@@ -89,8 +89,6 @@ function makeStreamHttpRequest(
     const streamChunks: string[] = [];
 
     const req = requestModule(options, (res: IncomingMessage) => {
-      reply.code(res.statusCode || 200);
-
       Object.entries(res.headers).forEach(([key, value]) => {
         const lowerKey = key.toLowerCase();
         if (!lowerKey.startsWith('transfer-encoding') &&
@@ -101,6 +99,7 @@ function makeStreamHttpRequest(
         }
       });
 
+      reply.code(res.statusCode || 200);
       reply.header('Content-Type', 'text/event-stream; charset=utf-8');
       reply.header('Cache-Control', 'no-cache, no-transform');
       reply.header('X-Accel-Buffering', 'no');
@@ -483,10 +482,16 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       const path = request.url.startsWith('/v1/') ? request.url.substring(3) : request.url;
       const portkeyUrl = `${appConfig.portkeyGatewayUrl}/v1${path}`;
 
+      const isStreamRequest = request.body?.stream === true;
+
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'x-portkey-config': JSON.stringify(portkeyConfig),
       };
+
+      if (isStreamRequest) {
+        headers['Accept'] = 'text/event-stream';
+      }
 
       Object.keys(request.headers).forEach(key => {
         if (key.toLowerCase().startsWith('x-') && key !== 'x-portkey-virtual-key') {
@@ -513,7 +518,6 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         'Proxy'
       );
 
-      const isStreamRequest = request.body?.stream === true;
       let requestBody: string | undefined;
 
       if (request.method !== 'GET' && request.method !== 'HEAD') {
