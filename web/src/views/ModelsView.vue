@@ -25,22 +25,44 @@
       preset="card"
       :title="editingId ? '编辑模型' : '添加模型'"
       class="model-modal"
-      :style="{ width: '600px', maxHeight: '50vh' }"
+      :style="{ width: '750px' }"
     >
-      <n-form ref="formRef" :model="formValue" :rules="rules" label-placement="left" label-width="100" size="small">
-        <n-form-item label="模型名称" path="name">
-          <n-input v-model:value="formValue.name" placeholder="如: GPT-4" size="small" />
-        </n-form-item>
-        <n-form-item label="所属提供商" path="providerId">
-          <n-select v-model:value="formValue.providerId" :options="providerOptions" placeholder="选择提供商" size="small" />
-        </n-form-item>
-        <n-form-item label="模型标识符" path="modelIdentifier">
-          <n-input v-model:value="formValue.modelIdentifier" placeholder="如: gpt-4, claude-3-opus" size="small" />
-        </n-form-item>
-        <n-form-item label="启用">
-          <n-switch v-model:value="formValue.enabled" size="small" />
-        </n-form-item>
-      </n-form>
+      <n-scrollbar style="max-height: 65vh; padding-right: 12px;">
+        <n-form ref="formRef" :model="formValue" :rules="rules" label-placement="left" label-width="100" size="small">
+          <n-form-item label="模型名称" path="name">
+            <n-input v-model:value="formValue.name" placeholder="如: GPT-4" size="small" />
+          </n-form-item>
+          <n-form-item label="所属提供商" path="providerId">
+            <n-select v-model:value="formValue.providerId" :options="providerOptions" placeholder="选择提供商" size="small" />
+          </n-form-item>
+          <n-form-item label="模型标识符" path="modelIdentifier">
+            <n-input
+              v-model:value="formValue.modelIdentifier"
+              placeholder="如: gpt-4, claude-3-opus"
+              size="small"
+            />
+          </n-form-item>
+          <n-form-item label="启用">
+            <n-switch v-model:value="formValue.enabled" size="small" />
+          </n-form-item>
+
+          <n-divider style="margin: 12px 0 8px 0;">
+            <n-space :size="8" align="center">
+              <span>模型属性配置</span>
+              <n-button
+                size="tiny"
+                type="primary"
+                secondary
+                @click.stop="showLiteLLMSelector = true"
+              >
+                从 LiteLLM 搜索
+              </n-button>
+            </n-space>
+          </n-divider>
+
+          <ModelAttributesEditor v-model="formValue.modelAttributes" />
+        </n-form>
+      </n-scrollbar>
       <template #footer>
         <n-space justify="end" :size="8">
           <n-button @click="showModal = false" size="small">取消</n-button>
@@ -50,31 +72,52 @@
         </n-space>
       </template>
     </n-modal>
+
+    <n-modal
+      v-model:show="showLiteLLMSelector"
+      preset="card"
+      title="从 LiteLLM 预设库搜索模型"
+      :style="{ width: '800px' }"
+    >
+      <LiteLLMPresetSelector @select="handleLiteLLMSelect" />
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, h, computed, onMounted } from 'vue';
-import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NPopconfirm } from 'naive-ui';
+import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NPopconfirm, NDivider, NScrollbar } from 'naive-ui';
 import { useModelStore } from '@/stores/model';
 import { useProviderStore } from '@/stores/provider';
 import { modelApi } from '@/api/model';
-import type { Model } from '@/types';
+import { litellmPresetsApi } from '@/api/litellm-presets';
+import ModelAttributesEditor from '@/components/ModelAttributesEditor.vue';
+import LiteLLMPresetSelector from '@/components/LiteLLMPresetSelector.vue';
+import type { Model, ModelAttributes } from '@/types';
+import type { LiteLLMSearchResult } from '@/api/litellm-presets';
 
 const message = useMessage();
 const modelStore = useModelStore();
 const providerStore = useProviderStore();
 
 const showModal = ref(false);
+const showLiteLLMSelector = ref(false);
 const formRef = ref();
 const submitting = ref(false);
 const editingId = ref<string | null>(null);
 
-const formValue = ref({
+const formValue = ref<{
+  name: string;
+  providerId: string;
+  modelIdentifier: string;
+  enabled: boolean;
+  modelAttributes?: ModelAttributes;
+}>({
   name: '',
   providerId: '',
   modelIdentifier: '',
   enabled: true,
+  modelAttributes: undefined,
 });
 
 const rules = {
@@ -144,6 +187,7 @@ function handleEdit(model: Model) {
     providerId: model.providerId,
     modelIdentifier: model.modelIdentifier,
     enabled: model.enabled,
+    modelAttributes: model.modelAttributes || undefined,
   };
   showModal.value = true;
 }
@@ -168,6 +212,7 @@ async function handleSubmit() {
         name: formValue.value.name,
         modelIdentifier: formValue.value.modelIdentifier,
         enabled: formValue.value.enabled,
+        modelAttributes: formValue.value.modelAttributes,
       });
       message.success('更新成功');
     } else {
@@ -194,7 +239,34 @@ function resetForm() {
     providerId: '',
     modelIdentifier: '',
     enabled: true,
+    modelAttributes: undefined,
   };
+}
+
+
+
+async function handleLiteLLMSelect(result: LiteLLMSearchResult) {
+  try {
+    const detail = await litellmPresetsApi.getModelDetail(result.modelName);
+
+    if (!formValue.value.modelIdentifier) {
+      formValue.value.modelIdentifier = result.modelName;
+    }
+
+    if (!formValue.value.name) {
+      formValue.value.name = result.modelName;
+    }
+
+    formValue.value.modelAttributes = {
+      ...formValue.value.modelAttributes,
+      ...detail.attributes,
+    };
+
+    showLiteLLMSelector.value = false;
+    message.success(`已应用 ${result.modelName} 的预设属性`);
+  } catch (error: any) {
+    message.error(error.message || '应用预设失败');
+  }
 }
 
 onMounted(async () => {

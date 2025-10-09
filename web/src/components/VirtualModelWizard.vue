@@ -4,6 +4,7 @@
       <n-step title="选择类型" />
       <n-step title="基本信息" />
       <n-step title="目标配置" />
+      <n-step title="模型属性" />
     </n-steps>
 
     <div class="step-content">
@@ -143,7 +144,35 @@
           </n-button>
         </n-space>
       </div>
+
+      <div v-if="currentStep === 4" class="step-panel">
+        <n-alert type="info" style="margin-bottom: 16px;">
+          为虚拟模型配置属性（可选）。可以从 LiteLLM 预设库搜索并应用配置。
+        </n-alert>
+
+        <n-space vertical :size="12">
+          <n-button
+            size="small"
+            type="primary"
+            secondary
+            @click="showLiteLLMSelector = true"
+          >
+            从 LiteLLM 搜索预设
+          </n-button>
+
+          <ModelAttributesEditor v-model="localFormValue.modelAttributes" />
+        </n-space>
+      </div>
     </div>
+
+    <n-modal
+      v-model:show="showLiteLLMSelector"
+      preset="card"
+      title="从 LiteLLM 预设库搜索模型"
+      :style="{ width: '800px' }"
+    >
+      <LiteLLMPresetSelector @select="handleLiteLLMSelect" />
+    </n-modal>
 
     <div class="wizard-footer">
       <n-space justify="space-between">
@@ -151,7 +180,7 @@
         <div v-else></div>
         <n-space :size="8">
           <n-button @click="handleCancel" size="small">取消</n-button>
-          <n-button v-if="currentStep < 3" type="primary" @click="nextStep" size="small">下一步</n-button>
+          <n-button v-if="currentStep < 4" type="primary" @click="nextStep" size="small">下一步</n-button>
           <n-button v-else type="primary" @click="handleSave" :loading="saving" size="small">
             {{ isEditing ? '保存修改' : '创建虚拟模型' }}
           </n-button>
@@ -178,6 +207,7 @@ import {
   NCard,
   NButton,
   NIcon,
+  NModal,
   useMessage,
 } from 'naive-ui';
 import {
@@ -186,6 +216,10 @@ import {
   ArrowUpOutline,
   ArrowDownOutline,
 } from '@vicons/ionicons5';
+import { litellmPresetsApi } from '@/api/litellm-presets';
+import type { LiteLLMSearchResult } from '@/api/litellm-presets';
+import ModelAttributesEditor from '@/components/ModelAttributesEditor.vue';
+import LiteLLMPresetSelector from '@/components/LiteLLMPresetSelector.vue';
 
 interface Target {
   providerId: string;
@@ -200,6 +234,7 @@ interface FormValue {
   targets: Target[];
   createVirtualModel: boolean;
   virtualModelName: string;
+  modelAttributes?: any;
 }
 
 interface Props {
@@ -223,6 +258,7 @@ const emit = defineEmits<{
 const message = useMessage();
 const currentStep = ref(1);
 const basicFormRef = ref();
+const showLiteLLMSelector = ref(false);
 
 const localConfigType = computed({
   get: () => props.configType,
@@ -235,7 +271,10 @@ const localFormValue = computed({
 });
 
 const stepStatus = computed(() => {
-  return currentStep.value === 3 && localFormValue.value.targets.length === 0 ? 'error' : 'process';
+  if (currentStep.value === 3 && localFormValue.value.targets.length === 0) {
+    return 'error';
+  }
+  return 'process';
 });
 
 function nextStep() {
@@ -309,6 +348,22 @@ function handleSave() {
 
 function handleCancel() {
   emit('cancel');
+}
+
+async function handleLiteLLMSelect(result: LiteLLMSearchResult) {
+  try {
+    const detail = await litellmPresetsApi.getModelDetail(result.modelName);
+
+    localFormValue.value.modelAttributes = {
+      ...localFormValue.value.modelAttributes,
+      ...detail.attributes,
+    };
+
+    showLiteLLMSelector.value = false;
+    message.success(`已应用 ${result.modelName} 的预设属性`);
+  } catch (error: any) {
+    message.error(error.message || '应用预设失败');
+  }
 }
 
 watch(() => localConfigType.value, () => {

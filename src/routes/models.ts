@@ -2,6 +2,27 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { modelDb, providerDb, virtualKeyDb } from '../db/index.js';
+import type { ModelAttributes } from '../types/index.js';
+
+const modelAttributesSchema = z.object({
+  max_tokens: z.number().optional(),
+  max_input_tokens: z.number().optional(),
+  max_output_tokens: z.number().optional(),
+  input_cost_per_token: z.number().optional(),
+  output_cost_per_token: z.number().optional(),
+  input_cost_per_token_cache_hit: z.number().optional(),
+  supports_function_calling: z.boolean().optional(),
+  supports_vision: z.boolean().optional(),
+  supports_tool_choice: z.boolean().optional(),
+  supports_assistant_prefill: z.boolean().optional(),
+  supports_prompt_caching: z.boolean().optional(),
+  supports_reasoning: z.boolean().optional(),
+  supports_audio_input: z.boolean().optional(),
+  supports_audio_output: z.boolean().optional(),
+  supports_pdf_input: z.boolean().optional(),
+  litellm_provider: z.string().optional(),
+  mode: z.string().optional(),
+}).optional();
 
 const createModelSchema = z.object({
   name: z.string(),
@@ -10,12 +31,14 @@ const createModelSchema = z.object({
   isVirtual: z.boolean().optional(),
   routingConfigId: z.string().optional(),
   enabled: z.boolean().optional(),
+  modelAttributes: modelAttributesSchema,
 });
 
 const updateModelSchema = z.object({
   name: z.string().optional(),
   modelIdentifier: z.string().optional(),
   enabled: z.boolean().optional(),
+  modelAttributes: modelAttributesSchema,
 });
 
 export async function modelRoutes(fastify: FastifyInstance) {
@@ -31,6 +54,15 @@ export async function modelRoutes(fastify: FastifyInstance) {
         const provider = m.provider_id ? providerMap.get(m.provider_id) : null;
         const virtualKeyCount = virtualKeyDb.countByModelId(m.id);
 
+        let modelAttributes = null;
+        if (m.model_attributes) {
+          try {
+            modelAttributes = JSON.parse(m.model_attributes);
+          } catch (e) {
+            modelAttributes = null;
+          }
+        }
+
         return {
           id: m.id,
           name: m.name,
@@ -40,6 +72,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
           isVirtual: m.is_virtual === 1,
           routingConfigId: m.routing_config_id,
           enabled: m.enabled === 1,
+          modelAttributes,
           virtualKeyCount,
           createdAt: m.created_at,
           updatedAt: m.updated_at,
@@ -59,6 +92,15 @@ export async function modelRoutes(fastify: FastifyInstance) {
     const provider = model.provider_id ? providerDb.getById(model.provider_id) : null;
     const virtualKeyCount = virtualKeyDb.countByModelId(model.id);
 
+    let modelAttributes = null;
+    if (model.model_attributes) {
+      try {
+        modelAttributes = JSON.parse(model.model_attributes);
+      } catch (e) {
+        modelAttributes = null;
+      }
+    }
+
     return {
       id: model.id,
       name: model.name,
@@ -66,6 +108,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
       providerName: model.is_virtual === 1 ? '虚拟模型' : (provider?.name || '未知提供商'),
       modelIdentifier: model.model_identifier,
       enabled: model.enabled === 1,
+      modelAttributes,
       virtualKeyCount,
       createdAt: model.created_at,
       updatedAt: model.updated_at,
@@ -92,7 +135,17 @@ export async function modelRoutes(fastify: FastifyInstance) {
       is_virtual: body.isVirtual ? 1 : 0,
       routing_config_id: body.routingConfigId || null,
       enabled: body.enabled !== false ? 1 : 0,
+      model_attributes: body.modelAttributes ? JSON.stringify(body.modelAttributes) : null,
     });
+
+    let modelAttributes = null;
+    if (model.model_attributes) {
+      try {
+        modelAttributes = JSON.parse(model.model_attributes);
+      } catch (e) {
+        modelAttributes = null;
+      }
+    }
 
     return {
       id: model.id,
@@ -102,6 +155,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
       isVirtual: model.is_virtual === 1,
       routingConfigId: model.routing_config_id,
       enabled: model.enabled === 1,
+      modelAttributes,
       createdAt: model.created_at,
       updatedAt: model.updated_at,
     };
@@ -120,16 +174,30 @@ export async function modelRoutes(fastify: FastifyInstance) {
     if (body.name !== undefined) updates.name = body.name;
     if (body.modelIdentifier !== undefined) updates.model_identifier = body.modelIdentifier;
     if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
+    if (body.modelAttributes !== undefined) {
+      updates.model_attributes = body.modelAttributes ? JSON.stringify(body.modelAttributes) : null;
+    }
 
     await modelDb.update(id, updates);
 
     const updated = modelDb.getById(id)!;
+
+    let modelAttributes = null;
+    if (updated.model_attributes) {
+      try {
+        modelAttributes = JSON.parse(updated.model_attributes);
+      } catch (e) {
+        modelAttributes = null;
+      }
+    }
+
     return {
       id: updated.id,
       name: updated.name,
       providerId: updated.provider_id,
       modelIdentifier: updated.model_identifier,
       enabled: updated.enabled === 1,
+      modelAttributes,
       createdAt: updated.created_at,
       updatedAt: updated.updated_at,
     };

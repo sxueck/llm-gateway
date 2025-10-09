@@ -113,6 +113,7 @@ const formValue = ref({
   targets: [] as Target[],
   createVirtualModel: true,
   virtualModelName: '',
+  modelAttributes: undefined as any,
 });
 
 const statusCodeOptions = [
@@ -211,6 +212,7 @@ async function handleSave() {
         type: configType.value,
         config: config,
         virtualModelName: formValue.value.virtualModelName,
+        modelAttributes: formValue.value.modelAttributes,
       });
       message.success('虚拟模型已更新');
     } else {
@@ -221,6 +223,7 @@ async function handleSave() {
         config: config,
         createVirtualModel: formValue.value.createVirtualModel,
         virtualModelName: formValue.value.virtualModelName,
+        modelAttributes: formValue.value.modelAttributes,
       });
 
       if (result.virtualModel) {
@@ -261,6 +264,7 @@ function handleEdit(row: any) {
     }),
     createVirtualModel: true,
     virtualModelName: virtualModel?.name || '',
+    modelAttributes: virtualModel?.modelAttributes || undefined,
   };
 
   showCreateModal.value = true;
@@ -299,6 +303,7 @@ function resetForm() {
     targets: [],
     createVirtualModel: true,
     virtualModelName: '',
+    modelAttributes: undefined,
   };
   configType.value = 'loadbalance';
 }

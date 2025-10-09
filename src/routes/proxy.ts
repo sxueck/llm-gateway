@@ -190,6 +190,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           error: {
             message: '缺少认证信息',
             type: 'invalid_request_error',
+            param: null,
             code: 'missing_authorization'
           }
         });
@@ -204,6 +205,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           error: {
             message: '无效的虚拟密钥',
             type: 'invalid_request_error',
+            param: null,
             code: 'invalid_api_key'
           }
         });
@@ -215,6 +217,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           error: {
             message: '虚拟密钥已被禁用',
             type: 'invalid_request_error',
+            param: null,
             code: 'api_key_disabled'
           }
         });
@@ -242,12 +245,25 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         .map(id => modelDb.getById(id))
         .filter(model => model?.enabled);
 
-      const modelList = models.map(model => ({
-        id: model!.is_virtual ? model!.name : model!.model_identifier,
-        object: 'model',
-        created: Math.floor(model!.created_at / 1000),
-        owned_by: 'system'
-      }));
+      const modelList = models.map(model => {
+        const baseInfo: any = {
+          id: model!.is_virtual ? model!.name : model!.model_identifier,
+          object: 'model',
+          created: Math.floor(model!.created_at / 1000),
+          owned_by: 'system'
+        };
+
+        if (model!.model_attributes) {
+          try {
+            const attributes = JSON.parse(model!.model_attributes);
+            Object.assign(baseInfo, attributes);
+          } catch (e) {
+            // 忽略解析错误
+          }
+        }
+
+        return baseInfo;
+      });
 
       memoryLogger.info(
         `模型列表查询: 虚拟密钥 ${virtualKeyValue.slice(0, 6)}...${virtualKeyValue.slice(-4)} | 返回 ${modelList.length} 个模型`,
@@ -269,6 +285,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         error: {
           message: error.message || '查询模型列表失败',
           type: 'internal_error',
+          param: null,
           code: 'models_list_error'
         }
       });
@@ -287,6 +304,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           error: {
             message: '缺少认证信息',
             type: 'invalid_request_error',
+            param: null,
             code: 'missing_authorization'
           }
         });
@@ -301,6 +319,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           error: {
             message: '无效的虚拟密钥',
             type: 'invalid_request_error',
+            param: null,
             code: 'invalid_api_key'
           }
         });
@@ -312,6 +331,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           error: {
             message: '虚拟密钥已被禁用',
             type: 'invalid_request_error',
+            param: null,
             code: 'api_key_disabled'
           }
         });
@@ -327,6 +347,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             error: {
               message: '模型配置不存在',
               type: 'internal_error',
+              param: null,
               code: 'model_not_found'
             }
           });
@@ -339,6 +360,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             error: {
               message: '提供商配置不存在',
               type: 'internal_error',
+              param: null,
               code: 'provider_not_found'
             }
           });
@@ -354,6 +376,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
               error: {
                 message: '虚拟密钥模型配置无效',
                 type: 'internal_error',
+                param: null,
                 code: 'invalid_model_config'
               }
             });
@@ -383,6 +406,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
               error: {
                 message: '模型配置不存在',
                 type: 'internal_error',
+                param: null,
                 code: 'model_not_found'
               }
             });
@@ -395,6 +419,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
               error: {
                 message: '提供商配置不存在',
                 type: 'internal_error',
+                param: null,
                 code: 'provider_not_found'
               }
             });
@@ -407,6 +432,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             error: {
               message: '虚拟密钥模型配置解析失败',
               type: 'internal_error',
+              param: null,
               code: 'model_config_parse_error'
             }
           });
@@ -419,6 +445,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             error: {
               message: '提供商配置不存在',
               type: 'internal_error',
+              param: null,
               code: 'provider_not_found'
             }
           });
@@ -431,6 +458,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           error: {
             message: '虚拟密钥配置不完整',
             type: 'internal_error',
+            param: null,
             code: 'invalid_key_config'
           }
         });
@@ -640,8 +668,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         );
         responseData = {
           error: {
-            message: 'Invalid JSON response',
-            details: responseText.substring(0, 200)
+            message: 'Invalid JSON response from upstream',
+            type: 'api_error',
+            param: null,
+            code: 'invalid_response'
           }
         };
       }
@@ -741,6 +771,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         error: {
           message: error.message || '代理请求失败',
           type: 'internal_error',
+          param: null,
           code: 'proxy_error'
         }
       });

@@ -13,7 +13,9 @@ import { virtualKeyRoutes } from './routes/virtual-keys.js';
 import { configRoutes } from './routes/config.js';
 import { publicConfigRoutes } from './routes/public-config.js';
 import { proxyRoutes } from './routes/proxy.js';
+import { litellmPresetsRoutes } from './routes/litellm-presets.js';
 import { memoryLogger } from './services/logger.js';
+import { litellmPresetsService } from './services/litellm-presets.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -53,8 +55,16 @@ await fastify.register(fastifyStatic, {
 fastify.decorate('authenticate', async function(request: any, reply: any) {
   try {
     await request.jwtVerify();
-  } catch (err) {
-    reply.code(401).send({ error: '未授权' });
+  } catch (err: any) {
+    reply.code(401).send({
+      error: {
+        message: '未授权',
+        type: 'invalid_request_error',
+        param: null,
+        code: 'unauthorized'
+      }
+    });
+    throw err;
   }
 });
 
@@ -92,21 +102,31 @@ await fastify.register(providerRoutes, { prefix: '/api/admin/providers' });
 await fastify.register(modelRoutes, { prefix: '/api/admin/models' });
 await fastify.register(virtualKeyRoutes, { prefix: '/api/admin/virtual-keys' });
 await fastify.register(configRoutes, { prefix: '/api/admin/config' });
+await fastify.register(litellmPresetsRoutes, { prefix: '/api/admin/litellm-presets' });
 
 memoryLogger.info('Routes registered', 'System');
 
 fastify.setErrorHandler((error, request, reply) => {
   fastify.log.error(error);
-  
+
   if (error.validation) {
     return reply.code(400).send({
-      error: '请求参数验证失败',
-      details: error.validation,
+      error: {
+        message: '请求参数验证失败',
+        type: 'invalid_request_error',
+        param: null,
+        code: 'validation_error'
+      }
     });
   }
 
   reply.code(error.statusCode || 500).send({
-    error: error.message || '服务器内部错误',
+    error: {
+      message: error.message || '服务器内部错误',
+      type: 'internal_error',
+      param: null,
+      code: 'internal_server_error'
+    }
   });
 });
 
@@ -124,6 +144,25 @@ async function cleanOldApiRequests() {
   }
 }
 
+async function checkAndUpdateLiteLLMPresets() {
+  try {
+    if (litellmPresetsService.shouldAutoUpdate()) {
+      memoryLogger.info('检测到 LiteLLM 预设需要更新，开始自动更新...', 'System');
+      const result = await litellmPresetsService.updateFromRemote();
+      if (result.success) {
+        memoryLogger.info(result.message, 'System');
+      } else {
+        memoryLogger.warn(`LiteLLM 预设更新失败: ${result.message}`, 'System');
+      }
+    } else {
+      const stats = litellmPresetsService.getStats();
+      memoryLogger.info(`LiteLLM 预设库已加载: ${stats.totalModels} 个模型`, 'System');
+    }
+  } catch (error: any) {
+    memoryLogger.error(`LiteLLM 预设检查失败: ${error.message}`, 'System');
+  }
+}
+
 try {
   await fastify.listen({ port: appConfig.port, host: '0.0.0.0' });
   console.log(`Server listening on http://localhost:${appConfig.port}`);
@@ -136,6 +175,11 @@ try {
     `已启动请求日志自动清理任务，每 24 小时执行一次，保留 ${appConfig.apiRequestLogRetentionDays} 天`,
     'System'
   );
+
+  await checkAndUpdateLiteLLMPresets();
+
+  setInterval(checkAndUpdateLiteLLMPresets, 24 * 60 * 60 * 1000);
+  memoryLogger.info('已启动 LiteLLM 预设自动更新任务，每 24 小时检查一次', 'System');
 } catch (err) {
   fastify.log.error(err);
   memoryLogger.error(`Failed to start server: ${err}`, 'System');

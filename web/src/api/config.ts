@@ -113,6 +113,7 @@ export const configApi = {
     createVirtualModel?: boolean;
     virtualModelName?: string;
     providerId?: string;
+    modelAttributes?: any;
   }): Promise<any> {
     return request.post('/admin/config/routing-configs', data);
   },
@@ -123,6 +124,7 @@ export const configApi = {
     type?: string;
     config?: any;
     virtualModelName?: string;
+    modelAttributes?: any;
   }): Promise<any> {
     return request.put(`/admin/config/routing-configs/${id}`, data);
   },

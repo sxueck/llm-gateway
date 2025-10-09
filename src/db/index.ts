@@ -88,6 +88,11 @@ function createTables() {
   } catch (e) {
   }
 
+  try {
+    db.run('ALTER TABLE models ADD COLUMN model_attributes TEXT');
+  } catch (e) {
+  }
+
   db.run('CREATE INDEX IF NOT EXISTS idx_models_provider ON models(provider_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_models_enabled ON models(enabled)');
   db.run('CREATE INDEX IF NOT EXISTS idx_models_is_virtual ON models(is_virtual)');
@@ -308,6 +313,26 @@ export const providerDb = {
   },
 };
 
+export interface ModelAttributes {
+  max_tokens?: number;
+  max_input_tokens?: number;
+  max_output_tokens?: number;
+  input_cost_per_token?: number;
+  output_cost_per_token?: number;
+  input_cost_per_token_cache_hit?: number;
+  supports_function_calling?: boolean;
+  supports_vision?: boolean;
+  supports_tool_choice?: boolean;
+  supports_assistant_prefill?: boolean;
+  supports_prompt_caching?: boolean;
+  supports_reasoning?: boolean;
+  supports_audio_input?: boolean;
+  supports_audio_output?: boolean;
+  supports_pdf_input?: boolean;
+  litellm_provider?: string;
+  mode?: string;
+}
+
 export interface Model {
   id: string;
   name: string;
@@ -316,13 +341,14 @@ export interface Model {
   is_virtual: number;
   routing_config_id: string | null;
   enabled: number;
+  model_attributes: string | null;
   created_at: number;
   updated_at: number;
 }
 
 export const modelDb = {
   getAll(): Model[] {
-    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, created_at, updated_at FROM models ORDER BY created_at DESC');
+    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, created_at, updated_at FROM models ORDER BY created_at DESC');
     if (result.length === 0) return [];
     return result[0].values.map(row => ({
       id: row[0] as string,
@@ -332,13 +358,14 @@ export const modelDb = {
       is_virtual: row[4] as number,
       routing_config_id: row[5] as string | null,
       enabled: row[6] as number,
-      created_at: row[7] as number,
-      updated_at: row[8] as number,
+      model_attributes: row[7] as string | null,
+      created_at: row[8] as number,
+      updated_at: row[9] as number,
     }));
   },
 
   getById(id: string): Model | undefined {
-    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, created_at, updated_at FROM models WHERE id = ?', [id]);
+    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, created_at, updated_at FROM models WHERE id = ?', [id]);
     if (result.length === 0 || result[0].values.length === 0) return undefined;
     const row = result[0].values[0];
     return {
@@ -349,13 +376,14 @@ export const modelDb = {
       is_virtual: row[4] as number,
       routing_config_id: row[5] as string | null,
       enabled: row[6] as number,
-      created_at: row[7] as number,
-      updated_at: row[8] as number,
+      model_attributes: row[7] as string | null,
+      created_at: row[8] as number,
+      updated_at: row[9] as number,
     };
   },
 
   getByProviderId(providerId: string): Model[] {
-    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, created_at, updated_at FROM models WHERE provider_id = ? ORDER BY created_at DESC', [providerId]);
+    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, created_at, updated_at FROM models WHERE provider_id = ? ORDER BY created_at DESC', [providerId]);
     if (result.length === 0) return [];
     return result[0].values.map(row => ({
       id: row[0] as string,
@@ -365,16 +393,17 @@ export const modelDb = {
       is_virtual: row[4] as number,
       routing_config_id: row[5] as string | null,
       enabled: row[6] as number,
-      created_at: row[7] as number,
-      updated_at: row[8] as number,
+      model_attributes: row[7] as string | null,
+      created_at: row[8] as number,
+      updated_at: row[9] as number,
     }));
   },
 
   async create(model: Omit<Model, 'created_at' | 'updated_at'>): Promise<Model> {
     const now = Date.now();
     db.run(
-      'INSERT INTO models (id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [model.id, model.name, model.provider_id, model.model_identifier, model.is_virtual, model.routing_config_id, model.enabled, now, now]
+      'INSERT INTO models (id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [model.id, model.name, model.provider_id, model.model_identifier, model.is_virtual, model.routing_config_id, model.enabled, model.model_attributes, now, now]
     );
     await saveDatabase();
     return { ...model, created_at: now, updated_at: now };

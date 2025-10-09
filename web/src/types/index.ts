@@ -14,6 +14,26 @@ export interface Provider {
   updatedAt: number;
 }
 
+export interface ModelAttributes {
+  max_tokens?: number;
+  max_input_tokens?: number;
+  max_output_tokens?: number;
+  input_cost_per_token?: number;
+  output_cost_per_token?: number;
+  input_cost_per_token_cache_hit?: number;
+  supports_function_calling?: boolean;
+  supports_vision?: boolean;
+  supports_tool_choice?: boolean;
+  supports_assistant_prefill?: boolean;
+  supports_prompt_caching?: boolean;
+  supports_reasoning?: boolean;
+  supports_audio_input?: boolean;
+  supports_audio_output?: boolean;
+  supports_pdf_input?: boolean;
+  litellm_provider?: string;
+  mode?: string;
+}
+
 export interface Model {
   id: string;
   name: string;
@@ -23,6 +43,7 @@ export interface Model {
   isVirtual?: boolean;
   routingConfigId?: string | null;
   enabled: boolean;
+  modelAttributes?: ModelAttributes | null;
   virtualKeyCount?: number;
   createdAt: number;
   updatedAt: number;
@@ -89,12 +110,14 @@ export interface CreateModelRequest {
   isVirtual?: boolean;
   routingConfigId?: string;
   enabled?: boolean;
+  modelAttributes?: ModelAttributes;
 }
 
 export interface UpdateModelRequest {
   name?: string;
   modelIdentifier?: string;
   enabled?: boolean;
+  modelAttributes?: ModelAttributes;
 }
 
 export interface CreateVirtualKeyRequest {
