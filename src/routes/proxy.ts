@@ -89,21 +89,13 @@ function makeStreamHttpRequest(
     const streamChunks: string[] = [];
 
     const req = requestModule(options, (res: IncomingMessage) => {
-      Object.entries(res.headers).forEach(([key, value]) => {
-        const lowerKey = key.toLowerCase();
-        if (!lowerKey.startsWith('transfer-encoding') &&
-            !lowerKey.startsWith('connection') &&
-            lowerKey !== 'content-length' &&
-            lowerKey !== 'content-type') {
-          reply.header(key, Array.isArray(value) ? value[0] : value);
-        }
+      reply.raw.writeHead(res.statusCode || 200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        'X-Accel-Buffering': 'no',
+        'Connection': 'keep-alive',
+        'Transfer-Encoding': 'chunked',
       });
-
-      reply.code(res.statusCode || 200);
-      reply.header('Content-Type', 'text/event-stream; charset=utf-8');
-      reply.header('Cache-Control', 'no-cache, no-transform');
-      reply.header('X-Accel-Buffering', 'no');
-      reply.hijack();
 
       res.on('data', (chunk: any) => {
         const chunkStr = chunk.toString();
