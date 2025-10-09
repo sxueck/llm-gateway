@@ -88,7 +88,9 @@ Portkey Gateway 可以在 Web UI 的"系统设置"页面一键启动。
 
 - **Web UI**: http://localhost:5173
 - **后端 API**: http://localhost:3000
-- **Portkey Gateway**: http://localhost:8787
+- **Portkey Gateway**: http://localhost:8787 (仅本地访问，不对外开放)
+
+**安全说明**: Portkey Gateway 已配置为仅监听本地回环地址 (127.0.0.1)，外部网络无法直接访问。所有 API 请求必须通过 LLM Gateway 进行转发，确保统一的认证和访问控制。
 
 ### 首次使用
 

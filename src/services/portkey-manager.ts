@@ -148,7 +148,7 @@ export class PortkeyManager {
       const command = [
         'docker run -d',
         `--name ${this.config.containerName}`,
-        `-p ${this.config.port}:8787`,
+        `-p 127.0.0.1:${this.config.port}:8787`,
         `-v "${volumePath}:/app/config"`,
         `-v "${fileVolumePath}:/app/conf.json"`,
         '-e CONFIG_PATH=/app/config/conf.json',

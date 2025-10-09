@@ -73,7 +73,7 @@ async function startPortkeyGateway() {
       const command = [
         'docker run -d',
         `--name ${PORTKEY_CONTAINER_NAME}`,
-        `-p ${PORTKEY_PORT}:8787`,
+        `-p 127.0.0.1:${PORTKEY_PORT}:8787`,
         `-v "${volumePath}:/app/config"`,
         `-v "${fileVolumePath}:/app/conf.json"`,
         '-e CONFIG_PATH=/app/config/conf.json',
