@@ -5,7 +5,7 @@ import { modelDb, providerDb, virtualKeyDb } from '../db/index.js';
 
 const createModelSchema = z.object({
   name: z.string(),
-  providerId: z.string(),
+  providerId: z.string().optional(),
   modelIdentifier: z.string(),
   isVirtual: z.boolean().optional(),
   routingConfigId: z.string().optional(),
@@ -28,14 +28,14 @@ export async function modelRoutes(fastify: FastifyInstance) {
 
     return {
       models: models.map(m => {
-        const provider = providerMap.get(m.provider_id);
+        const provider = m.provider_id ? providerMap.get(m.provider_id) : null;
         const virtualKeyCount = virtualKeyDb.countByModelId(m.id);
 
         return {
           id: m.id,
           name: m.name,
           providerId: m.provider_id,
-          providerName: provider?.name || '未知提供商',
+          providerName: m.is_virtual === 1 ? '虚拟模型' : (provider?.name || '未知提供商'),
           modelIdentifier: m.model_identifier,
           isVirtual: m.is_virtual === 1,
           routingConfigId: m.routing_config_id,
@@ -56,14 +56,14 @@ export async function modelRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: '模型不存在' });
     }
 
-    const provider = providerDb.getById(model.provider_id);
+    const provider = model.provider_id ? providerDb.getById(model.provider_id) : null;
     const virtualKeyCount = virtualKeyDb.countByModelId(model.id);
 
     return {
       id: model.id,
       name: model.name,
       providerId: model.provider_id,
-      providerName: provider?.name || '未知提供商',
+      providerName: model.is_virtual === 1 ? '虚拟模型' : (provider?.name || '未知提供商'),
       modelIdentifier: model.model_identifier,
       enabled: model.enabled === 1,
       virtualKeyCount,
@@ -75,15 +75,19 @@ export async function modelRoutes(fastify: FastifyInstance) {
   fastify.post('/', async (request, reply) => {
     const body = createModelSchema.parse(request.body);
 
-    const provider = providerDb.getById(body.providerId);
-    if (!provider) {
-      return reply.code(400).send({ error: '提供商不存在' });
+    if (body.providerId) {
+      const provider = providerDb.getById(body.providerId);
+      if (!provider) {
+        return reply.code(400).send({ error: '提供商不存在' });
+      }
+    } else if (!body.isVirtual) {
+      return reply.code(400).send({ error: '非虚拟模型必须关联提供商' });
     }
 
     const model = await modelDb.create({
       id: nanoid(),
       name: body.name,
-      provider_id: body.providerId,
+      provider_id: body.providerId || null,
       model_identifier: body.modelIdentifier,
       is_virtual: body.isVirtual ? 1 : 0,
       routing_config_id: body.routingConfigId || null,

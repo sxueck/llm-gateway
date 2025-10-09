@@ -362,11 +362,11 @@ export async function configRoutes(fastify: FastifyInstance) {
       memoryLogger.info(`创建路由配置: ${body.name}`, 'Config');
 
       let virtualModel = null;
-      if (body.createVirtualModel && body.virtualModelName && body.providerId) {
+      if (body.createVirtualModel && body.virtualModelName) {
         virtualModel = await modelDb.create({
           id: nanoid(),
           name: body.virtualModelName,
-          provider_id: body.providerId,
+          provider_id: null,
           model_identifier: `virtual-${configId}`,
           is_virtual: 1,
           routing_config_id: configId,

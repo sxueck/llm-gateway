@@ -113,7 +113,6 @@ const formValue = ref({
   targets: [] as Target[],
   createVirtualModel: true,
   virtualModelName: '',
-  providerId: '',
 });
 
 const statusCodeOptions = [
@@ -222,7 +221,6 @@ async function handleSave() {
         config: config,
         createVirtualModel: formValue.value.createVirtualModel,
         virtualModelName: formValue.value.virtualModelName,
-        providerId: formValue.value.providerId,
       });
 
       if (result.virtualModel) {
@@ -263,7 +261,6 @@ function handleEdit(row: any) {
     }),
     createVirtualModel: true,
     virtualModelName: virtualModel?.name || '',
-    providerId: virtualModel?.providerId || '',
   };
 
   showCreateModal.value = true;
@@ -302,7 +299,6 @@ function resetForm() {
     targets: [],
     createVirtualModel: true,
     virtualModelName: '',
-    providerId: '',
   };
   configType.value = 'loadbalance';
 }

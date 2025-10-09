@@ -64,7 +64,7 @@ function createTables() {
     CREATE TABLE IF NOT EXISTS models (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      provider_id TEXT NOT NULL,
+      provider_id TEXT,
       model_identifier TEXT NOT NULL,
       enabled INTEGER DEFAULT 1,
       created_at INTEGER NOT NULL,
@@ -80,6 +80,11 @@ function createTables() {
 
   try {
     db.run('ALTER TABLE models ADD COLUMN routing_config_id TEXT');
+  } catch (e) {
+  }
+
+  try {
+    db.run('UPDATE models SET provider_id = NULL WHERE is_virtual = 1');
   } catch (e) {
   }
 
@@ -306,7 +311,7 @@ export const providerDb = {
 export interface Model {
   id: string;
   name: string;
-  provider_id: string;
+  provider_id: string | null;
   model_identifier: string;
   is_virtual: number;
   routing_config_id: string | null;
@@ -322,7 +327,7 @@ export const modelDb = {
     return result[0].values.map(row => ({
       id: row[0] as string,
       name: row[1] as string,
-      provider_id: row[2] as string,
+      provider_id: row[2] as string | null,
       model_identifier: row[3] as string,
       is_virtual: row[4] as number,
       routing_config_id: row[5] as string | null,
@@ -339,7 +344,7 @@ export const modelDb = {
     return {
       id: row[0] as string,
       name: row[1] as string,
-      provider_id: row[2] as string,
+      provider_id: row[2] as string | null,
       model_identifier: row[3] as string,
       is_virtual: row[4] as number,
       routing_config_id: row[5] as string | null,
@@ -355,7 +360,7 @@ export const modelDb = {
     return result[0].values.map(row => ({
       id: row[0] as string,
       name: row[1] as string,
-      provider_id: row[2] as string,
+      provider_id: row[2] as string | null,
       model_identifier: row[3] as string,
       is_virtual: row[4] as number,
       routing_config_id: row[5] as string | null,
