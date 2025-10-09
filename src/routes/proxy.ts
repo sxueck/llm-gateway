@@ -100,7 +100,15 @@ function makeStreamHttpRequest(
         }
       });
 
-      res.on('data', (chunk) => {
+      const hasContentType = Object.keys(res.headers).some(k => k.toLowerCase() === 'content-type');
+      if (!hasContentType) {
+        reply.header('Content-Type', 'text/event-stream; charset=utf-8');
+      }
+      reply.header('Cache-Control', 'no-cache, no-transform');
+      reply.header('X-Accel-Buffering', 'no');
+      reply.hijack();
+
+      res.on('data', (chunk: any) => {
         const chunkStr = chunk.toString();
         buffer += chunkStr;
         streamChunks.push(chunkStr);
@@ -133,12 +141,12 @@ function makeStreamHttpRequest(
         resolve({ promptTokens, completionTokens, totalTokens, streamChunks });
       });
 
-      res.on('error', (err) => {
+      res.on('error', (err: any) => {
         reject(err);
       });
     });
 
-    req.on('error', (err) => {
+    req.on('error', (err: any) => {
       reject(err);
     });
 
@@ -310,7 +318,6 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       }
 
       let provider;
-      let selectedModel;
 
       if (virtualKey.model_id) {
         const model = modelDb.getById(virtualKey.model_id);
@@ -338,7 +345,6 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         }
 
         providerId = model.provider_id;
-        selectedModel = model;
       } else if (virtualKey.model_ids) {
         try {
           const parsedModelIds = JSON.parse(virtualKey.model_ids);
@@ -395,7 +401,6 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           }
 
           providerId = model.provider_id;
-          selectedModel = model;
         } catch (e) {
           memoryLogger.error(`解析 model_ids 失败: ${e}`, 'Proxy');
           return reply.code(500).send({
