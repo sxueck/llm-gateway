@@ -179,10 +179,11 @@ async function main() {
   console.log('启动完成!');
   console.log('========================================');
   console.log('\n访问地址:');
-  console.log('  Web UI:          http://localhost:5173');
-  console.log('  LLM Gateway:     http://localhost:3000');
+  console.log('  Web UI:          http://0.0.0.0:5173');
+  console.log('  LLM Gateway:     http://0.0.0.0:3000');
   console.log('  Portkey Gateway: http://localhost:8787');
-  console.log('\n按 Ctrl+C 停止所有服务\n');
+  console.log('\n提示: 外部访问请使用服务器的实际 IP 地址或域名');
+  console.log('按 Ctrl+C 停止所有服务\n');
 
   process.on('SIGINT', () => {
     console.log('\n\n正在停止服务...');
