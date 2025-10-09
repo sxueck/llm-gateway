@@ -10,9 +10,31 @@ import { nanoid } from 'nanoid';
 export async function configRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
 
+  fastify.get('/system-settings', async () => {
+    const allowRegCfg = systemConfigDb.get('allow_registration');
+    const corsEnabledCfg = systemConfigDb.get('cors_enabled');
+
+    return {
+      allowRegistration: !(allowRegCfg && allowRegCfg.value === 'false'),
+      corsEnabled: corsEnabledCfg ? corsEnabledCfg.value === 'true' : true,
+    };
+  });
+
   fastify.post('/system-settings', async (request) => {
-    const { allowRegistration } = request.body as { allowRegistration: boolean };
-    await systemConfigDb.set('allow_registration', allowRegistration ? 'true' : 'false', '是否允许新用户注册');
+    const { allowRegistration, corsEnabled } = request.body as {
+      allowRegistration?: boolean;
+      corsEnabled?: boolean;
+    };
+
+    if (allowRegistration !== undefined) {
+      await systemConfigDb.set('allow_registration', allowRegistration ? 'true' : 'false', '是否允许新用户注册');
+    }
+
+    if (corsEnabled !== undefined) {
+      await systemConfigDb.set('cors_enabled', corsEnabled ? 'true' : 'false', '是否启用 CORS 跨域支持');
+      memoryLogger.info(`CORS 配置已更新: ${corsEnabled ? '启用' : '禁用'}`, 'Config');
+    }
+
     return { success: true };
   });
 

@@ -131,11 +131,11 @@ export const configApi = {
     return request.delete(`/admin/config/routing-configs/${id}`);
   },
 
-  getSystemSettings(): Promise<{ allowRegistration: boolean }> {
+  getSystemSettings(): Promise<{ allowRegistration: boolean; corsEnabled: boolean }> {
     return request.get('/admin/config/system-settings');
   },
 
-  updateSystemSettings(data: { allowRegistration: boolean }): Promise<{ success: boolean }> {
+  updateSystemSettings(data: { allowRegistration?: boolean; corsEnabled?: boolean }): Promise<{ success: boolean }> {
     return request.post('/admin/config/system-settings', data);
   },
 };

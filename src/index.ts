@@ -5,7 +5,7 @@ import fastifyStatic from '@fastify/static';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { appConfig } from './config/index.js';
-import { initDatabase, apiRequestDb } from './db/index.js';
+import { initDatabase, apiRequestDb, systemConfigDb } from './db/index.js';
 import { authRoutes } from './routes/auth.js';
 import { providerRoutes } from './routes/providers.js';
 import { modelRoutes } from './routes/models.js';
@@ -32,8 +32,12 @@ const fastify = Fastify({
 });
 
 await fastify.register(cors, {
-  origin: appConfig.nodeEnv === 'development' ? '*' : false,
+  origin: (origin, callback) => {
+    callback(null, true);
+  },
   credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS', 'HEAD', 'PUT', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-portkey-config', 'Accept', 'Origin'],
 });
 
 await fastify.register(jwt, {
@@ -57,6 +61,25 @@ fastify.decorate('authenticate', async function(request: any, reply: any) {
 await initDatabase();
 
 memoryLogger.info('Database initialized', 'System');
+
+const corsEnabledCfg = systemConfigDb.get('cors_enabled');
+const corsEnabled = corsEnabledCfg ? corsEnabledCfg.value === 'true' : true;
+
+if (corsEnabled) {
+  memoryLogger.info('CORS 跨域支持已启用', 'System');
+} else {
+  memoryLogger.warn('CORS 跨域支持已禁用，浏览器端应用可能无法正常访问', 'System');
+}
+
+fastify.addHook('onRequest', async (request, reply) => {
+  const corsEnabledCfg = systemConfigDb.get('cors_enabled');
+  const corsEnabled = corsEnabledCfg ? corsEnabledCfg.value === 'true' : true;
+
+  if (!corsEnabled && request.headers.origin) {
+    reply.header('Access-Control-Allow-Origin', 'null');
+    reply.header('Access-Control-Allow-Credentials', 'false');
+  }
+});
 
 fastify.get('/health', async () => {
   return { status: 'ok', timestamp: Date.now() };
