@@ -310,6 +310,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       }
 
       let provider;
+      let selectedModel;
 
       if (virtualKey.model_id) {
         const model = modelDb.getById(virtualKey.model_id);
@@ -337,6 +338,74 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         }
 
         providerId = model.provider_id;
+        selectedModel = model;
+      } else if (virtualKey.model_ids) {
+        try {
+          const parsedModelIds = JSON.parse(virtualKey.model_ids);
+          if (!Array.isArray(parsedModelIds) || parsedModelIds.length === 0) {
+            memoryLogger.error(`虚拟密钥 model_ids 配置无效: ${virtualKeyValue}`, 'Proxy');
+            return reply.code(500).send({
+              error: {
+                message: '虚拟密钥模型配置无效',
+                type: 'internal_error',
+                code: 'invalid_model_config'
+              }
+            });
+          }
+
+          const requestedModel = request.body?.model;
+          let targetModelId: string | undefined;
+
+          if (requestedModel) {
+            for (const modelId of parsedModelIds) {
+              const model = modelDb.getById(modelId);
+              if (model && (model.model_identifier === requestedModel || model.name === requestedModel)) {
+                targetModelId = modelId;
+                break;
+              }
+            }
+          }
+
+          if (!targetModelId) {
+            targetModelId = parsedModelIds[0];
+          }
+
+          const model = modelDb.getById(targetModelId);
+          if (!model) {
+            memoryLogger.error(`模型不存在: ${targetModelId}`, 'Proxy');
+            return reply.code(500).send({
+              error: {
+                message: '模型配置不存在',
+                type: 'internal_error',
+                code: 'model_not_found'
+              }
+            });
+          }
+
+          provider = providerDb.getById(model.provider_id);
+          if (!provider) {
+            memoryLogger.error(`提供商不存在: ${model.provider_id}`, 'Proxy');
+            return reply.code(500).send({
+              error: {
+                message: '提供商配置不存在',
+                type: 'internal_error',
+                code: 'provider_not_found'
+              }
+            });
+          }
+
+          providerId = model.provider_id;
+          selectedModel = model;
+        } catch (e) {
+          memoryLogger.error(`解析 model_ids 失败: ${e}`, 'Proxy');
+          return reply.code(500).send({
+            error: {
+              message: '虚拟密钥模型配置解析失败',
+              type: 'internal_error',
+              code: 'model_config_parse_error'
+            }
+          });
+        }
       } else if (virtualKey.provider_id) {
         provider = providerDb.getById(virtualKey.provider_id);
         if (!provider) {
