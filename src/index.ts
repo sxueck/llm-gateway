@@ -87,7 +87,7 @@ fastify.get('/health', async () => {
 
 await fastify.register(proxyRoutes);
 await fastify.register(authRoutes, { prefix: '/api/auth' });
-await fastify.register(publicConfigRoutes, { prefix: '/api/admin/config' });
+await fastify.register(publicConfigRoutes, { prefix: '/api/public' });
 await fastify.register(providerRoutes, { prefix: '/api/admin/providers' });
 await fastify.register(modelRoutes, { prefix: '/api/admin/models' });
 await fastify.register(virtualKeyRoutes, { prefix: '/api/admin/virtual-keys' });

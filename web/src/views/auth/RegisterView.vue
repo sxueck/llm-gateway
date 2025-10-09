@@ -68,7 +68,7 @@ const allowRegistration = ref(true);
 
 onMounted(async () => {
   try {
-    const s = await configApi.getSystemSettings();
+    const s = await configApi.getPublicSystemSettings();
     allowRegistration.value = s.allowRegistration;
   } catch (e) {}
 });
