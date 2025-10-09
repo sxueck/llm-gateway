@@ -95,15 +95,13 @@ function makeStreamHttpRequest(
         const lowerKey = key.toLowerCase();
         if (!lowerKey.startsWith('transfer-encoding') &&
             !lowerKey.startsWith('connection') &&
-            lowerKey !== 'content-length') {
+            lowerKey !== 'content-length' &&
+            lowerKey !== 'content-type') {
           reply.header(key, Array.isArray(value) ? value[0] : value);
         }
       });
 
-      const hasContentType = Object.keys(res.headers).some(k => k.toLowerCase() === 'content-type');
-      if (!hasContentType) {
-        reply.header('Content-Type', 'text/event-stream; charset=utf-8');
-      }
+      reply.header('Content-Type', 'text/event-stream; charset=utf-8');
       reply.header('Cache-Control', 'no-cache, no-transform');
       reply.header('X-Accel-Buffering', 'no');
       reply.hijack();
