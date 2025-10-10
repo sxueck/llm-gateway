@@ -9,6 +9,7 @@ import { memoryLogger } from '../services/logger.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse } from '../utils/request-logger.js';
 
+
 function makeHttpRequest(
   url: string,
   method: string,
@@ -342,20 +343,22 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           });
         }
 
-        provider = providerDb.getById(model.provider_id);
-        if (!provider) {
-          memoryLogger.error(`提供商不存在: ${model.provider_id}`, 'Proxy');
-          return reply.code(500).send({
-            error: {
-              message: '提供商配置不存在',
-              type: 'internal_error',
-              param: null,
-              code: 'provider_not_found'
-            }
-          });
-        }
+        if (model.provider_id) {
+          provider = providerDb.getById(model.provider_id);
+          if (!provider) {
+            memoryLogger.error(`提供商不存在: ${model.provider_id}`, 'Proxy');
+            return reply.code(500).send({
+              error: {
+                message: '提供商配置不存在',
+                type: 'internal_error',
+                param: null,
+                code: 'provider_not_found'
+              }
+            });
+          }
 
-        providerId = model.provider_id;
+          providerId = model.provider_id;
+        }
       } else if (virtualKey.model_ids) {
         try {
           const parsedModelIds = JSON.parse(virtualKey.model_ids);
@@ -388,6 +391,18 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             targetModelId = parsedModelIds[0];
           }
 
+          if (!targetModelId) {
+            memoryLogger.error(`无法确定目标模型`, 'Proxy');
+            return reply.code(500).send({
+              error: {
+                message: '无法确定目标模型',
+                type: 'internal_error',
+                param: null,
+                code: 'model_not_determined'
+              }
+            });
+          }
+
           const model = modelDb.getById(targetModelId);
           if (!model) {
             memoryLogger.error(`模型不存在: ${targetModelId}`, 'Proxy');
@@ -401,20 +416,22 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             });
           }
 
-          provider = providerDb.getById(model.provider_id);
-          if (!provider) {
-            memoryLogger.error(`提供商不存在: ${model.provider_id}`, 'Proxy');
-            return reply.code(500).send({
-              error: {
-                message: '提供商配置不存在',
-                type: 'internal_error',
-                param: null,
-                code: 'provider_not_found'
-              }
-            });
-          }
+          if (model.provider_id) {
+            provider = providerDb.getById(model.provider_id);
+            if (!provider) {
+              memoryLogger.error(`提供商不存在: ${model.provider_id}`, 'Proxy');
+              return reply.code(500).send({
+                error: {
+                  message: '提供商配置不存在',
+                  type: 'internal_error',
+                  param: null,
+                  code: 'provider_not_found'
+                }
+              });
+            }
 
-          providerId = model.provider_id;
+            providerId = model.provider_id;
+          }
         } catch (e) {
           memoryLogger.error(`解析 model_ids 失败: ${e}`, 'Proxy');
           return reply.code(500).send({
@@ -449,6 +466,18 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             type: 'internal_error',
             param: null,
             code: 'invalid_key_config'
+          }
+        });
+      }
+
+      if (!provider) {
+        memoryLogger.error(`提供商未找到`, 'Proxy');
+        return reply.code(500).send({
+          error: {
+            message: '提供商配置未找到',
+            type: 'internal_error',
+            param: null,
+            code: 'provider_not_found'
           }
         });
       }
@@ -501,6 +530,8 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         ? `${virtualKeyValue.slice(0, 6)}...${virtualKeyValue.slice(-4)}`
         : virtualKeyValue;
 
+
+
       memoryLogger.info(
         `代理请求: ${request.method} ${path} | 虚拟密钥: ${vkDisplay} | 提供商: ${providerId}`,
         'Proxy'
@@ -549,6 +580,8 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             'Proxy'
           );
 
+
+
           const truncatedRequest = truncateRequestBody(request.body);
           const truncatedResponse = accumulateStreamResponse(tokenUsage.streamChunks);
 
@@ -576,6 +609,8 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             { error: streamError.stack }
           );
 
+
+
           const truncatedRequest = truncateRequestBody(request.body);
 
           apiRequestDb.create({
@@ -599,7 +634,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
 
       const response = await makeHttpRequest(
         portkeyUrl,
-        request.method,
+        (request as any).method,
         headers,
         requestBody
       );
@@ -698,6 +733,8 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           `请求完成: ${response.statusCode} | 耗时: ${duration}ms | Tokens: ${usage.total_tokens || 0}`,
           'Proxy'
         );
+
+
       } else {
         const errorStr = JSON.stringify(responseData);
         const truncatedError = errorStr.length > 500
@@ -707,6 +744,8 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           `请求失败: ${response.statusCode} | 耗时: ${duration}ms | 错误: ${truncatedError}`,
           'Proxy'
         );
+
+
       }
 
       reply.header('Content-Type', 'application/json');

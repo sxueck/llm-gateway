@@ -25,16 +25,16 @@ export function truncateRequestBody(body: any): string {
           const truncatedMsg: any = { role: msg.role };
           
           if (typeof msg.content === 'string') {
-            truncatedMsg.content = msg.content.length > 500 
-              ? msg.content.substring(0, 500) + '...[截断]'
+            truncatedMsg.content = msg.content.length > 1000
+              ? msg.content.substring(0, 1000) + '...[truncated]'
               : msg.content;
           } else if (Array.isArray(msg.content)) {
             truncatedMsg.content = msg.content.map((item: any) => {
               if (item.type === 'text' && item.text) {
                 return {
                   type: 'text',
-                  text: item.text.length > 500 
-                    ? item.text.substring(0, 500) + '...[截断]'
+                  text: item.text.length > 1000
+                    ? item.text.substring(0, 1000) + '...[truncated]'
                     : item.text
                 };
               }
@@ -61,11 +61,11 @@ export function truncateRequestBody(body: any): string {
       }
       
       const result = JSON.stringify(truncated);
-      return result.length <= MAX_BODY_LENGTH 
-        ? result 
-        : result.substring(0, MAX_BODY_LENGTH) + '...[截断]';
+      return result.length <= MAX_BODY_LENGTH
+        ? result
+        : result.substring(0, MAX_BODY_LENGTH) + '...[truncated]';
     } catch {
-      return bodyStr.substring(0, MAX_BODY_LENGTH) + '...[截断]';
+      return bodyStr.substring(0, MAX_BODY_LENGTH) + '...[truncated]';
     }
   } catch {
     return '';
@@ -102,7 +102,7 @@ export function truncateResponseBody(body: any): string {
             
             if (typeof msg.content === 'string') {
               truncatedChoice.message.content = msg.content.length > 1000
-                ? msg.content.substring(0, 1000) + '...[截断]'
+                ? msg.content.substring(0, 1000) + '...[truncated]'
                 : msg.content;
             } else {
               truncatedChoice.message.content = msg.content;
@@ -137,11 +137,11 @@ export function truncateResponseBody(body: any): string {
       }
       
       const result = JSON.stringify(truncated);
-      return result.length <= MAX_BODY_LENGTH 
-        ? result 
-        : result.substring(0, MAX_BODY_LENGTH) + '...[截断]';
+      return result.length <= MAX_BODY_LENGTH
+        ? result
+        : result.substring(0, MAX_BODY_LENGTH) + '...[truncated]';
     } catch {
-      return bodyStr.substring(0, MAX_BODY_LENGTH) + '...[截断]';
+      return bodyStr.substring(0, MAX_BODY_LENGTH) + '...[truncated]';
     }
   } catch {
     return '';
@@ -201,7 +201,7 @@ export function accumulateStreamResponse(chunks: string[]): string {
     
     return truncateResponseBody(accumulated);
   } catch {
-    return chunks.join('').substring(0, MAX_BODY_LENGTH) + '...[截断]';
+    return chunks.join('').substring(0, MAX_BODY_LENGTH) + '...[truncated]';
   }
 }
 

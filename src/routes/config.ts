@@ -5,6 +5,7 @@ import { apiRequestDb, routingConfigDb, modelDb, systemConfigDb } from '../db/in
 import { generatePortkeyConfig } from '../services/config-generator.js';
 import { portkeyManager } from '../services/portkey-manager.js';
 import { nanoid } from 'nanoid';
+import { realtimeLogger } from '../services/logger.js';
 
 
 export async function configRoutes(fastify: FastifyInstance) {
@@ -467,6 +468,12 @@ export async function configRoutes(fastify: FastifyInstance) {
       memoryLogger.error(`删除路由配置失败: ${error.message}`, 'Config');
       throw error;
     }
+  });
+
+  fastify.get('/realtime-logs', async (request, reply) => {
+    memoryLogger.info(`实时日志客户端连接`, 'RealtimeLogger');
+    realtimeLogger.addClient(reply);
+    return reply;
   });
 }
 

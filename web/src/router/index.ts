@@ -72,6 +72,11 @@ const router = createRouter({
           component: () => import('@/views/LogsView.vue'),
         },
         {
+          path: 'realtime-logs',
+          name: 'RealtimeLogs',
+          component: () => import('@/views/RealtimeLogsView.vue'),
+        },
+        {
           path: 'api-requests',
           name: 'ApiRequests',
           component: () => import('@/views/ApiRequestsView.vue'),
