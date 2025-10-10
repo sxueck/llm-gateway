@@ -309,7 +309,7 @@ async function handleSubmit() {
           message.warning(`提供商创建成功，但部分模型创建失败: ${error.message}`);
         }
       } else {
-        message.success('创建成功');
+        message.success('创建成功，您可以在模型管理页面使用"批量添加"功能手动添加模型');
       }
     }
 

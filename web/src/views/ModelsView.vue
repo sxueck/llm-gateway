@@ -3,9 +3,14 @@
     <n-space vertical :size="12">
       <n-space justify="space-between" align="center">
         <h2 class="page-title">模型列表</h2>
-        <n-button type="primary" size="small" @click="showModal = true">
-          添加模型
-        </n-button>
+        <n-space :size="8">
+          <n-button type="primary" size="small" @click="showModal = true">
+            添加模型
+          </n-button>
+          <n-button type="primary" secondary size="small" @click="showBatchModal = true">
+            批量添加
+          </n-button>
+        </n-space>
       </n-space>
 
       <n-card class="table-card">
@@ -81,6 +86,46 @@
     >
       <LiteLLMPresetSelector @select="handleLiteLLMSelect" />
     </n-modal>
+
+    <n-modal
+      v-model:show="showBatchModal"
+      preset="card"
+      title="批量添加模型"
+      :style="{ width: '900px' }"
+    >
+      <n-space vertical :size="16">
+        <n-form-item label="选择提供商" :rule="{ required: true, message: '请选择提供商' }">
+          <n-select
+            v-model:value="batchProviderId"
+            :options="providerOptions"
+            placeholder="选择提供商"
+            size="small"
+          />
+        </n-form-item>
+
+        <BatchModelAdder
+          v-if="batchProviderId"
+          ref="batchAdderRef"
+          :provider-id="batchProviderId"
+          @create="handleBatchCreate"
+        />
+      </n-space>
+
+      <template #footer>
+        <n-space justify="end" :size="8">
+          <n-button @click="closeBatchModal" size="small">取消</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <n-modal
+      v-model:show="showTestModal"
+      preset="card"
+      title="模型测试"
+      :style="{ width: '700px' }"
+    >
+      <ModelTester v-if="testingModel" :model="testingModel" />
+    </n-modal>
   </div>
 </template>
 
@@ -93,6 +138,8 @@ import { modelApi } from '@/api/model';
 import { litellmPresetsApi } from '@/api/litellm-presets';
 import ModelAttributesEditor from '@/components/ModelAttributesEditor.vue';
 import LiteLLMPresetSelector from '@/components/LiteLLMPresetSelector.vue';
+import BatchModelAdder from '@/components/BatchModelAdder.vue';
+import ModelTester from '@/components/ModelTester.vue';
 import type { Model, ModelAttributes } from '@/types';
 import type { LiteLLMSearchResult } from '@/api/litellm-presets';
 
@@ -102,9 +149,14 @@ const providerStore = useProviderStore();
 
 const showModal = ref(false);
 const showLiteLLMSelector = ref(false);
+const showBatchModal = ref(false);
+const showTestModal = ref(false);
 const formRef = ref();
+const batchAdderRef = ref();
 const submitting = ref(false);
 const editingId = ref<string | null>(null);
+const batchProviderId = ref<string>('');
+const testingModel = ref<Model | null>(null);
 
 const formValue = ref<{
   name: string;
@@ -168,6 +220,7 @@ const columns = [
     key: 'actions',
     render: (row: Model) => h(NSpace, null, {
       default: () => [
+        h(NButton, { size: 'small', onClick: () => handleTest(row), disabled: row.isVirtual }, { default: () => '测试' }),
         h(NButton, { size: 'small', onClick: () => handleEdit(row), disabled: row.isVirtual }, { default: () => '编辑' }),
         h(NPopconfirm, {
           onPositiveClick: () => handleDelete(row.id),
@@ -267,6 +320,41 @@ async function handleLiteLLMSelect(result: LiteLLMSearchResult) {
   } catch (error: any) {
     message.error(error.message || '应用预设失败');
   }
+}
+
+async function handleBatchCreate(models: any[]) {
+  try {
+    const modelsToCreate = models.map(model => ({
+      name: model.name,
+      providerId: batchProviderId.value,
+      modelIdentifier: model.modelIdentifier,
+      enabled: model.enabled,
+      modelAttributes: undefined,
+    }));
+
+    await modelApi.batchCreate(modelsToCreate);
+    message.success(`成功创建 ${modelsToCreate.length} 个模型`);
+
+    closeBatchModal();
+    await modelStore.fetchModels();
+  } catch (error: any) {
+    message.error(error.message || '批量创建模型失败');
+  }
+}
+
+function closeBatchModal() {
+  showBatchModal.value = false;
+  batchProviderId.value = '';
+  batchAdderRef.value?.clearModels();
+}
+
+function handleTest(model: Model) {
+  if (model.isVirtual) {
+    message.warning('虚拟模型无法直接测试');
+    return;
+  }
+  testingModel.value = model;
+  showTestModal.value = true;
 }
 
 onMounted(async () => {

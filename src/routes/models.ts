@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { modelDb, providerDb, virtualKeyDb } from '../db/index.js';
 import type { ModelAttributes } from '../types/index.js';
+import { decryptApiKey } from '../utils/crypto.js';
 
 const modelAttributesSchema = z.object({
   max_tokens: z.number().optional(),
@@ -237,6 +238,80 @@ export async function modelRoutes(fastify: FastifyInstance) {
         updatedAt: m.updated_at,
       })),
     };
+  });
+
+  fastify.post('/:id/test', async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const model = modelDb.getById(id);
+    if (!model) {
+      return reply.code(404).send({ error: '模型不存在' });
+    }
+
+    if (model.is_virtual === 1) {
+      return reply.code(400).send({ error: '虚拟模型无法直接测试' });
+    }
+
+    const provider = providerDb.getById(model.provider_id!);
+    if (!provider) {
+      return reply.code(400).send({ error: '关联的提供商不存在' });
+    }
+
+    const startTime = Date.now();
+
+    try {
+      const response = await fetch(`${provider.base_url}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${decryptApiKey(provider.api_key)}`,
+        },
+        body: JSON.stringify({
+          model: model.model_identifier,
+          messages: [
+            { role: 'user', content: '测试' }
+          ],
+          max_tokens: 10,
+          temperature: 0.1,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+
+      const responseTime = Date.now() - startTime;
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return {
+          success: false,
+          status: response.status,
+          message: `测试失败: HTTP ${response.status}`,
+          error: errorText,
+          responseTime,
+        };
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content || '无响应内容';
+
+      return {
+        success: true,
+        status: response.status,
+        message: '测试成功',
+        responseTime,
+        response: {
+          content,
+          usage: data.usage,
+        },
+      };
+    } catch (error: any) {
+      const responseTime = Date.now() - startTime;
+      return {
+        success: false,
+        message: error.message || '测试失败',
+        responseTime,
+        error: error.stack,
+      };
+    }
   });
 }
 

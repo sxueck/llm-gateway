@@ -34,5 +34,19 @@ export const modelApi = {
   delete(id: string): Promise<{ success: boolean }> {
     return request.delete(`/admin/models/${id}`);
   },
+
+  test(id: string): Promise<{
+    success: boolean;
+    status?: number;
+    message: string;
+    responseTime: number;
+    response?: {
+      content: string;
+      usage?: any;
+    };
+    error?: string;
+  }> {
+    return request.post(`/admin/models/${id}/test`);
+  },
 };
 

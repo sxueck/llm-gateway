@@ -88,6 +88,18 @@
           :closable="false"
           :bordered="false"
         />
+        <n-alert
+          v-if="fetchError"
+          type="warning"
+          :title="fetchError"
+          size="small"
+          :closable="false"
+          :bordered="false"
+        >
+          <div style="font-size: 12px; margin-top: 4px;">
+            该提供商可能不支持标准的 /v1/models 接口。您可以在创建提供商后，通过"批量添加模型"功能手动添加模型。
+          </div>
+        </n-alert>
       </n-space>
     </n-form-item>
 
@@ -161,6 +173,7 @@ const keyValidation = ref<ReturnType<typeof validateApiKey>>({ isValid: true });
 const fetchingModels = ref(false);
 const availableModels = ref<ModelInfo[]>([]);
 const selectedModels = ref<string[]>([]);
+const fetchError = ref<string>('');
 
 const formValue = computed({
   get: () => props.modelValue,
@@ -260,17 +273,21 @@ async function handleFetchModels() {
 
   try {
     fetchingModels.value = true;
+    fetchError.value = '';
     const result = await providerApi.fetchModels(formValue.value.baseUrl, formValue.value.apiKey);
 
     if (result.success) {
       availableModels.value = result.models;
       selectedModels.value = [];
+      fetchError.value = '';
       message.success(result.message);
     } else {
-      message.error(result.message);
+      availableModels.value = [];
+      fetchError.value = result.message;
     }
   } catch (error: any) {
-    message.error(error.message || '获取模型列表失败');
+    availableModels.value = [];
+    fetchError.value = error.message || '获取模型列表失败';
   } finally {
     fetchingModels.value = false;
   }

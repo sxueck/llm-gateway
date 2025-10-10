@@ -131,11 +131,6 @@ const menuOptions = [
         icon: () => h(NIcon, null, { default: () => h(TerminalOutline) }),
       },
       {
-        label: '实时日志',
-        key: 'realtime-logs',
-        icon: () => h(NIcon, null, { default: () => h(TerminalOutline) }),
-      },
-      {
         label: 'API 请求日志',
         key: 'api-requests',
         icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }),

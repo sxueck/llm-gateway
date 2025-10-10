@@ -1,41 +1,3 @@
-import { FastifyReply } from 'fastify';
-
-// 实时日志推送增强
-class RealtimeEnhancement {
-  private clients: Set<FastifyReply> = new Set();
-
-  addClient(reply: FastifyReply): void {
-    reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    });
-
-    this.clients.add(reply);
-    reply.raw.on('close', () => this.clients.delete(reply));
-  }
-
-  broadcast(level: string, message: string, module?: string): void {
-    if (this.clients.size === 0) return;
-
-    const data = `data: ${JSON.stringify({
-      time: new Date().toLocaleTimeString(),
-      level,
-      message,
-      module
-    })}\n\n`;
-
-    for (const client of this.clients) {
-      try {
-        client.raw.write(data);
-      } catch {
-        this.clients.delete(client);
-      }
-    }
-  }
-}
-
-const realtimeEnhancement = new RealtimeEnhancement();
 
 export interface LogEntry {
   timestamp: number;
@@ -65,9 +27,6 @@ class MemoryLogger {
     }
 
     console.log(`[${level}] ${module ? `[${module}] ` : ''}${message}`, metadata || '');
-
-    // 实时推送
-    realtimeEnhancement.broadcast(level, message, module);
   }
 
   info(message: string, module?: string, metadata?: Record<string, any>) {
@@ -137,6 +96,4 @@ class MemoryLogger {
 
 export const memoryLogger = new MemoryLogger();
 
-// 导出实时日志功能
-export const realtimeLogger = realtimeEnhancement;
 
