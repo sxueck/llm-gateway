@@ -21,6 +21,17 @@ const updateProviderSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
+const batchImportSchema = z.object({
+  providers: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    baseUrl: z.string().url(),
+    apiKey: z.string(),
+    enabled: z.boolean().optional(),
+  })),
+  skipExisting: z.boolean().optional(),
+});
+
 export async function providerRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
 
@@ -206,6 +217,63 @@ export async function providerRoutes(fastify: FastifyInstance) {
         models: [],
       };
     }
+  });
+
+  fastify.post('/batch-import', async (request, reply) => {
+    const body = batchImportSchema.parse(request.body);
+    const { providers, skipExisting = true } = body;
+
+    const results = {
+      success: 0,
+      failed: 0,
+      skipped: 0,
+      errors: [] as Array<{ id: string; error: string }>,
+    };
+
+    for (const providerData of providers) {
+      try {
+        const existing = providerDb.getById(providerData.id);
+
+        if (existing) {
+          if (skipExisting) {
+            results.skipped++;
+            continue;
+          } else {
+            results.errors.push({
+              id: providerData.id,
+              error: '提供商 ID 已存在',
+            });
+            results.failed++;
+            continue;
+          }
+        }
+
+        await providerDb.create({
+          id: providerData.id,
+          name: providerData.name,
+          base_url: providerData.baseUrl,
+          api_key: encryptApiKey(providerData.apiKey),
+          model_mapping: null,
+          enabled: providerData.enabled !== false ? 1 : 0,
+        });
+
+        results.success++;
+      } catch (error: any) {
+        results.errors.push({
+          id: providerData.id,
+          error: error.message || '创建失败',
+        });
+        results.failed++;
+      }
+    }
+
+    await generatePortkeyConfig();
+
+    return {
+      success: results.failed === 0,
+      message: `导入完成: 成功 ${results.success} 个，跳过 ${results.skipped} 个，失败 ${results.failed} 个`,
+      results,
+    };
   });
 }
 

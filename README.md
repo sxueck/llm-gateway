@@ -245,7 +245,26 @@ server {
 | PUT | `/api/admin/providers/:id` | 更新提供商 |
 | DELETE | `/api/admin/providers/:id` | 删除提供商 |
 | POST | `/api/admin/providers/:id/test` | 测试提供商连接 |
-| POST | `/api/admin/providers/:id/fetch-models` | 获取提供商模型列表 |
+| POST | `/api/admin/providers/fetch-models` | 获取提供商模型列表 |
+| POST | `/api/admin/providers/batch-import` | 批量导入提供商 |
+
+#### 提供商导入/导出功能
+
+系统支持提供商配置的导入和导出功能，方便批量管理和迁移配置。
+
+**导出功能**：
+- 在提供商管理页面点击"导出"按钮
+- 可选择导出所有提供商或仅导出已启用的提供商
+- 导出的 JSON 文件不包含 API Key（安全考虑）
+
+**导入功能**：
+1. 在提供商管理页面点击"导入"按钮
+2. 选择之前导出的 JSON 配置文件
+3. 系统会验证文件格式并显示确认对话框
+4. 确认后执行导入，已存在的提供商会被自动跳过
+5. 导入的提供商默认处于禁用状态，需要手动设置 API Key 后启用
+
+**导入文件格式示例**：参见 `docs/provider-import-example.json`
 
 ### 虚拟密钥管理
 

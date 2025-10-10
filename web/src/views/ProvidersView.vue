@@ -376,7 +376,7 @@ async function handleImportFile(data: { file: Required<UploadFileInfo>; fileList
   }
 
   try {
-    const { data, validation } = await parseImportFile(file);
+    const { data: importData, validation } = await parseImportFile(file);
 
     if (!validation.isValid) {
       message.error(`导入失败: ${validation.errors.join(', ')}`);
@@ -387,11 +387,60 @@ async function handleImportFile(data: { file: Required<UploadFileInfo>; fileList
       message.warning(`导入警告: ${validation.warnings.join(', ')}`);
     }
 
-    if (data) {
-      message.success(`配置文件验证通过，包含 ${data.providers.length} 个提供商配置`);
-      // 这里可以添加导入确认对话框
-      // 暂时只显示成功消息
+    if (!importData) {
+      message.error('导入数据为空');
+      return;
     }
+
+    const providersToImport = importData.providers;
+
+    dialog.warning({
+      title: '确认导入',
+      content: `即将导入 ${providersToImport.length} 个提供商配置。\n\n注意：导入的提供商需要您手动设置 API Key，因为安全原因导出文件中不包含 API Key。\n\n已存在的提供商将被跳过。`,
+      positiveText: '确认导入',
+      negativeText: '取消',
+      onPositiveClick: async () => {
+        await executeImport(providersToImport);
+      },
+    });
+  } catch (error: any) {
+    message.error(`导入失败: ${error.message}`);
+  }
+}
+
+async function executeImport(providers: Array<{ id: string; name: string; baseUrl: string; enabled?: boolean }>) {
+  try {
+    const providersWithDummyKey = providers.map(p => ({
+      ...p,
+      apiKey: 'PLEASE_SET_YOUR_API_KEY',
+      enabled: false,
+    }));
+
+    const result = await providerApi.batchImport(providersWithDummyKey, true);
+
+    if (result.success) {
+      message.success(result.message);
+
+      if (result.results.errors.length > 0) {
+        const errorMessages = result.results.errors.map(e => `${e.id}: ${e.error}`).join('\n');
+        dialog.error({
+          title: '部分导入失败',
+          content: errorMessages,
+        });
+      }
+    } else {
+      message.error(result.message);
+
+      if (result.results.errors.length > 0) {
+        const errorMessages = result.results.errors.map(e => `${e.id}: ${e.error}`).join('\n');
+        dialog.error({
+          title: '导入错误详情',
+          content: errorMessages,
+        });
+      }
+    }
+
+    await providerStore.fetchProviders();
   } catch (error: any) {
     message.error(`导入失败: ${error.message}`);
   }

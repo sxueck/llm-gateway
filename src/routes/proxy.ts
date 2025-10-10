@@ -491,7 +491,9 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       };
 
       if (provider.base_url) {
-        portkeyConfig.custom_host = provider.base_url;
+        let customHost = provider.base_url.replace(/\/+$/, '');
+        customHost = customHost.replace(/\/v1$/, '');
+        portkeyConfig.custom_host = customHost;
       }
 
       if (virtualKey.cache_enabled === 1) {
@@ -500,7 +502,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         };
       }
 
-      const path = request.url.startsWith('/v1/') ? request.url.substring(3) : request.url;
+      const path = request.url.startsWith('/v1/') ? request.url : `/v1${request.url}`;
       const portkeyUrl = `${appConfig.portkeyGatewayUrl}${path}`;
 
       const isStreamRequest = request.body?.stream === true;

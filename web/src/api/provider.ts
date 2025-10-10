@@ -35,5 +35,18 @@ export const providerApi = {
   fetchModels(baseUrl: string, apiKey: string): Promise<{ success: boolean; message: string; models: ModelInfo[] }> {
     return request.post('/admin/providers/fetch-models', { baseUrl, apiKey });
   },
+
+  batchImport(providers: Array<{ id: string; name: string; baseUrl: string; apiKey: string; enabled?: boolean }>, skipExisting = true): Promise<{
+    success: boolean;
+    message: string;
+    results: {
+      success: number;
+      failed: number;
+      skipped: number;
+      errors: Array<{ id: string; error: string }>;
+    };
+  }> {
+    return request.post('/admin/providers/batch-import', { providers, skipExisting });
+  },
 };
 

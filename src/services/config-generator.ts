@@ -36,7 +36,8 @@ export async function generatePortkeyConfig(): Promise<string> {
   for (const provider of providers) {
     if (provider.enabled) {
       const apiKey = decryptApiKey(provider.api_key).trim();
-      const baseUrl = (provider.base_url || '').trim().replace(/\/+$/, '');
+      let baseUrl = (provider.base_url || '').trim().replace(/\/+$/, '');
+      baseUrl = baseUrl.replace(/\/v1$/, '');
       const portkeyProvider = getPortkeyProviderType(baseUrl);
 
       config.credentials[provider.id] = {
