@@ -260,7 +260,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
     const startTime = Date.now();
 
     try {
-      const response = await fetch(`${provider.base_url}/v1/chat/completions`, {
+      const response = await fetch(`${provider.base_url}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

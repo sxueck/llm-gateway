@@ -153,7 +153,7 @@ Portkey Gateway 可以在 Web UI 的"系统设置"页面一键启动。
 使用虚拟密钥调用 LLM API:
 
 ```bash
-curl -X POST http://localhost:3000/v1/chat/completions \
+curl -X POST http://localhost:3000/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_VIRTUAL_KEY" \
   -d '{
@@ -167,7 +167,7 @@ curl -X POST http://localhost:3000/v1/chat/completions \
 ### 查询可用模型
 
 ```bash
-curl http://localhost:3000/v1/models \
+curl http://localhost:3000/models \
   -H "Authorization: Bearer YOUR_VIRTUAL_KEY"
 ```
 

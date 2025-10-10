@@ -145,7 +145,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      const response = await fetch(`${provider.base_url}/v1/models`, {
+      const response = await fetch(`${provider.base_url}/models`, {
         headers: {
           'Authorization': `Bearer ${decryptApiKey(provider.api_key)}`,
         },
@@ -172,7 +172,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      const response = await fetch(`${baseUrl}/v1/models`, {
+      const response = await fetch(`${baseUrl}/models`, {
         headers: {
           'Authorization': `Bearer ${apiKey}`,
         },

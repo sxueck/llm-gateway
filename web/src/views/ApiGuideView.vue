@@ -9,8 +9,8 @@
 
           <n-descriptions :column="1" bordered>
             <n-descriptions-item label="LLM Gateway API 地址">
-              <n-text code>{{ llmGatewayUrl }}/v1</n-text>
-              <n-button text type="primary" @click="copyText(llmGatewayUrl + '/v1')" style="margin-left: 8px;">
+              <n-text code>{{ llmGatewayUrl }}</n-text>
+              <n-button text type="primary" @click="copyText(llmGatewayUrl)" style="margin-left: 8px;">
                 复制
               </n-button>
             </n-descriptions-item>
@@ -76,7 +76,7 @@
           <div>
             <n-text strong>2. 配置 API 端点</n-text>
             <n-text depth="3" style="display: block; margin-top: 8px;">
-              将您的应用程序的 API 端点设置为：<n-text code>{{ llmGatewayUrl }}/v1</n-text>
+              将您的应用程序的 API 端点设置为：<n-text code>{{ llmGatewayUrl }}</n-text>
             </n-text>
           </div>
 
@@ -111,7 +111,7 @@ const checkingStatus = ref(false);
 const llmGatewayUrl = 'http://localhost:3000';
 const portkeyGatewayUrl = computed(() => gatewayStatus.value?.url || 'http://localhost:8787');
 
-const curlExample = computed(() => `curl ${llmGatewayUrl}/v1/chat/completions \\
+const curlExample = computed(() => `curl ${llmGatewayUrl}/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer YOUR_VIRTUAL_KEY" \\
   -d '{
@@ -128,7 +128,7 @@ const pythonExample = computed(() => `from openai import OpenAI
 
 client = OpenAI(
     api_key="YOUR_VIRTUAL_KEY",
-    base_url="${llmGatewayUrl}/v1"
+    base_url="${llmGatewayUrl}"
 )
 
 response = client.chat.completions.create(
@@ -144,7 +144,7 @@ const javascriptExample = computed(() => `import OpenAI from 'openai';
 
 const client = new OpenAI({
   apiKey: 'YOUR_VIRTUAL_KEY',
-  baseURL: '${llmGatewayUrl}/v1'
+  baseURL: '${llmGatewayUrl}'
 });
 
 const response = await client.chat.completions.create({
