@@ -2,8 +2,13 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { modelDb, providerDb, virtualKeyDb } from '../db/index.js';
-import type { ModelAttributes } from '../types/index.js';
 import { decryptApiKey } from '../utils/crypto.js';
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    authenticate: (request: any, reply: any) => Promise<void>;
+  }
+}
 
 const modelAttributesSchema = z.object({
   max_tokens: z.number().optional(),
@@ -59,8 +64,8 @@ export async function modelRoutes(fastify: FastifyInstance) {
         if (m.model_attributes) {
           try {
             modelAttributes = JSON.parse(m.model_attributes);
-          } catch (e) {
-            modelAttributes = null;
+          } catch {
+            fastify.log.warn(`Failed to parse model attributes for model ${m.id}`);
           }
         }
 
@@ -97,8 +102,8 @@ export async function modelRoutes(fastify: FastifyInstance) {
     if (model.model_attributes) {
       try {
         modelAttributes = JSON.parse(model.model_attributes);
-      } catch (e) {
-        modelAttributes = null;
+      } catch {
+        fastify.log.warn(`Failed to parse model attributes for model ${model.id}`);
       }
     }
 
@@ -143,8 +148,8 @@ export async function modelRoutes(fastify: FastifyInstance) {
     if (model.model_attributes) {
       try {
         modelAttributes = JSON.parse(model.model_attributes);
-      } catch (e) {
-        modelAttributes = null;
+      } catch {
+        fastify.log.warn(`Failed to parse model attributes for model ${model.id}`);
       }
     }
 
@@ -187,8 +192,8 @@ export async function modelRoutes(fastify: FastifyInstance) {
     if (updated.model_attributes) {
       try {
         modelAttributes = JSON.parse(updated.model_attributes);
-      } catch (e) {
-        modelAttributes = null;
+      } catch {
+        fastify.log.warn(`Failed to parse model attributes for model ${updated.id}`);
       }
     }
 
@@ -290,7 +295,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
         };
       }
 
-      const data = await response.json();
+      const data = await response.json() as any;
       const content = data.choices?.[0]?.message?.content || '无响应内容';
 
       return {
@@ -314,4 +319,3 @@ export async function modelRoutes(fastify: FastifyInstance) {
     }
   });
 }
-

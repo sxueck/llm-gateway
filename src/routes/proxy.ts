@@ -501,7 +501,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       }
 
       const path = request.url.startsWith('/v1/') ? request.url.substring(3) : request.url;
-      const portkeyUrl = `${appConfig.portkeyGatewayUrl}/v1${path}`;
+      const portkeyUrl = `${appConfig.portkeyGatewayUrl}${path}`;
 
       const isStreamRequest = request.body?.stream === true;
 

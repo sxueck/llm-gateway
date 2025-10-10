@@ -163,8 +163,6 @@ const columns = [
   },
 ];
 
-
-
 function generatePortkeyConfig() {
   const config: any = {
     strategy: {
