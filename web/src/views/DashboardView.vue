@@ -1,12 +1,40 @@
 <template>
   <div class="dashboard-view">
-    <n-space vertical :size="20">
-      <h2 class="page-title">仪表盘</h2>
+    <n-space vertical :size="24">
+      <div class="dashboard-header">
+        <div>
+          <h2 class="page-title">仪表盘</h2>
+          <p class="page-subtitle">这里监控了当前服务的全部数据</p>
+        </div>
+        <n-space :size="12">
+          <n-button secondary round>
+            <template #icon>
+              <n-icon><CloudDownloadOutline /></n-icon>
+            </template>
+            导入数据
+          </n-button>
+          <n-button type="primary" round>
+            <template #icon>
+              <n-icon><AddOutline /></n-icon>
+            </template>
+            添加项目
+          </n-button>
+        </n-space>
+      </div>
 
-      <n-grid :cols="4" :x-gap="16" :y-gap="16">
+      <n-grid :cols="4" :x-gap="20" :y-gap="20">
         <n-gi>
-          <n-card class="stat-card">
-            <n-statistic label="API 请求总数" :value="formatNumber(stats?.totalRequests || 0)" />
+          <n-card class="stat-card stat-card-primary">
+            <div class="stat-card-content">
+              <div class="stat-label">API 请求总数</div>
+              <div class="stat-value-large">{{ formatNumber(stats?.totalRequests || 0) }}</div>
+              <div class="stat-trend">
+                <n-icon size="16" color="#4ade80">
+                  <ArrowUpOutline />
+                </n-icon>
+                <span class="stat-trend-text">较上月增加</span>
+              </div>
+            </div>
           </n-card>
         </n-gi>
         <n-gi>
@@ -164,7 +192,8 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { useMessage, NSpace, NGrid, NGi, NCard, NStatistic, NSelect, NProgress, NEmpty } from 'naive-ui';
+import { useMessage, NSpace, NGrid, NGi, NCard, NStatistic, NSelect, NProgress, NEmpty, NButton, NIcon } from 'naive-ui';
+import { AddOutline, CloudDownloadOutline, ArrowUpOutline } from '@vicons/ionicons5';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
 import { configApi, type ApiStats, type TrendData } from '@/api/config';
@@ -310,51 +339,116 @@ onMounted(() => {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
 .page-title {
-  font-size: 22px;
-  font-weight: 500;
+  font-size: 32px;
+  font-weight: 600;
   color: #1a1a1a;
   margin: 0;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: #8c8c8c;
+  margin: 4px 0 0 0;
+  font-weight: 400;
 }
 
 .stat-card {
   background: #ffffff;
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
-  transition: all 0.2s ease;
+  border-radius: 16px;
+  border: none;
+  transition: all 0.3s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .stat-card:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.stat-card-primary {
+  background: linear-gradient(135deg, #0f6b4a 0%, #0d5a3e 100%);
+  color: #ffffff;
+}
+
+.stat-card-primary:hover {
+  box-shadow: 0 6px 16px rgba(15, 107, 74, 0.3);
+}
+
+.stat-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.stat-card-primary .stat-label {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.stat-value-large {
+  font-size: 42px;
+  font-weight: 600;
+  color: #ffffff;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-trend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.stat-trend-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 400;
 }
 
 .stat-card :deep(.n-statistic__label) {
   font-size: 13px;
   color: #8c8c8c;
-  font-weight: 400;
-  margin-bottom: 8px;
-  letter-spacing: 0.01em;
+  font-weight: 500;
+  margin-bottom: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .stat-card :deep(.n-statistic__value) {
-  font-size: 32px;
-  font-weight: 400;
+  font-size: 36px;
+  font-weight: 600;
   color: #1a1a1a;
-  line-height: 1.2;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 
 .stat-value {
-  font-size: 32px;
-  font-weight: 400;
+  font-size: 36px;
+  font-weight: 600;
   color: #1a1a1a;
-  line-height: 1.2;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 
 .stat-value-success {
-  color: #18a058;
+  color: #0f6b4a;
 }
 
 .stat-value-error {
@@ -374,18 +468,20 @@ onMounted(() => {
 
 .trend-card {
   background: #ffffff;
-  border-radius: 8px;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .trend-card :deep(.n-card__header) {
-  padding: 20px 24px;
+  padding: 24px 28px;
   border-bottom: 1px solid #f0f0f0;
 }
 
 .trend-card :deep(.n-card-header__main) {
-  font-size: 16px;
-  font-weight: 500;
+  font-size: 18px;
+  font-weight: 600;
   color: #1a1a1a;
+  letter-spacing: -0.02em;
 }
 
 .trend-content {
@@ -458,18 +554,20 @@ onMounted(() => {
 
 .overview-card {
   background: #ffffff;
-  border-radius: 8px;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .overview-card :deep(.n-card__header) {
-  padding: 20px 24px;
+  padding: 24px 28px;
   border-bottom: 1px solid #f0f0f0;
 }
 
 .overview-card :deep(.n-card-header__main) {
-  font-size: 16px;
-  font-weight: 500;
+  font-size: 18px;
+  font-weight: 600;
   color: #1a1a1a;
+  letter-spacing: -0.02em;
 }
 
 .overview-grid {

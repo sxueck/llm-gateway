@@ -372,17 +372,19 @@ onMounted(async () => {
 }
 
 .page-title {
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 600;
-  color: #262626;
+  color: #1a1a1a;
   margin: 0;
+  letter-spacing: -0.02em;
 }
 
 .table-card {
   background: #ffffff;
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
+  border-radius: 16px;
+  border: none;
   overflow-x: auto;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .model-modal :deep(.n-card) {

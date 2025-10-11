@@ -13,39 +13,46 @@ import { NConfigProvider, NMessageProvider, NDialogProvider } from 'naive-ui';
 
 const themeOverrides = {
   common: {
-    primaryColor: '#18a058',
-    borderRadius: '8px',
-    borderColor: '#e8e8e8',
+    primaryColor: '#0f6b4a',
+    primaryColorHover: '#0d5a3e',
+    primaryColorPressed: '#0a4830',
+    borderRadius: '12px',
+    borderColor: 'transparent',
     dividerColor: '#e8e8e8',
     fontFamily: '__Inter_1c856b, __Inter_Fallback_1c856b, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
   },
   Card: {
-    borderRadius: '8px',
-    borderColor: '#e8e8e8',
+    borderRadius: '16px',
+    borderColor: 'transparent',
     color: '#ffffff',
-    boxShadow: 'none',
-    paddingMedium: '16px',
-    paddingSmall: '12px',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
+    paddingMedium: '20px',
+    paddingSmall: '16px',
   },
   Layout: {
-    color: 'transparent',
-    siderColor: '#ffffff',
+    color: '#f5f5f5',
+    siderColor: '#f8f8f8',
     headerColor: '#ffffff',
   },
   Menu: {
-    itemColorActive: 'rgba(24, 160, 88, 0.1)',
-    itemColorHover: 'rgba(0, 0, 0, 0.04)',
-    borderRadius: '8px',
+    itemColorActive: '#0f6b4a',
+    itemColorHover: 'rgba(15, 107, 74, 0.08)',
+    itemTextColorActive: '#ffffff',
+    itemTextColorHover: '#0f6b4a',
+    itemIconColorActive: '#ffffff',
+    itemIconColorHover: '#0f6b4a',
+    borderRadius: '10px',
+    itemHeight: '40px',
   },
   Modal: {
-    borderRadius: '8px',
-    boxShadow: 'none',
+    borderRadius: '16px',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
   },
   Input: {
-    borderRadius: '8px',
+    borderRadius: '10px',
   },
   Button: {
-    borderRadius: '8px',
+    borderRadius: '10px',
   },
 };
 </script>

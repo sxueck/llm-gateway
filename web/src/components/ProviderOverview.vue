@@ -52,8 +52,9 @@ const stats = computed(() => {
 <style scoped>
 .overview-card {
   background: #ffffff;
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
+  border-radius: 16px;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .card-header {
@@ -63,33 +64,44 @@ const stats = computed(() => {
 }
 
 .card-title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
-  color: #262626;
+  color: #1a1a1a;
+  letter-spacing: -0.02em;
 }
 
 .stat-item {
-  padding: 12px;
-  background: #f8f9fa;
-  border-radius: 8px;
+  padding: 16px;
+  background: linear-gradient(135deg, #f8f9fa 0%, #f0f1f3 100%);
+  border-radius: 12px;
   text-align: center;
-  border: 1px solid #e8e8e8;
+  border: none;
+  transition: all 0.3s ease;
+}
+
+.stat-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .stat-value {
-  font-size: 28px;
-  font-weight: 700;
-  color: #262626;
+  font-size: 32px;
+  font-weight: 600;
+  color: #1a1a1a;
   line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-value.stat-enabled {
-  color: #18a058;
+  color: #0f6b4a;
 }
 
 .stat-label {
-  font-size: 12px;
+  font-size: 13px;
   color: #8c8c8c;
-  margin-top: 4px;
+  margin-top: 6px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 </style>
