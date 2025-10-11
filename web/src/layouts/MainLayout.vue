@@ -1,13 +1,11 @@
 <template>
   <n-layout has-sider style="height: 100vh; background-color: #f5f5f5;">
     <n-layout-sider
-      :collapsed="collapsed"
+      :collapsed="false"
       collapse-mode="width"
       :collapsed-width="80"
       :width="260"
-      show-trigger
-      @collapse="collapsed = true"
-      @expand="collapsed = false"
+      :show-trigger="false"
       style="border-right: none; background-color: #f8f8f8; padding: 16px 12px;"
     >
       <div class="logo">
@@ -16,13 +14,13 @@
             <CloudOutline />
           </n-icon>
         </div>
-        <span v-if="!collapsed" class="logo-text">LLM Gateway</span>
+        <span class="logo-text">LLM Gateway</span>
       </div>
 
-      <div v-if="!collapsed" class="menu-section-label">MENU</div>
+      <div class="menu-section-label">MENU</div>
 
       <n-menu
-        :collapsed="collapsed"
+        :collapsed="false"
         :collapsed-width="64"
         :collapsed-icon-size="22"
         :options="menuOptions"
@@ -31,10 +29,10 @@
         class="custom-menu"
       />
 
-      <div v-if="!collapsed" class="menu-section-label">GENERAL</div>
+      <div class="menu-section-label">GENERAL</div>
 
       <n-menu
-        :collapsed="collapsed"
+        :collapsed="false"
         :collapsed-width="64"
         :collapsed-icon-size="22"
         :options="generalMenuOptions"
@@ -45,8 +43,7 @@
     </n-layout-sider>
 
     <n-layout style="background-color: #f5f5f5;">
-      <n-layout-header style="height: 72px; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; border-bottom: none; background-color: transparent; margin-bottom: 8px;">
-        <div class="header-title">{{ currentTitle }}</div>
+      <n-layout-header style="height: 72px; padding: 0 32px; display: flex; align-items: center; justify-content: flex-end; border-bottom: none; background-color: transparent; margin-bottom: 8px;">
         <div class="header-right">
           <n-button circle quaternary class="header-icon-btn">
             <template #icon>
@@ -62,7 +59,7 @@
               >
                 {{ authStore.user?.username?.charAt(0).toUpperCase() }}
               </n-avatar>
-              <div v-if="!collapsed" class="user-info">
+              <div class="user-info">
                 <div class="user-name">{{ authStore.user?.username }}</div>
               </div>
             </div>
@@ -78,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, h, onMounted } from 'vue';
+import { computed, h, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import {
   NLayout,
@@ -108,8 +105,6 @@ import { useAuthStore } from '@/stores/auth';
 const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
-
-const collapsed = ref(false);
 
 const menuOptions = [
   {
@@ -194,21 +189,6 @@ const activeKey = computed(() => {
   return path || 'dashboard';
 });
 
-const currentTitle = computed(() => {
-  for (const item of menuOptions) {
-    if (item.key === activeKey.value) {
-      return item.label;
-    }
-    if (item.children) {
-      const child = item.children.find((c: any) => c.key === activeKey.value);
-      if (child) {
-        return child.label;
-      }
-    }
-  }
-  return '';
-});
-
 function handleMenuSelect(key: string) {
   router.push(`/${key}`);
 }
@@ -276,6 +256,10 @@ onMounted(async () => {
 
 .custom-menu :deep(.n-menu-item-content) {
   padding-left: 12px !important;
+}
+
+.custom-menu :deep(.n-submenu-children .n-menu-item-content) {
+  padding-left: 44px !important;
 }
 
 .custom-menu :deep(.n-menu-item-content--selected) {

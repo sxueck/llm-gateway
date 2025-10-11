@@ -27,15 +27,24 @@
         <n-gi :row-span="2">
           <n-card class="stat-card stat-card-primary stat-card-tall">
             <div class="stat-card-content">
-              <div class="stat-label">API 请求总数</div>
-              <div class="stat-value-large">{{ formatNumber(stats?.totalRequests || 0) }}</div>
-              <div class="stat-trend">
-                <n-icon size="16" color="#4ade80">
-                  <ArrowUpOutline />
-                </n-icon>
-                <span class="stat-trend-text">较上月增加</span>
+              <div class="stat-label">Token 消耗</div>
+              <div class="token-display-large">
+                <div class="token-value-large">{{ formatTokenNumber(stats?.totalTokens || 0) }}</div>
+                <div class="token-value-secondary-large">{{ formatLargeNumber(stats?.totalTokens || 0) }}</div>
               </div>
             </div>
+          </n-card>
+        </n-gi>
+        <n-gi>
+          <n-card class="stat-card">
+            <n-statistic label="API 请求总数">
+              <template #default>
+                <span class="stat-value">{{ formatNumber(stats?.totalRequests || 0) }}</span>
+              </template>
+              <template #suffix>
+                <span class="stat-suffix">次</span>
+              </template>
+            </n-statistic>
           </n-card>
         </n-gi>
         <n-gi>
@@ -70,18 +79,6 @@
               </template>
               <template #suffix>
                 <span class="stat-suffix">%</span>
-              </template>
-            </n-statistic>
-          </n-card>
-        </n-gi>
-        <n-gi>
-          <n-card class="stat-card">
-            <n-statistic label="Token 消耗">
-              <template #default>
-                <div class="token-display">
-                  <div class="token-value-primary">{{ formatTokenNumber(stats?.totalTokens || 0) }}</div>
-                  <div class="token-value-secondary">{{ formatLargeNumber(stats?.totalTokens || 0) }}</div>
-                </div>
               </template>
             </n-statistic>
           </n-card>
@@ -192,7 +189,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useMessage, NSpace, NGrid, NGi, NCard, NStatistic, NSelect, NProgress, NEmpty, NButton, NIcon } from 'naive-ui';
-import { RefreshOutline, ArrowUpOutline } from '@vicons/ionicons5';
+import { RefreshOutline } from '@vicons/ionicons5';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
 import { configApi, type ApiStats, type TrendData } from '@/api/config';
@@ -417,25 +414,27 @@ onMounted(() => {
   color: rgba(255, 255, 255, 0.9);
 }
 
-.stat-value-large {
-  font-size: 42px;
+.token-display-large {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.token-value-large {
+  font-size: 48px;
   font-weight: 600;
   color: #ffffff;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
-.stat-trend {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.stat-trend-text {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.8);
+.token-value-secondary-large {
+  font-size: 24px;
   font-weight: 400;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-card :deep(.n-statistic__label) {
