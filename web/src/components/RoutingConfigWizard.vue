@@ -66,13 +66,6 @@
                 :placeholder="localConfigType === 'loadbalance' ? 'GPT-4-LB' : 'GPT-4-Fallback'"
               />
             </n-form-item>
-            <n-form-item label="关联提供商" path="providerId" :rule="{ required: true, message: '请选择关联提供商' }">
-              <n-select
-                v-model:value="localFormValue.providerId"
-                :options="providerOptions"
-                placeholder="选择提供商"
-              />
-            </n-form-item>
           </template>
         </n-form>
       </div>
@@ -344,10 +337,6 @@ function handleSave() {
   if (localFormValue.value.createVirtualModel) {
     if (!localFormValue.value.virtualModelName) {
       message.error('请输入虚拟模型名称');
-      return;
-    }
-    if (!localFormValue.value.providerId) {
-      message.error('请选择关联提供商');
       return;
     }
   }

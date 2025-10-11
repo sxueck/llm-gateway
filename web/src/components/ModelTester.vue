@@ -1,10 +1,6 @@
 <template>
   <div class="model-tester">
     <n-space vertical :size="16">
-      <n-alert type="info" size="small">
-        将发送一个简单的测试消息到该模型，验证其可用性和响应时间。
-      </n-alert>
-
       <n-space justify="space-between" align="center">
         <n-space :size="8" align="center">
           <span class="model-info">
@@ -89,25 +85,6 @@
           </n-space>
         </n-card>
       </div>
-
-      <div v-if="testHistory.length > 0" class="test-history">
-        <n-divider style="margin: 16px 0 8px 0;">测试历史</n-divider>
-        <n-timeline size="small">
-          <n-timeline-item
-            v-for="(test, index) in testHistory.slice(0, 5)"
-            :key="index"
-            :type="test.success ? 'success' : 'error'"
-            :time="formatTime(test.timestamp)"
-          >
-            <n-space :size="8" align="center">
-              <span>{{ test.message }}</span>
-              <n-text depth="3" style="font-size: 12px">
-                {{ test.responseTime }}ms
-              </n-text>
-            </n-space>
-          </n-timeline-item>
-        </n-timeline>
-      </div>
     </n-space>
   </div>
 </template>
@@ -118,15 +95,12 @@ import {
   NSpace,
   NButton,
   NCard,
-  NAlert,
   NIcon,
   NText,
   NTag,
   NDescriptions,
   NDescriptionsItem,
   NDivider,
-  NTimeline,
-  NTimelineItem,
   useMessage,
 } from 'naive-ui';
 import {
@@ -159,7 +133,6 @@ const message = useMessage();
 
 const testing = ref(false);
 const testResult = ref<TestResult | null>(null);
-const testHistory = ref<TestResult[]>([]);
 
 async function handleTest() {
   if (props.model.isVirtual) {
@@ -174,10 +147,9 @@ async function handleTest() {
       ...result,
       timestamp: Date.now(),
     };
-    
+
     testResult.value = testData;
-    testHistory.value.unshift(testData);
-    
+
     if (result.success) {
       message.success('模型测试成功');
     } else {
@@ -191,9 +163,8 @@ async function handleTest() {
       error: error.message,
       timestamp: Date.now(),
     };
-    
+
     testResult.value = testData;
-    testHistory.value.unshift(testData);
     message.error('模型测试失败');
   } finally {
     testing.value = false;
@@ -204,10 +175,6 @@ function getResponseTimeType(responseTime: number): 'default' | 'success' | 'war
   if (responseTime < 1000) return 'success';
   if (responseTime < 3000) return 'warning';
   return 'error';
-}
-
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString();
 }
 </script>
 
@@ -248,9 +215,5 @@ function formatTime(timestamp: number): string {
 
 .usage-info {
   margin-top: 8px;
-}
-
-.test-history {
-  margin-top: 16px;
 }
 </style>
