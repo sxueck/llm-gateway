@@ -123,19 +123,21 @@
           />
         </template>
         <div v-if="trendData.length > 0" class="trend-content">
-          <n-space vertical :size="12">
-            <div v-for="(item, index) in trendData" :key="index" class="trend-item">
-              <span class="trend-time">{{ formatTimestamp(item.timestamp) }}</span>
-              <n-progress
-                type="line"
-                :percentage="getPercentage(item.requestCount)"
-                :show-indicator="false"
-                class="trend-progress"
-              />
-              <span class="trend-count">{{ formatNumber(item.requestCount) }} 次</span>
-              <span class="trend-tokens">{{ formatLargeNumber(item.tokenCount) }} tokens</span>
-            </div>
-          </n-space>
+          <div class="trend-scroll-container">
+            <n-space vertical :size="12">
+              <div v-for="(item, index) in trendData" :key="index" class="trend-item">
+                <span class="trend-time">{{ formatTimestamp(item.timestamp) }}</span>
+                <n-progress
+                  type="line"
+                  :percentage="getPercentage(item.requestCount)"
+                  :show-indicator="false"
+                  class="trend-progress"
+                />
+                <span class="trend-count">{{ formatNumber(item.requestCount) }} 次</span>
+                <span class="trend-tokens">{{ formatLargeNumber(item.tokenCount) }} tokens</span>
+              </div>
+            </n-space>
+          </div>
         </div>
         <n-empty v-else description="暂无数据" />
       </n-card>
@@ -257,10 +259,18 @@ function formatResponseTime(time: number): string {
 
 function formatTimestamp(timestamp: number) {
   const date = new Date(timestamp);
+  const formatter = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
   if (selectedPeriod.value === '24h') {
-    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    return formatter.format(date).split(' ')[1] || date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
   }
-  return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+  return formatter.format(date).split(' ')[0] || date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
 }
 
 function getPercentage(count: number) {
@@ -381,6 +391,30 @@ onMounted(() => {
 .trend-content {
   padding: 8px 0;
   min-height: 300px;
+}
+
+.trend-scroll-container {
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.trend-scroll-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.trend-scroll-container::-webkit-scrollbar-track {
+  background: #f5f5f5;
+  border-radius: 3px;
+}
+
+.trend-scroll-container::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 3px;
+}
+
+.trend-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: #bfbfbf;
 }
 
 .trend-item {

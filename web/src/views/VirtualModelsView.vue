@@ -207,7 +207,7 @@ async function handleSave() {
 
     if (editingId.value) {
       await configApi.updateRoutingConfig(editingId.value, {
-        name: formValue.value.name,
+        name: formValue.value.virtualModelName || formValue.value.name,
         description: formValue.value.description,
         type: configType.value,
         config: config,
@@ -217,7 +217,7 @@ async function handleSave() {
       message.success('虚拟模型已更新');
     } else {
       const result = await configApi.createRoutingConfig({
-        name: formValue.value.name,
+        name: formValue.value.virtualModelName,
         description: formValue.value.description,
         type: configType.value,
         config: config,
