@@ -7,7 +7,7 @@
           <p class="page-subtitle">这里监控了当前服务的全部数据</p>
         </div>
         <n-space :size="12">
-          <n-button secondary round @click="loadStats">
+          <n-button secondary round @click="loadData">
             <template #icon>
               <n-icon><RefreshOutline /></n-icon>
             </template>
@@ -18,21 +18,22 @@
             :options="periodOptions"
             size="medium"
             style="width: 160px;"
-            @update:value="loadStats"
+            @update:value="loadData"
           />
         </n-space>
       </div>
 
       <n-grid :cols="4" :x-gap="20" :y-gap="20">
-        <n-gi :row-span="2">
-          <n-card class="stat-card stat-card-primary stat-card-tall">
-            <div class="stat-card-content">
-              <div class="stat-label">Token 消耗</div>
-              <div class="token-display-large">
-                <div class="token-value-large">{{ formatTokenNumber(stats?.totalTokens || 0) }}</div>
-                <div class="token-value-secondary-large">{{ formatLargeNumber(stats?.totalTokens || 0) }}</div>
-              </div>
-            </div>
+        <n-gi>
+          <n-card class="stat-card">
+            <n-statistic label="Token 消耗">
+              <template #default>
+                <div class="token-display">
+                  <div class="token-value-primary">{{ formatTokenNumber(stats?.totalTokens || 0) }}</div>
+                  <div class="token-value-secondary">{{ formatLargeNumber(stats?.totalTokens || 0) }}</div>
+                </div>
+              </template>
+            </n-statistic>
           </n-card>
         </n-gi>
         <n-gi>
@@ -88,6 +89,18 @@
             <n-statistic label="平均响应时间">
               <template #default>
                 <span class="stat-value">{{ formatResponseTime(avgResponseTime) }}</span>
+              </template>
+              <template #suffix>
+                <span class="stat-suffix">ms</span>
+              </template>
+            </n-statistic>
+          </n-card>
+        </n-gi>
+        <n-gi>
+          <n-card class="stat-card">
+            <n-statistic label="网关延迟">
+              <template #default>
+                <span class="stat-value">{{ formatResponseTime(gatewayLatency) }}</span>
               </template>
               <template #suffix>
                 <span class="stat-suffix">ms</span>
@@ -223,6 +236,10 @@ const errorRate = computed(() => {
 });
 
 const avgResponseTime = computed(() => {
+  return stats.value?.avgResponseTime || 0;
+});
+
+const gatewayLatency = computed(() => {
   return stats.value?.avgResponseTime || 0;
 });
 
@@ -372,69 +389,6 @@ onMounted(() => {
 .stat-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-}
-
-.stat-card-primary {
-  background: linear-gradient(135deg, #0f6b4a 0%, #0d5a3e 100%);
-  color: #ffffff;
-}
-
-.stat-card-primary:hover {
-  box-shadow: 0 6px 16px rgba(15, 107, 74, 0.3);
-}
-
-.stat-card-tall {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.stat-card-tall :deep(.n-card__content) {
-  flex: 1;
-  display: flex;
-  align-items: center;
-}
-
-.stat-card-content {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-}
-
-.stat-label {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.85);
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.stat-card-primary .stat-label {
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.token-display-large {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.token-value-large {
-  font-size: 48px;
-  font-weight: 600;
-  color: #ffffff;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.token-value-secondary-large {
-  font-size: 24px;
-  font-weight: 400;
-  color: rgba(255, 255, 255, 0.8);
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
 }
 
 .stat-card :deep(.n-statistic__label) {
