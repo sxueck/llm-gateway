@@ -4,7 +4,7 @@
       <div class="dashboard-header">
         <div>
           <h2 class="page-title">仪表盘</h2>
-          <p class="page-subtitle">这里监控了当前服务的全部数据</p>
+          <p class="page-subtitle">这里监控着当前服务的全部数据</p>
         </div>
         <n-space :size="12">
           <n-button secondary round @click="loadData">
@@ -466,7 +466,7 @@ onMounted(() => {
 }
 
 .token-value-primary {
-  font-size: 36px;
+  font-size: 28px;
   font-weight: 600;
   color: #1a1a1a;
   line-height: 1.1;
@@ -474,7 +474,7 @@ onMounted(() => {
 }
 
 .token-value-secondary {
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 400;
   color: #8c8c8c;
   line-height: 1.2;
@@ -604,7 +604,7 @@ onMounted(() => {
 }
 
 .overview-value {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 500;
   color: #1a1a1a;
   font-variant-numeric: tabular-nums;

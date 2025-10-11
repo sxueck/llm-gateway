@@ -25,6 +25,7 @@
         :collapsed-icon-size="22"
         :options="menuOptions"
         :value="activeKey"
+        :default-expanded-keys="defaultExpandedKeys"
         @update:value="handleMenuSelect"
         class="custom-menu"
       />
@@ -168,6 +169,8 @@ const menuOptions = [
   },
 ];
 
+const defaultExpandedKeys = ['model-management', 'tools'];
+
 const generalMenuOptions = [
   {
     label: '系统设置',
@@ -256,14 +259,21 @@ onMounted(async () => {
 
 .custom-menu :deep(.n-menu-item-content) {
   padding-left: 12px !important;
+  border-radius: 8px;
+  transition: all 0.2s ease;
 }
 
 .custom-menu :deep(.n-submenu-children .n-menu-item-content) {
-  padding-left: 44px !important;
+  padding-left: 30px !important;
+}
+
+.custom-menu :deep(.n-menu-item-content:hover) {
+  background: rgba(15, 107, 74, 0.06) !important;
 }
 
 .custom-menu :deep(.n-menu-item-content--selected) {
   background: rgba(15, 107, 74, 0.08) !important;
+  color: #0f6b4a !important;
   box-shadow: none;
 }
 
@@ -271,12 +281,12 @@ onMounted(async () => {
   color: #0f6b4a !important;
 }
 
-.custom-menu :deep(.n-menu-item-content--selected) {
-  color: #0f6b4a !important;
-}
-
 .custom-menu :deep(.n-menu-item-content--selected::before) {
   display: none;
+}
+
+.custom-menu :deep(.n-submenu-children) {
+  padding-left: 0 !important;
 }
 
 .header-title {
