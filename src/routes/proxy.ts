@@ -68,7 +68,7 @@ function makeStreamHttpRequest(
   headers: Record<string, string>,
   body: string | undefined,
   reply: FastifyReply
-): Promise<{ promptTokens: number; completionTokens: number; totalTokens: number; streamChunks: string[] }> {
+): Promise<{ promptTokens: number; completionTokens: number; totalTokens: number; streamChunks: string[]; cacheHit: number }> {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(url);
     const isHttps = parsedUrl.protocol === 'https:';
@@ -88,8 +88,20 @@ function makeStreamHttpRequest(
     let totalTokens = 0;
     let buffer = '';
     const streamChunks: string[] = [];
+    let cacheHit = 0;
 
     const req = requestModule(options, (res: IncomingMessage) => {
+      const lowerCaseHeaders = res.headers as Record<string, string | string[]>;
+      Object.entries(lowerCaseHeaders).forEach(([key, value]) => {
+        const lowerKey = key.toLowerCase();
+        if (lowerKey === 'x-portkey-cache-status') {
+          const cacheStatusValue = Array.isArray(value) ? value[0] : value;
+          if (cacheStatusValue === 'HIT') {
+            cacheHit = 1;
+          }
+        }
+      });
+
       reply.raw.writeHead(res.statusCode || 200, {
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform',
@@ -128,7 +140,7 @@ function makeStreamHttpRequest(
 
       res.on('end', () => {
         reply.raw.end();
-        resolve({ promptTokens, completionTokens, totalTokens, streamChunks });
+        resolve({ promptTokens, completionTokens, totalTokens, streamChunks, cacheHit });
       });
 
       res.on('error', (err: any) => {
@@ -485,6 +497,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       const decryptedApiKey = decryptApiKey(provider.api_key);
       const portkeyProviderType = getPortkeyProviderType(provider.base_url);
 
+      const vkDisplay = virtualKeyValue && virtualKeyValue.length > 10
+        ? `${virtualKeyValue.slice(0, 6)}...${virtualKeyValue.slice(-4)}`
+        : virtualKeyValue;
+
       const portkeyConfig: Record<string, any> = {
         provider: portkeyProviderType,
         api_key: decryptedApiKey,
@@ -500,6 +516,15 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         portkeyConfig.cache = {
           mode: 'simple'
         };
+        memoryLogger.debug(
+          `缓存已启用: mode=simple | 虚拟密钥: ${vkDisplay}`,
+          'Proxy'
+        );
+      } else {
+        memoryLogger.debug(
+          `缓存未启用 | cache_enabled=${virtualKey.cache_enabled} | 虚拟密钥: ${vkDisplay}`,
+          'Proxy'
+        );
       }
 
       const path = request.url.startsWith('/v1/') ? request.url : `/v1${request.url}`;
@@ -527,12 +552,6 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         const k = redactedConfig.api_key;
         redactedConfig.api_key = k && k.length > 10 ? `${k.slice(0, 6)}...${k.slice(-4)}` : '***';
       }
-
-      const vkDisplay = virtualKeyValue && virtualKeyValue.length > 10
-        ? `${virtualKeyValue.slice(0, 6)}...${virtualKeyValue.slice(-4)}`
-        : virtualKeyValue;
-
-
 
       memoryLogger.info(
         `代理请求: ${request.method} ${path} | 虚拟密钥: ${vkDisplay} | 提供商: ${providerId}`,
@@ -577,8 +596,9 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           );
 
           const duration = Date.now() - startTime;
+          const cacheStatus = tokenUsage.cacheHit === 1 ? '缓存命中' : '缓存未命中';
           memoryLogger.info(
-            `流式请求完成: 耗时 ${duration}ms | Tokens: ${tokenUsage.totalTokens}`,
+            `流式请求完成: 耗时 ${duration}ms | Tokens: ${tokenUsage.totalTokens} | ${cacheStatus}`,
             'Proxy'
           );
 
@@ -600,6 +620,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             error_message: undefined,
             request_body: truncatedRequest,
             response_body: truncatedResponse,
+            cache_hit: tokenUsage.cacheHit,
           });
 
           return;
@@ -645,8 +666,15 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       let cacheHit = 0;
       Object.entries(response.headers).forEach(([key, value]) => {
         const lowerKey = key.toLowerCase();
-        if (lowerKey === 'x-portkey-cache-status' && value === 'HIT') {
-          cacheHit = 1;
+        if (lowerKey === 'x-portkey-cache-status') {
+          const cacheStatusValue = Array.isArray(value) ? value[0] : value;
+          memoryLogger.debug(
+            `Portkey 缓存状态头: x-portkey-cache-status=${cacheStatusValue}`,
+            'Proxy'
+          );
+          if (cacheStatusValue === 'HIT') {
+            cacheHit = 1;
+          }
         }
         if (!lowerKey.startsWith('transfer-encoding') &&
             !lowerKey.startsWith('connection') &&
@@ -731,8 +759,9 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       });
 
       if (isSuccess) {
+        const cacheStatus = cacheHit === 1 ? '缓存命中' : '缓存未命中';
         memoryLogger.info(
-          `请求完成: ${response.statusCode} | 耗时: ${duration}ms | Tokens: ${usage.total_tokens || 0}`,
+          `请求完成: ${response.statusCode} | 耗时: ${duration}ms | Tokens: ${usage.total_tokens || 0} | ${cacheStatus}`,
           'Proxy'
         );
 
