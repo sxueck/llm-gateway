@@ -53,11 +53,6 @@
               <n-icon size="20"><MailOutline /></n-icon>
             </template>
           </n-button>
-          <n-button circle quaternary class="header-icon-btn">
-            <template #icon>
-              <n-icon size="20"><NotificationsOutline /></n-icon>
-            </template>
-          </n-button>
           <n-dropdown :options="userOptions" @select="handleUserAction">
             <div class="user-avatar">
               <n-avatar
@@ -69,7 +64,6 @@
               </n-avatar>
               <div v-if="!collapsed" class="user-info">
                 <div class="user-name">{{ authStore.user?.username }}</div>
-                <div class="user-email">{{ authStore.user?.email || 'user@example.com' }}</div>
               </div>
             </div>
           </n-dropdown>
@@ -108,7 +102,6 @@ import {
   CloudOutline,
   CubeOutline,
   MailOutline,
-  NotificationsOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 
@@ -286,8 +279,16 @@ onMounted(async () => {
 }
 
 .custom-menu :deep(.n-menu-item-content--selected) {
-  background: linear-gradient(135deg, #0f6b4a 0%, #0d5a3e 100%) !important;
-  box-shadow: 0 2px 6px rgba(15, 107, 74, 0.25);
+  background: rgba(15, 107, 74, 0.08) !important;
+  box-shadow: none;
+}
+
+.custom-menu :deep(.n-menu-item-content--selected .n-menu-item-content__icon) {
+  color: #0f6b4a !important;
+}
+
+.custom-menu :deep(.n-menu-item-content--selected) {
+  color: #0f6b4a !important;
 }
 
 .custom-menu :deep(.n-menu-item-content--selected::before) {

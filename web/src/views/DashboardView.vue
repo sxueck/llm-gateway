@@ -7,24 +7,25 @@
           <p class="page-subtitle">这里监控了当前服务的全部数据</p>
         </div>
         <n-space :size="12">
-          <n-button secondary round>
+          <n-button secondary round @click="loadStats">
             <template #icon>
-              <n-icon><CloudDownloadOutline /></n-icon>
+              <n-icon><RefreshOutline /></n-icon>
             </template>
-            导入数据
+            刷新
           </n-button>
-          <n-button type="primary" round>
-            <template #icon>
-              <n-icon><AddOutline /></n-icon>
-            </template>
-            添加项目
-          </n-button>
+          <n-select
+            v-model:value="selectedPeriod"
+            :options="periodOptions"
+            size="medium"
+            style="width: 160px;"
+            @update:value="loadStats"
+          />
         </n-space>
       </div>
 
       <n-grid :cols="4" :x-gap="20" :y-gap="20">
-        <n-gi>
-          <n-card class="stat-card stat-card-primary">
+        <n-gi :row-span="2">
+          <n-card class="stat-card stat-card-primary stat-card-tall">
             <div class="stat-card-content">
               <div class="stat-label">API 请求总数</div>
               <div class="stat-value-large">{{ formatNumber(stats?.totalRequests || 0) }}</div>
@@ -75,7 +76,14 @@
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic label="Token 消耗" :value="formatLargeNumber(stats?.totalTokens || 0)" />
+            <n-statistic label="Token 消耗">
+              <template #default>
+                <div class="token-display">
+                  <div class="token-value-primary">{{ formatTokenNumber(stats?.totalTokens || 0) }}</div>
+                  <div class="token-value-secondary">{{ formatLargeNumber(stats?.totalTokens || 0) }}</div>
+                </div>
+              </template>
+            </n-statistic>
           </n-card>
         </n-gi>
         <n-gi>
@@ -141,15 +149,6 @@
       </n-grid>
 
       <n-card class="trend-card" title="请求趋势">
-        <template #header-extra>
-          <n-select
-            v-model:value="selectedPeriod"
-            :options="periodOptions"
-            size="small"
-            style="width: 140px;"
-            @update:value="loadStats"
-          />
-        </template>
         <div v-if="trendData.length > 0" class="trend-content">
           <div class="trend-scroll-container">
             <n-space vertical :size="12">
@@ -193,7 +192,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useMessage, NSpace, NGrid, NGi, NCard, NStatistic, NSelect, NProgress, NEmpty, NButton, NIcon } from 'naive-ui';
-import { AddOutline, CloudDownloadOutline, ArrowUpOutline } from '@vicons/ionicons5';
+import { RefreshOutline, ArrowUpOutline } from '@vicons/ionicons5';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
 import { configApi, type ApiStats, type TrendData } from '@/api/config';
@@ -249,6 +248,10 @@ function formatNumber(num: number): string {
     return (num / 1000).toFixed(1) + 'K';
   }
   return num.toString();
+}
+
+function formatTokenNumber(num: number): string {
+  return num.toLocaleString('en-US');
 }
 
 function formatLargeNumber(num: number): string {
@@ -383,10 +386,23 @@ onMounted(() => {
   box-shadow: 0 6px 16px rgba(15, 107, 74, 0.3);
 }
 
+.stat-card-tall {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-card-tall :deep(.n-card__content) {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
 .stat-card-content {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
 }
 
 .stat-label {
@@ -464,6 +480,28 @@ onMounted(() => {
 
 .stat-suffix-light {
   color: #8c8c8c;
+}
+
+.token-display {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.token-value-primary {
+  font-size: 36px;
+  font-weight: 600;
+  color: #1a1a1a;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.token-value-secondary {
+  font-size: 20px;
+  font-weight: 400;
+  color: #8c8c8c;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 
 .trend-card {
