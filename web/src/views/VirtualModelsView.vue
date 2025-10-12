@@ -29,6 +29,9 @@
           :data="configs"
           :loading="loading"
           :pagination="{ pageSize: 10 }"
+          :bordered="false"
+          size="small"
+          :single-line="false"
         />
       </n-card>
     </n-space>
@@ -84,13 +87,13 @@ import {
   AddOutline,
   RefreshOutline,
   CopyOutline,
-  EyeOutline,
-  TrashOutline,
 } from '@vicons/ionicons5';
+import { EditOutlined, DeleteOutlined, VisibilityOutlined } from '@vicons/material';
 import { useProviderStore } from '@/stores/provider';
 import { useModelStore } from '@/stores/model';
 import { configApi } from '@/api/config';
 import VirtualModelWizard from '@/components/VirtualModelWizard.vue';
+import { copyToClipboard } from '@/utils/common';
 
 const message = useMessage();
 const providerStore = useProviderStore();
@@ -156,13 +159,36 @@ const columns = [
   {
     title: '操作',
     key: 'actions',
-    render: (row: any) => h(NSpace, null, {
+    width: 150,
+    render: (row: any) => h(NSpace, { size: 6 }, {
       default: () => [
-        h(NButton, { text: true, onClick: () => handleEdit(row) }, { default: () => '编辑' }),
-        h(NButton, { text: true, onClick: () => handlePreview(row) }, { default: () => '预览', icon: () => h(NIcon, null, { default: () => h(EyeOutline) }) }),
-        h(NPopconfirm, { onPositiveClick: () => handleDelete(row.id) }, {
+        h(NButton, {
+          size: 'small',
+          quaternary: true,
+          circle: true,
+          onClick: () => handlePreview(row),
+        }, {
+          icon: () => h(NIcon, null, { default: () => h(VisibilityOutlined) }),
+        }),
+        h(NButton, {
+          size: 'small',
+          quaternary: true,
+          circle: true,
+          onClick: () => handleEdit(row),
+        }, {
+          icon: () => h(NIcon, null, { default: () => h(EditOutlined) }),
+        }),
+        h(NPopconfirm, {
+          onPositiveClick: () => handleDelete(row.id),
+        }, {
+          trigger: () => h(NButton, {
+            size: 'small',
+            quaternary: true,
+            circle: true,
+          }, {
+            icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) }),
+          }),
           default: () => '确定删除此虚拟模型？',
-          trigger: () => h(NButton, { text: true, type: 'error' }, { default: () => '删除', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }),
         }),
       ],
     }),
@@ -296,8 +322,7 @@ async function handleDelete(id: string) {
 }
 
 function handleCopyConfig() {
-  navigator.clipboard.writeText(previewConfig.value);
-  message.success('配置已复制到剪贴板');
+  copyToClipboard(previewConfig.value);
 }
 
 function resetForm() {
@@ -360,6 +385,7 @@ onMounted(async () => {
   font-size: 24px;
   font-weight: 600;
   color: #1a1a1a;
+  letter-spacing: -0.02em;
 }
 
 .page-subtitle {
@@ -371,9 +397,65 @@ onMounted(async () => {
 
 .table-card {
   background: #ffffff;
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
-  overflow-x: auto;
+  border-radius: 16px;
+  border: none;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.table-card :deep(.n-data-table) {
+  background: transparent;
+}
+
+.table-card :deep(.n-data-table-th) {
+  background: #fafafa;
+  font-weight: 600;
+  font-size: 12px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid #e8e8e8;
+  padding: 10px 12px;
+}
+
+.table-card :deep(.n-data-table-td) {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 13px;
+  color: #333;
+}
+
+.table-card :deep(.n-data-table-tr:hover .n-data-table-td) {
+  background: #fafafa;
+}
+
+.table-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
+  border-bottom: none;
+}
+
+.table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape) {
+  width: 28px;
+  height: 28px;
+  transition: all 0.2s ease;
+}
+
+.table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:hover) {
+  background: rgba(15, 107, 74, 0.08);
+  color: #0f6b4a;
+}
+
+.table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:hover .n-icon) {
+  color: #0f6b4a;
+}
+
+.table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape .n-icon) {
+  color: #666;
+  font-size: 16px;
+}
+
+.table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:disabled) {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .code-preview {

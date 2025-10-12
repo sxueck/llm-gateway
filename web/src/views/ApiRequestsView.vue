@@ -89,7 +89,7 @@
           </n-card>
 
           <n-card v-if="selectedRequest.error_message" title="错误信息" size="small">
-            <n-code :code="formatErrorMessage(selectedRequest.error_message)" language="json" />
+            <n-code :code="formatJson(selectedRequest.error_message)" language="json" />
           </n-card>
         </n-space>
       </n-drawer-content>
@@ -127,6 +127,7 @@ import { ref, h, onMounted, reactive } from 'vue';
 import { useMessage, NSpace, NCard, NButton, NDataTable, NTag, NDrawer, NDrawerContent, NDescriptions, NDescriptionsItem, NDatePicker, NSelect, NCode, NModal, NText, NInputNumber } from 'naive-ui';
 import { apiRequestApi, type ApiRequest } from '@/api/api-request';
 import type { DataTableColumns, PaginationProps } from 'naive-ui';
+import { formatJson, formatTimestamp } from '@/utils/common';
 
 const message = useMessage();
 const loading = ref(false);
@@ -249,35 +250,7 @@ const columns: DataTableColumns<ApiRequest> = [
   },
 ];
 
-const formatTimestamp = (timestamp: number) => {
-  const date = new Date(timestamp);
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-};
 
-const formatJson = (jsonStr: string) => {
-  try {
-    const parsed = JSON.parse(jsonStr);
-    return JSON.stringify(parsed, null, 2);
-  } catch {
-    return jsonStr;
-  }
-};
-
-const formatErrorMessage = (errorMessage: string) => {
-  try {
-    const parsed = JSON.parse(errorMessage);
-    return JSON.stringify(parsed, null, 2);
-  } catch {
-    return errorMessage;
-  }
-};
 
 const loadRequests = async () => {
   loading.value = true;

@@ -123,6 +123,7 @@ import { useVirtualKeyStore } from '@/stores/virtual-key';
 import { useModelStore } from '@/stores/model';
 import { virtualKeyApi } from '@/api/virtual-key';
 import type { VirtualKey } from '@/types';
+import { copyToClipboard } from '@/utils/common';
 
 const message = useMessage();
 const virtualKeyStore = useVirtualKeyStore();
@@ -347,13 +348,11 @@ function resetForm() {
 }
 
 function copyKeyValue(keyValue: string) {
-  navigator.clipboard.writeText(keyValue);
-  message.success('已复制到剪贴板');
+  copyToClipboard(keyValue);
 }
 
 function copyKey() {
-  navigator.clipboard.writeText(createdKeyValue.value);
-  message.success('已复制到剪贴板');
+  copyToClipboard(createdKeyValue.value);
 }
 
 onMounted(async () => {

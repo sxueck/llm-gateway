@@ -81,6 +81,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMessage, NSpace, NCard, NButton, NSelect, NDescriptions, NDescriptionsItem, NInput, NIcon, NScrollbar, NEmpty, NText, NTag } from 'naive-ui';
 import { SearchOutline } from '@vicons/ionicons5';
 import { configApi, type LogEntry } from '@/api/config';
+import { formatTimestamp } from '@/utils/common';
 
 const message = useMessage();
 const loading = ref(false);
@@ -134,10 +135,6 @@ function getLevelType(level: string) {
     default:
       return 'default';
   }
-}
-
-function formatTimestamp(timestamp: number) {
-  return new Date(timestamp).toLocaleString('zh-CN');
 }
 
 async function loadLogs() {
