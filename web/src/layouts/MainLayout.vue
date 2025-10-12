@@ -100,6 +100,7 @@ import {
   CloudOutline,
   CubeOutline,
   MailOutline,
+  GitNetworkOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 
@@ -128,6 +129,11 @@ const menuOptions = [
         key: 'models',
         icon: () => h(NIcon, null, { default: () => h(CubeOutline) }),
       },
+      {
+        label: '虚拟模型',
+        key: 'virtual-models',
+        icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) }),
+      },
     ],
   },
   {
@@ -136,14 +142,9 @@ const menuOptions = [
     icon: () => h(NIcon, null, { default: () => h(KeyOutline) }),
   },
   {
-    label: 'Gateway 管理',
-    key: 'gateway',
-    icon: () => h(NIcon, null, { default: () => h(CloudOutline) }),
-  },
-  {
-    label: '路由配置',
-    key: 'routing-config',
-    icon: () => h(NIcon, null, { default: () => h(SettingsOutline) }),
+    label: 'Portkey 网关',
+    key: 'portkey-gateways',
+    icon: () => h(NIcon, null, { default: () => h(ServerOutline) }),
   },
   {
     label: '工具',

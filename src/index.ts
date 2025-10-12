@@ -5,7 +5,8 @@ import fastifyStatic from '@fastify/static';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { appConfig } from './config/index.js';
-import { initDatabase, apiRequestDb, systemConfigDb } from './db/index.js';
+import { initDatabase, apiRequestDb, systemConfigDb, portkeyGatewayDb } from './db/index.js';
+import { nanoid } from 'nanoid';
 import { authRoutes } from './routes/auth.js';
 import { providerRoutes } from './routes/providers.js';
 import { modelRoutes } from './routes/models.js';
@@ -14,6 +15,8 @@ import { configRoutes } from './routes/config.js';
 import { publicConfigRoutes } from './routes/public-config.js';
 import { proxyRoutes } from './routes/proxy.js';
 import { litellmPresetsRoutes } from './routes/litellm-presets.js';
+import { portkeyGatewayRoutes } from './routes/portkey-gateways.js';
+import { routingRuleRoutes } from './routes/routing-rules.js';
 import { memoryLogger } from './services/logger.js';
 import { litellmPresetsService } from './services/litellm-presets.js';
 
@@ -72,6 +75,22 @@ await initDatabase();
 
 memoryLogger.info('Database initialized', 'System');
 
+const existingGateways = portkeyGatewayDb.getAll();
+if (existingGateways.length === 0) {
+  const defaultGatewayUrl = process.env.PORTKEY_GATEWAY_URL || 'http://localhost:8787';
+  await portkeyGatewayDb.create({
+    id: nanoid(),
+    name: 'Default Portkey Gateway',
+    url: defaultGatewayUrl,
+    description: '默认 Portkey Gateway',
+    is_default: 1,
+    enabled: 1,
+    container_name: 'portkey-gateway',
+    port: 8787,
+  });
+  memoryLogger.info(`已创建默认 Portkey Gateway: ${defaultGatewayUrl}`, 'System');
+}
+
 const corsEnabledCfg = systemConfigDb.get('cors_enabled');
 const corsEnabled = corsEnabledCfg ? corsEnabledCfg.value === 'true' : true;
 
@@ -103,6 +122,8 @@ await fastify.register(modelRoutes, { prefix: '/api/admin/models' });
 await fastify.register(virtualKeyRoutes, { prefix: '/api/admin/virtual-keys' });
 await fastify.register(configRoutes, { prefix: '/api/admin/config' });
 await fastify.register(litellmPresetsRoutes, { prefix: '/api/admin/litellm-presets' });
+await fastify.register(portkeyGatewayRoutes, { prefix: '/api/admin/portkey-gateways' });
+await fastify.register(routingRuleRoutes, { prefix: '/api/admin/routing-rules' });
 
 memoryLogger.info('Routes registered', 'System');
 

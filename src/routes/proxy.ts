@@ -3,11 +3,11 @@ import { nanoid } from 'nanoid';
 import { request as httpRequest, IncomingMessage } from 'http';
 import { request as httpsRequest } from 'https';
 import { URL } from 'url';
-import { appConfig } from '../config/index.js';
 import { virtualKeyDb, apiRequestDb, providerDb, modelDb } from '../db/index.js';
 import { memoryLogger } from '../services/logger.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse } from '../utils/request-logger.js';
+import { portkeyRouter } from '../services/portkey-router.js';
 
 
 function makeHttpRequest(
@@ -528,7 +528,29 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       }
 
       const path = request.url.startsWith('/v1/') ? request.url : `/v1${request.url}`;
-      const portkeyUrl = `${appConfig.portkeyGatewayUrl}${path}`;
+
+      const routingContext = {
+        modelName: request.body?.model,
+        modelId: virtualKey.model_id || undefined,
+        providerId: providerId,
+        virtualKeyId: virtualKey.id,
+      };
+
+      const selectedGateway = portkeyRouter.selectGateway(routingContext);
+
+      if (!selectedGateway) {
+        memoryLogger.error('没有可用的 Portkey Gateway', 'Proxy');
+        return reply.code(503).send({
+          error: {
+            message: '没有可用的 Portkey Gateway，请在系统设置中配置',
+            type: 'service_unavailable',
+            param: null,
+            code: 'no_gateway_available'
+          }
+        });
+      }
+
+      const portkeyUrl = `${selectedGateway.url}${path}`;
 
       const isStreamRequest = request.body?.stream === true;
 

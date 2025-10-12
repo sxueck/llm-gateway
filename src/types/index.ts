@@ -77,3 +77,29 @@ export interface PortkeyConfig {
   };
 }
 
+export interface PortkeyGateway {
+  id: string;
+  name: string;
+  url: string;
+  description: string | null;
+  is_default: number;
+  enabled: number;
+  container_name: string | null;
+  port: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ModelRoutingRule {
+  id: string;
+  name: string;
+  description: string | null;
+  portkey_gateway_id: string;
+  rule_type: 'model_name' | 'provider' | 'region' | 'pattern';
+  rule_value: string;
+  priority: number;
+  enabled: number;
+  created_at: number;
+  updated_at: number;
+}
+

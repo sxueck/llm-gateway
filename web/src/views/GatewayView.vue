@@ -1,9 +1,15 @@
 <template>
   <div>
-    <n-space vertical :size="24">
-      <n-card title="Portkey Gateway 状态">
-        <template #header-extra>
-          <n-space>
+    <n-space vertical :size="12">
+      <div>
+        <h2 class="page-title">Gateway 管理</h2>
+        <p class="page-subtitle">管理本地 Portkey Gateway 容器的运行状态,查看日志和配置文件</p>
+      </div>
+
+      <n-card>
+        <template #header>
+          <n-space justify="space-between" align="center">
+            <span>Portkey Gateway 状态</span>
             <n-button @click="refreshStatus" :loading="loading" size="small">
               <template #icon>
                 <n-icon><RefreshOutline /></n-icon>
@@ -394,3 +400,18 @@ onMounted(async () => {
 });
 </script>
 
+<style scoped>
+.page-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: #8c8c8c;
+  margin: 4px 0 0 0;
+  font-weight: 400;
+}
+</style>

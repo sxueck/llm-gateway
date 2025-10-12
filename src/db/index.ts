@@ -189,6 +189,45 @@ function createTables() {
 
   db.run('CREATE INDEX IF NOT EXISTS idx_routing_configs_type ON routing_configs(type)');
   db.run('CREATE INDEX IF NOT EXISTS idx_routing_configs_enabled ON routing_configs(enabled)');
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS portkey_gateways (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      url TEXT NOT NULL,
+      description TEXT,
+      is_default INTEGER DEFAULT 0,
+      enabled INTEGER DEFAULT 1,
+      container_name TEXT,
+      port INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+
+  db.run('CREATE INDEX IF NOT EXISTS idx_portkey_gateways_enabled ON portkey_gateways(enabled)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_portkey_gateways_is_default ON portkey_gateways(is_default)');
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS model_routing_rules (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      portkey_gateway_id TEXT NOT NULL,
+      rule_type TEXT NOT NULL,
+      rule_value TEXT NOT NULL,
+      priority INTEGER DEFAULT 0,
+      enabled INTEGER DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (portkey_gateway_id) REFERENCES portkey_gateways(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.run('CREATE INDEX IF NOT EXISTS idx_model_routing_rules_gateway ON model_routing_rules(portkey_gateway_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_model_routing_rules_type ON model_routing_rules(rule_type)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_model_routing_rules_enabled ON model_routing_rules(enabled)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_model_routing_rules_priority ON model_routing_rules(priority)');
 }
 
 export function getDatabase() {
@@ -987,6 +1026,338 @@ export const routingConfigDb = {
 
   async delete(id: string) {
     db.run('DELETE FROM routing_configs WHERE id = ?', [id]);
+    await saveDatabase();
+  },
+};
+
+export const portkeyGatewayDb = {
+  getAll() {
+    const result = db.exec('SELECT * FROM portkey_gateways ORDER BY is_default DESC, created_at DESC');
+    if (result.length === 0) return [];
+    return result[0].values.map(row => ({
+      id: row[0] as string,
+      name: row[1] as string,
+      url: row[2] as string,
+      description: row[3] as string | null,
+      is_default: row[4] as number,
+      enabled: row[5] as number,
+      container_name: row[6] as string | null,
+      port: row[7] as number | null,
+      created_at: row[8] as number,
+      updated_at: row[9] as number,
+    }));
+  },
+
+  getById(id: string) {
+    const result = db.exec('SELECT * FROM portkey_gateways WHERE id = ?', [id]);
+    if (result.length === 0 || result[0].values.length === 0) return undefined;
+    const row = result[0].values[0];
+    return {
+      id: row[0] as string,
+      name: row[1] as string,
+      url: row[2] as string,
+      description: row[3] as string | null,
+      is_default: row[4] as number,
+      enabled: row[5] as number,
+      container_name: row[6] as string | null,
+      port: row[7] as number | null,
+      created_at: row[8] as number,
+      updated_at: row[9] as number,
+    };
+  },
+
+  getDefault() {
+    const result = db.exec('SELECT * FROM portkey_gateways WHERE is_default = 1 AND enabled = 1 LIMIT 1');
+    if (result.length === 0 || result[0].values.length === 0) return undefined;
+    const row = result[0].values[0];
+    return {
+      id: row[0] as string,
+      name: row[1] as string,
+      url: row[2] as string,
+      description: row[3] as string | null,
+      is_default: row[4] as number,
+      enabled: row[5] as number,
+      container_name: row[6] as string | null,
+      port: row[7] as number | null,
+      created_at: row[8] as number,
+      updated_at: row[9] as number,
+    };
+  },
+
+  getEnabled() {
+    const result = db.exec('SELECT * FROM portkey_gateways WHERE enabled = 1 ORDER BY is_default DESC, created_at DESC');
+    if (result.length === 0) return [];
+    return result[0].values.map(row => ({
+      id: row[0] as string,
+      name: row[1] as string,
+      url: row[2] as string,
+      description: row[3] as string | null,
+      is_default: row[4] as number,
+      enabled: row[5] as number,
+      container_name: row[6] as string | null,
+      port: row[7] as number | null,
+      created_at: row[8] as number,
+      updated_at: row[9] as number,
+    }));
+  },
+
+  async create(data: {
+    id: string;
+    name: string;
+    url: string;
+    description?: string;
+    is_default?: number;
+    enabled?: number;
+    container_name?: string;
+    port?: number;
+  }) {
+    const now = Date.now();
+
+    if (data.is_default === 1) {
+      db.run('UPDATE portkey_gateways SET is_default = 0');
+    }
+
+    db.run(
+      `INSERT INTO portkey_gateways (id, name, url, description, is_default, enabled, container_name, port, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        data.id,
+        data.name,
+        data.url,
+        data.description || null,
+        data.is_default ?? 0,
+        data.enabled ?? 1,
+        data.container_name || null,
+        data.port || null,
+        now,
+        now,
+      ]
+    );
+    await saveDatabase();
+    return this.getById(data.id);
+  },
+
+  async update(id: string, data: {
+    name?: string;
+    url?: string;
+    description?: string;
+    is_default?: number;
+    enabled?: number;
+    container_name?: string;
+    port?: number;
+  }) {
+    const now = Date.now();
+    const updates: string[] = [];
+    const values: any[] = [];
+
+    if (data.is_default === 1) {
+      db.run('UPDATE portkey_gateways SET is_default = 0');
+    }
+
+    if (data.name !== undefined) {
+      updates.push('name = ?');
+      values.push(data.name);
+    }
+    if (data.url !== undefined) {
+      updates.push('url = ?');
+      values.push(data.url);
+    }
+    if (data.description !== undefined) {
+      updates.push('description = ?');
+      values.push(data.description);
+    }
+    if (data.is_default !== undefined) {
+      updates.push('is_default = ?');
+      values.push(data.is_default);
+    }
+    if (data.enabled !== undefined) {
+      updates.push('enabled = ?');
+      values.push(data.enabled);
+    }
+    if (data.container_name !== undefined) {
+      updates.push('container_name = ?');
+      values.push(data.container_name);
+    }
+    if (data.port !== undefined) {
+      updates.push('port = ?');
+      values.push(data.port);
+    }
+
+    updates.push('updated_at = ?');
+    values.push(now);
+    values.push(id);
+
+    db.run(
+      `UPDATE portkey_gateways SET ${updates.join(', ')} WHERE id = ?`,
+      values
+    );
+    await saveDatabase();
+    return this.getById(id);
+  },
+
+  async delete(id: string) {
+    db.run('DELETE FROM portkey_gateways WHERE id = ?', [id]);
+    await saveDatabase();
+  },
+};
+
+export const modelRoutingRuleDb = {
+  getAll() {
+    const result = db.exec('SELECT * FROM model_routing_rules ORDER BY priority DESC, created_at DESC');
+    if (result.length === 0) return [];
+    return result[0].values.map(row => ({
+      id: row[0] as string,
+      name: row[1] as string,
+      description: row[2] as string | null,
+      portkey_gateway_id: row[3] as string,
+      rule_type: row[4] as string,
+      rule_value: row[5] as string,
+      priority: row[6] as number,
+      enabled: row[7] as number,
+      created_at: row[8] as number,
+      updated_at: row[9] as number,
+    }));
+  },
+
+  getById(id: string) {
+    const result = db.exec('SELECT * FROM model_routing_rules WHERE id = ?', [id]);
+    if (result.length === 0 || result[0].values.length === 0) return undefined;
+    const row = result[0].values[0];
+    return {
+      id: row[0] as string,
+      name: row[1] as string,
+      description: row[2] as string | null,
+      portkey_gateway_id: row[3] as string,
+      rule_type: row[4] as string,
+      rule_value: row[5] as string,
+      priority: row[6] as number,
+      enabled: row[7] as number,
+      created_at: row[8] as number,
+      updated_at: row[9] as number,
+    };
+  },
+
+  getByGatewayId(gatewayId: string) {
+    const result = db.exec('SELECT * FROM model_routing_rules WHERE portkey_gateway_id = ? ORDER BY priority DESC', [gatewayId]);
+    if (result.length === 0) return [];
+    return result[0].values.map(row => ({
+      id: row[0] as string,
+      name: row[1] as string,
+      description: row[2] as string | null,
+      portkey_gateway_id: row[3] as string,
+      rule_type: row[4] as string,
+      rule_value: row[5] as string,
+      priority: row[6] as number,
+      enabled: row[7] as number,
+      created_at: row[8] as number,
+      updated_at: row[9] as number,
+    }));
+  },
+
+  getEnabled() {
+    const result = db.exec('SELECT * FROM model_routing_rules WHERE enabled = 1 ORDER BY priority DESC, created_at DESC');
+    if (result.length === 0) return [];
+    return result[0].values.map(row => ({
+      id: row[0] as string,
+      name: row[1] as string,
+      description: row[2] as string | null,
+      portkey_gateway_id: row[3] as string,
+      rule_type: row[4] as string,
+      rule_value: row[5] as string,
+      priority: row[6] as number,
+      enabled: row[7] as number,
+      created_at: row[8] as number,
+      updated_at: row[9] as number,
+    }));
+  },
+
+  async create(data: {
+    id: string;
+    name: string;
+    description?: string;
+    portkey_gateway_id: string;
+    rule_type: string;
+    rule_value: string;
+    priority?: number;
+    enabled?: number;
+  }) {
+    const now = Date.now();
+    db.run(
+      `INSERT INTO model_routing_rules (id, name, description, portkey_gateway_id, rule_type, rule_value, priority, enabled, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        data.id,
+        data.name,
+        data.description || null,
+        data.portkey_gateway_id,
+        data.rule_type,
+        data.rule_value,
+        data.priority ?? 0,
+        data.enabled ?? 1,
+        now,
+        now,
+      ]
+    );
+    await saveDatabase();
+    return this.getById(data.id);
+  },
+
+  async update(id: string, data: {
+    name?: string;
+    description?: string;
+    portkey_gateway_id?: string;
+    rule_type?: string;
+    rule_value?: string;
+    priority?: number;
+    enabled?: number;
+  }) {
+    const now = Date.now();
+    const updates: string[] = [];
+    const values: any[] = [];
+
+    if (data.name !== undefined) {
+      updates.push('name = ?');
+      values.push(data.name);
+    }
+    if (data.description !== undefined) {
+      updates.push('description = ?');
+      values.push(data.description);
+    }
+    if (data.portkey_gateway_id !== undefined) {
+      updates.push('portkey_gateway_id = ?');
+      values.push(data.portkey_gateway_id);
+    }
+    if (data.rule_type !== undefined) {
+      updates.push('rule_type = ?');
+      values.push(data.rule_type);
+    }
+    if (data.rule_value !== undefined) {
+      updates.push('rule_value = ?');
+      values.push(data.rule_value);
+    }
+    if (data.priority !== undefined) {
+      updates.push('priority = ?');
+      values.push(data.priority);
+    }
+    if (data.enabled !== undefined) {
+      updates.push('enabled = ?');
+      values.push(data.enabled);
+    }
+
+    updates.push('updated_at = ?');
+    values.push(now);
+    values.push(id);
+
+    db.run(
+      `UPDATE model_routing_rules SET ${updates.join(', ')} WHERE id = ?`,
+      values
+    );
+    await saveDatabase();
+    return this.getById(id);
+  },
+
+  async delete(id: string) {
+    db.run('DELETE FROM model_routing_rules WHERE id = ?', [id]);
     await saveDatabase();
   },
 };

@@ -1,7 +1,12 @@
 <template>
   <div>
-    <n-space vertical :size="24">
-      <n-card class="table-card" title="虚拟模型管理">
+    <n-space vertical :size="12">
+      <div>
+        <h2 class="page-title">虚拟模型</h2>
+        <p class="page-subtitle">虚拟模型通过负载均衡或故障转移配置,将请求智能分发到多个实际模型,提高可用性和性能</p>
+      </div>
+
+      <n-card class="table-card">
         <template #header-extra>
           <n-space>
             <n-button type="primary" @click="handleCreateModalOpen">
@@ -350,12 +355,27 @@ onMounted(async () => {
 
 
 <style scoped>
+.page-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: #8c8c8c;
+  margin: 4px 0 0 0;
+  font-weight: 400;
+}
+
 .table-card {
   background: #ffffff;
   border-radius: 8px;
   border: 1px solid #e8e8e8;
   overflow-x: auto;
 }
+
 .code-preview {
   max-height: 420px;
   overflow: auto;

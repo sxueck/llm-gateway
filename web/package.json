@@ -12,6 +12,7 @@
   "license": "MIT",
   "dependencies": {
     "@vicons/ionicons5": "^0.13.0",
+    "@vicons/material": "^0.13.0",
     "axios": "^1.7.9",
     "highlight.js": "^11.11.1",
     "naive-ui": "^2.40.1",

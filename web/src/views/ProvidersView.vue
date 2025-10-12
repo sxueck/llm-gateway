@@ -2,7 +2,10 @@
   <div class="providers-view">
     <n-space vertical :size="12">
       <n-space justify="space-between" align="center">
-        <h2 class="page-title">提供商管理</h2>
+        <div>
+          <h2 class="page-title">提供商管理</h2>
+          <p class="page-subtitle">配置和管理 AI 模型提供商,包括 API 密钥、Base URL 等信息。支持导入导出配置</p>
+        </div>
         <n-space :size="8">
           <n-dropdown :options="exportOptions" @select="handleExportSelect">
             <n-button size="small">
@@ -99,6 +102,7 @@
 import { ref, h, onMounted } from 'vue';
 import { useMessage, useDialog, NSpace, NButton, NDataTable, NCard, NModal, NTag, NPopconfirm, NTabs, NTabPane, NDropdown, NUpload, NIcon, type UploadFileInfo } from 'naive-ui';
 import { Download as DownloadIcon, CloudUpload as UploadIcon } from '@vicons/ionicons5';
+import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined } from '@vicons/material';
 import { useProviderStore } from '@/stores/provider';
 import { useModelStore } from '@/stores/model';
 import { providerApi } from '@/api/provider';
@@ -158,14 +162,35 @@ const columns = [
   {
     title: '操作',
     key: 'actions',
-    render: (row: Provider) => h(NSpace, null, {
+    width: 150,
+    render: (row: Provider) => h(NSpace, { size: 6 }, {
       default: () => [
-        h(NButton, { size: 'small', onClick: () => handleTest(row.id) }, { default: () => '测试' }),
-        h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }),
+        h(NButton, {
+          size: 'small',
+          quaternary: true,
+          circle: true,
+          onClick: () => handleTest(row.id),
+        }, {
+          icon: () => h(NIcon, null, { default: () => h(KeyboardCommandKeyOutlined) }),
+        }),
+        h(NButton, {
+          size: 'small',
+          quaternary: true,
+          circle: true,
+          onClick: () => handleEdit(row),
+        }, {
+          icon: () => h(NIcon, null, { default: () => h(EditOutlined) }),
+        }),
         h(NPopconfirm, {
           onPositiveClick: () => handleDelete(row.id),
         }, {
-          trigger: () => h(NButton, { size: 'small', type: 'error' }, { default: () => '删除' }),
+          trigger: () => h(NButton, {
+            size: 'small',
+            quaternary: true,
+            circle: true,
+          }, {
+            icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) }),
+          }),
           default: () => '确定删除此提供商吗？',
         }),
       ],
@@ -465,12 +490,74 @@ onMounted(() => {
   letter-spacing: -0.02em;
 }
 
+.page-subtitle {
+  font-size: 14px;
+  color: #8c8c8c;
+  margin: 4px 0 0 0;
+  font-weight: 400;
+}
+
 .table-card {
   background: #ffffff;
   border-radius: 16px;
   border: none;
-  overflow-x: auto;
+  overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.table-card :deep(.n-data-table) {
+  background: transparent;
+}
+
+.table-card :deep(.n-data-table-th) {
+  background: #fafafa;
+  font-weight: 600;
+  font-size: 12px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid #e8e8e8;
+  padding: 10px 12px;
+}
+
+.table-card :deep(.n-data-table-td) {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 13px;
+  color: #333;
+}
+
+.table-card :deep(.n-data-table-tr:hover .n-data-table-td) {
+  background: #fafafa;
+}
+
+.table-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
+  border-bottom: none;
+}
+
+.table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape) {
+  width: 28px;
+  height: 28px;
+  transition: all 0.2s ease;
+}
+
+.table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:hover) {
+  background: rgba(15, 107, 74, 0.08);
+  color: #0f6b4a;
+}
+
+.table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:hover .n-icon) {
+  color: #0f6b4a;
+}
+
+.table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape .n-icon) {
+  color: #666;
+  font-size: 16px;
+}
+
+.table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:disabled) {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .provider-modal :deep(.n-card) {

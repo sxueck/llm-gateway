@@ -14,110 +14,6 @@ const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const PORTKEY_CONTAINER_NAME = 'portkey-gateway';
-const PORTKEY_PORT = 8787;
-const PORTKEY_IMAGE = 'portkeyai/gateway:latest';
-
-async function checkPortkeyContainer() {
-  try {
-    const { stdout } = await execAsync(
-      `docker ps -a --filter "name=${PORTKEY_CONTAINER_NAME}" --format "{{.ID}}|{{.Status}}"`
-    );
-
-    if (!stdout.trim()) {
-      return { exists: false, running: false };
-    }
-
-    const [containerId, status] = stdout.trim().split('|');
-    const isRunning = status.toLowerCase().includes('up');
-
-    return {
-      exists: true,
-      running: isRunning,
-      containerId,
-      status,
-    };
-  } catch (error) {
-    return { exists: false, running: false };
-  }
-}
-
-async function startPortkeyGateway() {
-  console.log('\n启动 Portkey Gateway...');
-
-  const containerStatus = await checkPortkeyContainer();
-
-  if (containerStatus.running) {
-    console.log('✓ Portkey Gateway 已在运行中');
-    return true;
-  }
-
-  try {
-    if (containerStatus.exists) {
-      console.log('启动已存在的容器...');
-      await execAsync(`docker start ${PORTKEY_CONTAINER_NAME}`);
-    } else {
-      console.log('创建并启动新容器...');
-      
-      const configDir = resolve(__dirname, 'portkey-config');
-      const isWindows = process.platform === 'win32';
-      const volumePath = isWindows
-        ? configDir.replace(/\\/g, '/').replace(/^([A-Z]):/, (_, drive) => `/${drive.toLowerCase()}`)
-        : configDir;
-
-      const filePathRaw = resolve(configDir, 'conf.json');
-      const fileVolumePath = isWindows
-        ? filePathRaw.replace(/\\/g, '/').replace(/^([A-Z]):/, (_, drive) => `/${drive.toLowerCase()}`)
-        : filePathRaw;
-
-      const command = [
-        'docker run -d',
-        `--name ${PORTKEY_CONTAINER_NAME}`,
-        `-p 127.0.0.1:${PORTKEY_PORT}:8787`,
-        `-v "${volumePath}:/app/config"`,
-        `-v "${fileVolumePath}:/app/conf.json"`,
-        '-e CONFIG_PATH=/app/config/conf.json',
-        '--restart unless-stopped',
-        PORTKEY_IMAGE,
-      ].join(' ');
-
-      console.log(`执行命令: ${command}`);
-      await execAsync(command);
-    }
-
-    await waitForPortkeyHealthy();
-    console.log('✓ Portkey Gateway 启动成功');
-    return true;
-  } catch (error) {
-    console.error('✗ Portkey Gateway 启动失败:', error.message);
-    return false;
-  }
-}
-
-async function waitForPortkeyHealthy(timeout = 10000) {
-  console.log('等待 Portkey Gateway 就绪...');
-  const startTime = Date.now();
-  const checkInterval = 500;
-
-  while (Date.now() - startTime < timeout) {
-    try {
-      const response = await fetch(`http://localhost:${PORTKEY_PORT}/health`, {
-        signal: AbortSignal.timeout(1000),
-      });
-
-      if (response.ok || response.status === 404) {
-        return true;
-      }
-    } catch (error) {
-      // 继续等待
-    }
-
-    await new Promise(resolve => setTimeout(resolve, checkInterval));
-  }
-
-  throw new Error('Portkey Gateway 健康检查超时');
-}
-
 function startLLMGateway() {
   console.log('\n启动 LLM Gateway...');
   
@@ -163,11 +59,11 @@ async function main() {
   console.log('LLM Gateway 启动脚本');
   console.log('========================================\n');
 
-  const portkeyStarted = await startPortkeyGateway();
-  if (!portkeyStarted) {
-    console.log('\n提示: Portkey Gateway 启动失败');
-    console.log('您可以稍后在 Web UI 中启动，或手动启动');
-  }
+  console.log('提示: Portkey Gateway 不再自动启动');
+  console.log('您可以通过以下方式管理 Portkey Gateway:');
+  console.log('  1. 在 Web UI 的 "Portkey 网关" 页面添加和管理远程网关');
+  console.log('  2. 使用 "自动安装 Agent" 功能一键启动本地 Docker 容器');
+  console.log('  3. 手动启动 Portkey Gateway 容器并在 Web UI 中配置\n');
 
   const llmGateway = startLLMGateway();
 
@@ -179,10 +75,10 @@ async function main() {
   console.log('启动完成!');
   console.log('========================================');
   console.log('\n访问地址:');
-  console.log('  Web UI:          http://0.0.0.0:5173');
-  console.log('  LLM Gateway:     http://0.0.0.0:3000');
-  console.log('  Portkey Gateway: http://localhost:8787');
+  console.log('  Web UI:       http://0.0.0.0:5173');
+  console.log('  LLM Gateway:  http://0.0.0.0:3000');
   console.log('\n提示: 外部访问请使用服务器的实际 IP 地址或域名');
+  console.log('提示: 请在 Web UI 中配置 Portkey Gateway 后使用');
   console.log('按 Ctrl+C 停止所有服务\n');
 
   process.on('SIGINT', () => {
