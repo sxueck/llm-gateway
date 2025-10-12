@@ -7,6 +7,30 @@ import { existsSync } from 'fs';
 
 let db: SqlJsDatabase;
 let SQL: any;
+let isDirty = false;
+let saveTimer: NodeJS.Timeout | null = null;
+const SAVE_INTERVAL = 5000;
+
+type ApiRequestBuffer = {
+  id: string;
+  virtual_key_id?: string;
+  provider_id?: string;
+  model?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  status: string;
+  response_time?: number;
+  error_message?: string;
+  request_body?: string;
+  response_body?: string;
+  cache_hit?: number;
+};
+
+let apiRequestBuffer: ApiRequestBuffer[] = [];
+let bufferFlushTimer: NodeJS.Timeout | null = null;
+const BUFFER_FLUSH_INTERVAL = 30000;
+const BUFFER_MAX_SIZE = 100;
 
 export async function initDatabase() {
   await mkdir(dirname(appConfig.dbPath), { recursive: true });
@@ -27,6 +51,8 @@ export async function initDatabase() {
   createTables();
   await saveDatabase();
 
+  startAutoSave();
+
   return db;
 }
 
@@ -34,6 +60,106 @@ async function saveDatabase() {
   const data = db.export();
   const buffer = Buffer.from(data);
   await writeFile(appConfig.dbPath, buffer);
+  isDirty = false;
+}
+
+function markDirty() {
+  isDirty = true;
+}
+
+function flushApiRequestBuffer() {
+  if (apiRequestBuffer.length === 0) {
+    return;
+  }
+
+  const now = Date.now();
+  const requests = [...apiRequestBuffer];
+  apiRequestBuffer = [];
+
+  const failedRequests: ApiRequestBuffer[] = [];
+
+  requests.forEach(request => {
+    try {
+      db.run(
+        `INSERT INTO api_requests (
+          id, virtual_key_id, provider_id, model,
+          prompt_tokens, completion_tokens, total_tokens,
+          status, response_time, error_message, request_body, response_body, cache_hit, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          request.id,
+          request.virtual_key_id || null,
+          request.provider_id || null,
+          request.model || null,
+          request.prompt_tokens || 0,
+          request.completion_tokens || 0,
+          request.total_tokens || 0,
+          request.status,
+          request.response_time || null,
+          request.error_message || null,
+          request.request_body || null,
+          request.response_body || null,
+          request.cache_hit || 0,
+          now,
+        ]
+      );
+    } catch (error) {
+      console.error(`写入 API 请求日志失败 (ID: ${request.id}):`, error);
+      failedRequests.push(request);
+    }
+  });
+
+  if (failedRequests.length > 0) {
+    apiRequestBuffer.unshift(...failedRequests);
+  } else {
+    markDirty();
+  }
+}
+
+function startAutoSave() {
+  if (saveTimer) {
+    clearInterval(saveTimer);
+  }
+
+  saveTimer = setInterval(async () => {
+    if (isDirty) {
+      try {
+        await saveDatabase();
+      } catch (error) {
+        console.error('自动保存数据库失败:', error);
+      }
+    }
+  }, SAVE_INTERVAL);
+
+  if (bufferFlushTimer) {
+    clearInterval(bufferFlushTimer);
+  }
+
+  bufferFlushTimer = setInterval(() => {
+    flushApiRequestBuffer();
+  }, BUFFER_FLUSH_INTERVAL);
+}
+
+export function flushApiRequestBufferNow() {
+  flushApiRequestBuffer();
+}
+
+export async function shutdownDatabase() {
+  if (saveTimer) {
+    clearInterval(saveTimer);
+    saveTimer = null;
+  }
+
+  if (bufferFlushTimer) {
+    clearInterval(bufferFlushTimer);
+    bufferFlushTimer = null;
+  }
+
+  flushApiRequestBuffer();
+
+  if (isDirty) {
+    await saveDatabase();
+  }
 }
 
 function createTables() {
@@ -244,7 +370,7 @@ export const userDb = {
       'INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
       [user.id, user.username, user.password_hash, now, now]
     );
-    await saveDatabase();
+    markDirty();
     return { ...user, created_at: now, updated_at: now };
   },
 
@@ -322,7 +448,7 @@ export const providerDb = {
         now
       ]
     );
-    await saveDatabase();
+    markDirty();
     return { ...provider, created_at: now, updated_at: now };
   },
 
@@ -343,12 +469,12 @@ export const providerDb = {
     values.push(id);
 
     db.run(`UPDATE providers SET ${fields.join(', ')} WHERE id = ?`, values);
-    await saveDatabase();
+    markDirty();
   },
 
   async delete(id: string): Promise<void> {
     db.run('DELETE FROM providers WHERE id = ?', [id]);
-    await saveDatabase();
+    markDirty();
   },
 };
 
@@ -444,7 +570,7 @@ export const modelDb = {
       'INSERT INTO models (id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [model.id, model.name, model.provider_id, model.model_identifier, model.is_virtual, model.routing_config_id, model.enabled, model.model_attributes, now, now]
     );
-    await saveDatabase();
+    markDirty();
     return { ...model, created_at: now, updated_at: now };
   },
 
@@ -465,12 +591,12 @@ export const modelDb = {
     values.push(id);
 
     db.run(`UPDATE models SET ${fields.join(', ')} WHERE id = ?`, values);
-    await saveDatabase();
+    markDirty();
   },
 
   async delete(id: string): Promise<void> {
     db.run('DELETE FROM models WHERE id = ?', [id]);
-    await saveDatabase();
+    markDirty();
   },
 
   countByProviderId(providerId: string): number {
@@ -571,7 +697,7 @@ export const virtualKeyDb = {
         now
       ]
     );
-    await saveDatabase();
+    markDirty();
     return { ...vk, created_at: now, updated_at: now };
   },
 
@@ -592,12 +718,12 @@ export const virtualKeyDb = {
     values.push(id);
 
     db.run(`UPDATE virtual_keys SET ${fields.join(', ')} WHERE id = ?`, values);
-    await saveDatabase();
+    markDirty();
   },
 
   async delete(id: string): Promise<void> {
     db.run('DELETE FROM virtual_keys WHERE id = ?', [id]);
-    await saveDatabase();
+    markDirty();
   },
 
   countByModelId(modelId: string): number {
@@ -608,6 +734,64 @@ export const virtualKeyDb = {
     );
     if (result.length === 0 || result[0].values.length === 0) return 0;
     return result[0].values[0][0] as number;
+  },
+
+  countByModelIds(modelIds: string[]): Map<string, number> {
+    if (modelIds.length === 0) {
+      return new Map();
+    }
+
+    const counts = new Map<string, number>();
+    modelIds.forEach(id => counts.set(id, 0));
+
+    const placeholders = modelIds.map(() => '?').join(',');
+    const likeConditions = modelIds.map(() => 'model_ids LIKE ?').join(' OR ');
+
+    const result = db.exec(
+      `SELECT model_id, COUNT(*) as count FROM virtual_keys
+       WHERE model_id IN (${placeholders})
+       GROUP BY model_id`,
+      modelIds
+    );
+
+    if (result.length > 0 && result[0].values.length > 0) {
+      result[0].values.forEach(row => {
+        const modelId = row[0] as string;
+        const count = row[1] as number;
+        counts.set(modelId, count);
+      });
+    }
+
+    const likeParams: string[] = [];
+    modelIds.forEach(id => {
+      const escapedId = id.replace(/["%]/g, '\\$&');
+      likeParams.push(`%"${escapedId}"%`);
+    });
+
+    const likeResult = db.exec(
+      `SELECT model_ids FROM virtual_keys
+       WHERE model_ids IS NOT NULL AND (${likeConditions})`,
+      likeParams
+    );
+
+    if (likeResult.length > 0 && likeResult[0].values.length > 0) {
+      likeResult[0].values.forEach(row => {
+        const modelIdsStr = row[0] as string;
+        try {
+          const parsedIds = JSON.parse(modelIdsStr);
+          if (Array.isArray(parsedIds)) {
+            parsedIds.forEach(id => {
+              if (counts.has(id)) {
+                counts.set(id, (counts.get(id) || 0) + 1);
+              }
+            });
+          }
+        } catch {
+        }
+      });
+    }
+
+    return counts;
   },
 };
 
@@ -639,51 +823,17 @@ export const systemConfigDb = {
         [key, value, description || null, now]
       );
     }
-    await saveDatabase();
+    markDirty();
   },
 };
 
 export const apiRequestDb = {
-  async create(request: {
-    id: string;
-    virtual_key_id?: string;
-    provider_id?: string;
-    model?: string;
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    total_tokens?: number;
-    status: string;
-    response_time?: number;
-    error_message?: string;
-    request_body?: string;
-    response_body?: string;
-    cache_hit?: number;
-  }): Promise<void> {
-    const now = Date.now();
-    db.run(
-      `INSERT INTO api_requests (
-        id, virtual_key_id, provider_id, model,
-        prompt_tokens, completion_tokens, total_tokens,
-        status, response_time, error_message, request_body, response_body, cache_hit, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        request.id,
-        request.virtual_key_id || null,
-        request.provider_id || null,
-        request.model || null,
-        request.prompt_tokens || 0,
-        request.completion_tokens || 0,
-        request.total_tokens || 0,
-        request.status,
-        request.response_time || null,
-        request.error_message || null,
-        request.request_body || null,
-        request.response_body || null,
-        request.cache_hit || 0,
-        now,
-      ]
-    );
-    await saveDatabase();
+  async create(request: ApiRequestBuffer): Promise<void> {
+    apiRequestBuffer.push(request);
+
+    if (apiRequestBuffer.length >= BUFFER_MAX_SIZE) {
+      flushApiRequestBuffer();
+    }
   },
 
   getStats(options?: { startTime?: number; endTime?: number }) {
@@ -914,7 +1064,7 @@ export const apiRequestDb = {
 
     if (count > 0) {
       db.run('DELETE FROM api_requests WHERE created_at < ?', [cutoffTime]);
-      await saveDatabase();
+      markDirty();
     }
 
     return count;
@@ -976,7 +1126,7 @@ export const routingConfigDb = {
         now,
       ]
     );
-    await saveDatabase();
+    markDirty();
     return this.getById(data.id);
   },
 
@@ -1020,13 +1170,13 @@ export const routingConfigDb = {
       `UPDATE routing_configs SET ${updates.join(', ')} WHERE id = ?`,
       values
     );
-    await saveDatabase();
+    markDirty();
     return this.getById(id);
   },
 
   async delete(id: string) {
     db.run('DELETE FROM routing_configs WHERE id = ?', [id]);
-    await saveDatabase();
+    markDirty();
   },
 };
 
@@ -1133,7 +1283,7 @@ export const portkeyGatewayDb = {
         now,
       ]
     );
-    await saveDatabase();
+    markDirty();
     return this.getById(data.id);
   },
 
@@ -1191,13 +1341,13 @@ export const portkeyGatewayDb = {
       `UPDATE portkey_gateways SET ${updates.join(', ')} WHERE id = ?`,
       values
     );
-    await saveDatabase();
+    markDirty();
     return this.getById(id);
   },
 
   async delete(id: string) {
     db.run('DELETE FROM portkey_gateways WHERE id = ?', [id]);
-    await saveDatabase();
+    markDirty();
   },
 };
 
@@ -1298,7 +1448,7 @@ export const modelRoutingRuleDb = {
         now,
       ]
     );
-    await saveDatabase();
+    markDirty();
     return this.getById(data.id);
   },
 
@@ -1352,13 +1502,13 @@ export const modelRoutingRuleDb = {
       `UPDATE model_routing_rules SET ${updates.join(', ')} WHERE id = ?`,
       values
     );
-    await saveDatabase();
+    markDirty();
     return this.getById(id);
   },
 
   async delete(id: string) {
     db.run('DELETE FROM model_routing_rules WHERE id = ?', [id]);
-    await saveDatabase();
+    markDirty();
   },
 };
 

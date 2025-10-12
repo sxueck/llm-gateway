@@ -55,10 +55,12 @@ export async function modelRoutes(fastify: FastifyInstance) {
     const providers = providerDb.getAll();
     const providerMap = new Map(providers.map(p => [p.id, p]));
 
+    const virtualKeyCounts = virtualKeyDb.countByModelIds(models.map(m => m.id));
+
     return {
       models: models.map(m => {
         const provider = m.provider_id ? providerMap.get(m.provider_id) : null;
-        const virtualKeyCount = virtualKeyDb.countByModelId(m.id);
+        const virtualKeyCount = virtualKeyCounts.get(m.id) || 0;
 
         let modelAttributes = null;
         if (m.model_attributes) {

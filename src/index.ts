@@ -5,7 +5,7 @@ import fastifyStatic from '@fastify/static';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { appConfig } from './config/index.js';
-import { initDatabase, apiRequestDb, systemConfigDb, portkeyGatewayDb } from './db/index.js';
+import { initDatabase, apiRequestDb, systemConfigDb, portkeyGatewayDb, shutdownDatabase } from './db/index.js';
 import { nanoid } from 'nanoid';
 import { authRoutes } from './routes/auth.js';
 import { providerRoutes } from './routes/providers.js';
@@ -207,3 +207,32 @@ try {
   process.exit(1);
 }
 
+const gracefulShutdown = async (signal: string) => {
+  memoryLogger.info(`收到 ${signal} 信号，开始优雅关闭...`, 'System');
+
+  try {
+    await fastify.close();
+    memoryLogger.info('Fastify 服务已关闭', 'System');
+
+    await shutdownDatabase();
+    memoryLogger.info('数据库已安全关闭', 'System');
+
+    process.exit(0);
+  } catch (err) {
+    memoryLogger.error(`优雅关闭失败: ${err}`, 'System');
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+process.on('uncaughtException', async (err) => {
+  memoryLogger.error(`未捕获的异常: ${err.stack}`, 'System');
+  await gracefulShutdown('uncaughtException');
+});
+
+process.on('unhandledRejection', async (reason, promise) => {
+  memoryLogger.error(`未处理的 Promise 拒绝: ${reason}`, 'System');
+  await gracefulShutdown('unhandledRejection');
+});
