@@ -72,9 +72,6 @@ function buildAgent() {
 
     const platforms = [
       { os: 'linux', arch: 'amd64', name: 'llm-gateway-agent-linux-amd64' },
-      { os: 'darwin', arch: 'amd64', name: 'llm-gateway-agent-darwin-amd64' },
-      { os: 'darwin', arch: 'arm64', name: 'llm-gateway-agent-darwin-arm64' },
-      { os: 'windows', arch: 'amd64', name: 'llm-gateway-agent-windows-amd64.exe' },
     ];
 
     console.log('');
