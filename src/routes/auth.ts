@@ -5,6 +5,13 @@ import { userDb, systemConfigDb } from '../db/index.js';
 import { hashPassword, verifyPassword } from '../utils/crypto.js';
 import { validateUsername, validatePassword } from '../utils/validation.js';
 
+declare module '@fastify/jwt' {
+  interface FastifyJWT {
+    payload: { userId: string; username: string };
+    user: { userId: string; username: string };
+  }
+}
+
 const registerSchema = z.object({
   username: z.string(),
   password: z.string(),
@@ -22,7 +29,6 @@ export async function authRoutes(fastify: FastifyInstance) {
     if (allowCfg && allowCfg.value === 'false') {
       return reply.code(403).send({ error: '当前已关闭用户注册' });
     }
-
 
     const usernameValidation = validateUsername(body.username);
     if (!usernameValidation.valid) {

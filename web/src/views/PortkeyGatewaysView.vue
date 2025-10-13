@@ -539,6 +539,7 @@ const gatewayColumns = [
       const statusMap: Record<string, { type: 'success' | 'warning' | 'error' | 'default', text: string }> = {
         pending: { type: 'warning', text: '待安装' },
         installed: { type: 'success', text: '已安装' },
+        online: { type: 'success', text: '在线' },
         failed: { type: 'error', text: '安装失败' },
       };
       const status = statusMap[row.installStatus || 'pending'] || { type: 'default', text: '未知' };

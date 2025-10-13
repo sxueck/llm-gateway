@@ -198,7 +198,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
         };
       }
 
-      const data = await response.json();
+      const data = await response.json() as { data?: Array<{ id: string; created: number }> };
       const models = data.data?.map((model: any) => ({
         id: model.id,
         name: model.id,

@@ -94,7 +94,7 @@ export class LiteLLMPresetsService {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const data: LiteLLMData = await response.json();
+      const data = await response.json() as LiteLLMData;
       
       if (!data || typeof data !== 'object') {
         throw new Error('无效的数据格式');

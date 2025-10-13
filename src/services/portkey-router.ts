@@ -18,14 +18,23 @@ export class PortkeyRouter {
   private updateCache() {
     const now = Date.now();
     if (now - this.lastCacheUpdate > this.CACHE_TTL) {
-      this.cachedRules = modelRoutingRuleDb.getEnabled();
+      const rawRules = modelRoutingRuleDb.getEnabled();
+      this.cachedRules = rawRules.map(rule => ({
+        ...rule,
+        rule_type: this.validateRuleType(rule.rule_type)
+      }));
       this.cachedGateways = portkeyGatewayDb.getEnabled();
       this.lastCacheUpdate = now;
-      memoryLogger.debug(
-        `路由缓存已更新: ${this.cachedRules.length} 条规则, ${this.cachedGateways.length} 个网关`,
-        'PortkeyRouter'
-      );
     }
+  }
+
+  private validateRuleType(ruleType: string): 'model_name' | 'provider' | 'region' | 'pattern' {
+    const validTypes = ['model_name', 'provider', 'region', 'pattern'] as const;
+    if (validTypes.includes(ruleType as any)) {
+      return ruleType as 'model_name' | 'provider' | 'region' | 'pattern';
+    }
+    memoryLogger.warn(`无效的路由规则类型: ${ruleType}, 使用默认类型 'model_name'`, 'PortkeyRouter');
+    return 'model_name';
   }
 
   selectGateway(context: RoutingContext): PortkeyGateway | undefined {
@@ -39,18 +48,10 @@ export class PortkeyRouter {
     if (this.cachedRules.length === 0) {
       const defaultGateway = this.cachedGateways.find(g => g.is_default === 1);
       if (defaultGateway) {
-        memoryLogger.debug(
-          `使用默认网关: ${defaultGateway.name} (${defaultGateway.url})`,
-          'PortkeyRouter'
-        );
         return defaultGateway;
       }
-      
+
       const firstGateway = this.cachedGateways[0];
-      memoryLogger.debug(
-        `使用第一个可用网关: ${firstGateway.name} (${firstGateway.url})`,
-        'PortkeyRouter'
-      );
       return firstGateway;
     }
 
@@ -76,18 +77,10 @@ export class PortkeyRouter {
 
     const defaultGateway = this.cachedGateways.find(g => g.is_default === 1);
     if (defaultGateway) {
-      memoryLogger.debug(
-        `未匹配到路由规则，使用默认网关: ${defaultGateway.name} (${defaultGateway.url})`,
-        'PortkeyRouter'
-      );
       return defaultGateway;
     }
 
     const firstGateway = this.cachedGateways[0];
-    memoryLogger.debug(
-      `未匹配到路由规则，使用第一个可用网关: ${firstGateway.name} (${firstGateway.url})`,
-      'PortkeyRouter'
-    );
     return firstGateway;
   }
 
@@ -95,14 +88,7 @@ export class PortkeyRouter {
     switch (rule.rule_type) {
       case 'model_name':
         if (context.modelName) {
-          const matched = this.matchPattern(context.modelName, rule.rule_value);
-          if (matched) {
-            memoryLogger.debug(
-              `模型名称匹配: "${context.modelName}" 匹配规则 "${rule.rule_value}"`,
-              'PortkeyRouter'
-            );
-          }
-          return matched;
+          return this.matchPattern(context.modelName, rule.rule_value);
         }
         break;
 
@@ -110,15 +96,8 @@ export class PortkeyRouter {
         if (context.providerId) {
           const provider = providerDb.getById(context.providerId);
           if (provider) {
-            const matched = this.matchPattern(provider.name, rule.rule_value) ||
-                          this.matchPattern(context.providerId, rule.rule_value);
-            if (matched) {
-              memoryLogger.debug(
-                `提供商匹配: "${provider.name}" 匹配规则 "${rule.rule_value}"`,
-                'PortkeyRouter'
-              );
-            }
-            return matched;
+            return this.matchPattern(provider.name, rule.rule_value) ||
+                   this.matchPattern(context.providerId, rule.rule_value);
           }
         }
         break;
@@ -127,14 +106,7 @@ export class PortkeyRouter {
         if (context.providerId) {
           const provider = providerDb.getById(context.providerId);
           if (provider && provider.base_url) {
-            const matched = provider.base_url.toLowerCase().includes(rule.rule_value.toLowerCase());
-            if (matched) {
-              memoryLogger.debug(
-                `地区匹配: "${provider.base_url}" 包含 "${rule.rule_value}"`,
-                'PortkeyRouter'
-              );
-            }
-            return matched;
+            return provider.base_url.toLowerCase().includes(rule.rule_value.toLowerCase());
           }
         }
         break;
@@ -143,19 +115,11 @@ export class PortkeyRouter {
         try {
           const regex = new RegExp(rule.rule_value, 'i');
           if (context.modelName && regex.test(context.modelName)) {
-            memoryLogger.debug(
-              `模式匹配: "${context.modelName}" 匹配正则 "${rule.rule_value}"`,
-              'PortkeyRouter'
-            );
             return true;
           }
           if (context.providerId) {
             const provider = providerDb.getById(context.providerId);
             if (provider && regex.test(provider.name)) {
-              memoryLogger.debug(
-                `模式匹配: 提供商 "${provider.name}" 匹配正则 "${rule.rule_value}"`,
-                'PortkeyRouter'
-              );
               return true;
             }
           }
@@ -186,7 +150,6 @@ export class PortkeyRouter {
 
   clearCache() {
     this.lastCacheUpdate = 0;
-    memoryLogger.debug('路由缓存已清除', 'PortkeyRouter');
   }
 }
 

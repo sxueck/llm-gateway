@@ -1,29 +1,32 @@
 <template>
   <div>
     <n-space vertical :size="12">
-      <div>
-        <h2 class="page-title">虚拟模型</h2>
-        <p class="page-subtitle">虚拟模型通过负载均衡或故障转移配置,将请求智能分发到多个实际模型,提高可用性和性能</p>
-      </div>
+      <n-space justify="space-between" align="center">
+        <div>
+          <h2 class="page-title">虚拟模型</h2>
+          <p class="page-subtitle">虚拟模型通过负载均衡或故障转移配置,将请求智能分发到多个实际模型,提高可用性和性能</p>
+        </div>
+        <n-space :size="8">
+          <n-button type="primary" size="small" @click="handleCreateModalOpen">
+            <template #icon>
+              <n-icon><AddOutline /></n-icon>
+            </template>
+            创建虚拟模型
+          </n-button>
+          <n-button size="small" @click="handleRefresh">
+            <template #icon>
+              <n-icon><RefreshOutline /></n-icon>
+            </template>
+            刷新
+          </n-button>
+        </n-space>
+      </n-space>
+
+      <n-alert type="info">
+        虚拟模型作为统一入口,请求会根据配置的策略分发到目标模型。实际请求仍会通过目标模型匹配的 Portkey 网关路由规则进行转发。
+      </n-alert>
 
       <n-card class="table-card">
-        <template #header-extra>
-          <n-space>
-            <n-button type="primary" @click="handleCreateModalOpen">
-              <template #icon>
-                <n-icon><AddOutline /></n-icon>
-              </template>
-              创建虚拟模型
-            </n-button>
-            <n-button @click="handleRefresh">
-              <template #icon>
-                <n-icon><RefreshOutline /></n-icon>
-              </template>
-              刷新
-            </n-button>
-          </n-space>
-        </template>
-
         <n-data-table
           :columns="columns"
           :data="configs"
@@ -82,6 +85,7 @@ import {
   NCode,
   NTag,
   NPopconfirm,
+  NAlert,
 } from 'naive-ui';
 import {
   AddOutline,
