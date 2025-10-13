@@ -145,25 +145,41 @@
         size="small"
       >
         <n-alert type="info" style="margin-bottom: 16px">
-          <template #header>安装说明</template>
-          <ul style="margin: 8px 0; padding-left: 20px">
-            <li>系统将生成一条安装命令，您需要在目标服务器上执行该命令</li>
-            <li>目标服务器需要已安装 Docker 并确保 Docker 服务正在运行</li>
-            <li>确保指定的端口未被占用</li>
-            <li>当前仅支持 Ubuntu 和 Debian 系统</li>
-          </ul>
+          需要在目标服务器执行生成的安装命令（需要 Docker 环境）
         </n-alert>
         <n-form-item label="网关名称" path="name">
           <n-input v-model:value="agentFormValue.name" placeholder="例如: US Gateway" />
         </n-form-item>
-        <n-form-item label="网关 URL" path="url">
-          <n-input v-model:value="agentFormValue.url" placeholder="http://your-server-ip:8787" />
+        <n-form-item label="服务器地址" path="serverAddress">
+          <n-space vertical :size="4" style="width: 100%">
+            <n-input
+              v-model:value="agentFormValue.serverAddress"
+              placeholder="填写 IP 地址或域名，例如: 192.168.1.100"
+              @input="updateGatewayUrl"
+            />
+            <n-text depth="3" style="font-size: 12px">
+              只需填写 IP 地址或域名，不含端口号
+            </n-text>
+          </n-space>
         </n-form-item>
         <n-form-item label="端口" path="port">
           <n-space :size="8" style="width: 100%">
-            <n-input-number v-model:value="agentFormValue.port" :min="1" :max="65535" style="flex: 1" />
-            <n-button @click="generateRandomPort('agentFormValue')" size="small">随机端口</n-button>
+            <n-input-number
+              v-model:value="agentFormValue.port"
+              :min="1"
+              :max="65535"
+              style="flex: 1"
+              @update:value="updateGatewayUrl"
+            />
+            <n-button @click="generateRandomPort" size="small">随机端口</n-button>
           </n-space>
+        </n-form-item>
+        <n-form-item label="完整 URL" path="url">
+          <n-input
+            v-model:value="agentFormValue.url"
+            placeholder="自动生成"
+            readonly
+          />
         </n-form-item>
         <n-form-item label="描述" path="description">
           <n-input
@@ -402,6 +418,7 @@ const formValue = ref({
 
 const agentFormValue = ref({
   name: '',
+  serverAddress: '',
   url: '',
   port: 8789,
   description: '',
@@ -429,6 +446,7 @@ const gatewayFormRules: FormRules = {
 
 const agentRules: FormRules = {
   name: [{ required: true, message: '请输入网关名称', trigger: 'blur' }],
+  serverAddress: [{ required: true, message: '请输入服务器地址', trigger: 'blur' }],
   url: [{ required: true, message: '请输入网关 URL', trigger: 'blur' }],
   port: [{ required: true, type: 'number', message: '请输入端口', trigger: 'blur' }],
 };
@@ -795,6 +813,7 @@ async function handleDelete(id: string) {
 function handleInstallAgent() {
   agentFormValue.value = {
     name: '',
+    serverAddress: '',
     url: '',
     port: 8789,
     description: '',
@@ -804,6 +823,23 @@ function handleInstallAgent() {
   generatedInstallScript.value = '';
   generatedInstallCommand.value = '';
   showAgentModal.value = true;
+}
+
+function updateGatewayUrl() {
+  const { serverAddress, port } = agentFormValue.value;
+  if (serverAddress && port) {
+    let cleanAddress = serverAddress.trim();
+    cleanAddress = cleanAddress.replace(/^https?:\/\//, '');
+    cleanAddress = cleanAddress.replace(/:\d+$/, '');
+    cleanAddress = cleanAddress.replace(/\/$/, '');
+
+    agentFormValue.value.url = `http://${cleanAddress}:${port}`;
+  }
+}
+
+function generateRandomPort() {
+  agentFormValue.value.port = Math.floor(Math.random() * (65535 - 10000 + 1)) + 10000;
+  updateGatewayUrl();
 }
 
 async function handleGenerateScript() {

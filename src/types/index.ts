@@ -86,6 +86,10 @@ export interface PortkeyGateway {
   enabled: number;
   container_name: string | null;
   port: number | null;
+  api_key: string | null;
+  install_status: string | null;
+  last_heartbeat: number | null;
+  agent_version: string | null;
   created_at: number;
   updated_at: number;
 }

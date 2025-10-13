@@ -5,10 +5,12 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "npm run build:agent:optional && tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
-    "start:all": "node start.js",
+    "build:agent": "node scripts/build-agent.js",
+    "build:agent:optional": "node scripts/build-agent.js || true",
+    "start": "npm run build:agent:optional && node dist/index.js",
+    "start:all": "npm run build:agent:optional && node start.js",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [

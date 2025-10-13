@@ -333,6 +333,16 @@ function createTables() {
     )
   `);
 
+  try {
+    db.run('ALTER TABLE portkey_gateways ADD COLUMN last_heartbeat INTEGER');
+  } catch (e) {
+  }
+
+  try {
+    db.run('ALTER TABLE portkey_gateways ADD COLUMN agent_version TEXT');
+  } catch (e) {
+  }
+
   db.run('CREATE INDEX IF NOT EXISTS idx_portkey_gateways_enabled ON portkey_gateways(enabled)');
   db.run('CREATE INDEX IF NOT EXISTS idx_portkey_gateways_is_default ON portkey_gateways(is_default)');
 
@@ -1182,83 +1192,48 @@ export const routingConfigDb = {
   },
 };
 
+function mapPortkeyGatewayRow(row: any[]) {
+  return {
+    id: row[0] as string,
+    name: row[1] as string,
+    url: row[2] as string,
+    description: row[3] as string | null,
+    is_default: row[4] as number,
+    enabled: row[5] as number,
+    container_name: row[6] as string | null,
+    port: row[7] as number | null,
+    api_key: row[8] as string | null,
+    install_status: row[9] as string | null,
+    created_at: row[10] as number,
+    updated_at: row[11] as number,
+    last_heartbeat: row[12] as number | null,
+    agent_version: row[13] as string | null,
+  };
+}
+
 export const portkeyGatewayDb = {
   getAll() {
     const result = db.exec('SELECT * FROM portkey_gateways ORDER BY is_default DESC, created_at DESC');
     if (result.length === 0) return [];
-    return result[0].values.map(row => ({
-      id: row[0] as string,
-      name: row[1] as string,
-      url: row[2] as string,
-      description: row[3] as string | null,
-      is_default: row[4] as number,
-      enabled: row[5] as number,
-      container_name: row[6] as string | null,
-      port: row[7] as number | null,
-      api_key: row[8] as string | null,
-      install_status: row[9] as string | null,
-      created_at: row[10] as number,
-      updated_at: row[11] as number,
-    }));
+    return result[0].values.map(mapPortkeyGatewayRow);
   },
 
   getById(id: string) {
     const result = db.exec('SELECT * FROM portkey_gateways WHERE id = ?', [id]);
     if (result.length === 0 || result[0].values.length === 0) return undefined;
-    const row = result[0].values[0];
-    return {
-      id: row[0] as string,
-      name: row[1] as string,
-      url: row[2] as string,
-      description: row[3] as string | null,
-      is_default: row[4] as number,
-      enabled: row[5] as number,
-      container_name: row[6] as string | null,
-      port: row[7] as number | null,
-      api_key: row[8] as string | null,
-      install_status: row[9] as string | null,
-      created_at: row[10] as number,
-      updated_at: row[11] as number,
-    };
+    return mapPortkeyGatewayRow(result[0].values[0]);
   },
 
   getDefault() {
     const result = db.exec('SELECT * FROM portkey_gateways WHERE is_default = 1 AND enabled = 1 LIMIT 1');
     if (result.length === 0 || result[0].values.length === 0) return undefined;
-    const row = result[0].values[0];
-    return {
-      id: row[0] as string,
-      name: row[1] as string,
-      url: row[2] as string,
-      description: row[3] as string | null,
-      is_default: row[4] as number,
-      enabled: row[5] as number,
-      container_name: row[6] as string | null,
-      port: row[7] as number | null,
-      api_key: row[8] as string | null,
-      install_status: row[9] as string | null,
-      created_at: row[10] as number,
-      updated_at: row[11] as number,
-    };
+    return mapPortkeyGatewayRow(result[0].values[0]);
   },
 
   getEnabled() {
     const result = db.exec('SELECT * FROM portkey_gateways WHERE enabled = 1 ORDER BY is_default DESC, created_at DESC');
     if (result.length === 0) return [];
-    return result[0].values.map(row => ({
-      id: row[0] as string,
-      name: row[1] as string,
-      url: row[2] as string,
-      description: row[3] as string | null,
-      is_default: row[4] as number,
-      enabled: row[5] as number,
-      container_name: row[6] as string | null,
-      port: row[7] as number | null,
-      api_key: row[8] as string | null,
-      install_status: row[9] as string | null,
-      created_at: row[10] as number,
-      updated_at: row[11] as number,
-    }));
+    return result[0].values.map(mapPortkeyGatewayRow);
   },
 
   async create(data: {
@@ -1272,6 +1247,8 @@ export const portkeyGatewayDb = {
     port?: number;
     api_key?: string;
     install_status?: string;
+    last_heartbeat?: number;
+    agent_version?: string;
   }) {
     const now = Date.now();
 
@@ -1280,8 +1257,8 @@ export const portkeyGatewayDb = {
     }
 
     db.run(
-      `INSERT INTO portkey_gateways (id, name, url, description, is_default, enabled, container_name, port, api_key, install_status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO portkey_gateways (id, name, url, description, is_default, enabled, container_name, port, api_key, install_status, last_heartbeat, agent_version, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         data.id,
         data.name,
@@ -1293,6 +1270,8 @@ export const portkeyGatewayDb = {
         data.port || null,
         data.api_key || null,
         data.install_status || 'pending',
+        data.last_heartbeat || null,
+        data.agent_version || null,
         now,
         now,
       ]
@@ -1311,6 +1290,8 @@ export const portkeyGatewayDb = {
     port?: number;
     api_key?: string;
     install_status?: string;
+    last_heartbeat?: number;
+    agent_version?: string;
   }) {
     const now = Date.now();
     const updates: string[] = [];
@@ -1355,6 +1336,14 @@ export const portkeyGatewayDb = {
     if (data.install_status !== undefined) {
       updates.push('install_status = ?');
       values.push(data.install_status);
+    }
+    if (data.last_heartbeat !== undefined) {
+      updates.push('last_heartbeat = ?');
+      values.push(data.last_heartbeat);
+    }
+    if (data.agent_version !== undefined) {
+      updates.push('agent_version = ?');
+      values.push(data.agent_version);
     }
 
     updates.push('updated_at = ?');
