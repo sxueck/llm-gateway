@@ -11,6 +11,7 @@ const envSchema = z.object({
   LOG_LEVEL: z.string().default('info'),
   JWT_SECRET: z.string().min(32),
   API_REQUEST_LOG_RETENTION_DAYS: z.string().default('3'),
+  PUBLIC_URL: z.string().optional(),
 });
 
 const env = envSchema.parse(process.env);
@@ -23,5 +24,6 @@ export const appConfig = {
   logLevel: env.LOG_LEVEL,
   jwtSecret: env.JWT_SECRET,
   apiRequestLogRetentionDays: parseInt(env.API_REQUEST_LOG_RETENTION_DAYS, 10),
+  publicUrl: env.PUBLIC_URL || `http://localhost:${parseInt(env.PORT, 10)}`,
 };
 

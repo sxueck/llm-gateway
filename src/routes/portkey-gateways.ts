@@ -4,6 +4,7 @@ import { portkeyGatewayDb, modelRoutingRuleDb } from '../db/index.js';
 import { memoryLogger } from '../services/logger.js';
 import { portkeyRouter } from '../services/portkey-router.js';
 import { PortkeyManager } from '../services/portkey-manager.js';
+import { appConfig } from '../config/index.js';
 
 export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
@@ -20,6 +21,8 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
         enabled: gateway.enabled === 1,
         containerName: gateway.container_name,
         port: gateway.port,
+        apiKey: gateway.api_key,
+        installStatus: gateway.install_status,
         createdAt: gateway.created_at,
         updatedAt: gateway.updated_at,
       }));
@@ -47,6 +50,8 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
         enabled: gateway.enabled === 1,
         containerName: gateway.container_name,
         port: gateway.port,
+        apiKey: gateway.api_key,
+        installStatus: gateway.install_status,
         createdAt: gateway.created_at,
         updatedAt: gateway.updated_at,
       };
@@ -124,6 +129,8 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
         enabled: gateway!.enabled === 1,
         containerName: gateway!.container_name,
         port: gateway!.port,
+        apiKey: gateway!.api_key,
+        installStatus: gateway!.install_status,
         createdAt: gateway!.created_at,
         updatedAt: gateway!.updated_at,
       };
@@ -169,6 +176,8 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
         enabled: gateway!.enabled === 1,
         containerName: gateway!.container_name,
         port: gateway!.port,
+        apiKey: gateway!.api_key,
+        installStatus: gateway!.install_status,
         createdAt: gateway!.created_at,
         updatedAt: gateway!.updated_at,
       };
@@ -194,51 +203,60 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.post('/install-agent', async (request) => {
+  fastify.post('/generate-install-script', async (request) => {
     try {
       const body = request.body as {
         name: string;
+        url: string;
         port?: number;
         description?: string;
         isDefault?: boolean;
       };
 
       const port = body.port || 8787;
-      const containerName = `portkey-gateway-${nanoid(6)}`;
-
-      const portkeyManager = new PortkeyManager({
-        containerName,
-        port,
-      });
-
-      const startResult = await portkeyManager.start();
-
-      if (!startResult.success) {
-        throw new Error(startResult.message);
-      }
-
       const id = nanoid();
+      const apiKey = `pgw_${nanoid(32)}`;
+
       const gateway = await portkeyGatewayDb.create({
         id,
         name: body.name,
-        url: `http://localhost:${port}`,
+        url: body.url,
         description: body.description,
         is_default: body.isDefault ? 1 : 0,
-        enabled: 1,
-        container_name: containerName,
+        enabled: 0,
+        api_key: apiKey,
+        install_status: 'pending',
         port,
       });
 
       portkeyRouter.clearCache();
 
+      const { generateInstallScript, generateInstallCommand } = await import('../services/agent-installer.js');
+
+      const installScript = generateInstallScript({
+        gatewayId: id,
+        gatewayName: body.name,
+        apiKey,
+        port,
+        llmGatewayUrl: appConfig.publicUrl,
+      });
+
+      const installCommand = generateInstallCommand({
+        gatewayId: id,
+        gatewayName: body.name,
+        apiKey,
+        port,
+        llmGatewayUrl: appConfig.publicUrl,
+      });
+
       memoryLogger.info(
-        `Agent 安装成功: ${body.name} (容器: ${containerName}, 端口: ${port})`,
+        `生成 Agent 安装脚本: ${body.name} (ID: ${id}, 端口: ${port})`,
         'PortkeyGateways'
       );
 
       return {
         success: true,
-        message: 'Portkey Gateway Agent 安装成功',
+        message: '安装脚本生成成功',
         gateway: {
           id: gateway!.id,
           name: gateway!.name,
@@ -246,15 +264,17 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
           description: gateway!.description,
           isDefault: gateway!.is_default === 1,
           enabled: gateway!.enabled === 1,
-          containerName: gateway!.container_name,
+          apiKey: gateway!.api_key,
+          installStatus: gateway!.install_status,
           port: gateway!.port,
           createdAt: gateway!.created_at,
           updatedAt: gateway!.updated_at,
         },
-        containerId: startResult.containerId,
+        installScript,
+        installCommand,
       };
     } catch (error: any) {
-      memoryLogger.error(`安装 Agent 失败: ${error.message}`, 'PortkeyGateways');
+      memoryLogger.error(`生成安装脚本失败: ${error.message}`, 'PortkeyGateways');
       return {
         success: false,
         message: error.message,

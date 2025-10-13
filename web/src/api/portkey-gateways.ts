@@ -11,6 +11,8 @@ export interface PortkeyGateway {
   enabled: boolean;
   containerName?: string;
   port?: number;
+  apiKey?: string;
+  installStatus?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -65,8 +67,9 @@ export const portkeyGatewayApi = {
     return request.delete(`/admin/portkey-gateways/${id}`);
   },
 
-  installAgent(data: {
+  generateInstallScript(data: {
     name: string;
+    url: string;
     port?: number;
     description?: string;
     isDefault?: boolean;
@@ -74,9 +77,10 @@ export const portkeyGatewayApi = {
     success: boolean;
     message: string;
     gateway?: PortkeyGateway;
-    containerId?: string;
+    installScript?: string;
+    installCommand?: string;
   }> {
-    return request.post('/admin/portkey-gateways/install-agent', data);
+    return request.post('/admin/portkey-gateways/generate-install-script', data);
   },
 
   getRoutingRules(id: string): Promise<RoutingRule[]> {

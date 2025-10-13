@@ -326,6 +326,8 @@ function createTables() {
       enabled INTEGER DEFAULT 1,
       container_name TEXT,
       port INTEGER,
+      api_key TEXT,
+      install_status TEXT DEFAULT 'pending',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )
@@ -1193,8 +1195,10 @@ export const portkeyGatewayDb = {
       enabled: row[5] as number,
       container_name: row[6] as string | null,
       port: row[7] as number | null,
-      created_at: row[8] as number,
-      updated_at: row[9] as number,
+      api_key: row[8] as string | null,
+      install_status: row[9] as string | null,
+      created_at: row[10] as number,
+      updated_at: row[11] as number,
     }));
   },
 
@@ -1211,8 +1215,10 @@ export const portkeyGatewayDb = {
       enabled: row[5] as number,
       container_name: row[6] as string | null,
       port: row[7] as number | null,
-      created_at: row[8] as number,
-      updated_at: row[9] as number,
+      api_key: row[8] as string | null,
+      install_status: row[9] as string | null,
+      created_at: row[10] as number,
+      updated_at: row[11] as number,
     };
   },
 
@@ -1229,8 +1235,10 @@ export const portkeyGatewayDb = {
       enabled: row[5] as number,
       container_name: row[6] as string | null,
       port: row[7] as number | null,
-      created_at: row[8] as number,
-      updated_at: row[9] as number,
+      api_key: row[8] as string | null,
+      install_status: row[9] as string | null,
+      created_at: row[10] as number,
+      updated_at: row[11] as number,
     };
   },
 
@@ -1246,8 +1254,10 @@ export const portkeyGatewayDb = {
       enabled: row[5] as number,
       container_name: row[6] as string | null,
       port: row[7] as number | null,
-      created_at: row[8] as number,
-      updated_at: row[9] as number,
+      api_key: row[8] as string | null,
+      install_status: row[9] as string | null,
+      created_at: row[10] as number,
+      updated_at: row[11] as number,
     }));
   },
 
@@ -1260,6 +1270,8 @@ export const portkeyGatewayDb = {
     enabled?: number;
     container_name?: string;
     port?: number;
+    api_key?: string;
+    install_status?: string;
   }) {
     const now = Date.now();
 
@@ -1268,8 +1280,8 @@ export const portkeyGatewayDb = {
     }
 
     db.run(
-      `INSERT INTO portkey_gateways (id, name, url, description, is_default, enabled, container_name, port, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO portkey_gateways (id, name, url, description, is_default, enabled, container_name, port, api_key, install_status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         data.id,
         data.name,
@@ -1279,6 +1291,8 @@ export const portkeyGatewayDb = {
         data.enabled ?? 1,
         data.container_name || null,
         data.port || null,
+        data.api_key || null,
+        data.install_status || 'pending',
         now,
         now,
       ]
@@ -1295,6 +1309,8 @@ export const portkeyGatewayDb = {
     enabled?: number;
     container_name?: string;
     port?: number;
+    api_key?: string;
+    install_status?: string;
   }) {
     const now = Date.now();
     const updates: string[] = [];
@@ -1331,6 +1347,14 @@ export const portkeyGatewayDb = {
     if (data.port !== undefined) {
       updates.push('port = ?');
       values.push(data.port);
+    }
+    if (data.api_key !== undefined) {
+      updates.push('api_key = ?');
+      values.push(data.api_key);
+    }
+    if (data.install_status !== undefined) {
+      updates.push('install_status = ?');
+      values.push(data.install_status);
     }
 
     updates.push('updated_at = ?');

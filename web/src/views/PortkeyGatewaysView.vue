@@ -132,10 +132,11 @@
     <n-modal
       v-model:show="showAgentModal"
       preset="card"
-      title="自动安装 Agent"
-      style="width: 600px"
+      title="生成 Agent 安装脚本"
+      style="width: 700px"
     >
       <n-form
+        v-if="!installScriptGenerated"
         ref="agentFormRef"
         :model="agentFormValue"
         :rules="agentRules"
@@ -143,21 +144,25 @@
         label-width="100"
         size="small"
       >
-        <n-alert type="warning" style="margin-bottom: 16px">
-          <template #header>注意事项</template>
+        <n-alert type="info" style="margin-bottom: 16px">
+          <template #header>安装说明</template>
           <ul style="margin: 8px 0; padding-left: 20px">
-            <li>需要 Docker 已安装并运行</li>
-            <li>指定的端口不能被占用</li>
-            <li>需要有执行 Docker 命令的权限</li>
+            <li>系统将生成一条安装命令，您需要在目标服务器上执行该命令</li>
+            <li>目标服务器需要已安装 Docker 并确保 Docker 服务正在运行</li>
+            <li>确保指定的端口未被占用</li>
+            <li>当前仅支持 Ubuntu 和 Debian 系统</li>
           </ul>
         </n-alert>
         <n-form-item label="网关名称" path="name">
-          <n-input v-model:value="agentFormValue.name" placeholder="例如: Auto Gateway" />
+          <n-input v-model:value="agentFormValue.name" placeholder="例如: US Gateway" />
+        </n-form-item>
+        <n-form-item label="网关 URL" path="url">
+          <n-input v-model:value="agentFormValue.url" placeholder="http://your-server-ip:8787" />
         </n-form-item>
         <n-form-item label="端口" path="port">
           <n-space :size="8" style="width: 100%">
             <n-input-number v-model:value="agentFormValue.port" :min="1" :max="65535" style="flex: 1" />
-            <n-button @click="generateRandomPort('agentFormValue')">随机端口</n-button>
+            <n-button @click="generateRandomPort('agentFormValue')" size="small">随机端口</n-button>
           </n-space>
         </n-form-item>
         <n-form-item label="描述" path="description">
@@ -172,11 +177,75 @@
           <n-switch v-model:value="agentFormValue.isDefault" />
         </n-form-item>
       </n-form>
+
+      <div v-else>
+        <n-alert type="success" style="margin-bottom: 16px">
+          <template #header>安装脚本已生成</template>
+          请复制以下命令到目标服务器执行
+        </n-alert>
+
+        <n-space vertical :size="12">
+          <div>
+            <div style="margin-bottom: 8px; font-weight: 500">一键安装命令</div>
+            <n-input
+              :value="generatedInstallCommand"
+              type="textarea"
+              readonly
+              :rows="3"
+              style="font-family: monospace; font-size: 12px"
+            />
+            <n-space :size="8" style="margin-top: 8px">
+              <n-button size="small" @click="copyToClipboard(generatedInstallCommand, '安装命令')">
+                <template #icon>
+                  <n-icon><CopyOutline /></n-icon>
+                </template>
+                复制命令
+              </n-button>
+            </n-space>
+          </div>
+
+          <n-divider style="margin: 8px 0" />
+
+          <div>
+            <div style="margin-bottom: 8px; font-weight: 500">完整安装脚本</div>
+            <n-input
+              :value="generatedInstallScript"
+              type="textarea"
+              readonly
+              :rows="10"
+              style="font-family: monospace; font-size: 12px"
+            />
+            <n-space :size="8" style="margin-top: 8px">
+              <n-button size="small" @click="copyToClipboard(generatedInstallScript, '安装脚本')">
+                <template #icon>
+                  <n-icon><CopyOutline /></n-icon>
+                </template>
+                复制脚本
+              </n-button>
+              <n-button size="small" @click="downloadScript">
+                <template #icon>
+                  <n-icon><DownloadOutline /></n-icon>
+                </template>
+                下载脚本
+              </n-button>
+            </n-space>
+          </div>
+        </n-space>
+      </div>
+
       <template #footer>
         <n-space justify="end" :size="8">
-          <n-button @click="showAgentModal = false" size="small">取消</n-button>
-          <n-button type="primary" size="small" :loading="installing" @click="handleInstallSubmit">
-            安装
+          <n-button @click="closeAgentModal" size="small">
+            {{ installScriptGenerated ? '关闭' : '取消' }}
+          </n-button>
+          <n-button
+            v-if="!installScriptGenerated"
+            type="primary"
+            size="small"
+            :loading="installing"
+            @click="handleGenerateScript"
+          >
+            生成安装脚本
           </n-button>
         </n-space>
       </template>
@@ -293,6 +362,8 @@ import {
   CloudDownloadOutline,
   CheckmarkCircleOutline,
   CloseCircleOutline,
+  CopyOutline,
+  DownloadOutline,
 } from '@vicons/ionicons5';
 import {
   EditOutlined,
@@ -331,10 +402,15 @@ const formValue = ref({
 
 const agentFormValue = ref({
   name: '',
+  url: '',
   port: 8789,
   description: '',
   isDefault: false,
 });
+
+const installScriptGenerated = ref(false);
+const generatedInstallScript = ref('');
+const generatedInstallCommand = ref('');
 
 const ruleFormValue = ref({
   name: '',
@@ -353,6 +429,7 @@ const gatewayFormRules: FormRules = {
 
 const agentRules: FormRules = {
   name: [{ required: true, message: '请输入网关名称', trigger: 'blur' }],
+  url: [{ required: true, message: '请输入网关 URL', trigger: 'blur' }],
   port: [{ required: true, type: 'number', message: '请输入端口', trigger: 'blur' }],
 };
 
@@ -432,6 +509,20 @@ const gatewayColumns = [
       }
       const type = latency < 100 ? 'success' : latency < 300 ? 'warning' : 'error';
       return h(NTag, { type, size: 'small' }, { default: () => `${latency}ms` });
+    },
+  },
+  {
+    title: '安装状态',
+    key: 'installStatus',
+    width: 100,
+    render: (row: PortkeyGateway) => {
+      const statusMap: Record<string, { type: 'success' | 'warning' | 'error' | 'default', text: string }> = {
+        pending: { type: 'warning', text: '待安装' },
+        installed: { type: 'success', text: '已安装' },
+        failed: { type: 'error', text: '安装失败' },
+      };
+      const status = statusMap[row.installStatus || 'pending'] || { type: 'default', text: '未知' };
+      return h(NTag, { type: status.type, size: 'small' }, { default: () => status.text });
     },
   },
   {
@@ -704,32 +795,66 @@ async function handleDelete(id: string) {
 function handleInstallAgent() {
   agentFormValue.value = {
     name: '',
+    url: '',
     port: 8789,
     description: '',
     isDefault: false,
   };
+  installScriptGenerated.value = false;
+  generatedInstallScript.value = '';
+  generatedInstallCommand.value = '';
   showAgentModal.value = true;
 }
 
-async function handleInstallSubmit() {
+async function handleGenerateScript() {
   try {
     await agentFormRef.value?.validate();
     installing.value = true;
 
-    const result = await portkeyGatewayApi.installAgent(agentFormValue.value);
+    const result = await portkeyGatewayApi.generateInstallScript(agentFormValue.value);
 
     if (result.success) {
-      message.success(result.message || 'Agent 安装成功');
-      showAgentModal.value = false;
+      message.success(result.message || '安装脚本生成成功');
+      installScriptGenerated.value = true;
+      generatedInstallScript.value = result.installScript || '';
+      generatedInstallCommand.value = result.installCommand || '';
       await loadGateways();
     } else {
-      message.error(result.message || 'Agent 安装失败');
+      message.error(result.message || '生成安装脚本失败');
     }
   } catch (error: any) {
-    message.error(error.message || 'Agent 安装失败');
+    message.error(error.message || '生成安装脚本失败');
   } finally {
     installing.value = false;
   }
+}
+
+function closeAgentModal() {
+  showAgentModal.value = false;
+  installScriptGenerated.value = false;
+  generatedInstallScript.value = '';
+  generatedInstallCommand.value = '';
+}
+
+function copyToClipboard(text: string, label: string) {
+  navigator.clipboard.writeText(text).then(() => {
+    message.success(`${label}已复制到剪贴板`);
+  }).catch(() => {
+    message.error('复制失败，请手动复制');
+  });
+}
+
+function downloadScript() {
+  const blob = new Blob([generatedInstallScript.value], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'install-portkey-gateway.sh';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  message.success('脚本下载成功');
 }
 
 function handleCreateRule() {
