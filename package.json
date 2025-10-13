@@ -11,7 +11,8 @@
     "build:agent:optional": "node scripts/build-agent.js || true",
     "start": "npm run build:agent:optional && node dist/index.js",
     "start:all": "npm run build:agent:optional && node start.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "fix:db": "node scripts/fix-database.js"
   },
   "keywords": [
     "llm",

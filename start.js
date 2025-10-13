@@ -16,11 +16,11 @@ const __dirname = dirname(__filename);
 
 function startLLMGateway() {
   console.log('\n启动 LLM Gateway...');
-  
-  const isWindows = process.platform === 'win32';
-  const npmCmd = isWindows ? 'npm.cmd' : 'npm';
 
-  const llmGateway = spawn(npmCmd, ['run', 'dev'], {
+  const isWindows = process.platform === 'win32';
+  const tsxCmd = isWindows ? 'npx.cmd' : 'npx';
+
+  const llmGateway = spawn(tsxCmd, ['tsx', 'watch', 'src/index.ts'], {
     cwd: __dirname,
     stdio: 'inherit',
     shell: true,

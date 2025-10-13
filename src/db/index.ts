@@ -40,8 +40,22 @@ export async function initDatabase() {
   const dbPath = resolve(appConfig.dbPath);
 
   if (existsSync(dbPath)) {
-    const buffer = await readFile(dbPath);
-    db = new SQL.Database(buffer);
+    try {
+      const buffer = await readFile(dbPath);
+      db = new SQL.Database(buffer);
+
+      const integrityCheck = db.exec('PRAGMA integrity_check');
+      if (integrityCheck.length === 0 ||
+          integrityCheck[0].values[0][0] !== 'ok') {
+        console.error('数据库完整性检查失败，将创建新数据库');
+        db.close();
+        throw new Error('Database integrity check failed');
+      }
+    } catch (error) {
+      console.error('加载数据库失败:', error);
+      console.log('正在创建新数据库...');
+      db = new SQL.Database();
+    }
   } else {
     db = new SQL.Database();
   }
