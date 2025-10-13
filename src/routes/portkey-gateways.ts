@@ -3,8 +3,51 @@ import { nanoid } from 'nanoid';
 import { portkeyGatewayDb, modelRoutingRuleDb } from '../db/index.js';
 import { memoryLogger } from '../services/logger.js';
 import { portkeyRouter } from '../services/portkey-router.js';
-import { PortkeyManager } from '../services/portkey-manager.js';
 import { appConfig } from '../config/index.js';
+import type { PortkeyGateway } from '../types/index.js';
+import { NotFoundError } from '../utils/error-handler.js';
+
+async function generateInstallScripts(gateway: PortkeyGateway) {
+  const { generateInstallScript, generateInstallCommand } = await import('../services/agent-installer.js');
+
+  const config = {
+    gatewayId: gateway.id,
+    gatewayName: gateway.name,
+    apiKey: gateway.api_key!,
+    port: gateway.port || 8787,
+    llmGatewayUrl: appConfig.publicUrl,
+  };
+
+  return {
+    installScript: generateInstallScript(config),
+    installCommand: generateInstallCommand(config),
+  };
+}
+
+interface HealthCheckResult {
+  success: boolean;
+  latency: number | null;
+  error?: string;
+}
+
+async function checkGatewayHealth(gateway: PortkeyGateway): Promise<HealthCheckResult> {
+  const startTime = Date.now();
+
+  try {
+    const response = await fetch(`${gateway.url}/health`, {
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (response.ok || response.status === 404) {
+      const latency = Date.now() - startTime;
+      return { success: true, latency };
+    } else {
+      return { success: false, latency: null, error: `HTTP ${response.status}` };
+    }
+  } catch (error: any) {
+    return { success: false, latency: null, error: error.message };
+  }
+}
 
 export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
@@ -38,7 +81,7 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
       const gateway = portkeyGatewayDb.getById(id);
 
       if (!gateway) {
-        throw new Error('Portkey Gateway 不存在');
+        throw new NotFoundError('Portkey Gateway 不存在');
       }
 
       return {
@@ -70,22 +113,7 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
         return { success: false, latency: null, error: 'Gateway 不存在' };
       }
 
-      const startTime = Date.now();
-
-      try {
-        const response = await fetch(`${gateway.url}/health`, {
-          signal: AbortSignal.timeout(5000),
-        });
-
-        if (response.ok || response.status === 404) {
-          const latency = Date.now() - startTime;
-          return { success: true, latency };
-        } else {
-          return { success: false, latency: null, error: `HTTP ${response.status}` };
-        }
-      } catch (error: any) {
-        return { success: false, latency: null, error: error.message };
-      }
+      return await checkGatewayHealth(gateway);
     } catch (error: any) {
       memoryLogger.error(`检测 Gateway 健康状态失败: ${error.message}`, 'PortkeyGateways');
       return { success: false, latency: null, error: error.message };
@@ -231,23 +259,7 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
 
       portkeyRouter.clearCache();
 
-      const { generateInstallScript, generateInstallCommand } = await import('../services/agent-installer.js');
-
-      const installScript = generateInstallScript({
-        gatewayId: id,
-        gatewayName: body.name,
-        apiKey,
-        port,
-        llmGatewayUrl: appConfig.publicUrl,
-      });
-
-      const installCommand = generateInstallCommand({
-        gatewayId: id,
-        gatewayName: body.name,
-        apiKey,
-        port,
-        llmGatewayUrl: appConfig.publicUrl,
-      });
+      const { installScript, installCommand } = await generateInstallScripts(gateway!);
 
       memoryLogger.info(
         `生成 Agent 安装脚本: ${body.name} (ID: ${id}, 端口: ${port})`,
@@ -286,7 +298,7 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
     try {
       const { id } = request.params as { id: string };
       const rules = modelRoutingRuleDb.getByGatewayId(id);
-      
+
       return rules.map(rule => ({
         id: rule.id,
         name: rule.name,
@@ -302,6 +314,40 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
     } catch (error: any) {
       memoryLogger.error(`获取路由规则失败: ${error.message}`, 'PortkeyGateways');
       throw error;
+    }
+  });
+
+  fastify.get('/:id/install-script', async (request) => {
+    try {
+      const { id } = request.params as { id: string };
+      const gateway = portkeyGatewayDb.getById(id);
+
+      if (!gateway) {
+        throw new NotFoundError('Portkey Gateway 不存在');
+      }
+
+      if (!gateway.api_key) {
+        throw new NotFoundError('该网关没有 API Key，无法生成安装脚本');
+      }
+
+      const { installScript, installCommand } = await generateInstallScripts(gateway);
+
+      memoryLogger.info(
+        `获取 Agent 安装脚本: ${gateway.name} (ID: ${id})`,
+        'PortkeyGateways'
+      );
+
+      return {
+        success: true,
+        installScript,
+        installCommand,
+      };
+    } catch (error: any) {
+      memoryLogger.error(`获取安装脚本失败: ${error.message}`, 'PortkeyGateways');
+      return {
+        success: false,
+        message: error.message,
+      };
     }
   });
 }

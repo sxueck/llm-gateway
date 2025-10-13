@@ -37,7 +37,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
   fastify.post('/register', { preHandler: authenticateAgent }, async (request, reply) => {
     try {
       const gateway = (request as any).gateway;
-      const body = request.body as {
+      const body = (request.body || {}) as {
         version?: string;
         hostname?: string;
       };
@@ -98,7 +98,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
     try {
       const gateway = (request as any).gateway;
 
-      const body = request.body as {
+      const body = (request.body || {}) as {
         status: string;
         port?: number;
       };

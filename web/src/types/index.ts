@@ -45,6 +45,11 @@ export interface Model {
   enabled: boolean;
   modelAttributes?: ModelAttributes | null;
   virtualKeyCount?: number;
+  routingGateway?: {
+    id: string;
+    name: string;
+    url: string;
+  } | null;
   createdAt: number;
   updatedAt: number;
 }

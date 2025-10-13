@@ -1,8 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import { modelDb, providerDb, virtualKeyDb } from '../db/index.js';
+import { modelDb, providerDb, virtualKeyDb, portkeyGatewayDb } from '../db/index.js';
 import { decryptApiKey } from '../utils/crypto.js';
+import { portkeyRouter } from '../services/portkey-router.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -71,6 +72,23 @@ export async function modelRoutes(fastify: FastifyInstance) {
           }
         }
 
+        let routingGateway = null;
+        if (!m.is_virtual) {
+          const gateway = portkeyRouter.selectGateway({
+            modelName: m.name,
+            modelId: m.id,
+            providerId: m.provider_id || undefined,
+          });
+
+          if (gateway) {
+            routingGateway = {
+              id: gateway.id,
+              name: gateway.name,
+              url: gateway.url,
+            };
+          }
+        }
+
         return {
           id: m.id,
           name: m.name,
@@ -82,6 +100,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
           enabled: m.enabled === 1,
           modelAttributes,
           virtualKeyCount,
+          routingGateway,
           createdAt: m.created_at,
           updatedAt: m.updated_at,
         };

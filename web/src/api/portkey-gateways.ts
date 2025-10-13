@@ -90,6 +90,15 @@ export const portkeyGatewayApi = {
   checkHealth(id: string): Promise<{ success: boolean; latency: number | null; error?: string }> {
     return request.get(`/admin/portkey-gateways/${id}/health`);
   },
+
+  getInstallScript(id: string): Promise<{
+    success: boolean;
+    message?: string;
+    installScript?: string;
+    installCommand?: string;
+  }> {
+    return request.get(`/admin/portkey-gateways/${id}/install-script`);
+  },
 };
 
 export const routingRuleApi = {

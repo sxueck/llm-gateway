@@ -210,6 +210,21 @@ const columns = [
   { title: '所属提供商', key: 'providerName' },
   { title: '模型标识符', key: 'modelIdentifier' },
   {
+    title: '路由网关',
+    key: 'routingGateway',
+    render: (row: Model) => {
+      if (row.isVirtual) {
+        return h('span', { style: { color: '#999' } }, '-');
+      }
+      if (row.routingGateway) {
+        return h(NTag, { type: 'success', size: 'small' }, {
+          default: () => row.routingGateway!.name
+        });
+      }
+      return h('span', { style: { color: '#999' } }, '未配置');
+    },
+  },
+  {
     title: '状态',
     key: 'enabled',
     render: (row: Model) => h(NTag, { type: row.enabled ? 'success' : 'default' }, { default: () => row.enabled ? '启用' : '禁用' }),

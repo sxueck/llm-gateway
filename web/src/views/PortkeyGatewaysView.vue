@@ -902,13 +902,7 @@ function downloadScript() {
 async function handleViewInstallScript(gateway: PortkeyGateway) {
   try {
     installing.value = true;
-    const result = await portkeyGatewayApi.generateInstallScript({
-      name: gateway.name,
-      url: gateway.url,
-      port: gateway.port,
-      description: gateway.description,
-      isDefault: gateway.isDefault,
-    });
+    const result = await portkeyGatewayApi.getInstallScript(gateway.id);
 
     if (result.success) {
       installScriptGenerated.value = true;
