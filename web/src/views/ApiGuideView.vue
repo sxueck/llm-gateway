@@ -23,9 +23,6 @@
 
       <n-card title="在线 API 测试">
         <n-space vertical :size="16">
-          <n-alert type="info">
-            在此处直接测试 API 接口，无需离开页面。选择虚拟密钥和模型，编辑请求参数，即可发送测试请求。
-          </n-alert>
 
           <n-collapse>
             <n-collapse-item title="POST /v1/chat/completions - 聊天补全" name="chat-completions">

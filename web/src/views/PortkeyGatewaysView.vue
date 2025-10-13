@@ -171,7 +171,7 @@
               style="flex: 1"
               @update:value="updateGatewayUrl"
             />
-            <n-button @click="generateRandomPort" size="small">随机端口</n-button>
+            <n-button @click="generateRandomPort('agentFormValue')" size="small">随机端口</n-button>
           </n-space>
         </n-form-item>
         <n-form-item label="完整 URL" path="url">
@@ -837,10 +837,6 @@ function updateGatewayUrl() {
   }
 }
 
-function generateRandomPort() {
-  agentFormValue.value.port = Math.floor(Math.random() * (65535 - 10000 + 1)) + 10000;
-  updateGatewayUrl();
-}
 
 async function handleGenerateScript() {
   try {
