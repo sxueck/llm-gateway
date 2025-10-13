@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 
-const { execSync, spawn } = require('child_process');
-const { existsSync, mkdirSync } = require('fs');
-const { join } = require('path');
+import { execSync } from 'child_process';
+import { existsSync, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const AGENT_DIR = join(__dirname, '..', 'agent');
 const VERSION = '1.0.0';
@@ -127,10 +131,7 @@ function buildAgent() {
   }
 }
 
-if (require.main === module) {
-  const success = buildAgent();
-  process.exit(success ? 0 : 1);
-}
+const success = buildAgent();
+process.exit(success ? 0 : 1);
 
-module.exports = { buildAgent, checkGoInstalled };
-
+export { buildAgent, checkGoInstalled };

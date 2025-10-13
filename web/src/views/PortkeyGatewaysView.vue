@@ -369,6 +369,7 @@ import {
   NTabs,
   NTabPane,
   NSelect,
+  NDivider,
   type FormInst,
   type FormRules,
 } from 'naive-ui';
