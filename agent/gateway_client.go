@@ -78,7 +78,9 @@ func (g *GatewayClient) makeRequest(method, url string, payload interface{}, res
 		return fmt.Errorf("创建请求失败: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	req.Header.Set("X-Gateway-ID", g.config.GatewayID)
 	req.Header.Set("X-API-Key", g.config.APIKey)
 
@@ -101,4 +103,3 @@ func (g *GatewayClient) makeRequest(method, url string, payload interface{}, res
 
 	return nil
 }
-
