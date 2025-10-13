@@ -381,6 +381,7 @@ import {
   CloseCircleOutline,
   CopyOutline,
   DownloadOutline,
+  DocumentTextOutline,
 } from '@vicons/ionicons5';
 import {
   EditOutlined,
@@ -578,7 +579,7 @@ const gatewayColumns = [
   {
     title: '操作',
     key: 'actions',
-    width: 150,
+    width: 200,
     render: (row: PortkeyGateway) => {
       return h(NSpace, { size: 6 }, {
         default: () => [
@@ -590,6 +591,14 @@ const gatewayColumns = [
           }, {
             icon: () => h(NIcon, null, { default: () => h(EditOutlined) }),
           }),
+          row.apiKey ? h(NButton, {
+            size: 'small',
+            quaternary: true,
+            circle: true,
+            onClick: () => handleViewInstallScript(row),
+          }, {
+            icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }),
+          }) : null,
           h(NPopconfirm, {
             onPositiveClick: () => handleDelete(row.id),
           }, {
@@ -888,6 +897,32 @@ function downloadScript() {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
   message.success('脚本下载成功');
+}
+
+async function handleViewInstallScript(gateway: PortkeyGateway) {
+  try {
+    installing.value = true;
+    const result = await portkeyGatewayApi.generateInstallScript({
+      name: gateway.name,
+      url: gateway.url,
+      port: gateway.port,
+      description: gateway.description,
+      isDefault: gateway.isDefault,
+    });
+
+    if (result.success) {
+      installScriptGenerated.value = true;
+      generatedInstallScript.value = result.installScript || '';
+      generatedInstallCommand.value = result.installCommand || '';
+      showAgentModal.value = true;
+    } else {
+      message.error(result.message || '获取安装脚本失败');
+    }
+  } catch (error: any) {
+    message.error(error.message || '获取安装脚本失败');
+  } finally {
+    installing.value = false;
+  }
 }
 
 function handleCreateRule() {

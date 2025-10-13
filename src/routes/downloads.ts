@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { resolve, dirname, basename, normalize } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync, statSync } from 'fs';
+import { existsSync, statSync, createReadStream } from 'fs';
 import { memoryLogger } from '../services/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -9,9 +9,6 @@ const __dirname = dirname(__filename);
 
 const ALLOWED_BINARIES = [
   'llm-gateway-agent-linux-amd64',
-  'llm-gateway-agent-darwin-amd64',
-  'llm-gateway-agent-darwin-arm64',
-  'llm-gateway-agent-windows-amd64.exe',
 ];
 
 export async function downloadsRoutes(fastify: FastifyInstance) {
@@ -66,7 +63,13 @@ export async function downloadsRoutes(fastify: FastifyInstance) {
 
     memoryLogger.info(`下载文件: ${normalizedFilename}`, 'Downloads');
 
-    return reply.sendFile(normalizedFilename, agentDir);
+    const stream = createReadStream(filePath);
+
+    reply.header('Content-Type', 'application/octet-stream');
+    reply.header('Content-Disposition', `attachment; filename="${normalizedFilename}"`);
+    reply.header('Content-Length', stats.size);
+
+    return reply.send(stream);
   });
 }
 
