@@ -4,7 +4,7 @@ import jwt from '@fastify/jwt';
 import fastifyStatic from '@fastify/static';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { appConfig } from './config/index.js';
+import { appConfig, setPublicUrl } from './config/index.js';
 import { initDatabase, apiRequestDb, systemConfigDb, portkeyGatewayDb, shutdownDatabase } from './db/index.js';
 import { nanoid } from 'nanoid';
 import { authRoutes } from './routes/auth.js';
@@ -91,6 +91,14 @@ if (existingGateways.length === 0) {
     port: 8787,
   });
   memoryLogger.info(`已创建默认 Portkey Gateway: ${defaultGatewayUrl}`, 'System');
+}
+
+const publicUrlCfg = systemConfigDb.get('public_url');
+if (publicUrlCfg) {
+  setPublicUrl(publicUrlCfg.value);
+  memoryLogger.info(`使用自定义 LLM Gateway URL: ${publicUrlCfg.value}`, 'System');
+} else {
+  memoryLogger.info(`使用默认 LLM Gateway URL: ${appConfig.publicUrl}`, 'System');
 }
 
 const corsEnabledCfg = systemConfigDb.get('cors_enabled');

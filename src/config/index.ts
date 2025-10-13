@@ -16,14 +16,35 @@ const envSchema = z.object({
 
 const env = envSchema.parse(process.env);
 
+const port = parseInt(env.PORT, 10);
+const defaultPublicUrl = env.PUBLIC_URL || `http://localhost:${port}`;
+
 export const appConfig = {
-  port: parseInt(env.PORT, 10),
+  port,
   nodeEnv: env.NODE_ENV,
   dbPath: env.DB_PATH,
   portkeyConfigPath: env.PORTKEY_CONFIG_PATH,
   logLevel: env.LOG_LEVEL,
   jwtSecret: env.JWT_SECRET,
   apiRequestLogRetentionDays: parseInt(env.API_REQUEST_LOG_RETENTION_DAYS, 10),
-  publicUrl: env.PUBLIC_URL || `http://localhost:${parseInt(env.PORT, 10)}`,
+  publicUrl: defaultPublicUrl,
+  defaultPublicUrl,
 };
+
+export function validatePublicUrl(url: string): { valid: boolean; error?: string } {
+  if (!url || !url.trim()) {
+    return { valid: false, error: 'LLM Gateway URL 不能为空' };
+  }
+
+  try {
+    new URL(url);
+    return { valid: true };
+  } catch (error) {
+    return { valid: false, error: 'LLM Gateway URL 格式无效，请输入有效的 URL（例如: http://example.com:3000）' };
+  }
+}
+
+export function setPublicUrl(url: string): void {
+  appConfig.publicUrl = url;
+}
 

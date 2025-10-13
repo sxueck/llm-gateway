@@ -40,6 +40,53 @@
               如需使用浏览器端应用，请启用 CORS 或通过反向代理配置跨域。
             </n-text>
           </n-alert>
+
+          <n-divider style="margin: 8px 0;" />
+
+          <n-space vertical :size="8" style="width: 100%;">
+            <div>
+              <div>LLM Gateway 公网访问地址</div>
+              <n-text depth="3" style="font-size: 12px;">
+                用于 Agent 回调的 LLM Gateway 地址，如部署在公网服务器上，请设置为实际的公网地址
+              </n-text>
+            </div>
+            <n-space :size="8" style="width: 100%;">
+              <n-input
+                v-model:value="publicUrlInput"
+                placeholder="http://example.com:3000"
+                style="flex: 1;"
+                size="small"
+                :disabled="savingPublicUrl"
+              />
+              <n-button
+                type="primary"
+                size="small"
+                :loading="savingPublicUrl"
+                :disabled="!isPublicUrlChanged"
+                @click="onSavePublicUrl"
+              >
+                保存
+              </n-button>
+              <n-button
+                size="small"
+                :disabled="!isPublicUrlChanged"
+                @click="onResetPublicUrl"
+              >
+                重置
+              </n-button>
+            </n-space>
+            <n-text depth="3" style="font-size: 12px;">
+              当前值: {{ publicUrl }}
+            </n-text>
+          </n-space>
+
+          <n-alert type="info">
+            <template #header>配置说明</template>
+            <n-text>
+              此地址将在生成 Agent 安装脚本时使用，Agent 会通过此地址与 LLM Gateway 通信。
+              修改后会立即生效，但已安装的 Agent 需要手动更新配置文件并重启服务。
+            </n-text>
+          </n-alert>
         </n-space>
       </n-card>
 
@@ -65,7 +112,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { NSpace, NCard, NDescriptions, NDescriptionsItem, NSwitch, NAlert, NText, NDivider, useMessage, useDialog } from 'naive-ui';
+import { NSpace, NCard, NDescriptions, NDescriptionsItem, NSwitch, NAlert, NText, NDivider, NInput, NButton, useMessage, useDialog } from 'naive-ui';
 import { useAuthStore } from '@/stores/auth';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
@@ -80,6 +127,13 @@ const message = useMessage();
 const dialog = useDialog();
 const allowRegistration = ref(true);
 const corsEnabled = ref(true);
+const publicUrl = ref('');
+const publicUrlInput = ref('');
+const savingPublicUrl = ref(false);
+
+const isPublicUrlChanged = computed(() => {
+  return publicUrlInput.value.trim() !== '' && publicUrlInput.value !== publicUrl.value;
+});
 
 async function onToggleAllowRegistration(val: boolean) {
   try {
@@ -119,6 +173,25 @@ async function onToggleCorsEnabled(val: boolean) {
   }
 }
 
+async function onSavePublicUrl() {
+  const url = publicUrlInput.value.trim();
+
+  try {
+    savingPublicUrl.value = true;
+    await configApi.updateSystemSettings({ publicUrl: url });
+    publicUrl.value = url;
+    message.success('LLM Gateway URL 已更新');
+  } catch (e: any) {
+    message.error(e.message || '保存失败');
+  } finally {
+    savingPublicUrl.value = false;
+  }
+}
+
+function onResetPublicUrl() {
+  publicUrlInput.value = publicUrl.value;
+}
+
 const enabledKeysCount = computed(() => {
   return virtualKeyStore.virtualKeys.filter(k => k.enabled).length;
 });
@@ -127,6 +200,8 @@ onMounted(async () => {
   const s = await configApi.getSystemSettings();
   allowRegistration.value = s.allowRegistration;
   corsEnabled.value = s.corsEnabled;
+  publicUrl.value = s.publicUrl;
+  publicUrlInput.value = s.publicUrl;
   await Promise.all([
     providerStore.fetchProviders(),
     virtualKeyStore.fetchVirtualKeys(),

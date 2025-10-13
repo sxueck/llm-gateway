@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
-import { appConfig } from '../config/index.js';
+import { appConfig, setPublicUrl, validatePublicUrl } from '../config/index.js';
 import { memoryLogger } from '../services/logger.js';
-import { apiRequestDb, routingConfigDb, modelDb, systemConfigDb } from '../db/index.js';
+import { apiRequestDb, routingConfigDb, modelDb, systemConfigDb, portkeyGatewayDb } from '../db/index.js';
 import { generatePortkeyConfig } from '../services/config-generator.js';
 import { portkeyManager } from '../services/portkey-manager.js';
 import { nanoid } from 'nanoid';
@@ -13,17 +13,20 @@ export async function configRoutes(fastify: FastifyInstance) {
   fastify.get('/system-settings', async () => {
     const allowRegCfg = systemConfigDb.get('allow_registration');
     const corsEnabledCfg = systemConfigDb.get('cors_enabled');
+    const publicUrlCfg = systemConfigDb.get('public_url');
 
     return {
       allowRegistration: !(allowRegCfg && allowRegCfg.value === 'false'),
       corsEnabled: corsEnabledCfg ? corsEnabledCfg.value === 'true' : true,
+      publicUrl: publicUrlCfg ? publicUrlCfg.value : appConfig.defaultPublicUrl,
     };
   });
 
   fastify.post('/system-settings', async (request) => {
-    const { allowRegistration, corsEnabled } = request.body as {
+    const { allowRegistration, corsEnabled, publicUrl } = request.body as {
       allowRegistration?: boolean;
       corsEnabled?: boolean;
+      publicUrl?: string;
     };
 
     if (allowRegistration !== undefined) {
@@ -35,17 +38,39 @@ export async function configRoutes(fastify: FastifyInstance) {
       memoryLogger.info(`CORS 配置已更新: ${corsEnabled ? '启用' : '禁用'}`, 'Config');
     }
 
+    if (publicUrl !== undefined) {
+      const validation = validatePublicUrl(publicUrl);
+      if (!validation.valid) {
+        throw new Error(validation.error);
+      }
+
+      await systemConfigDb.set('public_url', publicUrl, 'LLM Gateway 公网访问地址');
+      setPublicUrl(publicUrl);
+      memoryLogger.info(`LLM Gateway URL 已更新: ${publicUrl}`, 'Config');
+    }
+
     return { success: true };
   });
 
 
   fastify.get('/gateway-status', async () => {
+    const defaultGateway = portkeyGatewayDb.getDefault();
+
+    if (!defaultGateway) {
+      return {
+        running: false,
+        status: 0,
+        url: '',
+        error: '未找到默认 Portkey Gateway',
+      };
+    }
+
     const endpoints = ['/v1/models', '/v1', '/'];
     let lastError: string | undefined;
 
     for (const endpoint of endpoints) {
       try {
-        const response = await fetch(`${appConfig.portkeyGatewayUrl}${endpoint}`, {
+        const response = await fetch(`${defaultGateway.url}${endpoint}`, {
           signal: AbortSignal.timeout(5000),
         });
 
@@ -53,7 +78,7 @@ export async function configRoutes(fastify: FastifyInstance) {
           return {
             running: true,
             status: response.status,
-            url: appConfig.portkeyGatewayUrl,
+            url: defaultGateway.url,
             endpoint,
           };
         }
@@ -65,7 +90,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     return {
       running: false,
       status: 0,
-      url: appConfig.portkeyGatewayUrl,
+      url: defaultGateway.url,
       error: lastError || '无法连接到 Gateway',
     };
   });
