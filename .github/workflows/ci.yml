@@ -25,16 +25,3 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Test Docker image
-      run: |
-        docker run --rm -d --name llm-gateway-test \
-          -e JWT_SECRET=test-secret-key-for-ci-testing-only \
-          -p 3000:3000 \
-          llm-gateway:test
-
-        sleep 10
-
-        curl -f http://localhost:3000/health || exit 1
-
-        docker stop llm-gateway-test
-

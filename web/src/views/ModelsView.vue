@@ -3,15 +3,15 @@
     <n-space vertical :size="12">
       <n-space justify="space-between" align="center">
         <div>
-          <h2 class="page-title">模型列表</h2>
-          <p class="page-subtitle">管理所有可用的 AI 模型,包括真实模型和虚拟模型。可以配置模型属性、测试连接等</p>
+          <h2 class="page-title">{{ t('models.title') }}</h2>
+          <p class="page-subtitle">{{ t('models.subtitle') }}</p>
         </div>
         <n-space :size="8">
           <n-button type="primary" size="small" @click="showModal = true">
-            添加模型
+            {{ t('models.addModel') }}
           </n-button>
           <n-button type="primary" secondary size="small" @click="showBatchModal = true">
-            批量添加
+            {{ t('models.batchAdd') }}
           </n-button>
         </n-space>
       </n-space>
@@ -31,39 +31,39 @@
     <n-modal
       v-model:show="showModal"
       preset="card"
-      :title="editingId ? '编辑模型' : '添加模型'"
+      :title="editingId ? t('models.editModel') : t('models.addModel')"
       class="model-modal"
       :style="{ width: '750px' }"
     >
       <n-scrollbar style="max-height: 65vh; padding-right: 12px;">
         <n-form ref="formRef" :model="formValue" :rules="rules" label-placement="left" label-width="100" size="small">
-          <n-form-item label="模型名称" path="name">
-            <n-input v-model:value="formValue.name" placeholder="如: GPT-4" size="small" />
+          <n-form-item :label="t('models.modelName')" path="name">
+            <n-input v-model:value="formValue.name" :placeholder="t('models.modelNamePlaceholder')" size="small" />
           </n-form-item>
-          <n-form-item label="所属提供商" path="providerId">
-            <n-select v-model:value="formValue.providerId" :options="providerOptions" placeholder="选择提供商" size="small" />
+          <n-form-item :label="t('models.provider')" path="providerId">
+            <n-select v-model:value="formValue.providerId" :options="providerOptions" :placeholder="t('models.selectProvider')" size="small" />
           </n-form-item>
-          <n-form-item label="模型标识符" path="modelIdentifier">
+          <n-form-item :label="t('models.modelId')" path="modelIdentifier">
             <n-input
               v-model:value="formValue.modelIdentifier"
-              placeholder="如: gpt-4, claude-3-opus"
+              :placeholder="t('models.modelIdPlaceholder')"
               size="small"
             />
           </n-form-item>
-          <n-form-item label="启用">
+          <n-form-item :label="t('common.enabled')">
             <n-switch v-model:value="formValue.enabled" size="small" />
           </n-form-item>
 
           <n-divider style="margin: 12px 0 8px 0;">
             <n-space :size="8" align="center">
-              <span>模型属性配置</span>
+              <span>{{ t('models.modelAttributes') }}</span>
               <n-button
                 size="tiny"
                 type="primary"
                 secondary
                 @click.stop="showLiteLLMSelector = true"
               >
-                从 LiteLLM 搜索
+                {{ t('models.searchFromLiteLLM') }}
               </n-button>
             </n-space>
           </n-divider>
@@ -73,9 +73,9 @@
       </n-scrollbar>
       <template #footer>
         <n-space justify="end" :size="8">
-          <n-button @click="showModal = false" size="small">取消</n-button>
+          <n-button @click="showModal = false" size="small">{{ t('common.cancel') }}</n-button>
           <n-button type="primary" :loading="submitting" @click="handleSubmit" size="small">
-            {{ editingId ? '更新' : '创建' }}
+            {{ editingId ? t('common.update') : t('common.create') }}
           </n-button>
         </n-space>
       </template>
@@ -84,7 +84,7 @@
     <n-modal
       v-model:show="showLiteLLMSelector"
       preset="card"
-      title="从 LiteLLM 预设库搜索模型"
+      :title="t('models.searchFromLiteLLMTitle')"
       :style="{ width: '800px' }"
     >
       <LiteLLMPresetSelector @select="handleLiteLLMSelect" />
@@ -93,15 +93,15 @@
     <n-modal
       v-model:show="showBatchModal"
       preset="card"
-      title="批量添加模型"
+      :title="t('models.batchAddTitle')"
       :style="{ width: '900px' }"
     >
       <n-space vertical :size="16">
-        <n-form-item label="选择提供商" :rule="{ required: true, message: '请选择提供商' }">
+        <n-form-item :label="t('models.selectProvider')" :rule="{ required: true, message: t('validation.providerRequired') }">
           <n-select
             v-model:value="batchProviderId"
             :options="providerOptions"
-            placeholder="选择提供商"
+            :placeholder="t('models.selectProvider')"
             size="small"
           />
         </n-form-item>
@@ -116,7 +116,7 @@
 
       <template #footer>
         <n-space justify="end" :size="8">
-          <n-button @click="closeBatchModal" size="small">取消</n-button>
+          <n-button @click="closeBatchModal" size="small">{{ t('common.cancel') }}</n-button>
         </n-space>
       </template>
     </n-modal>
@@ -124,7 +124,7 @@
     <n-modal
       v-model:show="showTestModal"
       preset="card"
-      title="模型测试"
+      :title="t('models.testModel')"
       :style="{ width: '700px' }"
     >
       <ModelTester v-if="testingModel" :model="testingModel" />
@@ -136,6 +136,7 @@
 import { ref, h, computed, onMounted } from 'vue';
 import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NPopconfirm, NDivider, NScrollbar, NIcon } from 'naive-ui';
 import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined } from '@vicons/material';
+import { useI18n } from 'vue-i18n';
 import { useModelStore } from '@/stores/model';
 import { useProviderStore } from '@/stores/provider';
 import { modelApi } from '@/api/model';
@@ -147,6 +148,7 @@ import ModelTester from '@/components/ModelTester.vue';
 import type { Model, ModelAttributes } from '@/types';
 import type { LiteLLMSearchResult } from '@/api/litellm-presets';
 
+const { t } = useI18n();
 const message = useMessage();
 const modelStore = useModelStore();
 const providerStore = useProviderStore();
@@ -176,11 +178,11 @@ const formValue = ref<{
   modelAttributes: undefined,
 });
 
-const rules = {
-  name: [{ required: true, message: '请输入模型名称', trigger: 'blur' }],
-  providerId: [{ required: true, message: '请选择提供商', trigger: 'change' }],
-  modelIdentifier: [{ required: true, message: '请输入模型标识符', trigger: 'blur' }],
-};
+const rules = computed(() => ({
+  name: [{ required: true, message: t('validation.modelNameRequired'), trigger: 'blur' }],
+  providerId: [{ required: true, message: t('validation.providerRequired'), trigger: 'change' }],
+  modelIdentifier: [{ required: true, message: t('validation.modelIdRequired'), trigger: 'blur' }],
+}));
 
 const providerOptions = computed(() => {
   return providerStore.providers
@@ -191,26 +193,26 @@ const providerOptions = computed(() => {
     }));
 });
 
-const columns = [
+const columns = computed(() => [
   {
-    title: '模型名称',
+    title: t('models.modelName'),
     key: 'name',
     render: (row: Model) => {
       if (row.isVirtual) {
         return h(NSpace, { align: 'center', size: 4 }, {
           default: () => [
             h('span', row.name),
-            h(NTag, { type: 'info', size: 'small', round: true }, { default: () => '智能路由' }),
+            h(NTag, { type: 'info', size: 'small', round: true }, { default: () => t('menu.virtualModels') }),
           ],
         });
       }
       return row.name;
     },
   },
-  { title: '所属提供商', key: 'providerName' },
-  { title: '模型标识符', key: 'modelIdentifier' },
+  { title: t('models.provider'), key: 'providerName' },
+  { title: t('models.modelId'), key: 'modelIdentifier' },
   {
-    title: '路由网关',
+    title: t('models.routingGateway'),
     key: 'routingGateway',
     render: (row: Model) => {
       if (row.isVirtual) {
@@ -221,21 +223,21 @@ const columns = [
           default: () => row.routingGateway!.name
         });
       }
-      return h('span', { style: { color: '#999' } }, '未配置');
+      return h('span', { style: { color: '#999' } }, t('models.notConfigured'));
     },
   },
   {
-    title: '状态',
+    title: t('common.status'),
     key: 'enabled',
-    render: (row: Model) => h(NTag, { type: row.enabled ? 'success' : 'default' }, { default: () => row.enabled ? '启用' : '禁用' }),
+    render: (row: Model) => h(NTag, { type: row.enabled ? 'success' : 'default' }, { default: () => row.enabled ? t('common.enabled') : t('common.disabled') }),
   },
   {
-    title: '绑定密钥数',
+    title: t('models.virtualKeyCount'),
     key: 'virtualKeyCount',
     render: (row: Model) => row.virtualKeyCount || 0,
   },
   {
-    title: '操作',
+    title: t('common.actions'),
     key: 'actions',
     width: 150,
     render: (row: Model) => h(NSpace, { size: 6 }, {
@@ -268,12 +270,12 @@ const columns = [
           }, {
             icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) }),
           }),
-          default: () => row.isVirtual ? '确定删除此虚拟模型吗？删除后关联的路由配置将失效。' : '确定删除此模型吗？',
+          default: () => row.isVirtual ? t('models.deleteVirtualModelConfirm') : t('models.deleteConfirm'),
         }),
       ],
     }),
   },
-];
+]);
 
 function handleEdit(model: Model) {
   editingId.value = model.id;
@@ -290,7 +292,7 @@ function handleEdit(model: Model) {
 async function handleDelete(id: string) {
   try {
     await modelApi.delete(id);
-    message.success('删除成功');
+    message.success(t('models.deleteSuccess'));
     await modelStore.fetchModels();
   } catch (error: any) {
     message.error(error.message);
@@ -309,10 +311,10 @@ async function handleSubmit() {
         enabled: formValue.value.enabled,
         modelAttributes: formValue.value.modelAttributes,
       });
-      message.success('更新成功');
+      message.success(t('models.updateSuccess'));
     } else {
       await modelApi.create(formValue.value);
-      message.success('创建成功');
+      message.success(t('models.createSuccess'));
     }
 
     showModal.value = false;
@@ -358,9 +360,9 @@ async function handleLiteLLMSelect(result: LiteLLMSearchResult) {
     };
 
     showLiteLLMSelector.value = false;
-    message.success(`已应用 ${result.modelName} 的预设属性`);
+    message.success(t('models.presetApplied', { modelName: result.modelName }));
   } catch (error: any) {
-    message.error(error.message || '应用预设失败');
+    message.error(error.message || t('models.presetApplyFailed'));
   }
 }
 
@@ -375,12 +377,12 @@ async function handleBatchCreate(models: any[]) {
     }));
 
     await modelApi.batchCreate(modelsToCreate);
-    message.success(`成功创建 ${modelsToCreate.length} 个模型`);
+    message.success(t('models.batchCreateSuccess', { count: modelsToCreate.length }));
 
     closeBatchModal();
     await modelStore.fetchModels();
   } catch (error: any) {
-    message.error(error.message || '批量创建模型失败');
+    message.error(error.message || t('models.batchCreateFailed'));
   }
 }
 
@@ -392,7 +394,7 @@ function closeBatchModal() {
 
 function handleTest(model: Model) {
   if (model.isVirtual) {
-    message.warning('虚拟模型无法直接测试');
+    message.warning(t('models.testWarning'));
     return;
   }
   testingModel.value = model;
