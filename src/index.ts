@@ -57,6 +57,12 @@ await fastify.register(fastifyStatic, {
   decorateReply: false,
 });
 
+await fastify.register(fastifyStatic, {
+  root: resolve(__dirname, '..', 'web', 'dist'),
+  prefix: '/',
+  decorateReply: false,
+});
+
 fastify.decorate('authenticate', async function(request: any, reply: any) {
   try {
     await request.jwtVerify();
@@ -138,6 +144,24 @@ await fastify.register(portkeyGatewayRoutes, { prefix: '/api/admin/portkey-gatew
 await fastify.register(routingRuleRoutes, { prefix: '/api/admin/routing-rules' });
 
 memoryLogger.info('Routes registered', 'System');
+
+fastify.setNotFoundHandler((request, reply) => {
+  if (request.url.startsWith('/api/') ||
+      request.url.startsWith('/v1/') ||
+      request.url.startsWith('/portkey-config/') ||
+      request.url.startsWith('/downloads/')) {
+    reply.code(404).send({
+      error: {
+        message: '未找到请求的资源',
+        type: 'invalid_request_error',
+        param: null,
+        code: 'not_found'
+      }
+    });
+  } else {
+    reply.type('text/html').sendFile('index.html');
+  }
+});
 
 fastify.setErrorHandler((error, request, reply) => {
   fastify.log.error(error);
