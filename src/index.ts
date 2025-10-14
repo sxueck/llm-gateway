@@ -21,6 +21,7 @@ import { agentRoutes } from './routes/agent.js';
 import { downloadsRoutes } from './routes/downloads.js';
 import { memoryLogger } from './services/logger.js';
 import { litellmPresetsService } from './services/litellm-presets.js';
+import { demoModeService } from './services/demo-mode.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -237,6 +238,8 @@ try {
 
   setInterval(checkAndUpdateLiteLLMPresets, 24 * 60 * 60 * 1000);
   memoryLogger.info('已启动 LiteLLM 预设自动更新任务，每 24 小时检查一次', 'System');
+
+  await demoModeService.start();
 } catch (err) {
   fastify.log.error(err);
   memoryLogger.error(`Failed to start server: ${err}`, 'System');
@@ -247,6 +250,9 @@ const gracefulShutdown = async (signal: string) => {
   memoryLogger.info(`收到 ${signal} 信号，开始优雅关闭...`, 'System');
 
   try {
+    demoModeService.stop();
+    memoryLogger.info('演示模式服务已停止', 'System');
+
     await fastify.close();
     memoryLogger.info('Fastify 服务已关闭', 'System');
 

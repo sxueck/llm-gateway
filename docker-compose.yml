@@ -22,7 +22,7 @@ services:
       - llm-gateway-network
 
   llm-gateway:
-    image: ghcr.io/sxueck/llm-gateway:main
+    image: ghcr.io/sxueck/llm-gateway:latest
     container_name: llm-gateway
     ports:
       - "3000:3000"

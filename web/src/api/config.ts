@@ -137,7 +137,7 @@ export const configApi = {
     return request.get('/admin/config/system-settings');
   },
 
-  getPublicSystemSettings(): Promise<{ allowRegistration: boolean; corsEnabled: boolean }> {
+  getPublicSystemSettings(): Promise<{ allowRegistration: boolean; corsEnabled: boolean; demoMode: boolean; nextCleanupTime: number | null }> {
     return request.get('/public/system-settings');
   },
 

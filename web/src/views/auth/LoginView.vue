@@ -1,6 +1,7 @@
 <template>
   <div class="auth-container">
     <n-card class="auth-card" title="登录">
+      <demo-mode-alert />
       <n-form ref="formRef" :model="formValue" :rules="rules" size="large">
         <n-form-item path="username" label="用户名">
           <n-input
@@ -38,25 +39,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useMessage, NCard, NForm, NFormItem, NInput, NButton, NSpace } from 'naive-ui';
 import { useAuthStore } from '@/stores/auth';
-import { configApi } from '@/api/config';
-
+import { useSystemConfig } from '@/composables/useSystemConfig';
+import DemoModeAlert from '@/components/DemoModeAlert.vue';
 
 const router = useRouter();
 const message = useMessage();
 const authStore = useAuthStore();
 
-const allowRegistration = ref(true);
-
-onMounted(async () => {
-  try {
-    const s = await configApi.getSystemSettings();
-    allowRegistration.value = s.allowRegistration;
-  } catch (e) {}
-});
+const { allowRegistration } = useSystemConfig();
 
 
 const formRef = ref();
