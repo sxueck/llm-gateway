@@ -3,15 +3,15 @@
     <n-space vertical :size="24">
       <div class="dashboard-header">
         <div>
-          <h2 class="page-title">仪表盘</h2>
-          <p class="page-subtitle">这里监控着当前服务的全部数据</p>
+          <h2 class="page-title">{{ t('dashboard.title') }}</h2>
+          <p class="page-subtitle">{{ t('dashboard.subtitle') }}</p>
         </div>
         <n-space :size="12">
           <n-button secondary round @click="loadData">
             <template #icon>
               <n-icon><RefreshOutline /></n-icon>
             </template>
-            刷新
+            {{ t('common.refresh') }}
           </n-button>
           <n-select
             v-model:value="selectedPeriod"
@@ -26,7 +26,7 @@
       <n-grid :cols="4" :x-gap="20" :y-gap="20">
         <n-gi>
           <n-card class="stat-card stat-card-primary">
-            <n-statistic label="Token 消耗">
+            <n-statistic :label="t('dashboard.tokenConsumption')">
               <template #default>
                 <span class="stat-value-primary">{{ formatTokenNumber(stats?.totalTokens || 0) }}</span>
               </template>
@@ -35,43 +35,43 @@
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic label="API 请求总数">
+            <n-statistic :label="t('dashboard.totalRequests')">
               <template #default>
                 <span class="stat-value">{{ formatNumber(stats?.totalRequests || 0) }}</span>
               </template>
               <template #suffix>
-                <span class="stat-suffix">次</span>
+                <span class="stat-suffix">{{ t('dashboard.times') }}</span>
               </template>
             </n-statistic>
           </n-card>
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic label="成功请求">
+            <n-statistic :label="t('dashboard.successfulRequests')">
               <template #default>
                 <span class="stat-value stat-value-success">{{ formatNumber(stats?.successfulRequests || 0) }}</span>
               </template>
               <template #suffix>
-                <span class="stat-suffix">次</span>
+                <span class="stat-suffix">{{ t('dashboard.times') }}</span>
               </template>
             </n-statistic>
           </n-card>
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic label="失败请求">
+            <n-statistic :label="t('dashboard.failedRequests')">
               <template #default>
                 <span class="stat-value stat-value-error">{{ formatNumber(stats?.failedRequests || 0) }}</span>
               </template>
               <template #suffix>
-                <span class="stat-suffix">次</span>
+                <span class="stat-suffix">{{ t('dashboard.times') }}</span>
               </template>
             </n-statistic>
           </n-card>
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic label="成功率">
+            <n-statistic :label="t('dashboard.successRate')">
               <template #default>
                 <span class="stat-value">{{ formatPercentage(successRate) }}</span>
               </template>
@@ -83,7 +83,7 @@
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic label="平均响应时间">
+            <n-statistic :label="t('dashboard.avgResponseTime')">
               <template #default>
                 <span class="stat-value">{{ formatResponseTime(avgResponseTime) }}</span>
               </template>
@@ -95,7 +95,7 @@
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic label="网关延迟">
+            <n-statistic :label="t('dashboard.gatewayLatency')">
               <template #default>
                 <span class="stat-value">{{ formatResponseTime(gatewayLatency) }}</span>
               </template>
@@ -107,7 +107,7 @@
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic label="错误率">
+            <n-statistic :label="t('dashboard.errorRate')">
               <template #default>
                 <span class="stat-value" :class="{ 'stat-value-error': errorRate > 5 }">{{ formatPercentage(errorRate) }}</span>
               </template>
@@ -119,31 +119,31 @@
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic label="最近请求">
+            <n-statistic :label="t('dashboard.recentRequests')">
               <template #default>
                 <span class="stat-value">{{ formatNumber(recentRequestsCount) }}</span>
               </template>
               <template #suffix>
-                <span class="stat-suffix stat-suffix-light">/ 小时</span>
+                <span class="stat-suffix stat-suffix-light">{{ t('dashboard.perHour') }}</span>
               </template>
             </n-statistic>
           </n-card>
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic label="缓存命中">
+            <n-statistic :label="t('dashboard.cacheHits')">
               <template #default>
                 <span class="stat-value stat-value-success">{{ formatNumber(stats?.cacheHits || 0) }}</span>
               </template>
               <template #suffix>
-                <span class="stat-suffix">次</span>
+                <span class="stat-suffix">{{ t('dashboard.times') }}</span>
               </template>
             </n-statistic>
           </n-card>
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic label="缓存命中率">
+            <n-statistic :label="t('dashboard.cacheHitRate')">
               <template #default>
                 <span class="stat-value" :class="{ 'stat-value-success': cacheHitRate > 20 }">{{ formatPercentage(cacheHitRate) }}</span>
               </template>
@@ -200,10 +200,12 @@
 import { ref, computed, onMounted } from 'vue';
 import { useMessage, NSpace, NGrid, NGi, NCard, NStatistic, NSelect, NProgress, NEmpty, NButton, NIcon } from 'naive-ui';
 import { RefreshOutline } from '@vicons/ionicons5';
+import { useI18n } from 'vue-i18n';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
 import { configApi, type ApiStats, type TrendData } from '@/api/config';
 
+const { t } = useI18n();
 const message = useMessage();
 const providerStore = useProviderStore();
 const virtualKeyStore = useVirtualKeyStore();
@@ -212,11 +214,11 @@ const stats = ref<ApiStats | null>(null);
 const trendData = ref<TrendData[]>([]);
 const selectedPeriod = ref<'24h' | '7d' | '30d'>('24h');
 
-const periodOptions = [
-  { label: '最近 24 小时', value: '24h' },
-  { label: '最近 7 天', value: '7d' },
-  { label: '最近 30 天', value: '30d' },
-];
+const periodOptions = computed(() => [
+  { label: t('dashboard.period.last24Hours'), value: '24h' },
+  { label: t('dashboard.period.last7Days'), value: '7d' },
+  { label: t('dashboard.period.last30Days'), value: '30d' },
+]);
 
 const enabledKeysCount = computed(() => {
   return virtualKeyStore.virtualKeys.filter(k => k.enabled).length;

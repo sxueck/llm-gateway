@@ -17,7 +17,7 @@
         <span class="logo-text">LLM Gateway</span>
       </div>
 
-      <div class="menu-section-label">MENU</div>
+      <div class="menu-section-label">{{ t('layout.menu') }}</div>
 
       <n-menu
         :collapsed="false"
@@ -30,7 +30,7 @@
         class="custom-menu"
       />
 
-      <div class="menu-section-label">GENERAL</div>
+      <div class="menu-section-label">{{ t('layout.general') }}</div>
 
       <n-menu
         :collapsed="false"
@@ -46,6 +46,7 @@
     <n-layout style="background-color: #f5f5f5;">
       <n-layout-header style="height: 72px; padding: 0 32px; display: flex; align-items: center; justify-content: flex-end; border-bottom: none; background-color: transparent; margin-bottom: 8px;">
         <div class="header-right">
+          <LanguageSwitcher />
           <n-button circle quaternary class="header-icon-btn">
             <template #icon>
               <n-icon size="20"><MailOutline /></n-icon>
@@ -78,6 +79,7 @@
 <script setup lang="ts">
 import { computed, h, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import {
   NLayout,
   NLayoutSider,
@@ -103,90 +105,92 @@ import {
   GitNetworkOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
 
 const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
+const { t } = useI18n();
 
-const menuOptions = [
+const menuOptions = computed(() => [
   {
-    label: '仪表盘',
+    label: t('menu.dashboard'),
     key: 'dashboard',
     icon: () => h(NIcon, null, { default: () => h(HomeOutline) }),
   },
   {
-    label: '模型管理',
+    label: t('menu.modelManagement'),
     key: 'model-management',
     icon: () => h(NIcon, null, { default: () => h(CubeOutline) }),
     children: [
       {
-        label: '提供商列表',
+        label: t('menu.providers'),
         key: 'providers',
         icon: () => h(NIcon, null, { default: () => h(ServerOutline) }),
       },
       {
-        label: '模型列表',
+        label: t('menu.models'),
         key: 'models',
         icon: () => h(NIcon, null, { default: () => h(CubeOutline) }),
       },
       {
-        label: '智能路由',
+        label: t('menu.virtualModels'),
         key: 'virtual-models',
         icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) }),
       },
     ],
   },
   {
-    label: '虚拟密钥',
+    label: t('menu.virtualKeys'),
     key: 'virtual-keys',
     icon: () => h(NIcon, null, { default: () => h(KeyOutline) }),
   },
   {
-    label: 'Portkey 网关',
+    label: t('menu.portkeyGateways'),
     key: 'portkey-gateways',
     icon: () => h(NIcon, null, { default: () => h(ServerOutline) }),
   },
   {
-    label: '工具',
+    label: t('menu.tools'),
     key: 'tools',
     icon: () => h(NIcon, null, { default: () => h(SettingsOutline) }),
     children: [
       {
-        label: 'API 使用说明',
+        label: t('menu.apiGuide'),
         key: 'api-guide',
         icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }),
       },
       {
-        label: '日志查看',
+        label: t('menu.logs'),
         key: 'logs',
         icon: () => h(NIcon, null, { default: () => h(TerminalOutline) }),
       },
       {
-        label: 'API 请求日志',
+        label: t('menu.apiRequests'),
         key: 'api-requests',
         icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }),
       },
     ],
   },
-];
+]);
 
 const defaultExpandedKeys = ['model-management', 'tools'];
 
-const generalMenuOptions = [
+const generalMenuOptions = computed(() => [
   {
-    label: '系统设置',
+    label: t('menu.settings'),
     key: 'settings',
     icon: () => h(NIcon, null, { default: () => h(SettingsOutline) }),
   },
-];
+]);
 
-const userOptions = [
+const userOptions = computed(() => [
   {
-    label: '退出登录',
+    label: t('common.logout'),
     key: 'logout',
     icon: () => h(NIcon, null, { default: () => h(LogOutOutline) }),
   },
-];
+]);
 
 const activeKey = computed(() => {
   const path = route.path.split('/')[1];
