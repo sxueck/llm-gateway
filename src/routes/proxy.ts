@@ -508,8 +508,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       };
 
       if (provider.base_url) {
-        let customHost = provider.base_url.replace(/\/+$/, '');
-        customHost = customHost.replace(/\/v1$/, '');
+        const customHost = provider.base_url.replace(/\/+$/, '');
         portkeyConfig.custom_host = customHost;
       }
 
@@ -529,6 +528,11 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       }
 
       const path = request.url.startsWith('/v1/') ? request.url : `/v1${request.url}`;
+
+
+      if (path.startsWith('/v1/embeddings') && (request as any).body && typeof (request as any).body.input === 'string') {
+        (request as any).body.input = [(request as any).body.input];
+      }
 
       const routingContext = {
         modelName: request.body?.model,
