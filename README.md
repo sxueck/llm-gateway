@@ -4,6 +4,7 @@
 
 <img width="2290" height="1363" alt="图片" src="https://github.com/user-attachments/assets/662d8585-b523-40a5-bb2a-33ad570f0d30" />
 
+更多截图请见 [服务截图](./docs/screenshot.md)
 
 ## 特性
 

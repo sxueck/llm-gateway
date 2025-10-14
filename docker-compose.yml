@@ -25,6 +25,7 @@ services:
     build: .
     container_name: llm-gateway
     ports:
+      - "5173:5173"
       - "3000:3000"
     volumes:
       - ./data:/app/data
