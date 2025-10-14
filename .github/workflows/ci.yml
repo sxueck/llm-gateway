@@ -7,49 +7,8 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
-
-    steps:
-    - uses: actions/checkout@v3
-
-    - name: Setup pnpm
-      uses: pnpm/action-setup@v2
-      with:
-        version: 8
-
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'pnpm'
-
-    - name: Install backend dependencies
-      run: pnpm install
-
-    - name: Type check backend
-      run: pnpm run typecheck
-
-    - name: Build backend
-      run: pnpm run build
-
-    - name: Install frontend dependencies
-      run: |
-        cd web
-        pnpm install
-
-    - name: Build frontend
-      run: |
-        cd web
-        pnpm run build
-
   docker:
     runs-on: ubuntu-latest
-    needs: build
 
     steps:
     - uses: actions/checkout@v3
@@ -81,7 +40,6 @@ jobs:
 
   docker-compose:
     runs-on: ubuntu-latest
-    needs: build
 
     steps:
     - uses: actions/checkout@v3

@@ -14,18 +14,18 @@
           <n-text strong>{{ preset.name }}</n-text>
           <n-text depth="3">{{ preset.description }}</n-text>
           <n-space>
-            <n-text depth="3">分类:</n-text>
+            <n-text depth="3">{{ t('common.category') }}:</n-text>
             <n-tag size="tiny" type="info">{{ preset.category }}</n-tag>
           </n-space>
           <n-space>
-            <n-text depth="3">支持功能:</n-text>
+            <n-text depth="3">{{ t('providers.supportedFeatures') }}:</n-text>
             <n-space>
-              <n-tag v-if="preset.features.chat" size="tiny" type="success">对话</n-tag>
-              <n-tag v-if="preset.features.vision" size="tiny" type="success">视觉</n-tag>
-              <n-tag v-if="preset.features.tools" size="tiny" type="success">工具</n-tag>
-              <n-tag v-if="preset.features.embeddings" size="tiny" type="success">嵌入</n-tag>
-              <n-tag v-if="preset.features.images" size="tiny" type="success">图像</n-tag>
-              <n-tag v-if="preset.features.audio" size="tiny" type="success">音频</n-tag>
+              <n-tag v-if="preset.features.chat" size="tiny" type="success">{{ t('providers.features.chat') }}</n-tag>
+              <n-tag v-if="preset.features.vision" size="tiny" type="success">{{ t('providers.features.vision') }}</n-tag>
+              <n-tag v-if="preset.features.tools" size="tiny" type="success">{{ t('providers.features.tools') }}</n-tag>
+              <n-tag v-if="preset.features.embeddings" size="tiny" type="success">{{ t('providers.features.embeddings') }}</n-tag>
+              <n-tag v-if="preset.features.images" size="tiny" type="success">{{ t('providers.features.images') }}</n-tag>
+              <n-tag v-if="preset.features.audio" size="tiny" type="success">{{ t('providers.features.audio') }}</n-tag>
             </n-space>
           </n-space>
 
@@ -37,9 +37,12 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { NSpace, NTag, NTooltip, NIcon, NText } from 'naive-ui';
 import { Information as InfoIcon } from '@vicons/ionicons5';
 import { getProviderById } from '@/constants/providers';
+
+const { t } = useI18n();
 
 interface Props {
   providerId: string;
@@ -61,8 +64,8 @@ function getStatusType(): 'success' | 'warning' | 'default' {
 }
 
 function getStatusText(): string {
-  if (isSupported.value) return '官方支持';
-  return '自定义';
+  if (isSupported.value) return t('providers.officialSupport');
+  return t('providers.custom');
 }
 
 function getIconColor(): string {

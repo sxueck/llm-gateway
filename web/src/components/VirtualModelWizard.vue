@@ -1,10 +1,10 @@
 <template>
   <div class="virtual-model-wizard">
     <n-steps :current="currentStep" :status="stepStatus" size="small">
-      <n-step title="选择类型" />
-      <n-step title="基本信息" />
-      <n-step title="目标配置" />
-      <n-step title="模型属性" />
+      <n-step :title="t('wizard.selectTypeStep')" />
+      <n-step :title="t('wizard.basicInfoStep')" />
+      <n-step :title="t('wizard.targetConfigStep')" />
+      <n-step :title="t('wizard.modelAttributesStep')" />
     </n-steps>
 
     <div class="step-content">
@@ -13,14 +13,14 @@
           <n-space vertical :size="12">
             <n-radio value="loadbalance">
               <div class="config-type-option">
-                <div class="option-title">负载均衡</div>
-                <div class="option-description">将请求按权重分配到多个目标</div>
+                <div class="option-title">{{ t('wizard.loadBalanceOption') }}</div>
+                <div class="option-description">{{ t('wizard.loadBalanceOptionDesc') }}</div>
               </div>
             </n-radio>
             <n-radio value="fallback">
               <div class="config-type-option">
-                <div class="option-title">故障转移</div>
-                <div class="option-description">主要目标失败时自动切换到备用目标</div>
+                <div class="option-title">{{ t('wizard.fallbackOption') }}</div>
+                <div class="option-description">{{ t('wizard.fallbackOptionDesc') }}</div>
               </div>
             </n-radio>
           </n-space>
@@ -29,17 +29,17 @@
 
       <div v-if="currentStep === 2" class="step-panel">
         <n-form ref="basicFormRef" :model="localFormValue" label-placement="top" :show-feedback="false">
-          <n-form-item label="智能路由名称" path="virtualModelName" :rule="{ required: true, message: '请输入智能路由名称' }">
+          <n-form-item :label="t('wizard.virtualModelNameLabel')" path="virtualModelName" :rule="{ required: true, message: t('wizard.virtualModelNameRequired') }">
             <n-input
               v-model:value="localFormValue.virtualModelName"
               :placeholder="localConfigType === 'loadbalance' ? 'GPT-4-LB' : 'GPT-4-Fallback'"
             />
           </n-form-item>
-          <n-form-item label="描述">
+          <n-form-item :label="t('wizard.descriptionLabel')">
             <n-input
               v-model:value="localFormValue.description"
               type="textarea"
-              placeholder="可选"
+              :placeholder="t('common.optional')"
               :rows="2"
             />
           </n-form-item>
@@ -48,7 +48,7 @@
 
       <div v-if="currentStep === 3" class="step-panel">
         <n-alert v-if="localConfigType === 'fallback'" type="info" style="margin-bottom: 16px;">
-          按优先级从高到低排列，失败时自动切换到下一个
+          {{ t('wizard.fallbackPriorityTip') }}
         </n-alert>
 
         <n-space vertical :size="12">
@@ -147,7 +147,7 @@
 
       <div v-if="currentStep === 4" class="step-panel">
         <n-alert type="info" style="margin-bottom: 16px;">
-          为虚拟模型配置属性（可选）。可以从 LiteLLM 预设库搜索并应用配置。
+          {{ t('wizard.modelAttributesInfo') }}
         </n-alert>
 
         <n-space vertical :size="12">
@@ -157,7 +157,7 @@
             secondary
             @click="showLiteLLMSelector = true"
           >
-            从 LiteLLM 搜索预设
+            {{ t('wizard.searchFromLiteLLM') }}
           </n-button>
 
           <ModelAttributesEditor v-model="localFormValue.modelAttributes" />
@@ -168,7 +168,7 @@
     <n-modal
       v-model:show="showLiteLLMSelector"
       preset="card"
-      title="从 LiteLLM 预设库搜索模型"
+      :title="t('wizard.litellmSelectorTitle')"
       :style="{ width: '800px' }"
     >
       <LiteLLMPresetSelector @select="handleLiteLLMSelect" />
@@ -176,13 +176,13 @@
 
     <div class="wizard-footer">
       <n-space justify="space-between">
-        <n-button v-if="currentStep > 1" @click="prevStep" size="small">上一步</n-button>
+        <n-button v-if="currentStep > 1" @click="prevStep" size="small">{{ t('common.previous') }}</n-button>
         <div v-else></div>
         <n-space :size="8">
-          <n-button @click="handleCancel" size="small">取消</n-button>
-          <n-button v-if="currentStep < 4" type="primary" @click="nextStep" size="small">下一步</n-button>
+          <n-button @click="handleCancel" size="small">{{ t('common.cancel') }}</n-button>
+          <n-button v-if="currentStep < 4" type="primary" @click="nextStep" size="small">{{ t('common.next') }}</n-button>
           <n-button v-else type="primary" @click="handleSave" :loading="saving" size="small">
-            {{ isEditing ? '保存修改' : '创建虚拟模型' }}
+            {{ isEditing ? t('common.save') : t('virtualModels.addVirtualModel') }}
           </n-button>
         </n-space>
       </n-space>
@@ -192,6 +192,9 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 import {
   NSteps,
   NStep,

@@ -2,7 +2,7 @@
   <n-card class="overview-card">
     <template #header>
       <div class="card-header">
-        <span class="card-title">提供商概览</span>
+        <span class="card-title">{{ t('providers.overview') }}</span>
       </div>
     </template>
 
@@ -10,13 +10,13 @@
       <n-gi>
         <div class="stat-item">
           <div class="stat-value">{{ stats.total }}</div>
-          <div class="stat-label">总数</div>
+          <div class="stat-label">{{ t('common.total') }}</div>
         </div>
       </n-gi>
       <n-gi>
         <div class="stat-item">
           <div class="stat-value stat-enabled">{{ stats.enabled }}</div>
-          <div class="stat-label">已启用</div>
+          <div class="stat-label">{{ t('common.enabled') }}</div>
         </div>
       </n-gi>
     </n-grid>
@@ -25,12 +25,15 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import {
   NCard,
   NGrid,
   NGi,
 } from 'naive-ui';
 import type { Provider } from '@/types';
+
+const { t } = useI18n();
 
 interface Props {
   providers: Provider[];

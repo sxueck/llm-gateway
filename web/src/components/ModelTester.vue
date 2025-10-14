@@ -17,7 +17,7 @@
           <template #icon>
             <n-icon><FlashOutline /></n-icon>
           </template>
-          {{ testing ? '测试中...' : '开始测试' }}
+          {{ testing ? t('common.testing') : t('common.startTest') }}
         </n-button>
       </n-space>
 
@@ -35,19 +35,19 @@
                 size="small"
                 round
               >
-                {{ testResult.success ? '成功' : '失败' }}
+                {{ testResult.success ? t('common.success') : t('common.failed') }}
               </n-tag>
             </n-space>
           </template>
 
           <n-space vertical :size="12">
             <n-descriptions :column="2" size="small" bordered>
-              <n-descriptions-item label="响应时间">
+              <n-descriptions-item :label="t('common.responseTime')">
                 <n-text :type="getResponseTimeType(testResult.responseTime)">
                   {{ testResult.responseTime }}ms
                 </n-text>
               </n-descriptions-item>
-              <n-descriptions-item label="HTTP 状态" v-if="testResult.status">
+              <n-descriptions-item :label="t('apiRequests.statusCode')" v-if="testResult.status">
                 <n-tag :type="testResult.status < 400 ? 'success' : 'error'" size="small">
                   {{ testResult.status }}
                 </n-tag>
@@ -91,6 +91,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import {
   NSpace,
   NButton,
@@ -110,6 +111,8 @@ import {
 } from '@vicons/ionicons5';
 import { modelApi } from '@/api/model';
 import type { Model } from '@/types';
+
+const { t } = useI18n();
 
 interface TestResult {
   success: boolean;
@@ -136,7 +139,7 @@ const testResult = ref<TestResult | null>(null);
 
 async function handleTest() {
   if (props.model.isVirtual) {
-    message.warning('虚拟模型无法直接测试');
+    message.warning(t('models.testWarning'));
     return;
   }
 
@@ -151,21 +154,21 @@ async function handleTest() {
     testResult.value = testData;
 
     if (result.success) {
-      message.success('模型测试成功');
+      message.success(t('models.testSuccess'));
     } else {
-      message.error('模型测试失败');
+      message.error(t('models.testFailed'));
     }
   } catch (error: any) {
     const testData: TestResult = {
       success: false,
-      message: error.message || '测试请求失败',
+      message: error.message || t('models.testRequestFailed'),
       responseTime: 0,
       error: error.message,
       timestamp: Date.now(),
     };
 
     testResult.value = testData;
-    message.error('模型测试失败');
+    message.error(t('models.testFailed'));
   } finally {
     testing.value = false;
   }

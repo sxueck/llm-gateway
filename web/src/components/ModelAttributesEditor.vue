@@ -1,7 +1,7 @@
 <template>
   <div class="model-attributes-editor">
     <n-collapse :default-expanded-names="['performance', 'cost', 'features']">
-      <n-collapse-item name="performance" title="性能参数">
+      <n-collapse-item name="performance" :title="t('models.performanceParams')">
         <n-space vertical :size="4">
           <div v-for="attr in performanceAttrs" :key="attr.key" class="attr-item">
             <n-form-item :label="attr.label" :label-width="140" size="small">
@@ -39,7 +39,7 @@
         </n-space>
       </n-collapse-item>
 
-      <n-collapse-item name="cost" title="成本参数">
+      <n-collapse-item name="cost" :title="t('models.costParams')">
         <n-space vertical :size="4">
           <div v-for="attr in costAttrs" :key="attr.key" class="attr-item">
             <n-form-item :label="attr.label" :label-width="140" size="small">
@@ -76,7 +76,7 @@
         </n-space>
       </n-collapse-item>
 
-      <n-collapse-item name="features" title="功能支持">
+      <n-collapse-item name="features" :title="t('models.featureSupport')">
         <div class="features-grid">
           <div
             v-for="attr in featureAttrs"
@@ -106,9 +106,12 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, nextTick } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { NCollapse, NCollapseItem, NSpace, NFormItem, NInputNumber, NSwitch, NTooltip, NIcon } from 'naive-ui';
 import { getAttributesByCategory } from '@/constants/modelAttributes';
 import type { ModelAttributes } from '@/types';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   modelValue?: ModelAttributes | null;

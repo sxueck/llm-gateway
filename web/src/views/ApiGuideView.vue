@@ -1,67 +1,67 @@
 <template>
   <div>
     <n-space vertical :size="24">
-      <n-card title="API 端点配置">
+      <n-card :title="t('apiGuide.endpointConfig')">
         <n-space vertical :size="16">
           <n-alert type="info">
-            使用虚拟密钥访问 LLM Gateway API,请求将经过虚拟密钥验证后转发到 Portkey Gateway,最终路由到配置的 AI 提供商。
+            {{ t('apiGuide.endpointConfigDesc') }}
           </n-alert>
 
           <n-descriptions :column="1" bordered>
-            <n-descriptions-item label="LLM Gateway API 地址">
+            <n-descriptions-item :label="t('apiGuide.gatewayApiAddress')">
               <n-text code>{{ llmGatewayUrl }}</n-text>
               <n-button text @click="copyToClipboard(llmGatewayUrl)" style="margin-left: 8px;">
-                复制
+                {{ t('common.copy') }}
               </n-button>
             </n-descriptions-item>
-            <n-descriptions-item label="认证方式">
-              Bearer Token (使用虚拟密钥)
+            <n-descriptions-item :label="t('apiGuide.authMethod')">
+              {{ t('apiGuide.authMethodDesc') }}
             </n-descriptions-item>
           </n-descriptions>
         </n-space>
       </n-card>
 
-      <n-card title="在线 API 测试">
+      <n-card :title="t('apiGuide.onlineApiTest')">
         <n-space vertical :size="16">
 
           <n-collapse>
-            <n-collapse-item title="POST /v1/chat/completions - 聊天补全" name="chat-completions">
+            <n-collapse-item :title="t('apiGuide.chatCompletions')" name="chat-completions">
               <n-space vertical :size="16">
                 <n-form label-placement="left" label-width="100">
-                  <n-form-item label="虚拟密钥">
+                  <n-form-item :label="t('apiGuide.virtualKey')">
                     <n-select
                       v-model:value="selectedVirtualKey"
                       :options="virtualKeyOptions"
-                      placeholder="选择虚拟密钥"
+                      :placeholder="t('apiGuide.selectVirtualKey')"
                       clearable
                     />
                   </n-form-item>
-                  <n-form-item label="模型">
+                  <n-form-item :label="t('apiGuide.model')">
                     <n-select
                       v-model:value="selectedModel"
                       :options="modelOptions"
-                      placeholder="选择模型"
+                      :placeholder="t('apiGuide.selectModel')"
                       clearable
                       filterable
                     />
                   </n-form-item>
-                  <n-form-item label="请求模板">
+                  <n-form-item :label="t('apiGuide.requestTemplate')">
                     <n-select
                       v-model:value="selectedTemplate"
                       :options="templateOptions"
-                      placeholder="选择预设模板"
+                      :placeholder="t('apiGuide.selectTemplate')"
                       @update:value="applyTemplate"
                     />
                   </n-form-item>
                 </n-form>
 
                 <div>
-                  <n-text strong>请求体</n-text>
+                  <n-text strong>{{ t('apiGuide.requestBody') }}</n-text>
                   <n-input
                     v-model:value="requestBody"
                     type="textarea"
                     :rows="12"
-                    placeholder="输入 JSON 格式的请求体"
+                    :placeholder="t('apiGuide.inputRequestBody')"
                     style="margin-top: 8px; font-family: monospace;"
                   />
                 </div>
@@ -71,10 +71,10 @@
                     <template #icon>
                       <n-icon><SendOutline /></n-icon>
                     </template>
-                    发送请求
+                    {{ t('apiGuide.sendRequest') }}
                   </n-button>
                   <n-button @click="clearResponse">
-                    清空响应
+                    {{ t('apiGuide.clearResponse') }}
                   </n-button>
                 </n-space>
 
@@ -82,20 +82,20 @@
                   <n-divider />
                   <n-space vertical :size="12">
                     <n-space align="center">
-                      <n-text strong>响应状态:</n-text>
+                      <n-text strong>{{ t('common.responseStatus') }}:</n-text>
                       <n-tag :type="response.status >= 200 && response.status < 300 ? 'success' : 'error'">
                         {{ response.status }} {{ response.statusText }}
                       </n-tag>
-                      <n-text depth="3">响应时间: {{ response.duration }}ms</n-text>
+                      <n-text depth="3">{{ t('common.responseTime') }}: {{ response.duration }}ms</n-text>
                     </n-space>
 
                     <div v-if="response.headers">
-                      <n-text strong>响应头</n-text>
+                      <n-text strong>{{ t('common.responseHeaders') }}</n-text>
                       <pre class="code-block" style="margin-top: 8px;">{{ formatJson(response.headers) }}</pre>
                     </div>
 
                     <div>
-                      <n-text strong>响应体</n-text>
+                      <n-text strong>{{ t('common.responseBody') }}</n-text>
                       <pre class="code-block" style="margin-top: 8px;">{{ formatJson(response.data) }}</pre>
                     </div>
                   </n-space>
@@ -220,6 +220,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { configApi } from '@/api/config';
 import {
   useMessage,
@@ -247,6 +248,7 @@ import { useVirtualKeyStore } from '@/stores/virtual-key';
 import { useModelStore } from '@/stores/model';
 import { formatJson, copyToClipboard } from '@/utils/common';
 
+const { t } = useI18n();
 const message = useMessage();
 const virtualKeyStore = useVirtualKeyStore();
 const modelStore = useModelStore();
