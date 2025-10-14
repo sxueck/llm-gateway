@@ -31,13 +31,14 @@ function makeHttpRequest(
     };
 
     const req = requestModule(options, (res: IncomingMessage) => {
-      let responseBody = '';
+      const chunks: Buffer[] = [];
 
-      res.on('data', (chunk) => {
-        responseBody += chunk;
+      res.on('data', (chunk: Buffer) => {
+        chunks.push(chunk);
       });
 
       res.on('end', () => {
+        const responseBody = Buffer.concat(chunks).toString('utf-8');
         resolve({
           statusCode: res.statusCode || 500,
           headers: res.headers as Record<string, string | string[]>,
@@ -55,7 +56,7 @@ function makeHttpRequest(
     });
 
     if (body) {
-      req.write(body);
+      req.write(body, 'utf-8');
     }
 
     req.end();
@@ -110,8 +111,8 @@ function makeStreamHttpRequest(
         'Transfer-Encoding': 'chunked',
       });
 
-      res.on('data', (chunk: any) => {
-        const chunkStr = chunk.toString();
+      res.on('data', (chunk: Buffer) => {
+        const chunkStr = chunk.toString('utf-8');
         buffer += chunkStr;
         streamChunks.push(chunkStr);
 
@@ -153,7 +154,7 @@ function makeStreamHttpRequest(
     });
 
     if (body) {
-      req.write(body);
+      req.write(body, 'utf-8');
     }
 
     req.end();
@@ -721,6 +722,18 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         'Proxy'
       );
 
+      const contentType = String(response.headers['content-type'] || '').toLowerCase();
+      const isJsonResponse = contentType.includes('application/json') || contentType.includes('json');
+
+      if (!isJsonResponse && responseText) {
+        memoryLogger.warn(
+          `上游返回非 JSON 响应: Content-Type=${contentType}`,
+          'Proxy'
+        );
+        reply.header('Content-Type', contentType || 'text/plain');
+        return reply.send(responseText);
+      }
+
       try {
         responseData = responseText ? JSON.parse(responseText) : { error: { message: 'Empty response body' } };
 
@@ -744,7 +757,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         memoryLogger.debug(logMessage, 'Proxy');
       } catch (parseError) {
         memoryLogger.error(
-          `JSON 解析失败: ${parseError}`,
+          `JSON 解析失败: ${parseError} | 原始响应前 200 字符: ${responseText.substring(0, 200)}`,
           'Proxy'
         );
         responseData = {
@@ -752,7 +765,8 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             message: 'Invalid JSON response from upstream',
             type: 'api_error',
             param: null,
-            code: 'invalid_response'
+            code: 'invalid_response',
+            upstream_response: responseText.substring(0, 1000)
           }
         };
       }
