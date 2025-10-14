@@ -90,6 +90,14 @@ npm run start:all
 3. 创建虚拟密钥，虚拟密钥用于访问 LLM Gateway 的 API
 4. 在应用中使用虚拟密钥访问 LLM Gateway 的 API
 
+## Demo
+
+[Demo](http://demo-api.sxueck.com:3000/)
+
+账户: demo / demo1234
+
+注意：Demo 站会每 3 天自动清空数据，同时请不要填写真实的 API 密钥
+
 ## 贡献
 
 欢迎提交 Issue 和 Pull Request!
