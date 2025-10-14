@@ -10,7 +10,7 @@
         <template #header>
           <n-space justify="space-between" align="center">
             <span>Portkey Gateway 状态</span>
-            <n-button @click="refreshStatus" :loading="loading" size="small">
+            <n-button @click="() => refreshStatus()" :loading="loading" size="small">
               <template #icon>
                 <n-icon><RefreshOutline /></n-icon>
               </template>
@@ -325,18 +325,7 @@ async function showLogs() {
     if (result.success && result.logs) {
       dialog.info({
         title: 'Portkey Gateway 日志',
-        content: () => {
-          const pre = document.createElement('pre');
-          pre.style.maxHeight = '500px';
-          pre.style.overflow = 'auto';
-          pre.style.fontSize = '12px';
-          pre.style.lineHeight = '1.5';
-          pre.style.padding = '12px';
-          pre.style.backgroundColor = '#f5f5f5';
-          pre.style.borderRadius = '4px';
-          pre.textContent = result.logs || '';
-          return pre;
-        },
+        content: result.logs || '',
         positiveText: '关闭',
       });
     } else {

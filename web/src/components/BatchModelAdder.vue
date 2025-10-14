@@ -154,7 +154,7 @@ interface Props {
   providerId: string;
 }
 
-const props = defineProps<Props>();
+defineProps<Props>();
 const emit = defineEmits<{
   create: [models: ModelInput[]];
 }>();

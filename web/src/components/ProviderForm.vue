@@ -196,7 +196,7 @@ const rules = {
   id: [
     { required: true, message: '请输入提供商 ID', trigger: 'blur' },
     {
-      validator: (rule: any, value: string) => {
+      validator: (_rule: any, value: string) => {
         const validation = validateProviderId(value);
         return validation.isValid;
       },
@@ -208,7 +208,7 @@ const rules = {
   baseUrl: [
     { required: true, message: '请输入 Base URL', trigger: 'blur' },
     {
-      validator: (rule: any, value: string) => {
+      validator: (_rule: any, value: string) => {
         const validation = validateBaseUrl(value);
         return validation.isValid;
       },
@@ -218,12 +218,12 @@ const rules = {
   ],
   apiKey: [
     {
-      required: (rule: any) => !props.editingId,
+      required: !props.editingId,
       message: '请输入 API Key',
       trigger: 'blur',
     },
     {
-      validator: (rule: any, value: string) => {
+      validator: (_rule: any, value: string) => {
         if (!value && props.editingId) {
           return true;
         }

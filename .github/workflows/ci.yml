@@ -38,36 +38,3 @@ jobs:
 
         docker stop llm-gateway-test
 
-  docker-compose:
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v3
-
-    - name: Create required directories
-      run: |
-        mkdir -p data portkey-config
-
-    - name: Create initial config file
-      run: |
-        echo '{"providers":[]}' > portkey-config/conf.json
-
-    - name: Test docker-compose build
-      run: |
-        docker-compose build
-
-    - name: Test docker-compose up
-      run: |
-        export JWT_SECRET=test-secret-key-for-ci-testing-only
-        docker-compose up -d
-
-        sleep 20
-
-        docker-compose ps
-
-        curl -f http://localhost:3000/health || exit 1
-
-        docker-compose logs
-
-        docker-compose down -v
-

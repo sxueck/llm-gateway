@@ -175,7 +175,7 @@ const pageSize = ref(15);
 
 const selectedProvider = computed({
   get: () => props.modelValue,
-  set: (value) => emit('update:modelValue', value),
+  set: (value) => emit('update:modelValue', value || null),
 });
 
 const categoryOptions = computed(() => {

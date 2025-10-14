@@ -21,7 +21,7 @@
                 </n-space>
               </template>
               <n-input-number
-                v-model:value="localAttributes[attr.key]"
+                v-model:value="localAttributes[attr.key] as number | null"
                 :min="attr.min"
                 :max="attr.max"
                 :step="attr.step"
@@ -59,7 +59,7 @@
                 </n-space>
               </template>
               <n-input-number
-                v-model:value="localAttributes[attr.key]"
+                v-model:value="localAttributes[attr.key] as number | null"
                 :min="attr.min"
                 :step="attr.step"
                 :placeholder="`请输入${attr.label}`"
@@ -130,7 +130,7 @@ const featureAttrs = computed(() => getAttributesByCategory('功能支持'));
 const isUpdatingFromProps = ref(false);
 
 function toggleFeature(key: keyof ModelAttributes) {
-  localAttributes.value[key] = !localAttributes.value[key];
+  localAttributes.value[key] = !localAttributes.value[key] as any;
 }
 
 watch(() => props.modelValue, async (newValue) => {
