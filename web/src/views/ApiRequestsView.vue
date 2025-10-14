@@ -323,5 +323,32 @@ onMounted(() => {
 </script>
 
 <style scoped>
+:deep(.n-data-table-th) {
+  font-size: 11px;
+  padding: 6px 8px;
+  font-weight: 600;
+}
+
+:deep(.n-data-table-td) {
+  font-size: 11px;
+  padding: 6px 8px;
+}
+
+:deep(.n-data-table-tr) {
+  height: 32px;
+}
+
+:deep(.n-button--small-type) {
+  font-size: 11px;
+  padding: 2px 8px;
+  height: 24px;
+}
+
+:deep(.n-tag--small-size) {
+  font-size: 10px;
+  padding: 0 6px;
+  height: 20px;
+  line-height: 20px;
+}
 </style>
 

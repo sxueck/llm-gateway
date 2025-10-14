@@ -67,8 +67,7 @@ interface ResolveSmartRoutingResult {
 }
 
 function resolveSmartRouting(
-  model: any,
-  reply: any
+  model: any
 ): ResolveSmartRoutingResult | null {
   if (model.is_virtual !== 1 || !model.routing_config_id) {
     return null;
@@ -77,15 +76,7 @@ function resolveSmartRouting(
   const routingConfig = routingConfigDb.getById(model.routing_config_id);
   if (!routingConfig) {
     memoryLogger.error(`智能路由配置不存在: ${model.routing_config_id}`, 'Proxy');
-    reply.code(500).send({
-      error: {
-        message: '智能路由配置不存在',
-        type: 'internal_error',
-        param: null,
-        code: 'routing_config_not_found'
-      }
-    });
-    return null;
+    throw new Error('智能路由配置不存在');
   }
 
   try {
@@ -94,29 +85,13 @@ function resolveSmartRouting(
 
     if (!selectedTarget) {
       memoryLogger.error(`无法从智能路由配置中选择目标: ${model.routing_config_id}`, 'Proxy');
-      reply.code(500).send({
-        error: {
-          message: '智能路由配置无可用目标',
-          type: 'internal_error',
-          param: null,
-          code: 'no_routing_target'
-        }
-      });
-      return null;
+      throw new Error('智能路由配置无可用目标');
     }
 
     const provider = providerDb.getById(selectedTarget.provider);
     if (!provider) {
       memoryLogger.error(`智能路由目标提供商不存在: ${selectedTarget.provider}`, 'Proxy');
-      reply.code(500).send({
-        error: {
-          message: '智能路由目标提供商不存在',
-          type: 'internal_error',
-          param: null,
-          code: 'routing_provider_not_found'
-        }
-      });
-      return null;
+      throw new Error('智能路由目标提供商不存在');
     }
 
     const result: ResolveSmartRoutingResult = {
@@ -140,15 +115,7 @@ function resolveSmartRouting(
     return result;
   } catch (e: any) {
     memoryLogger.error(`解析智能路由配置失败: ${e.message}`, 'Proxy');
-    reply.code(500).send({
-      error: {
-        message: '智能路由配置解析失败',
-        type: 'internal_error',
-        param: null,
-        code: 'routing_config_parse_error'
-      }
-    });
-    return null;
+    throw new Error(`智能路由配置解析失败: ${e.message}`);
   }
 }
 
@@ -498,29 +465,41 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           });
         }
 
-        const smartRoutingResult = resolveSmartRouting(model, reply);
-        if (smartRoutingResult) {
-          provider = smartRoutingResult.provider;
-          providerId = smartRoutingResult.providerId;
-          if (smartRoutingResult.modelOverride) {
-            request.body = request.body || {};
-            request.body.model = smartRoutingResult.modelOverride;
-          }
-        } else if (model.provider_id) {
-          provider = providerDb.getById(model.provider_id);
-          if (!provider) {
-            memoryLogger.error(`提供商不存在: ${model.provider_id}`, 'Proxy');
-            return reply.code(500).send({
-              error: {
-                message: '提供商配置不存在',
-                type: 'internal_error',
-                param: null,
-                code: 'provider_not_found'
-              }
-            });
-          }
+        try {
+          const smartRoutingResult = resolveSmartRouting(model);
+          if (smartRoutingResult) {
+            provider = smartRoutingResult.provider;
+            providerId = smartRoutingResult.providerId;
+            if (smartRoutingResult.modelOverride) {
+              request.body = request.body || {};
+              request.body.model = smartRoutingResult.modelOverride;
+            }
+          } else if (model.provider_id) {
+            provider = providerDb.getById(model.provider_id);
+            if (!provider) {
+              memoryLogger.error(`提供商不存在: ${model.provider_id}`, 'Proxy');
+              return reply.code(500).send({
+                error: {
+                  message: '提供商配置不存在',
+                  type: 'internal_error',
+                  param: null,
+                  code: 'provider_not_found'
+                }
+              });
+            }
 
-          providerId = model.provider_id;
+            providerId = model.provider_id;
+          }
+        } catch (routingError: any) {
+          memoryLogger.error(`智能路由失败: ${routingError.message}`, 'Proxy');
+          return reply.code(500).send({
+            error: {
+              message: routingError.message || '智能路由失败',
+              type: 'internal_error',
+              param: null,
+              code: 'smart_routing_error'
+            }
+          });
         }
       } else if (virtualKey.model_ids) {
         try {
@@ -579,29 +558,41 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             });
           }
 
-          const smartRoutingResult = resolveSmartRouting(model, reply);
-          if (smartRoutingResult) {
-            provider = smartRoutingResult.provider;
-            providerId = smartRoutingResult.providerId;
-            if (smartRoutingResult.modelOverride) {
-              request.body = request.body || {};
-              request.body.model = smartRoutingResult.modelOverride;
-            }
-          } else if (model.provider_id) {
-            provider = providerDb.getById(model.provider_id);
-            if (!provider) {
-              memoryLogger.error(`提供商不存在: ${model.provider_id}`, 'Proxy');
-              return reply.code(500).send({
-                error: {
-                  message: '提供商配置不存在',
-                  type: 'internal_error',
-                  param: null,
-                  code: 'provider_not_found'
-                }
-              });
-            }
+          try {
+            const smartRoutingResult = resolveSmartRouting(model);
+            if (smartRoutingResult) {
+              provider = smartRoutingResult.provider;
+              providerId = smartRoutingResult.providerId;
+              if (smartRoutingResult.modelOverride) {
+                request.body = request.body || {};
+                request.body.model = smartRoutingResult.modelOverride;
+              }
+            } else if (model.provider_id) {
+              provider = providerDb.getById(model.provider_id);
+              if (!provider) {
+                memoryLogger.error(`提供商不存在: ${model.provider_id}`, 'Proxy');
+                return reply.code(500).send({
+                  error: {
+                    message: '提供商配置不存在',
+                    type: 'internal_error',
+                    param: null,
+                    code: 'provider_not_found'
+                  }
+                });
+              }
 
-            providerId = model.provider_id;
+              providerId = model.provider_id;
+            }
+          } catch (routingError: any) {
+            memoryLogger.error(`智能路由失败: ${routingError.message}`, 'Proxy');
+            return reply.code(500).send({
+              error: {
+                message: routingError.message || '智能路由失败',
+                type: 'internal_error',
+                param: null,
+                code: 'smart_routing_error'
+              }
+            });
           }
         } catch (e) {
           memoryLogger.error(`解析 model_ids 失败: ${e}`, 'Proxy');
