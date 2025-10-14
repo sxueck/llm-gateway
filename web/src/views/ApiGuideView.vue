@@ -220,6 +220,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { configApi } from '@/api/config';
 import {
   useMessage,
   NSpace,
@@ -260,9 +261,9 @@ const gettingModels = ref(false);
 const response = ref<any>(null);
 const modelsResponse = ref<any>(null);
 
-const llmGatewayUrl = 'http://localhost:3000';
+const llmGatewayUrl = ref<string>('http://localhost:3000');
 
-const curlExample = computed(() => `curl ${llmGatewayUrl}/chat/completions \\
+const curlExample = computed(() => `curl ${llmGatewayUrl.value}/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer YOUR_VIRTUAL_KEY" \\
   -d '{
@@ -279,7 +280,7 @@ const pythonExample = computed(() => `from openai import OpenAI
 
 client = OpenAI(
     api_key="YOUR_VIRTUAL_KEY",
-    base_url="${llmGatewayUrl}"
+    base_url="${llmGatewayUrl.value}"
 )
 
 response = client.chat.completions.create(
@@ -295,7 +296,7 @@ const javascriptExample = computed(() => `import OpenAI from 'openai';
 
 const client = new OpenAI({
   apiKey: 'YOUR_VIRTUAL_KEY',
-  baseURL: '${llmGatewayUrl}'
+  baseURL: '${llmGatewayUrl.value}'
 });
 
 const response = await client.chat.completions.create({
@@ -311,7 +312,7 @@ const nodejsExample = computed(() => `const OpenAI = require('openai');
 
 const client = new OpenAI({
   apiKey: 'YOUR_VIRTUAL_KEY',
-  baseURL: '${llmGatewayUrl}/v1'
+  baseURL: '${llmGatewayUrl.value}/v1'
 });
 
 async function main() {
@@ -413,7 +414,7 @@ async function sendRequest() {
     sending.value = true;
     const startTime = Date.now();
 
-    const res = await fetch(`${llmGatewayUrl}/v1/chat/completions`, {
+    const res = await fetch(`${llmGatewayUrl.value}/v1/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -449,7 +450,7 @@ async function getModels() {
     gettingModels.value = true;
     const startTime = Date.now();
 
-    const res = await fetch(`${llmGatewayUrl}/v1/models`, {
+    const res = await fetch(`${llmGatewayUrl.value}/v1/models`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${selectedVirtualKeyModels.value}`,
@@ -485,6 +486,13 @@ onMounted(async () => {
     virtualKeyStore.fetchVirtualKeys(),
     modelStore.fetchModels(),
   ]);
+
+  try {
+    const settings = await configApi.getSystemSettings();
+    if (settings && settings.publicUrl) {
+      llmGatewayUrl.value = settings.publicUrl;
+    }
+  } catch (e) {}
 
   if (modelOptions.value.length > 0) {
     selectedModel.value = modelOptions.value[0].value;

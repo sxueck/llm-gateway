@@ -3,12 +3,154 @@ import { nanoid } from 'nanoid';
 import { request as httpRequest, IncomingMessage } from 'http';
 import { request as httpsRequest } from 'https';
 import { URL } from 'url';
-import { virtualKeyDb, apiRequestDb, providerDb, modelDb } from '../db/index.js';
+import { virtualKeyDb, apiRequestDb, providerDb, modelDb, routingConfigDb } from '../db/index.js';
 import { memoryLogger } from '../services/logger.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse } from '../utils/request-logger.js';
 import { portkeyRouter } from '../services/portkey-router.js';
 
+interface RoutingTarget {
+  provider: string;
+  weight?: number;
+  override_params?: {
+    model?: string;
+    [key: string]: any;
+  };
+  on_status_codes?: number[];
+}
+
+interface RoutingConfig {
+  strategy: {
+    mode: 'loadbalance' | 'fallback';
+  };
+  targets: RoutingTarget[];
+}
+
+let routingTargetIndex = 0;
+
+function selectRoutingTarget(config: RoutingConfig, type: string): RoutingTarget | null {
+  if (!config.targets || config.targets.length === 0) {
+    return null;
+  }
+
+  if (type === 'loadbalance' || config.strategy?.mode === 'loadbalance') {
+    const targets = config.targets.filter(t => t.weight && t.weight > 0);
+    if (targets.length === 0) {
+      return config.targets[0];
+    }
+
+    const totalWeight = targets.reduce((sum, t) => sum + (t.weight || 0), 0);
+    let random = Math.random() * totalWeight;
+
+    for (const target of targets) {
+      random -= target.weight || 0;
+      if (random <= 0) {
+        return target;
+      }
+    }
+
+    return targets[0];
+  }
+
+  if (type === 'fallback' || config.strategy?.mode === 'fallback') {
+    routingTargetIndex = (routingTargetIndex + 1) % config.targets.length;
+    return config.targets[routingTargetIndex];
+  }
+
+  return config.targets[0];
+}
+
+interface ResolveSmartRoutingResult {
+  provider: any;
+  providerId: string;
+  modelOverride?: string;
+}
+
+function resolveSmartRouting(
+  model: any,
+  reply: any
+): ResolveSmartRoutingResult | null {
+  if (model.is_virtual !== 1 || !model.routing_config_id) {
+    return null;
+  }
+
+  const routingConfig = routingConfigDb.getById(model.routing_config_id);
+  if (!routingConfig) {
+    memoryLogger.error(`智能路由配置不存在: ${model.routing_config_id}`, 'Proxy');
+    reply.code(500).send({
+      error: {
+        message: '智能路由配置不存在',
+        type: 'internal_error',
+        param: null,
+        code: 'routing_config_not_found'
+      }
+    });
+    return null;
+  }
+
+  try {
+    const config = JSON.parse(routingConfig.config);
+    const selectedTarget = selectRoutingTarget(config, routingConfig.type);
+
+    if (!selectedTarget) {
+      memoryLogger.error(`无法从智能路由配置中选择目标: ${model.routing_config_id}`, 'Proxy');
+      reply.code(500).send({
+        error: {
+          message: '智能路由配置无可用目标',
+          type: 'internal_error',
+          param: null,
+          code: 'no_routing_target'
+        }
+      });
+      return null;
+    }
+
+    const provider = providerDb.getById(selectedTarget.provider);
+    if (!provider) {
+      memoryLogger.error(`智能路由目标提供商不存在: ${selectedTarget.provider}`, 'Proxy');
+      reply.code(500).send({
+        error: {
+          message: '智能路由目标提供商不存在',
+          type: 'internal_error',
+          param: null,
+          code: 'routing_provider_not_found'
+        }
+      });
+      return null;
+    }
+
+    const result: ResolveSmartRoutingResult = {
+      provider,
+      providerId: selectedTarget.provider
+    };
+
+    if (selectedTarget.override_params?.model) {
+      result.modelOverride = selectedTarget.override_params.model;
+      memoryLogger.debug(
+        `智能路由覆盖模型参数: ${selectedTarget.override_params.model}`,
+        'Proxy'
+      );
+    }
+
+    memoryLogger.info(
+      `智能路由选择目标: 提供商=${provider.name} | 模型=${selectedTarget.override_params?.model || 'default'}`,
+      'Proxy'
+    );
+
+    return result;
+  } catch (e: any) {
+    memoryLogger.error(`解析智能路由配置失败: ${e.message}`, 'Proxy');
+    reply.code(500).send({
+      error: {
+        message: '智能路由配置解析失败',
+        type: 'internal_error',
+        param: null,
+        code: 'routing_config_parse_error'
+      }
+    });
+    return null;
+  }
+}
 
 function makeHttpRequest(
   url: string,
@@ -356,7 +498,15 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           });
         }
 
-        if (model.provider_id) {
+        const smartRoutingResult = resolveSmartRouting(model, reply);
+        if (smartRoutingResult) {
+          provider = smartRoutingResult.provider;
+          providerId = smartRoutingResult.providerId;
+          if (smartRoutingResult.modelOverride) {
+            request.body = request.body || {};
+            request.body.model = smartRoutingResult.modelOverride;
+          }
+        } else if (model.provider_id) {
           provider = providerDb.getById(model.provider_id);
           if (!provider) {
             memoryLogger.error(`提供商不存在: ${model.provider_id}`, 'Proxy');
@@ -429,7 +579,15 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             });
           }
 
-          if (model.provider_id) {
+          const smartRoutingResult = resolveSmartRouting(model, reply);
+          if (smartRoutingResult) {
+            provider = smartRoutingResult.provider;
+            providerId = smartRoutingResult.providerId;
+            if (smartRoutingResult.modelOverride) {
+              request.body = request.body || {};
+              request.body.model = smartRoutingResult.modelOverride;
+            }
+          } else if (model.provider_id) {
             provider = providerDb.getById(model.provider_id);
             if (!provider) {
               memoryLogger.error(`提供商不存在: ${model.provider_id}`, 'Proxy');

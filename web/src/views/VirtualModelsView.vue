@@ -3,15 +3,15 @@
     <n-space vertical :size="12">
       <n-space justify="space-between" align="center">
         <div>
-          <h2 class="page-title">虚拟模型</h2>
-          <p class="page-subtitle">虚拟模型通过负载均衡或故障转移配置,将请求智能分发到多个实际模型,提高可用性和性能</p>
+          <h2 class="page-title">智能路由</h2>
+          <p class="page-subtitle">智能路由通过负载均衡或故障转移配置,将请求智能分发到多个实际模型,提高可用性和性能</p>
         </div>
         <n-space :size="8">
           <n-button type="primary" size="small" @click="handleCreateModalOpen">
             <template #icon>
               <n-icon><AddOutline /></n-icon>
             </template>
-            创建虚拟模型
+            创建智能路由
           </n-button>
           <n-button size="small" @click="handleRefresh">
             <template #icon>
@@ -23,7 +23,7 @@
       </n-space>
 
       <n-alert type="info">
-        虚拟模型作为统一入口,请求会根据配置的策略分发到目标模型。实际请求仍会通过目标模型匹配的 Portkey 网关路由规则进行转发。
+        智能路由作为统一入口,请求会根据配置的策略分发到目标模型。实际请求仍会通过目标模型匹配的 Portkey 网关路由规则进行转发。
       </n-alert>
 
       <n-card class="table-card">
@@ -39,7 +39,7 @@
       </n-card>
     </n-space>
 
-    <n-modal v-model:show="showCreateModal" preset="card" :title="editingId ? '编辑虚拟模型' : '创建虚拟模型'" style="width: 700px">
+    <n-modal v-model:show="showCreateModal" preset="card" :title="editingId ? '编辑智能路由' : '创建智能路由'" style="width: 700px">
       <VirtualModelWizard
         v-model:config-type="configType"
         v-model:form-value="formValue"
@@ -156,7 +156,7 @@ function getModelOptionsByProvider(providerId: string) {
 }
 
 const columns = [
-  { title: '虚拟模型名称', key: 'name' },
+  { title: '智能路由名称', key: 'name' },
   { title: '类型', key: 'type', render: (row: any) => h(NTag, { type: row.type === 'loadbalance' ? 'info' : 'warning' }, { default: () => row.type === 'loadbalance' ? '负载均衡' : '故障转移' }) },
   { title: '目标数量', key: 'targetCount' },
   { title: '描述', key: 'description', ellipsis: { tooltip: true } },
@@ -192,7 +192,7 @@ const columns = [
           }, {
             icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) }),
           }),
-          default: () => '确定删除此虚拟模型？',
+          default: () => '确定删除此智能路由？',
         }),
       ],
     }),
@@ -262,9 +262,9 @@ async function handleSave() {
       });
 
       if (result.virtualModel) {
-        message.success(`虚拟模型 "${result.virtualModel.name}" 已创建`);
+        message.success(`智能路由 "${result.virtualModel.name}" 已创建`);
       } else {
-        message.success('虚拟模型已创建');
+        message.success('智能路由已创建');
       }
     }
 
@@ -318,7 +318,7 @@ function handlePreview(row: any) {
 async function handleDelete(id: string) {
   try {
     await configApi.deleteRoutingConfig(id);
-    message.success('虚拟模型已删除');
+    message.success('智能路由已删除');
     await loadConfigs();
   } catch (error: any) {
     message.error(error.message);

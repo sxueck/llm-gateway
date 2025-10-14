@@ -50,7 +50,7 @@
           <n-form-item>
             <template #label>
               <n-space align="center" :size="8">
-                <span>创建虚拟模型</span>
+                <span>创建智能路由</span>
                 <n-switch v-model:value="localFormValue.createVirtualModel" size="small" />
               </n-space>
             </template>
@@ -60,7 +60,7 @@
           </n-form-item>
 
           <template v-if="localFormValue.createVirtualModel">
-            <n-form-item label="虚拟模型名称" path="virtualModelName" :rule="{ required: true, message: '请输入虚拟模型名称' }">
+            <n-form-item label="智能路由名称" path="virtualModelName" :rule="{ required: true, message: '请输入智能路由名称' }">
               <n-input
                 v-model:value="localFormValue.virtualModelName"
                 :placeholder="localConfigType === 'loadbalance' ? 'GPT-4-LB' : 'GPT-4-Fallback'"

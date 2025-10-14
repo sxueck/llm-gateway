@@ -130,7 +130,7 @@ const menuOptions = [
         icon: () => h(NIcon, null, { default: () => h(CubeOutline) }),
       },
       {
-        label: '虚拟模型',
+        label: '智能路由',
         key: 'virtual-models',
         icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) }),
       },

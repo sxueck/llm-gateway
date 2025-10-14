@@ -29,7 +29,7 @@
 
       <div v-if="currentStep === 2" class="step-panel">
         <n-form ref="basicFormRef" :model="localFormValue" label-placement="top" :show-feedback="false">
-          <n-form-item label="虚拟模型名称" path="virtualModelName" :rule="{ required: true, message: '请输入虚拟模型名称' }">
+          <n-form-item label="智能路由名称" path="virtualModelName" :rule="{ required: true, message: '请输入智能路由名称' }">
             <n-input
               v-model:value="localFormValue.virtualModelName"
               :placeholder="localConfigType === 'loadbalance' ? 'GPT-4-LB' : 'GPT-4-Fallback'"

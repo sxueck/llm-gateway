@@ -4,6 +4,7 @@ import { User, Provider, VirtualKey, SystemConfig } from '../types/index.js';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import { existsSync } from 'fs';
+import { applyMigrations } from './migrations.js';
 
 let db: SqlJsDatabase;
 let SQL: any;
@@ -63,6 +64,7 @@ export async function initDatabase() {
   db.run('PRAGMA foreign_keys = ON');
 
   createTables();
+  applyMigrations(db);
   await saveDatabase();
 
   startAutoSave();

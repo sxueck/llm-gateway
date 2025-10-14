@@ -200,7 +200,7 @@ const columns = [
         return h(NSpace, { align: 'center', size: 4 }, {
           default: () => [
             h('span', row.name),
-            h(NTag, { type: 'info', size: 'small', round: true }, { default: () => '虚拟' }),
+            h(NTag, { type: 'info', size: 'small', round: true }, { default: () => '智能路由' }),
           ],
         });
       }
