@@ -1063,6 +1063,6 @@ export async function proxyRoutes(fastify: FastifyInstance) {
 
   setInterval(() => {
     requestCache.logStats();
-  }, 300000);
+  }, 3600000);
 }
 

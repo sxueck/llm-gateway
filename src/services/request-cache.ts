@@ -155,10 +155,13 @@ export class RequestCache {
 
   logStats(): void {
     const stats = this.getStats();
-    memoryLogger.info(
-      `缓存统计 | 命中=${stats.hits} | 未命中=${stats.misses} | 命中率=${stats.hitRate} | 当前大小=${stats.size}/${this.maxSize} | 淘汰次数=${stats.evictions}`,
-      'RequestCache'
-    );
+    const total = stats.hits + stats.misses;
+    if (total > 0) {
+      memoryLogger.info(
+        `缓存统计 | 命中=${stats.hits} | 未命中=${stats.misses} | 命中率=${stats.hitRate} | 当前大小=${stats.size}/${this.maxSize} | 淘汰次数=${stats.evictions}`,
+        'RequestCache'
+      );
+    }
   }
 }
 

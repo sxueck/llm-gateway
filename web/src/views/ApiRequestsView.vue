@@ -35,8 +35,6 @@
             :loading="loading"
             :pagination="pagination"
             :row-key="(row: ApiRequest) => row.id"
-            @update:page="handlePageChange"
-            @update:page-size="handlePageSizeChange"
           />
         </n-space>
       </n-card>
@@ -140,6 +138,17 @@ const showCleanDialog = ref(false);
 const cleanDays = ref(30);
 const cleanLoading = ref(false);
 
+const handlePageChange = (page: number) => {
+  pagination.page = page;
+  loadRequests();
+};
+
+const handlePageSizeChange = (pageSize: number) => {
+  pagination.pageSize = pageSize;
+  pagination.page = 1;
+  loadRequests();
+};
+
 const pagination = reactive<PaginationProps>({
   page: 1,
   pageSize: 20,
@@ -147,6 +156,8 @@ const pagination = reactive<PaginationProps>({
   pageSizes: [10, 20, 50, 100],
   showSizePicker: true,
   prefix: (info) => `共 ${info.itemCount} 条`,
+  onChange: handlePageChange,
+  onUpdatePageSize: handlePageSizeChange,
 });
 
 const statusOptions = [
@@ -279,17 +290,6 @@ const loadRequests = async () => {
   }
 };
 
-const handlePageChange = (page: number) => {
-  pagination.page = page;
-  loadRequests();
-};
-
-const handlePageSizeChange = (pageSize: number) => {
-  pagination.pageSize = pageSize;
-  pagination.page = 1;
-  loadRequests();
-};
-
 const handleTimeRangeChange = () => {
   pagination.page = 1;
   loadRequests();
@@ -324,30 +324,30 @@ onMounted(() => {
 
 <style scoped>
 :deep(.n-data-table-th) {
-  font-size: 11px;
-  padding: 6px 8px;
+  font-size: 13px;
+  padding: 10px 12px;
   font-weight: 600;
 }
 
 :deep(.n-data-table-td) {
-  font-size: 11px;
-  padding: 6px 8px;
+  font-size: 13px;
+  padding: 10px 12px;
 }
 
 :deep(.n-data-table-tr) {
-  height: 32px;
+  height: 40px;
 }
 
 :deep(.n-button--small-type) {
-  font-size: 11px;
-  padding: 2px 8px;
-  height: 24px;
+  font-size: 12px;
+  padding: 4px 10px;
+  height: 28px;
 }
 
 :deep(.n-tag--small-size) {
-  font-size: 10px;
-  padding: 0 6px;
-  height: 20px;
+  font-size: 12px;
+  padding: 2px 8px;
+  height: 24px;
   line-height: 20px;
 }
 </style>
