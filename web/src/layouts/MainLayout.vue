@@ -95,7 +95,6 @@ import {
   HomeOutline,
   ServerOutline,
   KeyOutline,
-  SettingsOutline,
   LogOutOutline,
   DocumentTextOutline,
   TerminalOutline,
@@ -103,6 +102,10 @@ import {
   CubeOutline,
   MailOutline,
   GitNetworkOutline,
+  LayersOutline,
+  ConstructOutline,
+  ListOutline,
+  OptionsOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
@@ -121,7 +124,7 @@ const menuOptions = computed(() => [
   {
     label: t('menu.modelManagement'),
     key: 'model-management',
-    icon: () => h(NIcon, null, { default: () => h(CubeOutline) }),
+    icon: () => h(NIcon, null, { default: () => h(LayersOutline) }),
     children: [
       {
         label: t('menu.providers'),
@@ -148,12 +151,12 @@ const menuOptions = computed(() => [
   {
     label: t('menu.portkeyGateways'),
     key: 'portkey-gateways',
-    icon: () => h(NIcon, null, { default: () => h(ServerOutline) }),
+    icon: () => h(NIcon, null, { default: () => h(CloudOutline) }),
   },
   {
     label: t('menu.tools'),
     key: 'tools',
-    icon: () => h(NIcon, null, { default: () => h(SettingsOutline) }),
+    icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
     children: [
       {
         label: t('menu.apiGuide'),
@@ -168,7 +171,7 @@ const menuOptions = computed(() => [
       {
         label: t('menu.apiRequests'),
         key: 'api-requests',
-        icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }),
+        icon: () => h(NIcon, null, { default: () => h(ListOutline) }),
       },
     ],
   },
@@ -180,7 +183,7 @@ const generalMenuOptions = computed(() => [
   {
     label: t('menu.settings'),
     key: 'settings',
-    icon: () => h(NIcon, null, { default: () => h(SettingsOutline) }),
+    icon: () => h(NIcon, null, { default: () => h(OptionsOutline) }),
   },
 ]);
 
