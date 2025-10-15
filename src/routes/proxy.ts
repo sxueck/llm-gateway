@@ -8,6 +8,7 @@ import { memoryLogger } from '../services/logger.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse } from '../utils/request-logger.js';
 import { portkeyRouter } from '../services/portkey-router.js';
+import { requestCache } from '../services/request-cache.js';
 
 interface RoutingTarget {
   provider: string;
@@ -831,6 +832,54 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         }
       }
 
+      let cacheKey: string | null = null;
+      let fromCache = false;
+
+      if (virtualKey.cache_enabled === 1 && !isStreamRequest && request.body) {
+        cacheKey = requestCache.generateCacheKey(request.body);
+        const cached = requestCache.get(cacheKey);
+
+        if (cached) {
+          fromCache = true;
+          reply.headers({
+            ...cached.headers,
+            'X-Cache-Status': 'HIT'
+          });
+          reply.code(200);
+
+          const duration = Date.now() - startTime;
+          const truncatedRequest = truncateRequestBody(request.body);
+
+          apiRequestDb.create({
+            id: nanoid(),
+            virtual_key_id: virtualKey.id,
+            provider_id: providerId,
+            model: request.body?.model || 'unknown',
+            prompt_tokens: cached.response.usage?.prompt_tokens || 0,
+            completion_tokens: cached.response.usage?.completion_tokens || 0,
+            total_tokens: cached.response.usage?.total_tokens || 0,
+            status: 'success',
+            response_time: duration,
+            error_message: undefined,
+            request_body: truncatedRequest,
+            response_body: truncateResponseBody(cached.response),
+            cache_hit: 1,
+          });
+
+          memoryLogger.info(
+            `请求完成: 200 | 耗时: ${duration}ms | Tokens: ${cached.response.usage?.total_tokens || 0} | 缓存命中`,
+            'Proxy'
+          );
+
+          return reply.send(cached.response);
+        }
+
+        memoryLogger.debug(
+          `缓存未命中 | key=${cacheKey.substring(0, 8)}... | 虚拟密钥: ${vkDisplay}`,
+          'Proxy'
+        );
+      }
+
       const response = await makeHttpRequest(
         portkeyUrl,
         (request as any).method,
@@ -948,13 +997,22 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       });
 
       if (isSuccess) {
-        const cacheStatus = cacheHit === 1 ? '缓存命中' : '缓存未命中';
+        if (cacheKey && virtualKey.cache_enabled === 1 && !isStreamRequest && !fromCache) {
+          const cacheHeaders: Record<string, string> = { ...responseHeaders };
+          requestCache.set(cacheKey, responseData, cacheHeaders);
+          reply.header('X-Cache-Status', 'MISS');
+
+          memoryLogger.debug(
+            `响应已缓存 | key=${cacheKey.substring(0, 8)}... | model=${request.body?.model}`,
+            'Proxy'
+          );
+        }
+
+        const cacheStatus = fromCache ? '缓存命中' : (cacheHit === 1 ? 'Portkey 缓存命中' : '缓存未命中');
         memoryLogger.info(
           `请求完成: ${response.statusCode} | 耗时: ${duration}ms | Tokens: ${usage.total_tokens || 0} | ${cacheStatus}`,
           'Proxy'
         );
-
-
       } else {
         const errorStr = JSON.stringify(responseData);
         const truncatedError = errorStr.length > 500
@@ -1030,5 +1088,9 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       });
     }
   });
+
+  setInterval(() => {
+    requestCache.logStats();
+  }, 300000);
 }
 
