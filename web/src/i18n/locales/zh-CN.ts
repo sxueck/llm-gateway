@@ -80,6 +80,7 @@ export default {
     perHour: '/ 小时',
     cacheHits: '缓存命中',
     cacheHitRate: '缓存命中率',
+    cacheSavedTokens: '缓存节省 Token',
     period: {
       last24Hours: '最近 24 小时',
       last7Days: '最近 7 天',

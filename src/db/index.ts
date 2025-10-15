@@ -882,7 +882,8 @@ export const apiRequestDb = {
         SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as failed_requests,
         SUM(total_tokens) as total_tokens,
         AVG(response_time) as avg_response_time,
-        SUM(CASE WHEN cache_hit = 1 THEN 1 ELSE 0 END) as cache_hits
+        SUM(CASE WHEN cache_hit = 1 THEN 1 ELSE 0 END) as cache_hits,
+        SUM(CASE WHEN cache_hit = 1 THEN total_tokens ELSE 0 END) as cache_saved_tokens
       FROM api_requests
       WHERE created_at >= ? AND created_at <= ?`,
       [startTime, endTime]
@@ -896,6 +897,7 @@ export const apiRequestDb = {
         totalTokens: 0,
         avgResponseTime: 0,
         cacheHits: 0,
+        cacheSavedTokens: 0,
       };
     }
 
@@ -907,6 +909,7 @@ export const apiRequestDb = {
       totalTokens: (row[3] as number) || 0,
       avgResponseTime: (row[4] as number) || 0,
       cacheHits: (row[5] as number) || 0,
+      cacheSavedTokens: (row[6] as number) || 0,
     };
   },
 

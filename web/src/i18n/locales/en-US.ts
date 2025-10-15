@@ -80,6 +80,7 @@ export default {
     perHour: '/ hour',
     cacheHits: 'Cache Hits',
     cacheHitRate: 'Cache Hit Rate',
+    cacheSavedTokens: 'Cache Saved Tokens',
     period: {
       last24Hours: 'Last 24 Hours',
       last7Days: 'Last 7 Days',

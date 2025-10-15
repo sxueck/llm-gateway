@@ -25,6 +25,7 @@ export interface ApiStats {
   totalTokens: number;
   avgResponseTime: number;
   cacheHits: number;
+  cacheSavedTokens: number;
 }
 
 export interface TrendData {

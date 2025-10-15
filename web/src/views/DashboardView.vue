@@ -153,6 +153,15 @@
             </n-statistic>
           </n-card>
         </n-gi>
+        <n-gi>
+          <n-card class="stat-card stat-card-success">
+            <n-statistic :label="t('dashboard.cacheSavedTokens')">
+              <template #default>
+                <span class="stat-value-success">{{ formatTokenNumber(stats?.cacheSavedTokens || 0) }}</span>
+              </template>
+            </n-statistic>
+          </n-card>
+        </n-gi>
       </n-grid>
 
       <n-card class="trend-card" title="请求趋势">
@@ -407,6 +416,23 @@ onMounted(() => {
 
 .stat-card-primary :deep(.n-statistic__label) {
   color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.stat-card-success {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+}
+
+.stat-card-success:hover {
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3);
+}
+
+.stat-card-success :deep(.n-statistic__label) {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.stat-card-success .stat-value-success {
+  color: #ffffff;
 }
 
 .stat-value-primary {
