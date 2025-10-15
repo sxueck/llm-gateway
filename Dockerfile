@@ -1,3 +1,15 @@
+FROM golang:1.23-alpine AS agent-builder
+
+WORKDIR /agent
+
+RUN apk add --no-cache git make
+
+COPY agent/go.mod agent/go.sum ./
+RUN go mod download
+
+COPY agent/*.go ./
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o llm-gateway-agent-linux-amd64 -ldflags="-s -w -X main.Version=1.0.0" .
+
 FROM node:20-alpine AS builder
 
 WORKDIR /app
@@ -30,6 +42,9 @@ RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/web/dist ./web/dist
 COPY scripts ./scripts
+
+COPY --from=agent-builder /agent/llm-gateway-agent-linux-amd64 ./agent/llm-gateway-agent-linux-amd64
+RUN chmod +x ./agent/llm-gateway-agent-linux-amd64
 
 RUN mkdir -p /app/data /app/portkey-config
 

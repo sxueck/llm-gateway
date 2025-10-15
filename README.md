@@ -75,6 +75,10 @@ npm run start:all
 2. 初始化数据库
 3. 构建 Portkey Gateway Agent
 
+### 使用 Docker Compose 方式启动
+
+请参考 [Docker 部署指南](./docs/DOCKER_DEPLOYMENT.md)
+
 ### 访问应用
 
 - **Web UI**: http://localhost:5173

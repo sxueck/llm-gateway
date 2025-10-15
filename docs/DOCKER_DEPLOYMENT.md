@@ -39,6 +39,7 @@ PUBLIC_URL=http://your-domain.com
 
 ```bash
 mkdir -p data portkey-config
+touch portkey-config/conf.json # 注意这里如果没有执行会无法保存模型
 ```
 
 ### 4. 启动服务
@@ -96,55 +97,6 @@ docker-compose logs -f
 - `./data` - 数据库文件
 - `./portkey-config` - Portkey Gateway 配置文件
 
-## 常用命令
-
-### 启动服务
-
-```bash
-docker-compose up -d
-```
-
-### 停止服务
-
-```bash
-docker-compose down
-```
-
-### 重启服务
-
-```bash
-docker-compose restart
-```
-
-### 查看服务状态
-
-```bash
-docker-compose ps
-```
-
-### 查看日志
-
-```bash
-docker-compose logs -f llm-gateway
-docker-compose logs -f portkey-gateway
-```
-
-### 更新服务
-
-```bash
-git pull
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
-```
-
-### 清理数据
-
-```bash
-docker-compose down -v
-rm -rf data portkey-config
-```
-
 ## 生产环境部署建议
 
 ### 使用反向代理
@@ -174,12 +126,3 @@ server {
     }
 }
 ```
-
-> 这里有个地方需要注意，我们的前端是 5173 端口，而后端代理层是 3000 端口，你要分别配置两条路由，而我们一般接入后端路由
-
-## 更多信息
-
-- [主文档](../README.md)
-- [Agent 安装指南](./AGENT_INSTALLATION.md)
-- [LiteLLM 预设功能](./LITELLM_PRESETS.md)
-
