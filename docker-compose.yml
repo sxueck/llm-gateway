@@ -19,7 +19,7 @@ services:
     image: ghcr.io/sxueck/llm-gateway:latest
     container_name: llm-gateway
     ports:
-      - "3000:3000"
+      - "13030:3000"
     volumes:
       - ./data:/app/data
       - ./portkey-config:/app/portkey-config

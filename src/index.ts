@@ -61,7 +61,6 @@ await fastify.register(fastifyStatic, {
 await fastify.register(fastifyStatic, {
   root: resolve(__dirname, '..', 'web', 'dist'),
   prefix: '/',
-  decorateReply: false,
 });
 
 fastify.decorate('authenticate', async function(request: any, reply: any) {

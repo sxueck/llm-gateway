@@ -41,21 +41,27 @@ export async function initDatabase() {
   const dbPath = resolve(appConfig.dbPath);
 
   if (existsSync(dbPath)) {
-    try {
-      const buffer = await readFile(dbPath);
-      db = new SQL.Database(buffer);
+    const buffer = await readFile(dbPath);
+    db = new SQL.Database(buffer);
 
-      const integrityCheck = db.exec('PRAGMA integrity_check');
-      if (integrityCheck.length === 0 ||
-          integrityCheck[0].values[0][0] !== 'ok') {
-        console.error('数据库完整性检查失败，将创建新数据库');
-        db.close();
-        throw new Error('Database integrity check failed');
-      }
-    } catch (error) {
-      console.error('加载数据库失败:', error);
-      console.log('正在创建新数据库...');
-      db = new SQL.Database();
+    const integrityCheck = db.exec('PRAGMA integrity_check');
+    if (integrityCheck.length === 0 ||
+        integrityCheck[0].values[0][0] !== 'ok') {
+      console.error('========================================');
+      console.error('数据库完整性检查失败');
+      console.error('========================================');
+      console.error(`数据库路径: ${dbPath}`);
+      console.error('');
+      console.error('数据库文件已损坏，无法加载。');
+      console.error('为防止数据丢失，系统已停止启动。');
+      console.error('');
+      console.error('请手动处理数据库文件：');
+      console.error('  1. 如需修复并重新开始，运行: npm run fix:db');
+      console.error('  2. 如需恢复数据，请先备份当前数据库文件');
+      console.error('');
+      console.error('========================================');
+      db.close();
+      process.exit(1);
     }
   } else {
     db = new SQL.Database();
