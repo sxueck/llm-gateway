@@ -109,7 +109,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'google-gemini',
     name: 'Google Gemini',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/',
     description: 'Gemini 模型系列',
     category: '主流提供商',
     features: {

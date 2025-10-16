@@ -21,7 +21,25 @@ abstract class BaseAdapter implements ProviderAdapter {
 
 class GoogleGeminiAdapter implements ProviderAdapter {
   normalizeBaseUrl(baseUrl: string): string {
-    return baseUrl.trim().replace(/\/+$/, '');
+    let normalized = baseUrl.trim();
+
+    if (normalized.includes('generativelanguage.googleapis.com')) {
+      normalized = normalized.replace(/\/+$/, '');
+
+      if (normalized.endsWith('/v1beta/openai')) {
+        return normalized + '/';
+      }
+
+      if (normalized.endsWith('/v1beta')) {
+        return normalized + '/openai/';
+      }
+
+      if (!normalized.includes('/openai')) {
+        return normalized + '/v1beta/openai/';
+      }
+    }
+
+    return normalized;
   }
 
   getProviderType(baseUrl: string): string {
