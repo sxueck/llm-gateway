@@ -10,6 +10,7 @@ import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse } f
 import { portkeyRouter } from '../services/portkey-router.js';
 import { requestCache } from '../services/request-cache.js';
 import { ProviderAdapterFactory } from '../services/provider-adapter.js';
+import { isLocalGateway } from '../utils/network.js';
 
 interface RoutingTarget {
   provider: string;
@@ -77,8 +78,8 @@ function resolveSmartRouting(
 
   const routingConfig = routingConfigDb.getById(model.routing_config_id);
   if (!routingConfig) {
-    memoryLogger.error(`智能路由配置不存在: ${model.routing_config_id}`, 'Proxy');
-    throw new Error('智能路由配置不存在');
+    memoryLogger.error(`Smart routing config not found: ${model.routing_config_id}`, 'Proxy');
+    throw new Error('Smart routing config not found');
   }
 
   try {
@@ -86,14 +87,14 @@ function resolveSmartRouting(
     const selectedTarget = selectRoutingTarget(config, routingConfig.type);
 
     if (!selectedTarget) {
-      memoryLogger.error(`无法从智能路由配置中选择目标: ${model.routing_config_id}`, 'Proxy');
-      throw new Error('智能路由配置无可用目标');
+      memoryLogger.error(`No target selected from smart routing config: ${model.routing_config_id}`, 'Proxy');
+      throw new Error('No available target in smart routing config');
     }
 
     const provider = providerDb.getById(selectedTarget.provider);
     if (!provider) {
-      memoryLogger.error(`智能路由目标提供商不存在: ${selectedTarget.provider}`, 'Proxy');
-      throw new Error('智能路由目标提供商不存在');
+      memoryLogger.error(`Smart routing target provider not found: ${selectedTarget.provider}`, 'Proxy');
+      throw new Error('Smart routing target provider not found');
     }
 
     const result: ResolveSmartRoutingResult = {
@@ -104,21 +105,58 @@ function resolveSmartRouting(
     if (selectedTarget.override_params?.model) {
       result.modelOverride = selectedTarget.override_params.model;
       memoryLogger.debug(
-        `智能路由覆盖模型参数: ${selectedTarget.override_params.model}`,
+        `Smart routing model override: ${selectedTarget.override_params.model}`,
         'Proxy'
       );
     }
 
     memoryLogger.info(
-      `智能路由选择目标: 提供商=${provider.name} | 模型=${selectedTarget.override_params?.model || 'default'}`,
+      `Smart routing target selected: provider=${provider.name} | model=${selectedTarget.override_params?.model || 'default'}`,
       'Proxy'
     );
 
     return result;
   } catch (e: any) {
-    memoryLogger.error(`解析智能路由配置失败: ${e.message}`, 'Proxy');
-    throw new Error(`智能路由配置解析失败: ${e.message}`);
+    memoryLogger.error(`Failed to parse smart routing config: ${e.message}`, 'Proxy');
+    throw new Error(`Smart routing config parse error: ${e.message}`);
   }
+}
+
+interface ResolveProviderResult {
+  provider: any;
+  providerId: string;
+}
+
+function resolveProviderFromModel(
+  model: any,
+  request: ProxyRequest
+): ResolveProviderResult {
+  const smartRoutingResult = resolveSmartRouting(model);
+  if (smartRoutingResult) {
+    if (smartRoutingResult.modelOverride) {
+      request.body = request.body || {};
+      request.body.model = smartRoutingResult.modelOverride;
+    }
+    return {
+      provider: smartRoutingResult.provider,
+      providerId: smartRoutingResult.providerId
+    };
+  }
+
+  if (!model.provider_id) {
+    throw new Error('Model has no provider configured');
+  }
+
+  const provider = providerDb.getById(model.provider_id);
+  if (!provider) {
+    memoryLogger.error(`Provider not found: ${model.provider_id}`, 'Proxy');
+    throw new Error('Provider config not found');
+  }
+
+  return {
+    provider,
+    providerId: model.provider_id
+  };
 }
 
 function makeHttpRequest(
@@ -274,7 +312,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       if (!authHeader?.startsWith('Bearer ')) {
         return reply.code(401).send({
           error: {
-            message: '缺少认证信息',
+            message: 'Missing authentication',
             type: 'invalid_request_error',
             param: null,
             code: 'missing_authorization'
@@ -286,10 +324,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       const virtualKey = virtualKeyDb.getByKeyValue(virtualKeyValue);
 
       if (!virtualKey) {
-        memoryLogger.warn(`虚拟密钥不存在: ${virtualKeyValue}`, 'Proxy');
+        memoryLogger.warn(`Virtual key not found: ${virtualKeyValue}`, 'Proxy');
         return reply.code(401).send({
           error: {
-            message: '无效的虚拟密钥',
+            message: 'Invalid virtual key',
             type: 'invalid_request_error',
             param: null,
             code: 'invalid_api_key'
@@ -298,10 +336,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       }
 
       if (!virtualKey.enabled) {
-        memoryLogger.warn(`虚拟密钥已禁用: ${virtualKeyValue}`, 'Proxy');
+        memoryLogger.warn(`Virtual key disabled: ${virtualKeyValue}`, 'Proxy');
         return reply.code(403).send({
           error: {
-            message: '虚拟密钥已被禁用',
+            message: 'Virtual key has been disabled',
             type: 'invalid_request_error',
             param: null,
             code: 'api_key_disabled'
@@ -322,7 +360,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             modelIds.push(...parsedModelIds);
           }
         } catch (e) {
-          memoryLogger.error(`解析 model_ids 失败: ${e}`, 'Proxy');
+          memoryLogger.error(`Failed to parse model_ids: ${e}`, 'Proxy');
         }
       }
 
@@ -344,7 +382,6 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             const attributes = JSON.parse(model!.model_attributes);
             Object.assign(baseInfo, attributes);
           } catch (e) {
-            // 忽略解析错误
           }
         }
 
@@ -352,7 +389,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       });
 
       memoryLogger.info(
-        `模型列表查询: 虚拟密钥 ${virtualKeyValue.slice(0, 6)}...${virtualKeyValue.slice(-4)} | 返回 ${modelList.length} 个模型`,
+        `Models list query: virtual key ${virtualKeyValue.slice(0, 6)}...${virtualKeyValue.slice(-4)} | returned ${modelList.length} models`,
         'Proxy'
       );
 
@@ -362,14 +399,14 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       });
     } catch (error: any) {
       memoryLogger.error(
-        `模型列表查询失败: ${error.message}`,
+        `Models list query failed: ${error.message}`,
         'Proxy',
         { error: error.stack }
       );
 
       return reply.code(500).send({
         error: {
-          message: error.message || '查询模型列表失败',
+          message: error.message || 'Failed to query models list',
           type: 'internal_error',
           param: null,
           code: 'models_list_error'
@@ -388,7 +425,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       if (!authHeader?.startsWith('Bearer ')) {
         return reply.code(401).send({
           error: {
-            message: '缺少认证信息',
+            message: 'Missing authentication',
             type: 'invalid_request_error',
             param: null,
             code: 'missing_authorization'
@@ -400,10 +437,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
 
       const virtualKey = virtualKeyDb.getByKeyValue(virtualKeyValue);
       if (!virtualKey) {
-        memoryLogger.warn(`虚拟密钥不存在: ${virtualKeyValue}`, 'Proxy');
+        memoryLogger.warn(`Virtual key not found: ${virtualKeyValue}`, 'Proxy');
         return reply.code(401).send({
           error: {
-            message: '无效的虚拟密钥',
+            message: 'Invalid virtual key',
             type: 'invalid_request_error',
             param: null,
             code: 'invalid_api_key'
@@ -412,10 +449,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       }
 
       if (!virtualKey.enabled) {
-        memoryLogger.warn(`虚拟密钥已禁用: ${virtualKeyValue}`, 'Proxy');
+        memoryLogger.warn(`Virtual key disabled: ${virtualKeyValue}`, 'Proxy');
         return reply.code(403).send({
           error: {
-            message: '虚拟密钥已被禁用',
+            message: 'Virtual key has been disabled',
             type: 'invalid_request_error',
             param: null,
             code: 'api_key_disabled'
@@ -428,10 +465,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       if (virtualKey.model_id) {
         const model = modelDb.getById(virtualKey.model_id);
         if (!model) {
-          memoryLogger.error(`模型不存在: ${virtualKey.model_id}`, 'Proxy');
+          memoryLogger.error(`Model not found: ${virtualKey.model_id}`, 'Proxy');
           return reply.code(500).send({
             error: {
-              message: '模型配置不存在',
+              message: 'Model config not found',
               type: 'internal_error',
               param: null,
               code: 'model_not_found'
@@ -440,35 +477,14 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         }
 
         try {
-          const smartRoutingResult = resolveSmartRouting(model);
-          if (smartRoutingResult) {
-            provider = smartRoutingResult.provider;
-            providerId = smartRoutingResult.providerId;
-            if (smartRoutingResult.modelOverride) {
-              request.body = request.body || {};
-              request.body.model = smartRoutingResult.modelOverride;
-            }
-          } else if (model.provider_id) {
-            provider = providerDb.getById(model.provider_id);
-            if (!provider) {
-              memoryLogger.error(`提供商不存在: ${model.provider_id}`, 'Proxy');
-              return reply.code(500).send({
-                error: {
-                  message: '提供商配置不存在',
-                  type: 'internal_error',
-                  param: null,
-                  code: 'provider_not_found'
-                }
-              });
-            }
-
-            providerId = model.provider_id;
-          }
+          const result = resolveProviderFromModel(model, request);
+          provider = result.provider;
+          providerId = result.providerId;
         } catch (routingError: any) {
-          memoryLogger.error(`智能路由失败: ${routingError.message}`, 'Proxy');
+          memoryLogger.error(`Smart routing failed: ${routingError.message}`, 'Proxy');
           return reply.code(500).send({
             error: {
-              message: routingError.message || '智能路由失败',
+              message: routingError.message || 'Smart routing failed',
               type: 'internal_error',
               param: null,
               code: 'smart_routing_error'
@@ -479,10 +495,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         try {
           const parsedModelIds = JSON.parse(virtualKey.model_ids);
           if (!Array.isArray(parsedModelIds) || parsedModelIds.length === 0) {
-            memoryLogger.error(`虚拟密钥 model_ids 配置无效: ${virtualKeyValue}`, 'Proxy');
+            memoryLogger.error(`Invalid model_ids config for virtual key: ${virtualKeyValue}`, 'Proxy');
             return reply.code(500).send({
               error: {
-                message: '虚拟密钥模型配置无效',
+                message: 'Invalid virtual key model config',
                 type: 'internal_error',
                 param: null,
                 code: 'invalid_model_config'
@@ -508,10 +524,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           }
 
           if (!targetModelId) {
-            memoryLogger.error(`无法确定目标模型`, 'Proxy');
+            memoryLogger.error(`Cannot determine target model`, 'Proxy');
             return reply.code(500).send({
               error: {
-                message: '无法确定目标模型',
+                message: 'Cannot determine target model',
                 type: 'internal_error',
                 param: null,
                 code: 'model_not_determined'
@@ -521,10 +537,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
 
           const model = modelDb.getById(targetModelId);
           if (!model) {
-            memoryLogger.error(`模型不存在: ${targetModelId}`, 'Proxy');
+            memoryLogger.error(`Model not found: ${targetModelId}`, 'Proxy');
             return reply.code(500).send({
               error: {
-                message: '模型配置不存在',
+                message: 'Model config not found',
                 type: 'internal_error',
                 param: null,
                 code: 'model_not_found'
@@ -533,35 +549,14 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           }
 
           try {
-            const smartRoutingResult = resolveSmartRouting(model);
-            if (smartRoutingResult) {
-              provider = smartRoutingResult.provider;
-              providerId = smartRoutingResult.providerId;
-              if (smartRoutingResult.modelOverride) {
-                request.body = request.body || {};
-                request.body.model = smartRoutingResult.modelOverride;
-              }
-            } else if (model.provider_id) {
-              provider = providerDb.getById(model.provider_id);
-              if (!provider) {
-                memoryLogger.error(`提供商不存在: ${model.provider_id}`, 'Proxy');
-                return reply.code(500).send({
-                  error: {
-                    message: '提供商配置不存在',
-                    type: 'internal_error',
-                    param: null,
-                    code: 'provider_not_found'
-                  }
-                });
-              }
-
-              providerId = model.provider_id;
-            }
+            const result = resolveProviderFromModel(model, request);
+            provider = result.provider;
+            providerId = result.providerId;
           } catch (routingError: any) {
-            memoryLogger.error(`智能路由失败: ${routingError.message}`, 'Proxy');
+            memoryLogger.error(`Smart routing failed: ${routingError.message}`, 'Proxy');
             return reply.code(500).send({
               error: {
-                message: routingError.message || '智能路由失败',
+                message: routingError.message || 'Smart routing failed',
                 type: 'internal_error',
                 param: null,
                 code: 'smart_routing_error'
@@ -569,10 +564,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             });
           }
         } catch (e) {
-          memoryLogger.error(`解析 model_ids 失败: ${e}`, 'Proxy');
+          memoryLogger.error(`Failed to parse model_ids: ${e}`, 'Proxy');
           return reply.code(500).send({
             error: {
-              message: '虚拟密钥模型配置解析失败',
+              message: 'Failed to parse virtual key model config',
               type: 'internal_error',
               param: null,
               code: 'model_config_parse_error'
@@ -582,10 +577,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       } else if (virtualKey.provider_id) {
         provider = providerDb.getById(virtualKey.provider_id);
         if (!provider) {
-          memoryLogger.error(`提供商不存在: ${virtualKey.provider_id}`, 'Proxy');
+          memoryLogger.error(`Provider not found: ${virtualKey.provider_id}`, 'Proxy');
           return reply.code(500).send({
             error: {
-              message: '提供商配置不存在',
+              message: 'Provider config not found',
               type: 'internal_error',
               param: null,
               code: 'provider_not_found'
@@ -595,10 +590,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
 
         providerId = virtualKey.provider_id;
       } else {
-        memoryLogger.error(`虚拟密钥未配置模型或提供商: ${virtualKeyValue}`, 'Proxy');
+        memoryLogger.error(`Virtual key has no model or provider configured: ${virtualKeyValue}`, 'Proxy');
         return reply.code(500).send({
           error: {
-            message: '虚拟密钥配置不完整',
+            message: 'Incomplete virtual key config',
             type: 'internal_error',
             param: null,
             code: 'invalid_key_config'
@@ -607,10 +602,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       }
 
       if (!provider) {
-        memoryLogger.error(`提供商未找到`, 'Proxy');
+        memoryLogger.error(`Provider not found`, 'Proxy');
         return reply.code(500).send({
           error: {
-            message: '提供商配置未找到',
+            message: 'Provider config not found',
             type: 'internal_error',
             param: null,
             code: 'provider_not_found'
@@ -642,7 +637,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
 
       if (virtualKey.cache_enabled === 1) {
         memoryLogger.debug(
-          `网关缓存已启用 | 虚拟密钥: ${vkDisplay}`,
+          `Gateway cache enabled | virtual key: ${vkDisplay}`,
           'Proxy'
         );
       }
@@ -664,10 +659,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       const selectedGateway = portkeyRouter.selectGateway(routingContext);
 
       if (!selectedGateway) {
-        memoryLogger.error('没有可用的 Portkey Gateway', 'Proxy');
+        memoryLogger.error('No Portkey Gateway available', 'Proxy');
         return reply.code(503).send({
           error: {
-            message: '没有可用的 Portkey Gateway，请在系统设置中配置',
+            message: 'No Portkey Gateway available, please configure in system settings',
             type: 'service_unavailable',
             param: null,
             code: 'no_gateway_available'
@@ -679,20 +674,48 @@ export async function proxyRoutes(fastify: FastifyInstance) {
 
       const isStreamRequest = request.body?.stream === true;
 
+      const portkeyConfigJson = JSON.stringify(portkeyConfig);
+      memoryLogger.debug(
+        `Portkey config JSON: ${portkeyConfigJson}`,
+        'Proxy'
+      );
+      memoryLogger.debug(
+        `Portkey config JSON length: ${portkeyConfigJson.length} | bytes: ${Buffer.byteLength(portkeyConfigJson, 'utf8')}`,
+        'Proxy'
+      );
+
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        'x-portkey-config': JSON.stringify(portkeyConfig),
+        'x-portkey-config': portkeyConfigJson,
       };
 
       if (isStreamRequest) {
         headers['Accept'] = 'text/event-stream';
       }
 
+      const isLocal = isLocalGateway(selectedGateway.url);
+      if (!isLocal && selectedGateway.api_key) {
+        headers['X-Gateway-ID'] = selectedGateway.id;
+        headers['X-API-Key'] = selectedGateway.api_key;
+
+        memoryLogger.debug(
+          `Remote gateway request, auth headers added | gateway: ${selectedGateway.name}`,
+          'Proxy'
+        );
+      } else if (isLocal) {
+        memoryLogger.debug(
+          `Local gateway request, direct mode | gateway: ${selectedGateway.name}`,
+          'Proxy'
+        );
+      }
+
       Object.keys(request.headers).forEach(key => {
         const lowerKey = key.toLowerCase();
         if (lowerKey.startsWith('x-') &&
             lowerKey !== 'x-portkey-virtual-key' &&
-            lowerKey !== 'x-portkey-config') {
+            lowerKey !== 'x-portkey-config' &&
+            lowerKey !== 'x-gateway-id' &&
+            lowerKey !== 'x-api-key') {
           headers[key] = request.headers[key] as string;
         }
       });
@@ -704,11 +727,11 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       }
 
       memoryLogger.info(
-        `代理请求: ${request.method} ${path} | 虚拟密钥: ${vkDisplay} | 提供商: ${providerId}`,
+        `Proxy request: ${request.method} ${path} | virtual key: ${vkDisplay} | provider: ${providerId}`,
         'Proxy'
       );
       memoryLogger.debug(
-        `转发到 Portkey: ${portkeyUrl} | config: ${JSON.stringify(redactedConfig)}`,
+        `Forward to Portkey: ${portkeyUrl} | config: ${JSON.stringify(redactedConfig)}`,
         'Proxy'
       );
 
@@ -717,22 +740,22 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       if (request.method !== 'GET' && request.method !== 'HEAD') {
         requestBody = JSON.stringify(request.body);
         const truncatedBody = requestBody.length > 500
-          ? `${requestBody.substring(0, 500)}... (总长度: ${requestBody.length} 字符)`
+          ? `${requestBody.substring(0, 500)}... (total length: ${requestBody.length} chars)`
           : requestBody;
         memoryLogger.debug(
-          `请求体: ${truncatedBody}`,
+          `Request body: ${truncatedBody}`,
           'Proxy'
         );
       }
 
       memoryLogger.debug(
-        `转发请求: ${request.method} ${portkeyUrl} | 流式: ${isStreamRequest}`,
+        `Forward request: ${request.method} ${portkeyUrl} | stream: ${isStreamRequest}`,
         'Proxy'
       );
 
       if (isStreamRequest) {
         memoryLogger.info(
-          `流式请求开始: ${path} | 虚拟密钥: ${vkDisplay}`,
+          `Stream request started: ${path} | virtual key: ${vkDisplay}`,
           'Proxy'
         );
 
@@ -747,7 +770,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
 
           const duration = Date.now() - startTime;
           memoryLogger.info(
-            `流式请求完成: 耗时 ${duration}ms | Tokens: ${tokenUsage.totalTokens}`,
+            `Stream request completed: ${duration}ms | tokens: ${tokenUsage.totalTokens}`,
             'Proxy'
           );
 
@@ -776,7 +799,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         } catch (streamError: any) {
           const duration = Date.now() - startTime;
           memoryLogger.error(
-            `流式请求失败: ${streamError.message}`,
+            `Stream request failed: ${streamError.message}`,
             'Proxy',
             { error: streamError.stack }
           );
@@ -812,7 +835,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
 
       if (isEmbeddingsRequest && virtualKey.cache_enabled === 1) {
         memoryLogger.debug(
-          `Embeddings 请求不使用缓存 | 虚拟密钥: ${vkDisplay}`,
+          `Embeddings request cache disabled | virtual key: ${vkDisplay}`,
           'Proxy'
         );
       }
@@ -849,7 +872,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           });
 
           memoryLogger.info(
-            `请求完成: 200 | 耗时: ${duration}ms | Tokens: ${cached.response.usage?.total_tokens || 0} | 缓存命中`,
+            `Request completed: 200 | ${duration}ms | tokens: ${cached.response.usage?.total_tokens || 0} | cache hit`,
             'Proxy'
           );
 
@@ -857,7 +880,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         }
 
         memoryLogger.debug(
-          `缓存未命中 | key=${cacheKey.substring(0, 8)}... | 虚拟密钥: ${vkDisplay}`,
+          `Cache miss | key=${cacheKey.substring(0, 8)}... | virtual key: ${vkDisplay}`,
           'Proxy'
         );
       }
@@ -887,11 +910,11 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       const responseText = response.body;
 
       const truncatedResponseText = responseText.length > 500
-        ? `${responseText.substring(0, 500)}... (总长度: ${responseText.length} 字符)`
+        ? `${responseText.substring(0, 500)}... (total length: ${responseText.length} chars)`
         : responseText;
 
       memoryLogger.debug(
-        `原始响应体: ${truncatedResponseText}`,
+        `Raw response body: ${truncatedResponseText}`,
         'Proxy'
       );
 
@@ -900,7 +923,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
 
       if (!isJsonResponse && responseText) {
         memoryLogger.warn(
-          `上游返回非 JSON 响应: Content-Type=${contentType}`,
+          `Upstream returned non-JSON response: Content-Type=${contentType}`,
           'Proxy'
         );
         reply.header('Content-Type', contentType || 'text/plain');
@@ -922,15 +945,15 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             usage: responseData.usage,
             total_length: responseDataStr.length
           };
-          logMessage = `响应摘要: ${JSON.stringify(summary)}`;
+          logMessage = `Response summary: ${JSON.stringify(summary)}`;
         } else {
-          logMessage = `完整响应: ${responseDataStr}`;
+          logMessage = `Full response: ${responseDataStr}`;
         }
 
         memoryLogger.debug(logMessage, 'Proxy');
       } catch (parseError) {
         memoryLogger.error(
-          `JSON 解析失败: ${parseError} | 原始响应前 200 字符: ${responseText.substring(0, 200)}`,
+          `JSON parse failed: ${parseError} | first 200 chars: ${responseText.substring(0, 200)}`,
           'Proxy'
         );
         responseData = {
@@ -974,30 +997,30 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           reply.header('X-Cache-Status', 'MISS');
 
           memoryLogger.debug(
-            `响应已缓存 | key=${cacheKey.substring(0, 8)}... | model=${request.body?.model}`,
+            `Response cached | key=${cacheKey.substring(0, 8)}... | model=${request.body?.model}`,
             'Proxy'
           );
         }
 
         let cacheStatus: string;
         if (fromCache) {
-          cacheStatus = '缓存命中';
+          cacheStatus = 'cache hit';
         } else if (shouldCache) {
-          cacheStatus = '缓存未命中';
+          cacheStatus = 'cache miss';
         } else {
-          cacheStatus = '未启用缓存';
+          cacheStatus = 'cache disabled';
         }
         memoryLogger.info(
-          `请求完成: ${response.statusCode} | 耗时: ${duration}ms | Tokens: ${usage.total_tokens || 0} | ${cacheStatus}`,
+          `Request completed: ${response.statusCode} | ${duration}ms | tokens: ${usage.total_tokens || 0} | ${cacheStatus}`,
           'Proxy'
         );
       } else {
         const errorStr = JSON.stringify(responseData);
         const truncatedError = errorStr.length > 500
-          ? `${errorStr.substring(0, 500)}... (总长度: ${errorStr.length} 字符)`
+          ? `${errorStr.substring(0, 500)}... (total length: ${errorStr.length} chars)`
           : errorStr;
         memoryLogger.error(
-          `请求失败: ${response.statusCode} | 耗时: ${duration}ms | 错误: ${truncatedError}`,
+          `Request failed: ${response.statusCode} | ${duration}ms | error: ${truncatedError}`,
           'Proxy'
         );
 
@@ -1007,7 +1030,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       reply.header('Content-Type', 'application/json');
 
       memoryLogger.debug(
-        `发送给客户端的响应结构: ${JSON.stringify({
+        `Response structure sent to client: ${JSON.stringify({
           has_id: !!responseData.id,
           has_object: !!responseData.object,
           object_value: responseData.object,
@@ -1029,7 +1052,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       const duration = Date.now() - startTime;
 
       memoryLogger.error(
-        `代理请求失败: ${error.message}`,
+        `Proxy request failed: ${error.message}`,
         'Proxy',
         { error: error.stack }
       );

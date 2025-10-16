@@ -29,28 +29,11 @@ export function encryptApiKey(apiKey: string): string {
 }
 
 export function decryptApiKey(encryptedKey: string): string {
-  try {
-    if (!encryptedKey || typeof encryptedKey !== 'string') {
-      throw new Error('Invalid encrypted key format');
-    }
-
-    const parts = encryptedKey.split(':');
-    if (parts.length !== 2) {
-      throw new Error('Invalid encrypted key format');
-    }
-
-    const [ivHex, encrypted] = parts;
-    if (!ivHex || !encrypted) {
-      throw new Error('Invalid encrypted key format');
-    }
-
-    const iv = Buffer.from(ivHex, 'hex');
-    const decipher = createDecipheriv(ALGORITHM, ENCRYPTION_KEY, iv);
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return decrypted;
-  } catch (error: any) {
-    throw new Error(`Failed to decrypt API key: ${error.message}`);
-  }
+  const [ivHex, encrypted] = encryptedKey.split(':');
+  const iv = Buffer.from(ivHex, 'hex');
+  const decipher = createDecipheriv(ALGORITHM, ENCRYPTION_KEY, iv);
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
 }
 

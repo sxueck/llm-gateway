@@ -4,8 +4,6 @@ import { nanoid } from 'nanoid';
 import { modelDb, providerDb, virtualKeyDb, portkeyGatewayDb } from '../db/index.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { portkeyRouter } from '../services/portkey-router.js';
-import { HttpClient } from '../utils/http-client.js';
-import { JsonParser } from '../utils/json-parser.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -65,7 +63,11 @@ export async function modelRoutes(fastify: FastifyInstance) {
         const provider = m.provider_id ? providerMap.get(m.provider_id) : null;
         const virtualKeyCount = virtualKeyCounts.get(m.id) || 0;
 
-        const modelAttributes = JsonParser.parseOrNull(m.model_attributes);
+        let modelAttributes = null;
+        try {
+          modelAttributes = m.model_attributes ? JSON.parse(m.model_attributes) : null;
+        } catch (e) {
+        }
 
         let routingGateway = null;
         if (!m.is_virtual) {
@@ -114,7 +116,11 @@ export async function modelRoutes(fastify: FastifyInstance) {
     const provider = model.provider_id ? providerDb.getById(model.provider_id) : null;
     const virtualKeyCount = virtualKeyDb.countByModelId(model.id);
 
-    const modelAttributes = JsonParser.parseOrNull(model.model_attributes);
+    let modelAttributes = null;
+    try {
+      modelAttributes = model.model_attributes ? JSON.parse(model.model_attributes) : null;
+    } catch (e) {
+    }
 
     return {
       id: model.id,
@@ -150,10 +156,14 @@ export async function modelRoutes(fastify: FastifyInstance) {
       is_virtual: body.isVirtual ? 1 : 0,
       routing_config_id: body.routingConfigId || null,
       enabled: body.enabled !== false ? 1 : 0,
-      model_attributes: body.modelAttributes ? JsonParser.safeStringify(body.modelAttributes) : null,
+      model_attributes: body.modelAttributes ? JSON.stringify(body.modelAttributes) : null,
     });
 
-    const modelAttributes = JsonParser.parseOrNull(model.model_attributes);
+    let modelAttributes = null;
+    try {
+      modelAttributes = model.model_attributes ? JSON.parse(model.model_attributes) : null;
+    } catch (e) {
+    }
 
     return {
       id: model.id,
@@ -183,13 +193,17 @@ export async function modelRoutes(fastify: FastifyInstance) {
     if (body.modelIdentifier !== undefined) updates.model_identifier = body.modelIdentifier;
     if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
     if (body.modelAttributes !== undefined) {
-      updates.model_attributes = body.modelAttributes ? JsonParser.safeStringify(body.modelAttributes) : null;
+      updates.model_attributes = body.modelAttributes ? JSON.stringify(body.modelAttributes) : null;
     }
 
     await modelDb.update(id, updates);
 
     const updated = modelDb.getById(id)!;
-    const modelAttributes = JsonParser.parseOrNull(updated.model_attributes);
+    let modelAttributes = null;
+    try {
+      modelAttributes = updated.model_attributes ? JSON.parse(updated.model_attributes) : null;
+    } catch (e) {
+    }
 
     return {
       id: updated.id,
@@ -260,34 +274,47 @@ export async function modelRoutes(fastify: FastifyInstance) {
 
     try {
       const apiKey = decryptApiKey(provider.api_key);
-      const result = await HttpClient.testModelCompletion(
-        provider.base_url,
-        apiKey,
-        model.model_identifier
-      );
+      const endpoint = `${provider.base_url}/chat/completions`;
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: model.model_identifier,
+          messages: [{ role: 'user', content: '测试' }],
+          max_tokens: 10,
+          temperature: 0.1,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
 
       const responseTime = Date.now() - startTime;
 
-      if (!result.ok) {
+      if (!response.ok) {
+        const errorText = await response.text();
         return {
           success: false,
-          status: result.status,
-          message: `测试失败: HTTP ${result.status}`,
-          error: result.error,
+          status: response.status,
+          message: `测试失败: HTTP ${response.status}`,
+          error: errorText,
           responseTime,
         };
       }
 
-      const content = result.data?.choices?.[0]?.message?.content || '无响应内容';
+      const data: any = await response.json();
+      const content = data?.choices?.[0]?.message?.content || '无响应内容';
 
       return {
         success: true,
-        status: result.status,
+        status: response.status,
         message: '测试成功',
         responseTime,
         response: {
           content,
-          usage: result.data?.usage,
+          usage: data?.usage,
         },
       };
     } catch (error: any) {

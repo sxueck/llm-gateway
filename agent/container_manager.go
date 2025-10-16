@@ -13,17 +13,17 @@ import (
 )
 
 type ContainerManager struct {
-	config       *Config
-	dockerClient *DockerClient
-	logger       *Logger
+	config        *Config
+	dockerClient  *DockerClient
+	logger        *Logger
 	configManager *ConfigManager
 }
 
 func NewContainerManager(config *Config, dockerClient *DockerClient, logger *Logger) *ContainerManager {
 	return &ContainerManager{
-		config:       config,
-		dockerClient: dockerClient,
-		logger:       logger,
+		config:        config,
+		dockerClient:  dockerClient,
+		logger:        logger,
 		configManager: NewConfigManager(config, logger),
 	}
 }
@@ -79,7 +79,7 @@ func (cm *ContainerManager) createAndStart(ctx context.Context) error {
 	configDir := "/tmp/portkey-config-" + cm.config.GatewayID
 
 	portBinding := nat.PortBinding{
-		HostIP:   "0.0.0.0",
+		HostIP:   "127.0.0.1",
 		HostPort: fmt.Sprintf("%d", cm.config.PortkeyPort),
 	}
 
@@ -173,4 +173,3 @@ func (cm *ContainerManager) IsRunning(ctx context.Context) (bool, error) {
 
 	return false, nil
 }
-

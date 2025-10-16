@@ -2,8 +2,16 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
 	"log"
+	"math/big"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -23,6 +31,10 @@ func main() {
 
 	if err := config.Validate(); err != nil {
 		log.Fatalf("配置验证失败: %v", err)
+	}
+
+	if config.GatewayID == "" || config.APIKey == "" {
+		log.Fatalf("GATEWAY_ID 和 API_KEY 不能为空，请检查配置")
 	}
 
 	logger := NewLogger(config.LogLevel)
@@ -77,6 +89,7 @@ type Agent struct {
 	configManager    *ConfigManager
 	containerManager *ContainerManager
 	gatewayClient    *GatewayClient
+	httpServer       *http.Server
 }
 
 func (a *Agent) Start(ctx context.Context) error {
@@ -99,6 +112,29 @@ func (a *Agent) Start(ctx context.Context) error {
 		return fmt.Errorf("容器启动失败: %w", err)
 	}
 
+	proxyHandler := NewProxyHandler(a.config, a.logger)
+	a.httpServer = &http.Server{
+		Addr:         fmt.Sprintf(":%d", a.config.AgentPort),
+		Handler:      proxyHandler,
+		ReadTimeout:  5 * time.Minute,
+		WriteTimeout: 5 * time.Minute,
+		IdleTimeout:  2 * time.Minute,
+	}
+
+	go func() {
+		a.logger.Info("准备启动 Agent HTTPS 代理服务器", "port", a.config.AgentPort)
+		if err := ensureTLSConfig(a.config.CertFile, a.config.KeyFile, a.logger); err != nil {
+			a.logger.Error("TLS 配置失败", "error", err)
+			return
+		}
+
+		a.logger.Info("启动 Agent HTTPS 代理服务器", "port", a.config.AgentPort)
+		err := a.httpServer.ListenAndServeTLS(a.config.CertFile, a.config.KeyFile)
+		if err != nil && err != http.ErrServerClosed {
+			a.logger.Error("HTTPS 服务器启动失败", "error", err)
+		}
+	}()
+
 	go a.heartbeatLoop(ctx)
 	go a.configSyncLoop(ctx)
 
@@ -109,6 +145,18 @@ func (a *Agent) Start(ctx context.Context) error {
 
 func (a *Agent) Stop(ctx context.Context) error {
 	a.logger.Info("正在停止 Agent...")
+
+	if a.httpServer != nil {
+		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		if err := a.httpServer.Shutdown(shutdownCtx); err != nil {
+			a.logger.Error("HTTP 服务器停止失败", "error", err)
+			return err
+		}
+		a.logger.Info("HTTP 服务器已停止")
+	}
+
 	return nil
 }
 
@@ -157,4 +205,56 @@ func (a *Agent) configSyncLoop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func ensureTLSConfig(certFile, keyFile string, logger *Logger) error {
+	if _, err := os.Stat(certFile); os.IsNotExist(err) {
+		logger.Info("证书文件不存在，正在生成自签名证书...", "cert", certFile, "key", keyFile)
+		return generateSelfSignedCert(certFile, keyFile)
+	}
+	logger.Info("找到现有 TLS 证书文件")
+	return nil
+}
+
+func generateSelfSignedCert(certFile, keyFile string) error {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return fmt.Errorf("生成 RSA 密钥失败: %w", err)
+	}
+
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			Organization: []string{"LLM Gateway Agent"},
+		},
+		NotBefore: time.Now(),
+		NotAfter:  time.Now().Add(365 * 24 * time.Hour),
+
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              []string{"localhost"},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	if err != nil {
+		return fmt.Errorf("创建证书失败: %w", err)
+	}
+
+	certOut, err := os.Create(certFile)
+	if err != nil {
+		return fmt.Errorf("创建证书文件失败: %w", err)
+	}
+	defer certOut.Close()
+	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+
+	keyOut, err := os.Create(keyFile)
+	if err != nil {
+		return fmt.Errorf("创建密钥文件失败: %w", err)
+	}
+	defer keyOut.Close()
+	pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
+
+	return nil
 }

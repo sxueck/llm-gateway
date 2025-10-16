@@ -26,7 +26,6 @@ type ApiRequestBuffer = {
   request_body?: string;
   response_body?: string;
   cache_hit?: number;
-  request_type?: string;
 };
 
 let apiRequestBuffer: ApiRequestBuffer[] = [];
@@ -315,11 +314,6 @@ function createTables() {
 
   try {
     db.run('ALTER TABLE api_requests ADD COLUMN cache_hit INTEGER DEFAULT 0');
-  } catch (e) {
-  }
-
-  try {
-    db.run('ALTER TABLE api_requests ADD COLUMN request_type TEXT DEFAULT "chat"');
   } catch (e) {
   }
 

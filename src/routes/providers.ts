@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { providerDb } from '../db/index.js';
 import { encryptApiKey, decryptApiKey } from '../utils/crypto.js';
 import { generatePortkeyConfig } from '../services/config-generator.js';
-import { HttpClient } from '../utils/http-client.js';
 
 const createProviderSchema = z.object({
   id: z.string(),
@@ -158,12 +157,20 @@ export async function providerRoutes(fastify: FastifyInstance) {
 
     try {
       const apiKey = decryptApiKey(provider.api_key);
-      const result = await HttpClient.testProviderConnection(provider.base_url, apiKey);
+      const endpoint = `${provider.base_url}/models`;
+
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        signal: AbortSignal.timeout(10000),
+      });
 
       return {
-        success: result.ok,
-        status: result.status,
-        message: result.ok ? '连接成功' : '连接失败',
+        success: response.ok,
+        status: response.status,
+        message: response.ok ? '连接成功' : '连接失败',
       };
     } catch (error: any) {
       return {
@@ -181,17 +188,26 @@ export async function providerRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      const result = await HttpClient.testProviderConnection(baseUrl, apiKey, 10000);
+      const endpoint = `${baseUrl}/models`;
 
-      if (!result.ok) {
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) {
         return {
           success: false,
-          message: `获取模型列表失败: HTTP ${result.status}`,
+          message: `获取模型列表失败: HTTP ${response.status}`,
           models: [],
         };
       }
 
-      const models = result.data?.data?.map((model: any) => ({
+      const data: any = await response.json();
+      const models = data?.data?.map((model: any) => ({
         id: model.id,
         name: model.id,
         created: model.created,

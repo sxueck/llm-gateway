@@ -16,6 +16,8 @@ type Config struct {
 	LogLevel           string
 	ConfigSyncInterval int
 	HeartbeatInterval  int
+	CertFile           string
+	KeyFile            string
 }
 
 func LoadConfig() *Config {
@@ -29,6 +31,8 @@ func LoadConfig() *Config {
 		LogLevel:           getEnv("LOG_LEVEL", "info"),
 		ConfigSyncInterval: getEnvInt("CONFIG_SYNC_INTERVAL", 300),
 		HeartbeatInterval:  getEnvInt("HEARTBEAT_INTERVAL", 30),
+		CertFile:           getEnv("CERT_FILE", "cert.pem"),
+		KeyFile:            getEnv("KEY_FILE", "key.pem"),
 	}
 }
 

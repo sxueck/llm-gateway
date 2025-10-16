@@ -35,8 +35,7 @@ function validateUrl(url: string): void {
 abstract class BaseAdapter implements ProviderAdapter {
   normalizeBaseUrl(baseUrl: string): string {
     validateUrl(baseUrl);
-    let normalized = baseUrl.trim().replace(/\/+$/, '');
-    normalized = normalized.replace(/\/v1$/, '');
+    const normalized = baseUrl.trim().replace(/\/+$/, '');
     return normalized;
   }
 
@@ -123,6 +122,14 @@ export class ProviderAdapterFactory {
   }
 
   static normalizeProviderConfig(config: ProviderConfig): ProviderConfig {
+    if (!config.baseUrl || config.baseUrl.trim() === '') {
+      return {
+        ...config,
+        baseUrl: '',
+        provider: 'openai',
+      };
+    }
+
     const adapter = this.getAdapter(config.baseUrl);
     return {
       ...config,
