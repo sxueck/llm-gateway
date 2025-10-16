@@ -9,6 +9,7 @@ import { decryptApiKey } from '../utils/crypto.js';
 import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse } from '../utils/request-logger.js';
 import { portkeyRouter } from '../services/portkey-router.js';
 import { requestCache } from '../services/request-cache.js';
+import { ProviderAdapterFactory } from '../services/provider-adapter.js';
 
 interface RoutingTarget {
   provider: string;
@@ -260,24 +261,7 @@ function makeStreamHttpRequest(
   });
 }
 
-function getPortkeyProviderType(baseUrl: string): string {
-  const url = baseUrl.toLowerCase();
 
-  if (url.includes('api.deepseek.com')) {
-    return 'openai';
-  }
-  if (url.includes('api.openai.com')) {
-    return 'openai';
-  }
-  if (url.includes('api.anthropic.com')) {
-    return 'anthropic';
-  }
-  if (url.includes('generativelanguage.googleapis.com')) {
-    return 'google';
-  }
-
-  return 'openai';
-}
 
 interface ProxyRequest extends FastifyRequest {
   body: any;
@@ -635,20 +619,25 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       }
 
       const decryptedApiKey = decryptApiKey(provider.api_key);
-      const portkeyProviderType = getPortkeyProviderType(provider.base_url);
+      const baseUrl = provider.base_url || '';
+
+      const normalized = ProviderAdapterFactory.normalizeProviderConfig({
+        provider: provider.id,
+        baseUrl,
+        apiKey: decryptedApiKey,
+      });
 
       const vkDisplay = virtualKeyValue && virtualKeyValue.length > 10
         ? `${virtualKeyValue.slice(0, 6)}...${virtualKeyValue.slice(-4)}`
         : virtualKeyValue;
 
       const portkeyConfig: Record<string, any> = {
-        provider: portkeyProviderType,
-        api_key: decryptedApiKey,
+        provider: normalized.provider,
+        api_key: normalized.apiKey,
       };
 
-      if (provider.base_url) {
-        const customHost = provider.base_url.replace(/\/+$/, '');
-        portkeyConfig.custom_host = customHost;
+      if (normalized.baseUrl) {
+        portkeyConfig.custom_host = normalized.baseUrl;
       }
 
       if (virtualKey.cache_enabled === 1) {

@@ -4,25 +4,7 @@ import { appConfig } from '../config/index.js';
 import { providerDb, virtualKeyDb } from '../db/index.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { PortkeyConfig } from '../types/index.js';
-
-function getPortkeyProviderType(baseUrl: string): string {
-  const url = baseUrl.toLowerCase();
-
-  if (url.includes('api.deepseek.com')) {
-    return 'openai';
-  }
-  if (url.includes('api.openai.com')) {
-    return 'openai';
-  }
-  if (url.includes('api.anthropic.com')) {
-    return 'anthropic';
-  }
-  if (url.includes('generativelanguage.googleapis.com')) {
-    return 'google';
-  }
-
-  return 'openai';
-}
+import { ProviderAdapterFactory } from './provider-adapter.js';
 
 export async function generatePortkeyConfig(): Promise<string> {
   const providers = providerDb.getAll();
@@ -36,14 +18,18 @@ export async function generatePortkeyConfig(): Promise<string> {
   for (const provider of providers) {
     if (provider.enabled) {
       const apiKey = decryptApiKey(provider.api_key).trim();
-      let baseUrl = (provider.base_url || '').trim().replace(/\/+$/, '');
-      baseUrl = baseUrl.replace(/\/v1$/, '');
-      const portkeyProvider = getPortkeyProviderType(baseUrl);
+      const baseUrl = (provider.base_url || '').trim();
+
+      const normalized = ProviderAdapterFactory.normalizeProviderConfig({
+        provider: provider.id,
+        baseUrl,
+        apiKey,
+      });
 
       config.credentials[provider.id] = {
-        provider: portkeyProvider,
-        api_key: apiKey,
-        base_url: baseUrl,
+        provider: normalized.provider,
+        api_key: normalized.apiKey,
+        base_url: normalized.baseUrl,
       };
     }
   }
