@@ -74,7 +74,7 @@ export class HttpClient {
           return lastError;
         }
 
-        const data = await response.json();
+        const data = await response.json() as T;
         return {
           ok: true,
           status: response.status,
