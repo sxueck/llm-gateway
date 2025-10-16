@@ -807,7 +807,17 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       let cacheKey: string | null = null;
       let fromCache = false;
 
-      if (virtualKey.cache_enabled === 1 && !isStreamRequest && request.body) {
+      const isEmbeddingsRequest = path.startsWith('/v1/embeddings');
+      const shouldCache = virtualKey.cache_enabled === 1 && !isStreamRequest && !isEmbeddingsRequest && request.body;
+
+      if (isEmbeddingsRequest && virtualKey.cache_enabled === 1) {
+        memoryLogger.debug(
+          `Embeddings 请求不使用缓存 | 虚拟密钥: ${vkDisplay}`,
+          'Proxy'
+        );
+      }
+
+      if (shouldCache) {
         cacheKey = requestCache.generateCacheKey(request.body);
         const cached = requestCache.get(cacheKey);
 
@@ -958,7 +968,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       });
 
       if (isSuccess) {
-        if (cacheKey && virtualKey.cache_enabled === 1 && !isStreamRequest && !fromCache) {
+        if (cacheKey && shouldCache && !fromCache) {
           const cacheHeaders: Record<string, string> = { ...responseHeaders };
           requestCache.set(cacheKey, responseData, cacheHeaders);
           reply.header('X-Cache-Status', 'MISS');
@@ -969,7 +979,14 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           );
         }
 
-        const cacheStatus = fromCache ? '缓存命中' : '缓存未命中';
+        let cacheStatus: string;
+        if (fromCache) {
+          cacheStatus = '缓存命中';
+        } else if (shouldCache) {
+          cacheStatus = '缓存未命中';
+        } else {
+          cacheStatus = '未启用缓存';
+        }
         memoryLogger.info(
           `请求完成: ${response.statusCode} | 耗时: ${duration}ms | Tokens: ${usage.total_tokens || 0} | ${cacheStatus}`,
           'Proxy'

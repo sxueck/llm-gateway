@@ -26,6 +26,7 @@ type ApiRequestBuffer = {
   request_body?: string;
   response_body?: string;
   cache_hit?: number;
+  request_type?: string;
 };
 
 let apiRequestBuffer: ApiRequestBuffer[] = [];
@@ -314,6 +315,11 @@ function createTables() {
 
   try {
     db.run('ALTER TABLE api_requests ADD COLUMN cache_hit INTEGER DEFAULT 0');
+  } catch (e) {
+  }
+
+  try {
+    db.run('ALTER TABLE api_requests ADD COLUMN request_type TEXT DEFAULT "chat"');
   } catch (e) {
   }
 
@@ -880,7 +886,7 @@ export const apiRequestDb = {
         COUNT(*) as total_requests,
         SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successful_requests,
         SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as failed_requests,
-        SUM(total_tokens) as total_tokens,
+        SUM(CASE WHEN cache_hit = 0 THEN total_tokens ELSE 0 END) as total_tokens,
         AVG(response_time) as avg_response_time,
         SUM(CASE WHEN cache_hit = 1 THEN 1 ELSE 0 END) as cache_hits,
         SUM(CASE WHEN cache_hit = 1 THEN total_tokens ELSE 0 END) as cache_saved_tokens
