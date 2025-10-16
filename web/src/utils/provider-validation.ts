@@ -123,19 +123,19 @@ export function validateBaseUrl(url: string): {
   try {
     const urlObj = new URL(url);
     
-    // 必须是 HTTPS
-    if (urlObj.protocol !== 'https:') {
+    // 支持 HTTP 和 HTTPS 协议
+    if (urlObj.protocol !== 'https:' && urlObj.protocol !== 'http:') {
       return {
         isValid: false,
-        message: 'Base URL 必须使用 HTTPS 协议',
+        message: 'Base URL 必须使用 HTTP 或 HTTPS 协议',
       };
     }
 
-    // 检查是否为有效的域名
-    if (!urlObj.hostname || urlObj.hostname === 'localhost') {
+    // 检查是否为有效的主机名（允许内网地址）
+    if (!urlObj.hostname) {
       return {
         isValid: false,
-        message: 'Base URL 必须包含有效的域名',
+        message: 'Base URL 必须包含有效的主机名',
       };
     }
 
