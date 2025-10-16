@@ -636,7 +636,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         api_key: normalized.apiKey,
       };
 
-      if (normalized.baseUrl) {
+      if (normalized.baseUrl && normalized.provider.toLowerCase() !== 'google') {
         portkeyConfig.custom_host = normalized.baseUrl;
       }
 

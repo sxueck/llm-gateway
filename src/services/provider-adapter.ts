@@ -9,8 +9,32 @@ interface ProviderAdapter {
   getProviderType(baseUrl: string): string;
 }
 
+function validateUrl(url: string): void {
+  if (!url || typeof url !== 'string') {
+    throw new Error('Invalid URL: URL must be a non-empty string');
+  }
+
+  const trimmedUrl = url.trim();
+  if (!trimmedUrl) {
+    throw new Error('Invalid URL: URL cannot be empty or whitespace');
+  }
+
+  try {
+    const parsedUrl = new URL(trimmedUrl);
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      throw new Error('Invalid URL: Only HTTP and HTTPS protocols are allowed');
+    }
+  } catch (error: any) {
+    if (error.message.includes('Invalid URL')) {
+      throw error;
+    }
+    throw new Error(`Invalid URL format: ${error.message}`);
+  }
+}
+
 abstract class BaseAdapter implements ProviderAdapter {
   normalizeBaseUrl(baseUrl: string): string {
+    validateUrl(baseUrl);
     let normalized = baseUrl.trim().replace(/\/+$/, '');
     normalized = normalized.replace(/\/v1$/, '');
     return normalized;
@@ -21,21 +45,22 @@ abstract class BaseAdapter implements ProviderAdapter {
 
 class GoogleGeminiAdapter implements ProviderAdapter {
   normalizeBaseUrl(baseUrl: string): string {
+    validateUrl(baseUrl);
     let normalized = baseUrl.trim();
 
     if (normalized.includes('generativelanguage.googleapis.com')) {
       normalized = normalized.replace(/\/+$/, '');
 
       if (normalized.endsWith('/v1beta/openai')) {
-        return normalized + '/';
+        return normalized;
       }
 
       if (normalized.endsWith('/v1beta')) {
-        return normalized + '/openai/';
+        return normalized + '/openai';
       }
 
       if (!normalized.includes('/openai')) {
-        return normalized + '/v1beta/openai/';
+        return normalized + '/v1beta/openai';
       }
     }
 

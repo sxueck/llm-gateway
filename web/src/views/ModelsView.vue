@@ -24,6 +24,7 @@
           :pagination="{ pageSize: 10 }"
           :bordered="false"
           size="small"
+          :max-height="560"
         />
       </n-card>
     </n-space>

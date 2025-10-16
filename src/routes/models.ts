@@ -4,6 +4,8 @@ import { nanoid } from 'nanoid';
 import { modelDb, providerDb, virtualKeyDb, portkeyGatewayDb } from '../db/index.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { portkeyRouter } from '../services/portkey-router.js';
+import { HttpClient } from '../utils/http-client.js';
+import { JsonParser } from '../utils/json-parser.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -63,14 +65,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
         const provider = m.provider_id ? providerMap.get(m.provider_id) : null;
         const virtualKeyCount = virtualKeyCounts.get(m.id) || 0;
 
-        let modelAttributes = null;
-        if (m.model_attributes) {
-          try {
-            modelAttributes = JSON.parse(m.model_attributes);
-          } catch {
-            fastify.log.warn(`Failed to parse model attributes for model ${m.id}`);
-          }
-        }
+        const modelAttributes = JsonParser.parseOrNull(m.model_attributes);
 
         let routingGateway = null;
         if (!m.is_virtual) {
@@ -119,14 +114,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
     const provider = model.provider_id ? providerDb.getById(model.provider_id) : null;
     const virtualKeyCount = virtualKeyDb.countByModelId(model.id);
 
-    let modelAttributes = null;
-    if (model.model_attributes) {
-      try {
-        modelAttributes = JSON.parse(model.model_attributes);
-      } catch {
-        fastify.log.warn(`Failed to parse model attributes for model ${model.id}`);
-      }
-    }
+    const modelAttributes = JsonParser.parseOrNull(model.model_attributes);
 
     return {
       id: model.id,
@@ -162,17 +150,10 @@ export async function modelRoutes(fastify: FastifyInstance) {
       is_virtual: body.isVirtual ? 1 : 0,
       routing_config_id: body.routingConfigId || null,
       enabled: body.enabled !== false ? 1 : 0,
-      model_attributes: body.modelAttributes ? JSON.stringify(body.modelAttributes) : null,
+      model_attributes: body.modelAttributes ? JsonParser.safeStringify(body.modelAttributes) : null,
     });
 
-    let modelAttributes = null;
-    if (model.model_attributes) {
-      try {
-        modelAttributes = JSON.parse(model.model_attributes);
-      } catch {
-        fastify.log.warn(`Failed to parse model attributes for model ${model.id}`);
-      }
-    }
+    const modelAttributes = JsonParser.parseOrNull(model.model_attributes);
 
     return {
       id: model.id,
@@ -202,21 +183,13 @@ export async function modelRoutes(fastify: FastifyInstance) {
     if (body.modelIdentifier !== undefined) updates.model_identifier = body.modelIdentifier;
     if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
     if (body.modelAttributes !== undefined) {
-      updates.model_attributes = body.modelAttributes ? JSON.stringify(body.modelAttributes) : null;
+      updates.model_attributes = body.modelAttributes ? JsonParser.safeStringify(body.modelAttributes) : null;
     }
 
     await modelDb.update(id, updates);
 
     const updated = modelDb.getById(id)!;
-
-    let modelAttributes = null;
-    if (updated.model_attributes) {
-      try {
-        modelAttributes = JSON.parse(updated.model_attributes);
-      } catch {
-        fastify.log.warn(`Failed to parse model attributes for model ${updated.id}`);
-      }
-    }
+    const modelAttributes = JsonParser.parseOrNull(updated.model_attributes);
 
     return {
       id: updated.id,
@@ -286,47 +259,35 @@ export async function modelRoutes(fastify: FastifyInstance) {
     const startTime = Date.now();
 
     try {
-      const response = await fetch(`${provider.base_url}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${decryptApiKey(provider.api_key)}`,
-        },
-        body: JSON.stringify({
-          model: model.model_identifier,
-          messages: [
-            { role: 'user', content: '测试' }
-          ],
-          max_tokens: 10,
-          temperature: 0.1,
-        }),
-        signal: AbortSignal.timeout(30000),
-      });
+      const apiKey = decryptApiKey(provider.api_key);
+      const result = await HttpClient.testModelCompletion(
+        provider.base_url,
+        apiKey,
+        model.model_identifier
+      );
 
       const responseTime = Date.now() - startTime;
 
-      if (!response.ok) {
-        const errorText = await response.text();
+      if (!result.ok) {
         return {
           success: false,
-          status: response.status,
-          message: `测试失败: HTTP ${response.status}`,
-          error: errorText,
+          status: result.status,
+          message: `测试失败: HTTP ${result.status}`,
+          error: result.error,
           responseTime,
         };
       }
 
-      const data = await response.json() as any;
-      const content = data.choices?.[0]?.message?.content || '无响应内容';
+      const content = result.data?.choices?.[0]?.message?.content || '无响应内容';
 
       return {
         success: true,
-        status: response.status,
+        status: result.status,
         message: '测试成功',
         responseTime,
         response: {
           content,
-          usage: data.usage,
+          usage: result.data?.usage,
         },
       };
     } catch (error: any) {

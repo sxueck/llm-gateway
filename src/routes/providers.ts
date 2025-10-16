@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { providerDb } from '../db/index.js';
 import { encryptApiKey, decryptApiKey } from '../utils/crypto.js';
 import { generatePortkeyConfig } from '../services/config-generator.js';
+import { HttpClient } from '../utils/http-client.js';
 
 const createProviderSchema = z.object({
   id: z.string(),
@@ -156,16 +157,13 @@ export async function providerRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      const response = await fetch(`${provider.base_url}/models`, {
-        headers: {
-          'Authorization': `Bearer ${decryptApiKey(provider.api_key)}`,
-        },
-      });
+      const apiKey = decryptApiKey(provider.api_key);
+      const result = await HttpClient.testProviderConnection(provider.base_url, apiKey);
 
       return {
-        success: response.ok,
-        status: response.status,
-        message: response.ok ? '连接成功' : '连接失败',
+        success: result.ok,
+        status: result.status,
+        message: result.ok ? '连接成功' : '连接失败',
       };
     } catch (error: any) {
       return {
@@ -183,23 +181,17 @@ export async function providerRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      const response = await fetch(`${baseUrl}/models`, {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        signal: AbortSignal.timeout(10000),
-      });
+      const result = await HttpClient.testProviderConnection(baseUrl, apiKey, 10000);
 
-      if (!response.ok) {
+      if (!result.ok) {
         return {
           success: false,
-          message: `获取模型列表失败: HTTP ${response.status}`,
+          message: `获取模型列表失败: HTTP ${result.status}`,
           models: [],
         };
       }
 
-      const data = await response.json() as { data?: Array<{ id: string; created: number }> };
-      const models = data.data?.map((model: any) => ({
+      const models = result.data?.data?.map((model: any) => ({
         id: model.id,
         name: model.id,
         created: model.created,
