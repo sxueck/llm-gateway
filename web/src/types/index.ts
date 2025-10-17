@@ -14,6 +14,13 @@ export interface Provider {
   updatedAt: number;
 }
 
+export interface PromptConfig {
+  operationType: 'replace' | 'prepend' | 'system';
+  templateContent: string;
+  systemMessage?: string;
+  enabled: boolean;
+}
+
 export interface ModelAttributes {
   max_tokens?: number;
   max_input_tokens?: number;
@@ -44,6 +51,7 @@ export interface Model {
   routingConfigId?: string | null;
   enabled: boolean;
   modelAttributes?: ModelAttributes | null;
+  promptConfig?: PromptConfig | null;
   virtualKeyCount?: number;
   routingGateway?: {
     id: string;
@@ -116,6 +124,7 @@ export interface CreateModelRequest {
   routingConfigId?: string;
   enabled?: boolean;
   modelAttributes?: ModelAttributes;
+  promptConfig?: PromptConfig;
 }
 
 export interface UpdateModelRequest {
@@ -123,6 +132,7 @@ export interface UpdateModelRequest {
   modelIdentifier?: string;
   enabled?: boolean;
   modelAttributes?: ModelAttributes;
+  promptConfig?: PromptConfig | null;
 }
 
 export interface CreateVirtualKeyRequest {

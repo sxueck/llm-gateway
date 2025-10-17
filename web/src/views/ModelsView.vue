@@ -70,6 +70,12 @@
           </n-divider>
 
           <ModelAttributesEditor v-model="formValue.modelAttributes" />
+
+          <n-divider style="margin: 12px 0 8px 0;">
+            <span>Prompt 管理</span>
+          </n-divider>
+
+          <PromptConfigEditor v-model="formValue.promptConfig" />
         </n-form>
       </n-scrollbar>
       <template #footer>
@@ -143,10 +149,11 @@ import { useProviderStore } from '@/stores/provider';
 import { modelApi } from '@/api/model';
 import { litellmPresetsApi } from '@/api/litellm-presets';
 import ModelAttributesEditor from '@/components/ModelAttributesEditor.vue';
+import PromptConfigEditor from '@/components/PromptConfigEditor.vue';
 import LiteLLMPresetSelector from '@/components/LiteLLMPresetSelector.vue';
 import BatchModelAdder from '@/components/BatchModelAdder.vue';
 import ModelTester from '@/components/ModelTester.vue';
-import type { Model, ModelAttributes } from '@/types';
+import type { Model, ModelAttributes, PromptConfig } from '@/types';
 import type { LiteLLMSearchResult } from '@/api/litellm-presets';
 
 const { t } = useI18n();
@@ -171,12 +178,14 @@ const formValue = ref<{
   modelIdentifier: string;
   enabled: boolean;
   modelAttributes?: ModelAttributes;
+  promptConfig?: PromptConfig | null;
 }>({
   name: '',
   providerId: '',
   modelIdentifier: '',
   enabled: true,
   modelAttributes: undefined,
+  promptConfig: null,
 });
 
 const rules = computed(() => ({
@@ -286,6 +295,7 @@ function handleEdit(model: Model) {
     modelIdentifier: model.modelIdentifier,
     enabled: model.enabled,
     modelAttributes: model.modelAttributes || undefined,
+    promptConfig: model.promptConfig || null,
   };
   showModal.value = true;
 }
@@ -305,16 +315,22 @@ async function handleSubmit() {
     await formRef.value?.validate();
     submitting.value = true;
 
+    const payload = {
+      name: formValue.value.name,
+      modelIdentifier: formValue.value.modelIdentifier,
+      enabled: formValue.value.enabled,
+      modelAttributes: formValue.value.modelAttributes,
+      promptConfig: formValue.value.promptConfig || undefined,
+    };
+
     if (editingId.value) {
-      await modelApi.update(editingId.value, {
-        name: formValue.value.name,
-        modelIdentifier: formValue.value.modelIdentifier,
-        enabled: formValue.value.enabled,
-        modelAttributes: formValue.value.modelAttributes,
-      });
+      await modelApi.update(editingId.value, payload);
       message.success(t('models.updateSuccess'));
     } else {
-      await modelApi.create(formValue.value);
+      await modelApi.create({
+        ...payload,
+        providerId: formValue.value.providerId,
+      });
       message.success(t('models.createSuccess'));
     }
 
@@ -338,6 +354,7 @@ function resetForm() {
     modelIdentifier: '',
     enabled: true,
     modelAttributes: undefined,
+    promptConfig: null,
   };
 }
 
