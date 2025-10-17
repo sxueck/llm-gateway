@@ -61,6 +61,11 @@ const router = createRouter({
           component: () => import('@/views/PromptManagementView.vue'),
         },
         {
+          path: 'compression-management',
+          name: 'CompressionManagement',
+          component: () => import('@/views/CompressionManagementView.vue'),
+        },
+        {
           path: 'api-guide',
           name: 'ApiGuide',
           component: () => import('@/views/ApiGuideView.vue'),

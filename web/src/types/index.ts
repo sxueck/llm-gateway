@@ -21,6 +21,16 @@ export interface PromptConfig {
   enabled: boolean;
 }
 
+export interface CompressionConfig {
+  enabled: boolean;
+  maxTokens: number;
+  minMessages: number;
+  keepRecentTokens: number;
+  compressionRatio: number;
+  summaryModelId?: string;
+  summaryPrompt?: string;
+}
+
 export interface ModelAttributes {
   max_tokens?: number;
   max_input_tokens?: number;
@@ -52,6 +62,7 @@ export interface Model {
   enabled: boolean;
   modelAttributes?: ModelAttributes | null;
   promptConfig?: PromptConfig | null;
+  compressionConfig?: CompressionConfig | null;
   virtualKeyCount?: number;
   routingGateway?: {
     id: string;

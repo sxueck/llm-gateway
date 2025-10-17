@@ -60,6 +60,7 @@ export default {
     portkeyGateways: 'Portkey 网关',
     advancedFeatures: '高级特性',
     promptManagement: 'Prompt 管理',
+    compressionManagement: '上下文压缩',
     tools: '工具',
     apiGuide: 'API 使用说明',
     logs: '日志查看',

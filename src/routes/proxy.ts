@@ -11,6 +11,7 @@ import { portkeyRouter } from '../services/portkey-router.js';
 import { requestCache } from '../services/request-cache.js';
 import { ProviderAdapterFactory } from '../services/provider-adapter.js';
 import { promptProcessor } from '../services/prompt-processor.js';
+import { compressionProcessor } from '../services/compression-processor.js';
 import { isLocalGateway } from '../utils/network.js';
 
 interface RoutingTarget {
@@ -749,32 +750,61 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         'Proxy'
       );
 
-      if (currentModel && currentModel.prompt_config && request.body?.messages && path.startsWith('/v1/chat/completions')) {
-        const promptConfig = promptProcessor.parsePromptConfig(currentModel.prompt_config);
+      if (currentModel && request.body?.messages && path.startsWith('/v1/chat/completions')) {
+        const processorContext = {
+          date: new Date().toISOString().split('T')[0],
+          requestHeaders: request.headers,
+        };
 
-        if (promptConfig) {
-          const processorContext = {
-            date: new Date().toISOString().split('T')[0],
-          };
+        if (currentModel.compression_config) {
+          const compressionConfig = compressionProcessor.parseCompressionConfig(currentModel.compression_config);
 
-          try {
-            const processedMessages = promptProcessor.processMessages(
-              request.body.messages,
-              promptConfig,
-              processorContext
-            );
+          if (compressionConfig) {
+            try {
+              const compressedMessages = await compressionProcessor.processMessages(
+                request.body.messages,
+                compressionConfig,
+                processorContext
+              );
 
-            request.body.messages = processedMessages;
+              request.body.messages = compressedMessages;
 
-            memoryLogger.info(
-              `Prompt 处理完成 | 模型: ${currentModel.name} | 操作: ${promptConfig.operationType}`,
-              'Proxy'
-            );
-          } catch (promptError: any) {
-            memoryLogger.error(
-              `Prompt 处理失败: ${promptError.message}`,
-              'Proxy'
-            );
+              memoryLogger.info(
+                `压缩处理完成 | 模型: ${currentModel.name}`,
+                'Proxy'
+              );
+            } catch (compressionError: any) {
+              memoryLogger.error(
+                `压缩处理失败: ${compressionError.message}`,
+                'Proxy'
+              );
+            }
+          }
+        }
+
+        if (currentModel.prompt_config) {
+          const promptConfig = promptProcessor.parsePromptConfig(currentModel.prompt_config);
+
+          if (promptConfig) {
+            try {
+              const processedMessages = promptProcessor.processMessages(
+                request.body.messages,
+                promptConfig,
+                processorContext
+              );
+
+              request.body.messages = processedMessages;
+
+              memoryLogger.info(
+                `Prompt 处理完成 | 模型: ${currentModel.name} | 操作: ${promptConfig.operationType}`,
+                'Proxy'
+              );
+            } catch (promptError: any) {
+              memoryLogger.error(
+                `Prompt 处理失败: ${promptError.message}`,
+                'Proxy'
+              );
+            }
           }
         }
       }
@@ -1000,8 +1030,11 @@ export async function proxyRoutes(fastify: FastifyInstance) {
 
         memoryLogger.debug(logMessage, 'Proxy');
       } catch (parseError) {
+        const truncatedResponse = responseText.length > 200
+          ? `${responseText.substring(0, 200)}... (total length: ${responseText.length})`
+          : responseText;
         memoryLogger.error(
-          `JSON parse failed: ${parseError} | first 200 chars: ${responseText.substring(0, 200)}`,
+          `JSON parse failed: ${parseError} | response: ${truncatedResponse}`,
           'Proxy'
         );
         responseData = {
@@ -1009,8 +1042,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             message: 'Invalid JSON response from upstream',
             type: 'api_error',
             param: null,
-            code: 'invalid_response',
-            upstream_response: responseText.substring(0, 1000)
+            code: 'invalid_response'
           }
         };
       }

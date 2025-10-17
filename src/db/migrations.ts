@@ -51,6 +51,29 @@ export const migrations: Migration[] = [
     },
     down: (db: SqlJsDatabase) => {
     }
+  },
+  {
+    version: 3,
+    name: 'add_compression_support',
+    up: (db: SqlJsDatabase) => {
+      try {
+        db.run('ALTER TABLE models ADD COLUMN compression_config TEXT');
+      } catch (e) {
+      }
+
+      db.run('CREATE INDEX IF NOT EXISTS idx_models_compression_config ON models(compression_config)');
+    },
+    down: (db: SqlJsDatabase) => {
+      try {
+        db.run('DROP INDEX IF EXISTS idx_models_compression_config');
+      } catch (e) {
+      }
+
+      try {
+        db.run('ALTER TABLE models DROP COLUMN compression_config');
+      } catch (e) {
+      }
+    }
   }
 ];
 

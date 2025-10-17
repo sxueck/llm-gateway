@@ -60,6 +60,7 @@ export default {
     portkeyGateways: 'Portkey Gateways',
     advancedFeatures: 'Advanced Features',
     promptManagement: 'Prompt Management',
+    compressionManagement: 'Context Compression',
     tools: 'Tools',
     apiGuide: 'API Guide',
     logs: 'Logs',

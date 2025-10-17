@@ -107,6 +107,7 @@ import {
   ListOutline,
   OptionsOutline,
   ChatbubbleEllipsesOutline,
+  ArchiveOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
@@ -163,6 +164,11 @@ const menuOptions = computed(() => [
         label: t('menu.promptManagement'),
         key: 'prompt-management',
         icon: () => h(NIcon, null, { default: () => h(ChatbubbleEllipsesOutline) }),
+      },
+      {
+        label: t('menu.compressionManagement'),
+        key: 'compression-management',
+        icon: () => h(NIcon, null, { default: () => h(ArchiveOutline) }),
       },
     ],
   },

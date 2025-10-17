@@ -114,3 +114,13 @@ export interface PromptConfig {
   enabled: boolean;
 }
 
+export interface CompressionConfig {
+  enabled: boolean;
+  maxTokens: number;
+  minMessages: number;
+  keepRecentTokens: number;
+  compressionRatio: number;
+  summaryModelId?: string;
+  summaryPrompt?: string;
+}
+

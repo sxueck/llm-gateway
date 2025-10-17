@@ -38,6 +38,16 @@ const promptConfigSchema = z.object({
   enabled: z.boolean().optional(),
 }).nullable().optional();
 
+const compressionConfigSchema = z.object({
+  enabled: z.boolean(),
+  maxTokens: z.number(),
+  minMessages: z.number(),
+  keepRecentTokens: z.number(),
+  compressionRatio: z.number(),
+  summaryModelId: z.string().optional(),
+  summaryPrompt: z.string().optional(),
+}).nullable().optional();
+
 const createModelSchema = z.object({
   name: z.string(),
   providerId: z.string().optional(),
@@ -47,6 +57,7 @@ const createModelSchema = z.object({
   enabled: z.boolean().optional(),
   modelAttributes: modelAttributesSchema,
   promptConfig: promptConfigSchema,
+  compressionConfig: compressionConfigSchema,
 });
 
 const updateModelSchema = z.object({
@@ -55,6 +66,7 @@ const updateModelSchema = z.object({
   enabled: z.boolean().optional(),
   modelAttributes: modelAttributesSchema,
   promptConfig: promptConfigSchema,
+  compressionConfig: compressionConfigSchema,
 });
 
 export async function modelRoutes(fastify: FastifyInstance) {
@@ -81,6 +93,12 @@ export async function modelRoutes(fastify: FastifyInstance) {
         let promptConfig = null;
         try {
           promptConfig = m.prompt_config ? JSON.parse(m.prompt_config) : null;
+        } catch (e) {
+        }
+
+        let compressionConfig = null;
+        try {
+          compressionConfig = m.compression_config ? JSON.parse(m.compression_config) : null;
         } catch (e) {
         }
 
@@ -112,6 +130,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
           enabled: m.enabled === 1,
           modelAttributes,
           promptConfig,
+          compressionConfig,
           virtualKeyCount,
           routingGateway,
           createdAt: m.created_at,
@@ -144,6 +163,12 @@ export async function modelRoutes(fastify: FastifyInstance) {
     } catch (e) {
     }
 
+    let compressionConfig = null;
+    try {
+      compressionConfig = model.compression_config ? JSON.parse(model.compression_config) : null;
+    } catch (e) {
+    }
+
     return {
       id: model.id,
       name: model.name,
@@ -153,6 +178,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
       enabled: model.enabled === 1,
       modelAttributes,
       promptConfig,
+      compressionConfig,
       virtualKeyCount,
       createdAt: model.created_at,
       updatedAt: model.updated_at,
@@ -181,6 +207,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
       enabled: body.enabled !== false ? 1 : 0,
       model_attributes: body.modelAttributes ? JSON.stringify(body.modelAttributes) : null,
       prompt_config: body.promptConfig ? JSON.stringify(body.promptConfig) : null,
+      compression_config: body.compressionConfig ? JSON.stringify(body.compressionConfig) : null,
     });
 
     let modelAttributes = null;
@@ -195,6 +222,12 @@ export async function modelRoutes(fastify: FastifyInstance) {
     } catch (e) {
     }
 
+    let compressionConfig = null;
+    try {
+      compressionConfig = model.compression_config ? JSON.parse(model.compression_config) : null;
+    } catch (e) {
+    }
+
     return {
       id: model.id,
       name: model.name,
@@ -205,6 +238,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
       enabled: model.enabled === 1,
       modelAttributes,
       promptConfig,
+      compressionConfig,
       createdAt: model.created_at,
       updatedAt: model.updated_at,
     };
@@ -229,6 +263,9 @@ export async function modelRoutes(fastify: FastifyInstance) {
     if (body.promptConfig !== undefined) {
       updates.prompt_config = body.promptConfig ? JSON.stringify(body.promptConfig) : null;
     }
+    if (body.compressionConfig !== undefined) {
+      updates.compression_config = body.compressionConfig ? JSON.stringify(body.compressionConfig) : null;
+    }
 
     await modelDb.update(id, updates);
 
@@ -245,6 +282,12 @@ export async function modelRoutes(fastify: FastifyInstance) {
     } catch (e) {
     }
 
+    let compressionConfig = null;
+    try {
+      compressionConfig = updated.compression_config ? JSON.parse(updated.compression_config) : null;
+    } catch (e) {
+    }
+
     return {
       id: updated.id,
       name: updated.name,
@@ -253,6 +296,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
       enabled: updated.enabled === 1,
       modelAttributes,
       promptConfig,
+      compressionConfig,
       createdAt: updated.created_at,
       updatedAt: updated.updated_at,
     };
