@@ -5,9 +5,20 @@ export interface PromptProcessorContext {
   date: string;
 }
 
+export interface ContentPart {
+  type: 'text' | 'image_url';
+  text?: string;
+  image_url?: {
+    url: string;
+    detail?: string;
+  };
+}
+
+export type MessageContent = string | ContentPart[];
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: MessageContent;
 }
 
 export class PromptProcessor {
@@ -49,14 +60,15 @@ export class PromptProcessor {
       return messages;
     }
 
+    const userPromptText = this.extractTextContent(lastUserMessage.content);
     const newContent = this.replaceVariables(
       promptConfig.templateContent,
-      lastUserMessage.content,
+      userPromptText,
       context
     );
 
     memoryLogger.debug(
-      `Replace 操作完成 | 原始长度: ${lastUserMessage.content.length} | 新长度: ${newContent.length}`,
+      `Replace 操作完成 | 原始长度: ${userPromptText.length} | 新长度: ${newContent.length}`,
       'PromptProcessor'
     );
 
@@ -73,13 +85,14 @@ export class PromptProcessor {
       return messages;
     }
 
+    const userPromptText = this.extractTextContent(lastUserMessage.content);
     const prependContent = this.replaceVariables(
       promptConfig.templateContent,
-      lastUserMessage.content,
+      userPromptText,
       context
     );
 
-    const newContent = `${prependContent}\n\n${lastUserMessage.content}`;
+    const newContent = `${prependContent}\n\n${userPromptText}`;
 
     memoryLogger.debug(
       `Prepend 操作完成 | 添加长度: ${prependContent.length} | 总长度: ${newContent.length}`,
@@ -100,11 +113,13 @@ export class PromptProcessor {
     }
 
     const lastUserMessage = this.getLastUserMessage(messages);
-    const userContent = lastUserMessage?.content || '';
+    const userPromptText = lastUserMessage
+      ? this.extractTextContent(lastUserMessage.content)
+      : '';
 
     const systemContent = this.replaceVariables(
       promptConfig.systemMessage,
-      userContent,
+      userPromptText,
       context
     );
 
@@ -127,7 +142,7 @@ export class PromptProcessor {
       memoryLogger.warn('没有找到用户消息，跳过操作', 'PromptProcessor');
       return null;
     }
-    return userMessages[userMessages.length - 1];
+    return userMessages.at(-1) || null;
   }
 
   private updateLastUserMessage(
@@ -136,6 +151,21 @@ export class PromptProcessor {
     newContent: string
   ): ChatMessage[] {
     return messages.map(m => m === lastUserMessage ? { ...m, content: newContent } : m);
+  }
+
+  private extractTextContent(content: MessageContent): string {
+    if (typeof content === 'string') {
+      return content;
+    }
+
+    if (Array.isArray(content)) {
+      return content
+        .filter(part => part.type === 'text' && part.text)
+        .map(part => part.text)
+        .join('\n');
+    }
+
+    return '';
   }
 
   private replaceVariables(
