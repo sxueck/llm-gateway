@@ -37,6 +37,20 @@ export const migrations: Migration[] = [
     },
     down: (db: SqlJsDatabase) => {
     }
+  },
+  {
+    version: 2,
+    name: 'add_prompt_management_support',
+    up: (db: SqlJsDatabase) => {
+      try {
+        db.run('ALTER TABLE models ADD COLUMN prompt_config TEXT');
+      } catch (e) {
+      }
+
+      db.run('CREATE INDEX IF NOT EXISTS idx_models_prompt_config ON models(prompt_config)');
+    },
+    down: (db: SqlJsDatabase) => {
+    }
   }
 ];
 

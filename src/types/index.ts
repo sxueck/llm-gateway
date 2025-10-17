@@ -107,3 +107,10 @@ export interface ModelRoutingRule {
   updated_at: number;
 }
 
+export interface PromptConfig {
+  operationType: 'replace' | 'prepend' | 'system';
+  templateContent: string;
+  systemMessage?: string;
+  enabled: boolean;
+}
+

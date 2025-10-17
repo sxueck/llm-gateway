@@ -398,6 +398,7 @@ export async function configRoutes(fastify: FastifyInstance) {
           routing_config_id: configId,
           enabled: 1,
           model_attributes: body.modelAttributes ? JSON.stringify(body.modelAttributes) : null,
+          prompt_config: null,
         });
         memoryLogger.info(`创建虚拟模型: ${body.virtualModelName}`, 'Config');
       }

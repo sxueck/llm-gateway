@@ -556,13 +556,14 @@ export interface Model {
   routing_config_id: string | null;
   enabled: number;
   model_attributes: string | null;
+  prompt_config: string | null;
   created_at: number;
   updated_at: number;
 }
 
 export const modelDb = {
   getAll(): Model[] {
-    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, created_at, updated_at FROM models ORDER BY created_at DESC');
+    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, prompt_config, created_at, updated_at FROM models ORDER BY created_at DESC');
     if (result.length === 0) return [];
     return result[0].values.map(row => ({
       id: row[0] as string,
@@ -573,13 +574,14 @@ export const modelDb = {
       routing_config_id: row[5] as string | null,
       enabled: row[6] as number,
       model_attributes: row[7] as string | null,
-      created_at: row[8] as number,
-      updated_at: row[9] as number,
+      prompt_config: row[8] as string | null,
+      created_at: row[9] as number,
+      updated_at: row[10] as number,
     }));
   },
 
   getById(id: string): Model | undefined {
-    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, created_at, updated_at FROM models WHERE id = ?', [id]);
+    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, prompt_config, created_at, updated_at FROM models WHERE id = ?', [id]);
     if (result.length === 0 || result[0].values.length === 0) return undefined;
     const row = result[0].values[0];
     return {
@@ -591,13 +593,14 @@ export const modelDb = {
       routing_config_id: row[5] as string | null,
       enabled: row[6] as number,
       model_attributes: row[7] as string | null,
-      created_at: row[8] as number,
-      updated_at: row[9] as number,
+      prompt_config: row[8] as string | null,
+      created_at: row[9] as number,
+      updated_at: row[10] as number,
     };
   },
 
   getByProviderId(providerId: string): Model[] {
-    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, created_at, updated_at FROM models WHERE provider_id = ? ORDER BY created_at DESC', [providerId]);
+    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, prompt_config, created_at, updated_at FROM models WHERE provider_id = ? ORDER BY created_at DESC', [providerId]);
     if (result.length === 0) return [];
     return result[0].values.map(row => ({
       id: row[0] as string,
@@ -608,16 +611,17 @@ export const modelDb = {
       routing_config_id: row[5] as string | null,
       enabled: row[6] as number,
       model_attributes: row[7] as string | null,
-      created_at: row[8] as number,
-      updated_at: row[9] as number,
+      prompt_config: row[8] as string | null,
+      created_at: row[9] as number,
+      updated_at: row[10] as number,
     }));
   },
 
   async create(model: Omit<Model, 'created_at' | 'updated_at'>): Promise<Model> {
     const now = Date.now();
     db.run(
-      'INSERT INTO models (id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [model.id, model.name, model.provider_id, model.model_identifier, model.is_virtual, model.routing_config_id, model.enabled, model.model_attributes, now, now]
+      'INSERT INTO models (id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, prompt_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [model.id, model.name, model.provider_id, model.model_identifier, model.is_virtual, model.routing_config_id, model.enabled, model.model_attributes, model.prompt_config, now, now]
     );
     markDirty();
     return { ...model, created_at: now, updated_at: now };

@@ -10,6 +10,7 @@ import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse } f
 import { portkeyRouter } from '../services/portkey-router.js';
 import { requestCache } from '../services/request-cache.js';
 import { ProviderAdapterFactory } from '../services/provider-adapter.js';
+import { promptProcessor } from '../services/prompt-processor.js';
 import { isLocalGateway } from '../utils/network.js';
 
 interface RoutingTarget {
@@ -469,6 +470,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       }
 
       let provider;
+      let currentModel;
 
       if (virtualKey.model_id) {
         const model = modelDb.getById(virtualKey.model_id);
@@ -483,6 +485,8 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             }
           });
         }
+
+        currentModel = model;
 
         try {
           const result = resolveProviderFromModel(model, request);
@@ -555,6 +559,8 @@ export async function proxyRoutes(fastify: FastifyInstance) {
               }
             });
           }
+
+          currentModel = model;
 
           try {
             const result = resolveProviderFromModel(model, request);
@@ -742,6 +748,36 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         `Forward to Portkey: ${portkeyUrl} | config: ${JSON.stringify(redactedConfig)}`,
         'Proxy'
       );
+
+      if (currentModel && currentModel.prompt_config && request.body?.messages && path.startsWith('/v1/chat/completions')) {
+        const promptConfig = promptProcessor.parsePromptConfig(currentModel.prompt_config);
+
+        if (promptConfig) {
+          const processorContext = {
+            date: new Date().toISOString().split('T')[0],
+          };
+
+          try {
+            const processedMessages = promptProcessor.processMessages(
+              request.body.messages,
+              promptConfig,
+              processorContext
+            );
+
+            request.body.messages = processedMessages;
+
+            memoryLogger.info(
+              `Prompt 处理完成 | 模型: ${currentModel.name} | 操作: ${promptConfig.operationType}`,
+              'Proxy'
+            );
+          } catch (promptError: any) {
+            memoryLogger.error(
+              `Prompt 处理失败: ${promptError.message}`,
+              'Proxy'
+            );
+          }
+        }
+      }
 
       let requestBody: string | undefined;
 

@@ -31,6 +31,13 @@ const modelAttributesSchema = z.object({
   mode: z.string().optional(),
 }).optional();
 
+const promptConfigSchema = z.object({
+  operationType: z.enum(['replace', 'prepend', 'system']),
+  templateContent: z.string(),
+  systemMessage: z.string().optional(),
+  enabled: z.boolean().optional(),
+}).optional();
+
 const createModelSchema = z.object({
   name: z.string(),
   providerId: z.string().optional(),
@@ -39,6 +46,7 @@ const createModelSchema = z.object({
   routingConfigId: z.string().optional(),
   enabled: z.boolean().optional(),
   modelAttributes: modelAttributesSchema,
+  promptConfig: promptConfigSchema,
 });
 
 const updateModelSchema = z.object({
@@ -46,6 +54,7 @@ const updateModelSchema = z.object({
   modelIdentifier: z.string().optional(),
   enabled: z.boolean().optional(),
   modelAttributes: modelAttributesSchema,
+  promptConfig: promptConfigSchema,
 });
 
 export async function modelRoutes(fastify: FastifyInstance) {
@@ -66,6 +75,12 @@ export async function modelRoutes(fastify: FastifyInstance) {
         let modelAttributes = null;
         try {
           modelAttributes = m.model_attributes ? JSON.parse(m.model_attributes) : null;
+        } catch (e) {
+        }
+
+        let promptConfig = null;
+        try {
+          promptConfig = m.prompt_config ? JSON.parse(m.prompt_config) : null;
         } catch (e) {
         }
 
@@ -96,6 +111,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
           routingConfigId: m.routing_config_id,
           enabled: m.enabled === 1,
           modelAttributes,
+          promptConfig,
           virtualKeyCount,
           routingGateway,
           createdAt: m.created_at,
@@ -122,6 +138,12 @@ export async function modelRoutes(fastify: FastifyInstance) {
     } catch (e) {
     }
 
+    let promptConfig = null;
+    try {
+      promptConfig = model.prompt_config ? JSON.parse(model.prompt_config) : null;
+    } catch (e) {
+    }
+
     return {
       id: model.id,
       name: model.name,
@@ -130,6 +152,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
       modelIdentifier: model.model_identifier,
       enabled: model.enabled === 1,
       modelAttributes,
+      promptConfig,
       virtualKeyCount,
       createdAt: model.created_at,
       updatedAt: model.updated_at,
@@ -157,11 +180,18 @@ export async function modelRoutes(fastify: FastifyInstance) {
       routing_config_id: body.routingConfigId || null,
       enabled: body.enabled !== false ? 1 : 0,
       model_attributes: body.modelAttributes ? JSON.stringify(body.modelAttributes) : null,
+      prompt_config: body.promptConfig ? JSON.stringify(body.promptConfig) : null,
     });
 
     let modelAttributes = null;
     try {
       modelAttributes = model.model_attributes ? JSON.parse(model.model_attributes) : null;
+    } catch (e) {
+    }
+
+    let promptConfig = null;
+    try {
+      promptConfig = model.prompt_config ? JSON.parse(model.prompt_config) : null;
     } catch (e) {
     }
 
@@ -174,6 +204,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
       routingConfigId: model.routing_config_id,
       enabled: model.enabled === 1,
       modelAttributes,
+      promptConfig,
       createdAt: model.created_at,
       updatedAt: model.updated_at,
     };
@@ -195,6 +226,9 @@ export async function modelRoutes(fastify: FastifyInstance) {
     if (body.modelAttributes !== undefined) {
       updates.model_attributes = body.modelAttributes ? JSON.stringify(body.modelAttributes) : null;
     }
+    if (body.promptConfig !== undefined) {
+      updates.prompt_config = body.promptConfig ? JSON.stringify(body.promptConfig) : null;
+    }
 
     await modelDb.update(id, updates);
 
@@ -205,6 +239,12 @@ export async function modelRoutes(fastify: FastifyInstance) {
     } catch (e) {
     }
 
+    let promptConfig = null;
+    try {
+      promptConfig = updated.prompt_config ? JSON.parse(updated.prompt_config) : null;
+    } catch (e) {
+    }
+
     return {
       id: updated.id,
       name: updated.name,
@@ -212,6 +252,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
       modelIdentifier: updated.model_identifier,
       enabled: updated.enabled === 1,
       modelAttributes,
+      promptConfig,
       createdAt: updated.created_at,
       updatedAt: updated.updated_at,
     };
