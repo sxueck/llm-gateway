@@ -14,7 +14,13 @@
               <n-icon><SearchOutline /></n-icon>
             </template>
           </n-input>
-          <n-button type="primary" size="small" @click="handleRefresh">
+          <n-button type="primary" size="small" @click="handleCreate">
+            <template #icon>
+              <n-icon><AddOutline /></n-icon>
+            </template>
+            {{ t('promptManagement.addPrompt') }}
+          </n-button>
+          <n-button size="small" @click="handleRefresh">
             <template #icon>
               <n-icon><RefreshOutline /></n-icon>
             </template>
@@ -40,7 +46,16 @@
     >
       <n-scrollbar style="max-height: 500px; padding-right: 12px;">
         <n-space vertical :size="16">
-          <n-alert type="info" :bordered="false" size="small">
+          <n-form-item v-if="!editingModel" :label="t('promptManagement.selectModel')" :show-feedback="false">
+            <n-select
+              v-model:value="selectedModelId"
+              :options="virtualModelOptions"
+              :placeholder="t('promptManagement.selectModelPlaceholder')"
+              filterable
+            />
+          </n-form-item>
+
+          <n-alert v-if="editingModel" type="info" :bordered="false" size="small">
             {{ t('promptManagement.modelInfo', { name: editingModel?.name || '' }) }}
           </n-alert>
 
@@ -60,10 +75,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, computed, onMounted } from 'vue';
-import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NInput, NTag, NPopconfirm, NScrollbar, NIcon, NAlert } from 'naive-ui';
+import { ref, h, computed, onMounted, watch } from 'vue';
+import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NInput, NTag, NPopconfirm, NScrollbar, NIcon, NAlert, NSelect, NFormItem } from 'naive-ui';
 import { EditOutlined, DeleteOutlined } from '@vicons/material';
-import { SearchOutline, RefreshOutline } from '@vicons/ionicons5';
+import { SearchOutline, RefreshOutline, AddOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
 import { useModelStore } from '@/stores/model';
 import { modelApi } from '@/api/model';
@@ -79,7 +94,16 @@ const showModal = ref(false);
 const submitting = ref(false);
 const searchQuery = ref('');
 const editingModel = ref<Model | null>(null);
+const selectedModelId = ref<string | null>(null);
 const promptConfig = ref<PromptConfig | null>(null);
+
+watch(showModal, (newValue) => {
+  if (!newValue) {
+    editingModel.value = null;
+    selectedModelId.value = null;
+    promptConfig.value = null;
+  }
+});
 
 const pagination = {
   pageSize: 10,
@@ -87,6 +111,13 @@ const pagination = {
 
 const virtualModels = computed(() => {
   return modelStore.models.filter(m => m.isVirtual);
+});
+
+const virtualModelOptions = computed(() => {
+  return virtualModels.value.map(m => ({
+    label: `${m.name} (${m.modelIdentifier})`,
+    value: m.id,
+  }));
 });
 
 const filteredModels = computed(() => {
@@ -157,7 +188,7 @@ const columns = computed(() => [
   {
     title: t('common.actions'),
     key: 'actions',
-    width: 150,
+    width: 200,
     render: (row: Model) => {
       return h(NSpace, { size: 4 }, {
         default: () => [
@@ -165,9 +196,10 @@ const columns = computed(() => [
             NButton,
             {
               size: 'small',
-              type: 'primary',
-              text: true,
               onClick: () => handleEdit(row),
+              style: {
+                borderRadius: '8px',
+              },
             },
             {
               default: () => t('common.edit'),
@@ -178,10 +210,10 @@ const columns = computed(() => [
             ? h(
                 NPopconfirm,
                 {
-                  onPositiveClick: () => handleDisable(row.id),
+                  onPositiveClick: () => handleDelete(row.id),
                 },
                 {
-                  default: () => t('promptManagement.confirmDisable'),
+                  default: () => t('promptManagement.confirmDelete'),
                   trigger: () => h(
                     NButton,
                     {
@@ -190,7 +222,7 @@ const columns = computed(() => [
                       text: true,
                     },
                     {
-                      default: () => t('promptManagement.disable'),
+                      default: () => t('common.delete'),
                       icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) }),
                     }
                   ),
@@ -212,9 +244,15 @@ async function handleRefresh() {
   }
 }
 
-function handleEdit(model: Model) {
-  editingModel.value = model;
-  promptConfig.value = model.promptConfig ? { ...model.promptConfig } : {
+function handleCreate() {
+  if (virtualModels.value.length === 0) {
+    message.warning(t('promptManagement.noVirtualModels'));
+    return;
+  }
+
+  editingModel.value = null;
+  selectedModelId.value = null;
+  promptConfig.value = {
     operationType: 'prepend',
     templateContent: '',
     systemMessage: '',
@@ -223,33 +261,57 @@ function handleEdit(model: Model) {
   showModal.value = true;
 }
 
+function handleEdit(model: Model) {
+  editingModel.value = model;
+  selectedModelId.value = null;
+  if (model.promptConfig) {
+    promptConfig.value = { ...model.promptConfig };
+  } else {
+    promptConfig.value = null;
+  }
+  showModal.value = true;
+}
+
 async function handleSubmit() {
-  if (!editingModel.value) return;
+  const targetModelId = editingModel.value?.id || selectedModelId.value;
+
+  if (!targetModelId) {
+    message.error(t('promptManagement.selectModelPlaceholder'));
+    return;
+  }
 
   try {
     submitting.value = true;
-    await modelApi.update(editingModel.value.id, {
+    await modelApi.update(targetModelId, {
       promptConfig: promptConfig.value,
     });
-    message.success(t('promptManagement.updateSuccess'));
+
+    const successMsg = editingModel.value
+      ? t('promptManagement.updateSuccess')
+      : t('promptManagement.createSuccess');
+    message.success(successMsg);
+
     showModal.value = false;
     await modelStore.fetchModels();
   } catch (error: any) {
-    message.error(error.message || t('promptManagement.updateFailed'));
+    const errorMsg = editingModel.value
+      ? t('promptManagement.updateFailed')
+      : t('promptManagement.createFailed');
+    message.error(error.message || errorMsg);
   } finally {
     submitting.value = false;
   }
 }
 
-async function handleDisable(modelId: string) {
+async function handleDelete(modelId: string) {
   try {
     await modelApi.update(modelId, {
       promptConfig: null,
     });
-    message.success(t('promptManagement.disableSuccess'));
+    message.success(t('promptManagement.deleteSuccess'));
     await modelStore.fetchModels();
   } catch (error: any) {
-    message.error(error.message || t('promptManagement.disableFailed'));
+    message.error(error.message || t('promptManagement.deleteFailed'));
   }
 }
 

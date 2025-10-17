@@ -153,8 +153,6 @@
         <n-space vertical :size="12">
           <n-button
             size="small"
-            type="primary"
-            secondary
             @click="showLiteLLMSelector = true"
           >
             {{ t('wizard.searchFromLiteLLM') }}

@@ -1,7 +1,7 @@
 <template>
-  <n-space vertical :size="12">
+  <n-space vertical :size="16">
     <n-space justify="space-between" align="center">
-      <span style="font-weight: 500;">Prompt 配置</span>
+      <span style="font-weight: 500; font-size: 14px;">Prompt 配置</span>
       <n-switch v-model:value="localEnabled" size="small" @update:value="handleEnabledChange">
         <template #checked>启用</template>
         <template #unchecked>禁用</template>
@@ -9,101 +9,86 @@
     </n-space>
 
     <n-form-item label="操作类型" :show-feedback="false">
-      <n-radio-group v-model:value="localConfig.operationType" @update:value="handleChange" :disabled="!localEnabled">
-        <n-space>
-          <n-radio value="replace">
-            <n-space :size="4" align="center">
-              <span>Replace</span>
-              <n-tooltip trigger="hover">
-                <template #trigger>
-                  <InfoIcon />
-                </template>
-                完全替换用户的原始 prompt
-              </n-tooltip>
-            </n-space>
-          </n-radio>
-          <n-radio value="prepend">
-            <n-space :size="4" align="center">
-              <span>Prepend</span>
-              <n-tooltip trigger="hover">
-                <template #trigger>
-                  <InfoIcon />
-                </template>
-                在用户 prompt 前添加内容
-              </n-tooltip>
-            </n-space>
-          </n-radio>
-          <n-radio value="system">
-            <n-space :size="4" align="center">
-              <span>System</span>
-              <n-tooltip trigger="hover">
-                <template #trigger>
-                  <InfoIcon />
-                </template>
-                设置或替换 system message
-              </n-tooltip>
-            </n-space>
-          </n-radio>
-        </n-space>
-      </n-radio-group>
+      <n-select
+        v-model:value="localConfig.operationType"
+        :options="operationTypeOptions"
+        :disabled="!localEnabled"
+        @update:value="handleChange"
+        placeholder="选择操作类型"
+      />
     </n-form-item>
 
-    <n-form-item 
-      v-if="localConfig.operationType !== 'system'" 
-      label="模板内容" 
+    <n-form-item
+      v-if="localConfig.operationType !== 'system'"
+      label="模板内容"
       :show-feedback="false"
     >
       <n-input
         v-model:value="localConfig.templateContent"
         type="textarea"
         :placeholder="getPlaceholder()"
-        :autosize="{ minRows: 3, maxRows: 6 }"
+        :autosize="{ minRows: 5, maxRows: 10 }"
         @update:value="handleChange"
         :disabled="!localEnabled"
       />
     </n-form-item>
 
-    <n-form-item 
-      v-if="localConfig.operationType === 'system'" 
-      label="System Message" 
+    <n-form-item
+      v-if="localConfig.operationType === 'system'"
+      label="System Message"
       :show-feedback="false"
     >
       <n-input
         v-model:value="localConfig.systemMessage"
         type="textarea"
         placeholder="例如: 你是一个专业的编程助手，当前日期是 {{date}}"
-        :autosize="{ minRows: 3, maxRows: 6 }"
+        :autosize="{ minRows: 5, maxRows: 10 }"
         @update:value="handleChange"
         :disabled="!localEnabled"
       />
     </n-form-item>
 
-    <n-alert type="info" :bordered="false" size="small">
-      <template #header>
-        <span style="font-size: 12px;">支持的变量</span>
-      </template>
-      <div style="font-size: 12px; line-height: 1.6;">
-        <div><code v-text="'{{user_prompt}}'"></code> - 用户的原始 prompt</div>
-        <div><code v-text="'{{date}}'"></code> - 当前日期 (YYYY-MM-DD)</div>
+    <div class="variables-hint">
+      <div class="variables-title">支持的变量</div>
+      <div class="variables-list">
+        <div class="variable-item">
+          <code class="variable-code" v-html="'{{user_prompt}}'"></code>
+          <span class="variable-desc">用户的原始 prompt</span>
+        </div>
+        <div class="variable-item">
+          <code class="variable-code" v-html="'{{date}}'"></code>
+          <span class="variable-desc">当前日期 (YYYY-MM-DD)</span>
+        </div>
       </div>
-    </n-alert>
+    </div>
   </n-space>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, h } from 'vue';
-import { NIcon } from 'naive-ui';
+import { ref, watch } from 'vue';
+import {
+  NSpace,
+  NSwitch,
+  NFormItem,
+  NSelect,
+  NInput
+} from 'naive-ui';
 import type { PromptConfig } from '../types';
 
-const InfoIcon = () => h(NIcon, { size: 14, style: { color: '#999' } }, {
-  default: () => h('svg', {
-    xmlns: 'http://www.w3.org/2000/svg',
-    viewBox: '0 0 24 24',
-    fill: 'currentColor'
-  }, [
-    h('path', { d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z' })
-  ])
-});
+const operationTypeOptions = [
+  {
+    label: 'Replace - 完全替换用户的原始 prompt',
+    value: 'replace'
+  },
+  {
+    label: 'Prepend - 在用户 prompt 前添加内容',
+    value: 'prepend'
+  },
+  {
+    label: 'System - 设置或替换 system message',
+    value: 'system'
+  }
+];
 
 const props = defineProps<{
   modelValue?: PromptConfig | null;
@@ -168,12 +153,51 @@ function getPlaceholder() {
 </script>
 
 <style scoped>
-code {
-  background-color: rgba(150, 150, 150, 0.1);
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
+.variables-hint {
+  background: rgba(24, 160, 88, 0.06);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-top: 4px;
+}
+
+.variables-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.88);
+  margin-bottom: 10px;
+  letter-spacing: 0.2px;
+}
+
+.variables-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.variable-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.variable-code {
+  background: rgba(0, 0, 0, 0.06);
+  color: #18a058;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  min-width: 120px;
+  display: inline-block;
+}
+
+.variable-desc {
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 12px;
 }
 </style>
 

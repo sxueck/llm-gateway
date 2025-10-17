@@ -10,7 +10,7 @@
           <n-button type="primary" size="small" @click="showModal = true">
             {{ t('models.addModel') }}
           </n-button>
-          <n-button type="primary" secondary size="small" @click="showBatchModal = true">
+          <n-button size="small" @click="showBatchModal = true">
             {{ t('models.batchAdd') }}
           </n-button>
         </n-space>
@@ -60,8 +60,6 @@
               <span>{{ t('models.modelAttributes') }}</span>
               <n-button
                 size="tiny"
-                type="primary"
-                secondary
                 @click.stop="showLiteLLMSelector = true"
               >
                 {{ t('models.searchFromLiteLLM') }}

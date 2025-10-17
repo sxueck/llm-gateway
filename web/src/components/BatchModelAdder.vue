@@ -1,9 +1,5 @@
 <template>
   <div class="batch-model-adder">
-    <n-alert type="info" style="margin-bottom: 16px;">
-      该提供商不支持自动获取模型列表，请手动添加模型。您可以一次添加多个模型。
-    </n-alert>
-
     <n-space vertical :size="12">
       <n-space justify="space-between" align="center">
         <h4 class="section-title">批量添加模型</h4>
@@ -14,7 +10,11 @@
             </template>
             添加模型
           </n-button>
-          <n-button size="small" type="primary" secondary @click="showBatchInput = true">
+          <n-button
+            size="small"
+            @click="showBatchInput = true"
+            :style="{ border: '1px solid #0f6b4a', borderRadius: '8px' }"
+          >
             <template #icon>
               <n-icon><DocumentTextOutline /></n-icon>
             </template>

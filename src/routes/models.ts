@@ -36,7 +36,7 @@ const promptConfigSchema = z.object({
   templateContent: z.string(),
   systemMessage: z.string().optional(),
   enabled: z.boolean().optional(),
-}).optional();
+}).nullable().optional();
 
 const createModelSchema = z.object({
   name: z.string(),

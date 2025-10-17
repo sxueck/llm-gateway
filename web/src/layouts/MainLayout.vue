@@ -142,11 +142,6 @@ const menuOptions = computed(() => [
         key: 'virtual-models',
         icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) }),
       },
-      {
-        label: t('menu.promptManagement'),
-        key: 'prompt-management',
-        icon: () => h(NIcon, null, { default: () => h(ChatbubbleEllipsesOutline) }),
-      },
     ],
   },
   {
@@ -158,6 +153,18 @@ const menuOptions = computed(() => [
     label: t('menu.portkeyGateways'),
     key: 'portkey-gateways',
     icon: () => h(NIcon, null, { default: () => h(CloudOutline) }),
+  },
+  {
+    label: t('menu.advancedFeatures'),
+    key: 'advanced-features',
+    icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
+    children: [
+      {
+        label: t('menu.promptManagement'),
+        key: 'prompt-management',
+        icon: () => h(NIcon, null, { default: () => h(ChatbubbleEllipsesOutline) }),
+      },
+    ],
   },
   {
     label: t('menu.tools'),
@@ -183,7 +190,7 @@ const menuOptions = computed(() => [
   },
 ]);
 
-const defaultExpandedKeys = ['model-management', 'tools'];
+const defaultExpandedKeys = ['model-management', 'advanced-features', 'tools'];
 
 const generalMenuOptions = computed(() => [
   {
