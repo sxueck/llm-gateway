@@ -14,6 +14,8 @@ export interface ApiRequest {
   created_at: number;
   request_body: string | null;
   response_body: string | null;
+  prompt_cache_hit_tokens: number;
+  prompt_cache_write_tokens: number;
 }
 
 export interface ApiRequestListResponse {

@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { nanoid } from 'nanoid';
 import https from 'https';
+import http from 'http';
 import { portkeyGatewayDb, modelRoutingRuleDb } from '../db/index.js';
 import { memoryLogger } from '../services/logger.js';
 import { portkeyRouter } from '../services/portkey-router.js';
@@ -54,33 +55,56 @@ async function checkGatewayHealth(gateway: PortkeyGateway): Promise<HealthCheckR
 
   const startTime = Date.now();
 
-  try {
-    const headers: Record<string, string> = {};
+  return new Promise((resolve) => {
+    try {
+      const url = new URL(`${gateway.url}/health`);
+      const isHttps = url.protocol === 'https:';
+      const requestModule = isHttps ? https : http;
 
-    if (gateway.api_key) {
-      headers['X-Gateway-ID'] = gateway.id;
-      headers['X-API-Key'] = gateway.api_key;
+      const headers: Record<string, string> = {};
+      if (gateway.api_key) {
+        headers['X-Gateway-ID'] = gateway.id;
+        headers['X-API-Key'] = gateway.api_key;
+      }
+
+      const options: any = {
+        hostname: url.hostname,
+        port: url.port || (isHttps ? 443 : 80),
+        path: url.pathname + url.search,
+        method: 'GET',
+        headers,
+        timeout: 5000,
+      };
+
+      if (isHttps) {
+        options.rejectUnauthorized = false;
+      }
+
+      const req = requestModule.request(options, (res) => {
+        res.resume();
+
+        const latency = Date.now() - startTime;
+        if (res.statusCode === 200 || res.statusCode === 404) {
+          resolve({ success: true, latency });
+        } else {
+          resolve({ success: false, latency: null, error: `HTTP ${res.statusCode}` });
+        }
+      });
+
+      req.on('error', (error: any) => {
+        resolve({ success: false, latency: null, error: error.message });
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        resolve({ success: false, latency: null, error: 'Request timeout' });
+      });
+
+      req.end();
+    } catch (error: any) {
+      resolve({ success: false, latency: null, error: error.message });
     }
-
-    const httpsAgent = new https.Agent({
-      rejectUnauthorized: false,
-    });
-
-    const response = await fetch(`${gateway.url}/health`, {
-      headers,
-      signal: AbortSignal.timeout(5000),
-      agent: gateway.url.startsWith('https:') ? httpsAgent : undefined,
-    } as any);
-
-    if (response.ok || response.status === 404) {
-      const latency = Date.now() - startTime;
-      return { success: true, latency };
-    } else {
-      return { success: false, latency: null, error: `HTTP ${response.status}` };
-    }
-  } catch (error: any) {
-    return { success: false, latency: null, error: error.message };
-  }
+  });
 }
 
 export async function portkeyGatewayRoutes(fastify: FastifyInstance) {

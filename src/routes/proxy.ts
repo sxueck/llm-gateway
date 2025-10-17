@@ -801,6 +801,8 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             request_body: truncatedRequest,
             response_body: truncatedResponse,
             cache_hit: 0,
+            prompt_cache_hit_tokens: 0,
+            prompt_cache_write_tokens: 0,
           });
 
           return;
@@ -877,6 +879,8 @@ export async function proxyRoutes(fastify: FastifyInstance) {
             request_body: truncatedRequest,
             response_body: truncateResponseBody(cached.response),
             cache_hit: 1,
+            prompt_cache_hit_tokens: 0,
+            prompt_cache_write_tokens: 0,
           });
 
           memoryLogger.info(
@@ -996,6 +1000,8 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         request_body: truncatedRequest,
         response_body: truncatedResponse,
         cache_hit: fromCache ? 1 : 0,
+        prompt_cache_hit_tokens: usage.prompt_tokens_details?.cached_tokens || usage.prompt_cache_hit_tokens || 0,
+        prompt_cache_write_tokens: usage.prompt_tokens_details?.cached_tokens_write || usage.prompt_cache_write_tokens || 0,
       });
 
       if (isSuccess) {

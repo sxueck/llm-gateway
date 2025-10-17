@@ -26,6 +26,8 @@ type ApiRequestBuffer = {
   request_body?: string;
   response_body?: string;
   cache_hit?: number;
+  prompt_cache_hit_tokens?: number;
+  prompt_cache_write_tokens?: number;
 };
 
 let apiRequestBuffer: ApiRequestBuffer[] = [];
@@ -106,8 +108,9 @@ function flushApiRequestBuffer() {
         `INSERT INTO api_requests (
           id, virtual_key_id, provider_id, model,
           prompt_tokens, completion_tokens, total_tokens,
-          status, response_time, error_message, request_body, response_body, cache_hit, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          status, response_time, error_message, request_body, response_body, cache_hit,
+          prompt_cache_hit_tokens, prompt_cache_write_tokens, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           request.id,
           request.virtual_key_id || null,
@@ -122,6 +125,8 @@ function flushApiRequestBuffer() {
           request.request_body || null,
           request.response_body || null,
           request.cache_hit || 0,
+          request.prompt_cache_hit_tokens || 0,
+          request.prompt_cache_write_tokens || 0,
           now,
         ]
       );
@@ -314,6 +319,16 @@ function createTables() {
 
   try {
     db.run('ALTER TABLE api_requests ADD COLUMN cache_hit INTEGER DEFAULT 0');
+  } catch (e) {
+  }
+
+  try {
+    db.run('ALTER TABLE api_requests ADD COLUMN prompt_cache_hit_tokens INTEGER DEFAULT 0');
+  } catch (e) {
+  }
+
+  try {
+    db.run('ALTER TABLE api_requests ADD COLUMN prompt_cache_write_tokens INTEGER DEFAULT 0');
   } catch (e) {
   }
 
@@ -938,6 +953,8 @@ export const apiRequestDb = {
       created_at: row[10] as number,
       request_body: row[11] as string | null,
       response_body: row[12] as string | null,
+      prompt_cache_hit_tokens: row[13] as number,
+      prompt_cache_write_tokens: row[14] as number,
     }));
   },
 
@@ -1056,6 +1073,8 @@ export const apiRequestDb = {
       created_at: row[10] as number,
       request_body: row[11] as string | null,
       response_body: row[12] as string | null,
+      prompt_cache_hit_tokens: row[13] as number,
+      prompt_cache_write_tokens: row[14] as number,
     }));
 
     return {
@@ -1086,6 +1105,8 @@ export const apiRequestDb = {
       created_at: row[10] as number,
       request_body: row[11] as string | null,
       response_body: row[12] as string | null,
+      prompt_cache_hit_tokens: row[13] as number,
+      prompt_cache_write_tokens: row[14] as number,
     };
   },
 
