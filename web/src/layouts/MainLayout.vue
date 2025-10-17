@@ -106,6 +106,7 @@ import {
   ConstructOutline,
   ListOutline,
   OptionsOutline,
+  ChatbubbleEllipsesOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
@@ -140,6 +141,11 @@ const menuOptions = computed(() => [
         label: t('menu.virtualModels'),
         key: 'virtual-models',
         icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) }),
+      },
+      {
+        label: t('menu.promptManagement'),
+        key: 'prompt-management',
+        icon: () => h(NIcon, null, { default: () => h(ChatbubbleEllipsesOutline) }),
       },
     ],
   },

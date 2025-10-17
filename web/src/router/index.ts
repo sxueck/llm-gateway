@@ -56,6 +56,11 @@ const router = createRouter({
           component: () => import('@/views/VirtualModelsView.vue'),
         },
         {
+          path: 'prompt-management',
+          name: 'PromptManagement',
+          component: () => import('@/views/PromptManagementView.vue'),
+        },
+        {
           path: 'api-guide',
           name: 'ApiGuide',
           component: () => import('@/views/ApiGuideView.vue'),
