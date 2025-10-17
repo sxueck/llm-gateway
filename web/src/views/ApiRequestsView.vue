@@ -35,59 +35,78 @@
             :loading="loading"
             :pagination="pagination"
             :row-key="(row: ApiRequest) => row.id"
+            :row-props="rowProps"
+            striped
           />
         </n-space>
       </n-card>
     </n-space>
 
-    <n-drawer v-model:show="showDetail" :width="'60%'" placement="right">
+    <n-drawer v-model:show="showDetail" :width="'65%'" placement="right">
       <n-drawer-content title="请求详情" closable>
-        <n-space vertical :size="16" v-if="selectedRequest">
-          <n-descriptions :column="1" bordered size="small">
-            <n-descriptions-item label="请求 ID">
-              {{ selectedRequest.id }}
-            </n-descriptions-item>
-            <n-descriptions-item label="请求时间">
-              {{ formatTimestamp(selectedRequest.created_at) }}
-            </n-descriptions-item>
-            <n-descriptions-item label="模型">
-              {{ selectedRequest.model || '-' }}
-            </n-descriptions-item>
-            <n-descriptions-item label="状态">
-              <n-tag :type="selectedRequest.status === 'success' ? 'success' : 'error'" size="small">
-                {{ selectedRequest.status === 'success' ? '成功' : '失败' }}
-              </n-tag>
-            </n-descriptions-item>
-            <n-descriptions-item label="响应时间">
-              {{ selectedRequest.response_time ? `${selectedRequest.response_time}ms` : '-' }}
-            </n-descriptions-item>
-            <n-descriptions-item label="提示词 Tokens">
-              {{ selectedRequest.prompt_tokens }}
-            </n-descriptions-item>
-            <n-descriptions-item label="完成 Tokens">
-              {{ selectedRequest.completion_tokens }}
-            </n-descriptions-item>
-            <n-descriptions-item label="总 Tokens">
-              {{ selectedRequest.total_tokens }}
-            </n-descriptions-item>
-            <n-descriptions-item label="虚拟密钥 ID">
-              {{ selectedRequest.virtual_key_id || '-' }}
-            </n-descriptions-item>
-            <n-descriptions-item label="提供商 ID">
-              {{ selectedRequest.provider_id || '-' }}
-            </n-descriptions-item>
-          </n-descriptions>
-
-          <n-card v-if="selectedRequest.request_body" title="请求体" size="small">
-            <n-code :code="formatJson(selectedRequest.request_body)" language="json" />
+        <n-space vertical :size="20" v-if="selectedRequest">
+          <n-card size="small" :bordered="false" style="background: #fafafa;">
+            <n-descriptions :column="2" bordered size="medium" label-placement="left">
+              <n-descriptions-item label="请求 ID" :span="2">
+                <n-text code style="word-break: break-all;">{{ selectedRequest.id }}</n-text>
+              </n-descriptions-item>
+              <n-descriptions-item label="请求时间">
+                {{ formatTimestamp(selectedRequest.created_at) }}
+              </n-descriptions-item>
+              <n-descriptions-item label="响应时间">
+                <n-tag v-if="selectedRequest.response_time" type="info" size="small">
+                  {{ selectedRequest.response_time }}ms
+                </n-tag>
+                <span v-else>-</span>
+              </n-descriptions-item>
+              <n-descriptions-item label="模型">
+                <n-text strong>{{ selectedRequest.model || '-' }}</n-text>
+              </n-descriptions-item>
+              <n-descriptions-item label="状态">
+                <n-tag :type="selectedRequest.status === 'success' ? 'success' : 'error'" size="medium">
+                  {{ selectedRequest.status === 'success' ? '成功' : '失败' }}
+                </n-tag>
+              </n-descriptions-item>
+              <n-descriptions-item label="提示词 Tokens">
+                <n-tag type="default" size="small">{{ selectedRequest.prompt_tokens || 0 }}</n-tag>
+              </n-descriptions-item>
+              <n-descriptions-item label="完成 Tokens">
+                <n-tag type="default" size="small">{{ selectedRequest.completion_tokens || 0 }}</n-tag>
+              </n-descriptions-item>
+              <n-descriptions-item label="总 Tokens" :span="2">
+                <n-tag type="info" size="small">{{ selectedRequest.total_tokens || 0 }}</n-tag>
+              </n-descriptions-item>
+              <n-descriptions-item label="虚拟密钥 ID" v-if="selectedRequest.virtual_key_id">
+                <n-text code style="word-break: break-all;">{{ selectedRequest.virtual_key_id }}</n-text>
+              </n-descriptions-item>
+              <n-descriptions-item label="提供商 ID" v-if="selectedRequest.provider_id">
+                <n-text code style="word-break: break-all;">{{ selectedRequest.provider_id }}</n-text>
+              </n-descriptions-item>
+            </n-descriptions>
           </n-card>
 
-          <n-card v-if="selectedRequest.response_body" title="响应体" size="small">
-            <n-code :code="formatJson(selectedRequest.response_body)" language="json" />
+          <n-card v-if="selectedRequest.request_body" title="请求体" size="small" hoverable>
+            <n-code
+              :code="formatJson(selectedRequest.request_body)"
+              language="json"
+              word-wrap
+              style="max-height: 400px; overflow-y: auto;"
+            />
           </n-card>
 
-          <n-card v-if="selectedRequest.error_message" title="错误信息" size="small">
-            <n-code :code="formatJson(selectedRequest.error_message)" language="json" />
+          <n-card v-if="selectedRequest.response_body" title="响应体" size="small" hoverable>
+            <n-code
+              :code="formatJson(selectedRequest.response_body)"
+              language="json"
+              word-wrap
+              style="max-height: 400px; overflow-y: auto;"
+            />
+          </n-card>
+
+          <n-card v-if="selectedRequest.error_message" title="错误信息" size="small" hoverable>
+            <n-alert type="error" style="word-break: break-word; white-space: pre-wrap;">
+              {{ selectedRequest.error_message }}
+            </n-alert>
           </n-card>
         </n-space>
       </n-drawer-content>
@@ -122,7 +141,7 @@
 
 <script setup lang="ts">
 import { ref, h, onMounted, reactive } from 'vue';
-import { useMessage, NSpace, NCard, NButton, NDataTable, NTag, NDrawer, NDrawerContent, NDescriptions, NDescriptionsItem, NDatePicker, NSelect, NCode, NModal, NText, NInputNumber } from 'naive-ui';
+import { useMessage, NSpace, NCard, NButton, NDataTable, NTag, NDrawer, NDrawerContent, NDescriptions, NDescriptionsItem, NDatePicker, NSelect, NCode, NModal, NText, NInputNumber, NAlert } from 'naive-ui';
 import { apiRequestApi, type ApiRequest } from '@/api/api-request';
 import type { DataTableColumns, PaginationProps } from 'naive-ui';
 import { formatJson, formatTimestamp } from '@/utils/common';
@@ -203,9 +222,21 @@ const columns: DataTableColumns<ApiRequest> = [
   },
   {
     title: 'Tokens',
-    key: 'total_tokens',
-    width: 80,
-    render: (row) => row.total_tokens || 0,
+    key: 'tokens',
+    width: 140,
+    render: (row) => {
+      return h(
+        NSpace,
+        { size: 4, align: 'center' },
+        {
+          default: () => [
+            h('span', { style: 'color: #666; font-size: 12px;' }, `提示: ${row.prompt_tokens || 0}`),
+            h('span', { style: 'color: #999;' }, '|'),
+            h('span', { style: 'color: #666; font-size: 12px;' }, `完成: ${row.completion_tokens || 0}`),
+          ],
+        }
+      );
+    },
   },
   {
     title: '请求预览',
@@ -241,22 +272,6 @@ const columns: DataTableColumns<ApiRequest> = [
       } catch {
         return row.response_body.substring(0, 50) + '...';
       }
-    },
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 80,
-    fixed: 'right',
-    render: (row) => {
-      return h(
-        NButton,
-        {
-          size: 'small',
-          onClick: () => handleViewDetail(row),
-        },
-        { default: () => '详情' }
-      );
     },
   },
 ];
@@ -300,6 +315,13 @@ const handleViewDetail = (request: ApiRequest) => {
   showDetail.value = true;
 };
 
+const rowProps = (row: ApiRequest) => {
+  return {
+    style: 'cursor: pointer;',
+    onClick: () => handleViewDetail(row),
+  };
+};
+
 const handleCleanLogs = async () => {
   cleanLoading.value = true;
   try {
@@ -336,6 +358,11 @@ onMounted(() => {
 
 :deep(.n-data-table-tr) {
   height: 40px;
+  transition: background-color 0.2s;
+}
+
+:deep(.n-data-table-tr:hover) {
+  background-color: rgba(0, 0, 0, 0.02);
 }
 
 :deep(.n-button--small-type) {
@@ -349,6 +376,19 @@ onMounted(() => {
   padding: 2px 8px;
   height: 24px;
   line-height: 20px;
+}
+
+:deep(.n-code) {
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+:deep(.n-descriptions-table-content__label) {
+  font-weight: 500;
+}
+
+:deep(.n-card.n-card--hoverable:hover) {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 </style>
 

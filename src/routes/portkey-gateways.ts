@@ -31,9 +31,27 @@ interface HealthCheckResult {
   success: boolean;
   latency: number | null;
   error?: string;
+  lastHeartbeat?: number;
+  agentVersion?: string;
 }
 
 async function checkGatewayHealth(gateway: PortkeyGateway): Promise<HealthCheckResult> {
+  const now = Date.now();
+  const HEARTBEAT_TIMEOUT = 60000;
+
+  if (gateway.last_heartbeat) {
+    const timeSinceHeartbeat = now - gateway.last_heartbeat;
+
+    if (timeSinceHeartbeat < HEARTBEAT_TIMEOUT) {
+      return {
+        success: true,
+        latency: Math.round(timeSinceHeartbeat / 10),
+        lastHeartbeat: gateway.last_heartbeat,
+        agentVersion: gateway.agent_version || undefined,
+      };
+    }
+  }
+
   const startTime = Date.now();
 
   try {
@@ -82,6 +100,8 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
         port: gateway.port,
         apiKey: gateway.api_key,
         installStatus: gateway.install_status,
+        lastHeartbeat: gateway.last_heartbeat,
+        agentVersion: gateway.agent_version,
         createdAt: gateway.created_at,
         updatedAt: gateway.updated_at,
       }));
@@ -111,6 +131,8 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
         port: gateway.port,
         apiKey: gateway.api_key,
         installStatus: gateway.install_status,
+        lastHeartbeat: gateway.last_heartbeat,
+        agentVersion: gateway.agent_version,
         createdAt: gateway.created_at,
         updatedAt: gateway.updated_at,
       };

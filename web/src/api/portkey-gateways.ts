@@ -13,6 +13,8 @@ export interface PortkeyGateway {
   port?: number;
   apiKey?: string;
   installStatus?: string;
+  lastHeartbeat?: number;
+  agentVersion?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -87,7 +89,7 @@ export const portkeyGatewayApi = {
     return request.get(`/admin/portkey-gateways/${id}/routing-rules`);
   },
 
-  checkHealth(id: string): Promise<{ success: boolean; latency: number | null; error?: string }> {
+  checkHealth(id: string): Promise<{ success: boolean; latency: number | null; error?: string; lastHeartbeat?: number; agentVersion?: string }> {
     return request.get(`/admin/portkey-gateways/${id}/health`);
   },
 
