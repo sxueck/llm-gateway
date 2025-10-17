@@ -222,10 +222,30 @@ func generateSelfSignedCert(certFile, keyFile string) error {
 		return fmt.Errorf("生成 RSA 密钥失败: %w", err)
 	}
 
+	hostname, _ := os.Hostname()
+	dnsNames := []string{"localhost"}
+	if hostname != "" && hostname != "localhost" {
+		dnsNames = append(dnsNames, hostname)
+	}
+
+	ipAddresses := []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}
+
+	addrs, err := net.InterfaceAddrs()
+	if err == nil {
+		for _, addr := range addrs {
+			if ipNet, ok := addr.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
+				if ipNet.IP.To4() != nil || ipNet.IP.To16() != nil {
+					ipAddresses = append(ipAddresses, ipNet.IP)
+				}
+			}
+		}
+	}
+
 	template := x509.Certificate{
-		SerialNumber: big.NewInt(1),
+		SerialNumber: big.NewInt(time.Now().Unix()),
 		Subject: pkix.Name{
 			Organization: []string{"LLM Gateway Agent"},
+			CommonName:   hostname,
 		},
 		NotBefore: time.Now(),
 		NotAfter:  time.Now().Add(365 * 24 * time.Hour),
@@ -233,8 +253,8 @@ func generateSelfSignedCert(certFile, keyFile string) error {
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		DNSNames:              []string{"localhost"},
-		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+		DNSNames:              dnsNames,
+		IPAddresses:           ipAddresses,
 	}
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)

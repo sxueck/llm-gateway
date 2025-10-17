@@ -93,7 +93,7 @@
           <n-input v-model:value="formValue.name" placeholder="例如: CN Gateway" />
         </n-form-item>
         <n-form-item label="网关 URL" path="url">
-          <n-input v-model:value="formValue.url" placeholder="http://localhost:8787" />
+          <n-input v-model:value="formValue.url" :placeholder="`http://localhost:${AGENT_DEFAULTS.PORTKEY_PORT}`" />
         </n-form-item>
         <n-form-item label="描述" path="description">
           <n-input
@@ -106,11 +106,16 @@
         <n-form-item label="容器名称" path="containerName">
           <n-input v-model:value="formValue.containerName" placeholder="portkey-gateway" />
         </n-form-item>
-        <n-form-item label="端口" path="port">
+        <n-form-item label="Agent 端口" path="port">
           <n-space :size="8" style="width: 100%">
-            <n-input-number v-model:value="formValue.port" :min="1" :max="65535" style="flex: 1" />
+            <n-input-number v-model:value="formValue.port" :min="1" :max="65535" style="flex: 1" :placeholder="String(AGENT_DEFAULTS.AGENT_PORT)" />
             <n-button @click="generateRandomPort('formValue')">随机端口</n-button>
           </n-space>
+          <template #feedback>
+            <n-text depth="3" style="font-size: 12px">
+              Agent 的监听端口，用于接收来自 LLM Gateway 的请求
+            </n-text>
+          </template>
         </n-form-item>
         <n-form-item label="设为默认" path="isDefault">
           <n-switch v-model:value="formValue.isDefault" />
@@ -162,24 +167,35 @@
             </n-text>
           </n-space>
         </n-form-item>
-        <n-form-item label="端口" path="port">
+        <n-form-item label="Agent 端口" path="port">
           <n-space :size="8" style="width: 100%">
             <n-input-number
               v-model:value="agentFormValue.port"
               :min="1"
               :max="65535"
               style="flex: 1"
+              :placeholder="String(AGENT_DEFAULTS.AGENT_PORT)"
               @update:value="updateGatewayUrl"
             />
             <n-button @click="generateRandomPort('agentFormValue')" size="small">随机端口</n-button>
           </n-space>
+          <template #feedback>
+            <n-text depth="3" style="font-size: 12px">
+              Agent 的监听端口，用于接收来自 LLM Gateway 的请求
+            </n-text>
+          </template>
         </n-form-item>
-        <n-form-item label="完整 URL" path="url">
+        <n-form-item label="Agent URL" path="url">
           <n-input
             v-model:value="agentFormValue.url"
             placeholder="自动生成"
             readonly
           />
+          <template #feedback>
+            <n-text depth="3" style="font-size: 12px">
+              Agent 的完整访问地址，LLM Gateway 将通过此地址与 Agent 通信
+            </n-text>
+          </template>
         </n-form-item>
         <n-form-item label="描述" path="description">
           <n-input
@@ -388,6 +404,7 @@ import {
   DeleteOutlined,
 } from '@vicons/material';
 import { portkeyGatewayApi, routingRuleApi, type PortkeyGateway, type RoutingRule } from '@/api/portkey-gateways';
+import { AGENT_DEFAULTS } from '@/constants/agent';
 
 const message = useMessage();
 
@@ -408,21 +425,36 @@ const formRef = ref<FormInst | null>(null);
 const agentFormRef = ref<FormInst | null>(null);
 const ruleFormRef = ref<FormInst | null>(null);
 
-const formValue = ref({
+const formValue = ref<{
+  name: string;
+  url: string;
+  description: string;
+  containerName: string;
+  port: number;
+  isDefault: boolean;
+  enabled: boolean;
+}>({
   name: '',
   url: '',
   description: '',
   containerName: '',
-  port: 8787,
+  port: AGENT_DEFAULTS.AGENT_PORT,
   isDefault: false,
   enabled: true,
 });
 
-const agentFormValue = ref({
+const agentFormValue = ref<{
+  name: string;
+  serverAddress: string;
+  url: string;
+  port: number;
+  description: string;
+  isDefault: boolean;
+}>({
   name: '',
   serverAddress: '',
   url: '',
-  port: 8789,
+  port: AGENT_DEFAULTS.AGENT_PORT,
   description: '',
   isDefault: false,
 });
@@ -766,7 +798,7 @@ function handleCreate() {
     url: '',
     description: '',
     containerName: '',
-    port: 8787,
+    port: AGENT_DEFAULTS.AGENT_PORT,
     isDefault: false,
     enabled: true,
   };
@@ -780,7 +812,7 @@ function handleEdit(gateway: PortkeyGateway) {
     url: gateway.url,
     description: gateway.description || '',
     containerName: gateway.containerName || '',
-    port: gateway.port || 8787,
+    port: gateway.port || AGENT_DEFAULTS.AGENT_PORT,
     isDefault: gateway.isDefault,
     enabled: gateway.enabled,
   };
@@ -826,7 +858,7 @@ function handleInstallAgent() {
     name: '',
     serverAddress: '',
     url: '',
-    port: 8789,
+    port: AGENT_DEFAULTS.AGENT_PORT,
     description: '',
     isDefault: false,
   };
@@ -844,7 +876,7 @@ function updateGatewayUrl() {
     cleanAddress = cleanAddress.replace(/:\d+$/, '');
     cleanAddress = cleanAddress.replace(/\/$/, '');
 
-    agentFormValue.value.url = `http://${cleanAddress}:${port}`;
+    agentFormValue.value.url = `https://${cleanAddress}:${port}`;
   }
 }
 

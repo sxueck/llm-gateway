@@ -1,13 +1,16 @@
+import { AGENT_DEFAULTS } from '../constants/agent.js';
+
 export interface AgentInstallConfig {
   gatewayId: string;
   gatewayName: string;
   apiKey: string;
-  port: number;
+  agentPort: number;
+  portkeyPort: number;
   llmGatewayUrl: string;
 }
 
 export function generateInstallScript(config: AgentInstallConfig): string {
-  const { gatewayId, gatewayName, apiKey, port, llmGatewayUrl } = config;
+  const { gatewayId, gatewayName, apiKey, agentPort, portkeyPort, llmGatewayUrl } = config;
 
   const script = `#!/bin/bash
 set -e
@@ -18,7 +21,8 @@ echo "=========================================="
 echo ""
 echo "网关名称: ${gatewayName}"
 echo "网关 ID: ${gatewayId}"
-echo "端口: ${port}"
+echo "Agent 端口: ${agentPort}"
+echo "Portkey Gateway 端口: ${portkeyPort}"
 echo "LLM Gateway URL: ${llmGatewayUrl}"
 echo ""
 
@@ -88,8 +92,8 @@ GATEWAY_ID=${gatewayId}
 API_KEY=${apiKey}
 LLM_GATEWAY_URL=${llmGatewayUrl}
 PORTKEY_CONTAINER_NAME=portkey-gateway-${gatewayId}
-PORTKEY_PORT=${port}
-AGENT_PORT=8788
+PORTKEY_PORT=${portkeyPort}
+AGENT_PORT=${agentPort}
 LOG_LEVEL=info
 CONFIG_SYNC_INTERVAL=300
 HEARTBEAT_INTERVAL=30
@@ -139,7 +143,8 @@ if sudo systemctl is-active --quiet llm-gateway-agent; then
     echo "=========================================="
     echo ""
     echo "Agent 状态: 运行中"
-    echo "Portkey Gateway 端口: ${port}"
+    echo "Agent 监听端口: ${agentPort}"
+    echo "Portkey Gateway 端口: ${portkeyPort}"
     echo ""
     echo "查看 Agent 日志: sudo journalctl -u llm-gateway-agent -f"
     echo "查看 Agent 状态: sudo systemctl status llm-gateway-agent"

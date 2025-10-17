@@ -9,7 +9,6 @@
 - 自动同步 Portkey 配置
 - 配置变更时自动重启容器
 - Docker 容器生命周期管理
-- 跨平台支持 (Linux/macOS/Windows)
 
 ## 快速开始
 
@@ -33,12 +32,16 @@ GATEWAY_ID=your-gateway-id
 API_KEY=your-api-key
 LLM_GATEWAY_URL=http://localhost:3000
 PORTKEY_CONTAINER_NAME=portkey-gateway
-PORTKEY_PORT=8787
-AGENT_PORT=8788
+PORTKEY_PORT=8787  # Portkey Gateway 容器监听端口
+AGENT_PORT=8788    # Agent HTTPS 服务监听端口
 LOG_LEVEL=info
 CONFIG_SYNC_INTERVAL=300
 HEARTBEAT_INTERVAL=30
 ```
+
+配置说明：
+- `AGENT_PORT`：Agent 的 HTTPS 监听端口，用于接收来自 LLM Gateway 的请求（默认：8788）
+- `PORTKEY_PORT`：Portkey Gateway 容器的 HTTP 监听端口，Agent 会将请求转发到此端口（默认：8787）
 
 ### 运行
 
@@ -70,8 +73,8 @@ make build-all
 | API_KEY | API 密钥 | 必填 |
 | LLM_GATEWAY_URL | LLM Gateway 地址 | http://localhost:3000 |
 | PORTKEY_CONTAINER_NAME | Portkey 容器名称 | portkey-gateway |
-| PORTKEY_PORT | Portkey 端口 | 8787 |
-| AGENT_PORT | Agent 端口 | 8788 |
+| PORTKEY_PORT | Portkey Gateway 容器监听端口 (本地) | 8787 |
+| AGENT_PORT | Agent HTTPS 服务监听端口 (对外) | 8788 |
 | LOG_LEVEL | 日志级别 (debug/info/warn/error) | info |
 | CONFIG_SYNC_INTERVAL | 配置同步间隔 (秒) | 300 |
 | HEARTBEAT_INTERVAL | 心跳间隔 (秒) | 30 |
@@ -79,51 +82,37 @@ make build-all
 ## 架构
 
 ```
+用户请求
+    ↓
 LLM Gateway (中心节点)
-    ↕ (HTTPS)
-Remote Agent
-    ↓ (HTTP)
-Portkey Gateway Container (本地)
+    ↓ (HTTPS, 带认证)
+Remote Agent (监听 AGENT_PORT)
+    ↓ (HTTP, 本地转发)
+Portkey Gateway Container (监听 PORTKEY_PORT)
 ```
 
-## API 端点
+请求流程说明：
+1. 用户请求发送到 LLM Gateway
+2. LLM Gateway 根据路由规则选择目标 Agent
+3. LLM Gateway 通过 HTTPS 将请求转发到 Agent (使用 X-Gateway-ID 和 X-API-Key 认证)
+4. Agent 验证认证信息后，将请求转发到本地的 Portkey Gateway 容器
+5. Portkey Gateway 处理请求并返回响应
+6. 响应原路返回给用户
 
-Agent 与 LLM Gateway 通信的端点:
+## TLS 证书
 
-- `POST /api/agent/register` - 注册节点
-- `POST /api/agent/heartbeat` - 发送心跳
-- `GET /api/agent/portkey-config` - 获取配置
-- `POST /api/agent/report-status` - 报告状态
+Agent 首次启动时会自动生成自签名 TLS 证书，证书包含：
+- 服务器主机名
+- 所有网络接口的 IP 地址
+- localhost 和 127.0.0.1
 
-## 日志
+证书文件位置：
+- 证书：`cert.pem`
+- 私钥：`key.pem`
 
-Agent 会输出详细的运行日志，包括:
+证书有效期为 1 年。如需更新证书，删除现有证书文件后重启 Agent 即可自动重新生成。
 
-- 注册状态
-- 心跳状态
-- 配置同步状态
-- 容器管理操作
-- 错误信息
-
-## 故障排查
-
-### Agent 无法启动
-
-1. 检查 Docker 是否运行
-2. 检查配置文件是否正确
-3. 检查网络连接
-
-### 配置同步失败
-
-1. 检查 LLM Gateway URL 是否正确
-2. 检查 API Key 是否有效
-3. 检查网络连接
-
-### 容器启动失败
-
-1. 检查 Docker 权限
-2. 检查端口是否被占用
-3. 查看容器日志: `docker logs portkey-gateway`
+LLM Gateway 会自动信任 Agent 的自签名证书，无需额外配置。
 
 ## License
 

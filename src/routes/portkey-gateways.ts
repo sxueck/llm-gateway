@@ -1,11 +1,13 @@
 import { FastifyInstance } from 'fastify';
 import { nanoid } from 'nanoid';
+import https from 'https';
 import { portkeyGatewayDb, modelRoutingRuleDb } from '../db/index.js';
 import { memoryLogger } from '../services/logger.js';
 import { portkeyRouter } from '../services/portkey-router.js';
 import { appConfig } from '../config/index.js';
 import type { PortkeyGateway } from '../types/index.js';
 import { NotFoundError } from '../utils/error-handler.js';
+import { AGENT_DEFAULTS } from '../constants/agent.js';
 
 async function generateInstallScripts(gateway: PortkeyGateway) {
   const { generateInstallScript, generateInstallCommand } = await import('../services/agent-installer.js');
@@ -14,7 +16,8 @@ async function generateInstallScripts(gateway: PortkeyGateway) {
     gatewayId: gateway.id,
     gatewayName: gateway.name,
     apiKey: gateway.api_key!,
-    port: gateway.port || 8787,
+    agentPort: gateway.port || AGENT_DEFAULTS.AGENT_PORT,
+    portkeyPort: AGENT_DEFAULTS.PORTKEY_PORT,
     llmGatewayUrl: appConfig.publicUrl,
   };
 
@@ -34,9 +37,22 @@ async function checkGatewayHealth(gateway: PortkeyGateway): Promise<HealthCheckR
   const startTime = Date.now();
 
   try {
-    const response = await fetch(`${gateway.url}/health`, {
-      signal: AbortSignal.timeout(5000),
+    const headers: Record<string, string> = {};
+
+    if (gateway.api_key) {
+      headers['X-Gateway-ID'] = gateway.id;
+      headers['X-API-Key'] = gateway.api_key;
+    }
+
+    const httpsAgent = new https.Agent({
+      rejectUnauthorized: false,
     });
+
+    const response = await fetch(`${gateway.url}/health`, {
+      headers,
+      signal: AbortSignal.timeout(5000),
+      agent: gateway.url.startsWith('https:') ? httpsAgent : undefined,
+    } as any);
 
     if (response.ok || response.status === 404) {
       const latency = Date.now() - startTime;
@@ -241,7 +257,7 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
         isDefault?: boolean;
       };
 
-      const port = body.port || 8787;
+      const agentPort = body.port || AGENT_DEFAULTS.AGENT_PORT;
       const id = nanoid();
       const apiKey = `pgw_${nanoid(32)}`;
 
@@ -254,7 +270,7 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
         enabled: 0,
         api_key: apiKey,
         install_status: 'pending',
-        port,
+        port: agentPort,
       });
 
       portkeyRouter.clearCache();
@@ -262,7 +278,7 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
       const { installScript, installCommand } = await generateInstallScripts(gateway!);
 
       memoryLogger.info(
-        `生成 Agent 安装脚本: ${body.name} (ID: ${id}, 端口: ${port})`,
+        `生成 Agent 安装脚本: ${body.name} (ID: ${id}, Agent 端口: ${agentPort})`,
         'PortkeyGateways'
       );
 

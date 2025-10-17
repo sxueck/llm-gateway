@@ -170,7 +170,7 @@ function makeHttpRequest(
     const isHttps = parsedUrl.protocol === 'https:';
     const requestModule = isHttps ? httpsRequest : httpRequest;
 
-    const options = {
+    const options: any = {
       hostname: parsedUrl.hostname,
       port: parsedUrl.port || (isHttps ? 443 : 80),
       path: parsedUrl.pathname + parsedUrl.search,
@@ -178,6 +178,10 @@ function makeHttpRequest(
       headers: headers,
       insecureHTTPParser: true,
     };
+
+    if (isHttps) {
+      options.rejectUnauthorized = false;
+    }
 
     const req = requestModule(options, (res: IncomingMessage) => {
       const chunks: Buffer[] = [];
@@ -224,7 +228,7 @@ function makeStreamHttpRequest(
     const isHttps = parsedUrl.protocol === 'https:';
     const requestModule = isHttps ? httpsRequest : httpRequest;
 
-    const options = {
+    const options: any = {
       hostname: parsedUrl.hostname,
       port: parsedUrl.port || (isHttps ? 443 : 80),
       path: parsedUrl.pathname + parsedUrl.search,
@@ -232,6 +236,10 @@ function makeStreamHttpRequest(
       headers: headers,
       insecureHTTPParser: true,
     };
+
+    if (isHttps) {
+      options.rejectUnauthorized = false;
+    }
 
     let promptTokens = 0;
     let completionTokens = 0;
