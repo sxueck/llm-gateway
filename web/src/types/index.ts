@@ -144,6 +144,7 @@ export interface UpdateModelRequest {
   enabled?: boolean;
   modelAttributes?: ModelAttributes;
   promptConfig?: PromptConfig | null;
+  compressionConfig?: CompressionConfig | null;
 }
 
 export interface CreateVirtualKeyRequest {
