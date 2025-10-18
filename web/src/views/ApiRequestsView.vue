@@ -36,6 +36,7 @@
             :pagination="pagination"
             :row-key="(row: ApiRequest) => row.id"
             :row-props="rowProps"
+            remote
             striped
           />
         </n-space>
@@ -184,6 +185,7 @@ const pagination = reactive<PaginationProps>({
   page: 1,
   pageSize: 20,
   itemCount: 0,
+  pageCount: 0,
   pageSizes: [10, 20, 50, 100],
   showSizePicker: true,
   prefix: (info) => `共 ${info.itemCount} 条`,
@@ -335,6 +337,7 @@ const loadRequests = async () => {
     const response = await apiRequestApi.getAll(params);
     requests.value = response.data;
     pagination.itemCount = response.total;
+    pagination.pageCount = response.totalPages;
   } catch (error: any) {
     message.error(error.message || '加载请求日志失败');
   } finally {
