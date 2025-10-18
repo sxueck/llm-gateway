@@ -12,6 +12,15 @@
               @update:value="handleTimeRangeChange"
             />
             <n-select
+              v-model:value="filterVirtualKeyId"
+              :options="virtualKeyOptions"
+              style="width: 200px;"
+              placeholder="虚拟密钥"
+              clearable
+              filterable
+              @update:value="loadRequests"
+            />
+            <n-select
               v-model:value="filterStatus"
               :options="statusOptions"
               style="width: 120px;"
@@ -156,6 +165,7 @@
 import { ref, h, onMounted, reactive } from 'vue';
 import { useMessage, NSpace, NCard, NButton, NDataTable, NTag, NDrawer, NDrawerContent, NDescriptions, NDescriptionsItem, NDatePicker, NSelect, NCode, NModal, NText, NInputNumber, NAlert } from 'naive-ui';
 import { apiRequestApi, type ApiRequest } from '@/api/api-request';
+import { virtualKeyApi } from '@/api/virtual-key';
 import type { DataTableColumns, PaginationProps } from 'naive-ui';
 import { formatJson, formatTimestamp } from '@/utils/common';
 
@@ -166,6 +176,8 @@ const showDetail = ref(false);
 const selectedRequest = ref<ApiRequest | null>(null);
 const timeRange = ref<[number, number] | null>(null);
 const filterStatus = ref<string | undefined>(undefined);
+const filterVirtualKeyId = ref<string | undefined>(undefined);
+const virtualKeyOptions = ref<Array<{ label: string; value: string }>>([]);
 const showCleanDialog = ref(false);
 const cleanDays = ref(30);
 const cleanLoading = ref(false);
@@ -334,6 +346,10 @@ const loadRequests = async () => {
       params.status = filterStatus.value;
     }
 
+    if (filterVirtualKeyId.value) {
+      params.virtualKeyId = filterVirtualKeyId.value;
+    }
+
     const response = await apiRequestApi.getAll(params);
     requests.value = response.data;
     pagination.itemCount = response.total;
@@ -376,10 +392,23 @@ const handleCleanLogs = async () => {
   }
 };
 
+const loadVirtualKeys = async () => {
+  try {
+    const response = await virtualKeyApi.getAll();
+    virtualKeyOptions.value = response.virtualKeys.map(vk => ({
+      label: `${vk.name} (${vk.keyValue.substring(0, 20)}...)`,
+      value: vk.id,
+    }));
+  } catch (error: any) {
+    message.error(error.message || '加载虚拟密钥列表失败');
+  }
+};
+
 onMounted(() => {
   const now = Date.now();
   const oneDayAgo = now - 24 * 60 * 60 * 1000;
   timeRange.value = [oneDayAgo, now];
+  loadVirtualKeys();
   loadRequests();
 });
 </script>
