@@ -46,7 +46,7 @@ async function checkGatewayHealth(gateway: PortkeyGateway): Promise<HealthCheckR
     if (timeSinceHeartbeat < HEARTBEAT_TIMEOUT) {
       return {
         success: true,
-        latency: Math.round(timeSinceHeartbeat / 10),
+        latency: timeSinceHeartbeat < 5000 ? Math.round(timeSinceHeartbeat / 100) : null,
         lastHeartbeat: gateway.last_heartbeat,
         agentVersion: gateway.agent_version || undefined,
       };

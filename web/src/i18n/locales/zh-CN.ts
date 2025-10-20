@@ -58,7 +58,7 @@ export default {
     virtualModels: '智能路由',
     virtualKeys: '虚拟密钥',
     portkeyGateways: 'Portkey 网关',
-    advancedFeatures: '高级特性',
+    experimentalFeatures: '实验性功能',
     promptManagement: 'Prompt 管理',
     compressionManagement: '上下文压缩',
     tools: '工具',

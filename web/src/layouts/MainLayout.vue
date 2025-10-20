@@ -107,6 +107,7 @@ import {
   ListOutline,
   OptionsOutline,
   ChatbubbleEllipsesOutline,
+  FlaskOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
@@ -155,9 +156,16 @@ const menuOptions = computed(() => [
     icon: () => h(NIcon, null, { default: () => h(CloudOutline) }),
   },
   {
-    label: t('menu.promptManagement'),
-    key: 'prompt-management',
-    icon: () => h(NIcon, null, { default: () => h(ChatbubbleEllipsesOutline) }),
+    label: t('menu.experimentalFeatures'),
+    key: 'experimental-features',
+    icon: () => h(NIcon, null, { default: () => h(FlaskOutline) }),
+    children: [
+      {
+        label: t('menu.promptManagement'),
+        key: 'prompt-management',
+        icon: () => h(NIcon, null, { default: () => h(ChatbubbleEllipsesOutline) }),
+      },
+    ],
   },
   {
     label: t('menu.tools'),
@@ -183,7 +191,7 @@ const menuOptions = computed(() => [
   },
 ]);
 
-const defaultExpandedKeys = ['model-management', 'advanced-features', 'tools'];
+const defaultExpandedKeys = ['model-management', 'experimental-features', 'tools'];
 
 const generalMenuOptions = computed(() => [
   {

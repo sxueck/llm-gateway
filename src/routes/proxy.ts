@@ -9,6 +9,7 @@ import { decryptApiKey } from '../utils/crypto.js';
 import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse } from '../utils/request-logger.js';
 import { portkeyRouter } from '../services/portkey-router.js';
 import { requestCache } from '../services/request-cache.js';
+import { generateCacheKey } from '../utils/cache-key-generator.js';
 import { ProviderAdapterFactory } from '../services/provider-adapter.js';
 import { removeV1Suffix } from '../utils/api-endpoint-builder.js';
 import { promptProcessor } from '../services/prompt-processor.js';
@@ -1100,7 +1101,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       }
 
       if (shouldCache) {
-        cacheKey = requestCache.generateCacheKey(request.body);
+        cacheKey = generateCacheKey(request.body, virtualKey.id);
         const cached = requestCache.get(cacheKey);
 
         if (cached) {
@@ -1139,11 +1140,6 @@ export async function proxyRoutes(fastify: FastifyInstance) {
 
           return reply.send(cached.response);
         }
-
-        memoryLogger.debug(
-          `Cache miss | key=${cacheKey.substring(0, 8)}... | virtual key: ${vkDisplay}`,
-          'Proxy'
-        );
       }
 
       const response = await makeHttpRequest(
@@ -1260,11 +1256,6 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           const cacheHeaders: Record<string, string> = { ...responseHeaders };
           requestCache.set(cacheKey, responseData, cacheHeaders);
           reply.header('X-Cache-Status', 'MISS');
-
-          memoryLogger.debug(
-            `Response cached | key=${cacheKey.substring(0, 8)}... | model=${request.body?.model}`,
-            'Proxy'
-          );
         }
 
         let cacheStatus: string;

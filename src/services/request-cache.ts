@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import { memoryLogger } from './logger.js';
 
 interface CacheEntry {
@@ -35,23 +34,6 @@ export class RequestCache {
     this.maxSize = maxSize;
     this.defaultTTL = defaultTTL;
     this.accessCounter = 0;
-  }
-
-  generateCacheKey(requestBody: any): string {
-    const normalizedBody = {
-      model: requestBody.model?.trim(),
-      messages: requestBody.messages,
-      temperature: requestBody.temperature,
-      max_tokens: requestBody.max_tokens,
-      top_p: requestBody.top_p,
-      frequency_penalty: requestBody.frequency_penalty,
-      presence_penalty: requestBody.presence_penalty,
-      stop: requestBody.stop,
-      n: requestBody.n,
-    };
-
-    const sortedBody = JSON.stringify(normalizedBody, Object.keys(normalizedBody).sort());
-    return crypto.createHash('md5').update(sortedBody).digest('hex');
   }
 
   set(key: string, response: any, headers: Record<string, string>, ttl?: number): void {

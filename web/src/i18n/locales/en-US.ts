@@ -58,7 +58,7 @@ export default {
     virtualModels: 'Smart Routing',
     virtualKeys: 'Virtual Keys',
     portkeyGateways: 'Portkey Gateways',
-    advancedFeatures: 'Advanced Features',
+    experimentalFeatures: 'Experimental Features',
     promptManagement: 'Prompt Management',
     compressionManagement: 'Context Compression',
     tools: 'Tools',
