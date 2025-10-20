@@ -103,7 +103,7 @@
               </n-space>
             </n-collapse-item>
 
-            <n-collapse-item title="GET /v1/models - 获取模型列表" name="models">
+            <n-collapse-item title="GET /models - 获取模型列表" name="models">
               <n-space vertical :size="16">
                 <n-form label-placement="left" label-width="100">
                   <n-form-item label="虚拟密钥">
@@ -416,7 +416,7 @@ async function sendRequest() {
     sending.value = true;
     const startTime = Date.now();
 
-    const res = await fetch(`${llmGatewayUrl.value}/v1/chat/completions`, {
+    const res = await fetch(`${llmGatewayUrl.value}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -452,7 +452,7 @@ async function getModels() {
     gettingModels.value = true;
     const startTime = Date.now();
 
-    const res = await fetch(`${llmGatewayUrl.value}/v1/models`, {
+    const res = await fetch(`${llmGatewayUrl.value}/models`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${selectedVirtualKeyModels.value}`,

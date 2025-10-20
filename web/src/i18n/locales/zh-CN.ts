@@ -197,7 +197,7 @@ export default {
     authMethod: '认证方式',
     authMethodDesc: 'Bearer Token (使用虚拟密钥)',
     onlineApiTest: '在线 API 测试',
-    chatCompletions: 'POST /v1/chat/completions - 聊天补全',
+    chatCompletions: 'POST /chat/completions - 聊天补全',
     virtualKey: '虚拟密钥',
     selectVirtualKey: '选择虚拟密钥',
     model: '模型',

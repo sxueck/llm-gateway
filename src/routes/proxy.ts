@@ -316,6 +316,38 @@ interface ProxyRequest extends FastifyRequest {
   body: any;
 }
 
+interface RouteConfig {
+  path: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'ALL';
+  handler: string;
+}
+
+interface ApiGroup {
+  routes: RouteConfig[];
+  withV1Prefix?: boolean;
+}
+
+const API_GROUPS: Record<string, ApiGroup> = {
+  models: {
+    routes: [
+      { path: '/models', method: 'GET', handler: 'getModels' },
+      { path: '/model/info', method: 'GET', handler: 'getModels' },
+    ],
+    withV1Prefix: true,
+  },
+  proxy: {
+    routes: [
+      { path: '/chat/completions', method: 'ALL', handler: 'proxy' },
+      { path: '/completions', method: 'ALL', handler: 'proxy' },
+      { path: '/embeddings', method: 'ALL', handler: 'proxy' },
+      { path: '/audio/*', method: 'ALL', handler: 'proxy' },
+      { path: '/images/*', method: 'ALL', handler: 'proxy' },
+      { path: '/moderations', method: 'ALL', handler: 'proxy' },
+    ],
+    withV1Prefix: true,
+  },
+};
+
 export async function proxyRoutes(fastify: FastifyInstance) {
   const getModelsHandler = async (request: FastifyRequest, reply: FastifyReply) => {
     try {
@@ -426,10 +458,32 @@ export async function proxyRoutes(fastify: FastifyInstance) {
     }
   };
 
-  fastify.get('/v1/models', getModelsHandler);
-  fastify.get('/v1/model/info', getModelsHandler);
+  const handlers: Record<string, any> = {
+    getModels: getModelsHandler,
+  };
 
-  fastify.all('/v1/*', async (request: ProxyRequest, reply: FastifyReply) => {
+  const registerApiGroup = (group: ApiGroup, handlers: Record<string, any>) => {
+    group.routes.forEach(route => {
+      const handler = handlers[route.handler];
+      if (!handler) {
+        memoryLogger.error(`Handler not found: ${route.handler}`, 'Proxy');
+        return;
+      }
+
+      const method = route.method.toLowerCase() as 'get' | 'post' | 'put' | 'delete' | 'patch' | 'all';
+      fastify[method](route.path, handler);
+
+      if (group.withV1Prefix) {
+        fastify[method](`/v1${route.path}`, handler);
+      }
+
+      memoryLogger.debug(`Registered route: ${route.method} ${route.path}`, 'Proxy');
+    });
+  };
+
+  registerApiGroup(API_GROUPS.models, handlers);
+
+  const proxyHandler = async (request: ProxyRequest, reply: FastifyReply) => {
     const startTime = Date.now();
     let virtualKeyValue: string | undefined;
     let providerId: string | undefined;
@@ -661,8 +715,22 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         );
       }
 
-      const path = request.url.startsWith('/v1/') ? request.url : `/v1${request.url}`;
+      let path = request.url;
+      if (path.startsWith('/v1/v1/')) {
+        path = path.replace(/^\/v1\/v1\//, '/v1/');
+        memoryLogger.debug(
+          `Path normalized: ${request.url} -> ${path}`,
+          'Proxy'
+        );
+      }
 
+      if (!path.startsWith('/v1/')) {
+        path = `/v1${path}`;
+        memoryLogger.debug(
+          `Path normalized to v1: ${request.url} -> ${path}`,
+          'Proxy'
+        );
+      }
 
       if (path.startsWith('/v1/embeddings') && (request as any).body && typeof (request as any).body.input === 'string') {
         (request as any).body.input = [(request as any).body.input];
@@ -1174,7 +1242,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         }
       });
     }
-  });
+  };
+
+  handlers.proxy = proxyHandler;
+  registerApiGroup(API_GROUPS.proxy, handlers);
 
   setInterval(() => {
     requestCache.logStats();

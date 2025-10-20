@@ -147,7 +147,6 @@ memoryLogger.info('Routes registered', 'System');
 
 fastify.setNotFoundHandler((request, reply) => {
   if (request.url.startsWith('/api/') ||
-      request.url.startsWith('/v1/') ||
       request.url.startsWith('/portkey-config/') ||
       request.url.startsWith('/downloads/')) {
     reply.code(404).send({

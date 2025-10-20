@@ -97,7 +97,7 @@
           :bordered="false"
         >
           <div style="font-size: 12px; margin-top: 4px;">
-            该提供商可能不支持标准的 /v1/models 接口。您可以在创建提供商后，通过"批量添加模型"功能手动添加模型。
+            该提供商可能不支持标准的 /models 接口。您可以在创建提供商后，通过"批量添加模型"功能手动添加模型。
           </div>
         </n-alert>
       </n-space>

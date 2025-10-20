@@ -197,7 +197,7 @@ export default {
     authMethod: 'Authentication Method',
     authMethodDesc: 'Bearer Token (using virtual key)',
     onlineApiTest: 'Online API Test',
-    chatCompletions: 'POST /v1/chat/completions - Chat Completions',
+    chatCompletions: 'POST /chat/completions - Chat Completions',
     virtualKey: 'Virtual Key',
     selectVirtualKey: 'Select Virtual Key',
     model: 'Model',
