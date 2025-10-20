@@ -43,6 +43,26 @@
 
           <n-divider style="margin: 8px 0;" />
 
+          <n-space align="center" justify="space-between">
+            <div>
+              <div>LiteLLM 兼容模式</div>
+              <n-text depth="3" style="font-size: 12px;">
+                开启后可在 RooCode / KiloCode 等工具中选择 LiteLLM 类型，自动复用预设库中的上下文大小和功能支持等配置
+              </n-text>
+            </div>
+            <n-switch :value="litellmCompatEnabled" @update:value="onToggleLitellmCompat" />
+          </n-space>
+
+          <n-alert type="info" v-if="litellmCompatEnabled">
+            <template #header>LiteLLM 兼容模式已启用</template>
+            <n-text>
+              已启用 <n-text code>/v1/model/info</n-text> 端点，返回 LiteLLM 格式的模型信息。
+              可在 Roo Code、Continue 等支持 LiteLLM 的工具中使用，自动获取模型的上下文窗口大小、功能支持等配置。
+            </n-text>
+          </n-alert>
+
+          <n-divider style="margin: 8px 0;" />
+
           <n-space vertical :size="8" style="width: 100%;">
             <div>
               <div>LLM Gateway 公网访问地址</div>
@@ -127,6 +147,7 @@ const message = useMessage();
 const dialog = useDialog();
 const allowRegistration = ref(true);
 const corsEnabled = ref(true);
+const litellmCompatEnabled = ref(false);
 const publicUrl = ref('');
 const publicUrlInput = ref('');
 const savingPublicUrl = ref(false);
@@ -173,6 +194,16 @@ async function onToggleCorsEnabled(val: boolean) {
   }
 }
 
+async function onToggleLitellmCompat(val: boolean) {
+  try {
+    await configApi.updateSystemSettings({ litellmCompatEnabled: val });
+    litellmCompatEnabled.value = val;
+    message.success(val ? 'LiteLLM 兼容模式已启用' : 'LiteLLM 兼容模式已禁用');
+  } catch (e: any) {
+    message.error('保存失败');
+  }
+}
+
 async function onSavePublicUrl() {
   const url = publicUrlInput.value.trim();
 
@@ -200,6 +231,7 @@ onMounted(async () => {
   const s = await configApi.getSystemSettings();
   allowRegistration.value = s.allowRegistration;
   corsEnabled.value = s.corsEnabled;
+  litellmCompatEnabled.value = s.litellmCompatEnabled;
   publicUrl.value = s.publicUrl;
   publicUrlInput.value = s.publicUrl;
   await Promise.all([

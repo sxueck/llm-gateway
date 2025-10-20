@@ -14,19 +14,22 @@ export async function configRoutes(fastify: FastifyInstance) {
     const allowRegCfg = systemConfigDb.get('allow_registration');
     const corsEnabledCfg = systemConfigDb.get('cors_enabled');
     const publicUrlCfg = systemConfigDb.get('public_url');
+    const litellmCompatCfg = systemConfigDb.get('litellm_compat_enabled');
 
     return {
       allowRegistration: !(allowRegCfg && allowRegCfg.value === 'false'),
       corsEnabled: corsEnabledCfg ? corsEnabledCfg.value === 'true' : true,
       publicUrl: publicUrlCfg ? publicUrlCfg.value : appConfig.defaultPublicUrl,
+      litellmCompatEnabled: litellmCompatCfg ? litellmCompatCfg.value === 'true' : false,
     };
   });
 
   fastify.post('/system-settings', async (request) => {
-    const { allowRegistration, corsEnabled, publicUrl } = request.body as {
+    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled } = request.body as {
       allowRegistration?: boolean;
       corsEnabled?: boolean;
       publicUrl?: string;
+      litellmCompatEnabled?: boolean;
     };
 
     if (allowRegistration !== undefined) {
@@ -36,6 +39,11 @@ export async function configRoutes(fastify: FastifyInstance) {
     if (corsEnabled !== undefined) {
       await systemConfigDb.set('cors_enabled', corsEnabled ? 'true' : 'false', '是否启用 CORS 跨域支持');
       memoryLogger.info(`CORS 配置已更新: ${corsEnabled ? '启用' : '禁用'}`, 'Config');
+    }
+
+    if (litellmCompatEnabled !== undefined) {
+      await systemConfigDb.set('litellm_compat_enabled', litellmCompatEnabled ? 'true' : 'false', '是否启用 LiteLLM 兼容模式');
+      memoryLogger.info(`LiteLLM 兼容模式已更新: ${litellmCompatEnabled ? '启用' : '禁用'}`, 'Config');
     }
 
     if (publicUrl !== undefined) {

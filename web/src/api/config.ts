@@ -134,7 +134,7 @@ export const configApi = {
     return request.delete(`/admin/config/routing-configs/${id}`);
   },
 
-  getSystemSettings(): Promise<{ allowRegistration: boolean; corsEnabled: boolean; publicUrl: string }> {
+  getSystemSettings(): Promise<{ allowRegistration: boolean; corsEnabled: boolean; publicUrl: string; litellmCompatEnabled: boolean }> {
     return request.get('/admin/config/system-settings');
   },
 
@@ -142,7 +142,7 @@ export const configApi = {
     return request.get('/public/system-settings');
   },
 
-  updateSystemSettings(data: { allowRegistration?: boolean; corsEnabled?: boolean; publicUrl?: string }): Promise<{ success: boolean }> {
+  updateSystemSettings(data: { allowRegistration?: boolean; corsEnabled?: boolean; publicUrl?: string; litellmCompatEnabled?: boolean }): Promise<{ success: boolean }> {
     return request.post('/admin/config/system-settings', data);
   },
 };
