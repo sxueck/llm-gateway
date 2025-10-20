@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { providerDb } from '../db/index.js';
 import { encryptApiKey, decryptApiKey } from '../utils/crypto.js';
 import { generatePortkeyConfig } from '../services/config-generator.js';
+import { buildModelsEndpoint } from '../utils/api-endpoint-builder.js';
 
 const createProviderSchema = z.object({
   id: z.string(),
@@ -157,7 +158,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
 
     try {
       const apiKey = decryptApiKey(provider.api_key);
-      const endpoint = `${provider.base_url}/models`;
+      const endpoint = buildModelsEndpoint(provider.base_url);
 
       const response = await fetch(endpoint, {
         method: 'GET',
@@ -188,7 +189,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      const endpoint = `${baseUrl}/models`;
+      const endpoint = buildModelsEndpoint(baseUrl);
 
       const response = await fetch(endpoint, {
         method: 'GET',

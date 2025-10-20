@@ -10,6 +10,7 @@ import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse } f
 import { portkeyRouter } from '../services/portkey-router.js';
 import { requestCache } from '../services/request-cache.js';
 import { ProviderAdapterFactory } from '../services/provider-adapter.js';
+import { removeV1Suffix } from '../utils/api-endpoint-builder.js';
 import { promptProcessor } from '../services/prompt-processor.js';
 import { compressionProcessor } from '../services/compression-processor.js';
 import { isLocalGateway } from '../utils/network.js';
@@ -650,7 +651,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
       };
 
       if (normalized.baseUrl && normalized.provider.toLowerCase() !== 'google') {
-        portkeyConfig.custom_host = normalized.baseUrl;
+        portkeyConfig.custom_host = removeV1Suffix(normalized.baseUrl);
       }
 
       if (virtualKey.cache_enabled === 1) {

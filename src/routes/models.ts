@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import { modelDb, providerDb, virtualKeyDb, portkeyGatewayDb } from '../db/index.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { portkeyRouter } from '../services/portkey-router.js';
+import { buildChatCompletionsEndpoint } from '../utils/api-endpoint-builder.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -359,7 +360,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
 
     try {
       const apiKey = decryptApiKey(provider.api_key);
-      const endpoint = `${provider.base_url}/chat/completions`;
+      const endpoint = buildChatCompletionsEndpoint(provider.base_url);
 
       const response = await fetch(endpoint, {
         method: 'POST',

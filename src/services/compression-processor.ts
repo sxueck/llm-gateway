@@ -4,6 +4,7 @@ import { TokenCounter } from './token-counter.js';
 import { memoryLogger } from './logger.js';
 import { modelDb, providerDb } from '../db/index.js';
 import { decryptApiKey } from '../utils/crypto.js';
+import { buildChatCompletionsEndpoint } from '../utils/api-endpoint-builder.js';
 
 export interface CompressionContext {
   date: string;
@@ -217,7 +218,7 @@ export class CompressionProcessor {
     const prompt = summaryPrompt.replace('{{history}}', historyText);
 
     const apiKey = decryptApiKey(provider.api_key);
-    const endpoint = `${provider.base_url}/chat/completions`;
+    const endpoint = buildChatCompletionsEndpoint(provider.base_url);
 
     const targetTokens = Math.floor(
       this.tokenCounter.countMessagesTokens(messages) * config.compressionRatio
