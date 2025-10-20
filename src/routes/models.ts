@@ -183,6 +183,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
       enabled: body.enabled !== false ? 1 : 0,
       model_attributes: body.modelAttributes ? JSON.stringify(body.modelAttributes) : null,
       prompt_config: body.promptConfig ? JSON.stringify(body.promptConfig) : null,
+      compression_config: null,
     });
 
     let modelAttributes = null;
