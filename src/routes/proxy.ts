@@ -316,7 +316,7 @@ interface ProxyRequest extends FastifyRequest {
 }
 
 export async function proxyRoutes(fastify: FastifyInstance) {
-  fastify.get('/v1/models', async (request: FastifyRequest, reply: FastifyReply) => {
+  const getModelsHandler = async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const authHeader = request.headers.authorization;
       if (!authHeader?.startsWith('Bearer ')) {
@@ -423,7 +423,10 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         }
       });
     }
-  });
+  };
+
+  fastify.get('/v1/models', getModelsHandler);
+  fastify.get('/v1/model/info', getModelsHandler);
 
   fastify.all('/v1/*', async (request: ProxyRequest, reply: FastifyReply) => {
     const startTime = Date.now();
