@@ -112,15 +112,6 @@ export interface PromptConfig {
   templateContent: string;
   systemMessage?: string;
   enabled: boolean;
-}
-
-export interface CompressionConfig {
-  enabled: boolean;
-  maxTokens: number;
-  minMessages: number;
-  keepRecentTokens: number;
-  compressionRatio: number;
-  summaryModelId?: string;
-  summaryPrompt?: string;
+  injectOnce?: boolean;
 }
 

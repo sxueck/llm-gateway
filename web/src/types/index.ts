@@ -19,16 +19,7 @@ export interface PromptConfig {
   templateContent: string;
   systemMessage?: string;
   enabled: boolean;
-}
-
-export interface CompressionConfig {
-  enabled: boolean;
-  maxTokens: number;
-  minMessages: number;
-  keepRecentTokens: number;
-  compressionRatio: number;
-  summaryModelId?: string;
-  summaryPrompt?: string;
+  injectOnce?: boolean;
 }
 
 export interface ModelAttributes {
@@ -62,7 +53,6 @@ export interface Model {
   enabled: boolean;
   modelAttributes?: ModelAttributes | null;
   promptConfig?: PromptConfig | null;
-  compressionConfig?: CompressionConfig | null;
   virtualKeyCount?: number;
   routingGateway?: {
     id: string;
@@ -144,7 +134,6 @@ export interface UpdateModelRequest {
   enabled?: boolean;
   modelAttributes?: ModelAttributes;
   promptConfig?: PromptConfig | null;
-  compressionConfig?: CompressionConfig | null;
 }
 
 export interface CreateVirtualKeyRequest {

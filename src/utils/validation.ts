@@ -38,35 +38,3 @@ export function validateUUID(id: string): { valid: boolean; message?: string } {
   return { valid: true };
 }
 
-export function validateCompressionConfig(config: any): { valid: boolean; message?: string } {
-  if (typeof config !== 'object' || config === null) {
-    return { valid: false, message: '压缩配置必须是对象' };
-  }
-
-  if (config.maxTokens !== undefined) {
-    if (typeof config.maxTokens !== 'number' || config.maxTokens <= 0 || config.maxTokens > 1000000) {
-      return { valid: false, message: 'maxTokens 必须是 1-1000000 之间的数字' };
-    }
-  }
-
-  if (config.minMessages !== undefined) {
-    if (typeof config.minMessages !== 'number' || config.minMessages < 1 || config.minMessages > 1000) {
-      return { valid: false, message: 'minMessages 必须是 1-1000 之间的数字' };
-    }
-  }
-
-  if (config.keepRecentTokens !== undefined) {
-    if (typeof config.keepRecentTokens !== 'number' || config.keepRecentTokens <= 0 || config.keepRecentTokens > 1000000) {
-      return { valid: false, message: 'keepRecentTokens 必须是 1-1000000 之间的数字' };
-    }
-  }
-
-  if (config.compressionRatio !== undefined) {
-    if (typeof config.compressionRatio !== 'number' || config.compressionRatio <= 0 || config.compressionRatio > 1) {
-      return { valid: false, message: 'compressionRatio 必须是 0-1 之间的数字' };
-    }
-  }
-
-  return { valid: true };
-}
-

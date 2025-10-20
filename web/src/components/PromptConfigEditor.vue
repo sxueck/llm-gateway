@@ -48,6 +48,21 @@
       />
     </n-form-item>
 
+    <n-form-item label="注入时机" :show-feedback="false">
+      <n-space vertical :size="8" style="width: 100%">
+        <n-checkbox
+          v-model:checked="localConfig.injectOnce"
+          :disabled="!localEnabled"
+          @update:checked="handleChange"
+        >
+          仅在对话开始时注入一次
+        </n-checkbox>
+        <div style="font-size: 12px; color: rgba(0, 0, 0, 0.45); margin-left: 24px;">
+          启用后, Prompt 只会在首次请求时注入以避免重复注入相同内容
+        </div>
+      </n-space>
+    </n-form-item>
+
     <div class="variables-hint">
       <div class="variables-title">支持的变量</div>
       <div class="variables-list">
@@ -71,7 +86,8 @@ import {
   NSwitch,
   NFormItem,
   NSelect,
-  NInput
+  NInput,
+  NCheckbox
 } from 'naive-ui';
 import type { PromptConfig } from '../types';
 
@@ -103,6 +119,7 @@ const defaultConfig: PromptConfig = {
   templateContent: '',
   systemMessage: '',
   enabled: false,
+  injectOnce: false,
 };
 
 const localConfig = ref<PromptConfig>({ ...defaultConfig });

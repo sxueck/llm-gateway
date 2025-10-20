@@ -31,9 +31,13 @@ export class PromptProcessor {
       return messages;
     }
 
+    if (promptConfig.injectOnce && !this.isFirstRequest(messages)) {
+      return messages;
+    }
+
     const operationType = promptConfig.operationType;
     memoryLogger.debug(
-      `处理 Prompt | 操作类型: ${operationType}`,
+      `处理 Prompt | 操作类型: ${operationType} | injectOnce: ${promptConfig.injectOnce || false}`,
       'PromptProcessor'
     );
 
@@ -48,6 +52,12 @@ export class PromptProcessor {
         memoryLogger.warn(`未知的操作类型: ${operationType}`, 'PromptProcessor');
         return messages;
     }
+  }
+
+  private isFirstRequest(messages: ChatMessage[]): boolean {
+    const nonSystemMessages = messages.filter(m => m.role !== 'system');
+    const userMessages = messages.filter(m => m.role === 'user');
+    return nonSystemMessages.length === 1 && userMessages.length === 1;
   }
 
   private handleReplace(
@@ -185,7 +195,7 @@ export class PromptProcessor {
 
     try {
       const config = JSON.parse(promptConfigJson);
-      
+
       if (!config.operationType || !config.templateContent) {
         memoryLogger.warn('Prompt 配置缺少必要字段', 'PromptProcessor');
         return null;
@@ -201,6 +211,7 @@ export class PromptProcessor {
         templateContent: config.templateContent,
         systemMessage: config.systemMessage,
         enabled: config.enabled !== false,
+        injectOnce: config.injectOnce || false,
       };
     } catch (error: any) {
       memoryLogger.error(`解析 Prompt 配置失败: ${error.message}`, 'PromptProcessor');

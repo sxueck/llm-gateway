@@ -12,7 +12,6 @@ import { requestCache } from '../services/request-cache.js';
 import { ProviderAdapterFactory } from '../services/provider-adapter.js';
 import { removeV1Suffix } from '../utils/api-endpoint-builder.js';
 import { promptProcessor } from '../services/prompt-processor.js';
-import { compressionProcessor } from '../services/compression-processor.js';
 import { isLocalGateway } from '../utils/network.js';
 
 interface RoutingTarget {
@@ -965,32 +964,6 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           date: new Date().toISOString().split('T')[0],
           requestHeaders: request.headers,
         };
-
-        if (currentModel.compression_config) {
-          const compressionConfig = compressionProcessor.parseCompressionConfig(currentModel.compression_config);
-
-          if (compressionConfig) {
-            try {
-              const compressedMessages = await compressionProcessor.processMessages(
-                request.body.messages,
-                compressionConfig,
-                processorContext
-              );
-
-              request.body.messages = compressedMessages;
-
-              memoryLogger.info(
-                `压缩处理完成 | 模型: ${currentModel.name}`,
-                'Proxy'
-              );
-            } catch (compressionError: any) {
-              memoryLogger.error(
-                `压缩处理失败: ${compressionError.message}`,
-                'Proxy'
-              );
-            }
-          }
-        }
 
         if (currentModel.prompt_config) {
           const promptConfig = promptProcessor.parsePromptConfig(currentModel.prompt_config);
