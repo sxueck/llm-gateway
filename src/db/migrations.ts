@@ -74,6 +74,71 @@ export const migrations: Migration[] = [
       } catch (e) {
       }
     }
+  },
+  {
+    version: 4,
+    name: 'add_expert_routing_support',
+    up: (db: SqlJsDatabase) => {
+      db.run(`
+        CREATE TABLE IF NOT EXISTS expert_routing_configs (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT,
+          enabled INTEGER DEFAULT 1,
+          config TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        )
+      `);
+
+      db.run('CREATE INDEX IF NOT EXISTS idx_expert_routing_configs_enabled ON expert_routing_configs(enabled)');
+      db.run('CREATE INDEX IF NOT EXISTS idx_expert_routing_configs_created_at ON expert_routing_configs(created_at)');
+
+      db.run(`
+        CREATE TABLE IF NOT EXISTS expert_routing_logs (
+          id TEXT PRIMARY KEY,
+          virtual_key_id TEXT,
+          expert_routing_id TEXT NOT NULL,
+          request_hash TEXT NOT NULL,
+          classifier_model TEXT NOT NULL,
+          classification_result TEXT NOT NULL,
+          selected_expert_id TEXT NOT NULL,
+          selected_expert_type TEXT NOT NULL,
+          selected_expert_name TEXT NOT NULL,
+          classification_time INTEGER,
+          created_at INTEGER NOT NULL,
+          FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
+          FOREIGN KEY (expert_routing_id) REFERENCES expert_routing_configs(id) ON DELETE CASCADE
+        )
+      `);
+
+      db.run('CREATE INDEX IF NOT EXISTS idx_expert_routing_logs_config ON expert_routing_logs(expert_routing_id)');
+      db.run('CREATE INDEX IF NOT EXISTS idx_expert_routing_logs_created_at ON expert_routing_logs(created_at)');
+      db.run('CREATE INDEX IF NOT EXISTS idx_expert_routing_logs_category ON expert_routing_logs(classification_result)');
+
+      try {
+        db.run('ALTER TABLE models ADD COLUMN expert_routing_id TEXT');
+      } catch (e) {
+      }
+
+      db.run('CREATE INDEX IF NOT EXISTS idx_models_expert_routing ON models(expert_routing_id)');
+    },
+    down: (db: SqlJsDatabase) => {
+      try {
+        db.run('DROP TABLE IF EXISTS expert_routing_logs');
+      } catch (e) {
+      }
+
+      try {
+        db.run('DROP TABLE IF EXISTS expert_routing_configs');
+      } catch (e) {
+      }
+
+      try {
+        db.run('DROP INDEX IF EXISTS idx_models_expert_routing');
+      } catch (e) {
+      }
+    }
   }
 ];
 

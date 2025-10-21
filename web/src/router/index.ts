@@ -61,6 +61,11 @@ const router = createRouter({
           component: () => import('@/views/PromptManagementView.vue'),
         },
         {
+          path: 'expert-routing',
+          name: 'ExpertRouting',
+          component: () => import('@/views/ExpertRoutingView.vue'),
+        },
+        {
           path: 'api-guide',
           name: 'ApiGuide',
           component: () => import('@/views/ApiGuideView.vue'),

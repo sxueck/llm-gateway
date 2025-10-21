@@ -554,6 +554,7 @@ export interface Model {
   model_identifier: string;
   is_virtual: number;
   routing_config_id: string | null;
+  expert_routing_id?: string | null;
   enabled: number;
   model_attributes: string | null;
   prompt_config: string | null;
@@ -564,7 +565,7 @@ export interface Model {
 
 export const modelDb = {
   getAll(): Model[] {
-    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, prompt_config, compression_config, created_at, updated_at FROM models ORDER BY created_at DESC');
+    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, expert_routing_id, enabled, model_attributes, prompt_config, compression_config, created_at, updated_at FROM models ORDER BY created_at DESC');
     if (result.length === 0) return [];
     return result[0].values.map(row => ({
       id: row[0] as string,
@@ -573,17 +574,18 @@ export const modelDb = {
       model_identifier: row[3] as string,
       is_virtual: row[4] as number,
       routing_config_id: row[5] as string | null,
-      enabled: row[6] as number,
-      model_attributes: row[7] as string | null,
-      prompt_config: row[8] as string | null,
-      compression_config: row[9] as string | null,
-      created_at: row[10] as number,
-      updated_at: row[11] as number,
+      expert_routing_id: row[6] as string | null,
+      enabled: row[7] as number,
+      model_attributes: row[8] as string | null,
+      prompt_config: row[9] as string | null,
+      compression_config: row[10] as string | null,
+      created_at: row[11] as number,
+      updated_at: row[12] as number,
     }));
   },
 
   getById(id: string): Model | undefined {
-    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, prompt_config, compression_config, created_at, updated_at FROM models WHERE id = ?', [id]);
+    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, expert_routing_id, enabled, model_attributes, prompt_config, compression_config, created_at, updated_at FROM models WHERE id = ?', [id]);
     if (result.length === 0 || result[0].values.length === 0) return undefined;
     const row = result[0].values[0];
     return {
@@ -593,12 +595,13 @@ export const modelDb = {
       model_identifier: row[3] as string,
       is_virtual: row[4] as number,
       routing_config_id: row[5] as string | null,
-      enabled: row[6] as number,
-      model_attributes: row[7] as string | null,
-      prompt_config: row[8] as string | null,
-      compression_config: row[9] as string | null,
-      created_at: row[10] as number,
-      updated_at: row[11] as number,
+      expert_routing_id: row[6] as string | null,
+      enabled: row[7] as number,
+      model_attributes: row[8] as string | null,
+      prompt_config: row[9] as string | null,
+      compression_config: row[10] as string | null,
+      created_at: row[11] as number,
+      updated_at: row[12] as number,
     };
   },
 
@@ -608,7 +611,7 @@ export const modelDb = {
       return [];
     }
 
-    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, prompt_config, compression_config, created_at, updated_at FROM models WHERE provider_id = ? ORDER BY created_at DESC', [providerId]);
+    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, expert_routing_id, enabled, model_attributes, prompt_config, compression_config, created_at, updated_at FROM models WHERE provider_id = ? ORDER BY created_at DESC', [providerId]);
     if (result.length === 0) return [];
     return result[0].values.map(row => ({
       id: row[0] as string,
@@ -617,20 +620,21 @@ export const modelDb = {
       model_identifier: row[3] as string,
       is_virtual: row[4] as number,
       routing_config_id: row[5] as string | null,
-      enabled: row[6] as number,
-      model_attributes: row[7] as string | null,
-      prompt_config: row[8] as string | null,
-      compression_config: row[9] as string | null,
-      created_at: row[10] as number,
-      updated_at: row[11] as number,
+      expert_routing_id: row[6] as string | null,
+      enabled: row[7] as number,
+      model_attributes: row[8] as string | null,
+      prompt_config: row[9] as string | null,
+      compression_config: row[10] as string | null,
+      created_at: row[11] as number,
+      updated_at: row[12] as number,
     }));
   },
 
   async create(model: Omit<Model, 'created_at' | 'updated_at'>): Promise<Model> {
     const now = Date.now();
     db.run(
-      'INSERT INTO models (id, name, provider_id, model_identifier, is_virtual, routing_config_id, enabled, model_attributes, prompt_config, compression_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [model.id, model.name, model.provider_id, model.model_identifier, model.is_virtual, model.routing_config_id, model.enabled, model.model_attributes, model.prompt_config, model.compression_config, now, now]
+      'INSERT INTO models (id, name, provider_id, model_identifier, is_virtual, routing_config_id, expert_routing_id, enabled, model_attributes, prompt_config, compression_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [model.id, model.name, model.provider_id, model.model_identifier, model.is_virtual, model.routing_config_id, model.expert_routing_id || null, model.enabled, model.model_attributes, model.prompt_config, model.compression_config, now, now]
     );
     markDirty();
     return { ...model, created_at: now, updated_at: now };
@@ -1581,6 +1585,220 @@ export const modelRoutingRuleDb = {
   async delete(id: string) {
     db.run('DELETE FROM model_routing_rules WHERE id = ?', [id]);
     markDirty();
+  },
+};
+
+export const expertRoutingConfigDb = {
+  getAll() {
+    const result = db.exec('SELECT * FROM expert_routing_configs ORDER BY created_at DESC');
+    if (result.length === 0) return [];
+    return result[0].values.map(row => ({
+      id: row[0] as string,
+      name: row[1] as string,
+      description: row[2] as string | null,
+      enabled: row[3] as number,
+      config: row[4] as string,
+      created_at: row[5] as number,
+      updated_at: row[6] as number,
+    }));
+  },
+
+  getById(id: string) {
+    const result = db.exec('SELECT * FROM expert_routing_configs WHERE id = ?', [id]);
+    if (result.length === 0 || result[0].values.length === 0) return undefined;
+    const row = result[0].values[0];
+    return {
+      id: row[0] as string,
+      name: row[1] as string,
+      description: row[2] as string | null,
+      enabled: row[3] as number,
+      config: row[4] as string,
+      created_at: row[5] as number,
+      updated_at: row[6] as number,
+    };
+  },
+
+  getEnabled() {
+    const result = db.exec('SELECT * FROM expert_routing_configs WHERE enabled = 1 ORDER BY created_at DESC');
+    if (result.length === 0) return [];
+    return result[0].values.map(row => ({
+      id: row[0] as string,
+      name: row[1] as string,
+      description: row[2] as string | null,
+      enabled: row[3] as number,
+      config: row[4] as string,
+      created_at: row[5] as number,
+      updated_at: row[6] as number,
+    }));
+  },
+
+  async create(data: {
+    id: string;
+    name: string;
+    description?: string;
+    enabled?: number;
+    config: string;
+  }) {
+    const now = Date.now();
+    db.run(
+      `INSERT INTO expert_routing_configs (id, name, description, enabled, config, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        data.id,
+        data.name,
+        data.description || null,
+        data.enabled ?? 1,
+        data.config,
+        now,
+        now,
+      ]
+    );
+    markDirty();
+    return this.getById(data.id);
+  },
+
+  async update(id: string, data: {
+    name?: string;
+    description?: string;
+    enabled?: number;
+    config?: string;
+  }) {
+    const now = Date.now();
+    const updates: string[] = [];
+    const values: any[] = [];
+
+    if (data.name !== undefined) {
+      updates.push('name = ?');
+      values.push(data.name);
+    }
+    if (data.description !== undefined) {
+      updates.push('description = ?');
+      values.push(data.description);
+    }
+    if (data.enabled !== undefined) {
+      updates.push('enabled = ?');
+      values.push(data.enabled);
+    }
+    if (data.config !== undefined) {
+      updates.push('config = ?');
+      values.push(data.config);
+    }
+
+    updates.push('updated_at = ?');
+    values.push(now);
+    values.push(id);
+
+    db.run(
+      `UPDATE expert_routing_configs SET ${updates.join(', ')} WHERE id = ?`,
+      values
+    );
+    markDirty();
+    return this.getById(id);
+  },
+
+  async delete(id: string) {
+    db.run('DELETE FROM expert_routing_configs WHERE id = ?', [id]);
+    markDirty();
+  },
+};
+
+export const expertRoutingLogDb = {
+  async create(log: {
+    id: string;
+    virtual_key_id: string | null;
+    expert_routing_id: string;
+    request_hash: string;
+    classifier_model: string;
+    classification_result: string;
+    selected_expert_id: string;
+    selected_expert_type: string;
+    selected_expert_name: string;
+    classification_time: number;
+  }) {
+    const now = Date.now();
+    db.run(
+      `INSERT INTO expert_routing_logs (
+        id, virtual_key_id, expert_routing_id, request_hash,
+        classifier_model, classification_result, selected_expert_id,
+        selected_expert_type, selected_expert_name, classification_time, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        log.id,
+        log.virtual_key_id,
+        log.expert_routing_id,
+        log.request_hash,
+        log.classifier_model,
+        log.classification_result,
+        log.selected_expert_id,
+        log.selected_expert_type,
+        log.selected_expert_name,
+        log.classification_time,
+        now,
+      ]
+    );
+    markDirty();
+  },
+
+  getByConfigId(configId: string, limit: number = 100) {
+    const result = db.exec(
+      `SELECT * FROM expert_routing_logs
+       WHERE expert_routing_id = ?
+       ORDER BY created_at DESC
+       LIMIT ?`,
+      [configId, limit]
+    );
+    if (result.length === 0) return [];
+    return result[0].values.map(row => ({
+      id: row[0] as string,
+      virtual_key_id: row[1] as string | null,
+      expert_routing_id: row[2] as string,
+      request_hash: row[3] as string,
+      classifier_model: row[4] as string,
+      classification_result: row[5] as string,
+      selected_expert_id: row[6] as string,
+      selected_expert_type: row[7] as string,
+      selected_expert_name: row[8] as string,
+      classification_time: row[9] as number,
+      created_at: row[10] as number,
+    }));
+  },
+
+  getStatistics(configId: string, timeRange?: number) {
+    const now = Date.now();
+    const startTime = timeRange ? now - timeRange : 0;
+
+    const result = db.exec(
+      `SELECT
+        classification_result,
+        COUNT(*) as count,
+        AVG(classification_time) as avg_time
+       FROM expert_routing_logs
+       WHERE expert_routing_id = ? AND created_at >= ?
+       GROUP BY classification_result`,
+      [configId, startTime]
+    );
+
+    if (result.length === 0) return { categoryDistribution: {}, avgClassificationTime: 0, totalRequests: 0 };
+
+    const categoryDistribution: Record<string, number> = {};
+    let totalTime = 0;
+    let totalRequests = 0;
+
+    result[0].values.forEach(row => {
+      const category = row[0] as string;
+      const count = row[1] as number;
+      const avgTime = row[2] as number;
+
+      categoryDistribution[category] = count;
+      totalTime += avgTime * count;
+      totalRequests += count;
+    });
+
+    return {
+      categoryDistribution,
+      avgClassificationTime: totalRequests > 0 ? Math.round(totalTime / totalRequests) : 0,
+      totalRequests,
+    };
   },
 };
 
