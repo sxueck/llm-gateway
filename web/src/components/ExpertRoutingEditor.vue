@@ -329,7 +329,7 @@ const providerOptions = computed(() =>
 
 const virtualModelOptions = computed(() =>
   modelStore.models
-    .filter((m) => m.is_virtual === 1)
+    .filter((m) => m.isVirtual === true)
     .map((m) => ({
       label: m.name,
       value: m.id,

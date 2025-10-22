@@ -163,7 +163,11 @@ const emit = defineEmits<{
 
 const localExperts = ref<ExpertTarget[]>([...props.experts]);
 const showExpertDrawer = ref(false);
-const editingExpert = ref<ExpertTarget | null>(null);
+const editingExpert = ref<ExpertTarget>({
+  id: '',
+  category: '',
+  type: 'real',
+});
 
 const classifierLabel = computed(() => {
   if (props.classifierConfig.type === 'virtual') {

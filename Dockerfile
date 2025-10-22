@@ -10,7 +10,7 @@ RUN go mod download
 COPY agent/*.go ./
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o llm-gateway-agent-linux-amd64 -ldflags="-s -w -X main.Version=1.0.0" .
 
-FROM node:20-alpine AS builder
+FROM node:23-alpine AS builder
 
 WORKDIR /app
 
@@ -30,7 +30,7 @@ COPY web/tsconfig*.json web/vite.config.ts web/index.html ./
 COPY web/src ./src
 RUN npm run build
 
-FROM node:20-alpine
+FROM node:23-alpine
 
 WORKDIR /app
 

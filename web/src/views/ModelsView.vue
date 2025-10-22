@@ -198,7 +198,7 @@ const columns = computed(() => [
     key: 'name',
     render: (row: Model) => {
       if (row.isVirtual) {
-        const tags = [];
+        const tags: any[] = [];
         if (row.expertRoutingId) {
           tags.push(h(NTag, { type: 'warning', size: 'small', round: true }, { default: () => '专家模型' }));
         } else {
