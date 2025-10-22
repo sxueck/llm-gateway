@@ -346,10 +346,12 @@ async function loadConfigs() {
   try {
     loading.value = true;
     const result = await configApi.getRoutingConfigs();
-    configs.value = result.configs.map(c => ({
-      ...c,
-      targetCount: c.config.targets?.length || 0,
-    }));
+    configs.value = result.configs
+      .filter(c => c.type === 'loadbalance' || c.type === 'fallback')
+      .map(c => ({
+        ...c,
+        targetCount: c.config.targets?.length || 0,
+      }));
   } catch (error: any) {
     message.error(error.message);
   } finally {

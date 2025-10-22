@@ -213,6 +213,7 @@ import { useI18n } from 'vue-i18n';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
 import { configApi, type ApiStats, type TrendData } from '@/api/config';
+import { portkeyGatewayApi } from '@/api/portkey-gateways';
 
 const { t } = useI18n();
 const message = useMessage();
@@ -222,6 +223,7 @@ const virtualKeyStore = useVirtualKeyStore();
 const stats = ref<ApiStats | null>(null);
 const trendData = ref<TrendData[]>([]);
 const selectedPeriod = ref<'24h' | '7d' | '30d'>('24h');
+const defaultGatewayLatency = ref<number | null>(null);
 
 const periodOptions = computed(() => [
   { label: t('dashboard.period.last24Hours'), value: '24h' },
@@ -248,13 +250,7 @@ const avgResponseTime = computed(() => {
 });
 
 const gatewayLatency = computed(() => {
-  if (!stats.value || stats.value.totalRequests === 0) return 0;
-  
-  // 网关延迟应该是我们服务到 Portkey Gateway 的网络延迟
-  // 这里使用一个更合理的估算：基于总响应时间的 5-10%
-  // 实际部署中应该通过专门的网络延迟监控来获取准确数据
-  const baseLatency = stats.value.avgResponseTime * 0.08;
-  return Math.max(2, Math.min(baseLatency, 30));
+  return defaultGatewayLatency.value || 0;
 });
 
 const recentRequestsCount = computed(() => {
@@ -340,11 +336,28 @@ function getPercentage(count: number) {
   return (count / max) * 100;
 }
 
+async function loadDefaultGatewayLatency() {
+  try {
+    const gateways = await portkeyGatewayApi.getAll();
+    const defaultGateway = gateways.find(g => g.isDefault && g.enabled);
+
+    if (defaultGateway) {
+      const healthResult = await portkeyGatewayApi.checkHealth(defaultGateway.id);
+      defaultGatewayLatency.value = healthResult.latency;
+    } else {
+      defaultGatewayLatency.value = null;
+    }
+  } catch {
+    defaultGatewayLatency.value = null;
+  }
+}
+
 async function loadData() {
   await Promise.all([
     providerStore.fetchProviders(),
     virtualKeyStore.fetchVirtualKeys(),
     loadStats(),
+    loadDefaultGatewayLatency(),
   ]);
 }
 

@@ -6,7 +6,6 @@
         <n-step :title="t('expertRouting.classifierConfig')" />
         <n-step :title="t('expertRouting.expertsConfig')" />
         <n-step :title="t('expertRouting.fallbackStrategy')" />
-        <n-step :title="t('expertRouting.createSmartRouting')" />
       </n-steps>
     </div>
 
@@ -120,6 +119,31 @@
               style="width: 100%"
             />
           </n-form-item>
+
+          <n-form-item :label="t('expertRouting.ignoreSystemMessages')">
+            <n-switch v-model:value="formValue.classifier.ignore_system_messages" />
+            <template #feedback>
+              <n-text depth="3" style="font-size: 12px">
+                {{ t('expertRouting.ignoreSystemMessagesHint') }}
+              </n-text>
+            </template>
+          </n-form-item>
+
+          <n-form-item :label="t('expertRouting.maxMessagesToClassify')">
+            <n-input-number
+              v-model:value="formValue.classifier.max_messages_to_classify"
+              :min="0"
+              :max="100"
+              :step="1"
+              style="width: 100%"
+              placeholder="0"
+            />
+            <template #feedback>
+              <n-text depth="3" style="font-size: 12px">
+                {{ t('expertRouting.maxMessagesToClassifyHint') }}
+              </n-text>
+            </template>
+          </n-form-item>
         </n-form>
       </div>
 
@@ -184,58 +208,7 @@
         </n-form>
       </div>
 
-      <div v-show="currentStep === 5">
-        <n-form label-placement="left" :label-width="140">
-          <n-form-item>
-            <template #label>
-              <n-space align="center" :size="8">
-                <span>{{ t('expertRouting.createExpertModel') }}</span>
-                <n-switch v-model:value="createVirtualModel" size="small" />
-              </n-space>
-            </template>
-            <n-text depth="3" style="font-size: 12px">
-              {{ t('expertRouting.createExpertModelHint') }}
-            </n-text>
-          </n-form-item>
 
-          <template v-if="createVirtualModel">
-            <n-form-item :label="t('expertRouting.expertModelName')" required>
-              <n-input
-                v-model:value="virtualModelName"
-                :placeholder="t('expertRouting.expertModelNamePlaceholder')"
-              />
-            </n-form-item>
-
-            <n-form-item :label="t('expertRouting.modelAttributes')">
-              <n-text depth="3" style="font-size: 12px">
-                {{ t('expertRouting.modelAttributesHint') }}
-              </n-text>
-            </n-form-item>
-          </template>
-
-          <n-divider v-if="createVirtualModel" style="margin: 20px 0;" />
-
-          <n-form-item :label="t('expertRouting.smartRoutingName')">
-            <n-input
-              v-model:value="smartRoutingName"
-              :placeholder="t('expertRouting.smartRoutingNamePlaceholder')"
-            />
-          </n-form-item>
-          <n-form-item :label="t('expertRouting.smartRoutingDescription')">
-            <n-input
-              v-model:value="smartRoutingDescription"
-              type="textarea"
-              :rows="3"
-              :placeholder="t('expertRouting.smartRoutingDescriptionPlaceholder')"
-            />
-          </n-form-item>
-          <n-form-item>
-            <n-text depth="3" style="font-size: 13px; line-height: 1.6">
-              {{ t('expertRouting.createSmartRoutingHint') }}
-            </n-text>
-          </n-form-item>
-        </n-form>
-      </div>
     </div>
 
     <n-space justify="space-between" style="margin-top: 24px">
@@ -245,7 +218,7 @@
       <n-space>
         <n-button @click="$emit('cancel')">{{ t('common.cancel') }}</n-button>
         <n-button
-          v-if="currentStep < 5"
+          v-if="currentStep < 4"
           type="primary"
           @click="handleNext"
         >
@@ -283,7 +256,6 @@ import {
   NText,
   NGrid,
   NGi,
-  NDivider,
 } from 'naive-ui';
 import { useProviderStore } from '@/stores/provider';
 import { useModelStore } from '@/stores/model';
@@ -300,7 +272,7 @@ interface Props {
 
 const props = defineProps<Props>();
 const emit = defineEmits<{
-  save: [data: CreateExpertRoutingRequest, smartRouting?: { name: string; description?: string }];
+  save: [data: CreateExpertRoutingRequest];
   cancel: [];
 }>();
 
@@ -315,10 +287,6 @@ const fallbackType = ref<'virtual' | 'real'>(props.config.fallback?.type || 'rea
 const fallbackModelId = ref(props.config.fallback?.model_id || '');
 const fallbackProviderId = ref(props.config.fallback?.provider_id || '');
 const fallbackModel = ref(props.config.fallback?.model || '');
-const createVirtualModel = ref(false);
-const virtualModelName = ref('');
-const smartRoutingName = ref('');
-const smartRoutingDescription = ref('');
 
 const providerOptions = computed(() =>
   providerStore.providers.map((p) => ({
@@ -375,7 +343,7 @@ function handlePrevious() {
 }
 
 function handleNext() {
-  if (currentStep.value < 5) {
+  if (currentStep.value < 4) {
     currentStep.value++;
   }
 }
@@ -392,19 +360,7 @@ function handleSave() {
     formValue.value.fallback = undefined;
   }
 
-  if (createVirtualModel.value && virtualModelName.value.trim()) {
-    formValue.value.createVirtualModel = true;
-    formValue.value.virtualModelName = virtualModelName.value.trim();
-  }
-
-  const smartRouting = smartRoutingName.value.trim()
-    ? {
-        name: smartRoutingName.value.trim(),
-        description: smartRoutingDescription.value.trim() || undefined,
-      }
-    : undefined;
-
-  emit('save', formValue.value, smartRouting);
+  emit('save', formValue.value);
 }
 
 onMounted(async () => {

@@ -20,6 +20,8 @@ export interface ClassifierConfig {
   max_tokens?: number;
   temperature?: number;
   timeout?: number;
+  ignore_system_messages?: boolean;
+  max_messages_to_classify?: number;
 }
 
 export interface FallbackConfig {

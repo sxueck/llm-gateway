@@ -345,7 +345,6 @@ import {
   BarChartOutlined,
 } from '@vicons/material';
 import { expertRoutingApi, type ExpertRouting, type CreateExpertRoutingRequest } from '@/api/expert-routing';
-import { configApi } from '@/api/config';
 import ExpertRoutingEditor from '@/components/ExpertRoutingEditor.vue';
 import ExpertRoutingVisualization from '@/components/ExpertRoutingVisualization.vue';
 import ExpertRoutingStatistics from '@/components/ExpertRoutingStatistics.vue';
@@ -370,6 +369,8 @@ const editingConfig = ref<CreateExpertRoutingRequest>({
     max_tokens: 50,
     temperature: 0.1,
     timeout: 10000,
+    ignore_system_messages: false,
+    max_messages_to_classify: 0,
   },
   experts: [],
 });
@@ -469,6 +470,8 @@ function handleCreate() {
       max_tokens: 50,
       temperature: 0.1,
       timeout: 10000,
+      ignore_system_messages: false,
+      max_messages_to_classify: 0,
     },
     experts: [],
   };
@@ -493,45 +496,15 @@ function handleShowStatistics(configId: string) {
   showStatisticsModal.value = true;
 }
 
-async function handleSave(
-  data: CreateExpertRoutingRequest,
-  smartRouting?: { name: string; description?: string }
-) {
+async function handleSave(data: CreateExpertRoutingRequest) {
   saving.value = true;
   try {
-    let expertRoutingId: string;
-
     if (editingId.value) {
       await expertRoutingApi.update(editingId.value, data);
-      expertRoutingId = editingId.value;
       message.success(t('expertRouting.updateSuccess'));
     } else {
-      const result = await expertRoutingApi.create(data);
-      expertRoutingId = result.id;
-
-      if (result.virtualModel) {
-        message.success(t('expertRouting.createSuccessWithModel'));
-      } else {
-        message.success(t('expertRouting.createSuccess'));
-      }
-    }
-
-    if (smartRouting && smartRouting.name) {
-      try {
-        await configApi.createRoutingConfig({
-          name: smartRouting.name,
-          description: smartRouting.description,
-          type: 'expert',
-          config: {
-            expert_routing_id: expertRoutingId,
-          },
-          createVirtualModel: true,
-          virtualModelName: smartRouting.name,
-        });
-        message.success(t('expertRouting.smartRoutingCreated'));
-      } catch (error: any) {
-        message.warning(t('expertRouting.smartRoutingCreateFailed') + ': ' + error.message);
-      }
+      await expertRoutingApi.create(data);
+      message.success('专家路由创建成功,已自动创建专家模型');
     }
 
     showEditorModal.value = false;

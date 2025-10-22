@@ -8,7 +8,9 @@ COPY agent/go.mod agent/go.sum ./
 RUN go mod download
 
 COPY agent/*.go ./
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o llm-gateway-agent-linux-amd64 -ldflags="-s -w -X main.Version=1.0.0" .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -o llm-gateway-agent-linux-amd64 \
+    -ldflags="-s -w -X main.Version=1.0.0" .
 
 FROM node:23-alpine AS builder
 

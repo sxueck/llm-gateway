@@ -3,6 +3,7 @@ import { providerDb, modelDb, expertRoutingConfigDb, expertRoutingLogDb } from '
 import { memoryLogger } from './logger.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { ExpertRoutingConfig, ExpertTarget } from '../types/index.js';
+import { buildChatCompletionsEndpoint } from '../utils/api-endpoint-builder.js';
 import crypto from 'crypto';
 
 interface ChatMessage {
@@ -83,7 +84,17 @@ export class ExpertRouter {
     messages: ChatMessage[],
     classifierConfig: ExpertRoutingConfig['classifier']
   ): Promise<string> {
-    const lastUserMessage = messages
+    let messagesToClassify = messages;
+
+    if (classifierConfig.ignore_system_messages) {
+      messagesToClassify = messages.filter(m => m.role !== 'system');
+    }
+
+    if (classifierConfig.max_messages_to_classify && classifierConfig.max_messages_to_classify > 0) {
+      messagesToClassify = messagesToClassify.slice(-classifierConfig.max_messages_to_classify);
+    }
+
+    const lastUserMessage = messagesToClassify
       .filter(m => m.role === 'user')
       .pop();
 
@@ -126,24 +137,37 @@ export class ExpertRouter {
     }
 
     const apiKey = decryptApiKey(provider.api_key);
-    const baseUrl = provider.base_url || '';
-    const endpoint = `${baseUrl}/v1/chat/completions`;
+    const endpoint = buildChatCompletionsEndpoint(provider.base_url);
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        ...classificationRequest,
-        model: model
-      }),
-      signal: AbortSignal.timeout(classifierConfig.timeout || 10000)
-    });
+    let response;
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          ...classificationRequest,
+          model: model
+        }),
+        signal: AbortSignal.timeout(classifierConfig.timeout || 10000)
+      });
+    } catch (fetchError: any) {
+      throw new Error(`Classification request failed: ${fetchError.message}`);
+    }
 
     if (!response.ok) {
-      throw new Error(`Classification failed: HTTP ${response.status}`);
+      let errorDetail = '';
+      try {
+        const errorBody = await response.text();
+        errorDetail = errorBody.length > 200
+          ? errorBody.substring(0, 200)
+          : errorBody;
+      } catch (e) {
+        errorDetail = response.statusText;
+      }
+      throw new Error(`Classification failed: HTTP ${response.status} - ${errorDetail}`);
     }
 
     const result = await response.json() as any;
@@ -153,11 +177,6 @@ export class ExpertRouter {
       throw new Error('Empty classification result');
     }
 
-    memoryLogger.debug(
-      `分类完成: ${category} | 模型: ${model}`,
-      'ExpertRouter'
-    );
-
     return category;
   }
 
@@ -165,19 +184,7 @@ export class ExpertRouter {
     category: string,
     experts: ExpertTarget[]
   ): ExpertTarget | null {
-    const exactMatch = experts.find(
-      e => e.category === category
-    );
-
-    if (exactMatch) {
-      memoryLogger.debug(
-        `专家匹配成功: 分类="${category}" → 专家="${exactMatch.category}"`,
-        'ExpertRouter'
-      );
-      return exactMatch;
-    }
-
-    return null;
+    return experts.find(e => e.category === category) || null;
   }
 
   private async resolveExpert(
