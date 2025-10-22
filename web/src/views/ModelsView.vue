@@ -198,10 +198,16 @@ const columns = computed(() => [
     key: 'name',
     render: (row: Model) => {
       if (row.isVirtual) {
+        const tags = [];
+        if (row.expertRoutingId) {
+          tags.push(h(NTag, { type: 'warning', size: 'small', round: true }, { default: () => '专家模型' }));
+        } else {
+          tags.push(h(NTag, { type: 'info', size: 'small', round: true }, { default: () => t('menu.virtualModels') }));
+        }
         return h(NSpace, { align: 'center', size: 4 }, {
           default: () => [
             h('span', row.name),
-            h(NTag, { type: 'info', size: 'small', round: true }, { default: () => t('menu.virtualModels') }),
+            ...tags,
           ],
         });
       }

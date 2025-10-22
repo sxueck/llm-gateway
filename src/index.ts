@@ -19,6 +19,7 @@ import { portkeyGatewayRoutes } from './routes/portkey-gateways.js';
 import { routingRuleRoutes } from './routes/routing-rules.js';
 import { agentRoutes } from './routes/agent.js';
 import { downloadsRoutes } from './routes/downloads.js';
+import { expertRoutingRoutes } from './routes/expert-routing.js';
 import { memoryLogger } from './services/logger.js';
 import { litellmPresetsService } from './services/litellm-presets.js';
 import { demoModeService } from './services/demo-mode.js';
@@ -142,6 +143,7 @@ await fastify.register(configRoutes, { prefix: '/api/admin/config' });
 await fastify.register(litellmPresetsRoutes, { prefix: '/api/admin/litellm-presets' });
 await fastify.register(portkeyGatewayRoutes, { prefix: '/api/admin/portkey-gateways' });
 await fastify.register(routingRuleRoutes, { prefix: '/api/admin/routing-rules' });
+await fastify.register(expertRoutingRoutes, { prefix: '/api/admin/expert-routing' });
 
 memoryLogger.info('Routes registered', 'System');
 

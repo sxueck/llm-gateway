@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid';
 import { request as httpRequest, IncomingMessage } from 'http';
 import { request as httpsRequest } from 'https';
 import { URL } from 'url';
-import { virtualKeyDb, apiRequestDb, providerDb, modelDb, routingConfigDb, systemConfigDb } from '../db/index.js';
+import { virtualKeyDb, apiRequestDb, providerDb, modelDb, routingConfigDb, systemConfigDb, expertRoutingConfigDb } from '../db/index.js';
 import { memoryLogger } from '../services/logger.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse } from '../utils/request-logger.js';
@@ -13,6 +13,7 @@ import { generateCacheKey } from '../utils/cache-key-generator.js';
 import { ProviderAdapterFactory } from '../services/provider-adapter.js';
 import { promptProcessor } from '../services/prompt-processor.js';
 import { isLocalGateway } from '../utils/network.js';
+import { expertRouter } from '../services/expert-router.js';
 
 interface RoutingTarget {
   provider: string;
@@ -127,12 +128,21 @@ function resolveSmartRouting(
 interface ResolveProviderResult {
   provider: any;
   providerId: string;
+  modelOverride?: string;
 }
 
-function resolveProviderFromModel(
+async function resolveProviderFromModel(
   model: any,
-  request: ProxyRequest
-): ResolveProviderResult {
+  request: ProxyRequest,
+  virtualKeyId?: string
+): Promise<ResolveProviderResult> {
+  if (model.expert_routing_id) {
+    const expertRoutingResult = await resolveExpertRouting(model, request, virtualKeyId);
+    if (expertRoutingResult) {
+      return expertRoutingResult;
+    }
+  }
+
   const smartRoutingResult = resolveSmartRouting(model);
   if (smartRoutingResult) {
     if (smartRoutingResult.modelOverride) {
@@ -159,6 +169,61 @@ function resolveProviderFromModel(
     provider,
     providerId: model.provider_id
   };
+}
+
+async function resolveExpertRouting(
+  model: any,
+  request: ProxyRequest,
+  virtualKeyId?: string
+): Promise<ResolveProviderResult | null> {
+  if (!model.expert_routing_id) {
+    return null;
+  }
+
+  const expertRoutingConfig = expertRoutingConfigDb.getById(model.expert_routing_id);
+  if (!expertRoutingConfig || expertRoutingConfig.enabled !== 1) {
+    memoryLogger.warn(
+      `专家路由配置未找到或未启用: ${model.expert_routing_id}`,
+      'ExpertRouter'
+    );
+    return null;
+  }
+
+  try {
+    const result = await expertRouter.route(request, model.expert_routing_id, {
+      modelId: model.id,
+      virtualKeyId: virtualKeyId
+    });
+
+    memoryLogger.info(
+      `专家路由: 分类=${result.category} | 专家类型=${result.expertType} | 专家=${result.expertName}`,
+      'ExpertRouter'
+    );
+
+    if (result.expertType === 'virtual') {
+      const virtualModel = modelDb.getById(result.expertModelId!);
+      if (!virtualModel) {
+        throw new Error(`Virtual model not found: ${result.expertModelId}`);
+      }
+
+      return await resolveProviderFromModel(virtualModel, request, virtualKeyId);
+    }
+
+    if (result.modelOverride) {
+      request.body = request.body || {};
+      request.body.model = result.modelOverride;
+    }
+
+    return {
+      provider: result.provider,
+      providerId: result.providerId,
+      modelOverride: result.modelOverride
+    };
+
+  } catch (e: any) {
+    memoryLogger.error(`专家路由失败: ${e.message}`, 'ExpertRouter');
+    throw new Error(`Expert routing failed: ${e.message}`);
+  }
 }
 
 function makeHttpRequest(
@@ -685,7 +750,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
         currentModel = model;
 
         try {
-          const result = resolveProviderFromModel(model, request);
+          const result = await resolveProviderFromModel(model, request, virtualKey.id);
           provider = result.provider;
           providerId = result.providerId;
         } catch (routingError: any) {
@@ -759,7 +824,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
           currentModel = model;
 
           try {
-            const result = resolveProviderFromModel(model, request);
+            const result = await resolveProviderFromModel(model, request, virtualKey.id);
             provider = result.provider;
             providerId = result.providerId;
           } catch (routingError: any) {

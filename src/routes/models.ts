@@ -111,6 +111,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
           modelIdentifier: m.model_identifier,
           isVirtual: m.is_virtual === 1,
           routingConfigId: m.routing_config_id,
+          expertRoutingId: m.expert_routing_id,
           enabled: m.enabled === 1,
           modelAttributes,
           promptConfig,

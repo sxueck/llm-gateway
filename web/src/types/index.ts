@@ -50,6 +50,7 @@ export interface Model {
   modelIdentifier: string;
   isVirtual?: boolean;
   routingConfigId?: string | null;
+  expertRoutingId?: string | null;
   enabled: boolean;
   modelAttributes?: ModelAttributes | null;
   promptConfig?: PromptConfig | null;

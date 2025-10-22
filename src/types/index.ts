@@ -115,3 +115,52 @@ export interface PromptConfig {
   injectOnce?: boolean;
 }
 
+export interface ExpertRoutingConfig {
+  id: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  classifier: {
+    type: 'virtual' | 'real';
+    model_id?: string;
+    provider_id?: string;
+    model?: string;
+    prompt_template: string;
+    max_tokens?: number;
+    temperature?: number;
+    timeout?: number;
+  };
+  experts: ExpertTarget[];
+  fallback?: {
+    type: 'virtual' | 'real';
+    model_id?: string;
+    provider_id?: string;
+    model?: string;
+  };
+}
+
+export interface ExpertTarget {
+  id: string;
+  category: string;
+  type: 'virtual' | 'real';
+  model_id?: string;
+  provider_id?: string;
+  model?: string;
+  description?: string;
+  color?: string;
+}
+
+export interface ExpertRoutingLog {
+  id: string;
+  virtual_key_id: string | null;
+  expert_routing_id: string;
+  request_hash: string;
+  classifier_model: string;
+  classification_result: string;
+  selected_expert_id: string;
+  selected_expert_type: string;
+  selected_expert_name: string;
+  classification_time: number;
+  created_at: number;
+}
+

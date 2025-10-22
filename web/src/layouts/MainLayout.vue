@@ -108,6 +108,7 @@ import {
   OptionsOutline,
   ChatbubbleEllipsesOutline,
   FlaskOutline,
+  GitBranchOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
@@ -164,6 +165,11 @@ const menuOptions = computed(() => [
         label: t('menu.promptManagement'),
         key: 'prompt-management',
         icon: () => h(NIcon, null, { default: () => h(ChatbubbleEllipsesOutline) }),
+      },
+      {
+        label: t('menu.expertRouting'),
+        key: 'expert-routing',
+        icon: () => h(NIcon, null, { default: () => h(GitBranchOutline) }),
       },
     ],
   },
