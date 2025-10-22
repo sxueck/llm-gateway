@@ -132,24 +132,13 @@ export interface ExpertRoutingConfig {
     ignore_system_messages?: boolean;
     max_messages_to_classify?: number;
   };
-  experts: ExpertTarget[];
+  experts: import('./expert-routing.js').ExpertTarget[];
   fallback?: {
     type: 'virtual' | 'real';
     model_id?: string;
     provider_id?: string;
     model?: string;
   };
-}
-
-export interface ExpertTarget {
-  id: string;
-  category: string;
-  type: 'virtual' | 'real';
-  model_id?: string;
-  provider_id?: string;
-  model?: string;
-  description?: string;
-  color?: string;
 }
 
 export interface ExpertRoutingLog {

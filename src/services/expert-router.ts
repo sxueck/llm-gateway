@@ -2,7 +2,8 @@ import { nanoid } from 'nanoid';
 import { providerDb, modelDb, expertRoutingConfigDb, expertRoutingLogDb } from '../db/index.js';
 import { memoryLogger } from './logger.js';
 import { decryptApiKey } from '../utils/crypto.js';
-import { ExpertRoutingConfig, ExpertTarget } from '../types/index.js';
+import { ExpertRoutingConfig } from '../types/index.js';
+import { ExpertTarget, ModelConfig, ResolvedModelInfo } from '../types/expert-routing.js';
 import { buildChatCompletionsEndpoint } from '../utils/api-endpoint-builder.js';
 import crypto from 'crypto';
 
@@ -35,6 +36,51 @@ interface ExpertRoutingResult {
   expertType: 'virtual' | 'real';
   expertName: string;
   expertModelId?: string;
+}
+
+interface ResolvedModel {
+  provider?: any;
+  providerId?: string;
+  modelOverride?: string;
+  expertType: 'virtual' | 'real';
+  expertName: string;
+  expertModelId?: string;
+}
+
+function resolveModelConfig(
+  config: { type: 'virtual' | 'real'; model_id?: string; provider_id?: string; model?: string },
+  configType: string
+): ResolvedModel {
+  let provider;
+  let modelOverride;
+  let expertType: 'virtual' | 'real' = config.type;
+  let expertName: string;
+  let expertModelId: string | undefined;
+
+  if (config.type === 'virtual') {
+    const virtualModel = modelDb.getById(config.model_id!);
+    if (!virtualModel) {
+      throw new Error(`${configType} virtual model not found: ${config.model_id}`);
+    }
+    expertModelId = config.model_id;
+    expertName = virtualModel.name;
+  } else {
+    provider = providerDb.getById(config.provider_id!);
+    if (!provider) {
+      throw new Error(`${configType} provider not found: ${config.provider_id}`);
+    }
+    modelOverride = config.model;
+    expertName = `${provider.name}/${config.model}`;
+  }
+
+  return {
+    provider,
+    providerId: config.provider_id,
+    modelOverride,
+    expertType,
+    expertName,
+    expertModelId,
+  };
 }
 
 export class ExpertRouter {
@@ -195,27 +241,7 @@ export class ExpertRouter {
     context: RoutingContext,
     request: ProxyRequest
   ): Promise<ExpertRoutingResult> {
-    let provider;
-    let modelOverride;
-    let expertType: 'virtual' | 'real' = expert.type;
-    let expertName: string;
-    let expertModelId: string | undefined;
-
-    if (expert.type === 'virtual') {
-      const virtualModel = modelDb.getById(expert.model_id!);
-      if (!virtualModel) {
-        throw new Error(`Expert virtual model not found: ${expert.model_id}`);
-      }
-      expertModelId = expert.model_id;
-      expertName = virtualModel.name;
-    } else {
-      provider = providerDb.getById(expert.provider_id!);
-      if (!provider) {
-        throw new Error(`Expert provider not found: ${expert.provider_id}`);
-      }
-      modelOverride = expert.model;
-      expertName = `${provider.name}/${expert.model}`;
-    }
+    const resolved = resolveModelConfig(expert, 'Expert');
 
     const requestHash = this.generateRequestHash(request);
 
@@ -228,20 +254,20 @@ export class ExpertRouter {
       classification_result: category,
       selected_expert_id: expert.id,
       selected_expert_type: expert.type,
-      selected_expert_name: expertName,
+      selected_expert_name: resolved.expertName,
       classification_time: classificationTime,
     });
 
     return {
-      provider: provider!,
+      provider: resolved.provider!,
       providerId: expert.provider_id!,
-      modelOverride,
+      modelOverride: resolved.modelOverride,
       category,
       expert,
       classificationTime,
-      expertType,
-      expertName,
-      expertModelId,
+      expertType: resolved.expertType,
+      expertName: resolved.expertName,
+      expertModelId: resolved.expertModelId,
     };
   }
 
@@ -249,41 +275,20 @@ export class ExpertRouter {
     fallback: ExpertRoutingConfig['fallback'],
     category: string,
     startTime: number,
-    expertRoutingId: string,
-    context: RoutingContext
+    _expertRoutingId: string,
+    _context: RoutingContext
   ): Promise<ExpertRoutingResult> {
     if (!fallback) {
       throw new Error('No fallback configured');
     }
 
-    let provider;
-    let modelOverride;
-    let expertType: 'virtual' | 'real' = fallback.type;
-    let expertName: string;
-    let expertModelId: string | undefined;
-
-    if (fallback.type === 'virtual') {
-      const virtualModel = modelDb.getById(fallback.model_id!);
-      if (!virtualModel) {
-        throw new Error(`Fallback virtual model not found: ${fallback.model_id}`);
-      }
-      expertModelId = fallback.model_id;
-      expertName = virtualModel.name;
-    } else {
-      provider = providerDb.getById(fallback.provider_id!);
-      if (!provider) {
-        throw new Error(`Fallback provider not found: ${fallback.provider_id}`);
-      }
-      modelOverride = fallback.model;
-      expertName = `${provider.name}/${fallback.model}`;
-    }
-
+    const resolved = resolveModelConfig(fallback, 'Fallback');
     const classificationTime = Date.now() - startTime;
 
     return {
-      provider: provider!,
+      provider: resolved.provider!,
       providerId: fallback.provider_id!,
-      modelOverride,
+      modelOverride: resolved.modelOverride,
       category,
       expert: {
         id: 'fallback',
@@ -295,9 +300,9 @@ export class ExpertRouter {
         description: 'Fallback expert',
       },
       classificationTime,
-      expertType,
-      expertName,
-      expertModelId,
+      expertType: resolved.expertType,
+      expertName: resolved.expertName,
+      expertModelId: resolved.expertModelId,
     };
   }
 

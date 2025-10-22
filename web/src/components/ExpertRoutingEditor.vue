@@ -31,46 +31,14 @@
 
       <div v-show="currentStep === 2">
         <n-form :model="formValue.classifier" label-placement="left" :label-width="120">
-          <n-form-item :label="t('expertRouting.modelType')" required>
-            <n-radio-group v-model:value="formValue.classifier.type" class="model-type-radio">
-              <n-space :size="16">
-                <n-radio value="virtual">{{ t('expertRouting.virtualModel') }}</n-radio>
-                <n-radio value="real">{{ t('expertRouting.realModel') }}</n-radio>
-              </n-space>
-            </n-radio-group>
-          </n-form-item>
-
-          <n-form-item
-            v-if="formValue.classifier.type === 'virtual'"
-            :label="t('expertRouting.virtualModel')"
-            required
-          >
-            <n-select
-              v-model:value="formValue.classifier.model_id"
-              :options="virtualModelOptions"
-              :placeholder="t('expertRouting.selectVirtualModel')"
-            />
-          </n-form-item>
-
-          <template v-else>
-            <n-form-item :label="t('expertRouting.selectProvider')" required>
-              <n-select
-                v-model:value="formValue.classifier.provider_id"
-                :options="providerOptions"
-                :placeholder="t('expertRouting.selectProvider')"
-                @update:value="handleClassifierProviderChange"
-              />
-            </n-form-item>
-            <n-form-item :label="t('expertRouting.modelName')" required>
-              <n-select
-                v-model:value="formValue.classifier.model"
-                :options="classifierProviderModelOptions"
-                :placeholder="t('expertRouting.selectModel')"
-                :disabled="!formValue.classifier.provider_id"
-                filterable
-              />
-            </n-form-item>
-          </template>
+          <ModelSelector
+            v-model:type="formValue.classifier.type"
+            v-model:model-id="formValue.classifier.model_id"
+            v-model:provider-id="formValue.classifier.provider_id"
+            v-model:model="formValue.classifier.model"
+            :provider-options="providerOptions"
+            :virtual-model-options="virtualModelOptions"
+          />
 
           <n-form-item :label="t('expertRouting.classificationPrompt')" required>
             <n-input
@@ -164,46 +132,14 @@
           </n-form-item>
 
           <template v-if="enableFallback">
-            <n-form-item :label="t('expertRouting.modelType')" required>
-              <n-radio-group v-model:value="fallbackType" class="model-type-radio">
-                <n-space :size="16">
-                  <n-radio value="virtual">{{ t('expertRouting.virtualModel') }}</n-radio>
-                  <n-radio value="real">{{ t('expertRouting.realModel') }}</n-radio>
-                </n-space>
-              </n-radio-group>
-            </n-form-item>
-
-            <n-form-item
-              v-if="fallbackType === 'virtual'"
-              :label="t('expertRouting.virtualModel')"
-              required
-            >
-              <n-select
-                v-model:value="fallbackModelId"
-                :options="virtualModelOptions"
-                :placeholder="t('expertRouting.selectVirtualModel')"
-              />
-            </n-form-item>
-
-            <template v-else>
-              <n-form-item :label="t('expertRouting.selectProvider')" required>
-                <n-select
-                  v-model:value="fallbackProviderId"
-                  :options="providerOptions"
-                  :placeholder="t('expertRouting.selectProvider')"
-                  @update:value="handleFallbackProviderChange"
-                />
-              </n-form-item>
-              <n-form-item :label="t('expertRouting.modelName')" required>
-                <n-select
-                  v-model:value="fallbackModel"
-                  :options="fallbackProviderModelOptions"
-                  :placeholder="t('expertRouting.selectModel')"
-                  :disabled="!fallbackProviderId"
-                  filterable
-                />
-              </n-form-item>
-            </template>
+            <ModelSelector
+              v-model:type="fallbackType"
+              v-model:model-id="fallbackModelId"
+              v-model:provider-id="fallbackProviderId"
+              v-model:model="fallbackModel"
+              :provider-options="providerOptions"
+              :virtual-model-options="virtualModelOptions"
+            />
           </template>
         </n-form>
       </div>
@@ -244,13 +180,10 @@ import {
   NSteps,
   NStep,
   NSpace,
-  NRadioGroup,
-  NRadio,
   NForm,
   NFormItem,
   NInput,
   NInputNumber,
-  NSelect,
   NSwitch,
   NButton,
   NText,
@@ -261,6 +194,7 @@ import { useProviderStore } from '@/stores/provider';
 import { useModelStore } from '@/stores/model';
 import type { CreateExpertRoutingRequest } from '@/api/expert-routing';
 import ExpertRoutingVisualization from './ExpertRoutingVisualization.vue';
+import ModelSelector from './ModelSelector.vue';
 
 const { t } = useI18n();
 
@@ -303,38 +237,6 @@ const virtualModelOptions = computed(() =>
       value: m.id,
     }))
 );
-
-const classifierProviderModelOptions = computed(() => {
-  if (!formValue.value.classifier.provider_id) {
-    return [];
-  }
-  return modelStore.models
-    .filter((m) => m.providerId === formValue.value.classifier.provider_id && m.isVirtual !== true)
-    .map((m) => ({
-      label: m.name,
-      value: m.modelIdentifier,
-    }));
-});
-
-const fallbackProviderModelOptions = computed(() => {
-  if (!fallbackProviderId.value) {
-    return [];
-  }
-  return modelStore.models
-    .filter((m) => m.providerId === fallbackProviderId.value && m.isVirtual !== true)
-    .map((m) => ({
-      label: m.name,
-      value: m.modelIdentifier,
-    }));
-});
-
-function handleClassifierProviderChange() {
-  formValue.value.classifier.model = '';
-}
-
-function handleFallbackProviderChange() {
-  fallbackModel.value = '';
-}
 
 function handlePrevious() {
   if (currentStep.value > 1) {
@@ -379,33 +281,6 @@ onMounted(async () => {
 .step-content {
   margin-top: 24px;
   min-height: 400px;
-}
-
-:deep(.model-type-radio .n-radio) {
-  padding: 8px 16px;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
-  transition: all 0.3s ease;
-}
-
-:deep(.model-type-radio .n-radio:hover) {
-  border-color: #18a058;
-  background-color: rgba(24, 160, 88, 0.05);
-}
-
-:deep(.model-type-radio .n-radio.n-radio--checked) {
-  border-color: #18a058;
-  background-color: rgba(24, 160, 88, 0.1);
-}
-
-:deep(.model-type-radio .n-radio__dot) {
-  width: 18px;
-  height: 18px;
-}
-
-:deep(.model-type-radio .n-radio__dot-wrapper) {
-  width: 18px;
-  height: 18px;
 }
 </style>
 

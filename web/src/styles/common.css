@@ -1,0 +1,27 @@
+.model-type-radio .n-radio {
+  padding: 8px 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+.model-type-radio .n-radio:hover {
+  border-color: #18a058;
+  background-color: rgba(24, 160, 88, 0.05);
+}
+
+.model-type-radio .n-radio.n-radio--checked {
+  border-color: #18a058;
+  background-color: rgba(24, 160, 88, 0.1);
+}
+
+.model-type-radio .n-radio__dot {
+  width: 18px;
+  height: 18px;
+}
+
+.model-type-radio .n-radio__dot-wrapper {
+  width: 18px;
+  height: 18px;
+}
+

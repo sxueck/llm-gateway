@@ -348,6 +348,7 @@ import { expertRoutingApi, type ExpertRouting, type CreateExpertRoutingRequest }
 import ExpertRoutingEditor from '@/components/ExpertRoutingEditor.vue';
 import ExpertRoutingVisualization from '@/components/ExpertRoutingVisualization.vue';
 import ExpertRoutingStatistics from '@/components/ExpertRoutingStatistics.vue';
+import { createDefaultExpertRoutingConfig } from '@/utils/expert-routing';
 
 const { t } = useI18n();
 const message = useMessage();
@@ -359,21 +360,7 @@ const loading = ref(false);
 const showEditorModal = ref(false);
 const showStatisticsModal = ref(false);
 const editingId = ref<string | null>(null);
-const editingConfig = ref<CreateExpertRoutingRequest>({
-  name: '',
-  description: '',
-  enabled: true,
-  classifier: {
-    type: 'real',
-    prompt_template: '',
-    max_tokens: 50,
-    temperature: 0.1,
-    timeout: 10000,
-    ignore_system_messages: false,
-    max_messages_to_classify: 0,
-  },
-  experts: [],
-});
+const editingConfig = ref<CreateExpertRoutingRequest>(createDefaultExpertRoutingConfig());
 const selectedConfigId = ref<string>('');
 const saving = ref(false);
 const showExperimentalAlert = ref(localStorage.getItem(EXPERIMENTAL_ALERT_KEY) !== 'true');
@@ -460,21 +447,7 @@ async function loadConfigs() {
 
 function handleCreate() {
   editingId.value = null;
-  editingConfig.value = {
-    name: '',
-    description: '',
-    enabled: true,
-    classifier: {
-      type: 'real',
-      prompt_template: '',
-      max_tokens: 50,
-      temperature: 0.1,
-      timeout: 10000,
-      ignore_system_messages: false,
-      max_messages_to_classify: 0,
-    },
-    experts: [],
-  };
+  editingConfig.value = createDefaultExpertRoutingConfig();
   showEditorModal.value = true;
 }
 
