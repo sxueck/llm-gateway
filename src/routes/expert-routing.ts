@@ -185,7 +185,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
 
       const updatedConfig = await expertRoutingConfigDb.update(id, {
         name: body.name,
-        description: body.description,
+        description: body.description ?? undefined,
         enabled: body.enabled !== undefined ? (body.enabled ? 1 : 0) : undefined,
         config: configData ? JSON.stringify(configData) : undefined,
       });

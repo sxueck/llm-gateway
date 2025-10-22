@@ -146,7 +146,7 @@ export class ExpertRouter {
       throw new Error(`Classification failed: HTTP ${response.status}`);
     }
 
-    const result = await response.json();
+    const result = await response.json() as any;
 
     const category = result.choices?.[0]?.message?.content?.trim();
     if (!category) {
