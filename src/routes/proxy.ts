@@ -134,10 +134,15 @@ interface ResolveProviderResult {
 async function resolveProviderFromModel(
   model: any,
   request: ProxyRequest,
-  virtualKeyId?: string
+  virtualKeyId?: string,
+  depth: number = 0
 ): Promise<ResolveProviderResult> {
+  if (depth > 5) {
+    throw new Error('Maximum routing depth exceeded (possible circular reference)');
+  }
+
   if (model.expert_routing_id) {
-    const expertRoutingResult = await resolveExpertRouting(model, request, virtualKeyId);
+    const expertRoutingResult = await resolveExpertRouting(model, request, virtualKeyId, depth);
     if (expertRoutingResult) {
       return expertRoutingResult;
     }
@@ -174,7 +179,8 @@ async function resolveProviderFromModel(
 async function resolveExpertRouting(
   model: any,
   request: ProxyRequest,
-  virtualKeyId?: string
+  virtualKeyId?: string,
+  depth: number = 0
 ): Promise<ResolveProviderResult | null> {
   if (!model.expert_routing_id) {
     return null;
@@ -206,7 +212,7 @@ async function resolveExpertRouting(
         throw new Error(`Virtual model not found: ${result.expertModelId}`);
       }
 
-      return await resolveProviderFromModel(virtualModel, request, virtualKeyId);
+      return await resolveProviderFromModel(virtualModel, request, virtualKeyId, depth + 1);
     }
 
     if (result.modelOverride) {

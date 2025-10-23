@@ -22,6 +22,7 @@ export interface ClassifierConfig {
   timeout?: number;
   ignore_system_messages?: boolean;
   max_messages_to_classify?: number;
+  ignored_tags?: string[];
 }
 
 export interface FallbackConfig {
@@ -125,6 +126,11 @@ export const expertRoutingApi = {
   getLogs(id: string, limit?: number): Promise<{ logs: ExpertRoutingLog[] }> {
     const params = limit ? { limit: limit.toString() } : {};
     return request.get(`/admin/expert-routing/${id}/logs`, { params });
+  },
+
+  getLogsByCategory(id: string, category: string, limit?: number): Promise<{ logs: ExpertRoutingLog[] }> {
+    const params = limit ? { limit: limit.toString() } : {};
+    return request.get(`/admin/expert-routing/${id}/logs/category/${encodeURIComponent(category)}`, { params });
   },
 
   associateModels(id: string, modelIds: string[]): Promise<{ success: boolean }> {

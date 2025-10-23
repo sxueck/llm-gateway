@@ -131,6 +131,7 @@ export interface ExpertRoutingConfig {
     timeout?: number;
     ignore_system_messages?: boolean;
     max_messages_to_classify?: number;
+    ignored_tags?: string[];
   };
   experts: import('./expert-routing.js').ExpertTarget[];
   fallback?: {

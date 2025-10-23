@@ -121,7 +121,7 @@ export class ExpertRouter {
 
     const classificationTime = Date.now() - startTime;
 
-    const result = await this.resolveExpert(expert, category, classificationTime, expertRoutingId, context, request);
+    const result = await this.resolveExpert(expert, category, classificationTime, expertRoutingId, context, request, config.classifier);
 
     return result;
   }
@@ -148,20 +148,27 @@ export class ExpertRouter {
       throw new Error('No user message found for classification');
     }
 
-    const userPrompt = typeof lastUserMessage.content === 'string'
+    let userPrompt = typeof lastUserMessage.content === 'string'
       ? lastUserMessage.content
       : JSON.stringify(lastUserMessage.content);
+
+    if (classifierConfig.ignored_tags && classifierConfig.ignored_tags.length > 0) {
+      userPrompt = this.filterIgnoredTags(userPrompt, classifierConfig.ignored_tags);
+    }
 
     const classificationPrompt = classifierConfig.prompt_template
       .replace('{{user_prompt}}', userPrompt);
 
-    const classificationRequest = {
+    const classificationRequest: any = {
       messages: [
         { role: 'user', content: classificationPrompt }
       ],
-      max_tokens: classifierConfig.max_tokens || 50,
       temperature: classifierConfig.temperature ?? 0.0
     };
+
+    if (classifierConfig.max_tokens !== 0) {
+      classificationRequest.max_tokens = classifierConfig.max_tokens || 50;
+    }
 
     let provider;
     let model;
@@ -230,7 +237,41 @@ export class ExpertRouter {
     category: string,
     experts: ExpertTarget[]
   ): ExpertTarget | null {
-    return experts.find(e => e.category === category) || null;
+    const normalizedCategory = category.trim().toLowerCase();
+
+    const exactMatch = experts.find(
+      e => e.category.trim().toLowerCase() === normalizedCategory
+    );
+
+    if (exactMatch) {
+      memoryLogger.debug(
+        `专家匹配成功: 分类="${category}" → 专家="${exactMatch.category}"`,
+        'ExpertRouter'
+      );
+      return exactMatch;
+    }
+
+    const partialMatch = experts.find(
+      e => {
+        const expertCategory = e.category.trim().toLowerCase();
+        return normalizedCategory.includes(expertCategory) || expertCategory.includes(normalizedCategory);
+      }
+    );
+
+    if (partialMatch) {
+      memoryLogger.debug(
+        `专家部分匹配成功: 分类="${category}" → 专家="${partialMatch.category}"`,
+        'ExpertRouter'
+      );
+      return partialMatch;
+    }
+
+    memoryLogger.warn(
+      `未找到匹配的专家: 分类="${category}" | 可用专家: ${experts.map(e => e.category).join(', ')}`,
+      'ExpertRouter'
+    );
+
+    return null;
   }
 
   private async resolveExpert(
@@ -239,18 +280,26 @@ export class ExpertRouter {
     classificationTime: number,
     expertRoutingId: string,
     context: RoutingContext,
-    request: ProxyRequest
+    request: ProxyRequest,
+    classifierConfig: ExpertRoutingConfig['classifier']
   ): Promise<ExpertRoutingResult> {
     const resolved = resolveModelConfig(expert, 'Expert');
 
     const requestHash = this.generateRequestHash(request);
+
+    let classifierModelName: string;
+    if (classifierConfig.type === 'virtual') {
+      classifierModelName = classifierConfig.model_id!;
+    } else {
+      classifierModelName = `${classifierConfig.provider_id}/${classifierConfig.model}`;
+    }
 
     await expertRoutingLogDb.create({
       id: nanoid(),
       virtual_key_id: context.virtualKeyId || null,
       expert_routing_id: expertRoutingId,
       request_hash: requestHash,
-      classifier_model: expert.type === 'virtual' ? expert.model_id! : `${expert.provider_id}/${expert.model}`,
+      classifier_model: classifierModelName,
       classification_result: category,
       selected_expert_id: expert.id,
       selected_expert_type: expert.type,
@@ -310,6 +359,27 @@ export class ExpertRouter {
     const messages = request.body?.messages || [];
     const content = JSON.stringify(messages);
     return crypto.createHash('md5').update(content).digest('hex');
+  }
+
+  private filterIgnoredTags(text: string, ignoredTags: string[]): string {
+    let filteredText = text;
+
+    for (const tag of ignoredTags) {
+      const tagName = tag.trim();
+      if (!tagName) continue;
+
+      const openTag = `<${tagName}>`;
+      const closeTag = `</${tagName}>`;
+      const regex = new RegExp(`${this.escapeRegex(openTag)}[\\s\\S]*?${this.escapeRegex(closeTag)}`, 'gi');
+
+      filteredText = filteredText.replace(regex, '');
+    }
+
+    return filteredText.trim();
+  }
+
+  private escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }
 

@@ -1800,5 +1800,29 @@ export const expertRoutingLogDb = {
       totalRequests,
     };
   },
+
+  getByCategory(configId: string, category: string, limit: number = 100) {
+    const result = db.exec(
+      `SELECT * FROM expert_routing_logs
+       WHERE expert_routing_id = ? AND classification_result = ?
+       ORDER BY created_at DESC
+       LIMIT ?`,
+      [configId, category, limit]
+    );
+    if (result.length === 0) return [];
+    return result[0].values.map(row => ({
+      id: row[0] as string,
+      virtual_key_id: row[1] as string | null,
+      expert_routing_id: row[2] as string,
+      request_hash: row[3] as string,
+      classifier_model: row[4] as string,
+      classification_result: row[5] as string,
+      selected_expert_id: row[6] as string,
+      selected_expert_type: row[7] as string,
+      selected_expert_name: row[8] as string,
+      classification_time: row[9] as number,
+      created_at: row[10] as number,
+    }));
+  },
 };
 

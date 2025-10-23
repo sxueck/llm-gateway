@@ -44,6 +44,7 @@ export default {
     responseTime: '响应时间',
     responseHeaders: '响应头',
     responseBody: '响应体',
+    time: '时间',
   },
   layout: {
     appName: 'LLM Gateway',
@@ -344,6 +345,8 @@ export default {
     ignoreSystemMessagesHint: '启用后，分类器将只分析用户消息，忽略 system 等系统级消息',
     maxMessagesToClassify: '限制分类消息数',
     maxMessagesToClassifyHint: '限制分类器只处理最近 N 条消息,0 表示处理全部消息',
+    ignoredTags: '忽略标签',
+    ignoredTagsPlaceholder: 'code, environment_details, system',
     addExpert: '添加专家',
     editExpert: '编辑专家',
     expertCategory: '分类类别',
@@ -391,6 +394,7 @@ export default {
     disassociateSuccess: '取消关联成功',
     noConfigs: '暂无专家路由配置',
     createFirstConfig: '创建第一个专家路由配置',
+    categoryDetails: '分类详情: {category}',
   },
   messages: {
     operationSuccess: '操作成功',

@@ -26,6 +26,7 @@ const classifierConfigSchema = z.object({
   timeout: z.number().optional(),
   ignore_system_messages: z.boolean().optional(),
   max_messages_to_classify: z.number().optional(),
+  ignored_tags: z.array(z.string()).optional(),
 });
 
 const fallbackConfigSchema = z.object({
@@ -272,6 +273,26 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       return { logs };
     } catch (error: any) {
       memoryLogger.error(`获取专家路由日志失败: ${error.message}`, 'ExpertRouting');
+      throw error;
+    }
+  });
+
+  fastify.get('/:id/logs/category/:category', async (request) => {
+    try {
+      const { id, category } = request.params as { id: string; category: string };
+      const { limit } = request.query as { limit?: string };
+
+      const config = expertRoutingConfigDb.getById(id);
+      if (!config) {
+        throw new Error('专家路由配置不存在');
+      }
+
+      const limitNum = limit ? parseInt(limit) : 100;
+      const logs = expertRoutingLogDb.getByCategory(id, category, limitNum);
+
+      return { logs };
+    } catch (error: any) {
+      memoryLogger.error(`获取分类日志失败: ${error.message}`, 'ExpertRouting');
       throw error;
     }
   });

@@ -112,6 +112,13 @@
               </n-text>
             </template>
           </n-form-item>
+
+          <n-form-item :label="t('expertRouting.ignoredTags')">
+            <n-input
+              v-model:value="ignoredTagsInput"
+              :placeholder="t('expertRouting.ignoredTagsPlaceholder')"
+            />
+          </n-form-item>
         </n-form>
       </div>
 
@@ -221,6 +228,9 @@ const fallbackType = ref<'virtual' | 'real'>(props.config.fallback?.type || 'rea
 const fallbackModelId = ref(props.config.fallback?.model_id || '');
 const fallbackProviderId = ref(props.config.fallback?.provider_id || '');
 const fallbackModel = ref(props.config.fallback?.model || '');
+const ignoredTagsInput = ref<string>(
+  props.config.classifier.ignored_tags?.join(', ') || ''
+);
 
 const providerOptions = computed(() =>
   providerStore.providers.map((p) => ({
@@ -261,6 +271,12 @@ function handleSave() {
   } else {
     formValue.value.fallback = undefined;
   }
+
+  const tags = ignoredTagsInput.value
+    .split(/[,，\n]/)
+    .map(tag => tag.trim())
+    .filter(tag => tag.length > 0);
+  formValue.value.classifier.ignored_tags = tags.length > 0 ? tags : undefined;
 
   emit('save', formValue.value);
 }
