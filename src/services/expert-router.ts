@@ -145,12 +145,12 @@ export class ExpertRouter {
   }> {
     let messagesToClassify = messages;
 
-    if (classifierConfig.ignore_system_messages) {
-      messagesToClassify = messages.filter(m => m.role !== 'system');
-    }
-
     if (classifierConfig.max_messages_to_classify && classifierConfig.max_messages_to_classify > 0) {
       messagesToClassify = messagesToClassify.slice(-classifierConfig.max_messages_to_classify);
+    }
+
+    if (classifierConfig.ignore_system_messages) {
+      messagesToClassify = messagesToClassify.filter(m => m.role !== 'system' && m.role !== 'assistant');
     }
 
     const lastUserMessage = messagesToClassify
