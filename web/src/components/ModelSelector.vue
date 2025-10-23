@@ -44,7 +44,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   NFormItem,
@@ -75,10 +75,26 @@ const emit = defineEmits<{
   'update:model': [value: string];
 }>();
 
-const localType = ref(props.type);
-const localModelId = ref(props.modelId || '');
-const localProviderId = ref(props.providerId || '');
-const localModel = ref(props.model || '');
+// 使用 computed 的 getter/setter 来简化双向绑定
+const localType = computed({
+  get: () => props.type,
+  set: (val) => emit('update:type', val)
+});
+
+const localModelId = computed({
+  get: () => props.modelId || '',
+  set: (val) => emit('update:modelId', val)
+});
+
+const localProviderId = computed({
+  get: () => props.providerId || '',
+  set: (val) => emit('update:providerId', val)
+});
+
+const localModel = computed({
+  get: () => props.model || '',
+  set: (val) => emit('update:model', val)
+});
 
 const providerModelOptions = computed(() => {
   if (!localProviderId.value) {
@@ -94,39 +110,6 @@ const providerModelOptions = computed(() => {
 
 function handleProviderChange() {
   localModel.value = '';
-  emit('update:model', '');
 }
-
-watch(localType, (newVal) => {
-  emit('update:type', newVal);
-});
-
-watch(localModelId, (newVal) => {
-  emit('update:modelId', newVal);
-});
-
-watch(localProviderId, (newVal) => {
-  emit('update:providerId', newVal);
-});
-
-watch(localModel, (newVal) => {
-  emit('update:model', newVal);
-});
-
-watch(() => props.type, (newVal) => {
-  localType.value = newVal;
-});
-
-watch(() => props.modelId, (newVal) => {
-  localModelId.value = newVal || '';
-});
-
-watch(() => props.providerId, (newVal) => {
-  localProviderId.value = newVal || '';
-});
-
-watch(() => props.model, (newVal) => {
-  localModel.value = newVal || '';
-});
 </script>
 

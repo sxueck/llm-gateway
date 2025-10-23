@@ -36,23 +36,22 @@ interface HealthCheckResult {
   agentVersion?: string;
 }
 
+function buildHealthCheckResult(
+  gateway: PortkeyGateway,
+  success: boolean,
+  latency: number | null,
+  error?: string
+): HealthCheckResult {
+  return {
+    success,
+    latency,
+    error,
+    lastHeartbeat: gateway.last_heartbeat || undefined,
+    agentVersion: gateway.agent_version || undefined,
+  };
+}
+
 async function checkGatewayHealth(gateway: PortkeyGateway): Promise<HealthCheckResult> {
-  const now = Date.now();
-  const HEARTBEAT_TIMEOUT = 60000;
-
-  if (gateway.last_heartbeat) {
-    const timeSinceHeartbeat = now - gateway.last_heartbeat;
-
-    if (timeSinceHeartbeat < HEARTBEAT_TIMEOUT) {
-      return {
-        success: true,
-        latency: timeSinceHeartbeat < 5000 ? Math.round(timeSinceHeartbeat / 100) : null,
-        lastHeartbeat: gateway.last_heartbeat,
-        agentVersion: gateway.agent_version || undefined,
-      };
-    }
-  }
-
   const startTime = Date.now();
 
   return new Promise((resolve) => {
@@ -85,24 +84,24 @@ async function checkGatewayHealth(gateway: PortkeyGateway): Promise<HealthCheckR
 
         const latency = Date.now() - startTime;
         if (res.statusCode === 200 || res.statusCode === 404) {
-          resolve({ success: true, latency });
+          resolve(buildHealthCheckResult(gateway, true, latency));
         } else {
-          resolve({ success: false, latency: null, error: `HTTP ${res.statusCode}` });
+          resolve(buildHealthCheckResult(gateway, false, null, `HTTP ${res.statusCode}`));
         }
       });
 
       req.on('error', (error: any) => {
-        resolve({ success: false, latency: null, error: error.message });
+        resolve(buildHealthCheckResult(gateway, false, null, error.message));
       });
 
       req.on('timeout', () => {
         req.destroy();
-        resolve({ success: false, latency: null, error: 'Request timeout' });
+        resolve(buildHealthCheckResult(gateway, false, null, 'Request timeout'));
       });
 
       req.end();
     } catch (error: any) {
-      resolve({ success: false, latency: null, error: error.message });
+      resolve(buildHealthCheckResult(gateway, false, null, error.message));
     }
   });
 }
