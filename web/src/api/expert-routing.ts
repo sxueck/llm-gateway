@@ -97,6 +97,23 @@ export interface ExpertRoutingLog {
   created_at: number;
 }
 
+export interface ExpertRoutingLogDetail {
+  id: string;
+  virtual_key_id: string | null;
+  expert_routing_id: string;
+  request_hash: string;
+  classifier_model: string;
+  classification_result: string;
+  selected_expert_id: string;
+  selected_expert_type: string;
+  selected_expert_name: string;
+  classification_time: number;
+  created_at: number;
+  original_request: any[] | null;
+  classifier_request: any | null;
+  classifier_response: any | null;
+}
+
 export const expertRoutingApi = {
   getAll(): Promise<{ configs: ExpertRouting[] }> {
     return request.get('/admin/expert-routing');
@@ -131,6 +148,10 @@ export const expertRoutingApi = {
   getLogsByCategory(id: string, category: string, limit?: number): Promise<{ logs: ExpertRoutingLog[] }> {
     const params = limit ? { limit: limit.toString() } : {};
     return request.get(`/admin/expert-routing/${id}/logs/category/${encodeURIComponent(category)}`, { params });
+  },
+
+  getLogDetails(id: string, logId: string): Promise<ExpertRoutingLogDetail> {
+    return request.get(`/admin/expert-routing/${id}/logs/${logId}/details`);
   },
 
   associateModels(id: string, modelIds: string[]): Promise<{ success: boolean }> {

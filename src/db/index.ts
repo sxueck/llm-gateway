@@ -246,9 +246,28 @@ function createTables() {
   } catch (e) {
   }
 
+  try {
+    db.run('ALTER TABLE models ADD COLUMN prompt_config TEXT');
+  } catch (e) {
+  }
+
+  try {
+    db.run('ALTER TABLE models ADD COLUMN compression_config TEXT');
+  } catch (e) {
+  }
+
+  try {
+    db.run('ALTER TABLE models ADD COLUMN expert_routing_id TEXT');
+  } catch (e) {
+  }
+
   db.run('CREATE INDEX IF NOT EXISTS idx_models_provider ON models(provider_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_models_enabled ON models(enabled)');
   db.run('CREATE INDEX IF NOT EXISTS idx_models_is_virtual ON models(is_virtual)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_models_routing_config ON models(routing_config_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_models_prompt_config ON models(prompt_config)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_models_compression_config ON models(compression_config)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_models_expert_routing ON models(expert_routing_id)');
 
   db.run(`
     CREATE TABLE IF NOT EXISTS virtual_keys (
@@ -403,6 +422,58 @@ function createTables() {
   db.run('CREATE INDEX IF NOT EXISTS idx_model_routing_rules_type ON model_routing_rules(rule_type)');
   db.run('CREATE INDEX IF NOT EXISTS idx_model_routing_rules_enabled ON model_routing_rules(enabled)');
   db.run('CREATE INDEX IF NOT EXISTS idx_model_routing_rules_priority ON model_routing_rules(priority)');
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS expert_routing_configs (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      enabled INTEGER DEFAULT 1,
+      config TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+
+  db.run('CREATE INDEX IF NOT EXISTS idx_expert_routing_configs_enabled ON expert_routing_configs(enabled)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_expert_routing_configs_created_at ON expert_routing_configs(created_at)');
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS expert_routing_logs (
+      id TEXT PRIMARY KEY,
+      virtual_key_id TEXT,
+      expert_routing_id TEXT NOT NULL,
+      request_hash TEXT NOT NULL,
+      classifier_model TEXT NOT NULL,
+      classification_result TEXT NOT NULL,
+      selected_expert_id TEXT NOT NULL,
+      selected_expert_type TEXT NOT NULL,
+      selected_expert_name TEXT NOT NULL,
+      classification_time INTEGER,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
+      FOREIGN KEY (expert_routing_id) REFERENCES expert_routing_configs(id) ON DELETE CASCADE
+    )
+  `);
+
+  try {
+    db.run('ALTER TABLE expert_routing_logs ADD COLUMN original_request TEXT');
+  } catch (e) {
+  }
+
+  try {
+    db.run('ALTER TABLE expert_routing_logs ADD COLUMN classifier_request TEXT');
+  } catch (e) {
+  }
+
+  try {
+    db.run('ALTER TABLE expert_routing_logs ADD COLUMN classifier_response TEXT');
+  } catch (e) {
+  }
+
+  db.run('CREATE INDEX IF NOT EXISTS idx_expert_routing_logs_config ON expert_routing_logs(expert_routing_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_expert_routing_logs_created_at ON expert_routing_logs(created_at)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_expert_routing_logs_category ON expert_routing_logs(classification_result)');
 }
 
 export function getDatabase() {
@@ -1714,14 +1785,18 @@ export const expertRoutingLogDb = {
     selected_expert_type: string;
     selected_expert_name: string;
     classification_time: number;
+    original_request?: string;
+    classifier_request?: string;
+    classifier_response?: string;
   }) {
     const now = Date.now();
     db.run(
       `INSERT INTO expert_routing_logs (
         id, virtual_key_id, expert_routing_id, request_hash,
         classifier_model, classification_result, selected_expert_id,
-        selected_expert_type, selected_expert_name, classification_time, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        selected_expert_type, selected_expert_name, classification_time, created_at,
+        original_request, classifier_request, classifier_response
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         log.id,
         log.virtual_key_id,
@@ -1734,6 +1809,9 @@ export const expertRoutingLogDb = {
         log.selected_expert_name,
         log.classification_time,
         now,
+        log.original_request || null,
+        log.classifier_request || null,
+        log.classifier_response || null,
       ]
     );
     markDirty();
@@ -1741,7 +1819,11 @@ export const expertRoutingLogDb = {
 
   getByConfigId(configId: string, limit: number = 100) {
     const result = db.exec(
-      `SELECT * FROM expert_routing_logs
+      `SELECT
+        id, virtual_key_id, expert_routing_id, request_hash,
+        classifier_model, classification_result, selected_expert_id,
+        selected_expert_type, selected_expert_name, classification_time, created_at
+       FROM expert_routing_logs
        WHERE expert_routing_id = ?
        ORDER BY created_at DESC
        LIMIT ?`,
@@ -1803,7 +1885,11 @@ export const expertRoutingLogDb = {
 
   getByCategory(configId: string, category: string, limit: number = 100) {
     const result = db.exec(
-      `SELECT * FROM expert_routing_logs
+      `SELECT
+        id, virtual_key_id, expert_routing_id, request_hash,
+        classifier_model, classification_result, selected_expert_id,
+        selected_expert_type, selected_expert_name, classification_time, created_at
+       FROM expert_routing_logs
        WHERE expert_routing_id = ? AND classification_result = ?
        ORDER BY created_at DESC
        LIMIT ?`,
@@ -1823,6 +1909,29 @@ export const expertRoutingLogDb = {
       classification_time: row[9] as number,
       created_at: row[10] as number,
     }));
+  },
+
+  getById(id: string) {
+    const result = db.exec('SELECT * FROM expert_routing_logs WHERE id = ?', [id]);
+    if (result.length === 0 || result[0].values.length === 0) return null;
+
+    const row = result[0].values[0];
+    return {
+      id: row[0] as string,
+      virtual_key_id: row[1] as string | null,
+      expert_routing_id: row[2] as string,
+      request_hash: row[3] as string,
+      classifier_model: row[4] as string,
+      classification_result: row[5] as string,
+      selected_expert_id: row[6] as string,
+      selected_expert_type: row[7] as string,
+      selected_expert_name: row[8] as string,
+      classification_time: row[9] as number,
+      created_at: row[10] as number,
+      original_request: row[11] as string | null,
+      classifier_request: row[12] as string | null,
+      classifier_response: row[13] as string | null,
+    };
   },
 };
 

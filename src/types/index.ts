@@ -154,5 +154,8 @@ export interface ExpertRoutingLog {
   selected_expert_name: string;
   classification_time: number;
   created_at: number;
+  original_request?: string | null;
+  classifier_request?: string | null;
+  classifier_response?: string | null;
 }
 

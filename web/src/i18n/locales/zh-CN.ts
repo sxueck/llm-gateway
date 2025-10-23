@@ -45,6 +45,7 @@ export default {
     responseHeaders: '响应头',
     responseBody: '响应体',
     time: '时间',
+    details: '详情',
   },
   layout: {
     appName: 'LLM Gateway',
@@ -395,6 +396,12 @@ export default {
     noConfigs: '暂无专家路由配置',
     createFirstConfig: '创建第一个专家路由配置',
     categoryDetails: '分类详情: {category}',
+    logDetails: '日志详情',
+    originalRequest: '原始请求',
+    classifierRequest: '分类器请求',
+    classifierResponse: '分类器响应',
+    classifierModel: '分类器模型',
+    details: '详情',
   },
   messages: {
     operationSuccess: '操作成功',

@@ -45,6 +45,7 @@ export default {
     responseHeaders: 'Response Headers',
     responseBody: 'Response Body',
     time: 'Time',
+    details: 'Details',
   },
   layout: {
     appName: 'LLM Gateway',
@@ -394,6 +395,12 @@ export default {
     noConfigs: 'No expert routing configurations',
     createFirstConfig: 'Create first expert routing configuration',
     categoryDetails: 'Category Details: {category}',
+    logDetails: 'Log Details',
+    originalRequest: 'Original Request',
+    classifierRequest: 'Classifier Request',
+    classifierResponse: 'Classifier Response',
+    classifierModel: 'Classifier Model',
+    details: 'Details',
   },
   messages: {
     operationSuccess: 'Operation successful',

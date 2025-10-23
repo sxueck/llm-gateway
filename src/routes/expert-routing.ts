@@ -297,6 +297,46 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     }
   });
 
+  fastify.get('/:id/logs/:logId/details', async (request) => {
+    try {
+      const { id, logId } = request.params as { id: string; logId: string };
+
+      const config = expertRoutingConfigDb.getById(id);
+      if (!config) {
+        throw new Error('专家路由配置不存在');
+      }
+
+      const log = expertRoutingLogDb.getById(logId);
+      if (!log) {
+        throw new Error('日志不存在');
+      }
+
+      if (log.expert_routing_id !== id) {
+        throw new Error('日志不属于该专家路由配置');
+      }
+
+      return {
+        id: log.id,
+        virtual_key_id: log.virtual_key_id,
+        expert_routing_id: log.expert_routing_id,
+        request_hash: log.request_hash,
+        classifier_model: log.classifier_model,
+        classification_result: log.classification_result,
+        selected_expert_id: log.selected_expert_id,
+        selected_expert_type: log.selected_expert_type,
+        selected_expert_name: log.selected_expert_name,
+        classification_time: log.classification_time,
+        created_at: log.created_at,
+        original_request: log.original_request ? JSON.parse(log.original_request) : null,
+        classifier_request: log.classifier_request ? JSON.parse(log.classifier_request) : null,
+        classifier_response: log.classifier_response ? JSON.parse(log.classifier_response) : null,
+      };
+    } catch (error: any) {
+      memoryLogger.error(`获取日志详情失败: ${error.message}`, 'ExpertRouting');
+      throw error;
+    }
+  });
+
   fastify.post('/:id/models', async (request) => {
     try {
       const { id } = request.params as { id: string };

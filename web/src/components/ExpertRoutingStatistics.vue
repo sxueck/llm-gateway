@@ -61,6 +61,57 @@
         />
       </n-spin>
     </n-modal>
+
+    <n-modal
+      v-model:show="showLogDetailModal"
+      preset="card"
+      :title="t('expertRouting.logDetails')"
+      style="width: 1000px; max-height: 80vh"
+    >
+      <n-spin :show="logDetailLoading">
+        <n-space v-if="selectedLogDetail" vertical :size="16">
+          <n-card :title="t('expertRouting.basicInfo')" size="small">
+            <n-space vertical :size="8">
+              <div><n-text strong>{{ t('expertRouting.classificationResult') }}:</n-text> {{ selectedLogDetail.classification_result }}</div>
+              <div><n-text strong>{{ t('expertRouting.selectedExpert') }}:</n-text> {{ selectedLogDetail.selected_expert_name }}</div>
+              <div><n-text strong>{{ t('expertRouting.classifierModel') }}:</n-text> {{ selectedLogDetail.classifier_model }}</div>
+              <div><n-text strong>{{ t('expertRouting.classificationTime') }}:</n-text> {{ selectedLogDetail.classification_time }}ms</div>
+              <div><n-text strong>{{ t('common.time') }}:</n-text> {{ new Date(selectedLogDetail.created_at).toLocaleString('zh-CN') }}</div>
+            </n-space>
+          </n-card>
+
+          <n-card :title="t('expertRouting.originalRequest')" size="small">
+            <n-code
+              v-if="selectedLogDetail.original_request"
+              :code="JSON.stringify(selectedLogDetail.original_request, null, 2)"
+              language="json"
+              style="max-height: 300px; overflow: auto"
+            />
+            <n-empty v-else :description="t('common.noData')" />
+          </n-card>
+
+          <n-card :title="t('expertRouting.classifierRequest')" size="small">
+            <n-code
+              v-if="selectedLogDetail.classifier_request"
+              :code="JSON.stringify(selectedLogDetail.classifier_request, null, 2)"
+              language="json"
+              style="max-height: 300px; overflow: auto"
+            />
+            <n-empty v-else :description="t('common.noData')" />
+          </n-card>
+
+          <n-card :title="t('expertRouting.classifierResponse')" size="small">
+            <n-code
+              v-if="selectedLogDetail.classifier_response"
+              :code="JSON.stringify(selectedLogDetail.classifier_response, null, 2)"
+              language="json"
+              style="max-height: 300px; overflow: auto"
+            />
+            <n-empty v-else :description="t('common.noData')" />
+          </n-card>
+        </n-space>
+      </n-spin>
+    </n-modal>
   </div>
 </template>
 
@@ -78,9 +129,11 @@ import {
   NTag,
   NModal,
   NSpin,
+  NButton,
+  NCode,
   type DataTableColumns,
 } from 'naive-ui';
-import { expertRoutingApi, type ExpertRoutingStatistics, type ExpertRoutingLog } from '@/api/expert-routing';
+import { expertRoutingApi, type ExpertRoutingStatistics, type ExpertRoutingLog, type ExpertRoutingLogDetail } from '@/api/expert-routing';
 
 const { t } = useI18n();
 
@@ -101,6 +154,9 @@ const showCategoryDetailModal = ref(false);
 const selectedCategory = ref('');
 const categoryLogs = ref<ExpertRoutingLog[]>([]);
 const categoryLogsLoading = ref(false);
+const showLogDetailModal = ref(false);
+const selectedLogDetail = ref<ExpertRoutingLogDetail | null>(null);
+const logDetailLoading = ref(false);
 
 const logColumns = computed<DataTableColumns<ExpertRoutingLog>>(() => [
   {
@@ -131,6 +187,21 @@ const logColumns = computed<DataTableColumns<ExpertRoutingLog>>(() => [
           type: row.selected_expert_type === 'virtual' ? 'info' : 'success',
         },
         () => row.selected_expert_type === 'virtual' ? t('expertRouting.virtualModel') : t('expertRouting.realModel')
+      );
+    },
+  },
+  {
+    title: t('common.actions'),
+    key: 'actions',
+    width: 100,
+    render: (row) => {
+      return h(
+        NButton,
+        {
+          size: 'small',
+          onClick: () => handleLogClick(row),
+        },
+        () => t('common.details')
       );
     },
   },
@@ -168,6 +239,21 @@ const categoryLogColumns = computed<DataTableColumns<ExpertRoutingLog>>(() => [
     key: 'created_at',
     width: 180,
     render: (row) => new Date(row.created_at).toLocaleString('zh-CN'),
+  },
+  {
+    title: t('common.actions'),
+    key: 'actions',
+    width: 100,
+    render: (row) => {
+      return h(
+        NButton,
+        {
+          size: 'small',
+          onClick: () => handleLogClick(row),
+        },
+        () => t('common.details')
+      );
+    },
   },
 ]);
 
@@ -207,6 +293,20 @@ async function handleCategoryClick(category: string) {
     console.error('Failed to load category logs:', error);
   } finally {
     categoryLogsLoading.value = false;
+  }
+}
+
+async function handleLogClick(log: ExpertRoutingLog) {
+  showLogDetailModal.value = true;
+  logDetailLoading.value = true;
+  selectedLogDetail.value = null;
+  try {
+    const detail = await expertRoutingApi.getLogDetails(props.configId, log.id);
+    selectedLogDetail.value = detail;
+  } catch (error) {
+    console.error('Failed to load log details:', error);
+  } finally {
+    logDetailLoading.value = false;
   }
 }
 

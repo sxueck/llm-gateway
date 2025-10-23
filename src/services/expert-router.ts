@@ -103,25 +103,34 @@ export class ExpertRouter {
       throw new Error('No messages in request');
     }
 
-    const category = await this.classify(messages, config.classifier);
+    const classificationResult = await this.classify(messages, config.classifier);
 
-    const expert = this.selectExpert(category, config.experts);
+    const expert = this.selectExpert(classificationResult.category, config.experts);
     if (!expert) {
       memoryLogger.warn(
-        `未找到匹配的专家: 分类结果="${category}"`,
+        `未找到匹配的专家: 分类结果="${classificationResult.category}"`,
         'ExpertRouter'
       );
 
       if (config.fallback) {
-        return await this.resolveFallback(config.fallback, category, startTime, expertRoutingId, context);
+        return await this.resolveFallback(config.fallback, classificationResult.category, startTime, expertRoutingId, context);
       }
 
-      throw new Error(`No expert found for category: ${category}`);
+      throw new Error(`No expert found for category: ${classificationResult.category}`);
     }
 
     const classificationTime = Date.now() - startTime;
 
-    const result = await this.resolveExpert(expert, category, classificationTime, expertRoutingId, context, request, config.classifier);
+    const result = await this.resolveExpert(
+      expert,
+      classificationResult.category,
+      classificationTime,
+      expertRoutingId,
+      context,
+      request,
+      config.classifier,
+      classificationResult
+    );
 
     return result;
   }
@@ -129,7 +138,11 @@ export class ExpertRouter {
   private async classify(
     messages: ChatMessage[],
     classifierConfig: ExpertRoutingConfig['classifier']
-  ): Promise<string> {
+  ): Promise<{
+    category: string;
+    classifierRequest: any;
+    classifierResponse: any;
+  }> {
     let messagesToClassify = messages;
 
     if (classifierConfig.ignore_system_messages) {
@@ -192,6 +205,11 @@ export class ExpertRouter {
     const apiKey = decryptApiKey(provider.api_key);
     const endpoint = buildChatCompletionsEndpoint(provider.base_url);
 
+    const fullClassifierRequest = {
+      ...classificationRequest,
+      model: model
+    };
+
     let response;
     try {
       response = await fetch(endpoint, {
@@ -200,10 +218,7 @@ export class ExpertRouter {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          ...classificationRequest,
-          model: model
-        }),
+        body: JSON.stringify(fullClassifierRequest),
         signal: AbortSignal.timeout(classifierConfig.timeout || 10000)
       });
     } catch (fetchError: any) {
@@ -230,7 +245,11 @@ export class ExpertRouter {
       throw new Error('Empty classification result');
     }
 
-    return category;
+    return {
+      category,
+      classifierRequest: fullClassifierRequest,
+      classifierResponse: result
+    };
   }
 
   private selectExpert(
@@ -281,7 +300,12 @@ export class ExpertRouter {
     expertRoutingId: string,
     context: RoutingContext,
     request: ProxyRequest,
-    classifierConfig: ExpertRoutingConfig['classifier']
+    classifierConfig: ExpertRoutingConfig['classifier'],
+    classificationResult: {
+      category: string;
+      classifierRequest: any;
+      classifierResponse: any;
+    }
   ): Promise<ExpertRoutingResult> {
     const resolved = resolveModelConfig(expert, 'Expert');
 
@@ -305,6 +329,9 @@ export class ExpertRouter {
       selected_expert_type: expert.type,
       selected_expert_name: resolved.expertName,
       classification_time: classificationTime,
+      original_request: JSON.stringify(request.body?.messages || []),
+      classifier_request: JSON.stringify(classificationResult.classifierRequest),
+      classifier_response: JSON.stringify(classificationResult.classifierResponse),
     });
 
     return {
