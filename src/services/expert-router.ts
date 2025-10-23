@@ -170,7 +170,8 @@ export class ExpertRouter {
     }
 
     const classificationPrompt = classifierConfig.prompt_template
-      .replace('{{user_prompt}}', userPrompt);
+      .split('{{USER_PROMPT}}').join(userPrompt)
+      .split('{{user_prompt}}').join(userPrompt);
 
     const classificationRequest: any = {
       messages: [

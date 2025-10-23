@@ -164,8 +164,9 @@
       v-model:show="showEditorModal"
       preset="card"
       :title="editingId ? t('expertRouting.editExpertRouting') : t('expertRouting.createExpertRouting')"
-      style="width: 90%; max-width: 1200px"
+      style="width: 90%; max-width: 1200px; max-height: 85vh"
       :segmented="{ content: 'soft' }"
+      :content-style="{ maxHeight: 'calc(85vh - 120px)', overflowY: 'auto' }"
     >
       <ExpertRoutingEditor
         v-if="showEditorModal"
