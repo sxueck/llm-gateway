@@ -4,7 +4,7 @@ export function createDefaultClassifierConfig(): ClassifierConfig {
   return {
     type: 'real',
     prompt_template: '',
-    max_tokens: 50,
+    max_tokens: 200,
     temperature: 0.1,
     timeout: 10000,
     ignore_system_messages: false,

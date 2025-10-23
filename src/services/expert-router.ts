@@ -3,7 +3,7 @@ import { providerDb, modelDb, expertRoutingConfigDb, expertRoutingLogDb } from '
 import { memoryLogger } from './logger.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { ExpertRoutingConfig } from '../types/index.js';
-import { ExpertTarget, ModelConfig, ResolvedModelInfo } from '../types/expert-routing.js';
+import { ExpertTarget } from '../types/expert-routing.js';
 import { buildChatCompletionsEndpoint } from '../utils/api-endpoint-builder.js';
 import crypto from 'crypto';
 
@@ -153,14 +153,12 @@ export class ExpertRouter {
       messagesToClassify = messagesToClassify.filter(m => m.role !== 'system' && m.role !== 'assistant');
     }
 
-    const lastUserMessage = messagesToClassify
-      .filter(m => m.role === 'user')
-      .pop();
-
-    if (!lastUserMessage) {
+    const userMessages = messagesToClassify.filter(m => m.role === 'user');
+    if (userMessages.length === 0) {
       throw new Error('No user message found for classification');
     }
 
+    const lastUserMessage = userMessages[userMessages.length - 1];
     let userPrompt = typeof lastUserMessage.content === 'string'
       ? lastUserMessage.content
       : JSON.stringify(lastUserMessage.content);
@@ -169,19 +167,51 @@ export class ExpertRouter {
       userPrompt = this.filterIgnoredTags(userPrompt, classifierConfig.ignored_tags);
     }
 
-    const classificationPrompt = classifierConfig.prompt_template
-      .split('{{USER_PROMPT}}').join(userPrompt)
-      .split('{{user_prompt}}').join(userPrompt);
+    let conversationContext = '';
+    if (userMessages.length > 1) {
+      const previousMessages = userMessages.slice(0, -1).slice(-3);
+      conversationContext = '\n\n# Conversation History (for context)\n';
+      conversationContext += previousMessages.map((msg, idx) => {
+        let content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+        if (classifierConfig.ignored_tags && classifierConfig.ignored_tags.length > 0) {
+          content = this.filterIgnoredTags(content, classifierConfig.ignored_tags);
+        }
+        return `Previous message ${idx + 1}: ${content}`;
+      }).join('\n');
+      conversationContext += '\n';
+    }
+
+    const promptWithContext = classifierConfig.prompt_template
+      .split('{{CONVERSATION_CONTEXT}}').join(conversationContext)
+      .split('{{conversation_context}}').join(conversationContext);
+
+    const userPromptMarkers = [
+      '---\nUser Prompt:\n{{USER_PROMPT}}\n---',
+      '---\nUser Prompt:\n{{user_prompt}}\n---',
+      '{{USER_PROMPT}}',
+      '{{user_prompt}}'
+    ];
+
+    let systemMessage: string = promptWithContext;
+    const userMessageContent: string = userPrompt;
+
+    for (const marker of userPromptMarkers) {
+      if (promptWithContext.includes(marker)) {
+        systemMessage = promptWithContext.split(marker)[0].trim();
+        break;
+      }
+    }
 
     const classificationRequest: any = {
       messages: [
-        { role: 'user', content: classificationPrompt }
+        { role: 'system', content: systemMessage },
+        { role: 'user', content: userMessageContent }
       ],
       temperature: classifierConfig.temperature ?? 0.0
     };
 
     if (classifierConfig.max_tokens !== 0) {
-      classificationRequest.max_tokens = classifierConfig.max_tokens || 50;
+      classificationRequest.max_tokens = classifierConfig.max_tokens || 100;
     }
 
     let provider;
@@ -241,9 +271,29 @@ export class ExpertRouter {
 
     const result = await response.json() as any;
 
-    const category = result.choices?.[0]?.message?.content?.trim();
-    if (!category) {
-      throw new Error('Empty classification result');
+    const rawContent = result.choices?.[0]?.message?.content?.trim();
+    if (!rawContent) {
+      throw new Error('Empty classification result from classifier');
+    }
+
+    let category: string;
+    try {
+      const parsedJson = JSON.parse(rawContent);
+      category = parsedJson.type;
+
+      if (!category) {
+        throw new Error('Missing "type" field in JSON response');
+      }
+    } catch (parseError: any) {
+      memoryLogger.error(
+        `分类器返回的内容不是有效的 JSON 格式: ${rawContent}`,
+        'ExpertRouter'
+      );
+      throw new Error(
+        `Classifier must return valid JSON format with "type" field. ` +
+        `Expected: {"type": "category_name"}. ` +
+        `Received: ${rawContent.substring(0, 100)}${rawContent.length > 100 ? '...' : ''}`
+      );
     }
 
     return {
