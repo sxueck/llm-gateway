@@ -3,7 +3,6 @@ import { appConfig, setPublicUrl, validatePublicUrl } from '../config/index.js';
 import { memoryLogger } from '../services/logger.js';
 import { apiRequestDb, routingConfigDb, modelDb, systemConfigDb, portkeyGatewayDb } from '../db/index.js';
 import { generatePortkeyConfig } from '../services/config-generator.js';
-import { portkeyManager } from '../services/portkey-manager.js';
 import { nanoid } from 'nanoid';
 
 
@@ -229,123 +228,6 @@ export async function configRoutes(fastify: FastifyInstance) {
       return {
         success: false,
         message: error.message || '重新生成配置文件失败',
-      };
-    }
-  });
-
-  fastify.get('/portkey/status', async () => {
-    try {
-      const status = await portkeyManager.getStatus();
-
-      return status;
-    } catch (error: any) {
-      memoryLogger.error(`获取 Portkey 状态失败: ${error.message}`, 'Config');
-      return {
-        running: false,
-        error: error.message,
-      };
-    }
-  });
-
-  fastify.post('/portkey/start', async () => {
-    try {
-      const result = await portkeyManager.start();
-      if (result.success) {
-        memoryLogger.info('Portkey Gateway 已启动', 'Config');
-      }
-      return result;
-    } catch (error: any) {
-      memoryLogger.error(`启动 Portkey Gateway 失败: ${error.message}`, 'Config');
-      return {
-        success: false,
-        message: error.message,
-      };
-    }
-  });
-
-  fastify.post('/portkey/stop', async () => {
-    try {
-      const result = await portkeyManager.stop();
-      if (result.success) {
-        memoryLogger.info('Portkey Gateway 已停止', 'Config');
-      }
-      return result;
-    } catch (error: any) {
-      memoryLogger.error(`停止 Portkey Gateway 失败: ${error.message}`, 'Config');
-      return {
-        success: false,
-        message: error.message,
-      };
-    }
-  });
-
-  fastify.post('/portkey/restart', async () => {
-    try {
-      const result = await portkeyManager.restart();
-      if (result.success) {
-        memoryLogger.info('Portkey Gateway 已重启', 'Config');
-      }
-      return result;
-    } catch (error: any) {
-      memoryLogger.error(`重启 Portkey Gateway 失败: ${error.message}`, 'Config');
-      return {
-        success: false,
-        message: error.message,
-      };
-    }
-  });
-
-  fastify.get('/portkey/logs', async (request) => {
-    try {
-      const { lines = 100 } = request.query as { lines?: number };
-      const result = await portkeyManager.getLogs(lines);
-      return result;
-    } catch (error: any) {
-      memoryLogger.error(`获取 Portkey 日志失败: ${error.message}`, 'Config');
-      return {
-        success: false,
-        message: error.message,
-      };
-    }
-  });
-
-  fastify.post('/portkey/remove', async () => {
-    try {
-      const result = await portkeyManager.remove();
-      if (result.success) {
-        memoryLogger.info('Portkey Gateway 容器已删除', 'Config');
-      }
-      return result;
-    } catch (error: any) {
-      memoryLogger.error(`删除 Portkey Gateway 容器失败: ${error.message}`, 'Config');
-      return {
-        success: false,
-        message: error.message,
-      };
-    }
-  });
-
-  fastify.post('/portkey/recreate', async () => {
-    try {
-      memoryLogger.info('重建 Portkey Gateway 容器', 'Config');
-
-      const removeResult = await portkeyManager.remove();
-      if (!removeResult.success) {
-        return removeResult;
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      const startResult = await portkeyManager.start();
-      if (startResult.success) {
-        memoryLogger.info('Portkey Gateway 容器已重建', 'Config');
-      }
-      return startResult;
-    } catch (error: any) {
-      memoryLogger.error(`重建 Portkey Gateway 容器失败: ${error.message}`, 'Config');
-      return {
-        success: false,
-        message: error.message,
       };
     }
   });

@@ -489,9 +489,9 @@ export class ExpertRouter {
 
       const openTag = `<${tagName}>`;
       const closeTag = `</${tagName}>`;
-      const regex = new RegExp(`${this.escapeRegex(openTag)}[\\s\\S]*?${this.escapeRegex(closeTag)}`, 'gi');
+      const regex = new RegExp(`${this.escapeRegex(openTag)}[\\s\\S]*?${this.escapeRegex(closeTag)}`, 'g');
 
-      filteredText = filteredText.replace(regex, '');
+      filteredText = filteredText.replace(regex, '').trim();
     }
 
     return filteredText.trim();
