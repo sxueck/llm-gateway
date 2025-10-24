@@ -10,9 +10,7 @@
     >
       <div class="logo">
         <div class="logo-icon">
-          <n-icon size="28" color="#0f6b4a">
-            <CloudOutline />
-          </n-icon>
+          <img src="/assets/logo.png" alt="LLM Gateway" style="width: 38px; height: 38px; object-fit: contain;" />
         </div>
         <span class="logo-text">LLM Gateway</span>
       </div>
@@ -255,13 +253,11 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #0f6b4a 0%, #0d5a3e 100%);
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(15, 107, 74, 0.2);
 }
 
 .logo-text {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 600;
   color: #1a1a1a;
   letter-spacing: -0.02em;

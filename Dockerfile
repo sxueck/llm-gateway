@@ -29,6 +29,7 @@ COPY web/package*.json ./
 RUN npm ci
 
 COPY web/tsconfig*.json web/vite.config.ts web/index.html ./
+COPY web/assets ./assets
 COPY web/src ./src
 RUN npm run build
 
