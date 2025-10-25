@@ -1,7 +1,5 @@
 import { FastifyInstance } from 'fastify';
 import { nanoid } from 'nanoid';
-import https from 'https';
-import http from 'http';
 import { portkeyGatewayDb, modelRoutingRuleDb } from '../db/index.js';
 import { memoryLogger } from '../services/logger.js';
 import { portkeyRouter } from '../services/portkey-router.js';
@@ -9,6 +7,7 @@ import { appConfig } from '../config/index.js';
 import type { PortkeyGateway } from '../types/index.js';
 import { NotFoundError } from '../utils/error-handler.js';
 import { AGENT_DEFAULTS } from '../constants/agent.js';
+import { makeHttpRequest } from './proxy/http-client.js';
 
 async function generateInstallScripts(gateway: PortkeyGateway) {
   const { generateInstallScript, generateInstallCommand } = await import('../services/agent-installer.js');
@@ -54,56 +53,29 @@ function buildHealthCheckResult(
 async function checkGatewayHealth(gateway: PortkeyGateway): Promise<HealthCheckResult> {
   const startTime = Date.now();
 
-  return new Promise((resolve) => {
-    try {
-      const url = new URL(`${gateway.url}/health`);
-      const isHttps = url.protocol === 'https:';
-      const requestModule = isHttps ? https : http;
-
-      const headers: Record<string, string> = {};
-      if (gateway.api_key) {
-        headers['X-Gateway-ID'] = gateway.id;
-        headers['X-API-Key'] = gateway.api_key;
-      }
-
-      const options: any = {
-        hostname: url.hostname,
-        port: url.port || (isHttps ? 443 : 80),
-        path: url.pathname + url.search,
-        method: 'GET',
-        headers,
-        timeout: 5000,
-      };
-
-      if (isHttps) {
-        options.rejectUnauthorized = false;
-      }
-
-      const req = requestModule.request(options, (res) => {
-        res.resume();
-
-        const latency = Date.now() - startTime;
-        if (res.statusCode === 200 || res.statusCode === 404) {
-          resolve(buildHealthCheckResult(gateway, true, latency));
-        } else {
-          resolve(buildHealthCheckResult(gateway, false, null, `HTTP ${res.statusCode}`));
-        }
-      });
-
-      req.on('error', (error: any) => {
-        resolve(buildHealthCheckResult(gateway, false, null, error.message));
-      });
-
-      req.on('timeout', () => {
-        req.destroy();
-        resolve(buildHealthCheckResult(gateway, false, null, 'Request timeout'));
-      });
-
-      req.end();
-    } catch (error: any) {
-      resolve(buildHealthCheckResult(gateway, false, null, error.message));
+  try {
+    const headers: Record<string, string> = {};
+    if (gateway.api_key) {
+      headers['X-Gateway-ID'] = gateway.id;
+      headers['X-API-Key'] = gateway.api_key;
     }
-  });
+
+    const response = await Promise.race([
+      makeHttpRequest(`${gateway.url}/health`, 'GET', headers),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Request timeout')), 5000)
+      )
+    ]);
+
+    const latency = Date.now() - startTime;
+    if (response.statusCode === 200 || response.statusCode === 404) {
+      return buildHealthCheckResult(gateway, true, latency);
+    } else {
+      return buildHealthCheckResult(gateway, false, null, `HTTP ${response.statusCode}`);
+    }
+  } catch (error: any) {
+    return buildHealthCheckResult(gateway, false, null, error.message);
+  }
 }
 
 export async function portkeyGatewayRoutes(fastify: FastifyInstance) {

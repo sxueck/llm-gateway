@@ -26,7 +26,7 @@
         <template #icon>
           <n-icon :component="InfoIcon" />
         </template>
-        预设库包含 {{ stats.totalModels }} 个模型，最后更新: {{ formatTime(stats.lastUpdate) }}
+        {{ presetsInfoText }}
       </n-alert>
 
       <div v-if="searchResults.length > 0" class="search-results">
@@ -95,7 +95,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import {
   NSpace,
   NInput,
@@ -112,11 +112,13 @@ import {
 } from 'naive-ui';
 import { Search as SearchIcon, InformationCircle as InfoIcon, Cube as ModelIcon } from '@vicons/ionicons5';
 import { litellmPresetsApi, type LiteLLMSearchResult, type LiteLLMStats } from '@/api/litellm-presets';
+import { useI18n } from 'vue-i18n';
 
 const emit = defineEmits<{
   select: [result: LiteLLMSearchResult];
 }>();
 
+const { t } = useI18n();
 const message = useMessage();
 const searchQuery = ref('');
 const searchResults = ref<LiteLLMSearchResult[]>([]);
@@ -124,6 +126,11 @@ const searching = ref(false);
 const updating = ref(false);
 const searched = ref(false);
 const stats = ref<LiteLLMStats | null>(null);
+
+const presetsInfoText = computed(() => {
+  if (!stats.value) return '';
+  return t('litellm.presetsInfo', [stats.value.totalModels, formatTime(stats.value.lastUpdate)]);
+});
 
 async function loadStats() {
   try {

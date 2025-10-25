@@ -237,7 +237,7 @@ export default {
   litellm: {
     searchPlaceholder: 'Search model name, e.g.: gpt-4, claude-3',
     updatePresets: 'Update Presets',
-    presetsInfo: 'Presets library contains {count} models, last updated: {time}',
+    presetsInfo: 'Presets library contains {0} models, last updated: {1}',
     noResults: 'No matching models found',
     searchPrompt: 'Please enter search keywords',
     searchFailed: 'Search failed',

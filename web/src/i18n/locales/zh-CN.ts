@@ -238,7 +238,7 @@ export default {
   litellm: {
     searchPlaceholder: '搜索模型名称，如: gpt-4, claude-3',
     updatePresets: '更新预设库',
-    presetsInfo: '预设库包含 {count} 个模型，最后更新: {time}',
+    presetsInfo: '预设库包含 {0} 个模型，最后更新: {1}',
     noResults: '未找到匹配的模型',
     searchPrompt: '请输入搜索关键词',
     searchFailed: '搜索失败',
