@@ -80,32 +80,32 @@
             </n-space>
           </n-card>
 
-          <n-card :title="t('expertRouting.originalRequest')" size="small">
+          <n-card :title="t('expertRouting.originalRequest')" size="small" class="log-detail-card">
             <n-code
               v-if="selectedLogDetail.original_request"
               :code="JSON.stringify(selectedLogDetail.original_request, null, 2)"
               language="json"
-              style="max-height: 300px; overflow: auto"
+              class="log-detail-code"
             />
             <n-empty v-else :description="t('common.noData')" />
           </n-card>
 
-          <n-card :title="t('expertRouting.classifierRequest')" size="small">
+          <n-card :title="t('expertRouting.classifierRequest')" size="small" class="log-detail-card">
             <n-code
               v-if="selectedLogDetail.classifier_request"
               :code="JSON.stringify(selectedLogDetail.classifier_request, null, 2)"
               language="json"
-              style="max-height: 300px; overflow: auto"
+              class="log-detail-code"
             />
             <n-empty v-else :description="t('common.noData')" />
           </n-card>
 
-          <n-card :title="t('expertRouting.classifierResponse')" size="small">
+          <n-card :title="t('expertRouting.classifierResponse')" size="small" class="log-detail-card">
             <n-code
               v-if="selectedLogDetail.classifier_response"
               :code="JSON.stringify(selectedLogDetail.classifier_response, null, 2)"
               language="json"
-              style="max-height: 300px; overflow: auto"
+              class="log-detail-code"
             />
             <n-empty v-else :description="t('common.noData')" />
           </n-card>
@@ -329,6 +329,38 @@ onMounted(() => {
 
 .category-item:hover {
   background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* 专家路由日志详情卡片样式 */
+.log-detail-card {
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.log-detail-card:last-child {
+  margin-bottom: 0;
+}
+
+.log-detail-code {
+  max-height: 300px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  word-break: break-all;
+  font-size: 12px;
+}
+
+/* 确保代码块在小屏幕上也能正确显示 */
+@media (max-height: 800px) {
+  .log-detail-code {
+    max-height: 200px;
+  }
+}
+
+@media (max-height: 600px) {
+  .log-detail-code {
+    max-height: 150px;
+  }
 }
 </style>
 

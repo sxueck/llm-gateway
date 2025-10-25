@@ -15,6 +15,8 @@ export interface ClassifierConfig {
   provider_id?: string;
   model?: string;
   prompt_template: string;
+  system_prompt?: string;
+  user_prompt_marker?: string;
   max_tokens?: number;
   temperature?: number;
   timeout?: number;

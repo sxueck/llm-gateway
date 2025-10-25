@@ -530,11 +530,19 @@ export class ExpertRouter {
     for (const marker of userPromptMarkers) {
       if (promptTemplate.includes(marker)) {
         const parts = promptTemplate.split(marker);
+
         if (parts.length !== 2) {
-          throw new Error(`Invalid prompt template format: marker "${marker}" found but template structure is incorrect`);
+          throw new Error(`Invalid prompt template format: marker "${marker}" appears ${parts.length - 1} times, expected exactly once`);
         }
+
+        const systemMessage = parts[0].trim();
+
+        if (!systemMessage) {
+          throw new Error(`Invalid prompt template format: marker "${marker}" is at the beginning, no system message found`);
+        }
+
         return {
-          systemMessage: parts[0].trim(),
+          systemMessage: systemMessage,
           userMessageContent: userPrompt
         };
       }

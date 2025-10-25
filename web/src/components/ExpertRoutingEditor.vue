@@ -40,19 +40,32 @@
             :virtual-model-options="virtualModelOptions"
           />
 
-          <n-form-item :label="t('expertRouting.classificationPrompt')" required>
-            <n-input
-              v-model:value="formValue.classifier.prompt_template"
-              type="textarea"
-              :rows="6"
-              :placeholder="t('expertRouting.classificationPromptPlaceholder')"
-            />
-            <template #feedback>
-              <n-text depth="3" style="font-size: 12px">
-                {{ t('expertRouting.classificationPromptHint') }}
-              </n-text>
-            </template>
-          </n-form-item>
+            <n-form-item :label="t('expertRouting.systemPrompt')" required>
+              <n-input
+                v-model:value="systemPrompt"
+                type="textarea"
+                :rows="8"
+                :placeholder="t('expertRouting.systemPromptPlaceholder')"
+              />
+              <template #feedback>
+                <n-text depth="3" style="font-size: 12px">
+                  {{ t('expertRouting.systemPromptHint') }}
+                </n-text>
+              </template>
+            </n-form-item>
+
+            <n-form-item :label="t('expertRouting.userPromptMarker')" required>
+              <n-input
+                v-model:value="userPromptMarker"
+                :placeholder="t('expertRouting.userPromptMarkerPlaceholder')"
+              />
+              <template #feedback>
+                <n-text depth="3" style="font-size: 12px">
+                  {{ t('expertRouting.userPromptMarkerHint') }}
+                </n-text>
+              </template>
+            </n-form-item>
+
 
           <n-grid :cols="2" :x-gap="12">
             <n-gi>
@@ -63,6 +76,11 @@
                   :max="1000"
                   style="width: 100%"
                 />
+                <template #feedback>
+                  <n-text depth="3" style="font-size: 12px">
+                    {{ t('expertRouting.maxTokensHint') }}
+                  </n-text>
+                </template>
               </n-form-item>
             </n-gi>
             <n-gi>
@@ -74,6 +92,11 @@
                   :step="0.1"
                   style="width: 100%"
                 />
+                <template #feedback>
+                  <n-text depth="3" style="font-size: 12px">
+                    {{ t('expertRouting.temperatureHint') }}
+                  </n-text>
+                </template>
               </n-form-item>
             </n-gi>
           </n-grid>
@@ -86,6 +109,11 @@
               :step="1000"
               style="width: 100%"
             />
+            <template #feedback>
+              <n-text depth="3" style="font-size: 12px">
+                {{ t('expertRouting.timeoutHint') }}
+              </n-text>
+            </template>
           </n-form-item>
 
           <n-form-item :label="t('expertRouting.ignoreSystemMessages')">
@@ -232,6 +260,47 @@ const ignoredTagsInput = ref<string>(
   props.config.classifier.ignored_tags?.join(', ') || ''
 );
 
+const systemPrompt = ref('');
+const userPromptMarker = ref('---\nUser Prompt:\n{{USER_PROMPT}}\n---');
+
+// 设置分类器性能参数默认值
+if (formValue.value.classifier.temperature === undefined) {
+  formValue.value.classifier.temperature = 0;
+}
+if (formValue.value.classifier.max_tokens === undefined) {
+  formValue.value.classifier.max_tokens = 50;
+}
+if (formValue.value.classifier.timeout === undefined) {
+  formValue.value.classifier.timeout = 10000;
+}
+
+function parsePromptTemplate(template: string) {
+  const markers = [
+    '---\nUser Prompt:\n{{USER_PROMPT}}\n---',
+    '---\nUser Prompt:\n{{user_prompt}}\n---',
+    '{{USER_PROMPT}}',
+    '{{user_prompt}}'
+  ];
+
+  for (const marker of markers) {
+    if (template.includes(marker)) {
+      const parts = template.split(marker);
+      if (parts.length === 2) {
+        systemPrompt.value = parts[0].trim();
+        userPromptMarker.value = marker;
+        return;
+      }
+    }
+  }
+
+  // 若无标记，视为全部为系统提示词
+  systemPrompt.value = template.trim();
+}
+
+if (props.config.classifier.prompt_template) {
+  parsePromptTemplate(props.config.classifier.prompt_template);
+}
+
 const providerOptions = computed(() =>
   providerStore.providers.map((p) => ({
     label: p.name,
@@ -261,6 +330,10 @@ function handleNext() {
 }
 
 function handleSave() {
+  formValue.value.classifier.prompt_template = `${systemPrompt.value}\n${userPromptMarker.value}`;
+  formValue.value.classifier.system_prompt = systemPrompt.value;
+  formValue.value.classifier.user_prompt_marker = userPromptMarker.value;
+
   if (enableFallback.value) {
     formValue.value.fallback = {
       type: fallbackType.value,

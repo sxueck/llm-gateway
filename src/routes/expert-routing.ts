@@ -21,6 +21,8 @@ const classifierConfigSchema = z.object({
   provider_id: z.string().optional(),
   model: z.string().optional(),
   prompt_template: z.string(),
+  system_prompt: z.string().optional(),
+  user_prompt_marker: z.string().optional(),
   max_tokens: z.number().optional(),
   temperature: z.number().optional(),
   timeout: z.number().optional(),
