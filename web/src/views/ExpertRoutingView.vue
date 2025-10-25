@@ -23,8 +23,10 @@
       </n-space>
 
       <n-alert v-if="showExperimentalAlert" type="info" closable @close="handleCloseExperimentalAlert">
-        <template #header>{{ t('expertRouting.experimentalFeature') }}</template>
-        {{ t('expertRouting.experimentalFeatureDesc') }}
+        <template #header>
+          <div style="font-size: 14px; font-weight: 500;">{{ t('expertRouting.experimentalFeature') }}</div>
+        </template>
+        <div style="font-size: 13px;">{{ t('expertRouting.experimentalFeatureDesc') }}</div>
       </n-alert>
 
       <n-spin :show="loading">

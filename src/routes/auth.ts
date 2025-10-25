@@ -98,5 +98,11 @@ export async function authRoutes(fastify: FastifyInstance) {
       username: user.username,
     };
   });
+
+  fastify.get('/users', {
+    onRequest: [fastify.authenticate],
+  }, async () => {
+    return userDb.getAll();
+  });
 }
 

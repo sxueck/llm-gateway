@@ -1,12 +1,12 @@
 <template>
   <div>
     <n-space vertical :size="24">
-      <n-card title="系统设置">
+      <n-card :title="$t('settings.title')">
         <n-space vertical :size="16">
           <n-space align="center" justify="space-between">
             <div>
-              <div>允许新用户注册</div>
-              <n-text depth="3" style="font-size: 12px;">控制是否允许新用户通过注册页面创建账号</n-text>
+              <div>{{ $t('settings.allowRegistration') }}</div>
+              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.allowRegistrationDesc') }}</n-text>
             </div>
             <n-switch :value="allowRegistration" @update:value="onToggleAllowRegistration" />
           </n-space>
@@ -15,60 +15,49 @@
 
           <n-space align="center" justify="space-between">
             <div>
-              <div>启用 CORS 跨域支持</div>
-              <n-text depth="3" style="font-size: 12px;">
-                允许浏览器端应用跨域访问 API
-              </n-text>
+              <div>{{ $t('settings.enableCors') }}</div>
+              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.enableCorsDesc') }}</n-text>
             </div>
             <n-switch :value="corsEnabled" @update:value="onToggleCorsEnabled" />
           </n-space>
 
           <n-alert type="warning" v-if="corsEnabled">
-            <template #header>CORS 兼容性提示</template>
-            <n-text>
-              启用 CORS 后，任何域名的浏览器端应用都可以访问此网关的 API。
-              这对于 Open WebUI 等浏览器端应用是必需的，但可能带来安全风险。
-              建议仅在需要浏览器端访问时启用，或配置反向代理限制访问来源。
-            </n-text>
+            <template #header>
+              <div style="font-size: 14px; font-weight: 500;">{{ $t('settings.corsWarning.title') }}</div>
+            </template>
+            <n-text style="font-size: 13px;">{{ $t('settings.corsWarning.content') }}</n-text>
           </n-alert>
 
           <n-alert type="info" v-else>
-            <template #header>CORS 已禁用</template>
-            <n-text>
-              当前已禁用 CORS 跨域支持。浏览器端应用（如 Open WebUI）将无法直接访问此网关。
-              服务端应用（如 Cursor、VS Code 插件）不受影响。
-              如需使用浏览器端应用，请启用 CORS 或通过反向代理配置跨域。
-            </n-text>
+            <template #header>
+              <div style="font-size: 14px; font-weight: 500;">{{ $t('settings.corsDisabled.title') }}</div>
+            </template>
+            <n-text style="font-size: 13px;">{{ $t('settings.corsDisabled.content') }}</n-text>
           </n-alert>
 
           <n-divider style="margin: 8px 0;" />
 
           <n-space align="center" justify="space-between">
             <div>
-              <div>LiteLLM 兼容模式</div>
-              <n-text depth="3" style="font-size: 12px;">
-                开启后可在 RooCode / KiloCode 等工具中选择 LiteLLM 类型，自动复用预设库中的上下文大小和功能支持等配置
-              </n-text>
+              <div>{{ $t('settings.litellmCompat') }}</div>
+              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.litellmCompatDesc') }}</n-text>
             </div>
             <n-switch :value="litellmCompatEnabled" @update:value="onToggleLitellmCompat" />
           </n-space>
 
           <n-alert type="info" v-if="litellmCompatEnabled">
-            <template #header>LiteLLM 兼容模式已启用</template>
-            <n-text>
-              已启用 <n-text code>/v1/model/info</n-text> 端点，返回 LiteLLM 格式的模型信息。
-              可在 Roo Code、Continue 等支持 LiteLLM 的工具中使用，自动获取模型的上下文窗口大小、功能支持等配置。
-            </n-text>
+            <template #header>
+              <div style="font-size: 14px; font-weight: 500;">{{ $t('settings.litellmCompatEnabled.title') }}</div>
+            </template>
+            <n-text style="font-size: 13px;">{{ $t('settings.litellmCompatEnabled.content') }}</n-text>
           </n-alert>
 
           <n-divider style="margin: 8px 0;" />
 
           <n-space vertical :size="8" style="width: 100%;">
             <div>
-              <div>LLM Gateway 公网访问地址</div>
-              <n-text depth="3" style="font-size: 12px;">
-                用于 Agent 回调的 LLM Gateway 地址，如部署在公网服务器上，请设置为实际的公网地址
-              </n-text>
+              <div>{{ $t('settings.publicUrl') }}</div>
+              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.publicUrlDesc') }}</n-text>
             </div>
             <n-space :size="8" style="width: 100%;">
               <n-input
@@ -85,43 +74,52 @@
                 :disabled="!isPublicUrlChanged"
                 @click="onSavePublicUrl"
               >
-                保存
+                {{ $t('common.save') }}
               </n-button>
               <n-button
                 size="small"
                 :disabled="!isPublicUrlChanged"
                 @click="onResetPublicUrl"
               >
-                重置
+                {{ $t('common.reset') }}
               </n-button>
             </n-space>
             <n-text depth="3" style="font-size: 12px;">
-              当前值: {{ publicUrl }}
+              {{ $t('settings.publicUrlCurrent', { url: publicUrl }) }}
             </n-text>
           </n-space>
 
           <n-alert type="info">
-            <template #header>配置说明</template>
-            <n-text>
-              此地址将在生成 Agent 安装脚本时使用，Agent 会通过此地址与 LLM Gateway 通信。
-              修改后会立即生效，但已安装的 Agent 需要手动更新配置文件并重启服务。
-            </n-text>
+            <template #header>
+              <div style="font-size: 14px; font-weight: 500;">{{ $t('settings.publicUrlConfig.title') }}</div>
+            </template>
+            <n-text style="font-size: 13px;">{{ $t('settings.publicUrlConfig.content') }}</n-text>
           </n-alert>
         </n-space>
       </n-card>
 
-      <n-card title="系统信息">
+      <n-card :title="$t('common.systemInfo')">
         <n-descriptions :column="1" bordered>
-          <n-descriptions-item label="当前用户">
-            {{ authStore.user?.username || '-' }}
+          <n-descriptions-item :label="$t('common.currentUser')">
+            <n-space>
+              <template v-for="user in allUsers" :key="user.id">
+                <n-text
+                  :type="user.id === authStore.user?.id ? 'primary' : 'default'"
+                  :strong="user.id === authStore.user?.id"
+                >
+                  {{ user.username }}
+                </n-text>
+                <n-text v-if="user.id !== allUsers[allUsers.length - 1].id" depth="3"> / </n-text>
+              </template>
+            </n-space>
           </n-descriptions-item>
-          <n-descriptions-item label="提供商数量">
+          <n-descriptions-item :label="$t('common.providerCount')">
             {{ providerStore.providers.length }}
           </n-descriptions-item>
-          <n-descriptions-item label="虚拟密钥数量">
+          <n-descriptions-item :label="$t('common.virtualKeyCount')">
             {{ virtualKeyStore.virtualKeys.length }}
           </n-descriptions-item>
-          <n-descriptions-item label="启用的密钥">
+          <n-descriptions-item :label="$t('common.enabledKeys')">
             {{ enabledKeysCount }}
           </n-descriptions-item>
         </n-descriptions>
@@ -133,12 +131,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { NSpace, NCard, NDescriptions, NDescriptionsItem, NSwitch, NAlert, NText, NDivider, NInput, NButton, useMessage, useDialog } from 'naive-ui';
+import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/auth';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
+import type { User } from '@/types';
 
 import { configApi } from '@/api/config';
+import { authApi } from '@/api/auth';
 
+const { t } = useI18n();
 const authStore = useAuthStore();
 const providerStore = useProviderStore();
 const virtualKeyStore = useVirtualKeyStore();
@@ -151,6 +153,7 @@ const litellmCompatEnabled = ref(false);
 const publicUrl = ref('');
 const publicUrlInput = ref('');
 const savingPublicUrl = ref(false);
+const allUsers = ref<User[]>([]);
 
 const isPublicUrlChanged = computed(() => {
   return publicUrlInput.value.trim() !== '' && publicUrlInput.value !== publicUrl.value;
@@ -160,26 +163,26 @@ async function onToggleAllowRegistration(val: boolean) {
   try {
     await configApi.updateSystemSettings({ allowRegistration: val });
     allowRegistration.value = val;
-    message.success('设置已保存');
+    message.success(t('messages.operationSuccess'));
   } catch (e: any) {
-    message.error('保存失败');
+    message.error(t('messages.operationFailed'));
   }
 }
 
 async function onToggleCorsEnabled(val: boolean) {
   if (!val) {
     dialog.warning({
-      title: '确认禁用 CORS',
-      content: '禁用 CORS 后，浏览器端应用（如 Open WebUI）将无法直接访问此网关。服务端应用不受影响。确定要禁用吗？',
-      positiveText: '确定禁用',
-      negativeText: '取消',
+      title: t('common.confirm'),
+      content: t('settings.corsDisabled.content'),
+      positiveText: t('common.confirm'),
+      negativeText: t('common.cancel'),
       onPositiveClick: async () => {
         try {
           await configApi.updateSystemSettings({ corsEnabled: val });
           corsEnabled.value = val;
-          message.warning('CORS 已禁用，需要重启服务才能生效');
+          message.warning(t('messages.operationSuccess'));
         } catch (e: any) {
-          message.error('保存失败');
+          message.error(t('messages.operationFailed'));
         }
       }
     });
@@ -187,9 +190,9 @@ async function onToggleCorsEnabled(val: boolean) {
     try {
       await configApi.updateSystemSettings({ corsEnabled: val });
       corsEnabled.value = val;
-      message.success('CORS 已启用，需要重启服务才能生效');
+      message.success(t('messages.operationSuccess'));
     } catch (e: any) {
-      message.error('保存失败');
+      message.error(t('messages.operationFailed'));
     }
   }
 }
@@ -198,9 +201,9 @@ async function onToggleLitellmCompat(val: boolean) {
   try {
     await configApi.updateSystemSettings({ litellmCompatEnabled: val });
     litellmCompatEnabled.value = val;
-    message.success(val ? 'LiteLLM 兼容模式已启用' : 'LiteLLM 兼容模式已禁用');
+    message.success(t('messages.operationSuccess'));
   } catch (e: any) {
-    message.error('保存失败');
+    message.error(t('messages.operationFailed'));
   }
 }
 
@@ -211,9 +214,9 @@ async function onSavePublicUrl() {
     savingPublicUrl.value = true;
     await configApi.updateSystemSettings({ publicUrl: url });
     publicUrl.value = url;
-    message.success('LLM Gateway URL 已更新');
+    message.success(t('messages.operationSuccess'));
   } catch (e: any) {
-    message.error(e.message || '保存失败');
+    message.error(e.message || t('messages.operationFailed'));
   } finally {
     savingPublicUrl.value = false;
   }
@@ -234,6 +237,13 @@ onMounted(async () => {
   litellmCompatEnabled.value = s.litellmCompatEnabled;
   publicUrl.value = s.publicUrl;
   publicUrlInput.value = s.publicUrl;
+  
+  try {
+    allUsers.value = await authApi.getAllUsers();
+  } catch (error) {
+    console.error('获取用户列表失败:', error);
+  }
+  
   await Promise.all([
     providerStore.fetchProviders(),
     virtualKeyStore.fetchVirtualKeys(),

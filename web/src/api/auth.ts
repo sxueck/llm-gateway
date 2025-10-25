@@ -13,5 +13,9 @@ export const authApi = {
   getProfile(): Promise<User> {
     return request.get('/auth/profile');
   },
+
+  getAllUsers(): Promise<User[]> {
+    return request.get('/auth/users');
+  },
 };
 

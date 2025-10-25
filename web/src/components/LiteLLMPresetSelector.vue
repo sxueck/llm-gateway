@@ -26,7 +26,7 @@
         <template #icon>
           <n-icon :component="InfoIcon" />
         </template>
-        {{ presetsInfoText }}
+        <div style="font-size: 13px;">{{ presetsInfoText }}</div>
       </n-alert>
 
       <div v-if="searchResults.length > 0" class="search-results">

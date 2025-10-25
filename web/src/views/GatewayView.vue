@@ -136,8 +136,10 @@
       <n-card title="配置文件管理">
         <n-space vertical :size="16">
           <n-alert type="info">
-            <template #header>关于配置文件</template>
-            <n-text>
+            <template #header>
+              <div style="font-size: 14px; font-weight: 500;">关于配置文件</div>
+            </template>
+            <n-text style="font-size: 13px;">
               Portkey Gateway 使用 <n-text code>portkey-config/conf.json</n-text> 作为配置文件。
               当提供商或虚拟密钥发生变化时，系统会自动重新生成配置文件。
               配置文件更新后，需要重启 Gateway 才能生效。

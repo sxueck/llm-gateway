@@ -48,7 +48,7 @@
 
       <div v-if="currentStep === 3" class="step-panel">
         <n-alert v-if="localConfigType === 'fallback'" type="info" style="margin-bottom: 16px;">
-          {{ t('wizard.fallbackPriorityTip') }}
+          <div style="font-size: 13px;">{{ t('wizard.fallbackPriorityTip') }}</div>
         </n-alert>
 
         <n-space vertical :size="12">
@@ -147,7 +147,7 @@
 
       <div v-if="currentStep === 4" class="step-panel">
         <n-alert type="info" style="margin-bottom: 16px;">
-          {{ t('wizard.modelAttributesInfo') }}
+          <div style="font-size: 13px;">{{ t('wizard.modelAttributesInfo') }}</div>
         </n-alert>
 
         <n-space vertical :size="12">

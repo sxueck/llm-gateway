@@ -150,7 +150,7 @@
         size="small"
       >
         <n-alert type="info" style="margin-bottom: 16px">
-          需要在目标服务器执行生成的安装命令（需要 Docker 环境）
+          <div style="font-size: 13px;">需要在目标服务器执行生成的安装命令（需要 Docker 环境）</div>
         </n-alert>
         <n-form-item label="网关名称" path="name">
           <n-input v-model:value="agentFormValue.name" placeholder="例如: US Gateway" />
@@ -212,8 +212,10 @@
 
       <div v-else>
         <n-alert type="success" style="margin-bottom: 16px">
-          <template #header>安装脚本已生成</template>
-          请复制以下命令到目标服务器执行
+          <template #header>
+            <div style="font-size: 14px; font-weight: 500;">安装脚本已生成</div>
+          </template>
+          <div style="font-size: 13px;">请复制以下命令到目标服务器执行</div>
         </n-alert>
 
         <n-space vertical :size="12">

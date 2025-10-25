@@ -95,9 +95,11 @@
     >
       <n-space vertical :size="12">
         <n-alert type="info" size="small">
-          每行一个模型，格式：模型名称|模型标识符|描述（可选）
-          <br>
-          示例：GPT-4 Turbo|gpt-4-turbo-preview|最新的GPT-4模型
+          <div style="font-size: 13px;">
+            每行一个模型，格式：模型名称|模型标识符|描述（可选）
+            <br>
+            示例：GPT-4 Turbo|gpt-4-turbo-preview|最新的GPT-4模型
+          </div>
         </n-alert>
         
         <n-input

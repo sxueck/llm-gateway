@@ -519,6 +519,18 @@ export const userDb = {
       updated_at: row[4] as number,
     };
   },
+
+  getAll(): User[] {
+    const result = db.exec('SELECT * FROM users ORDER BY username');
+    if (result.length === 0) return [];
+    return result[0].values.map(row => ({
+      id: row[0] as string,
+      username: row[1] as string,
+      password_hash: row[2] as string,
+      created_at: row[3] as number,
+      updated_at: row[4] as number,
+    }));
+  },
 };
 
 export const providerDb = {

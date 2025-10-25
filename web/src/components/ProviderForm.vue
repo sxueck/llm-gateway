@@ -78,7 +78,7 @@
           :closable="false"
           :bordered="false"
         >
-          <div style="font-size: 12px">当前提供商已配置 API Key，如需更新请输入新的密钥</div>
+          <div style="font-size: 13px;">当前提供商已配置 API Key，如需更新请输入新的密钥</div>
         </n-alert>
         <n-alert
           v-if="keyValidation.message"
@@ -96,7 +96,7 @@
           :closable="false"
           :bordered="false"
         >
-          <div style="font-size: 12px; margin-top: 4px;">
+          <div style="font-size: 13px; margin-top: 4px;">
             该提供商可能不支持标准的 /models 接口。您可以在创建提供商后，通过"批量添加模型"功能手动添加模型。
           </div>
         </n-alert>

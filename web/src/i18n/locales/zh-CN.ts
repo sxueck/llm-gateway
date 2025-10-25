@@ -46,6 +46,11 @@ export default {
     responseBody: '响应体',
     time: '时间',
     details: '详情',
+    systemInfo: '系统信息',
+    currentUser: '当前用户',
+    providerCount: '提供商数量',
+    virtualKeyCount: '虚拟密钥数量',
+    enabledKeys: '启用的密钥',
   },
   layout: {
     appName: 'LLM Gateway',
@@ -234,6 +239,31 @@ export default {
     theme: '主题设置',
     general: '通用设置',
     security: '安全设置',
+    allowRegistration: '允许新用户注册',
+    allowRegistrationDesc: '控制是否允许新用户通过注册页面创建账号',
+    enableCors: '启用 CORS 跨域支持',
+    enableCorsDesc: '允许浏览器端应用跨域访问 API',
+    corsWarning: {
+      title: 'CORS 兼容性提示',
+      content: '启用 CORS 后，任何域名的浏览器端应用都可以访问此网关的 API。这对于 Open WebUI 等浏览器端应用是必需的，但可能带来安全风险。建议仅在需要浏览器端访问时启用，或配置反向代理限制访问来源。',
+    },
+    corsDisabled: {
+      title: 'CORS 已禁用',
+      content: '当前已禁用 CORS 跨域支持。浏览器端应用（如 Open WebUI）将无法直接访问此网关。服务端应用（如 Cursor、VS Code 插件）不受影响。如需使用浏览器端应用，请启用 CORS 或通过反向代理配置跨域。',
+    },
+    litellmCompat: 'LiteLLM 兼容模式',
+    litellmCompatDesc: '开启后可在 RooCode / KiloCode 等工具中选择 LiteLLM 类型，自动复用预设库中的上下文大小和功能支持等配置',
+    litellmCompatEnabled: {
+      title: 'LiteLLM 兼容模式已启用',
+      content: '已启用 /v1/model/info 端点，返回 LiteLLM 格式的模型信息。可在 Roo Code、Continue 等支持 LiteLLM 的工具中使用，自动获取模型的上下文窗口大小、功能支持等配置。',
+    },
+    publicUrl: 'LLM Gateway 公网访问地址',
+    publicUrlDesc: '用于 Agent 回调的 LLM Gateway 地址，如部署在公网服务器上，请设置为实际的公网地址',
+    publicUrlCurrent: '当前值: {url}',
+    publicUrlConfig: {
+      title: '配置说明',
+      content: '此地址将在生成 Agent 安装脚本时使用，Agent 会通过此地址与 LLM Gateway 通信。修改后会立即生效，但已安装的 Agent 需要手动更新配置文件并重启服务。',
+    },
   },
   litellm: {
     searchPlaceholder: '搜索模型名称，如: gpt-4, claude-3',

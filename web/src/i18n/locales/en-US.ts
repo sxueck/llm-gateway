@@ -46,6 +46,11 @@ export default {
     responseBody: 'Response Body',
     time: 'Time',
     details: 'Details',
+    systemInfo: 'System Information',
+    currentUser: 'Current User',
+    providerCount: 'Provider Count',
+    virtualKeyCount: 'Virtual Key Count',
+    enabledKeys: 'Enabled Keys',
   },
   layout: {
     appName: 'LLM Gateway',
@@ -233,6 +238,31 @@ export default {
     theme: 'Theme',
     general: 'General',
     security: 'Security',
+    allowRegistration: 'Allow New User Registration',
+    allowRegistrationDesc: 'Control whether new users can create accounts through the registration page',
+    enableCors: 'Enable CORS Cross-Origin Support',
+    enableCorsDesc: 'Allow browser-side applications to access the API cross-origin',
+    corsWarning: {
+      title: 'CORS Compatibility Notice',
+      content: 'When CORS is enabled, browser-side applications from any domain can access this gateway\'s API. This is required for browser-side applications like Open WebUI, but may pose security risks. It is recommended to enable only when browser-side access is needed, or configure a reverse proxy to restrict access sources.',
+    },
+    corsDisabled: {
+      title: 'CORS Disabled',
+      content: 'CORS cross-origin support is currently disabled. Browser-side applications (like Open WebUI) will not be able to directly access this gateway. Server-side applications (like Cursor, VS Code extensions) are not affected. If you need to use browser-side applications, please enable CORS or configure cross-origin through a reverse proxy.',
+    },
+    litellmCompat: 'LiteLLM Compatibility Mode',
+    litellmCompatDesc: 'When enabled, you can select LiteLLM type in tools like RooCode / KiloCode, automatically reusing context size and feature support configurations from the preset library.',
+    litellmCompatEnabled: {
+      title: 'LiteLLM Compatibility Mode Enabled',
+      content: 'The /v1/model/info endpoint is enabled, returning model information in LiteLLM format. Can be used in tools that support LiteLLM like Roo Code, Continue, etc., automatically obtaining model context window size, feature support, and other configurations.',
+    },
+    publicUrl: 'LLM Gateway Public Access URL',
+    publicUrlDesc: 'LLM Gateway address for Agent callbacks. If deployed on a public server, set to the actual public address.',
+    publicUrlCurrent: 'Current value: {url}',
+    publicUrlConfig: {
+      title: 'Configuration Instructions',
+      content: 'This address will be used when generating Agent installation scripts. Agents will communicate with LLM Gateway through this address. Changes take effect immediately, but installed Agents need to manually update configuration files and restart services.',
+    },
   },
   litellm: {
     searchPlaceholder: 'Search model name, e.g.: gpt-4, claude-3',
