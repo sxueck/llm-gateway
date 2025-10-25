@@ -17,14 +17,50 @@
       </n-space>
 
       <n-card class="table-card">
+        <template #header>
+          <n-space justify="space-between" align="center">
+            <n-space :size="12" align="center">
+              <span style="font-size: 13px; color: #666;">{{ t('models.itemsPerPage') }}</span>
+              <n-select
+                v-model:value="pageSize"
+                :options="pageSizeOptions"
+                size="small"
+                style="width: 100px;"
+              />
+            </n-space>
+            <n-space :size="12" align="center">
+              <span style="font-size: 13px; color: #666;">{{ t('models.groupByProvider') }}</span>
+              <n-switch v-model:value="groupByProvider" size="small" />
+            </n-space>
+          </n-space>
+        </template>
+
+        <div v-if="groupByProvider">
+          <div v-for="group in groupedModels" :key="group.providerId" class="provider-group">
+            <div class="provider-group-header">
+              <span class="provider-name">{{ group.providerName }}</span>
+              <span class="model-count">{{ t('models.modelCount', { count: group.models.length }) }}</span>
+            </div>
+            <n-data-table
+              :columns="columns"
+              :data="group.models"
+              :loading="modelStore.loading"
+              :pagination="false"
+              :bordered="false"
+              size="small"
+            />
+          </div>
+        </div>
+
         <n-data-table
+          v-else
           :columns="columns"
           :data="modelStore.models"
           :loading="modelStore.loading"
-          :pagination="{ pageSize: 10 }"
+          :pagination="paginationConfig"
           :bordered="false"
           size="small"
-          :max-height="560"
+          :max-height="calculateTableHeight()"
         />
       </n-card>
     </n-space>
@@ -162,6 +198,48 @@ const submitting = ref(false);
 const editingId = ref<string | null>(null);
 const batchProviderId = ref<string>('');
 const testingModel = ref<Model | null>(null);
+const pageSize = ref(20);
+const groupByProvider = ref(false);
+
+const pageSizeOptions = [
+  { label: t('models.pageSizeOptions.10'), value: 10 },
+  { label: t('models.pageSizeOptions.20'), value: 20 },
+  { label: t('models.pageSizeOptions.50'), value: 50 },
+  { label: t('models.pageSizeOptions.100'), value: 100 },
+];
+
+const paginationConfig = computed(() => ({
+  pageSize: pageSize.value,
+}));
+
+const groupedModels = computed(() => {
+  if (!groupByProvider.value) {
+    return [];
+  }
+
+  const groups = new Map<string, { providerId: string; providerName: string; models: Model[] }>();
+
+  modelStore.models.forEach(model => {
+    const providerId = model.providerId || 'virtual';
+    const providerName = model.providerName || t('models.virtualModel');
+
+    if (!groups.has(providerId)) {
+      groups.set(providerId, {
+        providerId,
+        providerName,
+        models: [],
+      });
+    }
+
+    groups.get(providerId)!.models.push(model);
+  });
+
+  return Array.from(groups.values()).sort((a, b) => {
+    if (a.providerId === 'virtual') return 1;
+    if (b.providerId === 'virtual') return -1;
+    return a.providerName.localeCompare(b.providerName);
+  });
+});
 
 const formValue = ref<{
   name: string;
@@ -200,7 +278,7 @@ const columns = computed(() => [
       if (row.isVirtual) {
         const tags: any[] = [];
         if (row.expertRoutingId) {
-          tags.push(h(NTag, { type: 'warning', size: 'small', round: true }, { default: () => '专家模型' }));
+          tags.push(h(NTag, { type: 'warning', size: 'small', round: true }, { default: () => t('models.expertModel') }));
         } else {
           tags.push(h(NTag, { type: 'info', size: 'small', round: true }, { default: () => t('menu.virtualModels') }));
         }
@@ -411,6 +489,15 @@ function handleTest(model: Model) {
   showTestModal.value = true;
 }
 
+function calculateTableHeight() {
+  const rowHeight = 42;
+  const headerHeight = 42;
+  const paginationHeight = 48;
+  const margin = 20;
+  
+  return pageSize.value * rowHeight + headerHeight + paginationHeight + margin;
+}
+
 onMounted(async () => {
   await Promise.all([
     modelStore.fetchModels(),
@@ -541,6 +628,40 @@ onMounted(async () => {
 .model-modal :deep(.n-card__footer) {
   padding: 12px 20px;
   border-top: 1px solid #e8e8e8;
+}
+
+.table-card :deep(.n-card__header) {
+  padding: 16px 20px;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.provider-group {
+  margin-bottom: 24px;
+}
+
+.provider-group:last-child {
+  margin-bottom: 0;
+}
+
+.provider-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.provider-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.model-count {
+  font-size: 12px;
+  color: #8c8c8c;
 }
 </style>
 

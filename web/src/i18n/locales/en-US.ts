@@ -161,6 +161,17 @@ export default {
     performanceParams: 'Performance Parameters',
     costParams: 'Cost Parameters',
     featureSupport: 'Feature Support',
+    itemsPerPage: 'Items per page:',
+    groupByProvider: 'Group by provider:',
+    modelCount: '{count} models',
+    virtualModel: 'Virtual Model',
+    expertModel: 'Expert Model',
+    pageSizeOptions: {
+      10: '10 items/page',
+      20: '20 items/page',
+      50: '50 items/page',
+      100: '100 items/page',
+    },
   },
   virtualModels: {
     title: 'Smart Routing',

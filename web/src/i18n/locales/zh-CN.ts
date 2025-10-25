@@ -162,6 +162,17 @@ export default {
     performanceParams: '性能参数',
     costParams: '成本参数',
     featureSupport: '功能支持',
+    itemsPerPage: '每页显示：',
+    groupByProvider: '按供应商分组：',
+    modelCount: '{count} 个模型',
+    virtualModel: '虚拟模型',
+    expertModel: '专家模型',
+    pageSizeOptions: {
+      10: '10 条/页',
+      20: '20 条/页',
+      50: '50 条/页',
+      100: '100 条/页',
+    },
   },
   virtualModels: {
     title: '智能路由',
