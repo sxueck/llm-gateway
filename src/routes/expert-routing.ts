@@ -121,7 +121,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         id: configId,
         name: body.name,
         description: body.description,
-        enabled: body.enabled !== false ? 1 : 0,
+        enabled: body.enabled === false ? 0 : 1,
         config: JSON.stringify(configData),
       });
 
@@ -249,7 +249,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         throw new Error('专家路由配置不存在');
       }
 
-      const timeRangeMs = timeRange ? parseInt(timeRange) : undefined;
+      const timeRangeMs = timeRange ? Number.parseInt(timeRange) : undefined;
       const stats = expertRoutingLogDb.getStatistics(id, timeRangeMs);
 
       return stats;
@@ -269,7 +269,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         throw new Error('专家路由配置不存在');
       }
 
-      const limitNum = limit ? parseInt(limit) : 100;
+      const limitNum = limit ? Number.parseInt(limit) : 100;
       const logs = expertRoutingLogDb.getByConfigId(id, limitNum);
 
       return { logs };
@@ -289,7 +289,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         throw new Error('专家路由配置不存在');
       }
 
-      const limitNum = limit ? parseInt(limit) : 100;
+      const limitNum = limit ? Number.parseInt(limit) : 100;
       const logs = expertRoutingLogDb.getByCategory(id, category, limitNum);
 
       return { logs };
@@ -413,7 +413,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
   fastify.get('/preferences/preview-width', async () => {
     try {
       const config = systemConfigDb.get('expert_routing_preview_width');
-      const width = config ? parseInt(config.value, 10) : 600;
+      const width = config ? Number.parseInt(config.value, 10) : 600;
 
       return { width };
     } catch (error: any) {

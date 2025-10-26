@@ -26,7 +26,8 @@ class MemoryLogger {
       this.logs.shift();
     }
 
-    console.log(`[${level}] ${module ? `[${module}] ` : ''}${message}`, metadata || '');
+    const modulePrefix = module ? `[${module}] ` : '';
+    console.log(`[${level}] ${modulePrefix}${message}`, metadata || '');
   }
 
   info(message: string, module?: string, metadata?: Record<string, any>) {

@@ -219,7 +219,10 @@ export class ExpertRouter {
       throw new Error('No user message found for classification');
     }
 
-    const lastUserMessage = userMessages[userMessages.length - 1];
+    const lastUserMessage = userMessages.at(-1);
+    if (!lastUserMessage) {
+      throw new Error('No user message found for classification');
+    }
     let userPrompt = typeof lastUserMessage.content === 'string'
       ? lastUserMessage.content
       : JSON.stringify(lastUserMessage.content);

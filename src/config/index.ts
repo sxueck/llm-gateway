@@ -1,5 +1,6 @@
 import { config } from 'dotenv';
 import { z } from 'zod';
+import { memoryLogger } from '../services/logger';
 
 config();
 
@@ -41,7 +42,12 @@ export function validatePublicUrl(url: string): { valid: boolean; error?: string
   try {
     new URL(url);
     return { valid: true };
-  } catch (error) {
+  } catch (error: unknown) {
+    memoryLogger.error(
+      `URL 验证失败: ${error instanceof Error ? error.message : String(error)}`,
+      'config',
+      { url }
+    );
     return { valid: false, error: 'LLM Gateway URL 格式无效，请输入有效的 URL（例如: http://example.com:3000）' };
   }
 }
