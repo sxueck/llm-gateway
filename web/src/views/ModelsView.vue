@@ -168,7 +168,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, computed, onMounted } from 'vue';
+import { ref, h, computed, onMounted, watch } from 'vue';
 import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NPopconfirm, NDivider, NScrollbar, NIcon } from 'naive-ui';
 import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined } from '@vicons/material';
 import { useI18n } from 'vue-i18n';
@@ -199,7 +199,11 @@ const editingId = ref<string | null>(null);
 const batchProviderId = ref<string>('');
 const testingModel = ref<Model | null>(null);
 const pageSize = ref(20);
-const groupByProvider = ref(false);
+const groupByProvider = ref(localStorage.getItem('groupByProvider') === 'true');
+
+watch(groupByProvider, (newValue) => {
+  localStorage.setItem('groupByProvider', newValue.toString());
+});
 
 const pageSizeOptions = [
   { label: t('models.pageSizeOptions.10'), value: 10 },
@@ -427,8 +431,6 @@ function resetForm() {
     modelAttributes: undefined,
   };
 }
-
-
 
 async function handleLiteLLMSelect(result: LiteLLMSearchResult) {
   try {
