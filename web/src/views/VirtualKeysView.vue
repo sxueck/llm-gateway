@@ -62,6 +62,9 @@
         <n-form-item label="启用缓存">
           <n-switch v-model:value="formValue.cacheEnabled" size="small" />
         </n-form-item>
+        <n-form-item label="禁用日志">
+          <n-switch v-model:value="formValue.disableLogging" size="small" />
+        </n-form-item>
         <n-form-item label="启用">
           <n-switch v-model:value="formValue.enabled" size="small" />
         </n-form-item>
@@ -144,6 +147,7 @@ const formValue = ref({
   rateLimit: undefined as number | undefined,
   enabled: true,
   cacheEnabled: false,
+  disableLogging: false,
 });
 
 const modelOptions = computed(() => {
@@ -228,6 +232,16 @@ const columns = [
     },
   },
   {
+    title: '日志记录',
+    key: 'disableLogging',
+    render: (row: VirtualKey) => {
+      if (row.disableLogging) {
+        return h(NTag, { type: 'warning', size: 'small' }, { default: () => '已禁用' });
+      }
+      return h(NTag, { type: 'success', size: 'small' }, { default: () => '已启用' });
+    },
+  },
+  {
     title: '速率限制',
     key: 'rateLimit',
     render: (row: VirtualKey) => row.rateLimit ? `${row.rateLimit} 请求/分钟` : '-',
@@ -287,6 +301,7 @@ function handleEdit(vk: VirtualKey) {
     rateLimit: vk.rateLimit || undefined,
     enabled: vk.enabled,
     cacheEnabled: vk.cacheEnabled,
+    disableLogging: vk.disableLogging,
   };
   showModal.value = true;
 }
@@ -313,6 +328,7 @@ async function handleSubmit() {
         enabled: formValue.value.enabled,
         rateLimit: formValue.value.rateLimit,
         cacheEnabled: formValue.value.cacheEnabled,
+        disableLogging: formValue.value.disableLogging,
       });
       message.success('更新成功');
       showModal.value = false;
@@ -344,6 +360,7 @@ function resetForm() {
     rateLimit: undefined,
     enabled: true,
     cacheEnabled: false,
+    disableLogging: false,
   };
 }
 

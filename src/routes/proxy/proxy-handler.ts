@@ -9,6 +9,11 @@ import { checkCache, setCacheIfNeeded, getCacheStatus } from './cache.js';
 import { authenticateVirtualKey } from './auth.js';
 import { resolveModelAndProvider } from './model-resolver.js';
 import { buildProviderConfig } from './provider-config-builder.js';
+import type { VirtualKey } from '../../types/index.js';
+
+function shouldLogRequest(virtualKey: VirtualKey): boolean {
+  return !virtualKey.disable_logging;
+}
 
 export function createProxyHandler() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
@@ -130,7 +135,7 @@ export function createProxyHandler() {
       if (virtualKeyValue && providerId) {
         const { virtualKeyDb } = await import('../../db/index.js');
         const virtualKey = virtualKeyDb.getByKeyValue(virtualKeyValue);
-        if (virtualKey) {
+        if (virtualKey && shouldLogRequest(virtualKey)) {
           const truncatedRequest = truncateRequestBody(request.body);
 
           apiRequestDb.create({
@@ -197,23 +202,25 @@ async function handleStreamRequest(
     const truncatedRequest = truncateRequestBody(request.body);
     const truncatedResponse = accumulateStreamResponse(tokenUsage.streamChunks);
 
-    apiRequestDb.create({
-      id: nanoid(),
-      virtual_key_id: virtualKey.id,
-      provider_id: providerId,
-      model: (request.body as any)?.model || 'unknown',
-      prompt_tokens: tokenUsage.promptTokens,
-      completion_tokens: tokenUsage.completionTokens,
-      total_tokens: tokenUsage.totalTokens,
-      status: 'success',
-      response_time: duration,
-      error_message: undefined,
-      request_body: truncatedRequest,
-      response_body: truncatedResponse,
-      cache_hit: 0,
-      prompt_cache_hit_tokens: 0,
-      prompt_cache_write_tokens: 0,
-    });
+    if (shouldLogRequest(virtualKey)) {
+      apiRequestDb.create({
+        id: nanoid(),
+        virtual_key_id: virtualKey.id,
+        provider_id: providerId,
+        model: (request.body as any)?.model || 'unknown',
+        prompt_tokens: tokenUsage.promptTokens,
+        completion_tokens: tokenUsage.completionTokens,
+        total_tokens: tokenUsage.totalTokens,
+        status: 'success',
+        response_time: duration,
+        error_message: undefined,
+        request_body: truncatedRequest,
+        response_body: truncatedResponse,
+        cache_hit: 0,
+        prompt_cache_hit_tokens: 0,
+        prompt_cache_write_tokens: 0,
+      });
+    }
 
     return;
   } catch (streamError: any) {
@@ -226,20 +233,22 @@ async function handleStreamRequest(
 
     const truncatedRequest = truncateRequestBody(request.body);
 
-    apiRequestDb.create({
-      id: nanoid(),
-      virtual_key_id: virtualKey.id,
-      provider_id: providerId,
-      model: (request.body as any)?.model || 'unknown',
-      prompt_tokens: 0,
-      completion_tokens: 0,
-      total_tokens: 0,
-      status: 'error',
-      response_time: duration,
-      error_message: streamError.message,
-      request_body: truncatedRequest,
-      response_body: undefined,
-    });
+    if (shouldLogRequest(virtualKey)) {
+      apiRequestDb.create({
+        id: nanoid(),
+        virtual_key_id: virtualKey.id,
+        provider_id: providerId,
+        model: (request.body as any)?.model || 'unknown',
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0,
+        status: 'error',
+        response_time: duration,
+        error_message: streamError.message,
+        request_body: truncatedRequest,
+        response_body: undefined,
+      });
+    }
 
     throw streamError;
   }
@@ -283,23 +292,25 @@ async function handleNonStreamRequest(
     const duration = Date.now() - startTime;
     const truncatedRequest = truncateRequestBody(request.body);
 
-    apiRequestDb.create({
-      id: nanoid(),
-      virtual_key_id: virtualKey.id,
-      provider_id: providerId,
-      model: (request.body as any)?.model || 'unknown',
-      prompt_tokens: cacheResult.cached.response.usage?.prompt_tokens || 0,
-      completion_tokens: cacheResult.cached.response.usage?.completion_tokens || 0,
-      total_tokens: cacheResult.cached.response.usage?.total_tokens || 0,
-      status: 'success',
-      response_time: duration,
-      error_message: undefined,
-      request_body: truncatedRequest,
-      response_body: truncateResponseBody(cacheResult.cached.response),
-      cache_hit: 1,
-      prompt_cache_hit_tokens: 0,
-      prompt_cache_write_tokens: 0,
-    });
+    if (shouldLogRequest(virtualKey)) {
+      apiRequestDb.create({
+        id: nanoid(),
+        virtual_key_id: virtualKey.id,
+        provider_id: providerId,
+        model: (request.body as any)?.model || 'unknown',
+        prompt_tokens: cacheResult.cached.response.usage?.prompt_tokens || 0,
+        completion_tokens: cacheResult.cached.response.usage?.completion_tokens || 0,
+        total_tokens: cacheResult.cached.response.usage?.total_tokens || 0,
+        status: 'success',
+        response_time: duration,
+        error_message: undefined,
+        request_body: truncatedRequest,
+        response_body: truncateResponseBody(cacheResult.cached.response),
+        cache_hit: 1,
+        prompt_cache_hit_tokens: 0,
+        prompt_cache_write_tokens: 0,
+      });
+    }
 
     memoryLogger.info(
       `Request completed: 200 | ${duration}ms | tokens: ${cacheResult.cached.response.usage?.total_tokens || 0} | cache hit`,
@@ -400,23 +411,25 @@ async function handleNonStreamRequest(
   const truncatedRequest = truncateRequestBody(request.body);
   const truncatedResponse = truncateResponseBody(responseData);
 
-  apiRequestDb.create({
-    id: nanoid(),
-    virtual_key_id: virtualKey.id,
-    provider_id: providerId,
-    model: (request.body as any)?.model || 'unknown',
-    prompt_tokens: usage.prompt_tokens || 0,
-    completion_tokens: usage.completion_tokens || 0,
-    total_tokens: usage.total_tokens || 0,
-    status: isSuccess ? 'success' : 'error',
-    response_time: duration,
-    error_message: isSuccess ? undefined : JSON.stringify(responseData),
-    request_body: truncatedRequest,
-    response_body: truncatedResponse,
-    cache_hit: fromCache ? 1 : 0,
-    prompt_cache_hit_tokens: usage.prompt_tokens_details?.cached_tokens || usage.prompt_cache_hit_tokens || 0,
-    prompt_cache_write_tokens: usage.prompt_tokens_details?.cached_tokens_write || usage.prompt_cache_write_tokens || 0,
-  });
+  if (shouldLogRequest(virtualKey)) {
+    apiRequestDb.create({
+      id: nanoid(),
+      virtual_key_id: virtualKey.id,
+      provider_id: providerId,
+      model: (request.body as any)?.model || 'unknown',
+      prompt_tokens: usage.prompt_tokens || 0,
+      completion_tokens: usage.completion_tokens || 0,
+      total_tokens: usage.total_tokens || 0,
+      status: isSuccess ? 'success' : 'error',
+      response_time: duration,
+      error_message: isSuccess ? undefined : JSON.stringify(responseData),
+      request_body: truncatedRequest,
+      response_body: truncatedResponse,
+      cache_hit: fromCache ? 1 : 0,
+      prompt_cache_hit_tokens: usage.prompt_tokens_details?.cached_tokens || usage.prompt_cache_hit_tokens || 0,
+      prompt_cache_write_tokens: usage.prompt_tokens_details?.cached_tokens_write || usage.prompt_cache_write_tokens || 0,
+    });
+  }
 
   if (isSuccess) {
     setCacheIfNeeded(cacheResult.cacheKey, cacheResult.shouldCache, fromCache, responseData, responseHeaders);

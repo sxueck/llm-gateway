@@ -30,6 +30,7 @@ export interface VirtualKey {
   enabled: number;
   rate_limit: number | null;
   cache_enabled: number;
+  disable_logging: number;
   created_at: number;
   updated_at: number;
 }

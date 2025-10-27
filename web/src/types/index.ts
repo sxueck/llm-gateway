@@ -76,6 +76,7 @@ export interface VirtualKey {
   enabled: boolean;
   rateLimit?: number | null;
   cacheEnabled: boolean;
+  disableLogging: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -149,6 +150,7 @@ export interface CreateVirtualKeyRequest {
   rateLimit?: number;
   enabled?: boolean;
   cacheEnabled?: boolean;
+  disableLogging?: boolean;
 }
 
 export interface UpdateVirtualKeyRequest {
@@ -161,5 +163,6 @@ export interface UpdateVirtualKeyRequest {
   enabled?: boolean;
   rateLimit?: number;
   cacheEnabled?: boolean;
+  disableLogging?: boolean;
 }
 

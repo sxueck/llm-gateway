@@ -392,7 +392,7 @@ export default {
     ignoreSystemMessages: '忽略系统消息',
     ignoreSystemMessagesHint: '启用后，分类器将只分析用户消息，忽略 system 和 assistant 消息',
     maxMessagesToClassify: '限制分类消息数',
-    maxMessagesToClassifyHint: '限制分类器只处理最近 N 条消息,0 表示处理全部消息',
+    maxMessagesToClassifyHint: '限制分类器只处理最近 N 条消息，0 表示处理全部消息',
     ignoredTags: '忽略标签',
     ignoredTagsPlaceholder: 'code, environment_details, system',
     addExpert: '添加专家',

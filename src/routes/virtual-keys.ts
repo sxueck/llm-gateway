@@ -18,6 +18,7 @@ const createVirtualKeySchema = z.object({
   rateLimit: z.number().optional(),
   enabled: z.boolean().optional(),
   cacheEnabled: z.boolean().optional(),
+  disableLogging: z.boolean().optional(),
 });
 
 const updateVirtualKeySchema = z.object({
@@ -30,6 +31,7 @@ const updateVirtualKeySchema = z.object({
   enabled: z.boolean().optional(),
   rateLimit: z.number().optional(),
   cacheEnabled: z.boolean().optional(),
+  disableLogging: z.boolean().optional(),
 });
 
 const validateKeySchema = z.object({
@@ -54,6 +56,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
         enabled: vk.enabled === 1,
         rateLimit: vk.rate_limit,
         cacheEnabled: vk.cache_enabled === 1,
+        disableLogging: vk.disable_logging === 1,
         createdAt: vk.created_at,
         updatedAt: vk.updated_at,
       })),
@@ -80,6 +83,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       enabled: vk.enabled === 1,
       rateLimit: vk.rate_limit,
       cacheEnabled: vk.cache_enabled === 1,
+      disableLogging: vk.disable_logging === 1,
       createdAt: vk.created_at,
       updatedAt: vk.updated_at,
     };
@@ -145,6 +149,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       enabled: body.enabled !== false ? 1 : 0,
       rate_limit: body.rateLimit || null,
       cache_enabled: body.cacheEnabled ? 1 : 0,
+      disable_logging: body.disableLogging ? 1 : 0,
     });
 
     await generatePortkeyConfig();
@@ -162,6 +167,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
         enabled: vk.enabled === 1,
         rateLimit: vk.rate_limit,
         cacheEnabled: vk.cache_enabled === 1,
+        disableLogging: vk.disable_logging === 1,
         createdAt: vk.created_at,
         updatedAt: vk.updated_at,
       },
@@ -211,6 +217,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
     if (body.rateLimit !== undefined) updates.rate_limit = body.rateLimit;
     if (body.cacheEnabled !== undefined) updates.cache_enabled = body.cacheEnabled ? 1 : 0;
+    if (body.disableLogging !== undefined) updates.disable_logging = body.disableLogging ? 1 : 0;
 
     await virtualKeyDb.update(id, updates);
     await generatePortkeyConfig();
@@ -228,6 +235,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       enabled: updated.enabled === 1,
       rateLimit: updated.rate_limit,
       cacheEnabled: updated.cache_enabled === 1,
+      disableLogging: updated.disable_logging === 1,
       createdAt: updated.created_at,
       updatedAt: updated.updated_at,
     };

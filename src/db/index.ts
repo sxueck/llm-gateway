@@ -294,6 +294,11 @@ function createTables() {
   } catch (e) {
   }
 
+  try {
+    db.run('ALTER TABLE virtual_keys ADD COLUMN disable_logging INTEGER DEFAULT 0');
+  } catch (e) {
+  }
+
   db.run('CREATE INDEX IF NOT EXISTS idx_virtual_keys_hash ON virtual_keys(key_hash)');
   db.run('CREATE INDEX IF NOT EXISTS idx_virtual_keys_value ON virtual_keys(key_value)');
   db.run('CREATE INDEX IF NOT EXISTS idx_virtual_keys_provider ON virtual_keys(provider_id)');
@@ -755,70 +760,43 @@ export const modelDb = {
   },
 };
 
+function mapVirtualKeyRow(row: any[]): VirtualKey {
+  return {
+    id: row[0] as string,
+    key_value: row[1] as string,
+    key_hash: row[2] as string,
+    name: row[3] as string,
+    provider_id: row[4] as string | null,
+    model_id: row[5] as string | null,
+    routing_strategy: row[6] as string,
+    model_ids: row[7] as string | null,
+    routing_config: row[8] as string | null,
+    enabled: row[9] as number,
+    rate_limit: row[10] as number | null,
+    created_at: row[11] as number,
+    updated_at: row[12] as number,
+    cache_enabled: (row[13] as number) || 0,
+    disable_logging: (row[14] as number) || 0,
+  };
+}
+
 export const virtualKeyDb = {
   getAll(): VirtualKey[] {
     const result = db.exec('SELECT * FROM virtual_keys ORDER BY created_at DESC');
     if (result.length === 0) return [];
-    return result[0].values.map(row => ({
-      id: row[0] as string,
-      key_value: row[1] as string,
-      key_hash: row[2] as string,
-      name: row[3] as string,
-      provider_id: row[4] as string | null,
-      model_id: row[5] as string | null,
-      routing_strategy: row[6] as string,
-      model_ids: row[7] as string | null,
-      routing_config: row[8] as string | null,
-      enabled: row[9] as number,
-      rate_limit: row[10] as number | null,
-      created_at: row[11] as number,
-      updated_at: row[12] as number,
-      cache_enabled: (row[13] as number) || 0,
-    }));
+    return result[0].values.map(mapVirtualKeyRow);
   },
 
   getById(id: string): VirtualKey | undefined {
     const result = db.exec('SELECT * FROM virtual_keys WHERE id = ?', [id]);
     if (result.length === 0 || result[0].values.length === 0) return undefined;
-    const row = result[0].values[0];
-    return {
-      id: row[0] as string,
-      key_value: row[1] as string,
-      key_hash: row[2] as string,
-      name: row[3] as string,
-      provider_id: row[4] as string | null,
-      model_id: row[5] as string | null,
-      routing_strategy: row[6] as string,
-      model_ids: row[7] as string | null,
-      routing_config: row[8] as string | null,
-      enabled: row[9] as number,
-      rate_limit: row[10] as number | null,
-      created_at: row[11] as number,
-      updated_at: row[12] as number,
-      cache_enabled: (row[13] as number) || 0,
-    };
+    return mapVirtualKeyRow(result[0].values[0]);
   },
 
   getByKeyValue(keyValue: string): VirtualKey | undefined {
     const result = db.exec('SELECT * FROM virtual_keys WHERE key_value = ?', [keyValue]);
     if (result.length === 0 || result[0].values.length === 0) return undefined;
-    const row = result[0].values[0];
-    return {
-      id: row[0] as string,
-      key_value: row[1] as string,
-      key_hash: row[2] as string,
-      name: row[3] as string,
-      provider_id: row[4] as string | null,
-      model_id: row[5] as string | null,
-      routing_strategy: row[6] as string,
-      model_ids: row[7] as string | null,
-      routing_config: row[8] as string | null,
-      enabled: row[9] as number,
-      rate_limit: row[10] as number | null,
-      created_at: row[11] as number,
-      updated_at: row[12] as number,
-      cache_enabled: (row[13] as number) || 0,
-    };
+    return mapVirtualKeyRow(result[0].values[0]);
   },
 
   async create(vk: Omit<VirtualKey, 'created_at' | 'updated_at'>): Promise<VirtualKey> {
@@ -827,8 +805,8 @@ export const virtualKeyDb = {
       `INSERT INTO virtual_keys (
         id, key_value, key_hash, name, provider_id, model_id,
         routing_strategy, model_ids, routing_config,
-        enabled, rate_limit, cache_enabled, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        enabled, rate_limit, cache_enabled, disable_logging, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         vk.id,
         vk.key_value,
@@ -842,6 +820,7 @@ export const virtualKeyDb = {
         vk.enabled,
         vk.rate_limit,
         vk.cache_enabled || 0,
+        vk.disable_logging || 0,
         now,
         now
       ]
