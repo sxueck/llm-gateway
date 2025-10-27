@@ -1,6 +1,6 @@
 import { config } from 'dotenv';
 import { z } from 'zod';
-import { memoryLogger } from '../services/logger';
+import { memoryLogger } from '../services/logger.js';
 
 config();
 
