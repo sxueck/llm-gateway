@@ -313,7 +313,8 @@ export class ExpertRouter {
     let category: string;
     try {
       const cleanedContent = this.cleanMarkdownCodeBlock(rawContent);
-      const parsedJson = JSON.parse(cleanedContent);
+      const normalizedContent = this.normalizeJsonQuotes(cleanedContent);
+      const parsedJson = JSON.parse(normalizedContent);
       category = parsedJson.type;
 
       if (!category) {
@@ -481,6 +482,10 @@ export class ExpertRouter {
     }
 
     return cleaned;
+  }
+
+  private normalizeJsonQuotes(content: string): string {
+    return content.replace(/'/g, '"');
   }
 
   private filterIgnoredTags(text: string, ignoredTags: string[]): string {
