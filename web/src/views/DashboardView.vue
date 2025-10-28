@@ -224,7 +224,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { useMessage, NSpace, NGrid, NGi, NCard, NStatistic, NSelect, NProgress, NEmpty, NButton, NIcon, NSpin, NResult } from 'naive-ui';
+import { useMessage, NSpace, NGrid, NGi, NCard, NStatistic, NSelect, NEmpty, NButton, NIcon, NSpin, NResult } from 'naive-ui';
 import { RefreshOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
 import { useProviderStore } from '@/stores/provider';
