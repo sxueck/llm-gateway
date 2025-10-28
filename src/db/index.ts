@@ -888,29 +888,43 @@ export const apiRequestDb = {
 
     const conn = await pool.getConnection();
     try {
-      let query = 'SELECT * FROM api_requests WHERE 1=1';
+      let countQuery = 'SELECT COUNT(*) as total FROM api_requests WHERE 1=1';
+      let dataQuery = 'SELECT * FROM api_requests WHERE 1=1';
       const params: any[] = [];
 
       if (options?.virtualKeyId) {
-        query += ' AND virtual_key_id = ?';
+        countQuery += ' AND virtual_key_id = ?';
+        dataQuery += ' AND virtual_key_id = ?';
         params.push(options.virtualKeyId);
       }
 
       if (options?.startTime) {
-        query += ' AND created_at >= ?';
+        countQuery += ' AND created_at >= ?';
+        dataQuery += ' AND created_at >= ?';
         params.push(options.startTime);
       }
 
       if (options?.endTime) {
-        query += ' AND created_at <= ?';
+        countQuery += ' AND created_at <= ?';
+        dataQuery += ' AND created_at <= ?';
         params.push(options.endTime);
       }
 
-      query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-      params.push(limit, offset);
+      const [countRows] = await conn.query(countQuery, params);
+      const total = (countRows as any[])[0].total;
 
-      const [rows] = await conn.query(query, params);
-      return rows;
+      dataQuery += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+      const dataParams = [...params, limit, offset];
+
+      const [rows] = await conn.query(dataQuery, dataParams);
+
+      return {
+        data: rows,
+        total,
+        page: Math.floor(offset / limit) + 1,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit)
+      };
     } finally {
       conn.release();
     }
