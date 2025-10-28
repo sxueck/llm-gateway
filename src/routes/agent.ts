@@ -14,7 +14,7 @@ async function authenticateAgent(request: FastifyRequest, reply: FastifyReply) {
     });
   }
 
-  const gateway = portkeyGatewayDb.getById(gatewayId);
+  const gateway = await portkeyGatewayDb.getById(gatewayId);
 
   if (!gateway) {
     return reply.code(404).send({

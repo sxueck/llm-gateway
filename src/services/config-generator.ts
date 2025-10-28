@@ -7,8 +7,8 @@ import { PortkeyConfig } from '../types/index.js';
 import { ProviderAdapterFactory } from './provider-adapter.js';
 
 export async function generatePortkeyConfig(): Promise<string> {
-  const providers = providerDb.getAll();
-  const virtualKeys = virtualKeyDb.getAll();
+  const providers = await providerDb.getAll();
+  const virtualKeys = await virtualKeyDb.getAll();
 
   const config: PortkeyConfig = {
     credentials: {},

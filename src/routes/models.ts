@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import { modelDb, providerDb, virtualKeyDb, portkeyGatewayDb } from '../db/index.js';
+import { modelDb, providerDb, virtualKeyDb } from '../db/index.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { portkeyRouter } from '../services/portkey-router.js';
 import { buildChatCompletionsEndpoint } from '../utils/api-endpoint-builder.js';
@@ -63,32 +63,31 @@ export async function modelRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
 
   fastify.get('/', async () => {
-    const models = modelDb.getAll();
-    const providers = providerDb.getAll();
+    const models = await modelDb.getAll();
+    const providers = await providerDb.getAll();
     const providerMap = new Map(providers.map(p => [p.id, p]));
 
-    const virtualKeyCounts = virtualKeyDb.countByModelIds(models.map(m => m.id));
+    const virtualKeyCounts = await virtualKeyDb.countByModelIds(models.map(m => m.id));
 
-    return {
-      models: models.map(m => {
-        const provider = m.provider_id ? providerMap.get(m.provider_id) : null;
-        const virtualKeyCount = virtualKeyCounts.get(m.id) || 0;
+    const modelPromises = models.map(async m => {
+      const provider = m.provider_id ? providerMap.get(m.provider_id) : null;
+      const virtualKeyCount = virtualKeyCounts.get(m.id) || 0;
 
-        let modelAttributes = null;
-        try {
-          modelAttributes = m.model_attributes ? JSON.parse(m.model_attributes) : null;
-        } catch (e) {
-        }
+      let modelAttributes = null;
+      try {
+        modelAttributes = m.model_attributes ? JSON.parse(m.model_attributes) : null;
+      } catch (e) {
+      }
 
-        let promptConfig = null;
-        try {
-          promptConfig = m.prompt_config ? JSON.parse(m.prompt_config) : null;
-        } catch (e) {
-        }
+      let promptConfig = null;
+      try {
+        promptConfig = m.prompt_config ? JSON.parse(m.prompt_config) : null;
+      } catch (e) {
+      }
 
-        let routingGateway = null;
-        if (!m.is_virtual) {
-          const gateway = portkeyRouter.selectGateway({
+      let routingGateway = null;
+      if (!m.is_virtual) {
+        const gateway = await portkeyRouter.selectGateway({
             modelName: m.name,
             modelId: m.id,
             providerId: m.provider_id || undefined,
@@ -103,37 +102,40 @@ export async function modelRoutes(fastify: FastifyInstance) {
           }
         }
 
-        return {
-          id: m.id,
-          name: m.name,
-          providerId: m.provider_id,
-          providerName: m.is_virtual === 1 ? '虚拟模型' : (provider?.name || '未知提供商'),
-          modelIdentifier: m.model_identifier,
-          isVirtual: m.is_virtual === 1,
-          routingConfigId: m.routing_config_id,
-          expertRoutingId: m.expert_routing_id,
-          enabled: m.enabled === 1,
-          modelAttributes,
-          promptConfig,
-          virtualKeyCount,
-          routingGateway,
-          createdAt: m.created_at,
-          updatedAt: m.updated_at,
-        };
-      }),
+      return {
+        id: m.id,
+        name: m.name,
+        providerId: m.provider_id,
+        providerName: m.is_virtual === 1 ? '虚拟模型' : (provider?.name || '未知提供商'),
+        modelIdentifier: m.model_identifier,
+        isVirtual: m.is_virtual === 1,
+        routingConfigId: m.routing_config_id,
+        expertRoutingId: m.expert_routing_id,
+        enabled: m.enabled === 1,
+        modelAttributes,
+        promptConfig,
+        virtualKeyCount,
+        routingGateway,
+        createdAt: m.created_at,
+        updatedAt: m.updated_at,
+      };
+    });
+
+    return {
+      models: await Promise.all(modelPromises),
     };
   });
 
   fastify.get('/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const model = modelDb.getById(id);
+    const model = await modelDb.getById(id);
 
     if (!model) {
       return reply.code(404).send({ error: '模型不存在' });
     }
 
-    const provider = model.provider_id ? providerDb.getById(model.provider_id) : null;
-    const virtualKeyCount = virtualKeyDb.countByModelId(model.id);
+    const provider = model.provider_id ? await providerDb.getById(model.provider_id) : null;
+    const virtualKeyCount = await virtualKeyDb.countByModelId(model.id);
 
     let modelAttributes = null;
     try {
@@ -166,7 +168,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
     const body = createModelSchema.parse(request.body);
 
     if (body.providerId) {
-      const provider = providerDb.getById(body.providerId);
+      const provider = await providerDb.getById(body.providerId);
       if (!provider) {
         return reply.code(400).send({ error: '提供商不存在' });
       }
@@ -218,7 +220,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     const body = updateModelSchema.parse(request.body);
 
-    const model = modelDb.getById(id);
+    const model = await modelDb.getById(id);
     if (!model) {
       return reply.code(404).send({ error: '模型不存在' });
     }
@@ -236,7 +238,11 @@ export async function modelRoutes(fastify: FastifyInstance) {
 
     await modelDb.update(id, updates);
 
-    const updated = modelDb.getById(id)!;
+    const updated = await modelDb.getById(id);
+    if (!updated) {
+      throw new Error('模型不存在');
+    }
+
     let modelAttributes = null;
     try {
       modelAttributes = updated.model_attributes ? JSON.parse(updated.model_attributes) : null;
@@ -265,12 +271,12 @@ export async function modelRoutes(fastify: FastifyInstance) {
   fastify.delete('/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
 
-    const model = modelDb.getById(id);
+    const model = await modelDb.getById(id);
     if (!model) {
       return reply.code(404).send({ error: '模型不存在' });
     }
 
-    const virtualKeyCount = virtualKeyDb.countByModelId(id);
+    const virtualKeyCount = await virtualKeyDb.countByModelId(id);
     if (virtualKeyCount > 0) {
       return reply.code(400).send({ 
         error: `无法删除模型，有 ${virtualKeyCount} 个虚拟密钥正在使用此模型` 
@@ -283,7 +289,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
 
   fastify.get('/by-provider/:providerId', async (request) => {
     const { providerId } = request.params as { providerId: string };
-    const models = modelDb.getByProviderId(providerId);
+    const models = await modelDb.getByProviderId(providerId);
 
     return {
       models: models.map(m => ({
@@ -301,7 +307,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
   fastify.post('/:id/test', async (request, reply) => {
     const { id } = request.params as { id: string };
 
-    const model = modelDb.getById(id);
+    const model = await modelDb.getById(id);
     if (!model) {
       return reply.code(404).send({ error: '模型不存在' });
     }
@@ -310,7 +316,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: '虚拟模型无法直接测试' });
     }
 
-    const provider = providerDb.getById(model.provider_id!);
+    const provider = await providerDb.getById(model.provider_id!);
     if (!provider) {
       return reply.code(400).send({ error: '关联的提供商不存在' });
     }

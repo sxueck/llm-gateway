@@ -37,7 +37,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
 
   fastify.get('/', async () => {
-    const providers = providerDb.getAll();
+    const providers = await providerDb.getAll();
     return {
       providers: providers.map(p => ({
         id: p.id,
@@ -55,7 +55,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
   fastify.get('/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
     const { includeApiKey } = request.query as { includeApiKey?: string };
-    const provider = providerDb.getById(id);
+    const provider = await providerDb.getById(id);
 
     if (!provider) {
       return reply.code(404).send({ error: '提供商不存在' });
@@ -76,7 +76,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
   fastify.post('/', async (request, reply) => {
     const body = createProviderSchema.parse(request.body);
 
-    const existing = providerDb.getById(body.id);
+    const existing = await providerDb.getById(body.id);
     if (existing) {
       return reply.code(400).send({ error: '提供商 ID 已存在' });
     }
@@ -107,7 +107,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     const body = updateProviderSchema.parse(request.body);
 
-    const provider = providerDb.getById(id);
+    const provider = await providerDb.getById(id);
     if (!provider) {
       return reply.code(404).send({ error: '提供商不存在' });
     }
@@ -122,7 +122,11 @@ export async function providerRoutes(fastify: FastifyInstance) {
     await providerDb.update(id, updates);
     await generatePortkeyConfig();
 
-    const updated = providerDb.getById(id)!;
+    const updated = await providerDb.getById(id);
+    if (!updated) {
+      throw new Error('提供商不存在');
+    }
+
     return {
       id: updated.id,
       name: updated.name,
@@ -137,7 +141,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
   fastify.delete('/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
 
-    const provider = providerDb.getById(id);
+    const provider = await providerDb.getById(id);
     if (!provider) {
       return reply.code(404).send({ error: '提供商不存在' });
     }
@@ -151,7 +155,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
   fastify.post('/:id/test', async (request, reply) => {
     const { id } = request.params as { id: string };
 
-    const provider = providerDb.getById(id);
+    const provider = await providerDb.getById(id);
     if (!provider) {
       return reply.code(404).send({ error: '提供商不存在' });
     }
@@ -241,7 +245,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
 
     for (const providerData of providers) {
       try {
-        const existing = providerDb.getById(providerData.id);
+        const existing = await providerDb.getById(providerData.id);
 
         if (existing) {
           if (skipExisting) {

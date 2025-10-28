@@ -20,7 +20,7 @@ export interface AuthError {
   };
 }
 
-export function authenticateVirtualKey(authHeader: string | undefined): VirtualKeyAuthResult | AuthError {
+export async function authenticateVirtualKey(authHeader: string | undefined): Promise<VirtualKeyAuthResult | AuthError> {
   if (!authHeader?.startsWith('Bearer ')) {
     return {
       error: {
@@ -38,7 +38,7 @@ export function authenticateVirtualKey(authHeader: string | undefined): VirtualK
   }
 
   const virtualKeyValue = authHeader.substring(7);
-  const virtualKey = virtualKeyDb.getByKeyValue(virtualKeyValue);
+  const virtualKey = await virtualKeyDb.getByKeyValue(virtualKeyValue);
 
   if (!virtualKey) {
     memoryLogger.warn(`Virtual key not found: ${virtualKeyValue}`, 'Proxy');

@@ -64,9 +64,9 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
 
   fastify.get('/', async () => {
     try {
-      const configs = expertRoutingConfigDb.getAll();
-      return {
-        configs: configs.map(c => ({
+      const configs = await expertRoutingConfigDb.getAll();
+        return {
+          configs: (configs as any[]).map(c => ({
           id: c.id,
           name: c.name,
           description: c.description,
@@ -85,7 +85,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
   fastify.get('/:id', async (request) => {
     try {
       const { id } = request.params as { id: string };
-      const config = expertRoutingConfigDb.getById(id);
+      const config = await expertRoutingConfigDb.getById(id);
 
       if (!config) {
         throw new Error('专家路由配置不存在');
@@ -174,7 +174,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       const { id } = request.params as { id: string };
       const body = updateExpertRoutingSchema.parse(request.body);
 
-      const existingConfig = expertRoutingConfigDb.getById(id);
+      const existingConfig = await expertRoutingConfigDb.getById(id);
       if (!existingConfig) {
         throw new Error('专家路由配置不存在');
       }
@@ -189,7 +189,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         };
       }
 
-      const updatedConfig = await expertRoutingConfigDb.update(id, {
+      await expertRoutingConfigDb.update(id, {
         name: body.name,
         description: body.description ?? undefined,
         enabled: body.enabled !== undefined ? (body.enabled ? 1 : 0) : undefined,
@@ -197,7 +197,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       });
 
       if (body.name && body.name !== existingConfig.name) {
-        const associatedModels = modelDb.getAll().filter(m => m.expert_routing_id === id);
+        const associatedModels = (await modelDb.getAll() as any[]).filter((m: any) => m.expert_routing_id === id);
         for (const model of associatedModels) {
           await modelDb.update(model.id, { name: body.name });
         }
@@ -206,6 +206,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
 
       memoryLogger.info(`更新专家路由配置: ${id}`, 'ExpertRouting');
 
+      const updatedConfig = await expertRoutingConfigDb.getById(id);
       return {
         id: updatedConfig!.id,
         name: updatedConfig!.name,
@@ -225,7 +226,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     try {
       const { id } = request.params as { id: string };
 
-      const associatedModels = modelDb.getAll().filter(m => m.expert_routing_id === id);
+      const associatedModels = (await modelDb.getAll() as any[]).filter(m => m.expert_routing_id === id);
       for (const model of associatedModels) {
         await modelDb.update(model.id, { expert_routing_id: null });
       }
@@ -244,13 +245,13 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       const { id } = request.params as { id: string };
       const { timeRange } = request.query as { timeRange?: string };
 
-      const config = expertRoutingConfigDb.getById(id);
+      const config = await expertRoutingConfigDb.getById(id);
       if (!config) {
         throw new Error('专家路由配置不存在');
       }
 
       const timeRangeMs = timeRange ? Number.parseInt(timeRange) : undefined;
-      const stats = expertRoutingLogDb.getStatistics(id, timeRangeMs);
+      const stats = await expertRoutingLogDb.getStatistics(id, timeRangeMs);
 
       return stats;
     } catch (error: any) {
@@ -264,13 +265,13 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       const { id } = request.params as { id: string };
       const { limit } = request.query as { limit?: string };
 
-      const config = expertRoutingConfigDb.getById(id);
+      const config = await expertRoutingConfigDb.getById(id);
       if (!config) {
         throw new Error('专家路由配置不存在');
       }
 
       const limitNum = limit ? Number.parseInt(limit) : 100;
-      const logs = expertRoutingLogDb.getByConfigId(id, limitNum);
+      const logs = await expertRoutingLogDb.getByConfigId(id, limitNum);
 
       return { logs };
     } catch (error: any) {
@@ -284,13 +285,13 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       const { id, category } = request.params as { id: string; category: string };
       const { limit } = request.query as { limit?: string };
 
-      const config = expertRoutingConfigDb.getById(id);
+      const config = await expertRoutingConfigDb.getById(id);
       if (!config) {
         throw new Error('专家路由配置不存在');
       }
 
       const limitNum = limit ? Number.parseInt(limit) : 100;
-      const logs = expertRoutingLogDb.getByCategory(id, category, limitNum);
+      const logs = await expertRoutingLogDb.getByCategory(id, category, limitNum);
 
       return { logs };
     } catch (error: any) {
@@ -303,12 +304,12 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     try {
       const { id, logId } = request.params as { id: string; logId: string };
 
-      const config = expertRoutingConfigDb.getById(id);
+      const config = await expertRoutingConfigDb.getById(id);
       if (!config) {
         throw new Error('专家路由配置不存在');
       }
 
-      const log = expertRoutingLogDb.getById(logId);
+      const log = await expertRoutingLogDb.getById(logId);
       if (!log) {
         throw new Error('日志不存在');
       }
@@ -344,13 +345,13 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       const { id } = request.params as { id: string };
       const { modelIds } = request.body as { modelIds: string[] };
 
-      const config = expertRoutingConfigDb.getById(id);
+      const config = await expertRoutingConfigDb.getById(id);
       if (!config) {
         throw new Error('专家路由配置不存在');
       }
 
       for (const modelId of modelIds) {
-        const model = modelDb.getById(modelId);
+        const model = await modelDb.getById(modelId);
         if (model) {
           await modelDb.update(modelId, {
             expert_routing_id: id,
@@ -371,7 +372,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     try {
       const { id, modelId } = request.params as { id: string; modelId: string };
 
-      const model = modelDb.getById(modelId);
+      const model = await modelDb.getById(modelId);
       if (!model) {
         throw new Error('模型不存在');
       }
@@ -412,7 +413,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
 
   fastify.get('/preferences/preview-width', async () => {
     try {
-      const config = systemConfigDb.get('expert_routing_preview_width');
+      const config = await systemConfigDb.get('expert_routing_preview_width');
       const width = config ? Number.parseInt(config.value, 10) : 600;
 
       return { width };

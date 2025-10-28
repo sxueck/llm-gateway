@@ -60,24 +60,24 @@ interface ClassifierModelResult {
 /**
  * 解析分类器模型配置，获取 provider 和 model
  */
-function resolveClassifierModel(
+async function resolveClassifierModel(
   classifierConfig: ExpertRoutingConfig['classifier']
-): ClassifierModelResult {
+): Promise<ClassifierModelResult> {
   let provider;
   let model: string;
 
   if (classifierConfig.type === 'virtual') {
-    const virtualModel = modelDb.getById(classifierConfig.model_id!);
+    const virtualModel = await modelDb.getById(classifierConfig.model_id!);
     if (!virtualModel || !virtualModel.provider_id) {
       throw new Error(`Classifier virtual model not found or has no provider: ${classifierConfig.model_id}`);
     }
-    provider = providerDb.getById(virtualModel.provider_id);
+    provider = await providerDb.getById(virtualModel.provider_id);
     if (!provider) {
       throw new Error('Classifier provider not found');
     }
     model = virtualModel.model_identifier;
   } else {
-    provider = providerDb.getById(classifierConfig.provider_id!);
+    provider = await providerDb.getById(classifierConfig.provider_id!);
     if (!provider) {
       throw new Error('Classifier provider not found');
     }
@@ -93,10 +93,10 @@ function resolveClassifierModel(
 /**
  * 解析专家/降级模型配置
  */
-function resolveModelConfig(
+async function resolveModelConfig(
   config: { type: 'virtual' | 'real'; model_id?: string; provider_id?: string; model?: string },
   configType: string
-): ResolvedModel {
+): Promise<ResolvedModel> {
   let provider;
   let modelOverride;
   let expertType: 'virtual' | 'real' = config.type;
@@ -104,14 +104,14 @@ function resolveModelConfig(
   let expertModelId: string | undefined;
 
   if (config.type === 'virtual') {
-    const virtualModel = modelDb.getById(config.model_id!);
+    const virtualModel = await modelDb.getById(config.model_id!);
     if (!virtualModel) {
       throw new Error(`${configType} virtual model not found: ${config.model_id}`);
     }
     expertModelId = config.model_id;
     expertName = virtualModel.name;
   } else {
-    provider = providerDb.getById(config.provider_id!);
+    provider = await providerDb.getById(config.provider_id!);
     if (!provider) {
       throw new Error(`${configType} provider not found: ${config.provider_id}`);
     }
@@ -137,7 +137,7 @@ export class ExpertRouter {
   ): Promise<ExpertRoutingResult> {
     const startTime = Date.now();
 
-    const expertRoutingConfig = expertRoutingConfigDb.getById(expertRoutingId);
+    const expertRoutingConfig = await expertRoutingConfigDb.getById(expertRoutingId);
     if (!expertRoutingConfig || expertRoutingConfig.enabled !== 1) {
       throw new Error('Expert routing config not found or disabled');
     }
@@ -265,7 +265,7 @@ export class ExpertRouter {
     }
 
     // 使用提取的函数解析分类器模型
-    const { provider, model } = resolveClassifierModel(classifierConfig);
+    const { provider, model } = await resolveClassifierModel(classifierConfig);
 
     const apiKey = decryptApiKey(provider.api_key);
     const endpoint = buildChatCompletionsEndpoint(provider.base_url);
@@ -394,7 +394,7 @@ export class ExpertRouter {
       classifierResponse: any;
     }
   ): Promise<ExpertRoutingResult> {
-    const resolved = resolveModelConfig(expert, 'Expert');
+    const resolved = await resolveModelConfig(expert, 'Expert');
 
     const requestHash = this.generateRequestHash(request);
 
@@ -441,7 +441,7 @@ export class ExpertRouter {
       throw new Error('No fallback configured');
     }
 
-    const resolved = resolveModelConfig(fallback, 'Fallback');
+    const resolved = await resolveModelConfig(fallback, 'Fallback');
     const classificationTime = Date.now() - startTime;
 
     return {

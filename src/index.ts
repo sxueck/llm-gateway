@@ -132,7 +132,7 @@ if (existingGateways.length === 0) {
   memoryLogger.info(`已创建默认 Portkey Gateway: ${defaultGatewayUrl}`, 'System');
 }
 
-const publicUrlCfg = systemConfigDb.get('public_url');
+const publicUrlCfg = await systemConfigDb.get('public_url');
 if (publicUrlCfg) {
   setPublicUrl(publicUrlCfg.value);
   memoryLogger.info(`使用自定义 LLM Gateway URL: ${publicUrlCfg.value}`, 'System');
@@ -140,7 +140,7 @@ if (publicUrlCfg) {
   memoryLogger.info(`使用默认 LLM Gateway URL: ${appConfig.publicUrl}`, 'System');
 }
 
-const corsEnabledCfg = systemConfigDb.get('cors_enabled');
+const corsEnabledCfg = await systemConfigDb.get('cors_enabled');
 const corsEnabled = corsEnabledCfg ? corsEnabledCfg.value === 'true' : true;
 
 if (corsEnabled) {
@@ -150,7 +150,7 @@ if (corsEnabled) {
 }
 
 fastify.addHook('onRequest', async (request, reply) => {
-  const corsEnabledCfg = systemConfigDb.get('cors_enabled');
+  const corsEnabledCfg = await systemConfigDb.get('cors_enabled');
   const corsEnabled = corsEnabledCfg ? corsEnabledCfg.value === 'true' : true;
 
   if (!corsEnabled && request.headers.origin) {

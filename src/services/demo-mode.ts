@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { appConfig } from '../config/index.js';
-import { getDatabase, userDb, portkeyGatewayDb, flushApiRequestBufferNow } from '../db/index.js';
+import { getPool, userDb, portkeyGatewayDb, flushApiRequestBufferNow } from '../db/index.js';
 import { hashPassword } from '../utils/crypto.js';
 import { memoryLogger } from './logger.js';
 import { writeFile } from 'fs/promises';
@@ -35,7 +35,7 @@ export class DemoModeService {
   }
 
   private async performInitialSetup(): Promise<void> {
-    const existingUser = userDb.findByUsername(DEMO_USERNAME);
+    const existingUser = await userDb.findByUsername(DEMO_USERNAME);
     if (!existingUser) {
       await this.createDemoUser();
       memoryLogger.info('已创建演示用户', 'DemoMode');
@@ -74,9 +74,9 @@ export class DemoModeService {
   }
 
   private async clearDatabase(): Promise<void> {
-    const db = getDatabase();
+    const pool = getPool();
 
-    flushApiRequestBufferNow();
+    await flushApiRequestBufferNow();
 
     const tables = [
       'api_requests',
@@ -89,13 +89,18 @@ export class DemoModeService {
       'users',
     ];
 
-    for (const table of tables) {
-      try {
-        db.run(`DELETE FROM ${table}`);
-        memoryLogger.info(`已清空表: ${table}`, 'DemoMode');
-      } catch (error: any) {
-        memoryLogger.error(`清空表 ${table} 失败: ${error.message}`, 'DemoMode');
+    const conn = await pool.getConnection();
+    try {
+      for (const table of tables) {
+        try {
+          await conn.query(`DELETE FROM ${table}`);
+          memoryLogger.info(`已清空表: ${table}`, 'DemoMode');
+        } catch (error: any) {
+          memoryLogger.error(`清空表 ${table} 失败: ${error.message}`, 'DemoMode');
+        }
       }
+    } finally {
+      conn.release();
     }
   }
 

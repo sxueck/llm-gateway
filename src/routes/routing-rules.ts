@@ -9,7 +9,7 @@ export async function routingRuleRoutes(fastify: FastifyInstance) {
 
   fastify.get('/', async () => {
     try {
-      const rules = modelRoutingRuleDb.getAll();
+      const rules = await modelRoutingRuleDb.getAll();
       return rules.map(rule => ({
         id: rule.id,
         name: rule.name,
@@ -31,7 +31,7 @@ export async function routingRuleRoutes(fastify: FastifyInstance) {
   fastify.get('/:id', async (request) => {
     try {
       const { id } = request.params as { id: string };
-      const rule = modelRoutingRuleDb.getById(id);
+      const rule = await modelRoutingRuleDb.getById(id);
       
       if (!rule) {
         throw new Error('路由规则不存在');
@@ -67,7 +67,7 @@ export async function routingRuleRoutes(fastify: FastifyInstance) {
         enabled?: boolean;
       };
 
-      const gateway = portkeyGatewayDb.getById(body.portkeyGatewayId);
+      const gateway = await portkeyGatewayDb.getById(body.portkeyGatewayId);
       if (!gateway) {
         throw new Error('指定的 Portkey Gateway 不存在');
       }
@@ -123,13 +123,13 @@ export async function routingRuleRoutes(fastify: FastifyInstance) {
       };
 
       if (body.portkeyGatewayId) {
-        const gateway = portkeyGatewayDb.getById(body.portkeyGatewayId);
+        const gateway = await portkeyGatewayDb.getById(body.portkeyGatewayId);
         if (!gateway) {
           throw new Error('指定的 Portkey Gateway 不存在');
         }
       }
 
-      const rule = await modelRoutingRuleDb.update(id, {
+      await modelRoutingRuleDb.update(id, {
         name: body.name,
         description: body.description,
         portkey_gateway_id: body.portkeyGatewayId,
@@ -143,6 +143,7 @@ export async function routingRuleRoutes(fastify: FastifyInstance) {
 
       memoryLogger.info(`更新路由规则: ${id}`, 'RoutingRules');
 
+      const rule = await modelRoutingRuleDb.getById(id);
       return {
         id: rule!.id,
         name: rule!.name,

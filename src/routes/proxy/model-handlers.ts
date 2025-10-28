@@ -35,16 +35,16 @@ export function mergeModelAttributes(baseInfo: any, attributes: any): any {
 
 export async function getModelsHandler(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const authResult = authenticateVirtualKey(request.headers.authorization);
+    const authResult = await authenticateVirtualKey(request.headers.authorization);
     if ('error' in authResult) {
       return reply.code(authResult.error.code).send(authResult.error.body);
     }
 
     const { virtualKey, virtualKeyValue } = authResult;
     const uniqueModelIds = getModelIdsFromVirtualKey(virtualKey);
-    const models = uniqueModelIds
-      .map(id => modelDb.getById(id))
-      .filter(model => model?.enabled);
+    const modelPromises = uniqueModelIds.map(id => modelDb.getById(id));
+    const modelResults = await Promise.all(modelPromises);
+    const models = modelResults.filter(model => model?.enabled);
 
     const modelList = models.map(model => {
       const baseInfo = buildModelBaseInfo(model!);
@@ -82,7 +82,7 @@ export async function getModelsHandler(request: FastifyRequest, reply: FastifyRe
 
 export async function getModelInfoHandler(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const litellmCompatCfg = systemConfigDb.get('litellm_compat_enabled');
+    const litellmCompatCfg = await systemConfigDb.get('litellm_compat_enabled');
     const litellmCompatEnabled = litellmCompatCfg ? litellmCompatCfg.value === 'true' : false;
 
     if (!litellmCompatEnabled) {
@@ -96,16 +96,16 @@ export async function getModelInfoHandler(request: FastifyRequest, reply: Fastif
       });
     }
 
-    const authResult = authenticateVirtualKey(request.headers.authorization);
+    const authResult = await authenticateVirtualKey(request.headers.authorization);
     if ('error' in authResult) {
       return reply.code(authResult.error.code).send(authResult.error.body);
     }
 
     const { virtualKey, virtualKeyValue } = authResult;
     const uniqueModelIds = getModelIdsFromVirtualKey(virtualKey);
-    const models = uniqueModelIds
-      .map(id => modelDb.getById(id))
-      .filter(model => model?.enabled);
+    const modelPromises = uniqueModelIds.map(id => modelDb.getById(id));
+    const modelResults = await Promise.all(modelPromises);
+    const models = modelResults.filter(model => model?.enabled);
 
     const modelList = models.map(model => {
       const modelName = model!.is_virtual ? model!.name : model!.model_identifier;

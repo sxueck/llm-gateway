@@ -22,15 +22,15 @@ export function createProxyHandler() {
     let providerId: string | undefined;
 
     try {
-      const authResult = authenticateVirtualKey(request.headers.authorization);
+      const authResult = await authenticateVirtualKey(request.headers.authorization);
       if ('error' in authResult) {
-        return reply.code(authResult.error.code).send(authResult.error.body);
+        return reply.code((authResult.error as any).code).send((authResult.error as any).body);
       }
 
       const { virtualKey, virtualKeyValue: vkValue } = authResult;
       virtualKeyValue = vkValue;
 
-      const modelResult = await resolveModelAndProvider(virtualKey, request, virtualKeyValue);
+      const modelResult = await resolveModelAndProvider(virtualKey, request, virtualKeyValue!);
       if ('code' in modelResult) {
         return reply.code(modelResult.code).send(modelResult.body);
       }
@@ -38,7 +38,7 @@ export function createProxyHandler() {
       const { provider, providerId: resolvedProviderId, currentModel } = modelResult;
       providerId = resolvedProviderId;
 
-      const configResult = buildProviderConfig(provider, virtualKey, virtualKeyValue, providerId, request);
+      const configResult = await buildProviderConfig(provider, virtualKey, virtualKeyValue!, providerId, request);
       if ('code' in configResult) {
         return reply.code(configResult.code).send(configResult.body);
       }
@@ -134,11 +134,11 @@ export function createProxyHandler() {
 
       if (virtualKeyValue && providerId) {
         const { virtualKeyDb } = await import('../../db/index.js');
-        const virtualKey = virtualKeyDb.getByKeyValue(virtualKeyValue);
+        const virtualKey = await virtualKeyDb.getByKeyValue(virtualKeyValue);
         if (virtualKey && shouldLogRequest(virtualKey)) {
           const truncatedRequest = truncateRequestBody(request.body);
 
-          apiRequestDb.create({
+          await apiRequestDb.create({
             id: nanoid(),
             virtual_key_id: virtualKey.id,
             provider_id: providerId,
@@ -203,7 +203,7 @@ async function handleStreamRequest(
     const truncatedResponse = accumulateStreamResponse(tokenUsage.streamChunks);
 
     if (shouldLogRequest(virtualKey)) {
-      apiRequestDb.create({
+      await apiRequestDb.create({
         id: nanoid(),
         virtual_key_id: virtualKey.id,
         provider_id: providerId,
@@ -234,7 +234,7 @@ async function handleStreamRequest(
     const truncatedRequest = truncateRequestBody(request.body);
 
     if (shouldLogRequest(virtualKey)) {
-      apiRequestDb.create({
+      await apiRequestDb.create({
         id: nanoid(),
         virtual_key_id: virtualKey.id,
         provider_id: providerId,
@@ -293,7 +293,7 @@ async function handleNonStreamRequest(
     const truncatedRequest = truncateRequestBody(request.body);
 
     if (shouldLogRequest(virtualKey)) {
-      apiRequestDb.create({
+      await apiRequestDb.create({
         id: nanoid(),
         virtual_key_id: virtualKey.id,
         provider_id: providerId,
@@ -412,7 +412,7 @@ async function handleNonStreamRequest(
   const truncatedResponse = truncateResponseBody(responseData);
 
   if (shouldLogRequest(virtualKey)) {
-    apiRequestDb.create({
+    await apiRequestDb.create({
       id: nanoid(),
       virtual_key_id: virtualKey.id,
       provider_id: providerId,

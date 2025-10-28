@@ -31,7 +31,7 @@ export async function resolveModelAndProvider(
   let providerId: string | undefined;
 
   if (virtualKey.model_id) {
-    const model = modelDb.getById(virtualKey.model_id);
+    const model = await modelDb.getById(virtualKey.model_id);
     if (!model) {
       memoryLogger.error(`Model not found: ${virtualKey.model_id}`, 'Proxy');
       return {
@@ -90,7 +90,7 @@ export async function resolveModelAndProvider(
 
       if (requestedModel) {
         for (const modelId of parsedModelIds) {
-          const model = modelDb.getById(modelId);
+          const model = await modelDb.getById(modelId);
           if (model && (model.model_identifier === requestedModel || model.name === requestedModel)) {
             targetModelId = modelId;
             break;
@@ -117,7 +117,7 @@ export async function resolveModelAndProvider(
         };
       }
 
-      const model = modelDb.getById(targetModelId);
+      const model = await modelDb.getById(targetModelId);
       if (!model) {
         memoryLogger.error(`Model not found: ${targetModelId}`, 'Proxy');
         return {
@@ -168,7 +168,7 @@ export async function resolveModelAndProvider(
       };
     }
   } else if (virtualKey.provider_id) {
-    provider = providerDb.getById(virtualKey.provider_id);
+    provider = await providerDb.getById(virtualKey.provider_id);
     if (!provider) {
       memoryLogger.error(`Provider not found: ${virtualKey.provider_id}`, 'Proxy');
       return {

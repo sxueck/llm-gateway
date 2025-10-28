@@ -83,7 +83,7 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
 
   fastify.get('/', async () => {
     try {
-      const gateways = portkeyGatewayDb.getAll();
+      const gateways = await portkeyGatewayDb.getAll();
       return gateways.map(gateway => ({
         id: gateway.id,
         name: gateway.name,
@@ -109,7 +109,7 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
   fastify.get('/:id', async (request) => {
     try {
       const { id } = request.params as { id: string };
-      const gateway = portkeyGatewayDb.getById(id);
+      const gateway = await portkeyGatewayDb.getById(id);
 
       if (!gateway) {
         throw new NotFoundError('Portkey Gateway 不存在');
@@ -140,7 +140,7 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
   fastify.get('/:id/health', async (request) => {
     try {
       const { id } = request.params as { id: string };
-      const gateway = portkeyGatewayDb.getById(id);
+      const gateway = await portkeyGatewayDb.getById(id);
 
       if (!gateway) {
         return { success: false, latency: null, error: 'Gateway 不存在' };
@@ -214,7 +214,7 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
         port?: number;
       };
 
-      const gateway = await portkeyGatewayDb.update(id, {
+      await portkeyGatewayDb.update(id, {
         name: body.name,
         url: body.url,
         description: body.description,
@@ -228,6 +228,7 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
 
       memoryLogger.info(`更新 Portkey Gateway: ${id}`, 'PortkeyGateways');
 
+      const gateway = await portkeyGatewayDb.getById(id);
       return {
         id: gateway!.id,
         name: gateway!.name,
@@ -330,7 +331,7 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
   fastify.get('/:id/routing-rules', async (request) => {
     try {
       const { id } = request.params as { id: string };
-      const rules = modelRoutingRuleDb.getByGatewayId(id);
+      const rules = await modelRoutingRuleDb.getByGatewayId(id);
 
       return rules.map(rule => ({
         id: rule.id,
@@ -353,7 +354,7 @@ export async function portkeyGatewayRoutes(fastify: FastifyInstance) {
   fastify.get('/:id/install-script', async (request) => {
     try {
       const { id } = request.params as { id: string };
-      const gateway = portkeyGatewayDb.getById(id);
+      const gateway = await portkeyGatewayDb.getById(id);
 
       if (!gateway) {
         throw new NotFoundError('Portkey Gateway 不存在');

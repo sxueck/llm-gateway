@@ -69,12 +69,12 @@ export function selectRoutingTarget(config: RoutingConfig, type: string, configI
   return config.targets[0];
 }
 
-export function resolveSmartRouting(model: any): ResolveProviderResult | null {
+export async function resolveSmartRouting(model: any): Promise<ResolveProviderResult | null> {
   if (model.is_virtual !== 1 || !model.routing_config_id) {
     return null;
   }
 
-  const routingConfig = routingConfigDb.getById(model.routing_config_id);
+  const routingConfig = await routingConfigDb.getById(model.routing_config_id);
   if (!routingConfig) {
     memoryLogger.error(`Smart routing config not found: ${model.routing_config_id}`, 'Proxy');
     throw new Error('Smart routing config not found');
@@ -89,7 +89,7 @@ export function resolveSmartRouting(model: any): ResolveProviderResult | null {
       throw new Error('No available target in smart routing config');
     }
 
-    const provider = providerDb.getById(selectedTarget.provider);
+    const provider = await providerDb.getById(selectedTarget.provider);
     if (!provider) {
       memoryLogger.error(`Smart routing target provider not found: ${selectedTarget.provider}`, 'Proxy');
       throw new Error('Smart routing target provider not found');
@@ -130,7 +130,7 @@ export async function resolveExpertRouting(
     return null;
   }
 
-  const expertRoutingConfig = expertRoutingConfigDb.getById(model.expert_routing_id);
+  const expertRoutingConfig = await expertRoutingConfigDb.getById(model.expert_routing_id);
   if (!expertRoutingConfig || expertRoutingConfig.enabled !== 1) {
     memoryLogger.warn(
       `专家路由配置未找到或未启用: ${model.expert_routing_id}`,
@@ -151,7 +151,7 @@ export async function resolveExpertRouting(
     );
 
     if (result.expertType === 'virtual') {
-      const virtualModel = modelDb.getById(result.expertModelId!);
+      const virtualModel = await modelDb.getById(result.expertModelId!);
       if (!virtualModel) {
         throw new Error(`Virtual model not found: ${result.expertModelId}`);
       }
@@ -193,7 +193,7 @@ export async function resolveProviderFromModel(
     }
   }
 
-  const smartRoutingResult = resolveSmartRouting(model);
+  const smartRoutingResult = await resolveSmartRouting(model);
   if (smartRoutingResult) {
     if (smartRoutingResult.modelOverride) {
       request.body = request.body || {};
@@ -209,7 +209,7 @@ export async function resolveProviderFromModel(
     throw new Error('Model has no provider configured');
   }
 
-  const provider = providerDb.getById(model.provider_id);
+  const provider = await providerDb.getById(model.provider_id);
   if (!provider) {
     memoryLogger.error(`Provider not found: ${model.provider_id}`, 'Proxy');
     throw new Error('Provider config not found');

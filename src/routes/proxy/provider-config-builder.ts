@@ -26,13 +26,13 @@ export interface ProviderConfigError {
   };
 }
 
-export function buildProviderConfig(
+export async function buildProviderConfig(
   provider: any,
   virtualKey: any,
   virtualKeyValue: string,
   providerId: string,
   request: FastifyRequest
-): ProviderConfigResult | ProviderConfigError {
+): Promise<ProviderConfigResult | ProviderConfigError> {
   const decryptedApiKey = decryptApiKey(provider.api_key);
   const baseUrl = provider.base_url || '';
 
@@ -90,7 +90,7 @@ export function buildProviderConfig(
     virtualKeyId: virtualKey.id,
   };
 
-  const selectedGateway = portkeyRouter.selectGateway(routingContext);
+  const selectedGateway = await portkeyRouter.selectGateway(routingContext);
 
   if (!selectedGateway) {
     memoryLogger.error('No Portkey Gateway available', 'Proxy');

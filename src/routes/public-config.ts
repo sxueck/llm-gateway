@@ -4,8 +4,8 @@ import { demoModeService } from '../services/demo-mode.js';
 
 export async function publicConfigRoutes(fastify: FastifyInstance) {
   fastify.get('/system-settings', async () => {
-    const allowRegCfg = systemConfigDb.get('allow_registration');
-    const corsEnabledCfg = systemConfigDb.get('cors_enabled');
+    const allowRegCfg = await systemConfigDb.get('allow_registration');
+    const corsEnabledCfg = await systemConfigDb.get('cors_enabled');
 
     return {
       allowRegistration: !(allowRegCfg && allowRegCfg.value === 'false'),

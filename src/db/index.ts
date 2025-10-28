@@ -1070,7 +1070,7 @@ export const portkeyGatewayDb = {
     install_status?: string;
     last_heartbeat?: number;
     agent_version?: string;
-  }) {
+  }): Promise<PortkeyGateway> {
     const now = Date.now();
     const conn = await pool.getConnection();
     try {
@@ -1087,7 +1087,22 @@ export const portkeyGatewayDb = {
           now, now
         ]
       );
-      return { ...data, created_at: now, updated_at: now };
+      return {
+        id: data.id,
+        name: data.name,
+        url: data.url,
+        description: data.description || null,
+        is_default: data.is_default,
+        enabled: data.enabled,
+        container_name: data.container_name || null,
+        port: data.port || null,
+        api_key: data.api_key || null,
+        install_status: data.install_status || 'pending',
+        last_heartbeat: data.last_heartbeat || null,
+        agent_version: data.agent_version || null,
+        created_at: now,
+        updated_at: now,
+      };
     } finally {
       conn.release();
     }
@@ -1454,3 +1469,6 @@ export const expertRoutingLogDb = {
   },
 };
 
+export function getPool() {
+  return pool;
+}

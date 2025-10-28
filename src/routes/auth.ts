@@ -25,7 +25,7 @@ const loginSchema = z.object({
 export async function authRoutes(fastify: FastifyInstance) {
   fastify.post('/register', async (request, reply) => {
     const body = registerSchema.parse(request.body);
-    const allowCfg = systemConfigDb.get('allow_registration');
+    const allowCfg = await systemConfigDb.get('allow_registration');
     if (allowCfg && allowCfg.value === 'false') {
       return reply.code(403).send({ error: '当前已关闭用户注册' });
     }
@@ -40,7 +40,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: passwordValidation.message });
     }
 
-    const existingUser = userDb.findByUsername(body.username);
+    const existingUser = await userDb.findByUsername(body.username);
     if (existingUser) {
       return reply.code(400).send({ error: '用户名已存在' });
     }
@@ -65,7 +65,7 @@ export async function authRoutes(fastify: FastifyInstance) {
   fastify.post('/login', async (request, reply) => {
     const body = loginSchema.parse(request.body);
 
-    const user = userDb.findByUsername(body.username);
+    const user = await userDb.findByUsername(body.username);
     if (!user) {
       return reply.code(401).send({ error: '用户名或密码错误' });
     }
@@ -88,7 +88,7 @@ export async function authRoutes(fastify: FastifyInstance) {
   fastify.get('/profile', {
     onRequest: [fastify.authenticate],
   }, async (request) => {
-    const user = userDb.findById(request.user.userId);
+    const user = await userDb.findById(request.user.userId);
     if (!user) {
       throw new Error('用户不存在');
     }
@@ -102,7 +102,7 @@ export async function authRoutes(fastify: FastifyInstance) {
   fastify.get('/users', {
     onRequest: [fastify.authenticate],
   }, async () => {
-    return userDb.getAll();
+    return await userDb.getAll();
   });
 }
 

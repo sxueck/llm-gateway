@@ -1,4 +1,4 @@
-import { portkeyGatewayDb, modelRoutingRuleDb, providerDb, modelDb } from '../db/index.js';
+import { portkeyGatewayDb, modelRoutingRuleDb, providerDb } from '../db/index.js';
 import { memoryLogger } from './logger.js';
 import { PortkeyGateway, ModelRoutingRule } from '../types/index.js';
 
@@ -15,15 +15,15 @@ export class PortkeyRouter {
   private lastCacheUpdate: number = 0;
   private readonly CACHE_TTL = 60000;
 
-  private updateCache() {
+  private async updateCache() {
     const now = Date.now();
     if (now - this.lastCacheUpdate > this.CACHE_TTL) {
-      const rawRules = modelRoutingRuleDb.getEnabled();
+      const rawRules = await modelRoutingRuleDb.getEnabled();
       this.cachedRules = rawRules.map(rule => ({
         ...rule,
         rule_type: this.validateRuleType(rule.rule_type)
       }));
-      this.cachedGateways = portkeyGatewayDb.getEnabled();
+      this.cachedGateways = await portkeyGatewayDb.getEnabled();
       this.lastCacheUpdate = now;
     }
   }
@@ -37,8 +37,8 @@ export class PortkeyRouter {
     return 'model_name';
   }
 
-  selectGateway(context: RoutingContext): PortkeyGateway | undefined {
-    this.updateCache();
+  async selectGateway(context: RoutingContext): Promise<PortkeyGateway | undefined> {
+    await this.updateCache();
 
     if (this.cachedGateways.length === 0) {
       memoryLogger.warn('没有可用的 Portkey Gateway', 'PortkeyRouter');
@@ -58,7 +58,7 @@ export class PortkeyRouter {
     const sortedRules = [...this.cachedRules].sort((a, b) => b.priority - a.priority);
 
     for (const rule of sortedRules) {
-      if (this.matchRule(rule, context)) {
+      if (await this.matchRule(rule, context)) {
         const gateway = this.cachedGateways.find(g => g.id === rule.portkey_gateway_id);
         if (gateway) {
           memoryLogger.info(
@@ -84,7 +84,7 @@ export class PortkeyRouter {
     return firstGateway;
   }
 
-  private matchRule(rule: ModelRoutingRule, context: RoutingContext): boolean {
+  private async matchRule(rule: ModelRoutingRule, context: RoutingContext): Promise<boolean> {
     switch (rule.rule_type) {
       case 'model_name':
         if (context.modelName) {
@@ -94,7 +94,7 @@ export class PortkeyRouter {
 
       case 'provider':
         if (context.providerId) {
-          const provider = providerDb.getById(context.providerId);
+          const provider = await providerDb.getById(context.providerId);
           if (provider) {
             return this.matchPattern(provider.name, rule.rule_value) ||
                    this.matchPattern(context.providerId, rule.rule_value);
@@ -104,7 +104,7 @@ export class PortkeyRouter {
 
       case 'region':
         if (context.providerId) {
-          const provider = providerDb.getById(context.providerId);
+          const provider = await providerDb.getById(context.providerId);
           if (provider && provider.base_url) {
             return provider.base_url.toLowerCase().includes(rule.rule_value.toLowerCase());
           }
@@ -118,7 +118,7 @@ export class PortkeyRouter {
             return true;
           }
           if (context.providerId) {
-            const provider = providerDb.getById(context.providerId);
+            const provider = await providerDb.getById(context.providerId);
             if (provider && regex.test(provider.name)) {
               return true;
             }

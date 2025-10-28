@@ -10,10 +10,10 @@ export async function configRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
 
   fastify.get('/system-settings', async () => {
-    const allowRegCfg = systemConfigDb.get('allow_registration');
-    const corsEnabledCfg = systemConfigDb.get('cors_enabled');
-    const publicUrlCfg = systemConfigDb.get('public_url');
-    const litellmCompatCfg = systemConfigDb.get('litellm_compat_enabled');
+    const allowRegCfg = await systemConfigDb.get('allow_registration');
+    const corsEnabledCfg = await systemConfigDb.get('cors_enabled');
+    const publicUrlCfg = await systemConfigDb.get('public_url');
+    const litellmCompatCfg = await systemConfigDb.get('litellm_compat_enabled');
 
     return {
       allowRegistration: !(allowRegCfg && allowRegCfg.value === 'false'),
@@ -61,7 +61,7 @@ export async function configRoutes(fastify: FastifyInstance) {
 
 
   fastify.get('/gateway-status', async () => {
-    const defaultGateway = portkeyGatewayDb.getDefault();
+    const defaultGateway = await portkeyGatewayDb.getDefault();
 
     if (!defaultGateway) {
       return {
@@ -136,8 +136,8 @@ export async function configRoutes(fastify: FastifyInstance) {
         startTime = now - 24 * 60 * 60 * 1000;
     }
 
-    const stats = apiRequestDb.getStats({ startTime, endTime: now });
-    const trend = apiRequestDb.getTrend({
+    const stats = await apiRequestDb.getStats({ startTime, endTime: now });
+    const trend = await apiRequestDb.getTrend({
       startTime,
       endTime: now,
       interval: period === '24h' ? 'hour' : 'day'
@@ -171,15 +171,12 @@ export async function configRoutes(fastify: FastifyInstance) {
       model?: string;
     };
 
-    const result = apiRequestDb.getAll({
-      page: Number(page),
-      pageSize: Number(pageSize),
+    const result = await apiRequestDb.getAll({
+      limit: Number(pageSize),
+      offset: (Number(page) - 1) * Number(pageSize),
       startTime: startTime ? Number(startTime) : undefined,
       endTime: endTime ? Number(endTime) : undefined,
-      status,
       virtualKeyId,
-      providerId,
-      model,
     });
 
     return result;
@@ -187,7 +184,7 @@ export async function configRoutes(fastify: FastifyInstance) {
 
   fastify.get('/api-requests/:id', async (request) => {
     const { id } = request.params as { id: string };
-    const apiRequest = apiRequestDb.getById(id);
+    const apiRequest = await apiRequestDb.getById(id);
 
     if (!apiRequest) {
       throw new Error('请求记录不存在');
@@ -234,9 +231,9 @@ export async function configRoutes(fastify: FastifyInstance) {
 
   fastify.get('/routing-configs', async () => {
     try {
-      const configs = routingConfigDb.getAll();
-      return {
-        configs: configs.map(c => ({
+      const configs = await routingConfigDb.getAll();
+    return {
+      configs: (configs as any[]).map(c => ({
           id: c.id,
           name: c.name,
           description: c.description,
@@ -273,6 +270,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         description: body.description,
         type: body.type,
         config: JSON.stringify(body.config),
+        enabled: 1,
       });
 
       memoryLogger.info(`创建路由配置: ${body.name}`, 'Config');
@@ -330,19 +328,20 @@ export async function configRoutes(fastify: FastifyInstance) {
         modelAttributes?: any;
       };
 
-      const existingConfig = routingConfigDb.getById(id);
+      const existingConfig = await routingConfigDb.getById(id);
       if (!existingConfig) {
         throw new Error('路由配置不存在');
       }
 
-      const updatedConfig = await routingConfigDb.update(id, {
+      await routingConfigDb.update(id, {
         name: body.name,
         description: body.description,
         type: body.type,
         config: body.config ? JSON.stringify(body.config) : undefined,
       });
 
-      const virtualModel = modelDb.getAll().find(m => m.routing_config_id === id && m.is_virtual === 1);
+      const allModels = await modelDb.getAll();
+      const virtualModel = allModels.find((m: any) => m.routing_config_id === id && m.is_virtual === 1);
       if (virtualModel) {
         const updates: any = {};
         if (body.virtualModelName) {
@@ -358,6 +357,7 @@ export async function configRoutes(fastify: FastifyInstance) {
 
       memoryLogger.info(`更新路由配置: ${id}`, 'Config');
 
+      const updatedConfig = await routingConfigDb.getById(id);
       return {
         id: updatedConfig!.id,
         name: updatedConfig!.name,

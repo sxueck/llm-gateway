@@ -42,7 +42,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
 
   fastify.get('/', async () => {
-    const virtualKeys = virtualKeyDb.getAll();
+    const virtualKeys = await virtualKeyDb.getAll();
     return {
       virtualKeys: virtualKeys.map(vk => ({
         id: vk.id,
@@ -65,7 +65,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
 
   fastify.get('/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const vk = virtualKeyDb.getById(id);
+    const vk = await virtualKeyDb.getById(id);
 
     if (!vk) {
       return reply.code(404).send({ error: '虚拟密钥不存在' });
@@ -93,7 +93,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     const body = createVirtualKeySchema.parse(request.body);
 
     if (body.modelId) {
-      const model = modelDb.getById(body.modelId);
+      const model = await modelDb.getById(body.modelId);
       if (!model) {
         return reply.code(400).send({ error: '模型不存在' });
       }
@@ -101,7 +101,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
 
     if (body.modelIds && body.modelIds.length > 0) {
       for (const modelId of body.modelIds) {
-        const model = modelDb.getById(modelId);
+        const model = await modelDb.getById(modelId);
         if (!model) {
           return reply.code(400).send({ error: `模型 ${modelId} 不存在` });
         }
@@ -109,7 +109,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     }
 
     if (body.providerId) {
-      const provider = providerDb.getById(body.providerId);
+      const provider = await providerDb.getById(body.providerId);
       if (!provider) {
         return reply.code(400).send({ error: '提供商不存在' });
       }
@@ -128,7 +128,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: validation.message });
       }
 
-      const existing = virtualKeyDb.getByKeyValue(body.customKey);
+      const existing = await virtualKeyDb.getByKeyValue(body.customKey);
       if (existing) {
         return reply.code(400).send({ error: '密钥值已存在' });
       }
@@ -179,13 +179,13 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     const body = updateVirtualKeySchema.parse(request.body);
 
-    const vk = virtualKeyDb.getById(id);
+    const vk = await virtualKeyDb.getById(id);
     if (!vk) {
       return reply.code(404).send({ error: '虚拟密钥不存在' });
     }
 
     if (body.modelId !== undefined) {
-      const model = modelDb.getById(body.modelId);
+      const model = await modelDb.getById(body.modelId);
       if (!model) {
         return reply.code(400).send({ error: '模型不存在' });
       }
@@ -193,7 +193,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
 
     if (body.modelIds && body.modelIds.length > 0) {
       for (const modelId of body.modelIds) {
-        const model = modelDb.getById(modelId);
+        const model = await modelDb.getById(modelId);
         if (!model) {
           return reply.code(400).send({ error: `模型 ${modelId} 不存在` });
         }
@@ -201,7 +201,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     }
 
     if (body.providerId !== undefined) {
-      const provider = providerDb.getById(body.providerId);
+      const provider = await providerDb.getById(body.providerId);
       if (!provider) {
         return reply.code(400).send({ error: '提供商不存在' });
       }
@@ -222,7 +222,11 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     await virtualKeyDb.update(id, updates);
     await generatePortkeyConfig();
 
-    const updated = virtualKeyDb.getById(id)!;
+    const updated = await virtualKeyDb.getById(id);
+    if (!updated) {
+      throw new Error('虚拟密钥不存在');
+    }
+
     return {
       id: updated.id,
       keyValue: updated.key_value,
@@ -244,7 +248,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
   fastify.delete('/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
 
-    const vk = virtualKeyDb.getById(id);
+    const vk = await virtualKeyDb.getById(id);
     if (!vk) {
       return reply.code(404).send({ error: '虚拟密钥不存在' });
     }
@@ -263,7 +267,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       return { valid: false, message: validation.message };
     }
 
-    const existing = virtualKeyDb.getByKeyValue(body.customKey);
+    const existing = await virtualKeyDb.getByKeyValue(body.customKey);
     if (existing) {
       return { valid: false, message: '密钥值已存在' };
     }
