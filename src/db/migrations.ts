@@ -1,28 +1,28 @@
-import { Database as SqlJsDatabase } from 'sql.js';
+import type { Connection } from 'mysql2/promise';
 
 export interface Migration {
   version: number;
   name: string;
-  up: (db: SqlJsDatabase) => void;
-  down?: (db: SqlJsDatabase) => void;
+  up: (conn: Connection) => Promise<void>;
+  down?: (conn: Connection) => Promise<void>;
 }
 
 export const migrations: Migration[] = [];
 
-export function getCurrentVersion(db: SqlJsDatabase): number {
+export async function getCurrentVersion(conn: Connection): Promise<number> {
   try {
-    db.run(`
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
-        version INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        applied_at INTEGER NOT NULL
-      )
+        version INT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        applied_at BIGINT NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-    const result = db.exec('SELECT MAX(version) as version FROM schema_migrations');
-    if (result.length > 0 && result[0].values.length > 0) {
-      const version = result[0].values[0][0];
-      return typeof version === 'number' ? version : 0;
+    const [rows] = await conn.query('SELECT MAX(version) as version FROM schema_migrations');
+    const result = rows as any[];
+    if (result.length > 0 && result[0].version !== null) {
+      return result[0].version;
     }
   } catch (e) {
     console.error('获取数据库版本失败:', e);
@@ -30,8 +30,8 @@ export function getCurrentVersion(db: SqlJsDatabase): number {
   return 0;
 }
 
-export function applyMigrations(db: SqlJsDatabase): void {
-  const currentVersion = getCurrentVersion(db);
+export async function applyMigrations(conn: Connection): Promise<void> {
+  const currentVersion = await getCurrentVersion(conn);
   const pendingMigrations = migrations.filter(m => m.version > currentVersion);
 
   if (pendingMigrations.length === 0) {
@@ -44,9 +44,9 @@ export function applyMigrations(db: SqlJsDatabase): void {
   for (const migration of pendingMigrations) {
     try {
       console.log(`应用迁移 v${migration.version}: ${migration.name}`);
-      migration.up(db);
+      await migration.up(conn);
 
-      db.run(
+      await conn.query(
         'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
         [migration.version, migration.name, Date.now()]
       );
@@ -61,8 +61,8 @@ export function applyMigrations(db: SqlJsDatabase): void {
   console.log('所有迁移应用完成');
 }
 
-export function rollbackMigration(db: SqlJsDatabase, targetVersion: number): void {
-  const currentVersion = getCurrentVersion(db);
+export async function rollbackMigration(conn: Connection, targetVersion: number): Promise<void> {
+  const currentVersion = await getCurrentVersion(conn);
 
   if (targetVersion >= currentVersion) {
     console.log('目标版本不低于当前版本，无需回滚');
@@ -81,9 +81,9 @@ export function rollbackMigration(db: SqlJsDatabase, targetVersion: number): voi
 
     try {
       console.log(`回滚迁移 v${migration.version}: ${migration.name}`);
-      migration.down(db);
+      await migration.down(conn);
 
-      db.run('DELETE FROM schema_migrations WHERE version = ?', [migration.version]);
+      await conn.query('DELETE FROM schema_migrations WHERE version = ?', [migration.version]);
 
       console.log(`迁移 v${migration.version} 回滚成功`);
     } catch (e) {
@@ -94,4 +94,3 @@ export function rollbackMigration(db: SqlJsDatabase, targetVersion: number): voi
 
   console.log('回滚完成');
 }
-

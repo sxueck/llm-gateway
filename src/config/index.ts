@@ -14,6 +14,11 @@ const envSchema = z.object({
   API_REQUEST_LOG_RETENTION_DAYS: z.string().default('3'),
   PUBLIC_URL: z.string().optional(),
   DEMO_MODE: z.string().optional(),
+  MYSQL_HOST: z.string().default('localhost'),
+  MYSQL_PORT: z.string().default('3306'),
+  MYSQL_USER: z.string().default('root'),
+  MYSQL_PASSWORD: z.string(),
+  MYSQL_DATABASE: z.string().default('llm_gateway'),
 });
 
 const env = envSchema.parse(process.env);
@@ -32,6 +37,13 @@ export const appConfig = {
   publicUrl: defaultPublicUrl,
   defaultPublicUrl,
   demoMode: env.DEMO_MODE === 'true' || env.DEMO_MODE === 'enabled',
+  mysql: {
+    host: env.MYSQL_HOST,
+    port: parseInt(env.MYSQL_PORT, 10),
+    user: env.MYSQL_USER,
+    password: env.MYSQL_PASSWORD,
+    database: env.MYSQL_DATABASE,
+  },
 };
 
 export function validatePublicUrl(url: string): { valid: boolean; error?: string } {

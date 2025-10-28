@@ -1,16 +1,9 @@
-import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
+import mysql from 'mysql2/promise';
 import { appConfig } from '../config/index.js';
-import { User, Provider, VirtualKey, SystemConfig } from '../types/index.js';
-import { mkdir, readFile, writeFile } from 'fs/promises';
-import { dirname, resolve } from 'path';
-import { existsSync } from 'fs';
+import { User, Provider, VirtualKey, SystemConfig, PortkeyGateway, ModelRoutingRule } from '../types/index.js';
 import { applyMigrations } from './migrations.js';
 
-let db: SqlJsDatabase;
-let SQL: any;
-let isDirty = false;
-let saveTimer: NodeJS.Timeout | null = null;
-const SAVE_INTERVAL = 5000;
+let pool: mysql.Pool;
 
 type ApiRequestBuffer = {
   id: string;
@@ -30,68 +23,69 @@ type ApiRequestBuffer = {
   prompt_cache_write_tokens?: number;
 };
 
+export interface Model {
+  id: string;
+  name: string;
+  provider_id: string | null;
+  model_identifier: string;
+  is_virtual: number;
+  routing_config_id: string | null;
+  expert_routing_id?: string | null;
+  enabled: number;
+  model_attributes: string | null;
+  prompt_config: string | null;
+  compression_config: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 let apiRequestBuffer: ApiRequestBuffer[] = [];
 let bufferFlushTimer: NodeJS.Timeout | null = null;
 const BUFFER_FLUSH_INTERVAL = 30000;
 const BUFFER_MAX_SIZE = 100;
 
 export async function initDatabase() {
-  await mkdir(dirname(appConfig.dbPath), { recursive: true });
+  try {
+    pool = mysql.createPool({
+      host: appConfig.mysql.host,
+      port: appConfig.mysql.port,
+      user: appConfig.mysql.user,
+      password: appConfig.mysql.password,
+      database: appConfig.mysql.database,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0,
+    });
 
-  SQL = await initSqlJs();
+    const connection = await pool.getConnection();
+    console.log('[数据库] MySQL 连接成功');
 
-  const dbPath = resolve(appConfig.dbPath);
+    await createTables();
+    await applyMigrations(connection as any);
 
-  if (existsSync(dbPath)) {
-    const buffer = await readFile(dbPath);
-    db = new SQL.Database(buffer);
+    connection.release();
+    startBufferFlush();
 
-    const integrityCheck = db.exec('PRAGMA integrity_check');
-    if (integrityCheck.length === 0 ||
-        integrityCheck[0].values[0][0] !== 'ok') {
-      console.error('========================================');
-      console.error('数据库完整性检查失败');
-      console.error('========================================');
-      console.error(`数据库路径: ${dbPath}`);
-      console.error('');
-      console.error('数据库文件已损坏，无法加载。');
-      console.error('为防止数据丢失，系统已停止启动。');
-      console.error('');
-      console.error('请手动处理数据库文件：');
-      console.error('  1. 如需修复并重新开始，运行: npm run fix:db');
-      console.error('  2. 如需恢复数据，请先备份当前数据库文件');
-      console.error('');
-      console.error('========================================');
-      db.close();
-      process.exit(1);
-    }
-  } else {
-    db = new SQL.Database();
+    return pool;
+  } catch (error: any) {
+    console.error('[数据库] MySQL 连接失败:', error.message);
+    throw new Error(`MySQL 连接失败: ${error.message}`);
+  }
+}
+
+function startBufferFlush() {
+  if (bufferFlushTimer) {
+    clearInterval(bufferFlushTimer);
   }
 
-  db.run('PRAGMA foreign_keys = ON');
-
-  createTables();
-  applyMigrations(db);
-  await saveDatabase();
-
-  startAutoSave();
-
-  return db;
+  bufferFlushTimer = setInterval(() => {
+    flushApiRequestBuffer();
+  }, BUFFER_FLUSH_INTERVAL);
 }
 
-async function saveDatabase() {
-  const data = db.export();
-  const buffer = Buffer.from(data);
-  await writeFile(appConfig.dbPath, buffer);
-  isDirty = false;
-}
-
-function markDirty() {
-  isDirty = true;
-}
-
-function flushApiRequestBuffer() {
+async function flushApiRequestBuffer() {
   if (apiRequestBuffer.length === 0) {
     return;
   }
@@ -100,11 +94,11 @@ function flushApiRequestBuffer() {
   const requests = [...apiRequestBuffer];
   apiRequestBuffer = [];
 
-  const failedRequests: ApiRequestBuffer[] = [];
-
-  requests.forEach(request => {
-    try {
-      db.run(
+  const conn = await pool.getConnection();
+  
+  try {
+    for (const request of requests) {
+      await conn.query(
         `INSERT INTO api_requests (
           id, virtual_key_id, provider_id, model,
           prompt_tokens, completion_tokens, total_tokens,
@@ -130,828 +124,641 @@ function flushApiRequestBuffer() {
           now,
         ]
       );
-    } catch (error) {
-      console.error(`写入 API 请求日志失败 (ID: ${request.id}):`, error);
-      failedRequests.push(request);
     }
-  });
-
-  if (failedRequests.length > 0) {
-    apiRequestBuffer.unshift(...failedRequests);
-  } else {
-    markDirty();
+  } catch (error: any) {
+    console.error('[数据库] 批量写入 API 请求日志失败:', error.message);
+    apiRequestBuffer.unshift(...requests);
+  } finally {
+    conn.release();
   }
-}
-
-function startAutoSave() {
-  if (saveTimer) {
-    clearInterval(saveTimer);
-  }
-
-  saveTimer = setInterval(async () => {
-    if (isDirty) {
-      try {
-        await saveDatabase();
-      } catch (error) {
-        console.error('自动保存数据库失败:', error);
-      }
-    }
-  }, SAVE_INTERVAL);
-
-  if (bufferFlushTimer) {
-    clearInterval(bufferFlushTimer);
-  }
-
-  bufferFlushTimer = setInterval(() => {
-    flushApiRequestBuffer();
-  }, BUFFER_FLUSH_INTERVAL);
 }
 
 export function flushApiRequestBufferNow() {
-  flushApiRequestBuffer();
+  return flushApiRequestBuffer();
 }
 
 export async function shutdownDatabase() {
-  if (saveTimer) {
-    clearInterval(saveTimer);
-    saveTimer = null;
-  }
-
   if (bufferFlushTimer) {
     clearInterval(bufferFlushTimer);
     bufferFlushTimer = null;
   }
 
-  flushApiRequestBuffer();
+  await flushApiRequestBuffer();
 
-  if (isDirty) {
-    await saveDatabase();
+  if (pool) {
+    await pool.end();
   }
 }
 
-function createTables() {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      username TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS providers (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      base_url TEXT NOT NULL,
-      api_key TEXT NOT NULL,
-      model_mapping TEXT,
-      enabled INTEGER DEFAULT 1,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS models (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      provider_id TEXT,
-      model_identifier TEXT NOT NULL,
-      enabled INTEGER DEFAULT 1,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
-    )
-  `);
-
+async function createTables() {
+  const conn = await pool.getConnection();
+  
   try {
-    db.run('ALTER TABLE models ADD COLUMN is_virtual INTEGER DEFAULT 0');
-  } catch (e) {
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id VARCHAR(255) PRIMARY KEY,
+        username VARCHAR(255) NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        INDEX idx_username (username)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS providers (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        base_url TEXT NOT NULL,
+        api_key TEXT NOT NULL,
+        model_mapping TEXT,
+        enabled TINYINT DEFAULT 1,
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        INDEX idx_enabled (enabled)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS models (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        provider_id VARCHAR(255),
+        model_identifier VARCHAR(255) NOT NULL,
+        is_virtual TINYINT DEFAULT 0,
+        routing_config_id VARCHAR(255),
+        expert_routing_id VARCHAR(255),
+        enabled TINYINT DEFAULT 1,
+        model_attributes TEXT,
+        prompt_config TEXT,
+        compression_config TEXT,
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE,
+        INDEX idx_provider (provider_id),
+        INDEX idx_enabled (enabled)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS virtual_keys (
+        id VARCHAR(255) PRIMARY KEY,
+        key_value VARCHAR(255) NOT NULL UNIQUE,
+        key_hash VARCHAR(255) NOT NULL UNIQUE,
+        name VARCHAR(255) NOT NULL,
+        provider_id VARCHAR(255),
+        model_id VARCHAR(255),
+        routing_strategy VARCHAR(50) DEFAULT 'single',
+        model_ids TEXT,
+        routing_config TEXT,
+        enabled TINYINT DEFAULT 1,
+        rate_limit INT,
+        cache_enabled TINYINT DEFAULT 0,
+        disable_logging TINYINT DEFAULT 0,
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
+        FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE SET NULL,
+        INDEX idx_key_value (key_value),
+        INDEX idx_key_hash (key_hash),
+        INDEX idx_enabled (enabled)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS system_config (
+        \`key\` VARCHAR(255) PRIMARY KEY,
+        value TEXT NOT NULL,
+        description TEXT,
+        updated_at BIGINT NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS api_requests (
+        id VARCHAR(255) PRIMARY KEY,
+        virtual_key_id VARCHAR(255),
+        provider_id VARCHAR(255),
+        model VARCHAR(255),
+        prompt_tokens INT DEFAULT 0,
+        completion_tokens INT DEFAULT 0,
+        total_tokens INT DEFAULT 0,
+        status VARCHAR(50),
+        response_time INT,
+        error_message TEXT,
+        request_body TEXT,
+        response_body TEXT,
+        cache_hit TINYINT DEFAULT 0,
+        prompt_cache_hit_tokens INT DEFAULT 0,
+        prompt_cache_write_tokens INT DEFAULT 0,
+        created_at BIGINT NOT NULL,
+        FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
+        FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
+        INDEX idx_created_at (created_at),
+        INDEX idx_virtual_key (virtual_key_id),
+        INDEX idx_provider (provider_id),
+        INDEX idx_status (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS routing_configs (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        type VARCHAR(50) NOT NULL,
+        config TEXT NOT NULL,
+        enabled TINYINT DEFAULT 1,
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        INDEX idx_type (type),
+        INDEX idx_enabled (enabled)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS portkey_gateways (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        url TEXT NOT NULL,
+        description TEXT,
+        is_default TINYINT DEFAULT 0,
+        enabled TINYINT DEFAULT 1,
+        container_name VARCHAR(255),
+        port INT,
+        api_key TEXT,
+        install_status VARCHAR(50) DEFAULT 'pending',
+        last_heartbeat BIGINT,
+        agent_version VARCHAR(50),
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        INDEX idx_enabled (enabled),
+        INDEX idx_is_default (is_default)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS model_routing_rules (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        portkey_gateway_id VARCHAR(255) NOT NULL,
+        rule_type VARCHAR(50) NOT NULL,
+        rule_value VARCHAR(255) NOT NULL,
+        priority INT DEFAULT 0,
+        enabled TINYINT DEFAULT 1,
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        FOREIGN KEY (portkey_gateway_id) REFERENCES portkey_gateways(id) ON DELETE CASCADE,
+        INDEX idx_enabled (enabled),
+        INDEX idx_priority (priority)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS expert_routing_configs (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        enabled TINYINT DEFAULT 1,
+        config TEXT NOT NULL,
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        INDEX idx_enabled (enabled)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS expert_routing_logs (
+        id VARCHAR(255) PRIMARY KEY,
+        virtual_key_id VARCHAR(255),
+        expert_routing_id VARCHAR(255) NOT NULL,
+        request_hash VARCHAR(255) NOT NULL,
+        classifier_model VARCHAR(255) NOT NULL,
+        classification_result VARCHAR(255) NOT NULL,
+        selected_expert_id VARCHAR(255) NOT NULL,
+        selected_expert_type VARCHAR(50) NOT NULL,
+        selected_expert_name VARCHAR(255) NOT NULL,
+        classification_time INT NOT NULL,
+        created_at BIGINT NOT NULL,
+        original_request TEXT,
+        classifier_request TEXT,
+        classifier_response TEXT,
+        FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
+        INDEX idx_expert_routing (expert_routing_id),
+        INDEX idx_created_at (created_at),
+        INDEX idx_classification (classification_result)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+  } finally {
+    conn.release();
   }
-
-  try {
-    db.run('ALTER TABLE models ADD COLUMN routing_config_id TEXT');
-  } catch (e) {
-  }
-
-  try {
-    db.run('UPDATE models SET provider_id = NULL WHERE is_virtual = 1');
-  } catch (e) {
-  }
-
-  try {
-    db.run('ALTER TABLE models ADD COLUMN model_attributes TEXT');
-  } catch (e) {
-  }
-
-  try {
-    db.run('ALTER TABLE models ADD COLUMN prompt_config TEXT');
-  } catch (e) {
-  }
-
-  try {
-    db.run('ALTER TABLE models ADD COLUMN compression_config TEXT');
-  } catch (e) {
-  }
-
-  try {
-    db.run('ALTER TABLE models ADD COLUMN expert_routing_id TEXT');
-  } catch (e) {
-  }
-
-  db.run('CREATE INDEX IF NOT EXISTS idx_models_provider ON models(provider_id)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_models_enabled ON models(enabled)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_models_is_virtual ON models(is_virtual)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_models_routing_config ON models(routing_config_id)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_models_prompt_config ON models(prompt_config)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_models_compression_config ON models(compression_config)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_models_expert_routing ON models(expert_routing_id)');
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS virtual_keys (
-      id TEXT PRIMARY KEY,
-      key_value TEXT NOT NULL UNIQUE,
-      key_hash TEXT NOT NULL UNIQUE,
-      name TEXT NOT NULL,
-      provider_id TEXT,
-      model_id TEXT,
-      routing_strategy TEXT DEFAULT 'single',
-      model_ids TEXT,
-      routing_config TEXT,
-      enabled INTEGER DEFAULT 1,
-      rate_limit INTEGER,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
-      FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE SET NULL
-    )
-  `);
-
-  try {
-    db.run('ALTER TABLE virtual_keys ADD COLUMN cache_enabled INTEGER DEFAULT 0');
-  } catch (e) {
-  }
-
-  try {
-    db.run('ALTER TABLE virtual_keys ADD COLUMN disable_logging INTEGER DEFAULT 0');
-  } catch (e) {
-  }
-
-  db.run('CREATE INDEX IF NOT EXISTS idx_virtual_keys_hash ON virtual_keys(key_hash)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_virtual_keys_value ON virtual_keys(key_value)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_virtual_keys_provider ON virtual_keys(provider_id)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_virtual_keys_model ON virtual_keys(model_id)');
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS system_config (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      description TEXT,
-      updated_at INTEGER NOT NULL
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS api_requests (
-      id TEXT PRIMARY KEY,
-      virtual_key_id TEXT,
-      provider_id TEXT,
-      model TEXT,
-      prompt_tokens INTEGER DEFAULT 0,
-      completion_tokens INTEGER DEFAULT 0,
-      total_tokens INTEGER DEFAULT 0,
-      status TEXT,
-      response_time INTEGER,
-      error_message TEXT,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
-      FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL
-    )
-  `);
-
-  try {
-    db.run('ALTER TABLE api_requests ADD COLUMN request_body TEXT');
-  } catch (e) {
-  }
-
-  try {
-    db.run('ALTER TABLE api_requests ADD COLUMN response_body TEXT');
-  } catch (e) {
-  }
-
-  try {
-    db.run('ALTER TABLE api_requests ADD COLUMN cache_hit INTEGER DEFAULT 0');
-  } catch (e) {
-  }
-
-  try {
-    db.run('ALTER TABLE api_requests ADD COLUMN prompt_cache_hit_tokens INTEGER DEFAULT 0');
-  } catch (e) {
-  }
-
-  try {
-    db.run('ALTER TABLE api_requests ADD COLUMN prompt_cache_write_tokens INTEGER DEFAULT 0');
-  } catch (e) {
-  }
-
-  db.run('CREATE INDEX IF NOT EXISTS idx_api_requests_created_at ON api_requests(created_at)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_api_requests_virtual_key ON api_requests(virtual_key_id)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_api_requests_provider ON api_requests(provider_id)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_api_requests_status ON api_requests(status)');
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS routing_configs (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      type TEXT NOT NULL,
-      config TEXT NOT NULL,
-      enabled INTEGER DEFAULT 1,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `);
-
-  db.run('CREATE INDEX IF NOT EXISTS idx_routing_configs_type ON routing_configs(type)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_routing_configs_enabled ON routing_configs(enabled)');
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS portkey_gateways (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      url TEXT NOT NULL,
-      description TEXT,
-      is_default INTEGER DEFAULT 0,
-      enabled INTEGER DEFAULT 1,
-      container_name TEXT,
-      port INTEGER,
-      api_key TEXT,
-      install_status TEXT DEFAULT 'pending',
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `);
-
-  try {
-    db.run('ALTER TABLE portkey_gateways ADD COLUMN last_heartbeat INTEGER');
-  } catch (e) {
-  }
-
-  try {
-    db.run('ALTER TABLE portkey_gateways ADD COLUMN agent_version TEXT');
-  } catch (e) {
-  }
-
-  db.run('CREATE INDEX IF NOT EXISTS idx_portkey_gateways_enabled ON portkey_gateways(enabled)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_portkey_gateways_is_default ON portkey_gateways(is_default)');
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS model_routing_rules (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      portkey_gateway_id TEXT NOT NULL,
-      rule_type TEXT NOT NULL,
-      rule_value TEXT NOT NULL,
-      priority INTEGER DEFAULT 0,
-      enabled INTEGER DEFAULT 1,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      FOREIGN KEY (portkey_gateway_id) REFERENCES portkey_gateways(id) ON DELETE CASCADE
-    )
-  `);
-
-  db.run('CREATE INDEX IF NOT EXISTS idx_model_routing_rules_gateway ON model_routing_rules(portkey_gateway_id)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_model_routing_rules_type ON model_routing_rules(rule_type)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_model_routing_rules_enabled ON model_routing_rules(enabled)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_model_routing_rules_priority ON model_routing_rules(priority)');
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS expert_routing_configs (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      enabled INTEGER DEFAULT 1,
-      config TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `);
-
-  db.run('CREATE INDEX IF NOT EXISTS idx_expert_routing_configs_enabled ON expert_routing_configs(enabled)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_expert_routing_configs_created_at ON expert_routing_configs(created_at)');
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS expert_routing_logs (
-      id TEXT PRIMARY KEY,
-      virtual_key_id TEXT,
-      expert_routing_id TEXT NOT NULL,
-      request_hash TEXT NOT NULL,
-      classifier_model TEXT NOT NULL,
-      classification_result TEXT NOT NULL,
-      selected_expert_id TEXT NOT NULL,
-      selected_expert_type TEXT NOT NULL,
-      selected_expert_name TEXT NOT NULL,
-      classification_time INTEGER,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
-      FOREIGN KEY (expert_routing_id) REFERENCES expert_routing_configs(id) ON DELETE CASCADE
-    )
-  `);
-
-  try {
-    db.run('ALTER TABLE expert_routing_logs ADD COLUMN original_request TEXT');
-  } catch (e) {
-  }
-
-  try {
-    db.run('ALTER TABLE expert_routing_logs ADD COLUMN classifier_request TEXT');
-  } catch (e) {
-  }
-
-  try {
-    db.run('ALTER TABLE expert_routing_logs ADD COLUMN classifier_response TEXT');
-  } catch (e) {
-  }
-
-  db.run('CREATE INDEX IF NOT EXISTS idx_expert_routing_logs_config ON expert_routing_logs(expert_routing_id)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_expert_routing_logs_created_at ON expert_routing_logs(created_at)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_expert_routing_logs_category ON expert_routing_logs(classification_result)');
 }
 
 export function getDatabase() {
-  if (!db) {
+  if (!pool) {
     throw new Error('Database not initialized');
   }
-  return db;
+  return pool;
 }
 
 export const userDb = {
   async create(user: Omit<User, 'created_at' | 'updated_at'>): Promise<User> {
     const now = Date.now();
-    db.run(
-      'INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-      [user.id, user.username, user.password_hash, now, now]
-    );
-    markDirty();
-    return { ...user, created_at: now, updated_at: now };
+    const conn = await pool.getConnection();
+    try {
+      await conn.query(
+        'INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+        [user.id, user.username, user.password_hash, now, now]
+      );
+      return { ...user, created_at: now, updated_at: now };
+    } finally {
+      conn.release();
+    }
   },
 
-  findByUsername(username: string): User | undefined {
-    const result = db.exec('SELECT * FROM users WHERE username = ?', [username]);
-    if (result.length === 0 || result[0].values.length === 0) return undefined;
-    const row = result[0].values[0];
-    return {
-      id: row[0] as string,
-      username: row[1] as string,
-      password_hash: row[2] as string,
-      created_at: row[3] as number,
-      updated_at: row[4] as number,
-    };
+  async findByUsername(username: string): Promise<User | undefined> {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM users WHERE username = ?', [username]);
+      const users = rows as any[];
+      if (users.length === 0) return undefined;
+      return users[0];
+    } finally {
+      conn.release();
+    }
   },
 
-  findById(id: string): User | undefined {
-    const result = db.exec('SELECT * FROM users WHERE id = ?', [id]);
-    if (result.length === 0 || result[0].values.length === 0) return undefined;
-    const row = result[0].values[0];
-    return {
-      id: row[0] as string,
-      username: row[1] as string,
-      password_hash: row[2] as string,
-      created_at: row[3] as number,
-      updated_at: row[4] as number,
-    };
+  async findById(id: string): Promise<User | undefined> {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM users WHERE id = ?', [id]);
+      const users = rows as any[];
+      if (users.length === 0) return undefined;
+      return users[0];
+    } finally {
+      conn.release();
+    }
   },
 
-  getAll(): User[] {
-    const result = db.exec('SELECT * FROM users ORDER BY username');
-    if (result.length === 0) return [];
-    return result[0].values.map(row => ({
-      id: row[0] as string,
-      username: row[1] as string,
-      password_hash: row[2] as string,
-      created_at: row[3] as number,
-      updated_at: row[4] as number,
-    }));
+  async getAll(): Promise<User[]> {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM users ORDER BY created_at DESC');
+      return rows as User[];
+    } finally {
+      conn.release();
+    }
   },
 };
 
 export const providerDb = {
-  getAll(): Provider[] {
-    const result = db.exec('SELECT * FROM providers ORDER BY created_at DESC');
-    if (result.length === 0) return [];
-    return result[0].values.map(row => ({
-      id: row[0] as string,
-      name: row[1] as string,
-      base_url: row[2] as string,
-      api_key: row[3] as string,
-      model_mapping: row[4] as string | null,
-      enabled: row[5] as number,
-      created_at: row[6] as number,
-      updated_at: row[7] as number,
-    }));
+  async getAll(): Promise<Provider[]> {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM providers ORDER BY created_at DESC');
+      return rows as Provider[];
+    } finally {
+      conn.release();
+    }
   },
 
-  getById(id: string): Provider | undefined {
-    const result = db.exec('SELECT * FROM providers WHERE id = ?', [id]);
-    if (result.length === 0 || result[0].values.length === 0) return undefined;
-    const row = result[0].values[0];
-    return {
-      id: row[0] as string,
-      name: row[1] as string,
-      base_url: row[2] as string,
-      api_key: row[3] as string,
-      model_mapping: row[4] as string | null,
-      enabled: row[5] as number,
-      created_at: row[6] as number,
-      updated_at: row[7] as number,
-    };
+  async getById(id: string): Promise<Provider | undefined> {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM providers WHERE id = ?', [id]);
+      const providers = rows as any[];
+      if (providers.length === 0) return undefined;
+      return providers[0];
+    } finally {
+      conn.release();
+    }
   },
 
   async create(provider: Omit<Provider, 'created_at' | 'updated_at'>): Promise<Provider> {
     const now = Date.now();
-    db.run(
-      'INSERT INTO providers (id, name, base_url, api_key, model_mapping, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [
-        provider.id,
-        provider.name,
-        provider.base_url,
-        provider.api_key,
-        provider.model_mapping,
-        provider.enabled,
-        now,
-        now
-      ]
-    );
-    markDirty();
-    return { ...provider, created_at: now, updated_at: now };
+    const conn = await pool.getConnection();
+    try {
+      await conn.query(
+        'INSERT INTO providers (id, name, base_url, api_key, model_mapping, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [provider.id, provider.name, provider.base_url, provider.api_key, provider.model_mapping || null, provider.enabled, now, now]
+      );
+      return { ...provider, created_at: now, updated_at: now };
+    } finally {
+      conn.release();
+    }
   },
 
   async update(id: string, updates: Partial<Omit<Provider, 'id' | 'created_at' | 'updated_at'>>): Promise<void> {
     const now = Date.now();
-    const fields: string[] = [];
-    const values: any[] = [];
+    const conn = await pool.getConnection();
+    try {
+      const fields: string[] = [];
+      const values: any[] = [];
 
-    Object.entries(updates).forEach(([key, value]) => {
-      fields.push(`${key} = ?`);
-      values.push(value);
-    });
+      if (updates.name !== undefined) {
+        fields.push('name = ?');
+        values.push(updates.name);
+      }
+      if (updates.base_url !== undefined) {
+        fields.push('base_url = ?');
+        values.push(updates.base_url);
+      }
+      if (updates.api_key !== undefined) {
+        fields.push('api_key = ?');
+        values.push(updates.api_key);
+      }
+      if (updates.model_mapping !== undefined) {
+        fields.push('model_mapping = ?');
+        values.push(updates.model_mapping);
+      }
+      if (updates.enabled !== undefined) {
+        fields.push('enabled = ?');
+        values.push(updates.enabled);
+      }
 
-    if (fields.length === 0) return;
+      if (fields.length === 0) return;
 
-    fields.push('updated_at = ?');
-    values.push(now);
-    values.push(id);
+      fields.push('updated_at = ?');
+      values.push(now);
+      values.push(id);
 
-    db.run(`UPDATE providers SET ${fields.join(', ')} WHERE id = ?`, values);
-    markDirty();
+      await conn.query(`UPDATE providers SET ${fields.join(', ')} WHERE id = ?`, values);
+    } finally {
+      conn.release();
+    }
   },
 
   async delete(id: string): Promise<void> {
-    db.run('DELETE FROM providers WHERE id = ?', [id]);
-    markDirty();
+    const conn = await pool.getConnection();
+    try {
+      await conn.query('DELETE FROM providers WHERE id = ?', [id]);
+    } finally {
+      conn.release();
+    }
   },
 };
 
-export interface ModelAttributes {
-  max_tokens?: number;
-  max_input_tokens?: number;
-  max_output_tokens?: number;
-  input_cost_per_token?: number;
-  output_cost_per_token?: number;
-  input_cost_per_token_cache_hit?: number;
-  supports_function_calling?: boolean;
-  supports_vision?: boolean;
-  supports_tool_choice?: boolean;
-  supports_assistant_prefill?: boolean;
-  supports_prompt_caching?: boolean;
-  supports_reasoning?: boolean;
-  supports_audio_input?: boolean;
-  supports_audio_output?: boolean;
-  supports_pdf_input?: boolean;
-  litellm_provider?: string;
-  mode?: string;
-}
-
-export interface Model {
-  id: string;
-  name: string;
-  provider_id: string | null;
-  model_identifier: string;
-  is_virtual: number;
-  routing_config_id: string | null;
-  expert_routing_id?: string | null;
-  enabled: number;
-  model_attributes: string | null;
-  prompt_config: string | null;
-  compression_config: string | null;
-  created_at: number;
-  updated_at: number;
-}
-
 export const modelDb = {
-  getAll(): Model[] {
-    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, expert_routing_id, enabled, model_attributes, prompt_config, compression_config, created_at, updated_at FROM models ORDER BY created_at DESC');
-    if (result.length === 0) return [];
-    return result[0].values.map(row => ({
-      id: row[0] as string,
-      name: row[1] as string,
-      provider_id: row[2] as string | null,
-      model_identifier: row[3] as string,
-      is_virtual: row[4] as number,
-      routing_config_id: row[5] as string | null,
-      expert_routing_id: row[6] as string | null,
-      enabled: row[7] as number,
-      model_attributes: row[8] as string | null,
-      prompt_config: row[9] as string | null,
-      compression_config: row[10] as string | null,
-      created_at: row[11] as number,
-      updated_at: row[12] as number,
-    }));
-  },
-
-  getById(id: string): Model | undefined {
-    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, expert_routing_id, enabled, model_attributes, prompt_config, compression_config, created_at, updated_at FROM models WHERE id = ?', [id]);
-    if (result.length === 0 || result[0].values.length === 0) return undefined;
-    const row = result[0].values[0];
-    return {
-      id: row[0] as string,
-      name: row[1] as string,
-      provider_id: row[2] as string | null,
-      model_identifier: row[3] as string,
-      is_virtual: row[4] as number,
-      routing_config_id: row[5] as string | null,
-      expert_routing_id: row[6] as string | null,
-      enabled: row[7] as number,
-      model_attributes: row[8] as string | null,
-      prompt_config: row[9] as string | null,
-      compression_config: row[10] as string | null,
-      created_at: row[11] as number,
-      updated_at: row[12] as number,
-    };
-  },
-
-  getByProviderId(providerId: string): Model[] {
-    if (!providerId || typeof providerId !== 'string') {
-      console.warn('Invalid providerId parameter');
-      return [];
+  async getAll(): Promise<Model[]> {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM models ORDER BY created_at DESC');
+      return rows as Model[];
+    } finally {
+      conn.release();
     }
+  },
 
-    const result = db.exec('SELECT id, name, provider_id, model_identifier, is_virtual, routing_config_id, expert_routing_id, enabled, model_attributes, prompt_config, compression_config, created_at, updated_at FROM models WHERE provider_id = ? ORDER BY created_at DESC', [providerId]);
-    if (result.length === 0) return [];
-    return result[0].values.map(row => ({
-      id: row[0] as string,
-      name: row[1] as string,
-      provider_id: row[2] as string | null,
-      model_identifier: row[3] as string,
-      is_virtual: row[4] as number,
-      routing_config_id: row[5] as string | null,
-      expert_routing_id: row[6] as string | null,
-      enabled: row[7] as number,
-      model_attributes: row[8] as string | null,
-      prompt_config: row[9] as string | null,
-      compression_config: row[10] as string | null,
-      created_at: row[11] as number,
-      updated_at: row[12] as number,
-    }));
+  async getById(id: string): Promise<Model | undefined> {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM models WHERE id = ?', [id]);
+      const models = rows as any[];
+      if (models.length === 0) return undefined;
+      return models[0];
+    } finally {
+      conn.release();
+    }
+  },
+
+  async getByProviderId(providerId: string): Promise<Model[]> {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM models WHERE provider_id = ? ORDER BY created_at DESC', [providerId]);
+      return rows as Model[];
+    } finally {
+      conn.release();
+    }
   },
 
   async create(model: Omit<Model, 'created_at' | 'updated_at'>): Promise<Model> {
     const now = Date.now();
-    db.run(
-      'INSERT INTO models (id, name, provider_id, model_identifier, is_virtual, routing_config_id, expert_routing_id, enabled, model_attributes, prompt_config, compression_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [model.id, model.name, model.provider_id, model.model_identifier, model.is_virtual, model.routing_config_id, model.expert_routing_id || null, model.enabled, model.model_attributes, model.prompt_config, model.compression_config, now, now]
-    );
-    markDirty();
-    return { ...model, created_at: now, updated_at: now };
+    const conn = await pool.getConnection();
+    try {
+      await conn.query(
+        'INSERT INTO models (id, name, provider_id, model_identifier, is_virtual, routing_config_id, expert_routing_id, enabled, model_attributes, prompt_config, compression_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [model.id, model.name, model.provider_id, model.model_identifier, model.is_virtual, model.routing_config_id, model.expert_routing_id || null, model.enabled, model.model_attributes, model.prompt_config, model.compression_config, now, now]
+      );
+      return { ...model, created_at: now, updated_at: now };
+    } finally {
+      conn.release();
+    }
   },
 
   async update(id: string, updates: Partial<Omit<Model, 'id' | 'created_at' | 'updated_at'>>): Promise<void> {
     const now = Date.now();
-    const fields: string[] = [];
-    const values: any[] = [];
+    const conn = await pool.getConnection();
+    try {
+      const fields: string[] = [];
+      const values: any[] = [];
 
-    Object.entries(updates).forEach(([key, value]) => {
-      fields.push(`${key} = ?`);
-      values.push(value);
-    });
+      Object.entries(updates).forEach(([key, value]) => {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      });
 
-    if (fields.length === 0) return;
+      if (fields.length === 0) return;
 
-    fields.push('updated_at = ?');
-    values.push(now);
-    values.push(id);
+      fields.push('updated_at = ?');
+      values.push(now);
+      values.push(id);
 
-    db.run(`UPDATE models SET ${fields.join(', ')} WHERE id = ?`, values);
-    markDirty();
+      await conn.query(`UPDATE models SET ${fields.join(', ')} WHERE id = ?`, values);
+    } finally {
+      conn.release();
+    }
   },
 
   async delete(id: string): Promise<void> {
-    db.run('DELETE FROM models WHERE id = ?', [id]);
-    markDirty();
+    const conn = await pool.getConnection();
+    try {
+      await conn.query('DELETE FROM models WHERE id = ?', [id]);
+    } finally {
+      conn.release();
+    }
   },
 
-  countByProviderId(providerId: string): number {
-    const result = db.exec('SELECT COUNT(*) as count FROM models WHERE provider_id = ?', [providerId]);
-    if (result.length === 0 || result[0].values.length === 0) return 0;
-    return result[0].values[0][0] as number;
+  async countByProviderId(providerId: string): Promise<number> {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT COUNT(*) as count FROM models WHERE provider_id = ?', [providerId]);
+      const result = rows as any[];
+      return result[0].count;
+    } finally {
+      conn.release();
+    }
   },
 };
 
-function mapVirtualKeyRow(row: any[]): VirtualKey {
-  return {
-    id: row[0] as string,
-    key_value: row[1] as string,
-    key_hash: row[2] as string,
-    name: row[3] as string,
-    provider_id: row[4] as string | null,
-    model_id: row[5] as string | null,
-    routing_strategy: row[6] as string,
-    model_ids: row[7] as string | null,
-    routing_config: row[8] as string | null,
-    enabled: row[9] as number,
-    rate_limit: row[10] as number | null,
-    created_at: row[11] as number,
-    updated_at: row[12] as number,
-    cache_enabled: (row[13] as number) || 0,
-    disable_logging: (row[14] as number) || 0,
-  };
-}
-
 export const virtualKeyDb = {
-  getAll(): VirtualKey[] {
-    const result = db.exec('SELECT * FROM virtual_keys ORDER BY created_at DESC');
-    if (result.length === 0) return [];
-    return result[0].values.map(mapVirtualKeyRow);
+  async getAll(): Promise<VirtualKey[]> {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM virtual_keys ORDER BY created_at DESC');
+      return rows as VirtualKey[];
+    } finally {
+      conn.release();
+    }
   },
 
-  getById(id: string): VirtualKey | undefined {
-    const result = db.exec('SELECT * FROM virtual_keys WHERE id = ?', [id]);
-    if (result.length === 0 || result[0].values.length === 0) return undefined;
-    return mapVirtualKeyRow(result[0].values[0]);
+  async getById(id: string): Promise<VirtualKey | undefined> {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM virtual_keys WHERE id = ?', [id]);
+      const keys = rows as any[];
+      if (keys.length === 0) return undefined;
+      return keys[0];
+    } finally {
+      conn.release();
+    }
   },
 
-  getByKeyValue(keyValue: string): VirtualKey | undefined {
-    const result = db.exec('SELECT * FROM virtual_keys WHERE key_value = ?', [keyValue]);
-    if (result.length === 0 || result[0].values.length === 0) return undefined;
-    return mapVirtualKeyRow(result[0].values[0]);
+  async getByKeyValue(keyValue: string): Promise<VirtualKey | undefined> {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM virtual_keys WHERE key_value = ?', [keyValue]);
+      const keys = rows as any[];
+      if (keys.length === 0) return undefined;
+      return keys[0];
+    } finally {
+      conn.release();
+    }
   },
 
   async create(vk: Omit<VirtualKey, 'created_at' | 'updated_at'>): Promise<VirtualKey> {
     const now = Date.now();
-    db.run(
-      `INSERT INTO virtual_keys (
-        id, key_value, key_hash, name, provider_id, model_id,
-        routing_strategy, model_ids, routing_config,
-        enabled, rate_limit, cache_enabled, disable_logging, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        vk.id,
-        vk.key_value,
-        vk.key_hash,
-        vk.name,
-        vk.provider_id || null,
-        vk.model_id || null,
-        vk.routing_strategy || 'single',
-        vk.model_ids || null,
-        vk.routing_config || null,
-        vk.enabled,
-        vk.rate_limit,
-        vk.cache_enabled || 0,
-        vk.disable_logging || 0,
-        now,
-        now
-      ]
-    );
-    markDirty();
-    return { ...vk, created_at: now, updated_at: now };
+    const conn = await pool.getConnection();
+    try {
+      await conn.query(
+        `INSERT INTO virtual_keys (
+          id, key_value, key_hash, name, provider_id, model_id,
+          routing_strategy, model_ids, routing_config,
+          enabled, rate_limit, cache_enabled, disable_logging, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          vk.id,
+          vk.key_value,
+          vk.key_hash,
+          vk.name,
+          vk.provider_id || null,
+          vk.model_id || null,
+          vk.routing_strategy || 'single',
+          vk.model_ids || null,
+          vk.routing_config || null,
+          vk.enabled,
+          vk.rate_limit,
+          vk.cache_enabled || 0,
+          vk.disable_logging || 0,
+          now,
+          now
+        ]
+      );
+      return { ...vk, created_at: now, updated_at: now };
+    } finally {
+      conn.release();
+    }
   },
 
   async update(id: string, updates: Partial<Omit<VirtualKey, 'id' | 'key_value' | 'key_hash' | 'created_at' | 'updated_at'>>): Promise<void> {
     const now = Date.now();
-    const fields: string[] = [];
-    const values: any[] = [];
+    const conn = await pool.getConnection();
+    try {
+      const fields: string[] = [];
+      const values: any[] = [];
 
-    Object.entries(updates).forEach(([key, value]) => {
-      fields.push(`${key} = ?`);
-      values.push(value);
-    });
+      Object.entries(updates).forEach(([key, value]) => {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      });
 
-    if (fields.length === 0) return;
+      if (fields.length === 0) return;
 
-    fields.push('updated_at = ?');
-    values.push(now);
-    values.push(id);
+      fields.push('updated_at = ?');
+      values.push(now);
+      values.push(id);
 
-    db.run(`UPDATE virtual_keys SET ${fields.join(', ')} WHERE id = ?`, values);
-    markDirty();
+      await conn.query(`UPDATE virtual_keys SET ${fields.join(', ')} WHERE id = ?`, values);
+    } finally {
+      conn.release();
+    }
   },
 
   async delete(id: string): Promise<void> {
-    db.run('DELETE FROM virtual_keys WHERE id = ?', [id]);
-    markDirty();
+    const conn = await pool.getConnection();
+    try {
+      await conn.query('DELETE FROM virtual_keys WHERE id = ?', [id]);
+    } finally {
+      conn.release();
+    }
   },
 
-  countByModelId(modelId: string): number {
-    const result = db.exec(
-      `SELECT COUNT(*) as count FROM virtual_keys
-       WHERE model_id = ? OR model_ids LIKE ?`,
-      [modelId, `%"${modelId}"%`]
-    );
-    if (result.length === 0 || result[0].values.length === 0) return 0;
-    return result[0].values[0][0] as number;
+  async countByModelId(modelId: string): Promise<number> {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT COUNT(*) as count FROM virtual_keys WHERE model_id = ?', [modelId]);
+      const result = rows as any[];
+      return result[0].count;
+    } finally {
+      conn.release();
+    }
   },
 
-  countByModelIds(modelIds: string[]): Map<string, number> {
-    if (modelIds.length === 0) {
-      return new Map();
-    }
+  async countByModelIds(modelIds: string[]): Promise<Map<string, number>> {
+    if (modelIds.length === 0) return new Map();
 
-    const counts = new Map<string, number>();
-    modelIds.forEach(id => counts.set(id, 0));
-
-    const placeholders = modelIds.map(() => '?').join(',');
-    const likeConditions = modelIds.map(() => 'model_ids LIKE ?').join(' OR ');
-
-    const result = db.exec(
-      `SELECT model_id, COUNT(*) as count FROM virtual_keys
-       WHERE model_id IN (${placeholders})
-       GROUP BY model_id`,
-      modelIds
-    );
-
-    if (result.length > 0 && result[0].values.length > 0) {
-      result[0].values.forEach(row => {
-        const modelId = row[0] as string;
-        const count = row[1] as number;
-        counts.set(modelId, count);
+    const conn = await pool.getConnection();
+    try {
+      const placeholders = modelIds.map(() => '?').join(',');
+      const [rows] = await conn.query(
+        `SELECT model_id, COUNT(*) as count FROM virtual_keys WHERE model_id IN (${placeholders}) GROUP BY model_id`,
+        modelIds
+      );
+      const result = rows as any[];
+      const map = new Map<string, number>();
+      result.forEach(row => {
+        map.set(row.model_id, row.count);
       });
+      return map;
+    } finally {
+      conn.release();
     }
-
-    const likeParams: string[] = [];
-    modelIds.forEach(id => {
-      const escapedId = id.replace(/["%]/g, '\\$&');
-      likeParams.push(`%"${escapedId}"%`);
-    });
-
-    const likeResult = db.exec(
-      `SELECT model_ids FROM virtual_keys
-       WHERE model_ids IS NOT NULL AND (${likeConditions})`,
-      likeParams
-    );
-
-    if (likeResult.length > 0 && likeResult[0].values.length > 0) {
-      likeResult[0].values.forEach(row => {
-        const modelIdsStr = row[0] as string;
-        try {
-          const parsedIds = JSON.parse(modelIdsStr);
-          if (Array.isArray(parsedIds)) {
-            parsedIds.forEach(id => {
-              if (counts.has(id)) {
-                counts.set(id, (counts.get(id) || 0) + 1);
-              }
-            });
-          }
-        } catch {
-        }
-      });
-    }
-
-    return counts;
   },
 };
 
 export const systemConfigDb = {
-  get(key: string): SystemConfig | undefined {
-    const result = db.exec('SELECT * FROM system_config WHERE key = ?', [key]);
-    if (result.length === 0 || result[0].values.length === 0) return undefined;
-    const row = result[0].values[0];
-    return {
-      key: row[0] as string,
-      value: row[1] as string,
-      description: row[2] as string | null,
-      updated_at: row[3] as number,
-    };
+  async get(key: string): Promise<SystemConfig | undefined> {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM system_config WHERE `key` = ?', [key]);
+      const configs = rows as any[];
+      if (configs.length === 0) return undefined;
+      return configs[0];
+    } finally {
+      conn.release();
+    }
   },
 
   async set(key: string, value: string, description?: string): Promise<void> {
     const now = Date.now();
-    const existing = this.get(key);
+    const conn = await pool.getConnection();
+    try {
+      const existing = await this.get(key);
 
-    if (existing) {
-      db.run(
-        'UPDATE system_config SET value = ?, description = ?, updated_at = ? WHERE key = ?',
-        [value, description || null, now, key]
-      );
-    } else {
-      db.run(
-        'INSERT INTO system_config (key, value, description, updated_at) VALUES (?, ?, ?, ?)',
-        [key, value, description || null, now]
-      );
+      if (existing) {
+        await conn.query(
+          'UPDATE system_config SET value = ?, description = ?, updated_at = ? WHERE `key` = ?',
+          [value, description || null, now, key]
+        );
+      } else {
+        await conn.query(
+          'INSERT INTO system_config (`key`, value, description, updated_at) VALUES (?, ?, ?, ?)',
+          [key, value, description || null, now]
+        );
+      }
+    } finally {
+      conn.release();
     }
-    markDirty();
   },
 };
 
@@ -960,84 +767,76 @@ export const apiRequestDb = {
     apiRequestBuffer.push(request);
 
     if (apiRequestBuffer.length >= BUFFER_MAX_SIZE) {
-      flushApiRequestBuffer();
+      await flushApiRequestBuffer();
     }
   },
 
-  getStats(options?: { startTime?: number; endTime?: number }) {
+  async getStats(options?: { startTime?: number; endTime?: number }) {
     const now = Date.now();
     const startTime = options?.startTime || now - 24 * 60 * 60 * 1000;
     const endTime = options?.endTime || now;
 
-    const result = db.exec(
-      `SELECT
-        COUNT(*) as total_requests,
-        SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successful_requests,
-        SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as failed_requests,
-        SUM(CASE WHEN cache_hit = 0 THEN total_tokens ELSE 0 END) as total_tokens,
-        AVG(response_time) as avg_response_time,
-        SUM(CASE WHEN cache_hit = 1 THEN 1 ELSE 0 END) as cache_hits,
-        SUM(CASE WHEN cache_hit = 1 THEN total_tokens ELSE 0 END) as cache_saved_tokens
-      FROM api_requests
-      WHERE created_at >= ? AND created_at <= ?`,
-      [startTime, endTime]
-    );
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query(
+        `SELECT
+          COUNT(*) as total_requests,
+          SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successful_requests,
+          SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as failed_requests,
+          SUM(CASE WHEN cache_hit = 0 THEN total_tokens ELSE 0 END) as total_tokens,
+          AVG(response_time) as avg_response_time,
+          SUM(CASE WHEN cache_hit = 1 THEN 1 ELSE 0 END) as cache_hits,
+          SUM(prompt_cache_hit_tokens) as cache_saved_tokens
+        FROM api_requests
+        WHERE created_at >= ? AND created_at <= ?`,
+        [startTime, endTime]
+      );
 
-    if (result.length === 0 || result[0].values.length === 0) {
+      const result = rows as any[];
+      if (result.length === 0) {
+        return {
+          totalRequests: 0,
+          successfulRequests: 0,
+          failedRequests: 0,
+          totalTokens: 0,
+          avgResponseTime: 0,
+          cacheHits: 0,
+          cacheSavedTokens: 0,
+        };
+      }
+
+      const row = result[0];
       return {
-        totalRequests: 0,
-        successfulRequests: 0,
-        failedRequests: 0,
-        totalTokens: 0,
-        avgResponseTime: 0,
-        cacheHits: 0,
-        cacheSavedTokens: 0,
+        totalRequests: row.total_requests || 0,
+        successfulRequests: row.successful_requests || 0,
+        failedRequests: row.failed_requests || 0,
+        totalTokens: row.total_tokens || 0,
+        avgResponseTime: row.avg_response_time || 0,
+        cacheHits: row.cache_hits || 0,
+        cacheSavedTokens: row.cache_saved_tokens || 0,
       };
+    } finally {
+      conn.release();
     }
-
-    const row = result[0].values[0];
-    return {
-      totalRequests: (row[0] as number) || 0,
-      successfulRequests: (row[1] as number) || 0,
-      failedRequests: (row[2] as number) || 0,
-      totalTokens: (row[3] as number) || 0,
-      avgResponseTime: (row[4] as number) || 0,
-      cacheHits: (row[5] as number) || 0,
-      cacheSavedTokens: (row[6] as number) || 0,
-    };
   },
 
-  getByVirtualKey(virtualKeyId: string, limit: number = 100) {
-    const result = db.exec(
-      `SELECT * FROM api_requests
-       WHERE virtual_key_id = ?
-       ORDER BY created_at DESC
-       LIMIT ?`,
-      [virtualKeyId, limit]
-    );
-
-    if (result.length === 0) return [];
-
-    return result[0].values.map(row => ({
-      id: row[0] as string,
-      virtual_key_id: row[1] as string | null,
-      provider_id: row[2] as string | null,
-      model: row[3] as string | null,
-      prompt_tokens: row[4] as number,
-      completion_tokens: row[5] as number,
-      total_tokens: row[6] as number,
-      status: row[7] as string,
-      response_time: row[8] as number | null,
-      error_message: row[9] as string | null,
-      created_at: row[10] as number,
-      request_body: row[11] as string | null,
-      response_body: row[12] as string | null,
-      prompt_cache_hit_tokens: row[13] as number,
-      prompt_cache_write_tokens: row[14] as number,
-    }));
+  async getByVirtualKey(virtualKeyId: string, limit: number = 100) {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query(
+        `SELECT * FROM api_requests
+         WHERE virtual_key_id = ?
+         ORDER BY created_at DESC
+         LIMIT ?`,
+        [virtualKeyId, limit]
+      );
+      return rows;
+    } finally {
+      conn.release();
+    }
   },
 
-  getTrend(options?: { startTime?: number; endTime?: number; interval?: 'hour' | 'day' }) {
+  async getTrend(options?: { startTime?: number; endTime?: number; interval?: 'hour' | 'day' }) {
     const now = Date.now();
     const startTime = options?.startTime || now - 24 * 60 * 60 * 1000;
     const endTime = options?.endTime || now;
@@ -1045,199 +844,111 @@ export const apiRequestDb = {
 
     const intervalMs = interval === 'hour' ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
 
-    const result = db.exec(
-      `SELECT
-        (created_at / ${intervalMs}) * ${intervalMs} as time_bucket,
-        COUNT(*) as request_count,
-        SUM(total_tokens) as token_count
-      FROM api_requests
-      WHERE created_at >= ? AND created_at <= ?
-      GROUP BY time_bucket
-      ORDER BY time_bucket ASC`,
-      [startTime, endTime]
-    );
-
-    if (result.length === 0) return [];
-
-    return result[0].values.map(row => ({
-      timestamp: row[0] as number,
-      requestCount: row[1] as number,
-      tokenCount: (row[2] as number) || 0,
-    }));
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query(
+        `SELECT
+          FLOOR(created_at / ?) * ? as time_bucket,
+          COUNT(*) as count,
+          SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success_count,
+          SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error_count
+        FROM api_requests
+        WHERE created_at >= ? AND created_at <= ?
+        GROUP BY time_bucket
+        ORDER BY time_bucket ASC`,
+        [intervalMs, intervalMs, startTime, endTime]
+      );
+      return rows;
+    } finally {
+      conn.release();
+    }
   },
 
-  getAll(options?: {
-    page?: number;
-    pageSize?: number;
+  async getAll(options?: {
+    limit?: number;
+    offset?: number;
+    virtualKeyId?: string;
     startTime?: number;
     endTime?: number;
-    status?: string;
-    virtualKeyId?: string;
-    providerId?: string;
-    model?: string;
   }) {
-    const page = options?.page || 1;
-    const pageSize = options?.pageSize || 20;
-    const offset = (page - 1) * pageSize;
+    const limit = options?.limit || 100;
+    const offset = options?.offset || 0;
 
-    let whereConditions: string[] = [];
-    let params: any[] = [];
+    const conn = await pool.getConnection();
+    try {
+      let query = 'SELECT * FROM api_requests WHERE 1=1';
+      const params: any[] = [];
 
-    if (options?.startTime) {
-      whereConditions.push('created_at >= ?');
-      params.push(options.startTime);
+      if (options?.virtualKeyId) {
+        query += ' AND virtual_key_id = ?';
+        params.push(options.virtualKeyId);
+      }
+
+      if (options?.startTime) {
+        query += ' AND created_at >= ?';
+        params.push(options.startTime);
+      }
+
+      if (options?.endTime) {
+        query += ' AND created_at <= ?';
+        params.push(options.endTime);
+      }
+
+      query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+      params.push(limit, offset);
+
+      const [rows] = await conn.query(query, params);
+      return rows;
+    } finally {
+      conn.release();
     }
-
-    if (options?.endTime) {
-      whereConditions.push('created_at <= ?');
-      params.push(options.endTime);
-    }
-
-    if (options?.status) {
-      whereConditions.push('status = ?');
-      params.push(options.status);
-    }
-
-    if (options?.virtualKeyId) {
-      whereConditions.push('virtual_key_id = ?');
-      params.push(options.virtualKeyId);
-    }
-
-    if (options?.providerId) {
-      whereConditions.push('provider_id = ?');
-      params.push(options.providerId);
-    }
-
-    if (options?.model) {
-      whereConditions.push('model = ?');
-      params.push(options.model);
-    }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    const countResult = db.exec(
-      `SELECT COUNT(*) as total FROM api_requests ${whereClause}`,
-      params
-    );
-    const total = countResult.length > 0 && countResult[0].values.length > 0
-      ? (countResult[0].values[0][0] as number)
-      : 0;
-
-    const result = db.exec(
-      `SELECT * FROM api_requests ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-      [...params, pageSize, offset]
-    );
-
-    if (result.length === 0) {
-      return {
-        data: [],
-        total,
-        page,
-        pageSize,
-        totalPages: Math.ceil(total / pageSize),
-      };
-    }
-
-    const data = result[0].values.map(row => ({
-      id: row[0] as string,
-      virtual_key_id: row[1] as string | null,
-      provider_id: row[2] as string | null,
-      model: row[3] as string | null,
-      prompt_tokens: row[4] as number,
-      completion_tokens: row[5] as number,
-      total_tokens: row[6] as number,
-      status: row[7] as string,
-      response_time: row[8] as number | null,
-      error_message: row[9] as string | null,
-      created_at: row[10] as number,
-      request_body: row[11] as string | null,
-      response_body: row[12] as string | null,
-      prompt_cache_hit_tokens: row[13] as number,
-      prompt_cache_write_tokens: row[14] as number,
-    }));
-
-    return {
-      data,
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize),
-    };
   },
 
-  getById(id: string) {
-    const result = db.exec('SELECT * FROM api_requests WHERE id = ?', [id]);
-    if (result.length === 0 || result[0].values.length === 0) return null;
-
-    const row = result[0].values[0];
-    return {
-      id: row[0] as string,
-      virtual_key_id: row[1] as string | null,
-      provider_id: row[2] as string | null,
-      model: row[3] as string | null,
-      prompt_tokens: row[4] as number,
-      completion_tokens: row[5] as number,
-      total_tokens: row[6] as number,
-      status: row[7] as string,
-      response_time: row[8] as number | null,
-      error_message: row[9] as string | null,
-      created_at: row[10] as number,
-      request_body: row[11] as string | null,
-      response_body: row[12] as string | null,
-      prompt_cache_hit_tokens: row[13] as number,
-      prompt_cache_write_tokens: row[14] as number,
-    };
+  async getById(id: string) {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM api_requests WHERE id = ?', [id]);
+      const result = rows as any[];
+      if (result.length === 0) return undefined;
+      return result[0];
+    } finally {
+      conn.release();
+    }
   },
 
   async cleanOldRecords(daysToKeep: number = 30): Promise<number> {
     const cutoffTime = Date.now() - daysToKeep * 24 * 60 * 60 * 1000;
-    const countResult = db.exec(
-      'SELECT COUNT(*) as count FROM api_requests WHERE created_at < ?',
-      [cutoffTime]
-    );
-    const count = countResult.length > 0 && countResult[0].values.length > 0
-      ? (countResult[0].values[0][0] as number)
-      : 0;
-
-    if (count > 0) {
-      db.run('DELETE FROM api_requests WHERE created_at < ?', [cutoffTime]);
-      markDirty();
+    const conn = await pool.getConnection();
+    try {
+      const [result] = await conn.query('DELETE FROM api_requests WHERE created_at < ?', [cutoffTime]);
+      return (result as any).affectedRows || 0;
+    } finally {
+      conn.release();
     }
-
-    return count;
   },
 };
 
 export const routingConfigDb = {
-  getAll() {
-    const result = db.exec('SELECT * FROM routing_configs ORDER BY created_at DESC');
-    if (result.length === 0) return [];
-    return result[0].values.map(row => ({
-      id: row[0] as string,
-      name: row[1] as string,
-      description: row[2] as string | null,
-      type: row[3] as string,
-      config: row[4] as string,
-      enabled: row[5] as number,
-      created_at: row[6] as number,
-      updated_at: row[7] as number,
-    }));
+  async getAll() {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM routing_configs ORDER BY created_at DESC');
+      return rows;
+    } finally {
+      conn.release();
+    }
   },
 
-  getById(id: string) {
-    const result = db.exec('SELECT * FROM routing_configs WHERE id = ?', [id]);
-    if (result.length === 0 || result[0].values.length === 0) return undefined;
-    const row = result[0].values[0];
-    return {
-      id: row[0] as string,
-      name: row[1] as string,
-      description: row[2] as string | null,
-      type: row[3] as string,
-      config: row[4] as string,
-      enabled: row[5] as number,
-      created_at: row[6] as number,
-      updated_at: row[7] as number,
-    };
+  async getById(id: string) {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM routing_configs WHERE id = ?', [id]);
+      const result = rows as any[];
+      if (result.length === 0) return undefined;
+      return result[0];
+    } finally {
+      conn.release();
+    }
   },
 
   async create(data: {
@@ -1246,25 +957,19 @@ export const routingConfigDb = {
     description?: string;
     type: string;
     config: string;
-    enabled?: number;
+    enabled: number;
   }) {
     const now = Date.now();
-    db.run(
-      `INSERT INTO routing_configs (id, name, description, type, config, enabled, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        data.id,
-        data.name,
-        data.description || null,
-        data.type,
-        data.config,
-        data.enabled ?? 1,
-        now,
-        now,
-      ]
-    );
-    markDirty();
-    return this.getById(data.id);
+    const conn = await pool.getConnection();
+    try {
+      await conn.query(
+        'INSERT INTO routing_configs (id, name, description, type, config, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [data.id, data.name, data.description || null, data.type, data.config, data.enabled, now, now]
+      );
+      return { ...data, created_at: now, updated_at: now };
+    } finally {
+      conn.release();
+    }
   },
 
   async update(id: string, data: {
@@ -1275,90 +980,81 @@ export const routingConfigDb = {
     enabled?: number;
   }) {
     const now = Date.now();
-    const updates: string[] = [];
-    const values: any[] = [];
+    const conn = await pool.getConnection();
+    try {
+      const fields: string[] = [];
+      const values: any[] = [];
 
-    if (data.name !== undefined) {
-      updates.push('name = ?');
-      values.push(data.name);
-    }
-    if (data.description !== undefined) {
-      updates.push('description = ?');
-      values.push(data.description);
-    }
-    if (data.type !== undefined) {
-      updates.push('type = ?');
-      values.push(data.type);
-    }
-    if (data.config !== undefined) {
-      updates.push('config = ?');
-      values.push(data.config);
-    }
-    if (data.enabled !== undefined) {
-      updates.push('enabled = ?');
-      values.push(data.enabled);
-    }
+      Object.entries(data).forEach(([key, value]) => {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      });
 
-    updates.push('updated_at = ?');
-    values.push(now);
-    values.push(id);
+      if (fields.length === 0) return;
 
-    db.run(
-      `UPDATE routing_configs SET ${updates.join(', ')} WHERE id = ?`,
-      values
-    );
-    markDirty();
-    return this.getById(id);
+      fields.push('updated_at = ?');
+      values.push(now);
+      values.push(id);
+
+      await conn.query(`UPDATE routing_configs SET ${fields.join(', ')} WHERE id = ?`, values);
+    } finally {
+      conn.release();
+    }
   },
 
   async delete(id: string) {
-    db.run('DELETE FROM routing_configs WHERE id = ?', [id]);
-    markDirty();
+    const conn = await pool.getConnection();
+    try {
+      await conn.query('DELETE FROM routing_configs WHERE id = ?', [id]);
+    } finally {
+      conn.release();
+    }
   },
 };
 
-function mapPortkeyGatewayRow(row: any[]) {
-  return {
-    id: row[0] as string,
-    name: row[1] as string,
-    url: row[2] as string,
-    description: row[3] as string | null,
-    is_default: row[4] as number,
-    enabled: row[5] as number,
-    container_name: row[6] as string | null,
-    port: row[7] as number | null,
-    api_key: row[8] as string | null,
-    install_status: row[9] as string | null,
-    created_at: row[10] as number,
-    updated_at: row[11] as number,
-    last_heartbeat: row[12] as number | null,
-    agent_version: row[13] as string | null,
-  };
-}
-
 export const portkeyGatewayDb = {
-  getAll() {
-    const result = db.exec('SELECT * FROM portkey_gateways ORDER BY is_default DESC, created_at DESC');
-    if (result.length === 0) return [];
-    return result[0].values.map(mapPortkeyGatewayRow);
+  async getAll() {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM portkey_gateways ORDER BY is_default DESC, created_at DESC');
+      return rows as PortkeyGateway[];
+    } finally {
+      conn.release();
+    }
   },
 
-  getById(id: string) {
-    const result = db.exec('SELECT * FROM portkey_gateways WHERE id = ?', [id]);
-    if (result.length === 0 || result[0].values.length === 0) return undefined;
-    return mapPortkeyGatewayRow(result[0].values[0]);
+  async getById(id: string) {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM portkey_gateways WHERE id = ?', [id]);
+      const result = rows as any[];
+      if (result.length === 0) return undefined;
+      return result[0] as PortkeyGateway;
+    } finally {
+      conn.release();
+    }
   },
 
-  getDefault() {
-    const result = db.exec('SELECT * FROM portkey_gateways WHERE is_default = 1 AND enabled = 1 LIMIT 1');
-    if (result.length === 0 || result[0].values.length === 0) return undefined;
-    return mapPortkeyGatewayRow(result[0].values[0]);
+  async getDefault() {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM portkey_gateways WHERE is_default = 1 AND enabled = 1 LIMIT 1');
+      const result = rows as any[];
+      if (result.length === 0) return undefined;
+      return result[0] as PortkeyGateway;
+    } finally {
+      conn.release();
+    }
   },
 
-  getEnabled() {
-    const result = db.exec('SELECT * FROM portkey_gateways WHERE enabled = 1 ORDER BY is_default DESC, created_at DESC');
-    if (result.length === 0) return [];
-    return result[0].values.map(mapPortkeyGatewayRow);
+  async getEnabled() {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM portkey_gateways WHERE enabled = 1 ORDER BY is_default DESC, created_at DESC');
+      return rows as PortkeyGateway[];
+    } finally {
+      conn.release();
+    }
   },
 
   async create(data: {
@@ -1366,8 +1062,8 @@ export const portkeyGatewayDb = {
     name: string;
     url: string;
     description?: string;
-    is_default?: number;
-    enabled?: number;
+    is_default: number;
+    enabled: number;
     container_name?: string;
     port?: number;
     api_key?: string;
@@ -1376,33 +1072,25 @@ export const portkeyGatewayDb = {
     agent_version?: string;
   }) {
     const now = Date.now();
-
-    if (data.is_default === 1) {
-      db.run('UPDATE portkey_gateways SET is_default = 0');
+    const conn = await pool.getConnection();
+    try {
+      await conn.query(
+        `INSERT INTO portkey_gateways (
+          id, name, url, description, is_default, enabled,
+          container_name, port, api_key, install_status, last_heartbeat, agent_version,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          data.id, data.name, data.url, data.description || null, data.is_default, data.enabled,
+          data.container_name || null, data.port || null, data.api_key || null,
+          data.install_status || 'pending', data.last_heartbeat || null, data.agent_version || null,
+          now, now
+        ]
+      );
+      return { ...data, created_at: now, updated_at: now };
+    } finally {
+      conn.release();
     }
-
-    db.run(
-      `INSERT INTO portkey_gateways (id, name, url, description, is_default, enabled, container_name, port, api_key, install_status, last_heartbeat, agent_version, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        data.id,
-        data.name,
-        data.url,
-        data.description || null,
-        data.is_default ?? 0,
-        data.enabled ?? 1,
-        data.container_name || null,
-        data.port || null,
-        data.api_key || null,
-        data.install_status || 'pending',
-        data.last_heartbeat || null,
-        data.agent_version || null,
-        now,
-        now,
-      ]
-    );
-    markDirty();
-    return this.getById(data.id);
   },
 
   async update(id: string, data: {
@@ -1419,144 +1107,79 @@ export const portkeyGatewayDb = {
     agent_version?: string;
   }) {
     const now = Date.now();
-    const updates: string[] = [];
-    const values: any[] = [];
+    const conn = await pool.getConnection();
+    try {
+      const fields: string[] = [];
+      const values: any[] = [];
 
-    if (data.is_default === 1) {
-      db.run('UPDATE portkey_gateways SET is_default = 0');
-    }
+      Object.entries(data).forEach(([key, value]) => {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      });
 
-    if (data.name !== undefined) {
-      updates.push('name = ?');
-      values.push(data.name);
-    }
-    if (data.url !== undefined) {
-      updates.push('url = ?');
-      values.push(data.url);
-    }
-    if (data.description !== undefined) {
-      updates.push('description = ?');
-      values.push(data.description);
-    }
-    if (data.is_default !== undefined) {
-      updates.push('is_default = ?');
-      values.push(data.is_default);
-    }
-    if (data.enabled !== undefined) {
-      updates.push('enabled = ?');
-      values.push(data.enabled);
-    }
-    if (data.container_name !== undefined) {
-      updates.push('container_name = ?');
-      values.push(data.container_name);
-    }
-    if (data.port !== undefined) {
-      updates.push('port = ?');
-      values.push(data.port);
-    }
-    if (data.api_key !== undefined) {
-      updates.push('api_key = ?');
-      values.push(data.api_key);
-    }
-    if (data.install_status !== undefined) {
-      updates.push('install_status = ?');
-      values.push(data.install_status);
-    }
-    if (data.last_heartbeat !== undefined) {
-      updates.push('last_heartbeat = ?');
-      values.push(data.last_heartbeat);
-    }
-    if (data.agent_version !== undefined) {
-      updates.push('agent_version = ?');
-      values.push(data.agent_version);
-    }
+      if (fields.length === 0) return;
 
-    updates.push('updated_at = ?');
-    values.push(now);
-    values.push(id);
+      fields.push('updated_at = ?');
+      values.push(now);
+      values.push(id);
 
-    db.run(
-      `UPDATE portkey_gateways SET ${updates.join(', ')} WHERE id = ?`,
-      values
-    );
-    markDirty();
-    return this.getById(id);
+      await conn.query(`UPDATE portkey_gateways SET ${fields.join(', ')} WHERE id = ?`, values);
+    } finally {
+      conn.release();
+    }
   },
 
   async delete(id: string) {
-    db.run('DELETE FROM portkey_gateways WHERE id = ?', [id]);
-    markDirty();
+    const conn = await pool.getConnection();
+    try {
+      await conn.query('DELETE FROM portkey_gateways WHERE id = ?', [id]);
+    } finally {
+      conn.release();
+    }
   },
 };
 
 export const modelRoutingRuleDb = {
-  getAll() {
-    const result = db.exec('SELECT * FROM model_routing_rules ORDER BY priority DESC, created_at DESC');
-    if (result.length === 0) return [];
-    return result[0].values.map(row => ({
-      id: row[0] as string,
-      name: row[1] as string,
-      description: row[2] as string | null,
-      portkey_gateway_id: row[3] as string,
-      rule_type: row[4] as string,
-      rule_value: row[5] as string,
-      priority: row[6] as number,
-      enabled: row[7] as number,
-      created_at: row[8] as number,
-      updated_at: row[9] as number,
-    }));
+  async getAll() {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM model_routing_rules ORDER BY priority DESC, created_at DESC');
+      return rows as ModelRoutingRule[];
+    } finally {
+      conn.release();
+    }
   },
 
-  getById(id: string) {
-    const result = db.exec('SELECT * FROM model_routing_rules WHERE id = ?', [id]);
-    if (result.length === 0 || result[0].values.length === 0) return undefined;
-    const row = result[0].values[0];
-    return {
-      id: row[0] as string,
-      name: row[1] as string,
-      description: row[2] as string | null,
-      portkey_gateway_id: row[3] as string,
-      rule_type: row[4] as string,
-      rule_value: row[5] as string,
-      priority: row[6] as number,
-      enabled: row[7] as number,
-      created_at: row[8] as number,
-      updated_at: row[9] as number,
-    };
+  async getById(id: string) {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM model_routing_rules WHERE id = ?', [id]);
+      const result = rows as any[];
+      if (result.length === 0) return undefined;
+      return result[0] as ModelRoutingRule;
+    } finally {
+      conn.release();
+    }
   },
 
-  getByGatewayId(gatewayId: string) {
-    const result = db.exec('SELECT * FROM model_routing_rules WHERE portkey_gateway_id = ? ORDER BY priority DESC', [gatewayId]);
-    if (result.length === 0) return [];
-    return result[0].values.map(row => ({
-      id: row[0] as string,
-      name: row[1] as string,
-      description: row[2] as string | null,
-      portkey_gateway_id: row[3] as string,
-      rule_type: row[4] as string,
-      rule_value: row[5] as string,
-      priority: row[6] as number,
-      enabled: row[7] as number,
-      created_at: row[8] as number,
-      updated_at: row[9] as number,
-    }));
+  async getByGatewayId(gatewayId: string) {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM model_routing_rules WHERE portkey_gateway_id = ? ORDER BY priority DESC', [gatewayId]);
+      return rows as ModelRoutingRule[];
+    } finally {
+      conn.release();
+    }
   },
 
-  getEnabled() {
-    const result = db.exec('SELECT * FROM model_routing_rules WHERE enabled = 1 ORDER BY priority DESC, created_at DESC');
-    if (result.length === 0) return [];
-    return result[0].values.map(row => ({
-      id: row[0] as string,
-      name: row[1] as string,
-      description: row[2] as string | null,
-      portkey_gateway_id: row[3] as string,
-      rule_type: row[4] as string,
-      rule_value: row[5] as string,
-      priority: row[6] as number,
-      enabled: row[7] as number,
-      created_at: row[8] as number,
-      updated_at: row[9] as number,
-    }));
+  async getEnabled() {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM model_routing_rules WHERE enabled = 1 ORDER BY priority DESC, created_at DESC');
+      return rows as ModelRoutingRule[];
+    } finally {
+      conn.release();
+    }
   },
 
   async create(data: {
@@ -1566,28 +1189,20 @@ export const modelRoutingRuleDb = {
     portkey_gateway_id: string;
     rule_type: string;
     rule_value: string;
-    priority?: number;
-    enabled?: number;
+    priority: number;
+    enabled: number;
   }) {
     const now = Date.now();
-    db.run(
-      `INSERT INTO model_routing_rules (id, name, description, portkey_gateway_id, rule_type, rule_value, priority, enabled, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        data.id,
-        data.name,
-        data.description || null,
-        data.portkey_gateway_id,
-        data.rule_type,
-        data.rule_value,
-        data.priority ?? 0,
-        data.enabled ?? 1,
-        now,
-        now,
-      ]
-    );
-    markDirty();
-    return this.getById(data.id);
+    const conn = await pool.getConnection();
+    try {
+      await conn.query(
+        'INSERT INTO model_routing_rules (id, name, description, portkey_gateway_id, rule_type, rule_value, priority, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [data.id, data.name, data.description || null, data.portkey_gateway_id, data.rule_type, data.rule_value, data.priority, data.enabled, now, now]
+      );
+      return { ...data, created_at: now, updated_at: now };
+    } finally {
+      conn.release();
+    }
   },
 
   async update(id: string, data: {
@@ -1600,123 +1215,89 @@ export const modelRoutingRuleDb = {
     enabled?: number;
   }) {
     const now = Date.now();
-    const updates: string[] = [];
-    const values: any[] = [];
+    const conn = await pool.getConnection();
+    try {
+      const fields: string[] = [];
+      const values: any[] = [];
 
-    if (data.name !== undefined) {
-      updates.push('name = ?');
-      values.push(data.name);
-    }
-    if (data.description !== undefined) {
-      updates.push('description = ?');
-      values.push(data.description);
-    }
-    if (data.portkey_gateway_id !== undefined) {
-      updates.push('portkey_gateway_id = ?');
-      values.push(data.portkey_gateway_id);
-    }
-    if (data.rule_type !== undefined) {
-      updates.push('rule_type = ?');
-      values.push(data.rule_type);
-    }
-    if (data.rule_value !== undefined) {
-      updates.push('rule_value = ?');
-      values.push(data.rule_value);
-    }
-    if (data.priority !== undefined) {
-      updates.push('priority = ?');
-      values.push(data.priority);
-    }
-    if (data.enabled !== undefined) {
-      updates.push('enabled = ?');
-      values.push(data.enabled);
-    }
+      Object.entries(data).forEach(([key, value]) => {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      });
 
-    updates.push('updated_at = ?');
-    values.push(now);
-    values.push(id);
+      if (fields.length === 0) return;
 
-    db.run(
-      `UPDATE model_routing_rules SET ${updates.join(', ')} WHERE id = ?`,
-      values
-    );
-    markDirty();
-    return this.getById(id);
+      fields.push('updated_at = ?');
+      values.push(now);
+      values.push(id);
+
+      await conn.query(`UPDATE model_routing_rules SET ${fields.join(', ')} WHERE id = ?`, values);
+    } finally {
+      conn.release();
+    }
   },
 
   async delete(id: string) {
-    db.run('DELETE FROM model_routing_rules WHERE id = ?', [id]);
-    markDirty();
+    const conn = await pool.getConnection();
+    try {
+      await conn.query('DELETE FROM model_routing_rules WHERE id = ?', [id]);
+    } finally {
+      conn.release();
+    }
   },
 };
 
 export const expertRoutingConfigDb = {
-  getAll() {
-    const result = db.exec('SELECT * FROM expert_routing_configs ORDER BY created_at DESC');
-    if (result.length === 0) return [];
-    return result[0].values.map(row => ({
-      id: row[0] as string,
-      name: row[1] as string,
-      description: row[2] as string | null,
-      enabled: row[3] as number,
-      config: row[4] as string,
-      created_at: row[5] as number,
-      updated_at: row[6] as number,
-    }));
+  async getAll() {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM expert_routing_configs ORDER BY created_at DESC');
+      return rows;
+    } finally {
+      conn.release();
+    }
   },
 
-  getById(id: string) {
-    const result = db.exec('SELECT * FROM expert_routing_configs WHERE id = ?', [id]);
-    if (result.length === 0 || result[0].values.length === 0) return undefined;
-    const row = result[0].values[0];
-    return {
-      id: row[0] as string,
-      name: row[1] as string,
-      description: row[2] as string | null,
-      enabled: row[3] as number,
-      config: row[4] as string,
-      created_at: row[5] as number,
-      updated_at: row[6] as number,
-    };
+  async getById(id: string) {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM expert_routing_configs WHERE id = ?', [id]);
+      const result = rows as any[];
+      if (result.length === 0) return undefined;
+      return result[0];
+    } finally {
+      conn.release();
+    }
   },
 
-  getEnabled() {
-    const result = db.exec('SELECT * FROM expert_routing_configs WHERE enabled = 1 ORDER BY created_at DESC');
-    if (result.length === 0) return [];
-    return result[0].values.map(row => ({
-      id: row[0] as string,
-      name: row[1] as string,
-      description: row[2] as string | null,
-      enabled: row[3] as number,
-      config: row[4] as string,
-      created_at: row[5] as number,
-      updated_at: row[6] as number,
-    }));
+  async getEnabled() {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM expert_routing_configs WHERE enabled = 1 ORDER BY created_at DESC');
+      return rows;
+    } finally {
+      conn.release();
+    }
   },
 
   async create(data: {
     id: string;
     name: string;
     description?: string;
-    enabled?: number;
+    enabled: number;
     config: string;
   }) {
     const now = Date.now();
-    db.run(
-      `INSERT INTO expert_routing_configs (id, name, description, enabled, config, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        data.id,
-        data.name,
-        data.description || null,
-        data.enabled ?? 1,
-        data.config,
-        now,
-        now,
-      ]
-    );
-    markDirty();
-    return this.getById(data.id);
+    const conn = await pool.getConnection();
+    try {
+      await conn.query(
+        'INSERT INTO expert_routing_configs (id, name, description, enabled, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [data.id, data.name, data.description || null, data.enabled, data.config, now, now]
+      );
+      return { ...data, created_at: now, updated_at: now };
+    } finally {
+      conn.release();
+    }
   },
 
   async update(id: string, data: {
@@ -1726,41 +1307,35 @@ export const expertRoutingConfigDb = {
     config?: string;
   }) {
     const now = Date.now();
-    const updates: string[] = [];
-    const values: any[] = [];
+    const conn = await pool.getConnection();
+    try {
+      const fields: string[] = [];
+      const values: any[] = [];
 
-    if (data.name !== undefined) {
-      updates.push('name = ?');
-      values.push(data.name);
-    }
-    if (data.description !== undefined) {
-      updates.push('description = ?');
-      values.push(data.description);
-    }
-    if (data.enabled !== undefined) {
-      updates.push('enabled = ?');
-      values.push(data.enabled);
-    }
-    if (data.config !== undefined) {
-      updates.push('config = ?');
-      values.push(data.config);
-    }
+      Object.entries(data).forEach(([key, value]) => {
+        fields.push(`${key} = ?`);
+        values.push(value);
+      });
 
-    updates.push('updated_at = ?');
-    values.push(now);
-    values.push(id);
+      if (fields.length === 0) return;
 
-    db.run(
-      `UPDATE expert_routing_configs SET ${updates.join(', ')} WHERE id = ?`,
-      values
-    );
-    markDirty();
-    return this.getById(id);
+      fields.push('updated_at = ?');
+      values.push(now);
+      values.push(id);
+
+      await conn.query(`UPDATE expert_routing_configs SET ${fields.join(', ')} WHERE id = ?`, values);
+    } finally {
+      conn.release();
+    }
   },
 
   async delete(id: string) {
-    db.run('DELETE FROM expert_routing_configs WHERE id = ?', [id]);
-    markDirty();
+    const conn = await pool.getConnection();
+    try {
+      await conn.query('DELETE FROM expert_routing_configs WHERE id = ?', [id]);
+    } finally {
+      conn.release();
+    }
   },
 };
 
@@ -1781,148 +1356,101 @@ export const expertRoutingLogDb = {
     classifier_response?: string;
   }) {
     const now = Date.now();
-    db.run(
-      `INSERT INTO expert_routing_logs (
-        id, virtual_key_id, expert_routing_id, request_hash,
-        classifier_model, classification_result, selected_expert_id,
-        selected_expert_type, selected_expert_name, classification_time, created_at,
-        original_request, classifier_request, classifier_response
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        log.id,
-        log.virtual_key_id,
-        log.expert_routing_id,
-        log.request_hash,
-        log.classifier_model,
-        log.classification_result,
-        log.selected_expert_id,
-        log.selected_expert_type,
-        log.selected_expert_name,
-        log.classification_time,
-        now,
-        log.original_request || null,
-        log.classifier_request || null,
-        log.classifier_response || null,
-      ]
-    );
-    markDirty();
+    const conn = await pool.getConnection();
+    try {
+      await conn.query(
+        `INSERT INTO expert_routing_logs (
+          id, virtual_key_id, expert_routing_id, request_hash,
+          classifier_model, classification_result, selected_expert_id,
+          selected_expert_type, selected_expert_name, classification_time,
+          original_request, classifier_request, classifier_response, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          log.id,
+          log.virtual_key_id || null,
+          log.expert_routing_id,
+          log.request_hash,
+          log.classifier_model,
+          log.classification_result,
+          log.selected_expert_id,
+          log.selected_expert_type,
+          log.selected_expert_name,
+          log.classification_time,
+          log.original_request || null,
+          log.classifier_request || null,
+          log.classifier_response || null,
+          now,
+        ]
+      );
+    } finally {
+      conn.release();
+    }
   },
 
-  getByConfigId(configId: string, limit: number = 100) {
-    const result = db.exec(
-      `SELECT
-        id, virtual_key_id, expert_routing_id, request_hash,
-        classifier_model, classification_result, selected_expert_id,
-        selected_expert_type, selected_expert_name, classification_time, created_at
-       FROM expert_routing_logs
-       WHERE expert_routing_id = ?
-       ORDER BY created_at DESC
-       LIMIT ?`,
-      [configId, limit]
-    );
-    if (result.length === 0) return [];
-    return result[0].values.map(row => ({
-      id: row[0] as string,
-      virtual_key_id: row[1] as string | null,
-      expert_routing_id: row[2] as string,
-      request_hash: row[3] as string,
-      classifier_model: row[4] as string,
-      classification_result: row[5] as string,
-      selected_expert_id: row[6] as string,
-      selected_expert_type: row[7] as string,
-      selected_expert_name: row[8] as string,
-      classification_time: row[9] as number,
-      created_at: row[10] as number,
-    }));
+  async getByConfigId(configId: string, limit: number = 100) {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query(
+        'SELECT * FROM expert_routing_logs WHERE expert_routing_id = ? ORDER BY created_at DESC LIMIT ?',
+        [configId, limit]
+      );
+      return rows;
+    } finally {
+      conn.release();
+    }
   },
 
-  getStatistics(configId: string, timeRange?: number) {
-    const now = Date.now();
-    const startTime = timeRange ? now - timeRange : 0;
+  async getStatistics(configId: string, timeRange?: number) {
+    const conn = await pool.getConnection();
+    try {
+      let query = `
+        SELECT
+          classification_result,
+          COUNT(*) as count,
+          AVG(classification_time) as avg_time
+        FROM expert_routing_logs
+        WHERE expert_routing_id = ?
+      `;
+      const params: any[] = [configId];
 
-    const result = db.exec(
-      `SELECT
-        classification_result,
-        COUNT(*) as count,
-        AVG(classification_time) as avg_time
-       FROM expert_routing_logs
-       WHERE expert_routing_id = ? AND created_at >= ?
-       GROUP BY classification_result`,
-      [configId, startTime]
-    );
+      if (timeRange) {
+        const cutoffTime = Date.now() - timeRange;
+        query += ' AND created_at >= ?';
+        params.push(cutoffTime);
+      }
 
-    if (result.length === 0) return { categoryDistribution: {}, avgClassificationTime: 0, totalRequests: 0 };
+      query += ' GROUP BY classification_result';
 
-    const categoryDistribution: Record<string, number> = {};
-    let totalTime = 0;
-    let totalRequests = 0;
-
-    result[0].values.forEach(row => {
-      const category = row[0] as string;
-      const count = row[1] as number;
-      const avgTime = row[2] as number;
-
-      categoryDistribution[category] = count;
-      totalTime += avgTime * count;
-      totalRequests += count;
-    });
-
-    return {
-      categoryDistribution,
-      avgClassificationTime: totalRequests > 0 ? Math.round(totalTime / totalRequests) : 0,
-      totalRequests,
-    };
+      const [rows] = await conn.query(query, params);
+      return rows;
+    } finally {
+      conn.release();
+    }
   },
 
-  getByCategory(configId: string, category: string, limit: number = 100) {
-    const result = db.exec(
-      `SELECT
-        id, virtual_key_id, expert_routing_id, request_hash,
-        classifier_model, classification_result, selected_expert_id,
-        selected_expert_type, selected_expert_name, classification_time, created_at
-       FROM expert_routing_logs
-       WHERE expert_routing_id = ? AND classification_result = ?
-       ORDER BY created_at DESC
-       LIMIT ?`,
-      [configId, category, limit]
-    );
-    if (result.length === 0) return [];
-    return result[0].values.map(row => ({
-      id: row[0] as string,
-      virtual_key_id: row[1] as string | null,
-      expert_routing_id: row[2] as string,
-      request_hash: row[3] as string,
-      classifier_model: row[4] as string,
-      classification_result: row[5] as string,
-      selected_expert_id: row[6] as string,
-      selected_expert_type: row[7] as string,
-      selected_expert_name: row[8] as string,
-      classification_time: row[9] as number,
-      created_at: row[10] as number,
-    }));
+  async getByCategory(configId: string, category: string, limit: number = 100) {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query(
+        'SELECT * FROM expert_routing_logs WHERE expert_routing_id = ? AND classification_result = ? ORDER BY created_at DESC LIMIT ?',
+        [configId, category, limit]
+      );
+      return rows;
+    } finally {
+      conn.release();
+    }
   },
 
-  getById(id: string) {
-    const result = db.exec('SELECT * FROM expert_routing_logs WHERE id = ?', [id]);
-    if (result.length === 0 || result[0].values.length === 0) return null;
-
-    const row = result[0].values[0];
-    return {
-      id: row[0] as string,
-      virtual_key_id: row[1] as string | null,
-      expert_routing_id: row[2] as string,
-      request_hash: row[3] as string,
-      classifier_model: row[4] as string,
-      classification_result: row[5] as string,
-      selected_expert_id: row[6] as string,
-      selected_expert_type: row[7] as string,
-      selected_expert_name: row[8] as string,
-      classification_time: row[9] as number,
-      created_at: row[10] as number,
-      original_request: row[11] as string | null,
-      classifier_request: row[12] as string | null,
-      classifier_response: row[13] as string | null,
-    };
+  async getById(id: string) {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM expert_routing_logs WHERE id = ?', [id]);
+      const result = rows as any[];
+      if (result.length === 0) return undefined;
+      return result[0];
+    } finally {
+      conn.release();
+    }
   },
 };
 

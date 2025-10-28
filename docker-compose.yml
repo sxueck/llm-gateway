@@ -1,6 +1,27 @@
 version: '3.8'
 
 services:
+  mysql:
+    image: mysql:8.0
+    container_name: llm-gateway-mysql
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD:-your-mysql-password}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-llm_gateway}
+      - MYSQL_CHARACTER_SET_SERVER=utf8mb4
+      - MYSQL_COLLATION_SERVER=utf8mb4_unicode_ci
+    restart: unless-stopped
+    networks:
+      - llm-gateway-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   portkey-gateway:
     image: portkeyai/gateway:latest
     container_name: portkey-gateway
@@ -34,7 +55,15 @@ services:
       - PORTKEY_GATEWAY_URL=http://portkey-gateway:8787
       - PUBLIC_URL=${PUBLIC_URL:-http://localhost:3000}
       - API_REQUEST_LOG_RETENTION_DAYS=${API_REQUEST_LOG_RETENTION_DAYS:-3}
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-your-mysql-password}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-llm_gateway}
     restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
     networks:
       - llm-gateway-network
 
@@ -42,3 +71,5 @@ networks:
   llm-gateway-network:
     driver: bridge
 
+volumes:
+  mysql-data:
