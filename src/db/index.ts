@@ -197,8 +197,13 @@ async function createTables() {
         created_at BIGINT NOT NULL,
         updated_at BIGINT NOT NULL,
         FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE,
-        INDEX idx_provider (provider_id),
-        INDEX idx_enabled (enabled)
+        INDEX idx_models_provider (provider_id),
+        INDEX idx_models_enabled (enabled),
+        INDEX idx_models_is_virtual (is_virtual),
+        INDEX idx_models_routing_config (routing_config_id),
+        INDEX idx_models_prompt_config (prompt_config(255)),
+        INDEX idx_models_compression_config (compression_config(255)),
+        INDEX idx_models_expert_routing (expert_routing_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
@@ -221,9 +226,10 @@ async function createTables() {
         updated_at BIGINT NOT NULL,
         FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
         FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE SET NULL,
-        INDEX idx_key_value (key_value),
-        INDEX idx_key_hash (key_hash),
-        INDEX idx_enabled (enabled)
+        INDEX idx_virtual_keys_hash (key_hash),
+        INDEX idx_virtual_keys_value (key_value),
+        INDEX idx_virtual_keys_provider (provider_id),
+        INDEX idx_virtual_keys_model (model_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
@@ -257,10 +263,10 @@ async function createTables() {
         created_at BIGINT NOT NULL,
         FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
         FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
-        INDEX idx_created_at (created_at),
-        INDEX idx_virtual_key (virtual_key_id),
-        INDEX idx_provider (provider_id),
-        INDEX idx_status (status)
+        INDEX idx_api_requests_created_at (created_at),
+        INDEX idx_api_requests_virtual_key (virtual_key_id),
+        INDEX idx_api_requests_provider (provider_id),
+        INDEX idx_api_requests_status (status)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
@@ -313,8 +319,10 @@ async function createTables() {
         created_at BIGINT NOT NULL,
         updated_at BIGINT NOT NULL,
         FOREIGN KEY (portkey_gateway_id) REFERENCES portkey_gateways(id) ON DELETE CASCADE,
-        INDEX idx_enabled (enabled),
-        INDEX idx_priority (priority)
+        INDEX idx_model_routing_rules_gateway (portkey_gateway_id),
+        INDEX idx_model_routing_rules_type (rule_type),
+        INDEX idx_model_routing_rules_enabled (enabled),
+        INDEX idx_model_routing_rules_priority (priority)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
@@ -327,7 +335,8 @@ async function createTables() {
         config TEXT NOT NULL,
         created_at BIGINT NOT NULL,
         updated_at BIGINT NOT NULL,
-        INDEX idx_enabled (enabled)
+        INDEX idx_expert_routing_configs_enabled (enabled),
+        INDEX idx_expert_routing_configs_created_at (created_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
@@ -342,15 +351,15 @@ async function createTables() {
         selected_expert_id VARCHAR(255) NOT NULL,
         selected_expert_type VARCHAR(50) NOT NULL,
         selected_expert_name VARCHAR(255) NOT NULL,
-        classification_time INT NOT NULL,
+        classification_time INT,
         created_at BIGINT NOT NULL,
         original_request MEDIUMTEXT,
         classifier_request MEDIUMTEXT,
         classifier_response MEDIUMTEXT,
         FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
-        INDEX idx_expert_routing (expert_routing_id),
-        INDEX idx_created_at (created_at),
-        INDEX idx_classification (classification_result)
+        INDEX idx_expert_routing_logs_config (expert_routing_id),
+        INDEX idx_expert_routing_logs_created_at (created_at),
+        INDEX idx_expert_routing_logs_category (classification_result)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
   } finally {
