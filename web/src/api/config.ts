@@ -34,6 +34,20 @@ export interface TrendData {
   tokenCount: number;
 }
 
+export interface TrendDataPoint {
+  timestamp: number;
+  requestCount: number;
+  successCount: number;
+  errorCount: number;
+  tokenCount: number;
+}
+
+export interface VirtualKeyTrend {
+  virtualKeyId: string;
+  virtualKeyName: string;
+  data: TrendDataPoint[];
+}
+
 export interface PortkeyStatus {
   running: boolean;
   containerId?: string;
@@ -65,7 +79,7 @@ export const configApi = {
   getStats(period?: '24h' | '7d' | '30d'): Promise<{
     period: string;
     stats: ApiStats;
-    trend: TrendData[];
+    trend: VirtualKeyTrend[];
   }> {
     return request.get('/admin/config/stats', { params: { period } });
   },

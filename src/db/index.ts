@@ -45,6 +45,33 @@ let bufferFlushTimer: NodeJS.Timeout | null = null;
 const BUFFER_FLUSH_INTERVAL = 30000;
 const BUFFER_MAX_SIZE = 100;
 
+function generateTimeBuckets(startTime: number, endTime: number, intervalMs: number): number[] {
+  const timePoints: number[] = [];
+  let currentTime = Math.floor(startTime / intervalMs) * intervalMs;
+  const endBucket = Math.floor(endTime / intervalMs) * intervalMs;
+
+  while (currentTime <= endBucket) {
+    timePoints.push(currentTime);
+    currentTime += intervalMs;
+  }
+
+  return timePoints;
+}
+
+function initializeTimeBuckets(timePoints: number[]): Map<number, any> {
+  const buckets = new Map<number, any>();
+  timePoints.forEach(time => {
+    buckets.set(time, {
+      timestamp: time,
+      requestCount: 0,
+      successCount: 0,
+      errorCount: 0,
+      tokenCount: 0
+    });
+  });
+  return buckets;
+}
+
 export async function initDatabase() {
   try {
     pool = mysql.createPool({
@@ -866,6 +893,8 @@ export const apiRequestDb = {
       const [rows] = await conn.query(
         `SELECT
           FLOOR(ar.created_at / ?) * ? as time_bucket,
+          ar.virtual_key_id,
+          vk.name as virtual_key_name,
           COUNT(*) as count,
           SUM(CASE WHEN ar.status = 'success' THEN 1 ELSE 0 END) as success_count,
           SUM(CASE WHEN ar.status = 'error' THEN 1 ELSE 0 END) as error_count,
@@ -874,43 +903,59 @@ export const apiRequestDb = {
         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
         WHERE ar.created_at >= ? AND ar.created_at <= ?
           AND (vk.id IS NULL OR vk.disable_logging = 0)
-        GROUP BY time_bucket
+        GROUP BY time_bucket, ar.virtual_key_id, vk.name
         HAVING time_bucket IS NOT NULL
-        ORDER BY time_bucket ASC`,
+        ORDER BY time_bucket ASC, ar.virtual_key_id ASC`,
         [intervalMs, intervalMs, startTime, endTime]
       );
 
       const result = rows as any[];
 
-      const buckets: Map<number, any> = new Map();
-      let currentTime = Math.floor(startTime / intervalMs) * intervalMs;
-      const endBucket = Math.floor(endTime / intervalMs) * intervalMs;
-
-      while (currentTime <= endBucket) {
-        buckets.set(currentTime, {
-          timestamp: currentTime,
-          requestCount: 0,
-          successCount: 0,
-          errorCount: 0,
-          tokenCount: 0
-        });
-        currentTime += intervalMs;
+      if (!result || result.length === 0) {
+        return [];
       }
 
+      const virtualKeyMap = new Map<string, { id: string; name: string }>();
+      const dataByKey = new Map<string, Map<number, any>>();
+
+      const timePoints = generateTimeBuckets(startTime, endTime, intervalMs);
+
       result.forEach(row => {
-        const bucket = row.time_bucket;
-        if (bucket && buckets.has(bucket)) {
-          buckets.set(bucket, {
+        const keyId = row.virtual_key_id || 'unknown';
+        const keyName = row.virtual_key_name || '未知密钥';
+
+        if (!virtualKeyMap.has(keyId)) {
+          virtualKeyMap.set(keyId, { id: keyId, name: keyName });
+        }
+
+        if (!dataByKey.has(keyId)) {
+          dataByKey.set(keyId, initializeTimeBuckets(timePoints));
+        }
+
+        const bucket = Number(row.time_bucket);
+        if (!bucket || isNaN(bucket)) {
+          return;
+        }
+
+        const keyBuckets = dataByKey.get(keyId)!;
+        if (keyBuckets.has(bucket)) {
+          keyBuckets.set(bucket, {
             timestamp: bucket,
-            requestCount: row.count || 0,
-            successCount: row.success_count || 0,
-            errorCount: row.error_count || 0,
-            tokenCount: row.total_tokens || 0
+            requestCount: Number(row.count) || 0,
+            successCount: Number(row.success_count) || 0,
+            errorCount: Number(row.error_count) || 0,
+            tokenCount: Number(row.total_tokens) || 0
           });
         }
       });
 
-      return Array.from(buckets.values()).sort((a, b) => a.timestamp - b.timestamp);
+      const trendByKey = Array.from(dataByKey.entries()).map(([keyId, buckets]) => ({
+        virtualKeyId: keyId,
+        virtualKeyName: virtualKeyMap.get(keyId)?.name || '未知密钥',
+        data: Array.from(buckets.values()).sort((a, b) => a.timestamp - b.timestamp)
+      }));
+
+      return trendByKey;
     } finally {
       conn.release();
     }

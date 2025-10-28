@@ -164,23 +164,40 @@
         </n-gi>
       </n-grid>
 
-      <n-card class="trend-card" title="请求趋势">
-        <div v-if="trendData.length > 0" class="trend-content">
-          <div class="trend-scroll-container">
-            <n-space vertical :size="12">
-              <div v-for="(item, index) in trendData" :key="index" class="trend-item">
-                <span class="trend-time">{{ formatTimestamp(item.timestamp) }}</span>
-                <n-progress
-                  type="line"
-                  :percentage="getPercentage(item.requestCount)"
-                  :show-indicator="false"
-                  class="trend-progress"
-                />
-                <span class="trend-count">{{ formatNumber(item.requestCount) }} 次</span>
-                <span class="trend-tokens">{{ formatLargeNumber(item.tokenCount) }} tokens</span>
-              </div>
+      <n-card class="trend-card">
+        <template #header>
+          <n-space justify="space-between" align="center">
+            <span>请求趋势</span>
+            <n-space :size="12">
+              <n-button
+                :type="chartMetric === 'requests' ? 'primary' : 'default'"
+                size="small"
+                @click="chartMetric = 'requests'"
+              >
+                请求数
+              </n-button>
+              <n-button
+                :type="chartMetric === 'tokens' ? 'primary' : 'default'"
+                size="small"
+                @click="chartMetric = 'tokens'"
+              >
+                Token 消耗
+              </n-button>
             </n-space>
-          </div>
+          </n-space>
+        </template>
+        <div v-if="loading" class="trend-loading">
+          <n-spin size="large" />
+        </div>
+        <div v-else-if="loadError" class="trend-error">
+          <n-result status="error" :title="loadError" description="请稍后重试">
+            <template #footer>
+              <n-button @click="loadStats">重新加载</n-button>
+            </template>
+          </n-result>
+        </div>
+        <div v-else-if="trendData.length > 0" class="trend-chart-container">
+          <v-chart :option="chartOption" :autoresize="true" class="trend-chart" />
         </div>
         <n-empty v-else description="暂无数据" />
       </n-card>
@@ -207,13 +224,33 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { useMessage, NSpace, NGrid, NGi, NCard, NStatistic, NSelect, NProgress, NEmpty, NButton, NIcon } from 'naive-ui';
+import { useMessage, NSpace, NGrid, NGi, NCard, NStatistic, NSelect, NProgress, NEmpty, NButton, NIcon, NSpin, NResult } from 'naive-ui';
 import { RefreshOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
-import { configApi, type ApiStats, type TrendData } from '@/api/config';
+import { configApi, type ApiStats, type VirtualKeyTrend } from '@/api/config';
 import { portkeyGatewayApi } from '@/api/portkey-gateways';
+import { formatNumber, formatTokenNumber, formatPercentage, formatResponseTime, formatTimestamp } from '@/utils/format';
+import { use } from 'echarts/core';
+import { CanvasRenderer } from 'echarts/renderers';
+import { LineChart } from 'echarts/charts';
+import {
+  TitleComponent,
+  TooltipComponent,
+  LegendComponent,
+  GridComponent,
+} from 'echarts/components';
+import VChart from 'vue-echarts';
+
+use([
+  CanvasRenderer,
+  LineChart,
+  TitleComponent,
+  TooltipComponent,
+  LegendComponent,
+  GridComponent,
+]);
 
 const { t } = useI18n();
 const message = useMessage();
@@ -221,9 +258,12 @@ const providerStore = useProviderStore();
 const virtualKeyStore = useVirtualKeyStore();
 
 const stats = ref<ApiStats | null>(null);
-const trendData = ref<TrendData[]>([]);
+const trendData = ref<VirtualKeyTrend[]>([]);
 const selectedPeriod = ref<'24h' | '7d' | '30d'>('24h');
 const defaultGatewayLatency = ref<number | null>(null);
+const chartMetric = ref<'requests' | 'tokens'>('requests');
+const loading = ref(false);
+const loadError = ref<string | null>(null);
 
 const periodOptions = computed(() => [
   { label: t('dashboard.period.last24Hours'), value: '24h' },
@@ -255,8 +295,14 @@ const gatewayLatency = computed(() => {
 
 const recentRequestsCount = computed(() => {
   if (trendData.value.length === 0) return 0;
-  const lastHourData = trendData.value.slice(-1)[0];
-  return lastHourData?.requestCount || 0;
+  let totalRequests = 0;
+  trendData.value.forEach(keyTrend => {
+    const lastData = keyTrend.data.slice(-1)[0];
+    if (lastData) {
+      totalRequests += lastData.requestCount;
+    }
+  });
+  return totalRequests;
 });
 
 const cacheHitRate = computed(() => {
@@ -264,86 +310,213 @@ const cacheHitRate = computed(() => {
   return (stats.value.cacheHits / stats.value.totalRequests) * 100;
 });
 
-function formatNumber(num: number): string {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M';
-  }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'K';
-  }
-  return num.toString();
-}
+const COLOR_PALETTE = [
+  { line: '#0f6b4a', gradient: ['rgba(15, 107, 74, 0.4)', 'rgba(15, 107, 74, 0.05)'] },
+  { line: '#3b82f6', gradient: ['rgba(59, 130, 246, 0.4)', 'rgba(59, 130, 246, 0.05)'] },
+  { line: '#f59e0b', gradient: ['rgba(245, 158, 11, 0.4)', 'rgba(245, 158, 11, 0.05)'] },
+  { line: '#ef4444', gradient: ['rgba(239, 68, 68, 0.4)', 'rgba(239, 68, 68, 0.05)'] },
+  { line: '#8b5cf6', gradient: ['rgba(139, 92, 246, 0.4)', 'rgba(139, 92, 246, 0.05)'] },
+  { line: '#10b981', gradient: ['rgba(16, 185, 129, 0.4)', 'rgba(16, 185, 129, 0.05)'] },
+  { line: '#f97316', gradient: ['rgba(249, 115, 22, 0.4)', 'rgba(249, 115, 22, 0.05)'] },
+  { line: '#6366f1', gradient: ['rgba(99, 102, 241, 0.4)', 'rgba(99, 102, 241, 0.05)'] },
+  { line: '#ec4899', gradient: ['rgba(236, 72, 153, 0.4)', 'rgba(236, 72, 153, 0.05)'] },
+  { line: '#14b8a6', gradient: ['rgba(20, 184, 166, 0.4)', 'rgba(20, 184, 166, 0.05)'] },
+];
 
-function formatTokenNumber(num: number): string {
-  if (num >= 1000000000) {
-    return (num / 1000000000).toFixed(2) + 'B';
+const chartOption = computed(() => {
+  if (!trendData.value || trendData.value.length === 0) {
+    return {};
   }
-  if (num >= 10000000) { // 千万量级
-    return (num / 1000000).toFixed(2) + 'M';
-  }
-  if (num >= 10000) { // 万量级
-    return (num / 1000).toFixed(2) + 'K';
-  }
-  return num.toLocaleString('en-US');
-}
 
-function formatLargeNumber(num: number): string {
-  if (num >= 1000000000) {
-    return (num / 1000000000).toFixed(2) + 'B';
+  const firstKeyData = trendData.value[0]?.data;
+  if (!firstKeyData || firstKeyData.length === 0) {
+    return {};
   }
-  if (num >= 10000000) { // 千万量级
-    return (num / 1000000).toFixed(2) + 'M';
-  }
-  if (num >= 10000) { // 万量级
-    return (num / 1000).toFixed(2) + 'K';
-  }
-  return num.toString();
-}
 
-function formatPercentage(num: number): string {
-  if (num === 0) return '0';
-  if (num === 100) return '100';
-  if (num < 0.01) return '0.00';
-  if (num < 1) return num.toFixed(2);
-  if (num < 10) return num.toFixed(1);
-  return num.toFixed(0);
-}
+  const timePoints = firstKeyData
+    .map(d => d.timestamp)
+    .filter(t => t && !isNaN(t));
 
-function formatResponseTime(time: number): string {
-  if (time >= 1000) {
-    return (time / 1000).toFixed(2);
+  if (timePoints.length === 0) {
+    return {};
   }
-  if (time < 1) {
-    return time.toFixed(3);
-  }
-  if (time < 10) {
-    return time.toFixed(2);
-  }
-  return time.toFixed(1);
-}
 
-function formatTimestamp(timestamp: number) {
-  const date = new Date(timestamp);
-  const formatter = new Intl.DateTimeFormat('zh-CN', {
-    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    month: '2-digit',
-    day: '2-digit',
+  const series = trendData.value.map((keyTrend, index) => {
+    const colorScheme = COLOR_PALETTE[index % COLOR_PALETTE.length];
+
+    return {
+      name: keyTrend.virtualKeyName,
+      type: 'line',
+      smooth: true,
+      smoothMonotone: 'x',
+      symbol: 'circle',
+      symbolSize: 7,
+      showSymbol: false,
+      lineStyle: {
+        width: 3,
+        shadowColor: colorScheme.line,
+        shadowBlur: 8,
+        shadowOffsetY: 2,
+      },
+      itemStyle: {
+        borderWidth: 2,
+        borderColor: '#ffffff',
+      },
+      emphasis: {
+        focus: 'series',
+        scale: true,
+        itemStyle: {
+          borderWidth: 3,
+          shadowBlur: 10,
+          shadowColor: colorScheme.line,
+        },
+      },
+      areaStyle: {
+        color: {
+          type: 'linear',
+          x: 0,
+          y: 0,
+          x2: 0,
+          y2: 1,
+          colorStops: [
+            { offset: 0, color: colorScheme.gradient[0] },
+            { offset: 1, color: colorScheme.gradient[1] }
+          ],
+        },
+      },
+      data: keyTrend.data.map(d =>
+        chartMetric.value === 'requests' ? d.requestCount : d.tokenCount
+      ),
+      color: colorScheme.line,
+    };
   });
 
-  if (selectedPeriod.value === '24h') {
-    return formatter.format(date).split(' ')[1] || date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-  }
-  return formatter.format(date).split(' ')[0] || date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
-}
-
-function getPercentage(count: number) {
-  if (trendData.value.length === 0) return 0;
-  const max = Math.max(...trendData.value.map(d => d.requestCount));
-  if (max === 0) return 0;
-  return (count / max) * 100;
-}
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+      borderColor: '#e5e7eb',
+      borderWidth: 1,
+      textStyle: {
+        color: '#1f2937',
+        fontSize: 13,
+      },
+      padding: [12, 16],
+      axisPointer: {
+        type: 'line',
+        lineStyle: {
+          color: '#d1d5db',
+          width: 1,
+          type: 'solid',
+        },
+        crossStyle: {
+          color: '#d1d5db',
+          width: 1,
+          type: 'dashed',
+        },
+      },
+      formatter: (params: any) => {
+        if (!params || params.length === 0) return '';
+        const dataIndex = params[0].dataIndex;
+        if (dataIndex === undefined || dataIndex >= timePoints.length) return '';
+        const timestamp = timePoints[dataIndex];
+        if (!timestamp || isNaN(timestamp)) return '';
+        let result = `<div style="font-weight: 600; margin-bottom: 10px; color: #111827; font-size: 14px;">${formatTimestamp(timestamp, selectedPeriod.value)}</div>`;
+        params.forEach((param: any) => {
+          const value = chartMetric.value === 'requests'
+            ? `${formatNumber(param.value)} 次`
+            : `${formatTokenNumber(param.value)} tokens`;
+          result += `<div style="display: flex; align-items: center; margin: 6px 0;">
+            <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background-color: ${param.color}; margin-right: 10px;"></span>
+            <span style="flex: 1; color: #4b5563; font-size: 13px;">${param.seriesName}</span>
+            <span style="font-weight: 600; margin-left: 16px; color: #111827; font-size: 13px;">${value}</span>
+          </div>`;
+        });
+        return result;
+      }
+    },
+    legend: {
+      data: trendData.value.map(t => t.virtualKeyName),
+      top: 12,
+      left: 'center',
+      type: 'scroll',
+      pageButtonPosition: 'end',
+      itemWidth: 14,
+      itemHeight: 14,
+      itemGap: 20,
+      textStyle: {
+        color: '#6b7280',
+        fontSize: 13,
+        fontWeight: 500,
+      },
+      pageIconColor: '#0f6b4a',
+      pageIconInactiveColor: '#d1d5db',
+      pageTextStyle: {
+        color: '#6b7280',
+      },
+    },
+    grid: {
+      left: '2%',
+      right: '2%',
+      bottom: '5%',
+      top: 70,
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: timePoints.map(t => formatTimestamp(t, selectedPeriod.value)),
+      axisLine: {
+        lineStyle: {
+          color: '#e5e7eb',
+          width: 1,
+        }
+      },
+      axisTick: {
+        show: false,
+      },
+      axisLabel: {
+        rotate: selectedPeriod.value === '24h' ? 0 : 45,
+        interval: 'auto',
+        color: '#9ca3af',
+        fontSize: 12,
+        margin: 12,
+      },
+      splitLine: {
+        show: false,
+      }
+    },
+    yAxis: {
+      type: 'value',
+      axisLine: {
+        show: false,
+      },
+      axisTick: {
+        show: false,
+      },
+      axisLabel: {
+        color: '#9ca3af',
+        fontSize: 12,
+        margin: 12,
+        formatter: (value: number) => {
+          if (chartMetric.value === 'requests') {
+            return formatNumber(value);
+          }
+          return formatTokenNumber(value);
+        }
+      },
+      splitLine: {
+        lineStyle: {
+          color: '#f3f4f6',
+          width: 1,
+          type: 'solid',
+        }
+      }
+    },
+    series,
+  };
+});
 
 async function loadDefaultGatewayLatency() {
   try {
@@ -371,12 +544,23 @@ async function loadData() {
 }
 
 async function loadStats() {
+  loading.value = true;
+  loadError.value = null;
   try {
     const result = await configApi.getStats(selectedPeriod.value);
+
+    if (!result || !result.stats) {
+      throw new Error('获取统计数据失败');
+    }
+
     stats.value = result.stats;
-    trendData.value = result.trend;
+    trendData.value = result.trend || [];
   } catch (error: any) {
-    message.error(error.message);
+    const errorMsg = error.message || '加载数据失败';
+    loadError.value = errorMsg;
+    message.error(errorMsg);
+  } finally {
+    loading.value = false;
   }
 }
 
@@ -518,11 +702,16 @@ onMounted(() => {
   background: #ffffff;
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition: box-shadow 0.3s ease;
+}
+
+.trend-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 .trend-card :deep(.n-card__header) {
-  padding: 24px 28px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 24px 28px 20px;
+  border-bottom: 1px solid #f3f4f6;
 }
 
 .trend-card :deep(.n-card-header__main) {
@@ -532,72 +721,25 @@ onMounted(() => {
   letter-spacing: -0.02em;
 }
 
-.trend-content {
-  padding: 8px 0;
-  min-height: 300px;
+.trend-chart-container {
+  padding: 24px 16px 16px;
+  min-height: 400px;
 }
 
-.trend-scroll-container {
-  max-height: 400px;
-  overflow-y: auto;
-  padding-right: 8px;
+.trend-chart {
+  width: 100%;
+  height: 420px;
 }
 
-.trend-scroll-container::-webkit-scrollbar {
-  width: 6px;
-}
-
-.trend-scroll-container::-webkit-scrollbar-track {
-  background: #f5f5f5;
-  border-radius: 3px;
-}
-
-.trend-scroll-container::-webkit-scrollbar-thumb {
-  background: #d9d9d9;
-  border-radius: 3px;
-}
-
-.trend-scroll-container::-webkit-scrollbar-thumb:hover {
-  background: #bfbfbf;
-}
-
-.trend-item {
+.trend-loading {
   display: flex;
+  justify-content: center;
   align-items: center;
-  gap: 16px;
-  padding: 4px 0;
+  min-height: 400px;
 }
 
-.trend-time {
-  width: 80px;
-  font-size: 13px;
-  color: #595959;
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-
-.trend-progress {
-  flex: 1;
-  min-width: 0;
-}
-
-.trend-count {
-  width: 80px;
-  font-size: 13px;
-  color: #262626;
-  font-weight: 400;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-
-.trend-tokens {
-  width: 100px;
-  font-size: 13px;
-  color: #8c8c8c;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
+.trend-error {
+  padding: 40px 20px;
 }
 
 .overview-card {
