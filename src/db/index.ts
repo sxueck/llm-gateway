@@ -19,6 +19,7 @@ type ApiRequestBuffer = {
   request_body?: string;
   response_body?: string;
   cache_hit?: number;
+  request_type?: string;
   prompt_cache_hit_tokens?: number;
   prompt_cache_write_tokens?: number;
 };
@@ -103,8 +104,8 @@ async function flushApiRequestBuffer() {
           id, virtual_key_id, provider_id, model,
           prompt_tokens, completion_tokens, total_tokens,
           status, response_time, error_message, request_body, response_body, cache_hit,
-          prompt_cache_hit_tokens, prompt_cache_write_tokens, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          request_type, prompt_cache_hit_tokens, prompt_cache_write_tokens, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           request.id,
           request.virtual_key_id || null,
@@ -119,6 +120,7 @@ async function flushApiRequestBuffer() {
           request.request_body || null,
           request.response_body || null,
           request.cache_hit || 0,
+          request.request_type || 'chat',
           request.prompt_cache_hit_tokens || 0,
           request.prompt_cache_write_tokens || 0,
           now,
@@ -249,6 +251,7 @@ async function createTables() {
         request_body TEXT,
         response_body TEXT,
         cache_hit TINYINT DEFAULT 0,
+        request_type VARCHAR(50) DEFAULT 'chat',
         prompt_cache_hit_tokens INT DEFAULT 0,
         prompt_cache_write_tokens INT DEFAULT 0,
         created_at BIGINT NOT NULL,
@@ -341,9 +344,9 @@ async function createTables() {
         selected_expert_name VARCHAR(255) NOT NULL,
         classification_time INT NOT NULL,
         created_at BIGINT NOT NULL,
-        original_request TEXT,
-        classifier_request TEXT,
-        classifier_response TEXT,
+        original_request MEDIUMTEXT,
+        classifier_request MEDIUMTEXT,
+        classifier_response MEDIUMTEXT,
         FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
         INDEX idx_expert_routing (expert_routing_id),
         INDEX idx_created_at (created_at),

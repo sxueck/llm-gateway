@@ -7,7 +7,28 @@ export interface Migration {
   down?: (conn: Connection) => Promise<void>;
 }
 
-export const migrations: Migration[] = [];
+export const migrations: Migration[] = [
+  {
+    version: 1,
+    name: 'extend_expert_routing_logs_text_fields',
+    up: async (conn: Connection) => {
+      await conn.query(`
+        ALTER TABLE expert_routing_logs
+        MODIFY COLUMN original_request MEDIUMTEXT,
+        MODIFY COLUMN classifier_request MEDIUMTEXT,
+        MODIFY COLUMN classifier_response MEDIUMTEXT
+      `);
+    },
+    down: async (conn: Connection) => {
+      await conn.query(`
+        ALTER TABLE expert_routing_logs
+        MODIFY COLUMN original_request TEXT,
+        MODIFY COLUMN classifier_request TEXT,
+        MODIFY COLUMN classifier_response TEXT
+      `);
+    },
+  },
+];
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {
   try {

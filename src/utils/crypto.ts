@@ -29,11 +29,21 @@ export function encryptApiKey(apiKey: string): string {
 }
 
 export function decryptApiKey(encryptedKey: string): string {
-  const [ivHex, encrypted] = encryptedKey.split(':');
-  const iv = Buffer.from(ivHex, 'hex');
-  const decipher = createDecipheriv(ALGORITHM, ENCRYPTION_KEY, iv);
-  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
+  try {
+    const [ivHex, encrypted] = encryptedKey.split(':');
+    if (!ivHex || !encrypted) {
+      throw new Error('加密数据格式无效');
+    }
+    const iv = Buffer.from(ivHex, 'hex');
+    const decipher = createDecipheriv(ALGORITHM, ENCRYPTION_KEY, iv);
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (error: any) {
+    if (error.message?.includes('bad decrypt') || error.code === 'ERR_OSSL_BAD_DECRYPT') {
+      throw new Error('API 密钥解密失败,可能是因为 JWT_SECRET 已更改。请重新设置 Provider 的 API 密钥');
+    }
+    throw error;
+  }
 }
 

@@ -75,33 +75,60 @@ export async function migrateFromSQLite(
     for (const tableName of TABLE_ORDER) {
       try {
         const tableExists = db.exec(`SELECT name FROM sqlite_master WHERE type='table' AND name='${tableName}'`);
-        
+
         if (!tableExists || tableExists.length === 0 || tableExists[0].values.length === 0) {
           console.log(`[迁移] 表 ${tableName} 不存在，跳过`);
           continue;
         }
 
         const result = db.exec(`SELECT * FROM ${tableName}`);
-        
+
         if (!result || result.length === 0 || result[0].values.length === 0) {
           console.log(`[迁移] 表 ${tableName} 为空，跳过`);
           continue;
         }
 
-        const columns = result[0].columns;
+        const sqliteColumns = result[0].columns;
         const rows = result[0].values;
         const totalRows = rows.length;
 
-        console.log(`[迁移] 开始迁移表 ${tableName}，共 ${totalRows} 条记录`);
+        const [mysqlColumnsResult] = await mysqlConnection.query(
+          `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+           ORDER BY ORDINAL_POSITION`,
+          [tableName]
+        );
+        const mysqlColumns = (mysqlColumnsResult as any[]).map(row => row.COLUMN_NAME);
+
+        const columnMapping: { sqliteIndex: number; mysqlColumn: string }[] = [];
+        sqliteColumns.forEach((col, index) => {
+          if (mysqlColumns.includes(col)) {
+            columnMapping.push({ sqliteIndex: index, mysqlColumn: col });
+          } else {
+            console.log(`[迁移] 表 ${tableName} 跳过不存在的列: ${col}`);
+          }
+        });
+
+        if (columnMapping.length === 0) {
+          console.log(`[迁移] 表 ${tableName} 没有可迁移的列，跳过`);
+          continue;
+        }
+
+        const targetColumns = columnMapping.map(m => m.mysqlColumn);
+
+        console.log(`[迁移] 开始迁移表 ${tableName}，共 ${totalRows} 条记录，迁移 ${targetColumns.length} 列`);
 
         for (let i = 0; i < rows.length; i += BATCH_SIZE) {
           const batch = rows.slice(i, Math.min(i + BATCH_SIZE, rows.length));
-          
-          const placeholders = batch.map(() => `(${columns.map(() => '?').join(', ')})`).join(', ');
-          const values = batch.flatMap(row => row);
-          
-          const sql = `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES ${placeholders}`;
-          
+
+          const placeholders = batch.map(() => `(${targetColumns.map(() => '?').join(', ')})`).join(', ');
+          const values = batch.flatMap(row =>
+            columnMapping.map(m => row[m.sqliteIndex])
+          );
+
+          const escapedColumns = targetColumns.map(col => `\`${col}\``).join(', ');
+          const sql = `INSERT INTO ${tableName} (${escapedColumns}) VALUES ${placeholders}`;
+
           await mysqlConnection.query(sql, values);
 
           if (onProgress) {
