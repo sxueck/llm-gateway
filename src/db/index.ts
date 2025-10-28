@@ -793,14 +793,16 @@ export const apiRequestDb = {
       const [rows] = await conn.query(
         `SELECT
           COUNT(*) as total_requests,
-          SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successful_requests,
-          SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as failed_requests,
-          SUM(CASE WHEN cache_hit = 0 THEN total_tokens ELSE 0 END) as total_tokens,
-          AVG(response_time) as avg_response_time,
-          SUM(CASE WHEN cache_hit = 1 THEN 1 ELSE 0 END) as cache_hits,
-          SUM(prompt_cache_hit_tokens) as cache_saved_tokens
-        FROM api_requests
-        WHERE created_at >= ? AND created_at <= ?`,
+          SUM(CASE WHEN ar.status = 'success' THEN 1 ELSE 0 END) as successful_requests,
+          SUM(CASE WHEN ar.status = 'error' THEN 1 ELSE 0 END) as failed_requests,
+          SUM(CASE WHEN ar.cache_hit = 0 THEN ar.total_tokens ELSE 0 END) as total_tokens,
+          AVG(ar.response_time) as avg_response_time,
+          SUM(CASE WHEN ar.cache_hit = 1 THEN 1 ELSE 0 END) as cache_hits,
+          SUM(ar.prompt_cache_hit_tokens) as cache_saved_tokens
+        FROM api_requests ar
+        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        WHERE ar.created_at >= ? AND ar.created_at <= ?
+          AND (vk.id IS NULL OR vk.disable_logging = 0)`,
         [startTime, endTime]
       );
 
@@ -836,9 +838,12 @@ export const apiRequestDb = {
     const conn = await pool.getConnection();
     try {
       const [rows] = await conn.query(
-        `SELECT * FROM api_requests
-         WHERE virtual_key_id = ?
-         ORDER BY created_at DESC
+        `SELECT ar.*
+         FROM api_requests ar
+         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+         WHERE ar.virtual_key_id = ?
+           AND (vk.id IS NULL OR vk.disable_logging = 0)
+         ORDER BY ar.created_at DESC
          LIMIT ?`,
         [virtualKeyId, limit]
       );
@@ -860,26 +865,52 @@ export const apiRequestDb = {
     try {
       const [rows] = await conn.query(
         `SELECT
-          FLOOR(created_at / ?) * ? as time_bucket,
+          FLOOR(ar.created_at / ?) * ? as time_bucket,
           COUNT(*) as count,
-          SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success_count,
-          SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error_count,
-          SUM(total_tokens) as total_tokens
-        FROM api_requests
-        WHERE created_at >= ? AND created_at <= ?
+          SUM(CASE WHEN ar.status = 'success' THEN 1 ELSE 0 END) as success_count,
+          SUM(CASE WHEN ar.status = 'error' THEN 1 ELSE 0 END) as error_count,
+          SUM(ar.total_tokens) as total_tokens
+        FROM api_requests ar
+        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        WHERE ar.created_at >= ? AND ar.created_at <= ?
+          AND (vk.id IS NULL OR vk.disable_logging = 0)
         GROUP BY time_bucket
+        HAVING time_bucket IS NOT NULL
         ORDER BY time_bucket ASC`,
         [intervalMs, intervalMs, startTime, endTime]
       );
 
       const result = rows as any[];
-      return result.map(row => ({
-        timestamp: row.time_bucket,
-        requestCount: row.count || 0,
-        successCount: row.success_count || 0,
-        errorCount: row.error_count || 0,
-        tokenCount: row.total_tokens || 0
-      }));
+
+      const buckets: Map<number, any> = new Map();
+      let currentTime = Math.floor(startTime / intervalMs) * intervalMs;
+      const endBucket = Math.floor(endTime / intervalMs) * intervalMs;
+
+      while (currentTime <= endBucket) {
+        buckets.set(currentTime, {
+          timestamp: currentTime,
+          requestCount: 0,
+          successCount: 0,
+          errorCount: 0,
+          tokenCount: 0
+        });
+        currentTime += intervalMs;
+      }
+
+      result.forEach(row => {
+        const bucket = row.time_bucket;
+        if (bucket && buckets.has(bucket)) {
+          buckets.set(bucket, {
+            timestamp: bucket,
+            requestCount: row.count || 0,
+            successCount: row.success_count || 0,
+            errorCount: row.error_count || 0,
+            tokenCount: row.total_tokens || 0
+          });
+        }
+      });
+
+      return Array.from(buckets.values()).sort((a, b) => a.timestamp - b.timestamp);
     } finally {
       conn.release();
     }
@@ -897,32 +928,42 @@ export const apiRequestDb = {
 
     const conn = await pool.getConnection();
     try {
-      let countQuery = 'SELECT COUNT(*) as total FROM api_requests WHERE 1=1';
-      let dataQuery = 'SELECT * FROM api_requests WHERE 1=1';
+      let countQuery = `
+        SELECT COUNT(*) as total
+        FROM api_requests ar
+        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        WHERE (vk.id IS NULL OR vk.disable_logging = 0)
+      `;
+      let dataQuery = `
+        SELECT ar.*
+        FROM api_requests ar
+        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        WHERE (vk.id IS NULL OR vk.disable_logging = 0)
+      `;
       const params: any[] = [];
 
       if (options?.virtualKeyId) {
-        countQuery += ' AND virtual_key_id = ?';
-        dataQuery += ' AND virtual_key_id = ?';
+        countQuery += ' AND ar.virtual_key_id = ?';
+        dataQuery += ' AND ar.virtual_key_id = ?';
         params.push(options.virtualKeyId);
       }
 
       if (options?.startTime) {
-        countQuery += ' AND created_at >= ?';
-        dataQuery += ' AND created_at >= ?';
+        countQuery += ' AND ar.created_at >= ?';
+        dataQuery += ' AND ar.created_at >= ?';
         params.push(options.startTime);
       }
 
       if (options?.endTime) {
-        countQuery += ' AND created_at <= ?';
-        dataQuery += ' AND created_at <= ?';
+        countQuery += ' AND ar.created_at <= ?';
+        dataQuery += ' AND ar.created_at <= ?';
         params.push(options.endTime);
       }
 
       const [countRows] = await conn.query(countQuery, params);
       const total = (countRows as any[])[0].total;
 
-      dataQuery += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+      dataQuery += ' ORDER BY ar.created_at DESC LIMIT ? OFFSET ?';
       const dataParams = [...params, limit, offset];
 
       const [rows] = await conn.query(dataQuery, dataParams);
