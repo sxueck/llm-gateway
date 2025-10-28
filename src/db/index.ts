@@ -863,14 +863,23 @@ export const apiRequestDb = {
           FLOOR(created_at / ?) * ? as time_bucket,
           COUNT(*) as count,
           SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success_count,
-          SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error_count
+          SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error_count,
+          SUM(total_tokens) as total_tokens
         FROM api_requests
         WHERE created_at >= ? AND created_at <= ?
         GROUP BY time_bucket
         ORDER BY time_bucket ASC`,
         [intervalMs, intervalMs, startTime, endTime]
       );
-      return rows;
+
+      const result = rows as any[];
+      return result.map(row => ({
+        timestamp: row.time_bucket,
+        requestCount: row.count || 0,
+        successCount: row.success_count || 0,
+        errorCount: row.error_count || 0,
+        tokenCount: row.total_tokens || 0
+      }));
     } finally {
       conn.release();
     }
