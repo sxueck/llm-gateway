@@ -15,6 +15,10 @@ function shouldLogRequest(virtualKey: VirtualKey): boolean {
   return !virtualKey.disable_logging;
 }
 
+function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
+  return !virtualKey.disable_logging;
+}
+
 export function createProxyHandler() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const startTime = Date.now();
@@ -136,7 +140,8 @@ export function createProxyHandler() {
         const { virtualKeyDb } = await import('../../db/index.js');
         const virtualKey = await virtualKeyDb.getByKeyValue(virtualKeyValue);
         if (virtualKey && shouldLogRequest(virtualKey)) {
-          const truncatedRequest = truncateRequestBody(request.body);
+          const shouldLogBody = shouldLogRequestBody(virtualKey);
+          const truncatedRequest = shouldLogBody ? truncateRequestBody(request.body) : undefined;
 
           await apiRequestDb.create({
             id: nanoid(),
@@ -199,10 +204,11 @@ async function handleStreamRequest(
       'Proxy'
     );
 
-    const truncatedRequest = truncateRequestBody(request.body);
-    const truncatedResponse = accumulateStreamResponse(tokenUsage.streamChunks);
-
     if (shouldLogRequest(virtualKey)) {
+      const shouldLogBody = shouldLogRequestBody(virtualKey);
+      const truncatedRequest = shouldLogBody ? truncateRequestBody(request.body) : undefined;
+      const truncatedResponse = shouldLogBody ? accumulateStreamResponse(tokenUsage.streamChunks) : undefined;
+
       await apiRequestDb.create({
         id: nanoid(),
         virtual_key_id: virtualKey.id,
@@ -231,9 +237,10 @@ async function handleStreamRequest(
       { error: streamError.stack }
     );
 
-    const truncatedRequest = truncateRequestBody(request.body);
-
     if (shouldLogRequest(virtualKey)) {
+      const shouldLogBody = shouldLogRequestBody(virtualKey);
+      const truncatedRequest = shouldLogBody ? truncateRequestBody(request.body) : undefined;
+
       await apiRequestDb.create({
         id: nanoid(),
         virtual_key_id: virtualKey.id,
@@ -290,9 +297,11 @@ async function handleNonStreamRequest(
     reply.code(200);
 
     const duration = Date.now() - startTime;
-    const truncatedRequest = truncateRequestBody(request.body);
-
     if (shouldLogRequest(virtualKey)) {
+      const shouldLogBody = shouldLogRequestBody(virtualKey);
+      const truncatedRequest = shouldLogBody ? truncateRequestBody(request.body) : undefined;
+      const truncatedResponse = shouldLogBody ? truncateResponseBody(cacheResult.cached.response) : undefined;
+
       await apiRequestDb.create({
         id: nanoid(),
         virtual_key_id: virtualKey.id,
@@ -305,7 +314,7 @@ async function handleNonStreamRequest(
         response_time: duration,
         error_message: undefined,
         request_body: truncatedRequest,
-        response_body: truncateResponseBody(cacheResult.cached.response),
+        response_body: truncatedResponse,
         cache_hit: 1,
         prompt_cache_hit_tokens: 0,
         prompt_cache_write_tokens: 0,
@@ -408,10 +417,11 @@ async function handleNonStreamRequest(
   const usage = responseData.usage || {};
   const isSuccess = response.statusCode >= 200 && response.statusCode < 300;
 
-  const truncatedRequest = truncateRequestBody(request.body);
-  const truncatedResponse = truncateResponseBody(responseData);
-
   if (shouldLogRequest(virtualKey)) {
+    const shouldLogBody = shouldLogRequestBody(virtualKey);
+    const truncatedRequest = shouldLogBody ? truncateRequestBody(request.body) : undefined;
+    const truncatedResponse = shouldLogBody ? truncateResponseBody(responseData) : undefined;
+
     await apiRequestDb.create({
       id: nanoid(),
       virtual_key_id: virtualKey.id,

@@ -176,6 +176,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       offset: (Number(page) - 1) * Number(pageSize),
       startTime: startTime ? Number(startTime) : undefined,
       endTime: endTime ? Number(endTime) : undefined,
+      status,
       virtualKeyId,
     });
 

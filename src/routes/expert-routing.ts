@@ -253,7 +253,25 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       const timeRangeMs = timeRange ? Number.parseInt(timeRange) : undefined;
       const stats = await expertRoutingLogDb.getStatistics(id, timeRangeMs);
 
-      return stats;
+      const categoryDistribution: Record<string, number> = {};
+      let totalRequests = 0;
+      let totalClassificationTime = 0;
+
+      for (const row of stats as any[]) {
+        categoryDistribution[row.classification_result] = Number(row.count);
+        totalRequests += Number(row.count);
+        totalClassificationTime += Number(row.avg_time) * Number(row.count);
+      }
+
+      const avgClassificationTime = totalRequests > 0
+        ? Math.round(totalClassificationTime / totalRequests)
+        : 0;
+
+      return {
+        totalRequests,
+        avgClassificationTime,
+        categoryDistribution,
+      };
     } catch (error: any) {
       memoryLogger.error(`获取专家路由统计失败: ${error.message}`, 'ExpertRouting');
       throw error;

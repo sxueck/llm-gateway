@@ -42,8 +42,8 @@ export interface Model {
 
 let apiRequestBuffer: ApiRequestBuffer[] = [];
 let bufferFlushTimer: NodeJS.Timeout | null = null;
-const BUFFER_FLUSH_INTERVAL = 30000;
-const BUFFER_MAX_SIZE = 100;
+const BUFFER_FLUSH_INTERVAL = 10000;
+const BUFFER_MAX_SIZE = 200;
 
 function generateTimeBuckets(startTime: number, endTime: number, intervalMs: number): number[] {
   const timePoints: number[] = [];
@@ -123,38 +123,51 @@ async function flushApiRequestBuffer() {
   apiRequestBuffer = [];
 
   const conn = await pool.getConnection();
-  
+
   try {
+    await conn.beginTransaction();
+
+    const values: any[] = [];
+    const placeholders: string[] = [];
+
     for (const request of requests) {
+      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      values.push(
+        request.id,
+        request.virtual_key_id || null,
+        request.provider_id || null,
+        request.model || null,
+        request.prompt_tokens || 0,
+        request.completion_tokens || 0,
+        request.total_tokens || 0,
+        request.status,
+        request.response_time || null,
+        request.error_message || null,
+        request.request_body || null,
+        request.response_body || null,
+        request.cache_hit || 0,
+        request.request_type || 'chat',
+        request.prompt_cache_hit_tokens || 0,
+        request.prompt_cache_write_tokens || 0,
+        now
+      );
+    }
+
+    if (placeholders.length > 0) {
       await conn.query(
         `INSERT INTO api_requests (
           id, virtual_key_id, provider_id, model,
           prompt_tokens, completion_tokens, total_tokens,
           status, response_time, error_message, request_body, response_body, cache_hit,
           request_type, prompt_cache_hit_tokens, prompt_cache_write_tokens, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          request.id,
-          request.virtual_key_id || null,
-          request.provider_id || null,
-          request.model || null,
-          request.prompt_tokens || 0,
-          request.completion_tokens || 0,
-          request.total_tokens || 0,
-          request.status,
-          request.response_time || null,
-          request.error_message || null,
-          request.request_body || null,
-          request.response_body || null,
-          request.cache_hit || 0,
-          request.request_type || 'chat',
-          request.prompt_cache_hit_tokens || 0,
-          request.prompt_cache_write_tokens || 0,
-          now,
-        ]
+        ) VALUES ${placeholders.join(', ')}`,
+        values
       );
     }
+
+    await conn.commit();
   } catch (error: any) {
+    await conn.rollback();
     console.error('[数据库] 批量写入 API 请求日志失败:', error.message);
     apiRequestBuffer.unshift(...requests);
   } finally {
@@ -827,9 +840,7 @@ export const apiRequestDb = {
           SUM(CASE WHEN ar.cache_hit = 1 THEN 1 ELSE 0 END) as cache_hits,
           SUM(ar.prompt_cache_hit_tokens) as cache_saved_tokens
         FROM api_requests ar
-        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-        WHERE ar.created_at >= ? AND ar.created_at <= ?
-          AND (vk.id IS NULL OR vk.disable_logging = 0)`,
+        WHERE ar.created_at >= ? AND ar.created_at <= ?`,
         [startTime, endTime]
       );
 
@@ -867,9 +878,7 @@ export const apiRequestDb = {
       const [rows] = await conn.query(
         `SELECT ar.*
          FROM api_requests ar
-         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
          WHERE ar.virtual_key_id = ?
-           AND (vk.id IS NULL OR vk.disable_logging = 0)
          ORDER BY ar.created_at DESC
          LIMIT ?`,
         [virtualKeyId, limit]
@@ -902,7 +911,6 @@ export const apiRequestDb = {
         FROM api_requests ar
         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
         WHERE ar.created_at >= ? AND ar.created_at <= ?
-          AND (vk.id IS NULL OR vk.disable_logging = 0)
         GROUP BY time_bucket, ar.virtual_key_id, vk.name
         HAVING time_bucket IS NOT NULL
         ORDER BY time_bucket ASC, ar.virtual_key_id ASC`,
@@ -967,6 +975,7 @@ export const apiRequestDb = {
     virtualKeyId?: string;
     startTime?: number;
     endTime?: number;
+    status?: string;
   }) {
     const limit = options?.limit || 100;
     const offset = options?.offset || 0;
@@ -976,14 +985,12 @@ export const apiRequestDb = {
       let countQuery = `
         SELECT COUNT(*) as total
         FROM api_requests ar
-        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-        WHERE (vk.id IS NULL OR vk.disable_logging = 0)
+        WHERE 1=1
       `;
       let dataQuery = `
         SELECT ar.*
         FROM api_requests ar
-        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-        WHERE (vk.id IS NULL OR vk.disable_logging = 0)
+        WHERE 1=1
       `;
       const params: any[] = [];
 
@@ -1003,6 +1010,12 @@ export const apiRequestDb = {
         countQuery += ' AND ar.created_at <= ?';
         dataQuery += ' AND ar.created_at <= ?';
         params.push(options.endTime);
+      }
+
+      if (options?.status) {
+        countQuery += ' AND ar.status = ?';
+        dataQuery += ' AND ar.status = ?';
+        params.push(options.status);
       }
 
       const [countRows] = await conn.query(countQuery, params);
