@@ -80,34 +80,73 @@
             </n-space>
           </n-card>
 
-          <n-card :title="t('expertRouting.originalRequest')" size="small" class="log-detail-card">
-            <n-code
-              v-if="selectedLogDetail.original_request"
-              :code="JSON.stringify(selectedLogDetail.original_request, null, 2)"
-              language="json"
-              class="log-detail-code"
-            />
-            <n-empty v-else :description="t('common.noData')" />
+          <n-card size="small" class="log-detail-card collapsible-card">
+            <template #header>
+              <div class="card-header" @click="toggleOriginalRequest">
+                <n-text>{{ t('expertRouting.originalRequest') }}</n-text>
+                <n-icon :class="{ 'rotate-icon': !showOriginalRequest }">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+                  </svg>
+                </n-icon>
+              </div>
+            </template>
+            <div v-show="showOriginalRequest">
+              <n-code
+                v-if="selectedLogDetail.original_request"
+                :code="JSON.stringify(selectedLogDetail.original_request, null, 2)"
+                language="json"
+                class="log-detail-code"
+                word-wrap
+              />
+              <n-empty v-else :description="t('common.noData')" />
+            </div>
           </n-card>
 
-          <n-card :title="t('expertRouting.classifierRequest')" size="small" class="log-detail-card">
-            <n-code
-              v-if="selectedLogDetail.classifier_request"
-              :code="JSON.stringify(selectedLogDetail.classifier_request, null, 2)"
-              language="json"
-              class="log-detail-code"
-            />
-            <n-empty v-else :description="t('common.noData')" />
+          <n-card size="small" class="log-detail-card collapsible-card">
+            <template #header>
+              <div class="card-header" @click="toggleClassifierRequest">
+                <n-text>{{ t('expertRouting.classifierRequest') }}</n-text>
+                <n-icon :class="{ 'rotate-icon': !showClassifierRequest }">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+                  </svg>
+                </n-icon>
+              </div>
+            </template>
+            <div v-show="showClassifierRequest">
+              <n-code
+                v-if="selectedLogDetail.classifier_request"
+                :code="JSON.stringify(selectedLogDetail.classifier_request, null, 2)"
+                language="json"
+                class="log-detail-code"
+                word-wrap
+              />
+              <n-empty v-else :description="t('common.noData')" />
+            </div>
           </n-card>
 
-          <n-card :title="t('expertRouting.classifierResponse')" size="small" class="log-detail-card">
-            <n-code
-              v-if="selectedLogDetail.classifier_response"
-              :code="JSON.stringify(selectedLogDetail.classifier_response, null, 2)"
-              language="json"
-              class="log-detail-code"
-            />
-            <n-empty v-else :description="t('common.noData')" />
+          <n-card size="small" class="log-detail-card collapsible-card">
+            <template #header>
+              <div class="card-header" @click="toggleClassifierResponse">
+                <n-text>{{ t('expertRouting.classifierResponse') }}</n-text>
+                <n-icon :class="{ 'rotate-icon': !showClassifierResponse }">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+                  </svg>
+                </n-icon>
+              </div>
+            </template>
+            <div v-show="showClassifierResponse">
+              <n-code
+                v-if="selectedLogDetail.classifier_response"
+                :code="JSON.stringify(selectedLogDetail.classifier_response, null, 2)"
+                language="json"
+                class="log-detail-code"
+                word-wrap
+              />
+              <n-empty v-else :description="t('common.noData')" />
+            </div>
           </n-card>
         </n-space>
       </n-spin>
@@ -131,6 +170,7 @@ import {
   NSpin,
   NButton,
   NCode,
+  NIcon,
   type DataTableColumns,
 } from 'naive-ui';
 import { expertRoutingApi, type ExpertRoutingStatistics, type ExpertRoutingLog, type ExpertRoutingLogDetail } from '@/api/expert-routing';
@@ -157,6 +197,9 @@ const categoryLogsLoading = ref(false);
 const showLogDetailModal = ref(false);
 const selectedLogDetail = ref<ExpertRoutingLogDetail | null>(null);
 const logDetailLoading = ref(false);
+const showOriginalRequest = ref(true);
+const showClassifierRequest = ref(true);
+const showClassifierResponse = ref(true);
 
 const logColumns = computed<DataTableColumns<ExpertRoutingLog>>(() => [
   {
@@ -300,6 +343,9 @@ async function handleLogClick(log: ExpertRoutingLog) {
   showLogDetailModal.value = true;
   logDetailLoading.value = true;
   selectedLogDetail.value = null;
+  showOriginalRequest.value = true;
+  showClassifierRequest.value = true;
+  showClassifierResponse.value = true;
   try {
     const detail = await expertRoutingApi.getLogDetails(props.configId, log.id);
     selectedLogDetail.value = detail;
@@ -308,6 +354,18 @@ async function handleLogClick(log: ExpertRoutingLog) {
   } finally {
     logDetailLoading.value = false;
   }
+}
+
+function toggleOriginalRequest() {
+  showOriginalRequest.value = !showOriginalRequest.value;
+}
+
+function toggleClassifierRequest() {
+  showClassifierRequest.value = !showClassifierRequest.value;
+}
+
+function toggleClassifierResponse() {
+  showClassifierResponse.value = !showClassifierResponse.value;
 }
 
 onMounted(() => {
@@ -339,6 +397,25 @@ onMounted(() => {
 
 .log-detail-card:last-child {
   margin-bottom: 0;
+}
+
+.collapsible-card .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  width: 100%;
+}
+
+.collapsible-card .n-icon {
+  transition: transform 0.3s ease;
+  width: 20px;
+  height: 20px;
+}
+
+.collapsible-card .rotate-icon {
+  transform: rotate(-90deg);
 }
 
 .log-detail-code {
