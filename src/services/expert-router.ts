@@ -211,7 +211,7 @@ export class ExpertRouter {
     }
 
     if (classifierConfig.ignore_system_messages) {
-      messagesToClassify = messagesToClassify.filter(m => m.role !== 'system' && m.role !== 'assistant');
+      messagesToClassify = messagesToClassify.filter(m => m.role !== 'system');
     }
 
     const userMessages = messagesToClassify.filter(m => m.role === 'user');
@@ -232,17 +232,22 @@ export class ExpertRouter {
     }
 
     let conversationContext = '';
-    if (userMessages.length > 1) {
-      const previousMessages = userMessages.slice(0, -1).slice(-MAX_CONTEXT_MESSAGES);
-      conversationContext = '\n\n# Conversation History (for context)\n';
-      conversationContext += previousMessages.map((msg, idx) => {
-        let content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-        if (classifierConfig.ignored_tags && classifierConfig.ignored_tags.length > 0) {
-          content = this.filterIgnoredTags(content, classifierConfig.ignored_tags);
-        }
-        return `Previous message ${idx + 1}: ${content}`;
-      }).join('\n');
-      conversationContext += '\n';
+    const lastUserIndex = messagesToClassify.lastIndexOf(lastUserMessage);
+    if (lastUserIndex > 0) {
+      const contextMessages = messagesToClassify.slice(Math.max(0, lastUserIndex - MAX_CONTEXT_MESSAGES * 2), lastUserIndex);
+
+      if (contextMessages.length > 0) {
+        conversationContext = '\n\n# Conversation History (for context)\n';
+        conversationContext += contextMessages.map((msg) => {
+          let content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+          if (classifierConfig.ignored_tags && classifierConfig.ignored_tags.length > 0) {
+            content = this.filterIgnoredTags(content, classifierConfig.ignored_tags);
+          }
+          const roleLabel = msg.role === 'user' ? 'User' : 'Assistant';
+          return `[${roleLabel}]: ${content}`;
+        }).join('\n');
+        conversationContext += '\n';
+      }
     }
 
     const promptWithContext = classifierConfig.prompt_template
