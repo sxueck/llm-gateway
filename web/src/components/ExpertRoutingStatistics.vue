@@ -197,9 +197,9 @@ const categoryLogsLoading = ref(false);
 const showLogDetailModal = ref(false);
 const selectedLogDetail = ref<ExpertRoutingLogDetail | null>(null);
 const logDetailLoading = ref(false);
-const showOriginalRequest = ref(true);
-const showClassifierRequest = ref(true);
-const showClassifierResponse = ref(true);
+const showOriginalRequest = ref(false);
+const showClassifierRequest = ref(false);
+const showClassifierResponse = ref(false);
 
 const logColumns = computed<DataTableColumns<ExpertRoutingLog>>(() => [
   {
@@ -343,9 +343,9 @@ async function handleLogClick(log: ExpertRoutingLog) {
   showLogDetailModal.value = true;
   logDetailLoading.value = true;
   selectedLogDetail.value = null;
-  showOriginalRequest.value = true;
-  showClassifierRequest.value = true;
-  showClassifierResponse.value = true;
+  showOriginalRequest.value = false;
+  showClassifierRequest.value = false;
+  showClassifierResponse.value = false;
   try {
     const detail = await expertRoutingApi.getLogDetails(props.configId, log.id);
     selectedLogDetail.value = detail;
