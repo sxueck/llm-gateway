@@ -127,24 +127,25 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
 
       memoryLogger.info(`创建专家路由配置: ${config!.name}`, 'ExpertRouting');
 
-      const virtualModelName = body.createVirtualModel && body.virtualModelName
-        ? body.virtualModelName
-        : body.name;
+      let virtualModel = null;
+      if (body.createVirtualModel !== false) {
+        const virtualModelName = body.virtualModelName || body.name;
 
-      const virtualModel = await modelDb.create({
-        id: nanoid(),
-        name: virtualModelName,
-        provider_id: null,
-        model_identifier: `expert-${configId}`,
-        is_virtual: 1,
-        routing_config_id: null,
-        expert_routing_id: configId,
-        enabled: 1,
-        model_attributes: body.modelAttributes ? JSON.stringify(body.modelAttributes) : null,
-        prompt_config: null,
-        compression_config: null,
-      });
-      memoryLogger.info(`创建专家模型: ${virtualModelName}`, 'ExpertRouting');
+        virtualModel = await modelDb.create({
+          id: nanoid(),
+          name: virtualModelName,
+          provider_id: null,
+          model_identifier: `expert-${configId}`,
+          is_virtual: 1,
+          routing_config_id: null,
+          expert_routing_id: configId,
+          enabled: 1,
+          model_attributes: body.modelAttributes ? JSON.stringify(body.modelAttributes) : null,
+          prompt_config: null,
+          compression_config: null,
+        });
+        memoryLogger.info(`创建专家模型: ${virtualModelName}`, 'ExpertRouting');
+      }
 
       return {
         id: config!.id,
@@ -154,14 +155,14 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         config: JSON.parse(config!.config),
         createdAt: config!.created_at,
         updatedAt: config!.updated_at,
-        virtualModel: {
+        virtualModel: virtualModel ? {
           id: virtualModel.id,
           name: virtualModel.name,
           providerId: virtualModel.provider_id,
           modelIdentifier: virtualModel.model_identifier,
           isVirtual: true,
           expertRoutingId: virtualModel.expert_routing_id,
-        },
+        } : null,
       };
     } catch (error: any) {
       memoryLogger.error(`创建专家路由配置失败: ${error.message}`, 'ExpertRouting');
