@@ -73,6 +73,7 @@ export default {
     logs: 'Logs',
     apiRequests: 'API Requests',
     settings: 'Settings',
+    securitySettings: 'Security Settings',
   },
   dashboard: {
     title: 'Dashboard',
@@ -273,6 +274,31 @@ export default {
     publicUrlConfig: {
       title: 'Configuration Instructions',
       content: 'This address will be used when generating Agent installation scripts. Agents will communicate with LLM Gateway through this address. Changes take effect immediately, but installed Agents need to manually update configuration files and restart services.',
+    },
+    antiBot: {
+      title: 'Anti-Bot Settings',
+      enabled: 'Enable Anti-Bot Protection',
+      enabledDesc: 'When enabled, the system will detect and block bot requests',
+      blockBots: 'Block Bots',
+      blockBotsDesc: 'Block requests when bot User-Agent is detected',
+      blockSuspicious: 'Block Suspicious Requests',
+      blockSuspiciousDesc: 'Block requests when suspicious User-Agent is detected',
+      logOnly: 'Log Only Mode',
+      logOnlyDesc: 'Only log bot detections without actually blocking them',
+      allowedUserAgents: 'Allowed User-Agents (Whitelist)',
+      allowedUserAgentsDesc: 'User-Agents in the whitelist will not be blocked (one per line, regex supported)',
+      allowedUserAgentsPlaceholder: 'e.g.: Mozilla/5.0.*Chrome.*\nMyApp/1.0',
+      blockedUserAgents: 'Blocked User-Agents (Blacklist)',
+      blockedUserAgentsDesc: 'User-Agents in the blacklist will be blocked directly (one per line, regex supported)',
+      blockedUserAgentsPlaceholder: 'e.g.: BadBot.*\nScrapy.*',
+      warning: {
+        title: 'Anti-Bot Feature Description',
+        content: 'When anti-bot protection is enabled, the system will detect request User-Agents and identify and block common bot tools. It is recommended to enable "Log Only Mode" first for testing to ensure normal requests are not mistakenly blocked before enabling actual blocking.',
+      },
+      enabled_info: {
+        title: 'Anti-Bot Protection Enabled',
+        content: 'The system is monitoring User-Agents of all requests. Detected bot requests will be logged or blocked. You can view detailed detection records in the logs.',
+      },
     },
   },
   litellm: {

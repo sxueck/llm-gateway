@@ -107,6 +107,7 @@ import {
   ChatbubbleEllipsesOutline,
   FlaskOutline,
   GitBranchOutline,
+  ShieldOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
@@ -195,13 +196,25 @@ const menuOptions = computed(() => [
   },
 ]);
 
-const defaultExpandedKeys = ['model-management', 'experimental-features', 'tools'];
+const defaultExpandedKeys = ['model-management', 'experimental-features', 'tools', 'settings'];
 
 const generalMenuOptions = computed(() => [
   {
     label: t('menu.settings'),
     key: 'settings',
     icon: () => h(NIcon, null, { default: () => h(OptionsOutline) }),
+    children: [
+      {
+        label: t('settings.general'),
+        key: 'settings',
+        icon: () => h(NIcon, null, { default: () => h(OptionsOutline) }),
+      },
+      {
+        label: t('settings.security'),
+        key: 'security-settings',
+        icon: () => h(NIcon, null, { default: () => h(ShieldOutline) }),
+      },
+    ],
   },
 ]);
 

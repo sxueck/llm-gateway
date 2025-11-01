@@ -4,6 +4,7 @@ import { memoryLogger } from '../services/logger.js';
 import { apiRequestDb, routingConfigDb, modelDb, systemConfigDb, portkeyGatewayDb } from '../db/index.js';
 import { generatePortkeyConfig } from '../services/config-generator.js';
 import { nanoid } from 'nanoid';
+import { loadAntiBotConfig, validateUserAgentList } from '../utils/anti-bot-config.js';
 
 
 export async function configRoutes(fastify: FastifyInstance) {
@@ -14,49 +15,123 @@ export async function configRoutes(fastify: FastifyInstance) {
     const corsEnabledCfg = await systemConfigDb.get('cors_enabled');
     const publicUrlCfg = await systemConfigDb.get('public_url');
     const litellmCompatCfg = await systemConfigDb.get('litellm_compat_enabled');
+    const antiBot = await loadAntiBotConfig();
 
     return {
       allowRegistration: !(allowRegCfg && allowRegCfg.value === 'false'),
       corsEnabled: corsEnabledCfg ? corsEnabledCfg.value === 'true' : true,
       publicUrl: publicUrlCfg ? publicUrlCfg.value : appConfig.defaultPublicUrl,
       litellmCompatEnabled: litellmCompatCfg ? litellmCompatCfg.value === 'true' : false,
+      antiBot,
     };
   });
 
   fastify.post('/system-settings', async (request) => {
-    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled } = request.body as {
+    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, antiBot } = request.body as {
       allowRegistration?: boolean;
       corsEnabled?: boolean;
       publicUrl?: string;
       litellmCompatEnabled?: boolean;
+      antiBot?: {
+        enabled?: boolean;
+        blockBots?: boolean;
+        blockSuspicious?: boolean;
+        logOnly?: boolean;
+        allowedUserAgents?: string[];
+        blockedUserAgents?: string[];
+      };
     };
 
-    if (allowRegistration !== undefined) {
-      await systemConfigDb.set('allow_registration', allowRegistration ? 'true' : 'false', '是否允许新用户注册');
-    }
-
-    if (corsEnabled !== undefined) {
-      await systemConfigDb.set('cors_enabled', corsEnabled ? 'true' : 'false', '是否启用 CORS 跨域支持');
-      memoryLogger.info(`CORS 配置已更新: ${corsEnabled ? '启用' : '禁用'}`, 'Config');
-    }
-
-    if (litellmCompatEnabled !== undefined) {
-      await systemConfigDb.set('litellm_compat_enabled', litellmCompatEnabled ? 'true' : 'false', '是否启用 LiteLLM 兼容模式');
-      memoryLogger.info(`LiteLLM 兼容模式已更新: ${litellmCompatEnabled ? '启用' : '禁用'}`, 'Config');
-    }
-
-    if (publicUrl !== undefined) {
-      const validation = validatePublicUrl(publicUrl);
-      if (!validation.valid) {
-        throw new Error(validation.error);
+    try {
+      if (allowRegistration !== undefined) {
+        await systemConfigDb.set('allow_registration', allowRegistration ? 'true' : 'false', '是否允许新用户注册');
+        const verify = await systemConfigDb.get('allow_registration');
+        if (!verify || verify.value !== (allowRegistration ? 'true' : 'false')) {
+          throw new Error('注册配置保存失败');
+        }
       }
 
-      await systemConfigDb.set('public_url', publicUrl, 'LLM Gateway 公网访问地址');
-      setPublicUrl(publicUrl);
-      memoryLogger.info(`LLM Gateway URL 已更新: ${publicUrl}`, 'Config');
+      if (corsEnabled !== undefined) {
+        await systemConfigDb.set('cors_enabled', corsEnabled ? 'true' : 'false', '是否启用 CORS 跨域支持');
+        const verify = await systemConfigDb.get('cors_enabled');
+        if (!verify || verify.value !== (corsEnabled ? 'true' : 'false')) {
+          throw new Error('CORS 配置保存失败');
+        }
+        memoryLogger.info(`CORS 配置已更新: ${corsEnabled ? '启用' : '禁用'}`, 'Config');
+      }
+
+      if (litellmCompatEnabled !== undefined) {
+        await systemConfigDb.set('litellm_compat_enabled', litellmCompatEnabled ? 'true' : 'false', '是否启用 LiteLLM 兼容模式');
+        const verify = await systemConfigDb.get('litellm_compat_enabled');
+        if (!verify || verify.value !== (litellmCompatEnabled ? 'true' : 'false')) {
+          throw new Error('LiteLLM 兼容模式配置保存失败');
+        }
+        memoryLogger.info(`LiteLLM 兼容模式已更新: ${litellmCompatEnabled ? '启用' : '禁用'}`, 'Config');
+      }
+
+      if (publicUrl !== undefined) {
+        const validation = validatePublicUrl(publicUrl);
+        if (!validation.valid) {
+          throw new Error(validation.error);
+        }
+
+        await systemConfigDb.set('public_url', publicUrl, 'LLM Gateway 公网访问地址');
+        const verify = await systemConfigDb.get('public_url');
+        if (!verify || verify.value !== publicUrl) {
+          throw new Error('公网地址配置保存失败');
+        }
+        setPublicUrl(publicUrl);
+        memoryLogger.info(`LLM Gateway URL 已更新: ${publicUrl}`, 'Config');
+      }
+
+    if (antiBot !== undefined) {
+      if (antiBot.allowedUserAgents !== undefined) {
+        const validation = validateUserAgentList(antiBot.allowedUserAgents);
+        if (!validation.valid) {
+          throw new Error(`白名单验证失败: ${validation.error}`);
+        }
+      }
+      if (antiBot.blockedUserAgents !== undefined) {
+        const validation = validateUserAgentList(antiBot.blockedUserAgents);
+        if (!validation.valid) {
+          throw new Error(`黑名单验证失败: ${validation.error}`);
+        }
+      }
+
+      if (antiBot.enabled !== undefined) {
+        await systemConfigDb.set('anti_bot_enabled', antiBot.enabled ? 'true' : 'false', '是否启用反爬虫功能');
+        memoryLogger.info(`反爬虫功能已更新: ${antiBot.enabled ? '启用' : '禁用'}`, 'Config');
+      }
+      if (antiBot.blockBots !== undefined) {
+        await systemConfigDb.set('anti_bot_block_bots', antiBot.blockBots ? 'true' : 'false', '是否拦截爬虫');
+      }
+      if (antiBot.blockSuspicious !== undefined) {
+        await systemConfigDb.set('anti_bot_block_suspicious', antiBot.blockSuspicious ? 'true' : 'false', '是否拦截可疑请求');
+      }
+      if (antiBot.logOnly !== undefined) {
+        await systemConfigDb.set('anti_bot_log_only', antiBot.logOnly ? 'true' : 'false', '是否仅记录日志不拦截');
+      }
+      if (antiBot.allowedUserAgents !== undefined) {
+        await systemConfigDb.set('anti_bot_allowed_user_agents', antiBot.allowedUserAgents.join(','), '白名单User-Agent列表');
+      }
+      if (antiBot.blockedUserAgents !== undefined) {
+        await systemConfigDb.set('anti_bot_blocked_user_agents', antiBot.blockedUserAgents.join(','), '黑名单User-Agent列表');
+      }
+
+      const { antiBotService } = await import('../services/anti-bot.js');
+      await antiBotService.reloadConfig();
+
+      const reloadedConfig = await loadAntiBotConfig();
+      if (antiBot.enabled !== undefined && reloadedConfig.enabled !== antiBot.enabled) {
+        throw new Error('反爬虫配置保存验证失败');
+      }
     }
 
-    return { success: true };
+      return { success: true };
+    } catch (error: any) {
+      memoryLogger.error(`系统配置更新失败: ${error.message}`, 'Config');
+      throw error;
+    }
   });
 
 

@@ -74,6 +74,7 @@ export default {
     logs: '日志查看',
     apiRequests: 'API 请求日志',
     settings: '系统设置',
+    securitySettings: '安全设置',
   },
   dashboard: {
     title: '仪表盘',
@@ -274,6 +275,31 @@ export default {
     publicUrlConfig: {
       title: '配置说明',
       content: '此地址将在生成 Agent 安装脚本时使用，Agent 会通过此地址与 LLM Gateway 通信。修改后会立即生效，但已安装的 Agent 需要手动更新配置文件并重启服务。',
+    },
+    antiBot: {
+      title: '反爬虫设置',
+      enabled: '启用反爬虫功能',
+      enabledDesc: '开启后将检测并拦截爬虫请求',
+      blockBots: '拦截爬虫',
+      blockBotsDesc: '检测到爬虫User-Agent时拦截请求',
+      blockSuspicious: '拦截可疑请求',
+      blockSuspiciousDesc: '检测到可疑User-Agent时拦截请求',
+      logOnly: '仅记录日志',
+      logOnlyDesc: '检测到爬虫时仅记录日志，不实际拦截',
+      allowedUserAgents: '白名单User-Agent',
+      allowedUserAgentsDesc: '白名单中的User-Agent将不会被拦截（每行一个，支持正则表达式）',
+      allowedUserAgentsPlaceholder: '例如：Mozilla/5.0.*Chrome.*\nMyApp/1.0',
+      blockedUserAgents: '黑名单User-Agent',
+      blockedUserAgentsDesc: '黑名单中的User-Agent将被直接拦截（每行一个，支持正则表达式）',
+      blockedUserAgentsPlaceholder: '例如：BadBot.*\nScrapy.*',
+      warning: {
+        title: '反爬虫功能说明',
+        content: '启用反爬虫功能后，系统将检测请求的User-Agent，识别并拦截常见的爬虫工具。建议先启用"仅记录日志"模式测试，确认不会误拦截正常请求后再开启实际拦截。',
+      },
+      enabled_info: {
+        title: '反爬虫已启用',
+        content: '系统正在监控所有请求的User-Agent，检测到的爬虫请求将被记录或拦截。可在日志中查看详细的检测记录。',
+      },
     },
   },
   litellm: {
