@@ -9,10 +9,36 @@ import { checkCache, setCacheIfNeeded, getCacheStatus } from './cache.js';
 import { authenticateVirtualKey } from './auth.js';
 import { resolveModelAndProvider } from './model-resolver.js';
 import { buildProviderConfig } from './provider-config-builder.js';
+import { countStreamResponseTokens, countRequestTokens } from '../../services/token-counter.js';
 import type { VirtualKey } from '../../types/index.js';
 
 function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
   return !virtualKey.disable_logging;
+}
+
+function shouldCreateApiRequestLog(virtualKey: VirtualKey): boolean {
+  return !virtualKey.disable_logging;
+}
+
+async function calculateTokensIfNeeded(
+  totalTokens: number,
+  requestBody: any,
+  responseBody?: any,
+  streamChunks?: string[]
+): Promise<{ promptTokens: number; completionTokens: number; totalTokens: number }> {
+  if (totalTokens !== 0) {
+    return {
+      promptTokens: totalTokens,
+      completionTokens: 0,
+      totalTokens
+    };
+  }
+
+  if (streamChunks) {
+    return await countStreamResponseTokens(requestBody, streamChunks);
+  }
+
+  return await countRequestTokens(requestBody, responseBody);
 }
 
 export function createProxyHandler() {
@@ -139,14 +165,16 @@ export function createProxyHandler() {
           const shouldLogBody = shouldLogRequestBody(virtualKey);
           const truncatedRequest = shouldLogBody ? truncateRequestBody(request.body) : undefined;
 
+          const tokenCount = await calculateTokensIfNeeded(0, request.body);
+
           await apiRequestDb.create({
             id: nanoid(),
             virtual_key_id: virtualKey.id,
             provider_id: providerId,
             model: (request.body as any)?.model || 'unknown',
-            prompt_tokens: 0,
+            prompt_tokens: tokenCount.promptTokens,
             completion_tokens: 0,
-            total_tokens: 0,
+            total_tokens: tokenCount.promptTokens,
             status: 'error',
             response_time: duration,
             error_message: error.message,
@@ -195,8 +223,16 @@ async function handleStreamRequest(
     );
 
     const duration = Date.now() - startTime;
+
+    const tokenCount = await calculateTokensIfNeeded(
+      tokenUsage.totalTokens,
+      request.body,
+      undefined,
+      tokenUsage.streamChunks
+    );
+
     memoryLogger.info(
-      `Stream request completed: ${duration}ms | tokens: ${tokenUsage.totalTokens}`,
+      `Stream request completed: ${duration}ms | tokens: ${tokenCount.totalTokens}`,
       'Proxy'
     );
 
@@ -209,17 +245,15 @@ async function handleStreamRequest(
       virtual_key_id: virtualKey.id,
       provider_id: providerId,
       model: (request.body as any)?.model || 'unknown',
-      prompt_tokens: tokenUsage.promptTokens,
-      completion_tokens: tokenUsage.completionTokens,
-      total_tokens: tokenUsage.totalTokens,
+      prompt_tokens: tokenCount.promptTokens,
+      completion_tokens: tokenCount.completionTokens,
+      total_tokens: tokenCount.totalTokens,
       status: 'success',
       response_time: duration,
       error_message: undefined,
       request_body: truncatedRequest,
       response_body: truncatedResponse,
       cache_hit: 0,
-      prompt_cache_hit_tokens: 0,
-      prompt_cache_write_tokens: 0,
     });
 
     return;
@@ -234,14 +268,16 @@ async function handleStreamRequest(
     const shouldLogBody = shouldLogRequestBody(virtualKey);
     const truncatedRequest = shouldLogBody ? truncateRequestBody(request.body) : undefined;
 
+    const tokenCount = await calculateTokensIfNeeded(0, request.body);
+
     await apiRequestDb.create({
       id: nanoid(),
       virtual_key_id: virtualKey.id,
       provider_id: providerId,
       model: (request.body as any)?.model || 'unknown',
-      prompt_tokens: 0,
+      prompt_tokens: tokenCount.promptTokens,
       completion_tokens: 0,
-      total_tokens: 0,
+      total_tokens: tokenCount.promptTokens,
       status: 'error',
       response_time: duration,
       error_message: streamError.message,
@@ -293,26 +329,31 @@ async function handleNonStreamRequest(
     const truncatedRequest = shouldLogBody ? truncateRequestBody(request.body) : undefined;
     const truncatedResponse = shouldLogBody ? truncateResponseBody(cacheResult.cached.response) : undefined;
 
+    const usageTokens = cacheResult.cached.response?.usage?.total_tokens || 0;
+    const tokenCount = await calculateTokensIfNeeded(
+      usageTokens,
+      request.body,
+      cacheResult.cached.response
+    );
+
     await apiRequestDb.create({
       id: nanoid(),
       virtual_key_id: virtualKey.id,
       provider_id: providerId,
       model: (request.body as any)?.model || 'unknown',
-      prompt_tokens: cacheResult.cached.response.usage?.prompt_tokens || 0,
-      completion_tokens: cacheResult.cached.response.usage?.completion_tokens || 0,
-      total_tokens: cacheResult.cached.response.usage?.total_tokens || 0,
+      prompt_tokens: tokenCount.promptTokens,
+      completion_tokens: tokenCount.completionTokens,
+      total_tokens: tokenCount.totalTokens,
       status: 'success',
       response_time: duration,
       error_message: undefined,
       request_body: truncatedRequest,
       response_body: truncatedResponse,
       cache_hit: 1,
-      prompt_cache_hit_tokens: 0,
-      prompt_cache_write_tokens: 0,
     });
 
     memoryLogger.info(
-      `Request completed: 200 | ${duration}ms | tokens: ${cacheResult.cached.response.usage?.total_tokens || 0} | cache hit`,
+      `Request completed: 200 | ${duration}ms | tokens: ${tokenCount.totalTokens} | cache hit`,
       'Proxy'
     );
 
@@ -404,29 +445,33 @@ async function handleNonStreamRequest(
   }
 
   const duration = Date.now() - startTime;
-  const usage = responseData.usage || {};
   const isSuccess = response.statusCode >= 200 && response.statusCode < 300;
 
   const shouldLogBody = shouldLogRequestBody(virtualKey);
   const truncatedRequest = shouldLogBody ? truncateRequestBody(request.body) : undefined;
   const truncatedResponse = shouldLogBody ? truncateResponseBody(responseData) : undefined;
 
+  const usageTokens = responseData?.usage?.total_tokens || 0;
+  const tokenCount = await calculateTokensIfNeeded(
+    usageTokens,
+    request.body,
+    responseData
+  );
+
   await apiRequestDb.create({
     id: nanoid(),
     virtual_key_id: virtualKey.id,
     provider_id: providerId,
     model: (request.body as any)?.model || 'unknown',
-    prompt_tokens: usage.prompt_tokens || 0,
-    completion_tokens: usage.completion_tokens || 0,
-    total_tokens: usage.total_tokens || 0,
+    prompt_tokens: tokenCount.promptTokens,
+    completion_tokens: tokenCount.completionTokens,
+    total_tokens: tokenCount.totalTokens,
     status: isSuccess ? 'success' : 'error',
     response_time: duration,
     error_message: isSuccess ? undefined : JSON.stringify(responseData),
     request_body: truncatedRequest,
     response_body: truncatedResponse,
     cache_hit: fromCache ? 1 : 0,
-    prompt_cache_hit_tokens: usage.prompt_tokens_details?.cached_tokens || usage.prompt_cache_hit_tokens || 0,
-    prompt_cache_write_tokens: usage.prompt_tokens_details?.cached_tokens_write || usage.prompt_cache_write_tokens || 0,
   });
 
   if (isSuccess) {
@@ -438,7 +483,7 @@ async function handleNonStreamRequest(
 
     const cacheStatus = getCacheStatus(fromCache, cacheResult.shouldCache);
     memoryLogger.info(
-      `Request completed: ${response.statusCode} | ${duration}ms | tokens: ${usage.total_tokens || 0} | ${cacheStatus}`,
+      `Request completed: ${response.statusCode} | ${duration}ms | tokens: ${tokenCount.totalTokens} | ${cacheStatus}`,
       'Proxy'
     );
   } else {

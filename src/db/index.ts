@@ -20,8 +20,6 @@ type ApiRequestBuffer = {
   response_body?: string;
   cache_hit?: number;
   request_type?: string;
-  prompt_cache_hit_tokens?: number;
-  prompt_cache_write_tokens?: number;
 };
 
 export interface Model {
@@ -44,6 +42,10 @@ let apiRequestBuffer: ApiRequestBuffer[] = [];
 let bufferFlushTimer: NodeJS.Timeout | null = null;
 const BUFFER_FLUSH_INTERVAL = 10000;
 const BUFFER_MAX_SIZE = 200;
+
+function getDisableLoggingCondition(): string {
+  return '(vk.disable_logging IS NULL OR vk.disable_logging = 0)';
+}
 
 function generateTimeBuckets(startTime: number, endTime: number, intervalMs: number): number[] {
   const timePoints: number[] = [];
@@ -131,7 +133,7 @@ async function flushApiRequestBuffer() {
     const placeholders: string[] = [];
 
     for (const request of requests) {
-      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       values.push(
         request.id,
         request.virtual_key_id || null,
@@ -147,8 +149,6 @@ async function flushApiRequestBuffer() {
         request.response_body || null,
         request.cache_hit || 0,
         request.request_type || 'chat',
-        request.prompt_cache_hit_tokens || 0,
-        request.prompt_cache_write_tokens || 0,
         now
       );
     }
@@ -159,7 +159,7 @@ async function flushApiRequestBuffer() {
           id, virtual_key_id, provider_id, model,
           prompt_tokens, completion_tokens, total_tokens,
           status, response_time, error_message, request_body, response_body, cache_hit,
-          request_type, prompt_cache_hit_tokens, prompt_cache_write_tokens, created_at
+          request_type, created_at
         ) VALUES ${placeholders.join(', ')}`,
         values
       );
@@ -298,8 +298,6 @@ async function createTables() {
         response_body TEXT,
         cache_hit TINYINT DEFAULT 0,
         request_type VARCHAR(50) DEFAULT 'chat',
-        prompt_cache_hit_tokens INT DEFAULT 0,
-        prompt_cache_write_tokens INT DEFAULT 0,
         created_at BIGINT NOT NULL,
         FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
         FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
@@ -838,7 +836,7 @@ export const apiRequestDb = {
           SUM(CASE WHEN ar.cache_hit = 0 THEN ar.total_tokens ELSE 0 END) as total_tokens,
           AVG(ar.response_time) as avg_response_time,
           SUM(CASE WHEN ar.cache_hit = 1 THEN 1 ELSE 0 END) as cache_hits,
-          SUM(ar.prompt_cache_hit_tokens) as cache_saved_tokens
+          0 as cache_saved_tokens
         FROM api_requests ar
         WHERE ar.created_at >= ? AND ar.created_at <= ?`,
         [startTime, endTime]
@@ -878,7 +876,8 @@ export const apiRequestDb = {
       const [rows] = await conn.query(
         `SELECT ar.*
          FROM api_requests ar
-         WHERE ar.virtual_key_id = ?
+         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+         WHERE ar.virtual_key_id = ? AND ${getDisableLoggingCondition()}
          ORDER BY ar.created_at DESC
          LIMIT ?`,
         [virtualKeyId, limit]
@@ -982,15 +981,18 @@ export const apiRequestDb = {
 
     const conn = await pool.getConnection();
     try {
+      const loggingCondition = getDisableLoggingCondition();
       let countQuery = `
         SELECT COUNT(*) as total
         FROM api_requests ar
-        WHERE 1=1
+        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        WHERE 1=1 AND ${loggingCondition}
       `;
       let dataQuery = `
         SELECT ar.*
         FROM api_requests ar
-        WHERE 1=1
+        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        WHERE 1=1 AND ${loggingCondition}
       `;
       const params: any[] = [];
 
@@ -1041,7 +1043,13 @@ export const apiRequestDb = {
   async getById(id: string) {
     const conn = await pool.getConnection();
     try {
-      const [rows] = await conn.query('SELECT * FROM api_requests WHERE id = ?', [id]);
+      const [rows] = await conn.query(
+        `SELECT ar.*
+         FROM api_requests ar
+         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+         WHERE ar.id = ? AND ${getDisableLoggingCondition()}`,
+        [id]
+      );
       const result = rows as any[];
       if (result.length === 0) return undefined;
       return result[0];

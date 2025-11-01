@@ -28,6 +28,35 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 2,
+    name: 'remove_prompt_cache_fields',
+    up: async (conn: Connection) => {
+      const [tables] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'api_requests'
+        AND COLUMN_NAME = 'prompt_cache_hit_tokens'
+      `);
+      const result = tables as any[];
+
+      if (result[0].count > 0) {
+        await conn.query(`
+          ALTER TABLE api_requests
+          DROP COLUMN prompt_cache_hit_tokens,
+          DROP COLUMN prompt_cache_write_tokens
+        `);
+      }
+    },
+    down: async (conn: Connection) => {
+      await conn.query(`
+        ALTER TABLE api_requests
+        ADD COLUMN prompt_cache_hit_tokens INT DEFAULT 0,
+        ADD COLUMN prompt_cache_write_tokens INT DEFAULT 0
+      `);
+    },
+  },
 ];
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {

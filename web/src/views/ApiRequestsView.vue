@@ -77,26 +77,11 @@
                   {{ selectedRequest.status === 'success' ? '成功' : '失败' }}
                 </n-tag>
               </n-descriptions-item>
-              <n-descriptions-item label="提示词 Tokens">
+              <n-descriptions-item label="输入 Tokens">
                 <n-tag type="default" size="small">{{ selectedRequest.prompt_tokens || 0 }}</n-tag>
               </n-descriptions-item>
-              <n-descriptions-item label="完成 Tokens">
+              <n-descriptions-item label="输出 Tokens">
                 <n-tag type="default" size="small">{{ selectedRequest.completion_tokens || 0 }}</n-tag>
-              </n-descriptions-item>
-              <n-descriptions-item label="总 Tokens" :span="2">
-                <n-tag type="info" size="small">{{ selectedRequest.total_tokens || 0 }}</n-tag>
-              </n-descriptions-item>
-              <n-descriptions-item
-                label="缓存命中 Tokens"
-                :span="2"
-                v-if="selectedRequest.prompt_cache_hit_tokens && selectedRequest.prompt_cache_hit_tokens > 0"
-              >
-                <n-space align="center" :size="8">
-                  <n-tag type="success" size="small">{{ selectedRequest.prompt_cache_hit_tokens }}</n-tag>
-                  <n-text depth="3" style="font-size: 12px;">
-                    命中率: {{ ((selectedRequest.prompt_cache_hit_tokens / selectedRequest.prompt_tokens) * 100).toFixed(1) }}%
-                  </n-text>
-                </n-space>
               </n-descriptions-item>
               <n-descriptions-item label="虚拟密钥 ID" v-if="selectedRequest.virtual_key_id">
                 <n-text code style="word-break: break-all;">{{ selectedRequest.virtual_key_id }}</n-text>
@@ -249,31 +234,12 @@ const columns: DataTableColumns<ApiRequest> = [
   {
     title: 'Tokens',
     key: 'tokens',
-    width: 160,
+    width: 140,
     render: (row) => {
-      const cacheHitTokens = row.prompt_cache_hit_tokens || 0;
-      const cacheHitRate = row.prompt_tokens > 0 && cacheHitTokens > 0
-        ? ((cacheHitTokens / row.prompt_tokens) * 100).toFixed(1)
-        : null;
-
       const items = [
-        h('div', { style: 'font-size: 12px; color: #666;' }, `提示: ${row.prompt_tokens || 0}`),
-        h('div', { style: 'font-size: 12px; color: #666;' }, `共计: ${row.total_tokens || 0}`),
+        h('div', { style: 'font-size: 12px; color: #666;' }, `输入: ${row.prompt_tokens || 0}`),
+        h('div', { style: 'font-size: 12px; color: #666;' }, `输出: ${row.completion_tokens || 0}`),
       ];
-
-      if (cacheHitTokens > 0) {
-        items.push(
-          h(
-            'div',
-            { style: 'font-size: 12px;' },
-            [
-              h('span', { style: 'color: #18a058;' }, '缓存: '),
-              h('span', { style: 'color: #18a058; font-weight: 500;' }, `${cacheHitTokens}`),
-              cacheHitRate ? h('span', { style: 'color: #999; margin-left: 4px;' }, `(${cacheHitRate}%)`) : null,
-            ]
-          )
-        );
-      }
 
       return h(
         NSpace,

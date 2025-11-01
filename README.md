@@ -3,7 +3,6 @@
 基于 Portkey Gateway 的轻量级 LLM 网关管理系统，提供直观的 Web UI 界面，用于管理多个 LLM 提供商、虚拟密钥、路由配置和模型管理。
 
 <img width="3798" height="1967" alt="image" src="https://github.com/user-attachments/assets/1e1d9c6c-7a6b-4cef-9f1d-b188cd38dfbe" />
-
 <img width="1778" height="977" alt="image" src="https://github.com/user-attachments/assets/fe65a33e-73f3-481e-90b1-cb4a732122fa" />
 
 

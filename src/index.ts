@@ -183,7 +183,7 @@ fastify.setNotFoundHandler((request, reply) => {
   if (request.url.startsWith('/api/') ||
       request.url.startsWith('/portkey-config/') ||
       request.url.startsWith('/downloads/')) {
-    reply.code(404).send({
+    return reply.code(404).send({
       error: {
         message: '未找到请求的资源',
         type: 'invalid_request_error',
@@ -192,7 +192,7 @@ fastify.setNotFoundHandler((request, reply) => {
       }
     });
   } else {
-    reply.type('text/html').sendFile('index.html');
+    return reply.type('text/html').code(200).sendFile('index.html');
   }
 });
 

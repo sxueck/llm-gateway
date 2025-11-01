@@ -16,8 +16,6 @@ export interface ApiRequest {
   response_body: string | null;
   cache_hit: number;
   request_type: string;
-  prompt_cache_hit_tokens: number;
-  prompt_cache_write_tokens: number;
 }
 
 export interface ApiRequestListResponse {
