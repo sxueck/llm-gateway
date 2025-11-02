@@ -60,7 +60,6 @@
           :pagination="paginationConfig"
           :bordered="false"
           size="small"
-          :max-height="calculateTableHeight()"
         />
       </n-card>
     </n-space>
@@ -489,15 +488,6 @@ function handleTest(model: Model) {
   }
   testingModel.value = model;
   showTestModal.value = true;
-}
-
-function calculateTableHeight() {
-  const rowHeight = 42;
-  const headerHeight = 42;
-  const paginationHeight = 48;
-  const margin = 20;
-  
-  return pageSize.value * rowHeight + headerHeight + paginationHeight + margin;
 }
 
 onMounted(async () => {
