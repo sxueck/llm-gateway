@@ -84,6 +84,7 @@
         <n-empty
           v-if="localExperts.length === 0"
           :description="t('expertRouting.noExperts')"
+          :show-icon="false"
           size="small"
           style="padding: 20px"
         >

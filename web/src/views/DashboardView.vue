@@ -199,7 +199,7 @@
         <div v-else-if="trendData.length > 0" class="trend-chart-container">
           <v-chart :option="chartOption" :autoresize="true" class="trend-chart" />
         </div>
-        <n-empty v-else description="暂无数据" />
+        <n-empty v-else description="暂无数据" :show-icon="false" />
       </n-card>
 
       <n-card class="overview-card" title="系统概览">

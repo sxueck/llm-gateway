@@ -31,7 +31,7 @@
               <n-text>{{ count }}</n-text>
             </n-space>
           </div>
-          <n-empty v-if="Object.keys(statistics.categoryDistribution).length === 0" :description="t('common.noData')" />
+          <n-empty v-if="Object.keys(statistics.categoryDistribution).length === 0" :description="t('common.noData')" :show-icon="false" />
         </n-space>
       </n-card>
 
@@ -122,7 +122,7 @@
                 class="log-detail-code"
                 word-wrap
               />
-              <n-empty v-else :description="t('common.noData')" />
+              <n-empty v-else :description="t('common.noData')" :show-icon="false" />
             </div>
           </n-card>
 
@@ -145,7 +145,7 @@
                 class="log-detail-code"
                 word-wrap
               />
-              <n-empty v-else :description="t('common.noData')" />
+              <n-empty v-else :description="t('common.noData')" :show-icon="false" />
             </div>
           </n-card>
         </n-space>

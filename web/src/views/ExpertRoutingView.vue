@@ -33,6 +33,7 @@
         <n-empty
           v-if="configs.length === 0 && !loading"
           :description="t('expertRouting.noConfigs')"
+          :show-icon="false"
           style="padding: 60px 0"
         >
           <template #extra>
