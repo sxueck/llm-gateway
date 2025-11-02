@@ -175,6 +175,26 @@ export default {
       100: '100 条/页',
     },
   },
+  modelAttributes: {
+    features: {
+      reasoning: {
+        label: '推理能力',
+        description: '支持深度思考和推理，关闭后模型无法进行复杂逻辑分析',
+      },
+      vision: {
+        label: '视觉理解',
+        description: '支持图像输入和多模态理解，可处理图片、图表等视觉内容',
+      },
+      promptCaching: {
+        label: '提示词缓存',
+        description: '支持缓存重复的提示词内容，显著降低API调用成本',
+      },
+      audioOutput: {
+        label: '音频输出',
+        description: '支持生成语音输出，可将文本转换为自然流畅的音频',
+      },
+    },
+  },
   virtualModels: {
     title: '智能路由',
     subtitle: '配置负载均衡和故障转移',

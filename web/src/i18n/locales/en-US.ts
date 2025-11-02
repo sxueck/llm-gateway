@@ -174,6 +174,26 @@ export default {
       100: '100 items/page',
     },
   },
+  modelAttributes: {
+    features: {
+      reasoning: {
+        label: 'Reasoning',
+        description: 'Supports deep thinking and reasoning. When disabled, model cannot perform complex logical analysis',
+      },
+      vision: {
+        label: 'Vision',
+        description: 'Supports image input and multimodal understanding. Can process images, charts and visual content',
+      },
+      promptCaching: {
+        label: 'Prompt Caching',
+        description: 'Supports caching repeated prompt content to significantly reduce API call costs',
+      },
+      audioOutput: {
+        label: 'Audio Output',
+        description: 'Supports generating voice output. Can convert text to natural and fluent audio',
+      },
+    },
+  },
   virtualModels: {
     title: 'Smart Routing',
     subtitle: 'Configure load balancing and failover',

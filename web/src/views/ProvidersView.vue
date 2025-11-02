@@ -477,6 +477,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
+@import '@/styles/table.css';
 .providers-view {
   max-width: 1400px;
   margin: 0 auto;
@@ -520,16 +521,6 @@ onMounted(() => {
   padding: 10px 12px;
 }
 
-.table-card :deep(.n-data-table-td) {
-  padding: 10px 12px;
-  border-bottom: 1px solid #f0f0f0;
-  font-size: 13px;
-  color: #333;
-}
-
-.table-card :deep(.n-data-table-tr:hover .n-data-table-td) {
-  background: #fafafa;
-}
 
 .table-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
   border-bottom: none;

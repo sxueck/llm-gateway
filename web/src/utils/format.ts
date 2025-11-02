@@ -1,3 +1,5 @@
+import { MILLION, BILLION } from '@/constants/numbers';
+
 export interface FormatOptions {
   decimals?: number;
   locale?: string;
@@ -7,8 +9,8 @@ export interface FormatOptions {
 export function formatNumber(num: number, options?: FormatOptions): string {
   const { decimals = 1, locale = 'en-US', useGrouping = false } = options || {};
   
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(decimals) + 'M';
+  if (num >= MILLION) {
+    return (num / MILLION).toFixed(decimals) + 'M';
   }
   if (num >= 1000) {
     return (num / 1000).toFixed(decimals) + 'K';
@@ -24,11 +26,11 @@ export function formatNumber(num: number, options?: FormatOptions): string {
 export function formatTokenNumber(num: number, options?: FormatOptions): string {
   const { decimals = 2, locale = 'en-US' } = options || {};
   
-  if (num >= 1000000000) {
-    return (num / 1000000000).toFixed(decimals) + 'B';
+  if (num >= BILLION) {
+    return (num / BILLION).toFixed(decimals) + 'B';
   }
-  if (num >= 10000000) {
-    return (num / 1000000).toFixed(decimals) + 'M';
+  if (num >= 10 * MILLION) {
+    return (num / MILLION).toFixed(decimals) + 'M';
   }
   if (num >= 10000) {
     return (num / 1000).toFixed(decimals) + 'K';
