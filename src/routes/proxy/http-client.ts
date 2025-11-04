@@ -2,6 +2,7 @@ import { FastifyReply } from 'fastify';
 import { request as httpRequest, IncomingMessage } from 'http';
 import { request as httpsRequest } from 'https';
 import { URL } from 'url';
+import { extractReasoningFromChoice } from '../../utils/request-logger.js';
 
 export interface HttpResponse {
   statusCode: number;
@@ -9,11 +10,19 @@ export interface HttpResponse {
   body: string;
 }
 
+export interface ThinkingBlock {
+  type: string;
+  thinking: string;
+  signature?: string;
+}
+
 export interface StreamTokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
   streamChunks: string[];
+  reasoningContent?: string;
+  thinkingBlocks?: ThinkingBlock[];
 }
 
 export function makeHttpRequest(
@@ -103,6 +112,8 @@ export function makeStreamHttpRequest(
     let totalTokens = 0;
     let buffer = '';
     const streamChunks: string[] = [];
+    let reasoningContent = '';
+    let thinkingBlocks: ThinkingBlock[] = [];
 
     const req = requestModule(options, (res: IncomingMessage) => {
 
@@ -133,6 +144,16 @@ export function makeStreamHttpRequest(
                   completionTokens = data.usage.completion_tokens || completionTokens;
                   totalTokens = data.usage.total_tokens || totalTokens;
                 }
+
+                if (data.choices && data.choices[0]) {
+                  const extraction = extractReasoningFromChoice(
+                    data.choices[0],
+                    reasoningContent,
+                    thinkingBlocks
+                  );
+                  reasoningContent = extraction.reasoningContent;
+                  thinkingBlocks = extraction.thinkingBlocks as ThinkingBlock[];
+                }
               }
             } catch {
             }
@@ -144,7 +165,14 @@ export function makeStreamHttpRequest(
 
       res.on('end', () => {
         reply.raw.end();
-        resolve({ promptTokens, completionTokens, totalTokens, streamChunks });
+        resolve({
+          promptTokens,
+          completionTokens,
+          totalTokens,
+          streamChunks,
+          reasoningContent: reasoningContent || undefined,
+          thinkingBlocks: thinkingBlocks.length > 0 ? thinkingBlocks : undefined
+        });
       });
 
       res.on('error', (err: any) => {

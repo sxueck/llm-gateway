@@ -24,12 +24,39 @@ async function calculateTokensIfNeeded(
   totalTokens: number,
   requestBody: any,
   responseBody?: any,
-  streamChunks?: string[]
+  streamChunks?: string[],
+  promptTokensFromStream?: number,
+  completionTokensFromStream?: number
 ): Promise<{ promptTokens: number; completionTokens: number; totalTokens: number }> {
-  if (totalTokens !== 0) {
+  // 优先使用从流中解析的 usage 信息
+  if (promptTokensFromStream !== undefined && completionTokensFromStream !== undefined) {
     return {
-      promptTokens: totalTokens,
-      completionTokens: 0,
+      promptTokens: promptTokensFromStream,
+      completionTokens: completionTokensFromStream,
+      totalTokens: promptTokensFromStream + completionTokensFromStream
+    };
+  }
+
+  if (totalTokens !== 0) {
+    // 尝试从响应中获取详细的 token 信息
+    if (responseBody?.usage) {
+      const usage = responseBody.usage;
+      return {
+        promptTokens: usage.prompt_tokens || 0,
+        completionTokens: usage.completion_tokens || 0,
+        totalTokens: usage.total_tokens || totalTokens
+      };
+    }
+    
+    // 如果只有 total_tokens，需要 fallback 计算
+    if (streamChunks) {
+      return await countStreamResponseTokens(requestBody, streamChunks);
+    }
+    
+    const calculated = await countRequestTokens(requestBody, responseBody);
+    return {
+      promptTokens: calculated.promptTokens,
+      completionTokens: calculated.completionTokens,
       totalTokens
     };
   }
@@ -248,7 +275,9 @@ async function handleStreamRequest(
       tokenUsage.totalTokens,
       request.body,
       undefined,
-      tokenUsage.streamChunks
+      tokenUsage.streamChunks,
+      tokenUsage.promptTokens,
+      tokenUsage.completionTokens
     );
 
     memoryLogger.info(
@@ -529,6 +558,10 @@ async function handleNonStreamRequest(
       has_message: !!responseData.choices?.[0]?.message,
       message_role: responseData.choices?.[0]?.message?.role,
       message_content_length: responseData.choices?.[0]?.message?.content?.length,
+      has_reasoning_content: !!responseData.choices?.[0]?.message?.reasoning_content,
+      reasoning_content_length: responseData.choices?.[0]?.message?.reasoning_content?.length,
+      has_thinking_blocks: !!responseData.choices?.[0]?.message?.thinking_blocks,
+      thinking_blocks_count: responseData.choices?.[0]?.message?.thinking_blocks?.length,
       has_tool_calls: !!responseData.choices?.[0]?.message?.tool_calls,
       tool_calls_length: responseData.choices?.[0]?.message?.tool_calls?.length,
       has_usage: !!responseData.usage,
