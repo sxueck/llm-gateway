@@ -2,7 +2,7 @@ import { FastifyReply } from 'fastify';
 import { request as httpRequest, IncomingMessage } from 'http';
 import { request as httpsRequest } from 'https';
 import { URL } from 'url';
-import { extractReasoningFromChoice } from '../../utils/request-logger';
+import { extractReasoningFromChoice } from '../../utils/request-logger.js';
 
 export interface HttpResponse {
   statusCode: number;
