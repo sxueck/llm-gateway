@@ -76,12 +76,6 @@
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.avgResponseTime') }}</div>
               <div class="stat-main-value">{{ formatResponseTime(avgResponseTime) }}<span class="stat-unit">ms</span></div>
-              <div class="stat-details">
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">P95:</span>
-                  <span class="stat-detail-value">{{ formatResponseTime(p95ResponseTime) }} ms</span>
-                </span>
-              </div>
             </div>
           </n-card>
         </n-gi>
@@ -212,7 +206,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { useMessage, NSpace, NGrid, NGi, NCard, NStatistic, NSelect, NEmpty, NButton, NIcon, NSpin, NResult } from 'naive-ui';
+import { useMessage, NSpace, NGrid, NGi, NCard, NSelect, NEmpty, NButton, NIcon, NSpin, NResult } from 'naive-ui';
 import { RefreshOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
 import { useProviderStore } from '@/stores/provider';
@@ -318,10 +312,6 @@ const promptTokens = computed(() => {
 const completionTokens = computed(() => {
   if (!stats.value) return 0;
   return stats.value.completionTokens || 0;
-});
-
-const p95ResponseTime = computed(() => {
-  return stats.value?.p95ResponseTime || avgResponseTime.value * 1.5;
 });
 
 const COLOR_PALETTE = [
