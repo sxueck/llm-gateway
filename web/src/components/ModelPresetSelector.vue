@@ -1,10 +1,10 @@
 <template>
-  <div class="litellm-preset-selector">
+  <div class="model-preset-selector">
     <n-space vertical :size="12">
       <n-space :size="8" align="center">
         <n-input
           v-model:value="searchQuery"
-          placeholder="搜索模型名称，如: gpt-4, claude-3"
+          :placeholder="t('modelPresets.searchPlaceholder')"
           clearable
           size="small"
           style="flex: 1"
@@ -26,7 +26,7 @@
         <template #icon>
           <n-icon :component="InfoIcon" />
         </template>
-        <div style="font-size: 13px;">{{ presetsInfoText }}</div>
+        <div style="font-size: 13px;">{{ t('modelPresets.presetsInfo', [stats.totalModels, formatTime(stats.lastUpdate)]) }}</div>
       </n-alert>
 
       <div v-if="searchResults.length > 0" class="search-results">
@@ -111,30 +111,26 @@ import {
   useMessage,
 } from 'naive-ui';
 import { Search as SearchIcon, InformationCircle as InfoIcon, Cube as ModelIcon } from '@vicons/ionicons5';
-import { litellmPresetsApi, type LiteLLMSearchResult, type LiteLLMStats } from '@/api/litellm-presets';
+import { modelPresetsApi, type ModelPresetSearchResult, type ModelPresetStats } from '@/api/model-presets';
 import { useI18n } from 'vue-i18n';
 
 const emit = defineEmits<{
-  select: [result: LiteLLMSearchResult];
+  select: [result: ModelPresetSearchResult];
 }>();
 
 const { t } = useI18n();
 const message = useMessage();
 const searchQuery = ref('');
-const searchResults = ref<LiteLLMSearchResult[]>([]);
+const searchResults = ref<ModelPresetSearchResult[]>([]);
 const searching = ref(false);
 const updating = ref(false);
 const searched = ref(false);
-const stats = ref<LiteLLMStats | null>(null);
+const stats = ref<ModelPresetStats | null>(null);
 
-const presetsInfoText = computed(() => {
-  if (!stats.value) return '';
-  return t('litellm.presetsInfo', [stats.value.totalModels, formatTime(stats.value.lastUpdate)]);
-});
 
 async function loadStats() {
   try {
-    stats.value = await litellmPresetsApi.getStats();
+    stats.value = await modelPresetsApi.getStats();
   } catch (error: any) {
     console.error('加载统计信息失败:', error);
   }
@@ -149,7 +145,7 @@ async function handleSearch() {
   searching.value = true;
   searched.value = true;
   try {
-    const response = await litellmPresetsApi.searchModels(searchQuery.value, 20);
+    const response = await modelPresetsApi.searchModels(searchQuery.value, 20);
     searchResults.value = response.results;
     
     if (response.results.length === 0) {
@@ -166,7 +162,7 @@ async function handleSearch() {
 async function handleUpdate() {
   updating.value = true;
   try {
-    const result = await litellmPresetsApi.updatePresets();
+    const result = await modelPresetsApi.updatePresets();
     if (result.success) {
       message.success(result.message);
       await loadStats();
@@ -180,7 +176,7 @@ async function handleUpdate() {
   }
 }
 
-function handleSelect(result: LiteLLMSearchResult) {
+function handleSelect(result: ModelPresetSearchResult) {
   emit('select', result);
 }
 
@@ -200,7 +196,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.litellm-preset-selector {
+.model-preset-selector {
   padding: 4px;
 }
 

@@ -95,9 +95,9 @@
               <span>{{ t('models.modelAttributes') }}</span>
               <n-button
                 size="tiny"
-                @click.stop="showLiteLLMSelector = true"
+                @click.stop="showModelPresetSelector = true"
               >
-                {{ t('models.searchFromLiteLLM') }}
+                {{ t('models.searchFromModelPresets') }}
               </n-button>
             </n-space>
           </n-divider>
@@ -116,12 +116,12 @@
     </n-modal>
 
     <n-modal
-      v-model:show="showLiteLLMSelector"
+      v-model:show="showModelPresetSelector"
       preset="card"
-      :title="t('models.searchFromLiteLLMTitle')"
+      :title="t('models.searchFromModelPresetsTitle')"
       :style="{ width: '800px' }"
     >
-      <LiteLLMPresetSelector @select="handleLiteLLMSelect" />
+      <ModelPresetSelector @select="handleModelPresetSelect" />
     </n-modal>
 
     <n-modal
@@ -174,13 +174,13 @@ import { useI18n } from 'vue-i18n';
 import { useModelStore } from '@/stores/model';
 import { useProviderStore } from '@/stores/provider';
 import { modelApi } from '@/api/model';
-import { litellmPresetsApi } from '@/api/litellm-presets';
+import { modelPresetsApi } from '@/api/model-presets';
 import ModelAttributesEditor from '@/components/ModelAttributesEditor.vue';
-import LiteLLMPresetSelector from '@/components/LiteLLMPresetSelector.vue';
+import ModelPresetSelector from '@/components/ModelPresetSelector.vue';
 import BatchModelAdder from '@/components/BatchModelAdder.vue';
 import ModelTester from '@/components/ModelTester.vue';
 import type { Model, ModelAttributes } from '@/types';
-import type { LiteLLMSearchResult } from '@/api/litellm-presets';
+import type { ModelPresetSearchResult } from '@/api/model-presets';
 
 const { t } = useI18n();
 const message = useMessage();
@@ -188,7 +188,7 @@ const modelStore = useModelStore();
 const providerStore = useProviderStore();
 
 const showModal = ref(false);
-const showLiteLLMSelector = ref(false);
+const showModelPresetSelector = ref(false);
 const showBatchModal = ref(false);
 const showTestModal = ref(false);
 const formRef = ref();
@@ -431,9 +431,9 @@ function resetForm() {
   };
 }
 
-async function handleLiteLLMSelect(result: LiteLLMSearchResult) {
+async function handleModelPresetSelect(result: ModelPresetSearchResult) {
   try {
-    const detail = await litellmPresetsApi.getModelDetail(result.modelName);
+    const detail = await modelPresetsApi.getModelDetail(result.modelName);
 
     if (!formValue.value.modelIdentifier) {
       formValue.value.modelIdentifier = result.modelName;
@@ -448,7 +448,7 @@ async function handleLiteLLMSelect(result: LiteLLMSearchResult) {
       ...detail.attributes,
     };
 
-    showLiteLLMSelector.value = false;
+    showModelPresetSelector.value = false;
     message.success(t('models.presetApplied', { modelName: result.modelName }));
   } catch (error: any) {
     message.error(error.message || t('models.presetApplyFailed'));

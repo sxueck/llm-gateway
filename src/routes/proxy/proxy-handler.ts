@@ -112,7 +112,7 @@ export function createProxyHandler() {
         return reply.code(configResult.code).send(configResult.body);
       }
 
-      const { litellmConfig, path, vkDisplay, isStreamRequest } = configResult;
+      const { protocolConfig, path, vkDisplay, isStreamRequest } = configResult;
 
       if (currentModel && (request.body as any)?.messages && path.startsWith('/v1/chat/completions')) {
         const processorContext = {
@@ -169,7 +169,7 @@ export function createProxyHandler() {
         return await handleStreamRequest(
           request,
           reply,
-          litellmConfig,
+          protocolConfig,
           path,
           vkDisplay,
           virtualKey,
@@ -181,7 +181,7 @@ export function createProxyHandler() {
       return await handleNonStreamRequest(
         request,
         reply,
-        litellmConfig,
+        protocolConfig,
         virtualKey,
         providerId,
         isStreamRequest,
@@ -238,7 +238,7 @@ export function createProxyHandler() {
 async function handleStreamRequest(
   request: FastifyRequest,
   reply: FastifyReply,
-  litellmConfig: any,
+  protocolConfig: any,
   path: string,
   vkDisplay: string,
   virtualKey: any,
@@ -262,7 +262,7 @@ async function handleStreamRequest(
     };
 
     const tokenUsage = await makeStreamHttpRequest(
-      litellmConfig,
+      protocolConfig,
       messages,
       options,
       reply
@@ -340,7 +340,7 @@ async function handleStreamRequest(
 async function handleNonStreamRequest(
   request: FastifyRequest,
   reply: FastifyReply,
-  litellmConfig: any,
+  protocolConfig: any,
   virtualKey: any,
   providerId: string,
   isStreamRequest: boolean,
@@ -414,12 +414,19 @@ async function handleNonStreamRequest(
     frequency_penalty: (request.body as any)?.frequency_penalty,
     presence_penalty: (request.body as any)?.presence_penalty,
     stop: (request.body as any)?.stop,
+    encoding_format: (request.body as any)?.encoding_format,
+    dimensions: (request.body as any)?.dimensions,
+    user: (request.body as any)?.user,
   };
 
+  const input = isEmbeddingsRequest ? (request.body as any)?.input : undefined;
+
   const response = await makeHttpRequest(
-    litellmConfig,
+    protocolConfig,
     messages,
-    options
+    options,
+    isEmbeddingsRequest,
+    input
   );
 
   const responseHeaders: Record<string, string> = {};

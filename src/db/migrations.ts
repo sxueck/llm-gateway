@@ -57,6 +57,33 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 3,
+    name: 'add_protocol_to_providers',
+    up: async (conn: Connection) => {
+      const [tables] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'providers'
+        AND COLUMN_NAME = 'protocol'
+      `);
+      const result = tables as any[];
+
+      if (result[0].count === 0) {
+        await conn.query(`
+          ALTER TABLE providers
+          ADD COLUMN protocol VARCHAR(20) DEFAULT 'openai' AFTER api_key
+        `);
+      }
+    },
+    down: async (conn: Connection) => {
+      await conn.query(`
+        ALTER TABLE providers
+        DROP COLUMN protocol
+      `);
+    },
+  },
 ];
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {

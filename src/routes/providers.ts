@@ -9,6 +9,7 @@ const createProviderSchema = z.object({
   name: z.string(),
   baseUrl: z.string().url(),
   apiKey: z.string(),
+  protocol: z.enum(['openai', 'anthropic', 'google']).optional().default('openai'),
   modelMapping: z.record(z.string()).optional(),
   enabled: z.boolean().optional(),
 });
@@ -17,6 +18,7 @@ const updateProviderSchema = z.object({
   name: z.string().optional(),
   baseUrl: z.string().url().optional(),
   apiKey: z.string().optional(),
+  protocol: z.enum(['openai', 'anthropic', 'google']).optional(),
   modelMapping: z.record(z.string()).optional(),
   enabled: z.boolean().optional(),
 });
@@ -43,6 +45,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
         name: p.name,
         baseUrl: p.base_url,
         apiKey: '***',
+        protocol: p.protocol || 'openai',
         modelMapping: p.model_mapping ? JSON.parse(p.model_mapping) : null,
         enabled: p.enabled === 1,
         createdAt: p.created_at,
@@ -65,6 +68,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
       name: provider.name,
       baseUrl: provider.base_url,
       apiKey: includeApiKey === 'true' ? decryptApiKey(provider.api_key) : '***',
+      protocol: provider.protocol || 'openai',
       modelMapping: provider.model_mapping ? JSON.parse(provider.model_mapping) : null,
       enabled: provider.enabled === 1,
       createdAt: provider.created_at,
@@ -85,6 +89,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
       name: body.name,
       base_url: body.baseUrl,
       api_key: encryptApiKey(body.apiKey),
+      protocol: body.protocol || 'openai',
       model_mapping: body.modelMapping ? JSON.stringify(body.modelMapping) : null,
       enabled: body.enabled !== false ? 1 : 0,
     });
@@ -93,6 +98,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
       id: provider.id,
       name: provider.name,
       baseUrl: provider.base_url,
+      protocol: provider.protocol || 'openai',
       modelMapping: provider.model_mapping ? JSON.parse(provider.model_mapping) : null,
       enabled: provider.enabled === 1,
       createdAt: provider.created_at,
@@ -113,6 +119,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
     if (body.name !== undefined) updates.name = body.name;
     if (body.baseUrl !== undefined) updates.base_url = body.baseUrl;
     if (body.apiKey !== undefined) updates.api_key = encryptApiKey(body.apiKey);
+    if (body.protocol !== undefined) updates.protocol = body.protocol;
     if (body.modelMapping !== undefined) updates.model_mapping = JSON.stringify(body.modelMapping);
     if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
 
@@ -127,6 +134,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
       id: updated.id,
       name: updated.name,
       baseUrl: updated.base_url,
+      protocol: updated.protocol || 'openai',
       modelMapping: updated.model_mapping ? JSON.parse(updated.model_mapping) : null,
       enabled: updated.enabled === 1,
       createdAt: updated.created_at,
@@ -261,6 +269,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
           name: providerData.name,
           base_url: providerData.baseUrl,
           api_key: encryptApiKey(providerData.apiKey),
+          protocol: 'openai',
           model_mapping: null,
           enabled: providerData.enabled !== false ? 1 : 0,
         });

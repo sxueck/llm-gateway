@@ -153,9 +153,9 @@
         <n-space vertical :size="12">
           <n-button
             size="small"
-            @click="showLiteLLMSelector = true"
+            @click="showModelPresetSelector = true"
           >
-            {{ t('wizard.searchFromLiteLLM') }}
+            {{ t('wizard.searchFromModelPresets') }}
           </n-button>
 
           <ModelAttributesEditor v-model="localFormValue.modelAttributes" />
@@ -164,12 +164,12 @@
     </div>
 
     <n-modal
-      v-model:show="showLiteLLMSelector"
+      v-model:show="showModelPresetSelector"
       preset="card"
-      :title="t('wizard.litellmSelectorTitle')"
+      :title="t('wizard.modelPresetSelectorTitle')"
       :style="{ width: '800px' }"
     >
-      <LiteLLMPresetSelector @select="handleLiteLLMSelect" />
+      <ModelPresetSelector @select="handleModelPresetSelect" />
     </n-modal>
 
     <div class="wizard-footer">
@@ -217,10 +217,10 @@ import {
   ArrowUpOutline,
   ArrowDownOutline,
 } from '@vicons/ionicons5';
-import { litellmPresetsApi } from '@/api/litellm-presets';
-import type { LiteLLMSearchResult } from '@/api/litellm-presets';
+import { modelPresetsApi } from '@/api/model-presets';
+import type { ModelPresetSearchResult } from '@/api/model-presets';
 import ModelAttributesEditor from '@/components/ModelAttributesEditor.vue';
-import LiteLLMPresetSelector from '@/components/LiteLLMPresetSelector.vue';
+import ModelPresetSelector from '@/components/ModelPresetSelector.vue';
 
 interface Target {
   providerId: string;
@@ -259,7 +259,7 @@ const emit = defineEmits<{
 const message = useMessage();
 const currentStep = ref(1);
 const basicFormRef = ref();
-const showLiteLLMSelector = ref(false);
+const showModelPresetSelector = ref(false);
 
 const localConfigType = computed({
   get: () => props.configType,
@@ -351,16 +351,16 @@ function handleCancel() {
   emit('cancel');
 }
 
-async function handleLiteLLMSelect(result: LiteLLMSearchResult) {
+async function handleModelPresetSelect(result: ModelPresetSearchResult) {
   try {
-    const detail = await litellmPresetsApi.getModelDetail(result.modelName);
+    const detail = await modelPresetsApi.getModelDetail(result.modelName);
 
     localFormValue.value.modelAttributes = {
       ...localFormValue.value.modelAttributes,
       ...detail.attributes,
     };
 
-    showLiteLLMSelector.value = false;
+    showModelPresetSelector.value = false;
     message.success(`已应用 ${result.modelName} 的预设属性`);
   } catch (error: any) {
     message.error(error.message || '应用预设失败');

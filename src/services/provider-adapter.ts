@@ -2,6 +2,7 @@ interface ProviderConfig {
   provider: string;
   baseUrl: string;
   apiKey: string;
+  protocol?: 'openai' | 'anthropic' | 'google';
 }
 
 interface ProviderAdapter {
@@ -126,16 +127,33 @@ export class ProviderAdapterFactory {
       return {
         ...config,
         baseUrl: '',
-        provider: 'openai',
+        provider: config.protocol || 'openai',
+        protocol: config.protocol || 'openai',
       };
     }
 
-    const adapter = this.getAdapter(config.baseUrl);
+    const adapter = config.protocol
+      ? this.getAdapterByProtocol(config.protocol)
+      : this.getAdapter(config.baseUrl);
+    
     return {
       ...config,
       baseUrl: adapter.normalizeBaseUrl(config.baseUrl),
-      provider: adapter.getProviderType(config.baseUrl),
+      provider: config.protocol || adapter.getProviderType(config.baseUrl),
+      protocol: config.protocol || adapter.getProviderType(config.baseUrl) as 'openai' | 'anthropic' | 'google',
     };
+  }
+
+  static getAdapterByProtocol(protocol: 'openai' | 'anthropic' | 'google'): ProviderAdapter {
+    switch (protocol) {
+      case 'google':
+        return this.googleAdapter;
+      case 'anthropic':
+        return this.anthropicAdapter;
+      case 'openai':
+      default:
+        return this.openaiAdapter;
+    }
   }
 }
 

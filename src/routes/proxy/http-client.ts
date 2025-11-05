@@ -1,5 +1,5 @@
 import { FastifyReply } from 'fastify';
-import { LiteLLMAdapter, type LiteLLMConfig } from '../../services/litellm-adapter.js';
+import { ProtocolAdapter, type ProtocolConfig } from '../../services/protocol-adapter.js';
 
 export interface HttpResponse {
   statusCode: number;
@@ -22,7 +22,7 @@ export interface StreamTokenUsage {
   thinkingBlocks?: ThinkingBlock[];
 }
 
-const litellmAdapter = new LiteLLMAdapter();
+const protocolAdapter = new ProtocolAdapter();
 
 function normalizeError(error: any): { statusCode: number; errorResponse: any } {
   let statusCode = 500;
@@ -62,12 +62,20 @@ function normalizeError(error: any): { statusCode: number; errorResponse: any } 
 }
 
 export async function makeHttpRequest(
-  config: LiteLLMConfig,
+  config: ProtocolConfig,
   messages: any[],
-  options: any
+  options: any,
+  isEmbeddingsRequest: boolean = false,
+  input?: string | string[]
 ): Promise<HttpResponse> {
   try {
-    const response = await litellmAdapter.chatCompletion(config, messages, options);
+    let response: any;
+
+    if (isEmbeddingsRequest) {
+      response = await protocolAdapter.createEmbedding(config, input || [], options);
+    } else {
+      response = await protocolAdapter.chatCompletion(config, messages, options);
+    }
 
     return {
       statusCode: 200,
@@ -86,13 +94,13 @@ export async function makeHttpRequest(
 }
 
 export async function makeStreamHttpRequest(
-  config: LiteLLMConfig,
+  config: ProtocolConfig,
   messages: any[],
   options: any,
   reply: FastifyReply
 ): Promise<StreamTokenUsage> {
   try {
-    return await litellmAdapter.streamChatCompletion(config, messages, options, reply);
+    return await protocolAdapter.streamChatCompletion(config, messages, options, reply);
   } catch (error: any) {
     const { statusCode, errorResponse } = normalizeError(error);
 

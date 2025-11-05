@@ -2,10 +2,10 @@ import { FastifyRequest } from 'fastify';
 import { decryptApiKey } from '../../utils/crypto.js';
 import { memoryLogger } from '../../services/logger.js';
 import { ProviderAdapterFactory } from '../../services/provider-adapter.js';
-import type { LiteLLMConfig } from '../../services/litellm-adapter.js';
+import type { ProtocolConfig } from '../../services/protocol-adapter.js';
 
 export interface ProviderConfigResult {
-  litellmConfig: LiteLLMConfig;
+  protocolConfig: ProtocolConfig;
   path: string;
   vkDisplay: string;
   isStreamRequest: boolean;
@@ -37,6 +37,7 @@ export async function buildProviderConfig(
     provider: provider.id,
     baseUrl,
     apiKey: decryptedApiKey,
+    protocol: provider.protocol || 'openai',
   });
 
   const vkDisplay = virtualKeyValue && virtualKeyValue.length > 10
@@ -74,11 +75,12 @@ export async function buildProviderConfig(
   const isStreamRequest = (request.body as any)?.stream === true;
   const model = (request.body as any)?.model || 'unknown';
 
-  const litellmConfig: LiteLLMConfig = {
+  const protocolConfig: ProtocolConfig = {
     provider: normalized.provider,
     apiKey: normalized.apiKey,
     baseUrl: normalized.baseUrl || undefined,
     model,
+    protocol: normalized.protocol,
   };
 
   const redactedApiKey = decryptedApiKey && decryptedApiKey.length > 10
@@ -90,12 +92,12 @@ export async function buildProviderConfig(
     'Proxy'
   );
   memoryLogger.debug(
-    `LiteLLM 配置 | provider: ${normalized.provider} | baseUrl: ${normalized.baseUrl || 'default'} | apiKey: ${redactedApiKey}`,
+    `协议配置 | provider: ${normalized.provider} | protocol: ${normalized.protocol} | baseUrl: ${normalized.baseUrl || 'default'} | apiKey: ${redactedApiKey}`,
     'Proxy'
   );
 
   return {
-    litellmConfig,
+    protocolConfig,
     path,
     vkDisplay,
     isStreamRequest,

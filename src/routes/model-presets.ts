@@ -1,23 +1,23 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { litellmPresetsService } from '../services/litellm-presets.js';
+import { modelPresetsService } from '../services/model-presets.js';
 
 const searchSchema = z.object({
   query: z.string().min(1),
   limit: z.number().min(1).max(100).optional(),
 });
 
-export async function litellmPresetsRoutes(fastify: FastifyInstance) {
+export async function modelPresetsRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
 
   fastify.get('/stats', async () => {
-    await litellmPresetsService.ensureDataAvailable();
-    const stats = litellmPresetsService.getStats();
+    await modelPresetsService.ensureDataAvailable();
+    const stats = modelPresetsService.getStats();
     return stats;
   });
 
   fastify.post('/update', async (request, reply) => {
-    const result = await litellmPresetsService.updateFromRemote();
+    const result = await modelPresetsService.updateFromRemote();
     
     if (result.success) {
       return result;
@@ -29,9 +29,9 @@ export async function litellmPresetsRoutes(fastify: FastifyInstance) {
   fastify.post('/search', async (request, reply) => {
     const body = searchSchema.parse(request.body);
     
-    await litellmPresetsService.ensureDataAvailable();
+    await modelPresetsService.ensureDataAvailable();
     
-    const results = litellmPresetsService.searchModels(body.query, body.limit);
+    const results = modelPresetsService.searchModels(body.query, body.limit);
     
     return {
       query: body.query,
@@ -54,15 +54,15 @@ export async function litellmPresetsRoutes(fastify: FastifyInstance) {
   fastify.get('/model/:modelName', async (request, reply) => {
     const { modelName } = request.params as { modelName: string };
     
-    await litellmPresetsService.ensureDataAvailable();
+    await modelPresetsService.ensureDataAvailable();
     
-    const info = litellmPresetsService.getModelInfo(modelName);
+    const info = modelPresetsService.getModelInfo(modelName);
     
     if (!info) {
       return reply.code(404).send({ error: '模型未找到' });
     }
 
-    const attributes = litellmPresetsService.convertToModelAttributes(info);
+    const attributes = modelPresetsService.convertToModelAttributes(info);
     
     return {
       modelName,

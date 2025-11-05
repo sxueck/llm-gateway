@@ -15,10 +15,10 @@ import { virtualKeyRoutes } from './routes/virtual-keys.js';
 import { configRoutes } from './routes/config.js';
 import { publicConfigRoutes } from './routes/public-config.js';
 import { proxyRoutes } from './routes/proxy.js';
-import { litellmPresetsRoutes } from './routes/litellm-presets.js';
+import { modelPresetsRoutes } from './routes/model-presets.js';
 import { expertRoutingRoutes } from './routes/expert-routing.js';
 import { memoryLogger } from './services/logger.js';
-import { litellmPresetsService } from './services/litellm-presets.js';
+import { modelPresetsService } from './services/model-presets.js';
 import { demoModeService } from './services/demo-mode.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -145,7 +145,7 @@ await fastify.register(providerRoutes, { prefix: '/api/admin/providers' });
 await fastify.register(modelRoutes, { prefix: '/api/admin/models' });
 await fastify.register(virtualKeyRoutes, { prefix: '/api/admin/virtual-keys' });
 await fastify.register(configRoutes, { prefix: '/api/admin/config' });
-await fastify.register(litellmPresetsRoutes, { prefix: '/api/admin/litellm-presets' });
+await fastify.register(modelPresetsRoutes, { prefix: '/api/admin/model-presets' });
 await fastify.register(expertRoutingRoutes, { prefix: '/api/admin/expert-routing' });
 
 memoryLogger.info('Routes registered', 'System');
@@ -203,22 +203,22 @@ async function cleanOldApiRequests() {
   }
 }
 
-async function checkAndUpdateLiteLLMPresets() {
+async function checkAndUpdateModelPresets() {
   try {
-    if (litellmPresetsService.shouldAutoUpdate()) {
-      memoryLogger.info('检测到 LiteLLM 预设需要更新，开始自动更新...', 'System');
-      const result = await litellmPresetsService.updateFromRemote();
+    if (modelPresetsService.shouldAutoUpdate()) {
+      memoryLogger.info('检测到模型预设需要更新，开始自动更新...', 'System');
+      const result = await modelPresetsService.updateFromRemote();
       if (result.success) {
         memoryLogger.info(result.message, 'System');
       } else {
-        memoryLogger.warn(`LiteLLM 预设更新失败: ${result.message}`, 'System');
+        memoryLogger.warn(`模型预设更新失败: ${result.message}`, 'System');
       }
     } else {
-      const stats = litellmPresetsService.getStats();
-      memoryLogger.info(`LiteLLM 预设库已加载: ${stats.totalModels} 个模型`, 'System');
+      const stats = modelPresetsService.getStats();
+      memoryLogger.info(`模型预设库已加载: ${stats.totalModels} 个模型`, 'System');
     }
   } catch (error: any) {
-    memoryLogger.error(`LiteLLM 预设检查失败: ${error.message}`, 'System');
+    memoryLogger.error(`模型预设检查失败: ${error.message}`, 'System');
   }
 }
 
@@ -235,10 +235,10 @@ try {
     'System'
   );
 
-  await checkAndUpdateLiteLLMPresets();
+  await checkAndUpdateModelPresets();
 
-  setInterval(checkAndUpdateLiteLLMPresets, 24 * 60 * 60 * 1000);
-  memoryLogger.info('已启动 LiteLLM 预设自动更新任务，每 24 小时检查一次', 'System');
+  setInterval(checkAndUpdateModelPresets, 24 * 60 * 60 * 1000);
+  memoryLogger.info('已启动模型预设自动更新任务，每 24 小时检查一次', 'System');
 
   await demoModeService.start();
 } catch (err) {

@@ -82,16 +82,16 @@ export async function getModelsHandler(request: FastifyRequest, reply: FastifyRe
 
 export async function getModelInfoHandler(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const litellmCompatCfg = await systemConfigDb.get('litellm_compat_enabled');
-    const litellmCompatEnabled = litellmCompatCfg ? litellmCompatCfg.value === 'true' : false;
+    const protocolCompatCfg = await systemConfigDb.get('protocol_compat_enabled');
+    const litellmCompatEnabled = protocolCompatCfg ? protocolCompatCfg.value === 'true' : false;
 
     if (!litellmCompatEnabled) {
       return reply.code(404).send({
         error: {
-          message: 'LiteLLM compatibility mode is not enabled',
+          message: 'Protocol compatibility mode is not enabled',
           type: 'not_found_error',
           param: null,
-          code: 'litellm_compat_disabled'
+          code: 'protocol_compat_disabled'
         }
       });
     }
@@ -123,7 +123,7 @@ export async function getModelInfoHandler(request: FastifyRequest, reply: Fastif
       };
 
       if (modelAttributes.litellm_provider) {
-        modelInfo.litellm_provider = modelAttributes.litellm_provider;
+        modelInfo.provider = modelAttributes.litellm_provider;
       }
 
       if (modelAttributes.mode) {

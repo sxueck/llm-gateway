@@ -1,6 +1,6 @@
 import request from '@/utils/request';
 
-export interface LiteLLMSearchResult {
+export interface ModelPresetSearchResult {
   modelName: string;
   provider?: string;
   maxTokens?: number;
@@ -13,38 +13,38 @@ export interface LiteLLMSearchResult {
   score: number;
 }
 
-export interface LiteLLMStats {
+export interface ModelPresetStats {
   totalModels: number;
   lastUpdate: number;
   cacheAge: number;
   providers: string[];
 }
 
-export interface LiteLLMModelDetail {
+export interface ModelPresetDetail {
   modelName: string;
   rawInfo: any;
   attributes: any;
 }
 
-export const litellmPresetsApi = {
-  getStats(): Promise<LiteLLMStats> {
-    return request.get('/admin/litellm-presets/stats');
+export const modelPresetsApi = {
+  getStats(): Promise<ModelPresetStats> {
+    return request.get('/admin/model-presets/stats');
   },
 
   updatePresets(): Promise<{ success: boolean; message: string; count?: number }> {
-    return request.post('/admin/litellm-presets/update');
+    return request.post('/admin/model-presets/update');
   },
 
   searchModels(query: string, limit?: number): Promise<{
     query: string;
-    results: LiteLLMSearchResult[];
+    results: ModelPresetSearchResult[];
     total: number;
   }> {
-    return request.post('/admin/litellm-presets/search', { query, limit });
+    return request.post('/admin/model-presets/search', { query, limit });
   },
 
-  getModelDetail(modelName: string): Promise<LiteLLMModelDetail> {
-    return request.get(`/admin/litellm-presets/model/${encodeURIComponent(modelName)}`);
+  getModelDetail(modelName: string): Promise<ModelPresetDetail> {
+    return request.get(`/admin/model-presets/model/${encodeURIComponent(modelName)}`);
   },
 };
 

@@ -5,14 +5,15 @@ import { memoryLogger } from './logger.js';
 import { extractReasoningFromChoice } from '../utils/request-logger.js';
 import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-client.js';
 
-export interface LiteLLMConfig {
+export interface ProtocolConfig {
   provider: string;
   apiKey: string;
   baseUrl?: string;
   model: string;
+  protocol?: string;
 }
 
-export interface LiteLLMResponse {
+export interface ProtocolResponse {
   id: string;
   object: string;
   created: number;
@@ -34,11 +35,11 @@ export interface LiteLLMResponse {
   };
 }
 
-export class LiteLLMAdapter {
+export class ProtocolAdapter {
   private openaiClients: Map<string, OpenAI> = new Map();
   private anthropicClients: Map<string, Anthropic> = new Map();
 
-  private getOpenAIClient(config: LiteLLMConfig): OpenAI {
+  private getOpenAIClient(config: ProtocolConfig): OpenAI {
     const cacheKey = `${config.provider}-${config.baseUrl || 'default'}`;
 
     if (!this.openaiClients.has(cacheKey)) {
@@ -53,13 +54,13 @@ export class LiteLLMAdapter {
       }
 
       this.openaiClients.set(cacheKey, new OpenAI(clientConfig));
-      memoryLogger.debug(`创建 OpenAI 客户端 | provider: ${config.provider} | baseUrl: ${config.baseUrl || 'default'}`, 'LiteLLM');
+      memoryLogger.debug(`创建 OpenAI 客户端 | provider: ${config.provider} | baseUrl: ${config.baseUrl || 'default'}`, 'Protocol');
     }
 
     return this.openaiClients.get(cacheKey)!;
   }
 
-  private getAnthropicClient(config: LiteLLMConfig): Anthropic {
+  private getAnthropicClient(config: ProtocolConfig): Anthropic {
     const cacheKey = `${config.provider}-${config.baseUrl || 'default'}`;
 
     if (!this.anthropicClients.has(cacheKey)) {
@@ -74,13 +75,17 @@ export class LiteLLMAdapter {
       }
 
       this.anthropicClients.set(cacheKey, new Anthropic(clientConfig));
-      memoryLogger.debug(`创建 Anthropic 客户端 | provider: ${config.provider} | baseUrl: ${config.baseUrl || 'default'}`, 'LiteLLM');
+      memoryLogger.debug(`创建 Anthropic 客户端 | provider: ${config.provider} | baseUrl: ${config.baseUrl || 'default'}`, 'Protocol');
     }
 
     return this.anthropicClients.get(cacheKey)!;
   }
 
-  private normalizeProvider(provider: string): string {
+  private detectProtocol(provider: string, protocol?: string): string {
+    if (protocol) {
+      return protocol.toLowerCase();
+    }
+    
     const normalized = provider.toLowerCase();
     
     if (normalized === 'claude' || normalized.includes('anthropic')) {
@@ -108,7 +113,7 @@ export class LiteLLMAdapter {
     };
   }
 
-  private convertAnthropicToOpenAIFormat(response: any): LiteLLMResponse {
+  private convertAnthropicToOpenAIFormat(response: any): ProtocolResponse {
     return {
       id: response.id,
       object: 'chat.completion',
@@ -131,18 +136,18 @@ export class LiteLLMAdapter {
   }
 
   async chatCompletion(
-    config: LiteLLMConfig,
+    config: ProtocolConfig,
     messages: any[],
     options: any
-  ): Promise<LiteLLMResponse> {
-    const normalizedProvider = this.normalizeProvider(config.provider);
+  ): Promise<ProtocolResponse> {
+    const protocol = this.detectProtocol(config.provider, config.protocol);
 
     memoryLogger.debug(
-      `LiteLLM 请求 | provider: ${normalizedProvider} | model: ${config.model}`,
-      'LiteLLM'
+      `协议适配器请求 | protocol: ${protocol} | model: ${config.model}`,
+      'Protocol'
     );
 
-    if (normalizedProvider === 'anthropic') {
+    if (protocol === 'anthropic') {
       return await this.anthropicChatCompletion(config, messages, options);
     }
 
@@ -150,10 +155,10 @@ export class LiteLLMAdapter {
   }
 
   private async openaiChatCompletion(
-    config: LiteLLMConfig,
+    config: ProtocolConfig,
     messages: any[],
     options: any
-  ): Promise<LiteLLMResponse> {
+  ): Promise<ProtocolResponse> {
     const client = this.getOpenAIClient(config);
 
     const requestParams: any = {
@@ -182,10 +187,10 @@ export class LiteLLMAdapter {
   }
 
   private async anthropicChatCompletion(
-    config: LiteLLMConfig,
+    config: ProtocolConfig,
     messages: any[],
     options: any
-  ): Promise<LiteLLMResponse> {
+  ): Promise<ProtocolResponse> {
     const client = this.getAnthropicClient(config);
     const { system, messages: anthropicMessages } = this.convertToAnthropicFormat(messages);
 
@@ -221,19 +226,19 @@ export class LiteLLMAdapter {
   }
 
   async streamChatCompletion(
-    config: LiteLLMConfig,
+    config: ProtocolConfig,
     messages: any[],
     options: any,
     reply: FastifyReply
   ): Promise<StreamTokenUsage> {
-    const normalizedProvider = this.normalizeProvider(config.provider);
+    const protocol = this.detectProtocol(config.provider, config.protocol);
 
     memoryLogger.debug(
-      `LiteLLM 流式请求 | provider: ${normalizedProvider} | model: ${config.model}`,
-      'LiteLLM'
+      `协议适配器流式请求 | protocol: ${protocol} | model: ${config.model}`,
+      'Protocol'
     );
 
-    if (normalizedProvider === 'anthropic') {
+    if (protocol === 'anthropic') {
       return await this.anthropicStreamChatCompletion(config, messages, options, reply);
     }
 
@@ -241,7 +246,7 @@ export class LiteLLMAdapter {
   }
 
   private async openaiStreamChatCompletion(
-    config: LiteLLMConfig,
+    config: ProtocolConfig,
     messages: any[],
     options: any,
     reply: FastifyReply
@@ -322,7 +327,7 @@ export class LiteLLMAdapter {
   }
 
   private async anthropicStreamChatCompletion(
-    config: LiteLLMConfig,
+    config: ProtocolConfig,
     messages: any[],
     options: any,
     reply: FastifyReply
@@ -445,5 +450,52 @@ export class LiteLLMAdapter {
       streamChunks,
     };
   }
-}
 
+  async createEmbedding(
+    config: ProtocolConfig,
+    input: string | string[],
+    options: any = {}
+  ): Promise<any> {
+    const protocol = this.detectProtocol(config.provider, config.protocol);
+
+    memoryLogger.debug(
+      `协议适配器 Embeddings 请求 | protocol: ${protocol} | model: ${config.model}`,
+      'Protocol'
+    );
+
+    if (protocol === 'anthropic') {
+      throw new Error('Anthropic 不支持 embeddings API');
+    }
+
+    return await this.openaiCreateEmbedding(config, input, options);
+  }
+
+  private async openaiCreateEmbedding(
+    config: ProtocolConfig,
+    input: string | string[],
+    options: any
+  ): Promise<any> {
+    const client = this.getOpenAIClient(config);
+
+    const requestParams: any = {
+      model: config.model,
+      input,
+    };
+
+    if (options.encoding_format !== undefined) {
+      requestParams.encoding_format = options.encoding_format;
+    }
+
+    if (options.dimensions !== undefined) {
+      requestParams.dimensions = options.dimensions;
+    }
+
+    if (options.user !== undefined) {
+      requestParams.user = options.user;
+    }
+
+    const response = await client.embeddings.create(requestParams);
+
+    return response;
+  }
+}

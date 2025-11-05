@@ -3,7 +3,7 @@ import type { ModelAttributes } from '../types/index.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 
-interface LiteLLMModelInfo {
+interface ModelPresetInfo {
   max_tokens?: number;
   max_input_tokens?: number;
   max_output_tokens?: number;
@@ -18,7 +18,7 @@ interface LiteLLMModelInfo {
   input_cost_per_audio_per_second?: number;
   output_cost_per_audio_per_second?: number;
   input_cost_per_video_per_second?: number;
-  litellm_provider?: string;
+  provider?: string;
   mode?: string;
   supports_function_calling?: boolean;
   supports_parallel_function_calling?: boolean;
@@ -32,16 +32,16 @@ interface LiteLLMModelInfo {
   tool_use_system_prompt_supported?: boolean;
 }
 
-interface LiteLLMData {
-  [modelName: string]: LiteLLMModelInfo;
+interface ModelPresetData {
+  [modelName: string]: ModelPresetInfo;
 }
 
-const LITELLM_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json';
-const CACHE_FILE_PATH = './data/litellm-presets.json';
+const MODEL_PRESET_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json';
+const CACHE_FILE_PATH = './data/model-presets.json';
 const CACHE_DURATION = 24 * 60 * 60 * 1000;
 
-export class LiteLLMPresetsService {
-  private cachedData: LiteLLMData | null = null;
+export class ModelPresetsService {
+  private cachedData: ModelPresetData | null = null;
   private lastUpdateTime: number = 0;
 
   constructor() {
@@ -55,16 +55,16 @@ export class LiteLLMPresetsService {
         const data = JSON.parse(content);
         this.cachedData = data.models || null;
         this.lastUpdateTime = data.lastUpdate || 0;
-        memoryLogger.info(`从缓存加载 LiteLLM 预设: ${Object.keys(this.cachedData || {}).length} 个模型`, 'LiteLLM');
+        memoryLogger.info(`从缓存加载模型预设: ${Object.keys(this.cachedData || {}).length} 个模型`, 'ModelPresets');
       }
     } catch (error: any) {
-      memoryLogger.error(`加载 LiteLLM 缓存失败: ${error.message}`, 'LiteLLM');
+      memoryLogger.error(`加载模型预设缓存失败: ${error.message}`, 'ModelPresets');
       this.cachedData = null;
       this.lastUpdateTime = 0;
     }
   }
 
-  private saveToCache(data: LiteLLMData): void {
+  private saveToCache(data: ModelPresetData): void {
     try {
       const dir = dirname(CACHE_FILE_PATH);
       if (!existsSync(dir)) {
@@ -79,22 +79,22 @@ export class LiteLLMPresetsService {
       writeFileSync(CACHE_FILE_PATH, JSON.stringify(cacheData, null, 2), 'utf-8');
       this.cachedData = data;
       this.lastUpdateTime = Date.now();
-      memoryLogger.info(`LiteLLM 预设已缓存: ${Object.keys(data).length} 个模型`, 'LiteLLM');
+      memoryLogger.info(`模型预设已缓存: ${Object.keys(data).length} 个模型`, 'ModelPresets');
     } catch (error: any) {
-      memoryLogger.error(`保存 LiteLLM 缓存失败: ${error.message}`, 'LiteLLM');
+      memoryLogger.error(`保存模型预设缓存失败: ${error.message}`, 'ModelPresets');
     }
   }
 
   async updateFromRemote(): Promise<{ success: boolean; message: string; count?: number }> {
     try {
-      memoryLogger.info('开始从远程更新 LiteLLM 预设...', 'LiteLLM');
+      memoryLogger.info('开始从远程更新模型预设...', 'ModelPresets');
       
-      const response = await fetch(LITELLM_URL);
+      const response = await fetch(MODEL_PRESET_URL);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const data = await response.json() as LiteLLMData;
+      const data = await response.json() as ModelPresetData;
       
       if (!data || typeof data !== 'object') {
         throw new Error('无效的数据格式');
@@ -103,7 +103,7 @@ export class LiteLLMPresetsService {
       this.saveToCache(data);
       
       const count = Object.keys(data).length;
-      memoryLogger.info(`LiteLLM 预设更新成功: ${count} 个模型`, 'LiteLLM');
+      memoryLogger.info(`模型预设更新成功: ${count} 个模型`, 'ModelPresets');
       
       return {
         success: true,
@@ -111,8 +111,8 @@ export class LiteLLMPresetsService {
         count,
       };
     } catch (error: any) {
-      const errorMsg = `更新 LiteLLM 预设失败: ${error.message}`;
-      memoryLogger.error(errorMsg, 'LiteLLM');
+      const errorMsg = `更新模型预设失败: ${error.message}`;
+      memoryLogger.error(errorMsg, 'ModelPresets');
       return {
         success: false,
         message: errorMsg,
@@ -134,7 +134,7 @@ export class LiteLLMPresetsService {
 
   searchModels(query: string, limit: number = 20): Array<{
     modelName: string;
-    info: LiteLLMModelInfo;
+    info: ModelPresetInfo;
     score: number;
   }> {
     if (!this.cachedData) {
@@ -146,7 +146,7 @@ export class LiteLLMPresetsService {
       return [];
     }
 
-    const results: Array<{ modelName: string; info: LiteLLMModelInfo; score: number }> = [];
+    const results: Array<{ modelName: string; info: ModelPresetInfo; score: number }> = [];
 
     for (const [modelName, info] of Object.entries(this.cachedData)) {
       const lowerModelName = modelName.toLowerCase();
@@ -171,16 +171,16 @@ export class LiteLLMPresetsService {
     return results.slice(0, limit);
   }
 
-  convertToModelAttributes(litellmInfo: LiteLLMModelInfo): ModelAttributes {
+  convertToModelAttributes(modelInfo: ModelPresetInfo): ModelAttributes {
     const attrs: ModelAttributes = {};
 
-    const fieldMapping: Array<keyof LiteLLMModelInfo> = [
+    const fieldMapping: Array<keyof ModelPresetInfo> = [
       'max_tokens',
       'max_input_tokens',
       'max_output_tokens',
       'input_cost_per_token',
       'output_cost_per_token',
-      'litellm_provider',
+      'provider',
       'mode',
       'supports_function_calling',
       'supports_vision',
@@ -192,15 +192,15 @@ export class LiteLLMPresetsService {
     ];
 
     for (const field of fieldMapping) {
-      if (litellmInfo[field] !== undefined) {
-        (attrs as any)[field] = litellmInfo[field];
+      if (modelInfo[field] !== undefined) {
+        (attrs as any)[field] = modelInfo[field];
       }
     }
 
     return attrs;
   }
 
-  getModelInfo(modelName: string): LiteLLMModelInfo | null {
+  getModelInfo(modelName: string): ModelPresetInfo | null {
     if (!this.cachedData) {
       return null;
     }
@@ -219,8 +219,8 @@ export class LiteLLMPresetsService {
     const providers = new Set<string>();
     if (this.cachedData) {
       for (const info of Object.values(this.cachedData)) {
-        if (info.litellm_provider) {
-          providers.add(info.litellm_provider);
+        if (info.provider) {
+          providers.add(info.provider);
         }
       }
     }
@@ -234,5 +234,5 @@ export class LiteLLMPresetsService {
   }
 }
 
-export const litellmPresetsService = new LiteLLMPresetsService();
+export const modelPresetsService = new ModelPresetsService();
 

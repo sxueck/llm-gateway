@@ -9,6 +9,7 @@ export interface Provider {
   baseUrl: string;
   apiKey?: string;
   modelMapping?: Record<string, string> | null;
+  protocol: string; // 'openai' | 'anthropic' | 'google'
   enabled: boolean;
   createdAt: number;
   updatedAt: number;
@@ -38,7 +39,7 @@ export interface ModelAttributes {
   supports_audio_input?: boolean;
   supports_audio_output?: boolean;
   supports_pdf_input?: boolean;
-  litellm_provider?: string;
+  provider?: string;
   mode?: string;
 }
 
@@ -107,6 +108,7 @@ export interface CreateProviderRequest {
   name: string;
   baseUrl: string;
   apiKey: string;
+  protocol: string; // 'openai' | 'anthropic' | 'google'
   modelMapping?: Record<string, string>;
   enabled?: boolean;
 }
@@ -115,6 +117,7 @@ export interface UpdateProviderRequest {
   name?: string;
   baseUrl?: string;
   apiKey?: string;
+  protocol?: string; // 'openai' | 'anthropic' | 'google'
   modelMapping?: Record<string, string>;
   enabled?: boolean;
 }
