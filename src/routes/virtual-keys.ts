@@ -4,7 +4,6 @@ import { nanoid } from 'nanoid';
 import { virtualKeyDb, providerDb, modelDb } from '../db/index.js';
 import { hashKey } from '../utils/crypto.js';
 import { validateCustomKey } from '../utils/validation.js';
-import { generatePortkeyConfig } from '../services/config-generator.js';
 
 const createVirtualKeySchema = z.object({
   name: z.string(),
@@ -152,8 +151,6 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       disable_logging: body.disableLogging ? 1 : 0,
     });
 
-    await generatePortkeyConfig();
-
     return {
       virtualKey: {
         id: vk.id,
@@ -220,7 +217,6 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     if (body.disableLogging !== undefined) updates.disable_logging = body.disableLogging ? 1 : 0;
 
     await virtualKeyDb.update(id, updates);
-    await generatePortkeyConfig();
 
     const updated = await virtualKeyDb.getById(id);
     if (!updated) {
@@ -254,7 +250,6 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     }
 
     await virtualKeyDb.delete(id);
-    await generatePortkeyConfig();
 
     return { success: true };
   });

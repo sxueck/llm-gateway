@@ -230,7 +230,6 @@ import { useI18n } from 'vue-i18n';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
 import { configApi, type ApiStats, type VirtualKeyTrend } from '@/api/config';
-import { portkeyGatewayApi } from '@/api/portkey-gateways';
 import { formatNumber, formatTokenNumber, formatPercentage, formatResponseTime, formatTimestamp } from '@/utils/format';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
@@ -519,19 +518,7 @@ const chartOption = computed(() => {
 });
 
 async function loadDefaultGatewayLatency() {
-  try {
-    const gateways = await portkeyGatewayApi.getAll();
-    const defaultGateway = gateways.find(g => g.isDefault && g.enabled);
-
-    if (defaultGateway) {
-      const healthResult = await portkeyGatewayApi.checkHealth(defaultGateway.id);
-      defaultGatewayLatency.value = healthResult.latency;
-    } else {
-      defaultGatewayLatency.value = null;
-    }
-  } catch {
-    defaultGatewayLatency.value = null;
-  }
+  defaultGatewayLatency.value = null;
 }
 
 async function loadData() {

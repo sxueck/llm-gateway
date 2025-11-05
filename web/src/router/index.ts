@@ -46,11 +46,6 @@ const router = createRouter({
           component: () => import('@/views/VirtualKeysView.vue'),
         },
         {
-          path: 'portkey-gateways',
-          name: 'PortkeyGateways',
-          component: () => import('@/views/PortkeyGatewaysView.vue'),
-        },
-        {
           path: 'virtual-models',
           name: 'VirtualModels',
           component: () => import('@/views/VirtualModelsView.vue'),

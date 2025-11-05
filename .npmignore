@@ -34,9 +34,6 @@ Thumbs.db
 data/
 *.db
 
-# Config
-portkey-config/
-
 # Node
 node_modules/
 

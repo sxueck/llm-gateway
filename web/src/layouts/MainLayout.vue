@@ -96,7 +96,6 @@ import {
   LogOutOutline,
   DocumentTextOutline,
   TerminalOutline,
-  CloudOutline,
   CubeOutline,
   MailOutline,
   GitNetworkOutline,
@@ -149,11 +148,6 @@ const menuOptions = computed(() => [
     label: t('menu.virtualKeys'),
     key: 'virtual-keys',
     icon: () => h(NIcon, null, { default: () => h(KeyOutline) }),
-  },
-  {
-    label: t('menu.portkeyGateways'),
-    key: 'portkey-gateways',
-    icon: () => h(NIcon, null, { default: () => h(CloudOutline) }),
   },
   {
     label: t('menu.experimentalFeatures'),

@@ -64,10 +64,6 @@ export interface PortkeyStatus {
 }
 
 export const configApi = {
-  getGatewayStatus(): Promise<{ running: boolean; status: number; url: string; endpoint?: string; error?: string }> {
-    return request.get('/admin/config/gateway-status');
-  },
-
   getLogs(params?: {
     level?: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
     limit?: number;
@@ -82,38 +78,6 @@ export const configApi = {
     trend: VirtualKeyTrend[];
   }> {
     return request.get('/admin/config/stats', { params: { period } });
-  },
-
-  regenerateConfig(): Promise<{ success: boolean; message: string; path?: string }> {
-    return request.post('/admin/config/regenerate-config');
-  },
-
-  getPortkeyStatus(): Promise<PortkeyStatus> {
-    return request.get('/admin/config/portkey/status');
-  },
-
-  startPortkey(): Promise<{ success: boolean; message: string; containerId?: string }> {
-    return request.post('/admin/config/portkey/start');
-  },
-
-  stopPortkey(): Promise<{ success: boolean; message: string }> {
-    return request.post('/admin/config/portkey/stop');
-  },
-
-  restartPortkey(): Promise<{ success: boolean; message: string }> {
-    return request.post('/admin/config/portkey/restart');
-  },
-
-  getPortkeyLogs(lines?: number): Promise<{ success: boolean; logs?: string; message?: string }> {
-    return request.get('/admin/config/portkey/logs', { params: { lines } });
-  },
-
-  removePortkey(): Promise<{ success: boolean; message: string }> {
-    return request.post('/admin/config/portkey/remove');
-  },
-
-  recreatePortkey(): Promise<{ success: boolean; message: string; containerId?: string }> {
-    return request.post('/admin/config/portkey/recreate');
   },
 
   getRoutingConfigs(): Promise<{ configs: any[] }> {

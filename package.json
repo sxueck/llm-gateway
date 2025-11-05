@@ -1,23 +1,20 @@
 {
   "name": "llm-gateway",
   "version": "1.0.0",
-  "description": "基于 Portkey Gateway 的轻量级 LLM 网关管理系统",
+  "description": "轻量级 LLM 网关管理系统",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "dev": "npm run build:agent:optional && tsx watch src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "build:agent": "node scripts/build-agent.js",
-    "build:agent:optional": "node scripts/build-agent.js || true",
-    "start": "npm run build:agent:optional && node dist/index.js",
-    "start:all": "npm run build:agent:optional && node start.js",
+    "start": "node dist/index.js",
+    "start:all": "node start.js",
     "typecheck": "tsc --noEmit",
     "fix:db": "node scripts/fix-database.js"
   },
   "keywords": [
     "llm",
     "gateway",
-    "portkey",
     "web-ui",
     "openai",
     "api-gateway",
@@ -35,6 +32,7 @@
   },
   "homepage": "https://github.com/sxueck/llm-gateway#readme",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.20.0",
     "@fastify/cors": "^11.1.0",
     "@fastify/jwt": "^10.0.0",
     "@fastify/static": "^8.0.2",
@@ -42,6 +40,7 @@
     "fastify": "^5.2.0",
     "mysql2": "^3.15.3",
     "nanoid": "^5.0.9",
+    "openai": "^4.0.0",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
     "sql.js": "^1.12.0",

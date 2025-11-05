@@ -5,10 +5,9 @@ import fastifyStatic from '@fastify/static';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { appConfig, setPublicUrl } from './config/index.js';
-import { initDatabase, apiRequestDb, systemConfigDb, portkeyGatewayDb, shutdownDatabase, getDatabase } from './db/index.js';
+import { initDatabase, apiRequestDb, systemConfigDb, shutdownDatabase, getDatabase } from './db/index.js';
 import { migrateFromSQLite } from './db/migration-from-sqlite.js';
 import { existsSync } from 'fs';
-import { nanoid } from 'nanoid';
 import { authRoutes } from './routes/auth.js';
 import { providerRoutes } from './routes/providers.js';
 import { modelRoutes } from './routes/models.js';
@@ -17,9 +16,6 @@ import { configRoutes } from './routes/config.js';
 import { publicConfigRoutes } from './routes/public-config.js';
 import { proxyRoutes } from './routes/proxy.js';
 import { litellmPresetsRoutes } from './routes/litellm-presets.js';
-import { portkeyGatewayRoutes } from './routes/portkey-gateways.js';
-import { routingRuleRoutes } from './routes/routing-rules.js';
-import { agentRoutes } from './routes/agent.js';
 import { downloadsRoutes } from './routes/downloads.js';
 import { expertRoutingRoutes } from './routes/expert-routing.js';
 import { memoryLogger } from './services/logger.js';
@@ -53,12 +49,6 @@ await fastify.register(cors, {
 
 await fastify.register(jwt, {
   secret: appConfig.jwtSecret,
-});
-
-await fastify.register(fastifyStatic, {
-  root: resolve(__dirname, '..', 'portkey-config'),
-  prefix: '/portkey-config/',
-  decorateReply: false,
 });
 
 await fastify.register(fastifyStatic, {
@@ -116,21 +106,7 @@ if (existsSync(appConfig.dbPath)) {
   }
 }
 
-const existingGateways = await portkeyGatewayDb.getAll();
-if (existingGateways.length === 0) {
-  const defaultGatewayUrl = process.env.PORTKEY_GATEWAY_URL || 'http://localhost:8787';
-  await portkeyGatewayDb.create({
-    id: nanoid(),
-    name: 'Default Portkey Gateway',
-    url: defaultGatewayUrl,
-    description: '默认 Portkey Gateway',
-    is_default: 1,
-    enabled: 1,
-    container_name: 'portkey-gateway',
-    port: 8787,
-  });
-  memoryLogger.info(`已创建默认 Portkey Gateway: ${defaultGatewayUrl}`, 'System');
-}
+
 
 const publicUrlCfg = await systemConfigDb.get('public_url');
 if (publicUrlCfg) {
@@ -166,22 +142,18 @@ fastify.get('/health', async () => {
 await fastify.register(proxyRoutes);
 await fastify.register(authRoutes, { prefix: '/api/auth' });
 await fastify.register(publicConfigRoutes, { prefix: '/api/public' });
-await fastify.register(agentRoutes, { prefix: '/api/agent' });
 await fastify.register(downloadsRoutes, { prefix: '/downloads' });
 await fastify.register(providerRoutes, { prefix: '/api/admin/providers' });
 await fastify.register(modelRoutes, { prefix: '/api/admin/models' });
 await fastify.register(virtualKeyRoutes, { prefix: '/api/admin/virtual-keys' });
 await fastify.register(configRoutes, { prefix: '/api/admin/config' });
 await fastify.register(litellmPresetsRoutes, { prefix: '/api/admin/litellm-presets' });
-await fastify.register(portkeyGatewayRoutes, { prefix: '/api/admin/portkey-gateways' });
-await fastify.register(routingRuleRoutes, { prefix: '/api/admin/routing-rules' });
 await fastify.register(expertRoutingRoutes, { prefix: '/api/admin/expert-routing' });
 
 memoryLogger.info('Routes registered', 'System');
 
 fastify.setNotFoundHandler((request, reply) => {
   if (request.url.startsWith('/api/') ||
-      request.url.startsWith('/portkey-config/') ||
       request.url.startsWith('/downloads/')) {
     return reply.code(404).send({
       error: {

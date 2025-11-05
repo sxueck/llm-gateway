@@ -13,7 +13,6 @@ data/
 *.db-wal
 
 # Configuration
-portkey-config/
 .env
 .env.local
 .env.*.local

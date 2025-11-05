@@ -16,10 +16,6 @@ function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
   return !virtualKey.disable_logging;
 }
 
-function shouldCreateApiRequestLog(virtualKey: VirtualKey): boolean {
-  return !virtualKey.disable_logging;
-}
-
 async function calculateTokensIfNeeded(
   totalTokens: number,
   requestBody: any,
@@ -116,7 +112,7 @@ export function createProxyHandler() {
         return reply.code(configResult.code).send(configResult.body);
       }
 
-      const { portkeyUrl, headers, path, vkDisplay, isStreamRequest } = configResult;
+      const { litellmConfig, path, vkDisplay, isStreamRequest } = configResult;
 
       if (currentModel && (request.body as any)?.messages && path.startsWith('/v1/chat/completions')) {
         const processorContext = {
@@ -165,7 +161,7 @@ export function createProxyHandler() {
       }
 
       memoryLogger.debug(
-        `Forward request: ${request.method} ${portkeyUrl} | stream: ${isStreamRequest}`,
+        `转发请求: ${request.method} ${path} | stream: ${isStreamRequest}`,
         'Proxy'
       );
 
@@ -173,9 +169,7 @@ export function createProxyHandler() {
         return await handleStreamRequest(
           request,
           reply,
-          portkeyUrl,
-          headers,
-          requestBody,
+          litellmConfig,
           path,
           vkDisplay,
           virtualKey,
@@ -187,9 +181,7 @@ export function createProxyHandler() {
       return await handleNonStreamRequest(
         request,
         reply,
-        portkeyUrl,
-        headers,
-        requestBody,
+        litellmConfig,
         virtualKey,
         providerId,
         isStreamRequest,
@@ -246,9 +238,7 @@ export function createProxyHandler() {
 async function handleStreamRequest(
   request: FastifyRequest,
   reply: FastifyReply,
-  portkeyUrl: string,
-  headers: Record<string, string>,
-  requestBody: string | undefined,
+  litellmConfig: any,
   path: string,
   vkDisplay: string,
   virtualKey: any,
@@ -256,16 +246,25 @@ async function handleStreamRequest(
   startTime: number
 ) {
   memoryLogger.info(
-    `Stream request started: ${path} | virtual key: ${vkDisplay}`,
+    `流式请求开始: ${path} | virtual key: ${vkDisplay}`,
     'Proxy'
   );
 
   try {
+    const messages = (request.body as any)?.messages || [];
+    const options = {
+      temperature: (request.body as any)?.temperature,
+      max_tokens: (request.body as any)?.max_tokens,
+      top_p: (request.body as any)?.top_p,
+      frequency_penalty: (request.body as any)?.frequency_penalty,
+      presence_penalty: (request.body as any)?.presence_penalty,
+      stop: (request.body as any)?.stop,
+    };
+
     const tokenUsage = await makeStreamHttpRequest(
-      portkeyUrl,
-      request.method,
-      headers,
-      requestBody,
+      litellmConfig,
+      messages,
+      options,
       reply
     );
 
@@ -281,7 +280,7 @@ async function handleStreamRequest(
     );
 
     memoryLogger.info(
-      `Stream request completed: ${duration}ms | tokens: ${tokenCount.totalTokens}`,
+      `流式请求完成: ${duration}ms | tokens: ${tokenCount.totalTokens}`,
       'Proxy'
     );
 
@@ -309,7 +308,7 @@ async function handleStreamRequest(
   } catch (streamError: any) {
     const duration = Date.now() - startTime;
     memoryLogger.error(
-      `Stream request failed: ${streamError.message}`,
+      `流式请求失败: ${streamError.message}`,
       'Proxy',
       { error: streamError.stack }
     );
@@ -341,9 +340,7 @@ async function handleStreamRequest(
 async function handleNonStreamRequest(
   request: FastifyRequest,
   reply: FastifyReply,
-  portkeyUrl: string,
-  headers: Record<string, string>,
-  requestBody: string | undefined,
+  litellmConfig: any,
   virtualKey: any,
   providerId: string,
   isStreamRequest: boolean,
@@ -402,18 +399,27 @@ async function handleNonStreamRequest(
     });
 
     memoryLogger.info(
-      `Request completed: 200 | ${duration}ms | tokens: ${tokenCount.totalTokens} | cache hit`,
+      `请求完成: 200 | ${duration}ms | tokens: ${tokenCount.totalTokens} | 缓存命中`,
       'Proxy'
     );
 
     return reply.send(cacheResult.cached.response);
   }
 
+  const messages = (request.body as any)?.messages || [];
+  const options = {
+    temperature: (request.body as any)?.temperature,
+    max_tokens: (request.body as any)?.max_tokens,
+    top_p: (request.body as any)?.top_p,
+    frequency_penalty: (request.body as any)?.frequency_penalty,
+    presence_penalty: (request.body as any)?.presence_penalty,
+    stop: (request.body as any)?.stop,
+  };
+
   const response = await makeHttpRequest(
-    portkeyUrl,
-    request.method,
-    headers,
-    requestBody
+    litellmConfig,
+    messages,
+    options
   );
 
   const responseHeaders: Record<string, string> = {};
@@ -532,7 +538,7 @@ async function handleNonStreamRequest(
 
     const cacheStatus = getCacheStatus(fromCache, cacheResult.shouldCache);
     memoryLogger.info(
-      `Request completed: ${response.statusCode} | ${duration}ms | tokens: ${tokenCount.totalTokens} | ${cacheStatus}`,
+      `请求完成: ${response.statusCode} | ${duration}ms | tokens: ${tokenCount.totalTokens} | ${cacheStatus}`,
       'Proxy'
     );
   } else {
@@ -541,7 +547,7 @@ async function handleNonStreamRequest(
       ? `${errorStr.substring(0, 500)}... (total length: ${errorStr.length} chars)`
       : errorStr;
     memoryLogger.error(
-      `Request failed: ${response.statusCode} | ${duration}ms | error: ${truncatedError}`,
+      `请求失败: ${response.statusCode} | ${duration}ms | error: ${truncatedError}`,
       'Proxy'
     );
   }

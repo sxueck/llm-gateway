@@ -2,7 +2,6 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { providerDb } from '../db/index.js';
 import { encryptApiKey, decryptApiKey } from '../utils/crypto.js';
-import { generatePortkeyConfig } from '../services/config-generator.js';
 import { buildModelsEndpoint } from '../utils/api-endpoint-builder.js';
 
 const createProviderSchema = z.object({
@@ -90,8 +89,6 @@ export async function providerRoutes(fastify: FastifyInstance) {
       enabled: body.enabled !== false ? 1 : 0,
     });
 
-    await generatePortkeyConfig();
-
     return {
       id: provider.id,
       name: provider.name,
@@ -120,7 +117,6 @@ export async function providerRoutes(fastify: FastifyInstance) {
     if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
 
     await providerDb.update(id, updates);
-    await generatePortkeyConfig();
 
     const updated = await providerDb.getById(id);
     if (!updated) {
@@ -147,7 +143,6 @@ export async function providerRoutes(fastify: FastifyInstance) {
     }
 
     await providerDb.delete(id);
-    await generatePortkeyConfig();
 
     return { success: true };
   });
@@ -279,8 +274,6 @@ export async function providerRoutes(fastify: FastifyInstance) {
         results.failed++;
       }
     }
-
-    await generatePortkeyConfig();
 
     return {
       success: results.failed === 0,

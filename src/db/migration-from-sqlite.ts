@@ -20,8 +20,6 @@ const TABLE_ORDER = [
   'models',
   'virtual_keys',
   'routing_configs',
-  'portkey_gateways',
-  'model_routing_rules',
   'expert_routing_configs',
   'api_requests',
   'expert_routing_logs',

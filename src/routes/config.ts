@@ -1,8 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { appConfig, setPublicUrl, validatePublicUrl } from '../config/index.js';
 import { memoryLogger } from '../services/logger.js';
-import { apiRequestDb, routingConfigDb, modelDb, systemConfigDb, portkeyGatewayDb } from '../db/index.js';
-import { generatePortkeyConfig } from '../services/config-generator.js';
+import { apiRequestDb, routingConfigDb, modelDb, systemConfigDb } from '../db/index.js';
 import { nanoid } from 'nanoid';
 import { loadAntiBotConfig, validateUserAgentList } from '../utils/anti-bot-config.js';
 
@@ -135,48 +134,6 @@ export async function configRoutes(fastify: FastifyInstance) {
   });
 
 
-  fastify.get('/gateway-status', async () => {
-    const defaultGateway = await portkeyGatewayDb.getDefault();
-
-    if (!defaultGateway) {
-      return {
-        running: false,
-        status: 0,
-        url: '',
-        error: '未找到默认 Portkey Gateway',
-      };
-    }
-
-    const endpoints = ['/v1/models', '/v1', '/'];
-    let lastError: string | undefined;
-
-    for (const endpoint of endpoints) {
-      try {
-        const response = await fetch(`${defaultGateway.url}${endpoint}`, {
-          signal: AbortSignal.timeout(5000),
-        });
-
-        if (response.ok || response.status === 404) {
-          return {
-            running: true,
-            status: response.status,
-            url: defaultGateway.url,
-            endpoint,
-          };
-        }
-      } catch (error) {
-        lastError = error instanceof Error ? error.message : '连接失败';
-      }
-    }
-
-    return {
-      running: false,
-      status: 0,
-      url: defaultGateway.url,
-      error: lastError || '无法连接到 Gateway',
-    };
-  });
-
   fastify.get('/logs', async (request) => {
     const { level, limit = 100, search } = request.query as {
       level?: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
@@ -284,24 +241,6 @@ export async function configRoutes(fastify: FastifyInstance) {
     } catch (error: any) {
       memoryLogger.error(`清理请求日志失败: ${error.message}`, 'Config');
       throw error;
-    }
-  });
-
-  fastify.post('/regenerate-config', async () => {
-    try {
-      const configPath = await generatePortkeyConfig();
-      memoryLogger.info('手动重新生成 Portkey 配置文件', 'Config');
-      return {
-        success: true,
-        message: '配置文件已重新生成',
-        path: configPath,
-      };
-    } catch (error: any) {
-      memoryLogger.error(`重新生成配置文件失败: ${error.message}`, 'Config');
-      return {
-        success: false,
-        message: error.message || '重新生成配置文件失败',
-      };
     }
   });
 

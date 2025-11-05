@@ -62,52 +62,6 @@ export interface ModelAttributes {
   mode?: string;
 }
 
-export interface PortkeyConfig {
-  credentials: {
-    [providerId: string]: {
-      provider?: string;
-      api_key: string;
-      base_url?: string;
-    };
-  };
-  virtual_keys: {
-    [keyValue: string]: {
-      provider: string;
-      override_params?: Record<string, any>;
-    };
-  };
-}
-
-export interface PortkeyGateway {
-  id: string;
-  name: string;
-  url: string;
-  description: string | null;
-  is_default: number;
-  enabled: number;
-  container_name: string | null;
-  port: number | null;
-  api_key: string | null;
-  install_status: string | null;
-  last_heartbeat: number | null;
-  agent_version: string | null;
-  created_at: number;
-  updated_at: number;
-}
-
-export interface ModelRoutingRule {
-  id: string;
-  name: string;
-  description: string | null;
-  portkey_gateway_id: string;
-  rule_type: 'model_name' | 'provider' | 'region' | 'pattern';
-  rule_value: string;
-  priority: number;
-  enabled: number;
-  created_at: number;
-  updated_at: number;
-}
-
 export interface PromptConfig {
   operationType: 'replace' | 'prepend' | 'system';
   templateContent: string;

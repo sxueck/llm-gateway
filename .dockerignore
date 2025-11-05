@@ -1,7 +1,6 @@
 node_modules
 dist
 data
-portkey-config
 .env
 .git
 .gitignore
@@ -11,8 +10,4 @@ portkey-config
 docs
 web/node_modules
 web/dist
-agent/llm-gateway-agent-*
-!agent/*.go
-!agent/go.mod
-!agent/go.sum
 

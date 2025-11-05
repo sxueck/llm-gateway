@@ -1,8 +1,5 @@
 import { FastifyReply } from 'fastify';
-import { request as httpRequest, IncomingMessage } from 'http';
-import { request as httpsRequest } from 'https';
-import { URL } from 'url';
-import { extractReasoningFromChoice } from '../../utils/request-logger.js';
+import { LiteLLMAdapter, type LiteLLMConfig } from '../../services/litellm-adapter.js';
 
 export interface HttpResponse {
   statusCode: number;
@@ -25,170 +22,88 @@ export interface StreamTokenUsage {
   thinkingBlocks?: ThinkingBlock[];
 }
 
-export function makeHttpRequest(
-  url: string,
-  method: string,
-  headers: Record<string, string>,
-  body?: string
-): Promise<HttpResponse> {
-  return new Promise((resolve, reject) => {
-    const parsedUrl = new URL(url);
-    const isHttps = parsedUrl.protocol === 'https:';
-    const requestModule = isHttps ? httpsRequest : httpRequest;
+const litellmAdapter = new LiteLLMAdapter();
 
-    const options: any = {
-      hostname: parsedUrl.hostname,
-      port: parsedUrl.port || (isHttps ? 443 : 80),
-      path: parsedUrl.pathname + parsedUrl.search,
-      method: method,
-      headers: headers,
-      insecureHTTPParser: true,
-    };
+function normalizeError(error: any): { statusCode: number; errorResponse: any } {
+  let statusCode = 500;
+  let errorType = 'api_error';
+  let errorCode = 'llm_error';
+  let message = error.message || 'LLM 请求失败';
 
-    if (isHttps) {
-      options.rejectUnauthorized = false;
+  if (error.status) {
+    statusCode = error.status;
+  }
+
+  if (statusCode === 401) {
+    errorType = 'authentication_error';
+    errorCode = 'invalid_api_key';
+  } else if (statusCode === 429) {
+    errorType = 'rate_limit_error';
+    errorCode = 'rate_limit_exceeded';
+  } else if (statusCode === 400) {
+    errorType = 'invalid_request_error';
+    errorCode = 'invalid_request';
+  } else if (statusCode >= 500) {
+    errorType = 'api_error';
+    errorCode = 'internal_server_error';
+  }
+
+  return {
+    statusCode,
+    errorResponse: {
+      error: {
+        message,
+        type: errorType,
+        param: null,
+        code: errorCode
+      }
     }
-
-    const req = requestModule(options, (res: IncomingMessage) => {
-      const chunks: Buffer[] = [];
-
-      res.on('data', (chunk: Buffer) => {
-        chunks.push(chunk);
-      });
-
-      res.on('end', () => {
-        const responseBody = Buffer.concat(chunks).toString('utf-8');
-        resolve({
-          statusCode: res.statusCode || 500,
-          headers: res.headers as Record<string, string | string[]>,
-          body: responseBody,
-        });
-      });
-
-      res.on('error', (err) => {
-        reject(err);
-      });
-    });
-
-    req.on('error', (err) => {
-      reject(err);
-    });
-
-    if (body) {
-      req.write(body, 'utf-8');
-    }
-
-    req.end();
-  });
+  };
 }
 
-export function makeStreamHttpRequest(
-  url: string,
-  method: string,
-  headers: Record<string, string>,
-  body: string | undefined,
+export async function makeHttpRequest(
+  config: LiteLLMConfig,
+  messages: any[],
+  options: any
+): Promise<HttpResponse> {
+  try {
+    const response = await litellmAdapter.chatCompletion(config, messages, options);
+
+    return {
+      statusCode: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(response)
+    };
+  } catch (error: any) {
+    const { statusCode, errorResponse } = normalizeError(error);
+
+    return {
+      statusCode,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(errorResponse)
+    };
+  }
+}
+
+export async function makeStreamHttpRequest(
+  config: LiteLLMConfig,
+  messages: any[],
+  options: any,
   reply: FastifyReply
 ): Promise<StreamTokenUsage> {
-  return new Promise((resolve, reject) => {
-    const parsedUrl = new URL(url);
-    const isHttps = parsedUrl.protocol === 'https:';
-    const requestModule = isHttps ? httpsRequest : httpRequest;
+  try {
+    return await litellmAdapter.streamChatCompletion(config, messages, options, reply);
+  } catch (error: any) {
+    const { statusCode, errorResponse } = normalizeError(error);
 
-    const options: any = {
-      hostname: parsedUrl.hostname,
-      port: parsedUrl.port || (isHttps ? 443 : 80),
-      path: parsedUrl.pathname + parsedUrl.search,
-      method: method,
-      headers: headers,
-      insecureHTTPParser: true,
-    };
-
-    if (isHttps) {
-      options.rejectUnauthorized = false;
-    }
-
-    let promptTokens = 0;
-    let completionTokens = 0;
-    let totalTokens = 0;
-    let buffer = '';
-    const streamChunks: string[] = [];
-    let reasoningContent = '';
-    let thinkingBlocks: ThinkingBlock[] = [];
-
-    const req = requestModule(options, (res: IncomingMessage) => {
-
-      reply.raw.writeHead(res.statusCode || 200, {
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        'Cache-Control': 'no-cache, no-transform',
-        'X-Accel-Buffering': 'no',
-        'Connection': 'keep-alive',
-        'Transfer-Encoding': 'chunked',
-      });
-
-      res.on('data', (chunk: Buffer) => {
-        const chunkStr = chunk.toString('utf-8');
-        buffer += chunkStr;
-        streamChunks.push(chunkStr);
-
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ') && line.trim() !== 'data: [DONE]') {
-            try {
-              const jsonStr = line.substring(6).trim();
-              if (jsonStr) {
-                const data = JSON.parse(jsonStr);
-                if (data.usage) {
-                  promptTokens = data.usage.prompt_tokens || promptTokens;
-                  completionTokens = data.usage.completion_tokens || completionTokens;
-                  totalTokens = data.usage.total_tokens || totalTokens;
-                }
-
-                if (data.choices && data.choices[0]) {
-                  const extraction = extractReasoningFromChoice(
-                    data.choices[0],
-                    reasoningContent,
-                    thinkingBlocks
-                  );
-                  reasoningContent = extraction.reasoningContent;
-                  thinkingBlocks = extraction.thinkingBlocks as ThinkingBlock[];
-                }
-              }
-            } catch {
-            }
-          }
-        }
-
-        reply.raw.write(chunk);
-      });
-
-      res.on('end', () => {
-        reply.raw.end();
-        resolve({
-          promptTokens,
-          completionTokens,
-          totalTokens,
-          streamChunks,
-          reasoningContent: reasoningContent || undefined,
-          thinkingBlocks: thinkingBlocks.length > 0 ? thinkingBlocks : undefined
-        });
-      });
-
-      res.on('error', (err: any) => {
-        reject(err);
-      });
+    reply.raw.writeHead(statusCode, {
+      'Content-Type': 'application/json',
     });
 
-    req.on('error', (err: any) => {
-      reject(err);
-    });
+    reply.raw.write(JSON.stringify(errorResponse));
+    reply.raw.end();
 
-    if (body) {
-      req.write(body, 'utf-8');
-    }
-
-    req.end();
-  });
+    throw error;
+  }
 }
 

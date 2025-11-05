@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { modelDb, providerDb, virtualKeyDb } from '../db/index.js';
 import { decryptApiKey } from '../utils/crypto.js';
-import { portkeyRouter } from '../services/portkey-router.js';
 import { buildChatCompletionsEndpoint } from '../utils/api-endpoint-builder.js';
 
 declare module 'fastify' {
@@ -85,23 +84,6 @@ export async function modelRoutes(fastify: FastifyInstance) {
       } catch (e) {
       }
 
-      let routingGateway = null;
-      if (!m.is_virtual) {
-        const gateway = await portkeyRouter.selectGateway({
-            modelName: m.name,
-            modelId: m.id,
-            providerId: m.provider_id || undefined,
-          });
-
-          if (gateway) {
-            routingGateway = {
-              id: gateway.id,
-              name: gateway.name,
-              url: gateway.url,
-            };
-          }
-        }
-
       return {
         id: m.id,
         name: m.name,
@@ -115,7 +97,6 @@ export async function modelRoutes(fastify: FastifyInstance) {
         modelAttributes,
         promptConfig,
         virtualKeyCount,
-        routingGateway,
         createdAt: m.created_at,
         updatedAt: m.updated_at,
       };

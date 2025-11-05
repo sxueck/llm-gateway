@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { appConfig } from '../config/index.js';
-import { getPool, userDb, portkeyGatewayDb, flushApiRequestBufferNow } from '../db/index.js';
+import { getPool, userDb, flushApiRequestBufferNow } from '../db/index.js';
 import { hashPassword } from '../utils/crypto.js';
 import { memoryLogger } from './logger.js';
 import { writeFile } from 'fs/promises';
@@ -138,23 +138,7 @@ export class DemoModeService {
   }
 
   private async createDefaultGateway(): Promise<void> {
-    try {
-      const defaultGatewayUrl = process.env.PORTKEY_GATEWAY_URL || 'http://localhost:8787';
-      await portkeyGatewayDb.create({
-        id: nanoid(),
-        name: 'Default Portkey Gateway',
-        url: defaultGatewayUrl,
-        description: '默认 Portkey Gateway',
-        is_default: 1,
-        enabled: 1,
-        container_name: 'portkey-gateway',
-        port: 8787,
-      });
-
-      memoryLogger.info('已创建默认 Portkey Gateway', 'DemoMode');
-    } catch (error: any) {
-      memoryLogger.error(`创建默认 Gateway 失败: ${error.message}`, 'DemoMode');
-    }
+    memoryLogger.info('演示模式已启用,跳过创建默认 Gateway (已迁移至 LiteLLM SDK)', 'DemoMode');
   }
 
   getNextCleanupTime(): number {
