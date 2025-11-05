@@ -1,6 +1,7 @@
 import { providerDb, modelDb, routingConfigDb, expertRoutingConfigDb } from '../../db/index.js';
 import { memoryLogger } from '../../services/logger.js';
 import { expertRouter } from '../../services/expert-router.js';
+import { circuitBreaker } from '../../services/circuit-breaker.js';
 
 export interface RoutingTarget {
   provider: string;
@@ -36,37 +37,56 @@ export function selectRoutingTarget(config: RoutingConfig, type: string, configI
     return null;
   }
 
+  const availableTargets = config.targets.filter(t => circuitBreaker.isAvailable(t.provider));
+
+  if (availableTargets.length === 0) {
+    memoryLogger.warn(
+      `所有路由目标均不可用 | total: ${config.targets.length}`,
+      'Routing'
+    );
+    return null;
+  }
+
   if (type === 'loadbalance' || config.strategy?.mode === 'loadbalance') {
-    const targets = config.targets.filter(t => t.weight && t.weight > 0);
-    if (targets.length === 0) {
-      return config.targets[0];
+    const weightedTargets = availableTargets.filter(t => t.weight && t.weight > 0);
+    if (weightedTargets.length === 0) {
+      return availableTargets[0];
     }
 
-    const totalWeight = targets.reduce((sum, t) => sum + (t.weight || 0), 0);
+    const totalWeight = weightedTargets.reduce((sum, t) => sum + (t.weight || 0), 0);
     let random = Math.random() * totalWeight;
 
-    for (const target of targets) {
+    for (const target of weightedTargets) {
       random -= target.weight || 0;
       if (random <= 0) {
         return target;
       }
     }
 
-    return targets[0];
+    return weightedTargets[0];
   }
 
   if (type === 'fallback' || config.strategy?.mode === 'fallback') {
     if (!configId) {
-      return config.targets[0];
+      return availableTargets[0];
     }
 
-    const currentIndex = routingTargetIndexMap.get(configId) || 0;
-    const nextIndex = (currentIndex + 1) % config.targets.length;
-    routingTargetIndexMap.set(configId, nextIndex);
-    return config.targets[nextIndex];
+    for (let i = 0; i < config.targets.length; i++) {
+      const currentIndex = routingTargetIndexMap.get(configId) || 0;
+      const target = config.targets[currentIndex];
+
+      const nextIndex = (currentIndex + 1) % config.targets.length;
+      routingTargetIndexMap.set(configId, nextIndex);
+
+      if (circuitBreaker.isAvailable(target.provider)) {
+        return target;
+      }
+    }
+
+    return null;
   }
 
-  return config.targets[0];
+  return availableTargets[0];
 }
 
 export async function resolveSmartRouting(model: any): Promise<ResolveProviderResult | null> {

@@ -10,6 +10,7 @@ import { authenticateVirtualKey } from './auth.js';
 import { resolveModelAndProvider } from './model-resolver.js';
 import { buildProviderConfig } from './provider-config-builder.js';
 import { countStreamResponseTokens, countRequestTokens } from '../../services/token-counter.js';
+import { circuitBreaker } from '../../services/circuit-breaker.js';
 import type { VirtualKey } from '../../types/index.js';
 
 function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
@@ -279,6 +280,8 @@ async function handleStreamRequest(
       tokenUsage.completionTokens
     );
 
+    circuitBreaker.recordSuccess(providerId);
+
     memoryLogger.info(
       `流式请求完成: ${duration}ms | tokens: ${tokenCount.totalTokens}`,
       'Proxy'
@@ -307,6 +310,9 @@ async function handleStreamRequest(
     return;
   } catch (streamError: any) {
     const duration = Date.now() - startTime;
+
+    circuitBreaker.recordFailure(providerId, streamError);
+
     memoryLogger.error(
       `流式请求失败: ${streamError.message}`,
       'Proxy',
@@ -537,6 +543,8 @@ async function handleNonStreamRequest(
   });
 
   if (isSuccess) {
+    circuitBreaker.recordSuccess(providerId);
+
     setCacheIfNeeded(cacheResult.cacheKey, cacheResult.shouldCache, fromCache, responseData, responseHeaders);
 
     if (cacheResult.cacheKey && cacheResult.shouldCache && !fromCache) {
@@ -549,6 +557,8 @@ async function handleNonStreamRequest(
       'Proxy'
     );
   } else {
+    circuitBreaker.recordFailure(providerId, new Error(`HTTP ${response.statusCode}`));
+
     const errorStr = JSON.stringify(responseData);
     const truncatedError = errorStr.length > 500
       ? `${errorStr.substring(0, 500)}... (total length: ${errorStr.length} chars)`

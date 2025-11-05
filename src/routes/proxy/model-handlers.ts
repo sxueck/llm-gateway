@@ -82,8 +82,8 @@ export async function getModelsHandler(request: FastifyRequest, reply: FastifyRe
 
 export async function getModelInfoHandler(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const protocolCompatCfg = await systemConfigDb.get('protocol_compat_enabled');
-    const litellmCompatEnabled = protocolCompatCfg ? protocolCompatCfg.value === 'true' : false;
+    const litellmCompatCfg = await systemConfigDb.get('litellm_compat_enabled');
+    const litellmCompatEnabled = litellmCompatCfg ? litellmCompatCfg.value === 'true' : false;
 
     if (!litellmCompatEnabled) {
       return reply.code(404).send({

@@ -4,6 +4,7 @@ import { memoryLogger } from '../services/logger.js';
 import { apiRequestDb, routingConfigDb, modelDb, systemConfigDb, expertRoutingLogDb } from '../db/index.js';
 import { nanoid } from 'nanoid';
 import { loadAntiBotConfig, validateUserAgentList } from '../utils/anti-bot-config.js';
+import { circuitBreaker } from '../services/circuit-breaker.js';
 
 
 export async function configRoutes(fastify: FastifyInstance) {
@@ -402,6 +403,55 @@ export async function configRoutes(fastify: FastifyInstance) {
       return { success: true };
     } catch (error: any) {
       memoryLogger.error(`删除路由配置失败: ${error.message}`, 'Config');
+      throw error;
+    }
+  });
+
+  fastify.get('/circuit-breaker/status', async () => {
+    try {
+      const stats = circuitBreaker.getAllStats();
+      const result: any[] = [];
+
+      stats.forEach((stat, providerId) => {
+        result.push({
+          providerId,
+          state: stat.state,
+          failures: stat.failures,
+          successes: stat.successes,
+          lastFailureTime: stat.lastFailureTime,
+          halfOpenAttempts: stat.halfOpenAttempts
+        });
+      });
+
+      return {
+        providers: result,
+        timestamp: Date.now()
+      };
+    } catch (error: any) {
+      memoryLogger.error(`获取熔断器状态失败: ${error.message}`, 'Config');
+      throw error;
+    }
+  });
+
+  fastify.post('/circuit-breaker/reset/:providerId', async (request) => {
+    try {
+      const { providerId } = request.params as { providerId: string };
+      circuitBreaker.reset(providerId);
+      memoryLogger.info(`重置熔断器: ${providerId}`, 'Config');
+      return { success: true };
+    } catch (error: any) {
+      memoryLogger.error(`重置熔断器失败: ${error.message}`, 'Config');
+      throw error;
+    }
+  });
+
+  fastify.post('/circuit-breaker/reset-all', async () => {
+    try {
+      circuitBreaker.resetAll();
+      memoryLogger.info('重置所有熔断器', 'Config');
+      return { success: true };
+    } catch (error: any) {
+      memoryLogger.error(`重置所有熔断器失败: ${error.message}`, 'Config');
       throw error;
     }
   });
