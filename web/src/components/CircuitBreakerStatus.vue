@@ -81,6 +81,10 @@ interface CircuitBreakerProvider {
   halfOpenAttempts: number;
 }
 
+interface CircuitBreakerStatusResponse {
+  providers: CircuitBreakerProvider[];
+}
+
 const message = useMessage();
 const loading = ref(false);
 const providers = ref<CircuitBreakerProvider[]>([]);
@@ -88,7 +92,7 @@ const providers = ref<CircuitBreakerProvider[]>([]);
 async function fetchStatus() {
   loading.value = true;
   try {
-    const response = await request.get('/config/circuit-breaker/status');
+    const response = await request.get<CircuitBreakerStatusResponse>('/config/circuit-breaker/status');
     providers.value = response.providers || [];
   } catch (error: any) {
     message.error(error.message || '获取熔断器状态失败');

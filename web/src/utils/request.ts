@@ -1,13 +1,21 @@
 import axios from 'axios';
-import type { AxiosInstance, AxiosError } from 'axios';
+import type { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
 import { useAuthStore } from '@/stores/auth';
 
-const request: AxiosInstance = axios.create({
+interface CustomAxiosInstance extends Omit<AxiosInstance, 'get' | 'post' | 'put' | 'delete' | 'patch'> {
+  get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>;
+  post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
+  put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
+  delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>;
+  patch<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
+}
+
+const axiosInstance: AxiosInstance = axios.create({
   baseURL: '/api',
   timeout: 10000,
 });
 
-request.interceptors.request.use(
+axiosInstance.interceptors.request.use(
   (config) => {
     const authStore = useAuthStore();
     if (authStore.token) {
@@ -20,7 +28,7 @@ request.interceptors.request.use(
   }
 );
 
-request.interceptors.response.use(
+axiosInstance.interceptors.response.use(
   (response) => {
     return response.data;
   },
@@ -37,6 +45,8 @@ request.interceptors.response.use(
     return Promise.reject(new Error(message));
   }
 );
+
+const request = axiosInstance as CustomAxiosInstance;
 
 export default request;
 
