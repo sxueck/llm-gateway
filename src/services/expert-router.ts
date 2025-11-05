@@ -231,36 +231,26 @@ export class ExpertRouter {
       userPrompt = this.filterIgnoredTags(userPrompt, classifierConfig.ignored_tags);
     }
 
-    let conversationContext = '';
-    const lastUserIndex = messagesToClassify.lastIndexOf(lastUserMessage);
-    if (lastUserIndex > 0) {
-      const contextMessages = messagesToClassify.slice(Math.max(0, lastUserIndex - MAX_CONTEXT_MESSAGES * 2), lastUserIndex);
-
-      if (contextMessages.length > 0) {
-        conversationContext = '\n\n# Conversation History (for context)\n';
-        conversationContext += contextMessages.map((msg) => {
-          let content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-          if (classifierConfig.ignored_tags && classifierConfig.ignored_tags.length > 0) {
-            content = this.filterIgnoredTags(content, classifierConfig.ignored_tags);
-          }
-          const roleLabel = msg.role === 'user' ? 'User' : 'Assistant';
-          return `[${roleLabel}]: ${content}`;
-        }).join('\n');
-        conversationContext += '\n';
-      }
-    }
-
-    const promptWithContext = classifierConfig.prompt_template
-      .split('{{CONVERSATION_CONTEXT}}').join(conversationContext)
-      .split('{{conversation_context}}').join(conversationContext);
+    // 构建对话历史上下文
+    const conversationContext = this.buildConversationContext(
+      messagesToClassify,
+      lastUserMessage,
+      classifierConfig.ignored_tags
+    );
 
     // 验证模板格式并处理用户提示符
-    const { systemMessage, userMessageContent } = this.processPromptTemplate(promptWithContext, userPrompt);
+    const { systemMessage, userMessageContent } = this.processPromptTemplate(classifierConfig.prompt_template, userPrompt);
+
+    // 组装完整的用户消息（包含历史和最新输入）
+    const userMessageWithHistory = this.assembleUserMessageWithHistory(
+      conversationContext,
+      userMessageContent
+    );
 
     const classificationRequest: any = {
       messages: [
         { role: 'system', content: systemMessage },
-        { role: 'user', content: userMessageContent }
+        { role: 'user', content: userMessageWithHistory }
       ],
       temperature: classifierConfig.temperature ?? 0.0
     };
@@ -571,6 +561,99 @@ export class ExpertRouter {
       systemMessage: promptTemplate.trim(),
       userMessageContent: userPrompt
     };
+  }
+
+  /**
+   * 构建对话历史上下文
+   * @param messages 待分类的消息列表
+   * @param lastUserMessage 最后一条用户消息
+   * @param ignoredTags 需要过滤的标签列表
+   * @returns 格式化的对话历史字符串
+   */
+  private buildConversationContext(
+    messages: ChatMessage[],
+    lastUserMessage: ChatMessage,
+    ignoredTags?: string[]
+  ): string {
+    const lastUserIndex = messages.lastIndexOf(lastUserMessage);
+    
+    // 如果最后一条用户消息是第一条消息，则没有历史
+    if (lastUserIndex <= 0) {
+      return '';
+    }
+
+    // 提取历史消息（最多 MAX_CONTEXT_MESSAGES * 2 条，包含用户和助手消息）
+    const startIndex = Math.max(0, lastUserIndex - MAX_CONTEXT_MESSAGES * 2);
+    const contextMessages = messages.slice(startIndex, lastUserIndex);
+
+    if (contextMessages.length === 0) {
+      return '';
+    }
+
+    // 格式化历史消息
+    const formattedMessages = contextMessages.map((msg, index) => {
+      let content = typeof msg.content === 'string'
+        ? msg.content
+        : JSON.stringify(msg.content);
+
+      // 过滤忽略的标签
+      if (ignoredTags && ignoredTags.length > 0) {
+        content = this.filterIgnoredTags(content, ignoredTags);
+      }
+
+      // 确定角色标签
+      const roleLabel = this.getRoleLabel(msg.role);
+      
+      // 添加序号以便追踪对话顺序
+      const messageNumber = index + 1;
+      
+      return `[${messageNumber}] ${roleLabel}: ${content}`;
+    });
+
+    // 构建完整的历史上下文
+    return [
+      '# Conversation History (for context)',
+      ...formattedMessages,
+      ''
+    ].join('\n');
+  }
+
+  /**
+   * 组装包含历史的完整用户消息
+   * @param conversationContext 对话历史上下文
+   * @param currentUserPrompt 当前用户输入
+   * @returns 完整的用户消息
+   */
+  private assembleUserMessageWithHistory(
+    conversationContext: string,
+    currentUserPrompt: string
+  ): string {
+    if (!conversationContext) {
+      return currentUserPrompt;
+    }
+
+    return [
+      conversationContext.trim(),
+      '',
+      '---',
+      'Latest User Prompt:',
+      currentUserPrompt
+    ].join('\n');
+  }
+
+  /**
+   * 获取角色标签
+   * @param role 消息角色
+   * @returns 格式化的角色标签
+   */
+  private getRoleLabel(role: string): string {
+    const roleMap: Record<string, string> = {
+      'user': 'User',
+      'assistant': 'Assistant',
+      'system': 'System'
+    };
+
+    return roleMap[role.toLowerCase()] || role;
   }
 }
 

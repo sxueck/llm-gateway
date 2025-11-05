@@ -122,10 +122,4 @@ Execute this EXACT sequence:
 - If message asks for optimization or performance improvement → `code_refactor_edit`
 - If message requests best practices or coding standards → `code_refactor_edit`
 
-{{CONVERSATION_CONTEXT}}
----
-Latest User Prompt:
 {{USER_PROMPT}}
----
-
-Now execute the classification sequence above and output ONLY the JSON result.
