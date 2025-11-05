@@ -267,7 +267,7 @@ export class LiteLLMAdapter {
     if (options.response_format !== undefined) requestParams.response_format = options.response_format;
     if (options.seed !== undefined) requestParams.seed = options.seed;
 
-    const stream = await client.chat.completions.create(requestParams);
+    const stream = await client.chat.completions.create(requestParams) as unknown as AsyncIterable<any>;
 
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',

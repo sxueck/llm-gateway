@@ -105,22 +105,7 @@ export class DemoModeService {
   }
 
   private async clearPortkeyConfig(): Promise<void> {
-    try {
-      const emptyConfig = {
-        credentials: {},
-        virtual_keys: {},
-      };
-
-      await writeFile(
-        appConfig.portkeyConfigPath,
-        JSON.stringify(emptyConfig, null, 2),
-        'utf-8'
-      );
-
-      memoryLogger.info('已清空 Portkey 配置文件', 'DemoMode');
-    } catch (error: any) {
-      memoryLogger.error(`清空 Portkey 配置文件失败: ${error.message}`, 'DemoMode');
-    }
+    memoryLogger.info('演示模式已启用,跳过清空 Portkey 配置 (已迁移至 LiteLLM SDK)', 'DemoMode');
   }
 
   private async createDemoUser(): Promise<void> {
