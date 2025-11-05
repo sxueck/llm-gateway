@@ -224,14 +224,17 @@ export function createProxyHandler() {
         }
       }
 
-      return reply.code(500).send({
-        error: {
-          message: error.message || '代理请求失败',
-          type: 'internal_error',
-          param: null,
-          code: 'proxy_error'
-        }
-      });
+      // 检查是否已经发送响应(流式请求会直接写入 raw 响应)
+      if (!reply.sent) {
+        return reply.code(500).send({
+          error: {
+            message: error.message || '代理请求失败',
+            type: 'internal_error',
+            param: null,
+            code: 'proxy_error'
+          }
+        });
+      }
     }
   };
 }
@@ -256,6 +259,7 @@ async function handleStreamRequest(
     const options = {
       temperature: (request.body as any)?.temperature,
       max_tokens: (request.body as any)?.max_tokens,
+      max_completion_tokens: (request.body as any)?.max_completion_tokens,
       top_p: (request.body as any)?.top_p,
       frequency_penalty: (request.body as any)?.frequency_penalty,
       presence_penalty: (request.body as any)?.presence_penalty,
@@ -339,7 +343,9 @@ async function handleStreamRequest(
       response_body: undefined,
     });
 
-    throw streamError;
+    // 流式请求失败时，如果响应已经发送，则不再处理
+    // http-client 会处理错误响应的发送
+    return;
   }
 }
 
@@ -416,6 +422,7 @@ async function handleNonStreamRequest(
   const options = {
     temperature: (request.body as any)?.temperature,
     max_tokens: (request.body as any)?.max_tokens,
+    max_completion_tokens: (request.body as any)?.max_completion_tokens,
     top_p: (request.body as any)?.top_p,
     frequency_penalty: (request.body as any)?.frequency_penalty,
     presence_penalty: (request.body as any)?.presence_penalty,

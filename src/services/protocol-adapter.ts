@@ -168,7 +168,12 @@ export class ProtocolAdapter {
     };
 
     if (options.temperature !== undefined) requestParams.temperature = options.temperature;
-    if (options.max_tokens !== undefined) requestParams.max_tokens = options.max_tokens;
+    // 优先使用 max_tokens,如果不存在则使用 max_completion_tokens
+    if (options.max_tokens !== undefined) {
+      requestParams.max_tokens = options.max_tokens;
+    } else if (options.max_completion_tokens !== undefined) {
+      requestParams.max_tokens = options.max_completion_tokens;
+    }
     if (options.top_p !== undefined) requestParams.top_p = options.top_p;
     if (options.frequency_penalty !== undefined) requestParams.frequency_penalty = options.frequency_penalty;
     if (options.presence_penalty !== undefined) requestParams.presence_penalty = options.presence_penalty;
@@ -261,7 +266,12 @@ export class ProtocolAdapter {
     };
 
     if (options.temperature !== undefined) requestParams.temperature = options.temperature;
-    if (options.max_tokens !== undefined) requestParams.max_tokens = options.max_tokens;
+    // 优先使用 max_tokens,如果不存在则使用 max_completion_tokens
+    if (options.max_tokens !== undefined) {
+      requestParams.max_tokens = options.max_tokens;
+    } else if (options.max_completion_tokens !== undefined) {
+      requestParams.max_tokens = options.max_completion_tokens;
+    }
     if (options.top_p !== undefined) requestParams.top_p = options.top_p;
     if (options.frequency_penalty !== undefined) requestParams.frequency_penalty = options.frequency_penalty;
     if (options.presence_penalty !== undefined) requestParams.presence_penalty = options.presence_penalty;
