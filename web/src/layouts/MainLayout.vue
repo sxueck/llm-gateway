@@ -41,8 +41,8 @@
       />
     </n-layout-sider>
 
-    <n-layout style="background-color: #f5f5f5;">
-      <n-layout-header style="height: 72px; padding: 0 32px; display: flex; align-items: center; justify-content: flex-end; border-bottom: none; background-color: transparent; margin-bottom: 8px;">
+    <n-layout style="background-color: #f5f5f5; height: 100vh; display: flex; flex-direction: column;">
+      <n-layout-header style="height: 72px; padding: 0 32px; display: flex; align-items: center; justify-content: flex-end; border-bottom: none; background-color: transparent; flex-shrink: 0;">
         <div class="header-right">
           <LanguageSwitcher />
           <n-button circle quaternary class="header-icon-btn">
@@ -67,7 +67,7 @@
         </div>
       </n-layout-header>
 
-      <n-layout-content content-style="padding: 0 32px 32px 32px; background-color: transparent;">
+      <n-layout-content content-style="padding: 8px 32px 32px 32px; background-color: transparent; overflow-y: auto; flex: 1;">
         <router-view />
       </n-layout-content>
     </n-layout>

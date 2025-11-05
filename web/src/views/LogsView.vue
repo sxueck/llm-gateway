@@ -34,10 +34,8 @@
           </n-input>
 
           <div class="terminal-container">
-            <n-scrollbar ref="scrollbarRef" style="max-height: 900px;">
-              <pre v-if="filteredLogText" class="terminal-output">{{ filteredLogText }}</pre>
-              <n-empty v-else description="暂无日志数据" :show-icon="false" />
-            </n-scrollbar>
+            <pre v-if="filteredLogText" class="terminal-output">{{ filteredLogText }}</pre>
+            <n-empty v-else description="暂无日志数据" :show-icon="false" />
           </div>
         </n-space>
       </n-card>
@@ -46,15 +44,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
-import { useMessage, NSpace, NCard, NButton, NSelect, NInput, NIcon, NScrollbar, NEmpty } from 'naive-ui';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useMessage, NSpace, NCard, NButton, NSelect, NInput, NIcon, NEmpty } from 'naive-ui';
 import { SearchOutline } from '@vicons/ionicons5';
 import { configApi, type LogEntry } from '@/api/config';
 import { formatTimestamp } from '@/utils/common';
 
 const message = useMessage();
 const loading = ref(false);
-const scrollbarRef = ref<InstanceType<typeof NScrollbar> | null>(null);
 const allLogsText = ref('');
 const searchText = ref('');
 const selectedLevel = ref<string>('ALL');
@@ -114,9 +111,6 @@ async function loadLogs() {
 
     if (logsData?.logs && Array.isArray(logsData.logs)) {
       allLogsText.value = logsData.logs.map(formatLogEntry).join('\n');
-
-      await nextTick();
-      scrollbarRef.value?.scrollTo({ top: scrollbarRef.value.$el.scrollHeight });
     }
   } catch (error: any) {
     message.error(error.message);

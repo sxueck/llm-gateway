@@ -23,9 +23,24 @@ export interface ApiStats {
   successfulRequests: number;
   failedRequests: number;
   totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
   avgResponseTime: number;
   cacheHits: number;
   cacheSavedTokens: number;
+}
+
+export interface ExpertRoutingStats {
+  totalRequests: number;
+  avgClassificationTime: number;
+}
+
+export interface ModelStat {
+  model: string;
+  provider_name: string;
+  request_count: number;
+  total_tokens: number;
+  avg_response_time: number;
 }
 
 export interface TrendData {
@@ -76,6 +91,8 @@ export const configApi = {
     period: string;
     stats: ApiStats;
     trend: VirtualKeyTrend[];
+    expertRoutingStats: ExpertRoutingStats;
+    modelStats: ModelStat[];
   }> {
     return request.get('/admin/config/stats', { params: { period } });
   },

@@ -793,6 +793,8 @@ export const apiRequestDb = {
           SUM(CASE WHEN ar.status = 'success' THEN 1 ELSE 0 END) as successful_requests,
           SUM(CASE WHEN ar.status = 'error' THEN 1 ELSE 0 END) as failed_requests,
           SUM(CASE WHEN ar.cache_hit = 0 THEN ar.total_tokens ELSE 0 END) as total_tokens,
+          SUM(CASE WHEN ar.cache_hit = 0 THEN ar.prompt_tokens ELSE 0 END) as prompt_tokens,
+          SUM(CASE WHEN ar.cache_hit = 0 THEN ar.completion_tokens ELSE 0 END) as completion_tokens,
           AVG(ar.response_time) as avg_response_time,
           SUM(CASE WHEN ar.cache_hit = 1 THEN 1 ELSE 0 END) as cache_hits,
           0 as cache_saved_tokens
@@ -808,6 +810,8 @@ export const apiRequestDb = {
           successfulRequests: 0,
           failedRequests: 0,
           totalTokens: 0,
+          promptTokens: 0,
+          completionTokens: 0,
           avgResponseTime: 0,
           cacheHits: 0,
           cacheSavedTokens: 0,
@@ -820,6 +824,8 @@ export const apiRequestDb = {
         successfulRequests: row.successful_requests || 0,
         failedRequests: row.failed_requests || 0,
         totalTokens: row.total_tokens || 0,
+        promptTokens: row.prompt_tokens || 0,
+        completionTokens: row.completion_tokens || 0,
         avgResponseTime: row.avg_response_time || 0,
         cacheHits: row.cache_hits || 0,
         cacheSavedTokens: row.cache_saved_tokens || 0,
@@ -1023,6 +1029,31 @@ export const apiRequestDb = {
     try {
       const [result] = await conn.query('DELETE FROM api_requests WHERE created_at < ?', [cutoffTime]);
       return (result as any).affectedRows || 0;
+    } finally {
+      conn.release();
+    }
+  },
+
+  async getModelStats(options: { startTime: number; endTime: number }) {
+    const { startTime, endTime } = options;
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query(
+        `SELECT
+          ar.model,
+          p.name as provider_name,
+          COUNT(*) as request_count,
+          SUM(ar.total_tokens) as total_tokens,
+          AVG(ar.response_time) as avg_response_time
+        FROM api_requests ar
+        LEFT JOIN providers p ON ar.provider_id = p.id
+        WHERE ar.created_at >= ? AND ar.created_at <= ? AND ar.model IS NOT NULL
+        GROUP BY ar.model, p.name
+        ORDER BY request_count DESC
+        LIMIT 5`,
+        [startTime, endTime]
+      );
+      return rows as any[];
     } finally {
       conn.release();
     }
@@ -1314,6 +1345,33 @@ export const expertRoutingLogDb = {
       const result = rows as any[];
       if (result.length === 0) return undefined;
       return result[0];
+    } finally {
+      conn.release();
+    }
+  },
+
+  async getGlobalStatistics(startTime: number) {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query(
+        `SELECT
+          COUNT(*) as total_requests,
+          AVG(classification_time) as avg_classification_time
+        FROM expert_routing_logs
+        WHERE created_at >= ?`,
+        [startTime]
+      );
+      const result = rows as any[];
+      if (result.length === 0) {
+        return {
+          totalRequests: 0,
+          avgClassificationTime: 0,
+        };
+      }
+      return {
+        totalRequests: result[0].total_requests || 0,
+        avgClassificationTime: Math.round(result[0].avg_classification_time || 0),
+      };
     } finally {
       conn.release();
     }

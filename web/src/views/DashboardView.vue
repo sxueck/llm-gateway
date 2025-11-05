@@ -26,140 +26,128 @@
       <n-grid :cols="4" :x-gap="20" :y-gap="20">
         <n-gi>
           <n-card class="stat-card stat-card-primary">
-            <n-statistic :label="t('dashboard.tokenConsumption')">
-              <template #default>
-                <span class="stat-value-primary">{{ formatTokenNumber(stats?.totalTokens || 0) }}</span>
-              </template>
-            </n-statistic>
+            <div class="stat-content">
+              <div class="stat-header">{{ t('dashboard.tokenConsumption') }}</div>
+              <div class="stat-main-value">{{ formatTokenNumber(stats?.totalTokens || 0) }}</div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">输入:</span>
+                  <span class="stat-detail-value">{{ formatTokenNumber(promptTokens) }}</span>
+                </span>
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">输出:</span>
+                  <span class="stat-detail-value">{{ formatTokenNumber(completionTokens) }}</span>
+                </span>
+              </div>
+            </div>
           </n-card>
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic :label="t('dashboard.totalRequests')">
-              <template #default>
-                <span class="stat-value">{{ formatNumber(stats?.totalRequests || 0) }}</span>
-              </template>
-              <template #suffix>
-                <span class="stat-suffix">{{ t('dashboard.times') }}</span>
-              </template>
-            </n-statistic>
+            <div class="stat-content">
+              <div class="stat-header">{{ t('dashboard.totalRequests') }}</div>
+              <div class="stat-main-value">{{ formatNumber(stats?.totalRequests || 0) }}</div>
+              <div class="stat-details">
+                <span class="stat-detail-item stat-detail-success">
+                  <span class="stat-detail-label">成功:</span>
+                  <span class="stat-detail-value">{{ formatNumber(stats?.successfulRequests || 0) }}</span>
+                </span>
+                <span class="stat-detail-item stat-detail-error">
+                  <span class="stat-detail-label">失败:</span>
+                  <span class="stat-detail-value">{{ formatNumber(stats?.failedRequests || 0) }}</span>
+                </span>
+              </div>
+            </div>
           </n-card>
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic :label="t('dashboard.successfulRequests')">
-              <template #default>
-                <span class="stat-value stat-value-success">{{ formatNumber(stats?.successfulRequests || 0) }}</span>
-              </template>
-              <template #suffix>
-                <span class="stat-suffix">{{ t('dashboard.times') }}</span>
-              </template>
-            </n-statistic>
+            <div class="stat-content">
+              <div class="stat-header">{{ t('dashboard.successRate') }}</div>
+              <div class="stat-main-value">{{ formatPercentage(successRate) }}<span class="stat-unit">%</span></div>
+              <div class="stat-progress">
+                <div class="stat-progress-bar" :style="{ width: successRate + '%' }"></div>
+              </div>
+            </div>
           </n-card>
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic :label="t('dashboard.failedRequests')">
-              <template #default>
-                <span class="stat-value stat-value-error">{{ formatNumber(stats?.failedRequests || 0) }}</span>
-              </template>
-              <template #suffix>
-                <span class="stat-suffix">{{ t('dashboard.times') }}</span>
-              </template>
-            </n-statistic>
+            <div class="stat-content">
+              <div class="stat-header">{{ t('dashboard.avgResponseTime') }}</div>
+              <div class="stat-main-value">{{ formatResponseTime(avgResponseTime) }}<span class="stat-unit">ms</span></div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">P95:</span>
+                  <span class="stat-detail-value">{{ formatResponseTime(p95ResponseTime) }} ms</span>
+                </span>
+              </div>
+            </div>
           </n-card>
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic :label="t('dashboard.successRate')">
-              <template #default>
-                <span class="stat-value">{{ formatPercentage(successRate) }}</span>
-              </template>
-              <template #suffix>
-                <span class="stat-suffix">%</span>
-              </template>
-            </n-statistic>
+            <div class="stat-content">
+              <div class="stat-header">缓存命中</div>
+              <div class="stat-main-value">{{ formatNumber(stats?.cacheHits || 0) }}</div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">命中率:</span>
+                  <span class="stat-detail-value">{{ formatPercentage(cacheHitRate) }}%</span>
+                </span>
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">节省:</span>
+                  <span class="stat-detail-value">{{ formatTokenNumber(stats?.cacheSavedTokens || 0) }}</span>
+                </span>
+              </div>
+            </div>
           </n-card>
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic :label="t('dashboard.avgResponseTime')">
-              <template #default>
-                <span class="stat-value">{{ formatResponseTime(avgResponseTime) }}</span>
-              </template>
-              <template #suffix>
-                <span class="stat-suffix">ms</span>
-              </template>
-            </n-statistic>
+            <div class="stat-content">
+              <div class="stat-header">错误率</div>
+              <div class="stat-main-value" :class="{ 'stat-value-error': errorRate > 5 }">{{ formatPercentage(errorRate) }}<span class="stat-unit">%</span></div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">错误数:</span>
+                  <span class="stat-detail-value">{{ formatNumber(stats?.failedRequests || 0) }}</span>
+                </span>
+              </div>
+            </div>
           </n-card>
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic :label="t('dashboard.gatewayLatency')">
-              <template #default>
-                <span class="stat-value">{{ formatResponseTime(gatewayLatency) }}</span>
-              </template>
-              <template #suffix>
-                <span class="stat-suffix">ms</span>
-              </template>
-            </n-statistic>
+            <div class="stat-content">
+              <div class="stat-header">路由分类速度</div>
+              <div class="stat-main-value">{{ formatResponseTime(expertRoutingSpeed) }}<span class="stat-unit">ms</span></div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">分类次数:</span>
+                  <span class="stat-detail-value">{{ formatNumber(expertRoutingCount) }}</span>
+                </span>
+              </div>
+            </div>
           </n-card>
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
-            <n-statistic :label="t('dashboard.errorRate')">
-              <template #default>
-                <span class="stat-value" :class="{ 'stat-value-error': errorRate > 5 }">{{ formatPercentage(errorRate) }}</span>
-              </template>
-              <template #suffix>
-                <span class="stat-suffix">%</span>
-              </template>
-            </n-statistic>
-          </n-card>
-        </n-gi>
-        <n-gi>
-          <n-card class="stat-card">
-            <n-statistic :label="t('dashboard.recentRequests')">
-              <template #default>
-                <span class="stat-value">{{ formatNumber(recentRequestsCount) }}</span>
-              </template>
-              <template #suffix>
-                <span class="stat-suffix stat-suffix-light">{{ t('dashboard.perHour') }}</span>
-              </template>
-            </n-statistic>
-          </n-card>
-        </n-gi>
-        <n-gi>
-          <n-card class="stat-card">
-            <n-statistic :label="t('dashboard.cacheHits')">
-              <template #default>
-                <span class="stat-value stat-value-success">{{ formatNumber(stats?.cacheHits || 0) }}</span>
-              </template>
-              <template #suffix>
-                <span class="stat-suffix">{{ t('dashboard.times') }}</span>
-              </template>
-            </n-statistic>
-          </n-card>
-        </n-gi>
-        <n-gi>
-          <n-card class="stat-card">
-            <n-statistic :label="t('dashboard.cacheHitRate')">
-              <template #default>
-                <span class="stat-value" :class="{ 'stat-value-success': cacheHitRate > 20 }">{{ formatPercentage(cacheHitRate) }}</span>
-              </template>
-              <template #suffix>
-                <span class="stat-suffix">%</span>
-              </template>
-            </n-statistic>
-          </n-card>
-        </n-gi>
-        <n-gi>
-          <n-card class="stat-card">
-            <n-statistic :label="t('dashboard.cacheSavedTokens')">
-              <template #default>
-                <span class="stat-value stat-value-success">{{ formatTokenNumber(stats?.cacheSavedTokens || 0) }}</span>
-              </template>
-            </n-statistic>
+            <div class="stat-content">
+              <div class="stat-header">热门模型</div>
+              <div class="stat-main-value" style="font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ topModel }}</div>
+              <div class="stat-provider">{{ topModelProvider }}</div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">请求:</span>
+                  <span class="stat-detail-value">{{ formatNumber(topModelRequests) }}</span>
+                </span>
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">Token:</span>
+                  <span class="stat-detail-value">{{ formatTokenNumber(topModelTokens) }}</span>
+                </span>
+              </div>
+            </div>
           </n-card>
         </n-gi>
       </n-grid>
@@ -229,7 +217,7 @@ import { RefreshOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
-import { configApi, type ApiStats, type VirtualKeyTrend } from '@/api/config';
+import { configApi, type ApiStats, type VirtualKeyTrend, type ExpertRoutingStats, type ModelStat } from '@/api/config';
 import { formatNumber, formatTokenNumber, formatPercentage, formatResponseTime, formatTimestamp } from '@/utils/format';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
@@ -258,8 +246,9 @@ const virtualKeyStore = useVirtualKeyStore();
 
 const stats = ref<ApiStats | null>(null);
 const trendData = ref<VirtualKeyTrend[]>([]);
+const expertRoutingStats = ref<ExpertRoutingStats | null>(null);
+const modelStats = ref<ModelStat[]>([]);
 const selectedPeriod = ref<'24h' | '7d' | '30d'>('24h');
-const defaultGatewayLatency = ref<number | null>(null);
 const chartMetric = ref<'requests' | 'tokens'>('requests');
 const loading = ref(false);
 const loadError = ref<string | null>(null);
@@ -288,25 +277,51 @@ const avgResponseTime = computed(() => {
   return stats.value?.avgResponseTime || 0;
 });
 
-const gatewayLatency = computed(() => {
-  return defaultGatewayLatency.value || 0;
+const expertRoutingSpeed = computed(() => {
+  return expertRoutingStats.value?.avgClassificationTime || 0;
 });
 
-const recentRequestsCount = computed(() => {
-  if (trendData.value.length === 0) return 0;
-  let totalRequests = 0;
-  trendData.value.forEach(keyTrend => {
-    const lastData = keyTrend.data.slice(-1)[0];
-    if (lastData) {
-      totalRequests += lastData.requestCount;
-    }
-  });
-  return totalRequests;
+const expertRoutingCount = computed(() => {
+  return expertRoutingStats.value?.totalRequests || 0;
+});
+
+const topModel = computed(() => {
+  if (modelStats.value.length === 0) return '-';
+  return modelStats.value[0].model;
+});
+
+const topModelProvider = computed(() => {
+  if (modelStats.value.length === 0) return '-';
+  return modelStats.value[0].provider_name || '-';
+});
+
+const topModelRequests = computed(() => {
+  if (modelStats.value.length === 0) return 0;
+  return modelStats.value[0].request_count || 0;
+});
+
+const topModelTokens = computed(() => {
+  if (modelStats.value.length === 0) return 0;
+  return modelStats.value[0].total_tokens || 0;
 });
 
 const cacheHitRate = computed(() => {
   if (!stats.value || stats.value.totalRequests === 0) return 0;
   return (stats.value.cacheHits / stats.value.totalRequests) * 100;
+});
+
+const promptTokens = computed(() => {
+  if (!stats.value) return 0;
+  return stats.value.promptTokens || 0;
+});
+
+const completionTokens = computed(() => {
+  if (!stats.value) return 0;
+  return stats.value.completionTokens || 0;
+});
+
+const p95ResponseTime = computed(() => {
+  return stats.value?.p95ResponseTime || avgResponseTime.value * 1.5;
 });
 
 const COLOR_PALETTE = [
@@ -517,16 +532,11 @@ const chartOption = computed(() => {
   };
 });
 
-async function loadDefaultGatewayLatency() {
-  defaultGatewayLatency.value = null;
-}
-
 async function loadData() {
   await Promise.all([
     providerStore.fetchProviders(),
     virtualKeyStore.fetchVirtualKeys(),
     loadStats(),
-    loadDefaultGatewayLatency(),
   ]);
 }
 
@@ -542,6 +552,8 @@ async function loadStats() {
 
     stats.value = result.stats;
     trendData.value = result.trend || [];
+    expertRoutingStats.value = result.expertRoutingStats || { totalRequests: 0, avgClassificationTime: 0 };
+    modelStats.value = result.modelStats || [];
   } catch (error: any) {
     const errorMsg = error.message || '加载数据失败';
     loadError.value = errorMsg;
@@ -591,6 +603,12 @@ onMounted(() => {
   border: none;
   transition: all 0.3s ease;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  height: 100%;
+}
+
+.stat-card :deep(.n-card__content) {
+  padding: 0;
+  height: 100%;
 }
 
 .stat-card:hover {
@@ -607,82 +625,117 @@ onMounted(() => {
   box-shadow: 0 6px 16px rgba(15, 107, 74, 0.3);
 }
 
-.stat-card-primary :deep(.n-statistic__label) {
-  color: rgba(255, 255, 255, 0.9) !important;
+.stat-card-primary .stat-header {
+  color: rgba(255, 255, 255, 0.9);
 }
 
-.stat-value-primary {
-  font-size: 36px;
-  font-weight: 600;
+.stat-card-primary .stat-main-value {
   color: #ffffff;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
 }
 
-.stat-card :deep(.n-statistic__label) {
-  font-size: 13px;
-  color: #8c8c8c;
+.stat-card-primary .stat-detail-label,
+.stat-card-primary .stat-detail-value {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.stat-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 24px;
+}
+
+.stat-header {
+  font-size: 12px;
   font-weight: 500;
-  margin-bottom: 12px;
-  letter-spacing: 0.02em;
+  color: #8c8c8c;
   text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 16px;
 }
 
-.stat-card :deep(.n-statistic__value) {
-  font-size: 36px;
+.stat-main-value {
+  font-size: 42px;
   font-weight: 600;
   color: #1a1a1a;
-  line-height: 1.1;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
+  margin-bottom: 8px;
 }
 
-.stat-value {
-  font-size: 36px;
-  font-weight: 600;
-  color: #1a1a1a;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-}
-
-.stat-value-success {
+.stat-provider {
+  font-size: 13px;
+  font-weight: 500;
   color: #0f6b4a;
+  margin-bottom: auto;
+  padding-bottom: 16px;
 }
 
 .stat-value-error {
   color: #d03050;
 }
 
-.stat-suffix {
-  font-size: 14px;
+.stat-unit {
+  font-size: 18px;
   font-weight: 400;
-  color: #595959;
   margin-left: 4px;
 }
 
-.stat-suffix-light {
-  color: #8c8c8c;
-}
-
-.token-display {
+.stat-details {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  justify-content: space-between;
+  gap: 20px;
+  font-size: 13px;
+  margin-top: auto;
 }
 
-.token-value-primary {
-  font-size: 28px;
-  font-weight: 600;
-  color: #1a1a1a;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
+.stat-detail-item {
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 
-.token-value-secondary {
-  font-size: 16px;
-  font-weight: 400;
+.stat-detail-label {
   color: #8c8c8c;
-  line-height: 1.2;
+  font-weight: 400;
+}
+
+.stat-detail-value {
+  color: #1a1a1a;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
+}
+
+.stat-detail-success .stat-detail-label {
+  color: #0f6b4a;
+}
+
+.stat-detail-success .stat-detail-value {
+  color: #0f6b4a;
+}
+
+.stat-detail-error .stat-detail-label {
+  color: #d03050;
+}
+
+.stat-detail-error .stat-detail-value {
+  color: #d03050;
+}
+
+.stat-progress {
+  width: 100%;
+  height: 8px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: auto;
+}
+
+.stat-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #0f6b4a 0%, #10b981 100%);
+  border-radius: 4px;
+  transition: width 0.3s ease;
 }
 
 .trend-card {

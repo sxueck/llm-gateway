@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { appConfig, setPublicUrl, validatePublicUrl } from '../config/index.js';
 import { memoryLogger } from '../services/logger.js';
-import { apiRequestDb, routingConfigDb, modelDb, systemConfigDb } from '../db/index.js';
+import { apiRequestDb, routingConfigDb, modelDb, systemConfigDb, expertRoutingLogDb } from '../db/index.js';
 import { nanoid } from 'nanoid';
 import { loadAntiBotConfig, validateUserAgentList } from '../utils/anti-bot-config.js';
 
@@ -175,10 +175,15 @@ export async function configRoutes(fastify: FastifyInstance) {
       interval: period === '24h' ? 'hour' : 'day'
     });
 
+    const expertRoutingStats = await expertRoutingLogDb.getGlobalStatistics(startTime);
+    const modelStats = await apiRequestDb.getModelStats({ startTime, endTime: now });
+
     return {
       period,
       stats,
       trend,
+      expertRoutingStats,
+      modelStats,
     };
   });
 
