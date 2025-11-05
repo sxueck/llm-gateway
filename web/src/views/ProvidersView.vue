@@ -213,7 +213,7 @@ async function handleEdit(provider: Provider) {
       baseUrl: fullProvider.baseUrl,
       apiKey: fullProvider.apiKey || '',
       enabled: fullProvider.enabled,
-      protocol: fullProvider.protocol || 'openai',
+      protocol: (fullProvider.protocol || 'openai') as 'openai' | 'anthropic' | 'google',
     };
   } catch (error: any) {
     message.error('获取提供商信息失败: ' + error.message);

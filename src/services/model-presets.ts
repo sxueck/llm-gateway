@@ -18,6 +18,7 @@ interface ModelPresetInfo {
   input_cost_per_audio_per_second?: number;
   output_cost_per_audio_per_second?: number;
   input_cost_per_video_per_second?: number;
+  litellm_provider?: string;
   provider?: string;
   mode?: string;
   supports_function_calling?: boolean;
