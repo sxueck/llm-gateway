@@ -16,7 +16,6 @@
 - **模型管理**: 统一管理所有提供商的模型，支持批量导入和自定义配置
 - **Prompt 管理**: 为虚拟模型配置 prompt 处理规则，支持替换、前置添加、系统消息等操作
 - **LiteLLM 预设集成**: 自动从 LiteLLM 官方库获取模型配置，支持搜索和一键应用
-- **分布式 Agent 部署**: 支持在远程服务器上部署 Portkey Gateway Agent，实现分布式架构
 - **智能路由**: 基于模型、提供商、地区等规则实现智能请求分发
 - **用户认证**: 基于 JWT 的安全认证机制
 - **实时监控**: 仪表盘展示系统状态和配置信息
@@ -28,7 +27,6 @@
 - Node.js v20 或更高版本
 - npm / cnpm
 - Docker (可选,用于运行 Portkey Gateway)
-- Golang 1.18+ (可选,用于构建 Portkey Gateway Agent)
 
 ### 安装
 
@@ -76,7 +74,6 @@ npm run start:all
 此命令将自动:
 1. 分别启动前后端服务
 2. 初始化数据库
-3. 构建 Portkey Gateway Agent
 
 ### 使用 Docker Compose 方式启动
 

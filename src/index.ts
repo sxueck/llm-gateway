@@ -16,7 +16,6 @@ import { configRoutes } from './routes/config.js';
 import { publicConfigRoutes } from './routes/public-config.js';
 import { proxyRoutes } from './routes/proxy.js';
 import { litellmPresetsRoutes } from './routes/litellm-presets.js';
-import { downloadsRoutes } from './routes/downloads.js';
 import { expertRoutingRoutes } from './routes/expert-routing.js';
 import { memoryLogger } from './services/logger.js';
 import { litellmPresetsService } from './services/litellm-presets.js';
@@ -142,7 +141,6 @@ fastify.get('/health', async () => {
 await fastify.register(proxyRoutes);
 await fastify.register(authRoutes, { prefix: '/api/auth' });
 await fastify.register(publicConfigRoutes, { prefix: '/api/public' });
-await fastify.register(downloadsRoutes, { prefix: '/downloads' });
 await fastify.register(providerRoutes, { prefix: '/api/admin/providers' });
 await fastify.register(modelRoutes, { prefix: '/api/admin/models' });
 await fastify.register(virtualKeyRoutes, { prefix: '/api/admin/virtual-keys' });
@@ -153,8 +151,7 @@ await fastify.register(expertRoutingRoutes, { prefix: '/api/admin/expert-routing
 memoryLogger.info('Routes registered', 'System');
 
 fastify.setNotFoundHandler((request, reply) => {
-  if (request.url.startsWith('/api/') ||
-      request.url.startsWith('/downloads/')) {
+  if (request.url.startsWith('/api/')) {
     return reply.code(404).send({
       error: {
         message: '未找到请求的资源',

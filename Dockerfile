@@ -32,7 +32,7 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/web/dist ./web/dist
 COPY scripts ./scripts
 
-RUN mkdir -p /app/data /app/portkey-config /app/agent
+RUN mkdir -p /app/data /app/portkey-config
 
 ENV NODE_ENV=production
 ENV PORT=3000

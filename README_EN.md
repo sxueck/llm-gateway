@@ -14,7 +14,6 @@ For more screenshots, see [Service Screenshots](./docs/screenshot.md)
 - **Model Management**: Unified management of models from all providers with support for batch import and custom configuration
 - **Prompt Management**: Configure prompt processing rules for virtual models, supporting replacement, prepending, system messages, and more
 - **LiteLLM Preset Integration**: Automatically fetch model configurations from the official LiteLLM library with search and one-click application
-- **Distributed Agent Deployment**: Support for deploying Portkey Gateway Agent on remote servers for distributed architecture
 - **Intelligent Routing**: Smart request distribution based on model, provider, region, and other rules
 - **User Authentication**: Secure authentication mechanism based on JWT
 - **Real-time Monitoring**: Dashboard displaying system status and configuration information
@@ -26,7 +25,6 @@ For more screenshots, see [Service Screenshots](./docs/screenshot.md)
 - Node.js v20 or higher
 - npm / cnpm
 - Docker (optional, for running Portkey Gateway)
-- Golang 1.18+ (optional, for building Portkey Gateway Agent)
 
 ### Installation
 
@@ -74,7 +72,6 @@ npm run start:all
 This command will automatically:
 1. Start both frontend and backend services
 2. Initialize the database
-3. Build the Portkey Gateway Agent
 
 ### Docker Compose Deployment
 
