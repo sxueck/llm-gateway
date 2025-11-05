@@ -18,11 +18,7 @@
           size="small"
           :closable="false"
           :bordered="false"
-        >
-          <div v-if="idValidation.suggestion" style="font-size: 12px">
-            {{ idValidation.suggestion }}
-          </div>
-        </n-alert>
+        />
       </n-space>
     </n-form-item>
 
@@ -177,7 +173,7 @@ const emit = defineEmits<{
 
 const message = useMessage();
 const formRef = ref();
-const idValidation = ref<ReturnType<typeof validateProviderId>>({ isValid: true, isSupported: true });
+const idValidation = ref<ReturnType<typeof validateProviderId>>({ isValid: true });
 const urlValidation = ref<ReturnType<typeof validateBaseUrl>>({ isValid: true });
 const keyValidation = ref<ReturnType<typeof validateApiKey>>({ isValid: true });
 const fetchingModels = ref(false);
@@ -276,10 +272,8 @@ function validateKey() {
   keyValidation.value = validateApiKey(formValue.value.apiKey, formValue.value.id);
 }
 
-function getIdValidationType(): 'success' | 'warning' | 'error' {
-  if (!idValidation.value.isValid) return 'error';
-  if (!idValidation.value.isSupported) return 'warning';
-  return 'success';
+function getIdValidationType(): 'success' | 'error' {
+  return idValidation.value.isValid ? 'success' : 'error';
 }
 
 async function handleFetchModels() {

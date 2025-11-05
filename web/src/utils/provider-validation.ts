@@ -1,19 +1,16 @@
 import { PROVIDER_PRESETS } from '@/constants/providers';
 
 /**
- * 验证提供商 ID 是否符合 Portkey 的要求
+ * 验证提供商 ID 格式
  */
 export function validateProviderId(id: string): {
   isValid: boolean;
-  isSupported: boolean;
   message?: string;
-  suggestion?: string;
 } {
   // 检查是否为空
   if (!id || id.trim() === '') {
     return {
       isValid: false,
-      isSupported: false,
       message: '提供商 ID 不能为空',
     };
   }
@@ -23,7 +20,6 @@ export function validateProviderId(id: string): {
   if (!formatRegex.test(id)) {
     return {
       isValid: false,
-      isSupported: false,
       message: '提供商 ID 只能包含小写字母、数字和连字符',
     };
   }
@@ -32,7 +28,6 @@ export function validateProviderId(id: string): {
   if (id.startsWith('-') || id.endsWith('-')) {
     return {
       isValid: false,
-      isSupported: false,
       message: '提供商 ID 不能以连字符开头或结尾',
     };
   }
@@ -41,7 +36,6 @@ export function validateProviderId(id: string): {
   if (id.includes('--')) {
     return {
       isValid: false,
-      isSupported: false,
       message: '提供商 ID 不能包含连续的连字符',
     };
   }
@@ -50,40 +44,12 @@ export function validateProviderId(id: string): {
   if (id.length < 2 || id.length > 50) {
     return {
       isValid: false,
-      isSupported: false,
       message: '提供商 ID 长度应在 2-50 个字符之间',
-    };
-  }
-
-  // 检查是否为 Portkey 官方支持的提供商
-  const supportedProvider = PROVIDER_PRESETS.find(p => p.id === id);
-  if (supportedProvider) {
-    return {
-      isValid: true,
-      isSupported: true,
-      message: `✓ 这是 Portkey 官方支持的提供商：${supportedProvider.name}`,
-    };
-  }
-
-  // 查找相似的提供商 ID
-  const similarProvider = PROVIDER_PRESETS.find(p => 
-    p.id.includes(id) || id.includes(p.id) || 
-    p.name.toLowerCase().includes(id.toLowerCase())
-  );
-
-  if (similarProvider) {
-    return {
-      isValid: true,
-      isSupported: false,
-      message: '⚠️ 这不是 Portkey 官方支持的提供商 ID',
-      suggestion: `建议使用官方支持的 ID：${similarProvider.id} (${similarProvider.name})`,
     };
   }
 
   return {
     isValid: true,
-    isSupported: false,
-    message: '⚠️ 这不是 Portkey 官方支持的提供商 ID，请确保配置正确',
   };
 }
 

@@ -56,11 +56,6 @@ export interface Model {
   modelAttributes?: ModelAttributes | null;
   promptConfig?: PromptConfig | null;
   virtualKeyCount?: number;
-  routingGateway?: {
-    id: string;
-    name: string;
-    url: string;
-  } | null;
   createdAt: number;
   updatedAt: number;
 }

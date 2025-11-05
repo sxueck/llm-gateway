@@ -143,7 +143,6 @@ export default {
     batchAdd: '批量添加',
     batchAddTitle: '批量添加模型',
     testModel: '模型测试',
-    routingGateway: '路由网关',
     notConfigured: '未配置',
     virtualKeyCount: '绑定密钥数',
     deleteConfirm: '确定删除此模型吗？',

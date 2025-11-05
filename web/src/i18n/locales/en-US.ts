@@ -142,7 +142,6 @@ export default {
     batchAdd: 'Batch Add',
     batchAddTitle: 'Batch Add Models',
     testModel: 'Test Model',
-    routingGateway: 'Routing Gateway',
     notConfigured: 'Not Configured',
     virtualKeyCount: 'Virtual Key Count',
     deleteConfirm: 'Are you sure you want to delete this model?',

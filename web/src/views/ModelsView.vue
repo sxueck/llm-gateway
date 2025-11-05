@@ -298,21 +298,6 @@ const columns = computed(() => [
   { title: t('models.provider'), key: 'providerName' },
   { title: t('models.modelId'), key: 'modelIdentifier' },
   {
-    title: t('models.routingGateway'),
-    key: 'routingGateway',
-    render: (row: Model) => {
-      if (row.isVirtual) {
-        return h('span', { style: { color: '#999' } }, '-');
-      }
-      if (row.routingGateway) {
-        return h(NTag, { type: 'success', size: 'small' }, {
-          default: () => row.routingGateway!.name
-        });
-      }
-      return h('span', { style: { color: '#999' } }, t('models.notConfigured'));
-    },
-  },
-  {
     title: t('common.status'),
     key: 'enabled',
     render: (row: Model) => h(NTag, { type: row.enabled ? 'success' : 'default' }, { default: () => row.enabled ? t('common.enabled') : t('common.disabled') }),
