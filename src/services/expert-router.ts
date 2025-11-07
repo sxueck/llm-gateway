@@ -259,6 +259,19 @@ export class ExpertRouter {
       classificationRequest.max_tokens = classifierConfig.max_tokens || DEFAULT_MAX_TOKENS;
     }
 
+    // 添加结构化输出支持
+    if (classifierConfig.enable_structured_output) {
+      classificationRequest.response_format = { type: 'json_object' };
+      
+      // 确保系统提示词包含 JSON 输出指引
+      if (!systemMessage.toLowerCase().includes('json')) {
+        memoryLogger.warn(
+          '启用结构化输出但系统提示词中未包含 "json" 关键词，可能导致 API 错误',
+          'ExpertRouter'
+        );
+      }
+    }
+
     // 使用提取的函数解析分类器模型
     const { provider, model } = await resolveClassifierModel(classifierConfig);
 

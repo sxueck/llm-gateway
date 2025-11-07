@@ -147,6 +147,15 @@
               :placeholder="t('expertRouting.ignoredTagsPlaceholder')"
             />
           </n-form-item>
+
+          <n-form-item :label="t('expertRouting.enableStructuredOutput')">
+            <n-switch v-model:value="formValue.classifier.enable_structured_output" />
+            <template #feedback>
+              <n-text depth="3" style="font-size: 12px">
+                {{ t('expertRouting.enableStructuredOutputHint') }}
+              </n-text>
+            </template>
+          </n-form-item>
         </n-form>
       </div>
 

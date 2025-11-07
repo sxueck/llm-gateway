@@ -22,6 +22,7 @@ export interface ClassifierConfig {
   timeout?: number;
   ignore_system_messages?: boolean;
   max_messages_to_classify?: number;
+  enable_structured_output?: boolean;
 }
 
 export interface FallbackConfig {

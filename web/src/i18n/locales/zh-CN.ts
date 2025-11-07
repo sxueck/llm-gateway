@@ -439,6 +439,8 @@ export default {
     maxMessagesToClassifyHint: '限制分类器只处理最近 N 条消息，0 表示处理全部消息',
     ignoredTags: '忽略标签',
     ignoredTagsPlaceholder: 'code, environment_details, system',
+    enableStructuredOutput: '启用结构化输出',
+    enableStructuredOutputHint: '启用后将添加 response_format: {type: "json_object"} 参数，确保模型返回有效的 JSON 格式。注意：系统提示词中必须包含 "json" 关键词',
     addExpert: '添加专家',
     editExpert: '编辑专家',
     expertCategory: '分类类别',

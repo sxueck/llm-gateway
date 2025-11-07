@@ -88,6 +88,7 @@ export interface ExpertRoutingConfig {
     ignore_system_messages?: boolean;
     max_messages_to_classify?: number;
     ignored_tags?: string[];
+    enable_structured_output?: boolean;
   };
   experts: import('./expert-routing.js').ExpertTarget[];
   fallback?: {

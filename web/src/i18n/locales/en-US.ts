@@ -443,6 +443,8 @@ export default {
     maxMessagesToClassifyHint: 'Limit the classifier to process only the most recent N messages, 0 means process all messages',
     ignoredTags: 'Ignored Tags',
     ignoredTagsPlaceholder: 'code, environment_details, system',
+    enableStructuredOutput: 'Enable Structured Output',
+    enableStructuredOutputHint: 'When enabled, will add response_format: {type: "json_object"} parameter to ensure the model returns valid JSON format. Note: System prompt must contain "json" keyword',
     addExpert: 'Add Expert',
     editExpert: 'Edit Expert',
     expertCategory: 'Category',
