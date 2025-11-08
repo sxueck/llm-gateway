@@ -340,12 +340,21 @@ const virtualKeyOptions = computed(() => {
 });
 
 const modelOptions = computed(() => {
-  return modelStore.models
+  const uniqueModels = new Map<string, { label: string; value: string }>();
+  
+  modelStore.models
     .filter(m => m.enabled)
-    .map(m => ({
-      label: m.name,
-      value: m.modelIdentifier,
-    }));
+    .forEach(m => {
+      const key = `${m.providerName}-${m.name}`;
+      if (!uniqueModels.has(key)) {
+        uniqueModels.set(key, {
+          label: `${m.providerName} (${m.name})`,
+          value: m.modelIdentifier,
+        });
+      }
+    });
+  
+  return Array.from(uniqueModels.values());
 });
 
 const templateOptions = [

@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import { providerDb, modelDb, expertRoutingConfigDb, expertRoutingLogDb } from '../db/index.js';
+import { providerDb, modelDb, expertRoutingConfigDb, expertRoutingLogDb, routingConfigDb } from '../db/index.js';
 import { memoryLogger } from './logger.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { ExpertRoutingConfig } from '../types/index.js';
@@ -68,14 +68,66 @@ async function resolveClassifierModel(
 
   if (classifierConfig.type === 'virtual') {
     const virtualModel = await modelDb.getById(classifierConfig.model_id!);
-    if (!virtualModel || !virtualModel.provider_id) {
-      throw new Error(`Classifier virtual model not found or has no provider: ${classifierConfig.model_id}`);
+    if (!virtualModel) {
+      throw new Error(`Classifier virtual model not found: ${classifierConfig.model_id}`);
     }
-    provider = await providerDb.getById(virtualModel.provider_id);
-    if (!provider) {
-      throw new Error('Classifier provider not found');
+    
+    // 如果虚拟模型有专家路由配置，则不能用作分类器（会导致循环依赖）
+    if (virtualModel.expert_routing_id) {
+      throw new Error(
+        `Classifier virtual model "${virtualModel.name}" (${classifierConfig.model_id}) uses expert routing and cannot be used as a classifier. ` +
+        `Please select a real model or a virtual model with a direct provider.`
+      );
     }
-    model = virtualModel.model_identifier;
+    
+    // 如果虚拟模型使用负载均衡路由配置，需要解析路由配置获取实际的 provider
+    if (virtualModel.routing_config_id) {
+      const routingConfig = await routingConfigDb.getById(virtualModel.routing_config_id);
+      if (!routingConfig) {
+        throw new Error(
+          `Routing config not found for classifier virtual model: ${virtualModel.routing_config_id}`
+        );
+      }
+      
+      try {
+        const config = JSON.parse(routingConfig.config);
+        const { selectRoutingTarget } = await import('../routes/proxy/routing.js');
+        const selectedTarget = selectRoutingTarget(config, routingConfig.type, virtualModel.routing_config_id);
+        
+        if (!selectedTarget) {
+          throw new Error(
+            `No available target in routing config for classifier virtual model "${virtualModel.name}"`
+          );
+        }
+        
+        provider = await providerDb.getById(selectedTarget.provider);
+        if (!provider) {
+          throw new Error(
+            `Provider not found for routing target: ${selectedTarget.provider}`
+          );
+        }
+        
+        // 使用路由目标的 model override 或虚拟模型的 model_identifier
+        model = selectedTarget.override_params?.model || virtualModel.model_identifier;
+      } catch (e: any) {
+        throw new Error(
+          `Failed to resolve routing config for classifier virtual model "${virtualModel.name}": ${e.message}`
+        );
+      }
+    } else if (virtualModel.provider_id) {
+      // 虚拟模型有直接的 provider_id
+      provider = await providerDb.getById(virtualModel.provider_id);
+      if (!provider) {
+        throw new Error(`Classifier provider not found for virtual model: ${virtualModel.provider_id}`);
+      }
+      model = virtualModel.model_identifier;
+    } else {
+      // 既没有 provider_id 也没有路由配置，这是一个无效的虚拟模型
+      throw new Error(
+        `Classifier virtual model "${virtualModel.name}" (${classifierConfig.model_id}) has no provider configured. ` +
+        `Please configure a provider for this model or select a different classifier model.`
+      );
+    }
   } else {
     provider = await providerDb.getById(classifierConfig.provider_id!);
     if (!provider) {

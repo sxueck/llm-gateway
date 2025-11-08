@@ -426,7 +426,7 @@ export default {
     systemPromptPlaceholder: 'Enter the system prompt for the classifier, e.g.: You are a professional request classifier that categorizes user requests...',
     systemPromptHint: 'The system prompt will be sent as a system message to the classifier model to guide classification',
     userPromptMarker: 'User Input Marker',
-    userPromptMarkerPlaceholder: 'Enter the marker for user input, e.g.: {{USER_PROMPT}}',
+    userPromptMarkerPlaceholder: 'Enter the marker for user input, e.g.: {USER_PROMPT}',
     userPromptMarkerHint: 'This marker will be replaced with actual user input at runtime and sent as a user message',
     promptConfigMode: 'Prompt Configuration Mode',
     advancedMode: 'Advanced Mode',

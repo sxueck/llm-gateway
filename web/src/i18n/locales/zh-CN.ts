@@ -424,7 +424,7 @@ export default {
     systemPromptPlaceholder: '输入分类器的系统提示词，例如：你是一个专业的请求分类器，需要将用户请求分类为不同的类别...',
     systemPromptHint: '系统提示词将作为 system message 发送给分类器模型，用于指导模型如何进行分类',
     userPromptMarker: '用户输入标记',
-    userPromptMarkerPlaceholder: '输入用户输入的标记位置，例如：{{USER_PROMPT}}',
+    userPromptMarkerPlaceholder: '输入用户输入的标记位置，例如：{USER_PROMPT}',
     userPromptMarkerHint: '此标记将在运行时被替换为实际的用户输入内容，并作为 user message 发送',
     selectModel: '选择模型',
     maxTokens: 'Max Tokens',
