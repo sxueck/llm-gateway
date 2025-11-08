@@ -345,16 +345,20 @@ const modelOptions = computed(() => {
   modelStore.models
     .filter(m => m.enabled)
     .forEach(m => {
-      const key = `${m.providerName}-${m.name}`;
+      // 使用 modelIdentifier 作为唯一键，确保每个模型只出现一次
+      const key = m.modelIdentifier;
       if (!uniqueModels.has(key)) {
         uniqueModels.set(key, {
-          label: `${m.providerName} (${m.name})`,
+          label: `${m.providerName} - ${m.name}`,
           value: m.modelIdentifier,
         });
       }
     });
   
-  return Array.from(uniqueModels.values());
+  // 转换为数组并按 label 排序，确保顺序稳定
+  return Array.from(uniqueModels.values()).sort((a, b) =>
+    a.label.localeCompare(b.label)
+  );
 });
 
 const templateOptions = [
