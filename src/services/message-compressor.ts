@@ -429,76 +429,42 @@ export class MessageCompressor {
 
   /**
    * 分块压缩策略 - 处理超长消息
-   * 将消息分成多个块，每个块独立压缩，避免性能问题
+   * 关键改进：先提取全局指纹，再分块压缩，确保跨块重复内容也能被识别
    */
   private compressInChunks(messages: MessageContent[]): { messages: MessageContent[]; stats: CompressionStats } {
     const startTime = Date.now();
-    const chunks: MessageContent[][] = [];
-    let currentChunk: MessageContent[] = [];
-    let currentLength = 0;
-
-    // 按长度分块
-    for (const msg of messages) {
-      const text = this.extractTextContent(msg.content);
-      const msgLength = text ? text.length : 0;
-
-      if (currentLength + msgLength > this.CHUNK_SIZE && currentChunk.length > 0) {
-        chunks.push(currentChunk);
-        currentChunk = [msg];
-        currentLength = msgLength;
-      } else {
-        currentChunk.push(msg);
-        currentLength += msgLength;
-      }
-    }
-
-    if (currentChunk.length > 0) {
-      chunks.push(currentChunk);
-    }
+    
+    // 保留最后两条消息不压缩
+    const lastTwoMessages = messages.slice(-2);
+    const historyMessages = messages.slice(0, -2);
 
     memoryLogger.info(
-      `超长消息分块处理 | 总消息数: ${messages.length} | 分块数: ${chunks.length}`,
+      `超长消息分块处理 | 总消息数: ${messages.length} | 历史消息: ${historyMessages.length}`,
       'MessageCompressor'
     );
 
-    // 对每个块进行压缩
-    const compressedChunks: MessageContent[] = [];
+
+    const globalFingerprints = this.extractFingerprints(historyMessages);
+    
+    // 统计去重数量
     let totalDuplicates = 0;
-    let totalOriginalTokens = 0;
-    let totalCompressedTokens = 0;
-
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      
-      // 保留最后两条消息不压缩
-      const lastTwoMessages = i === chunks.length - 1 ? chunk.slice(-2) : [];
-      const historyMessages = i === chunks.length - 1 ? chunk.slice(0, -2) : chunk;
-
-      if (historyMessages.length === 0) {
-        compressedChunks.push(...lastTwoMessages);
-        continue;
-      }
-
-      const fingerprints = this.extractFingerprints(historyMessages);
-      const compressedHistory = this.compressHistoryMessages(historyMessages, fingerprints);
-      
-      compressedChunks.push(...compressedHistory, ...lastTwoMessages);
-
-      // 累计统计
-      for (const prints of fingerprints.values()) {
-        if (prints.length > 1) {
-          totalDuplicates += prints.length - 1;
-        }
+    for (const prints of globalFingerprints.values()) {
+      if (prints.length > 1) {
+        totalDuplicates += prints.length - 1;
       }
     }
 
-    totalOriginalTokens = this.estimateTokens(messages);
-    totalCompressedTokens = this.estimateTokens(compressedChunks);
+    // 使用全局指纹压缩所有历史消息
+    const compressedHistory = this.compressHistoryMessages(historyMessages, globalFingerprints);
+    const compressedMessages = [...compressedHistory, ...lastTwoMessages];
+
+    const totalOriginalTokens = this.estimateTokens(messages);
+    const totalCompressedTokens = this.estimateTokens(compressedMessages);
 
     const duration = Date.now() - startTime;
     const stats: CompressionStats = {
       originalMessageCount: messages.length,
-      compressedMessageCount: compressedChunks.length,
+      compressedMessageCount: compressedMessages.length,
       originalTokenEstimate: totalOriginalTokens,
       compressedTokenEstimate: totalCompressedTokens,
       duplicatesFound: totalDuplicates,
@@ -511,7 +477,7 @@ export class MessageCompressor {
       'MessageCompressor'
     );
 
-    return { messages: compressedChunks, stats };
+    return { messages: compressedMessages, stats };
   }
 }
 

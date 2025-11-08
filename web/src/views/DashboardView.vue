@@ -115,7 +115,7 @@
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">路由分类速度</div>
-              <div class="stat-main-value">{{ formatResponseTime(expertRoutingSpeed) }}<span class="stat-unit">ms</span></div>
+              <div class="stat-main-value">{{ formatResponseTime(expertRoutingSpeed) }}<span class="stat-unit">{{ expertRoutingSpeed >= 1000 ? 's' : 'ms' }}</span></div>
               <div class="stat-details">
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">分类次数:</span>
