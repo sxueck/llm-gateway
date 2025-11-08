@@ -32,6 +32,7 @@ export interface VirtualKey {
   rate_limit: number | null;
   cache_enabled: number;
   disable_logging: number;
+  dynamic_compression_enabled: number;
   created_at: number;
   updated_at: number;
 }

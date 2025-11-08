@@ -12,12 +12,33 @@ export const migrations: Migration[] = [
     version: 1,
     name: 'extend_expert_routing_logs_text_fields',
     up: async (conn: Connection) => {
-      await conn.query(`
-        ALTER TABLE expert_routing_logs
-        MODIFY COLUMN original_request MEDIUMTEXT,
-        MODIFY COLUMN classifier_request MEDIUMTEXT,
-        MODIFY COLUMN classifier_response MEDIUMTEXT
-      `);
+      try {
+        const [tables] = await conn.query(`
+          SELECT COLUMN_TYPE
+          FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'expert_routing_logs'
+          AND COLUMN_NAME = 'original_request'
+        `);
+        const result = tables as any[];
+
+        if (result.length > 0 && result[0].COLUMN_TYPE !== 'mediumtext') {
+          console.log('  - 扩展 expert_routing_logs 文本字段为 MEDIUMTEXT');
+          await conn.query(`
+            ALTER TABLE expert_routing_logs
+            MODIFY COLUMN original_request MEDIUMTEXT,
+            MODIFY COLUMN classifier_request MEDIUMTEXT,
+            MODIFY COLUMN classifier_response MEDIUMTEXT
+          `);
+        } else if (result.length > 0) {
+          console.log('  - expert_routing_logs 文本字段已是 MEDIUMTEXT,跳过');
+        } else {
+          console.log('  - expert_routing_logs 表不存在或字段不存在,跳过');
+        }
+      } catch (e: any) {
+        console.error('  - 迁移 v1 执行出错:', e.message);
+        throw e;
+      }
     },
     down: async (conn: Connection) => {
       await conn.query(`
@@ -42,11 +63,14 @@ export const migrations: Migration[] = [
       const result = tables as any[];
 
       if (result[0].count > 0) {
+        console.log('  - 移除 api_requests 的 prompt_cache 相关字段');
         await conn.query(`
           ALTER TABLE api_requests
           DROP COLUMN prompt_cache_hit_tokens,
           DROP COLUMN prompt_cache_write_tokens
         `);
+      } else {
+        console.log('  - prompt_cache 字段不存在,跳过');
       }
     },
     down: async (conn: Connection) => {
@@ -71,16 +95,81 @@ export const migrations: Migration[] = [
       const result = tables as any[];
 
       if (result[0].count === 0) {
+        console.log('  - 添加 providers.protocol 字段');
         await conn.query(`
           ALTER TABLE providers
           ADD COLUMN protocol VARCHAR(20) DEFAULT 'openai' AFTER api_key
         `);
+      } else {
+        console.log('  - providers.protocol 字段已存在,跳过');
       }
     },
     down: async (conn: Connection) => {
       await conn.query(`
         ALTER TABLE providers
         DROP COLUMN protocol
+      `);
+    },
+  },
+  {
+    version: 4,
+    name: 'add_dynamic_compression_to_virtual_keys',
+    up: async (conn: Connection) => {
+      const [tables] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'virtual_keys'
+        AND COLUMN_NAME = 'dynamic_compression_enabled'
+      `);
+      const result = tables as any[];
+
+      if (result[0].count === 0) {
+        console.log('  - 添加 virtual_keys.dynamic_compression_enabled 字段');
+        await conn.query(`
+          ALTER TABLE virtual_keys
+          ADD COLUMN dynamic_compression_enabled TINYINT DEFAULT 0 AFTER disable_logging
+        `);
+      } else {
+        console.log('  - virtual_keys.dynamic_compression_enabled 字段已存在,跳过');
+      }
+    },
+    down: async (conn: Connection) => {
+      await conn.query(`
+        ALTER TABLE virtual_keys
+        DROP COLUMN dynamic_compression_enabled
+      `);
+    },
+  },
+  {
+    version: 5,
+    name: 'add_compression_stats_to_api_requests',
+    up: async (conn: Connection) => {
+      const [tables] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'api_requests'
+        AND COLUMN_NAME = 'compression_original_tokens'
+      `);
+      const result = tables as any[];
+
+      if (result[0].count === 0) {
+        console.log('  - 添加 api_requests 压缩统计字段');
+        await conn.query(`
+          ALTER TABLE api_requests
+          ADD COLUMN compression_original_tokens INT DEFAULT NULL AFTER cache_hit,
+          ADD COLUMN compression_saved_tokens INT DEFAULT NULL AFTER compression_original_tokens
+        `);
+      } else {
+        console.log('  - api_requests 压缩统计字段已存在,跳过');
+      }
+    },
+    down: async (conn: Connection) => {
+      await conn.query(`
+        ALTER TABLE api_requests
+        DROP COLUMN compression_original_tokens,
+        DROP COLUMN compression_saved_tokens
       `);
     },
   },
@@ -99,43 +188,56 @@ export async function getCurrentVersion(conn: Connection): Promise<number> {
     const [rows] = await conn.query('SELECT MAX(version) as version FROM schema_migrations');
     const result = rows as any[];
     if (result.length > 0 && result[0].version !== null) {
+      console.log(`已应用的迁移版本: v${result[0].version}`);
       return result[0].version;
     }
-  } catch (e) {
-    console.error('获取数据库版本失败:', e);
+
+    console.log('未发现已应用的迁移,数据库版本为 v0');
+    return 0;
+  } catch (e: any) {
+    console.error('获取数据库版本失败:', e.message);
+    console.error('错误详情:', e);
+    return 0;
   }
-  return 0;
 }
 
 export async function applyMigrations(conn: Connection): Promise<void> {
-  const currentVersion = await getCurrentVersion(conn);
-  const pendingMigrations = migrations.filter(m => m.version > currentVersion);
+  try {
+    const currentVersion = await getCurrentVersion(conn);
+    console.log(`当前数据库版本: v${currentVersion}`);
 
-  if (pendingMigrations.length === 0) {
-    console.log('数据库已是最新版本');
-    return;
-  }
+    const pendingMigrations = migrations.filter(m => m.version > currentVersion);
 
-  console.log(`发现 ${pendingMigrations.length} 个待应用的迁移`);
-
-  for (const migration of pendingMigrations) {
-    try {
-      console.log(`应用迁移 v${migration.version}: ${migration.name}`);
-      await migration.up(conn);
-
-      await conn.query(
-        'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
-        [migration.version, migration.name, Date.now()]
-      );
-
-      console.log(`迁移 v${migration.version} 应用成功`);
-    } catch (e) {
-      console.error(`迁移 v${migration.version} 应用失败:`, e);
-      throw e;
+    if (pendingMigrations.length === 0) {
+      console.log('数据库已是最新版本');
+      return;
     }
-  }
 
-  console.log('所有迁移应用完成');
+    console.log(`发现 ${pendingMigrations.length} 个待应用的迁移`);
+
+    for (const migration of pendingMigrations) {
+      try {
+        console.log(`应用迁移 v${migration.version}: ${migration.name}`);
+        await migration.up(conn);
+
+        await conn.query(
+          'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+          [migration.version, migration.name, Date.now()]
+        );
+
+        console.log(`迁移 v${migration.version} 应用成功`);
+      } catch (e: any) {
+        console.error(`迁移 v${migration.version} 应用失败:`, e.message);
+        console.error('错误详情:', e);
+        throw e;
+      }
+    }
+
+    console.log('所有迁移应用完成');
+  } catch (e: any) {
+    console.error('迁移系统执行失败:', e.message);
+    throw e;
+  }
 }
 
 export async function rollbackMigration(conn: Connection, targetVersion: number): Promise<void> {

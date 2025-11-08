@@ -19,7 +19,7 @@ function countTokensForText(text: string): number {
   }
 }
 
-function countTokensForMessages(messages: any[]): number {
+export function countTokensForMessages(messages: any[]): number {
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return 0;
   }

@@ -20,6 +20,8 @@ type ApiRequestBuffer = {
   response_body?: string;
   cache_hit?: number;
   request_type?: string;
+  compression_original_tokens?: number;
+  compression_saved_tokens?: number;
 };
 
 export interface Model {
@@ -44,7 +46,7 @@ const BUFFER_FLUSH_INTERVAL = 10000;
 const BUFFER_MAX_SIZE = 200;
 
 function getDisableLoggingCondition(): string {
-  return '(vk.disable_logging IS NULL OR vk.disable_logging = 0)';
+  return '(ar.virtual_key_id IS NULL OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)';
 }
 
 function generateTimeBuckets(startTime: number, endTime: number, intervalMs: number): number[] {
@@ -92,16 +94,28 @@ export async function initDatabase() {
     const connection = await pool.getConnection();
     console.log('[数据库] MySQL 连接成功');
 
+    console.log('[数据库] 开始创建表结构...');
     await createTables();
-    await applyMigrations(connection as any);
+    console.log('[数据库] 表结构创建完成');
+
+    console.log('[数据库] 开始应用数据库迁移...');
+    try {
+      await applyMigrations(connection as any);
+      console.log('[数据库] 数据库迁移完成');
+    } catch (migrationError: any) {
+      console.error('[数据库] 迁移失败:', migrationError.message);
+      console.error('[数据库] 迁移错误详情:', migrationError);
+      throw migrationError;
+    }
 
     connection.release();
     startBufferFlush();
 
     return pool;
   } catch (error: any) {
-    console.error('[数据库] MySQL 连接失败:', error.message);
-    throw new Error(`MySQL 连接失败: ${error.message}`);
+    console.error('[数据库] 初始化失败:', error.message);
+    console.error('[数据库] 错误详情:', error);
+    throw new Error(`数据库初始化失败: ${error.message}`);
   }
 }
 
@@ -133,7 +147,7 @@ async function flushApiRequestBuffer() {
     const placeholders: string[] = [];
 
     for (const request of requests) {
-      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       values.push(
         request.id,
         request.virtual_key_id || null,
@@ -149,6 +163,8 @@ async function flushApiRequestBuffer() {
         request.response_body || null,
         request.cache_hit || 0,
         request.request_type || 'chat',
+        request.compression_original_tokens || null,
+        request.compression_saved_tokens || null,
         now
       );
     }
@@ -159,7 +175,7 @@ async function flushApiRequestBuffer() {
           id, virtual_key_id, provider_id, model,
           prompt_tokens, completion_tokens, total_tokens,
           status, response_time, error_message, request_body, response_body, cache_hit,
-          request_type, created_at
+          request_type, compression_original_tokens, compression_saved_tokens, created_at
         ) VALUES ${placeholders.join(', ')}`,
         values
       );
@@ -213,6 +229,7 @@ async function createTables() {
         name VARCHAR(255) NOT NULL,
         base_url TEXT NOT NULL,
         api_key TEXT NOT NULL,
+        protocol VARCHAR(20) DEFAULT 'openai',
         model_mapping TEXT,
         enabled TINYINT DEFAULT 1,
         created_at BIGINT NOT NULL,
@@ -262,6 +279,7 @@ async function createTables() {
         rate_limit INT,
         cache_enabled TINYINT DEFAULT 0,
         disable_logging TINYINT DEFAULT 0,
+        dynamic_compression_enabled TINYINT DEFAULT 0,
         created_at BIGINT NOT NULL,
         updated_at BIGINT NOT NULL,
         FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
@@ -297,6 +315,8 @@ async function createTables() {
         request_body TEXT,
         response_body TEXT,
         cache_hit TINYINT DEFAULT 0,
+        compression_original_tokens INT DEFAULT NULL,
+        compression_saved_tokens INT DEFAULT NULL,
         request_type VARCHAR(50) DEFAULT 'chat',
         created_at BIGINT NOT NULL,
         FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
@@ -449,8 +469,8 @@ export const providerDb = {
     const conn = await pool.getConnection();
     try {
       await conn.query(
-        'INSERT INTO providers (id, name, base_url, api_key, model_mapping, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [provider.id, provider.name, provider.base_url, provider.api_key, provider.model_mapping || null, provider.enabled, now, now]
+        'INSERT INTO providers (id, name, base_url, api_key, protocol, model_mapping, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [provider.id, provider.name, provider.base_url, provider.api_key, provider.protocol || 'openai', provider.model_mapping || null, provider.enabled, now, now]
       );
       return { ...provider, created_at: now, updated_at: now };
     } finally {
@@ -476,6 +496,10 @@ export const providerDb = {
       if (updates.api_key !== undefined) {
         fields.push('api_key = ?');
         values.push(updates.api_key);
+      }
+      if (updates.protocol !== undefined) {
+        fields.push('protocol = ?');
+        values.push(updates.protocol);
       }
       if (updates.model_mapping !== undefined) {
         fields.push('model_mapping = ?');
@@ -643,8 +667,8 @@ export const virtualKeyDb = {
         `INSERT INTO virtual_keys (
           id, key_value, key_hash, name, provider_id, model_id,
           routing_strategy, model_ids, routing_config,
-          enabled, rate_limit, cache_enabled, disable_logging, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          enabled, rate_limit, cache_enabled, disable_logging, dynamic_compression_enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           vk.id,
           vk.key_value,
@@ -659,6 +683,7 @@ export const virtualKeyDb = {
           vk.rate_limit,
           vk.cache_enabled || 0,
           vk.disable_logging || 0,
+          vk.dynamic_compression_enabled || 0,
           now,
           now
         ]
@@ -787,6 +812,7 @@ export const apiRequestDb = {
 
     const conn = await pool.getConnection();
     try {
+      const loggingCondition = getDisableLoggingCondition();
       const [rows] = await conn.query(
         `SELECT
           COUNT(*) as total_requests,
@@ -799,7 +825,8 @@ export const apiRequestDb = {
           SUM(CASE WHEN ar.cache_hit = 1 THEN 1 ELSE 0 END) as cache_hits,
           0 as cache_saved_tokens
         FROM api_requests ar
-        WHERE ar.created_at >= ? AND ar.created_at <= ?`,
+        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        WHERE ar.created_at >= ? AND ar.created_at <= ? AND ${loggingCondition}`,
         [startTime, endTime]
       );
 
@@ -863,6 +890,7 @@ export const apiRequestDb = {
 
     const conn = await pool.getConnection();
     try {
+      const loggingCondition = getDisableLoggingCondition();
       const [rows] = await conn.query(
         `SELECT
           FLOOR(ar.created_at / ?) * ? as time_bucket,
@@ -874,7 +902,7 @@ export const apiRequestDb = {
           SUM(ar.total_tokens) as total_tokens
         FROM api_requests ar
         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-        WHERE ar.created_at >= ? AND ar.created_at <= ?
+        WHERE ar.created_at >= ? AND ar.created_at <= ? AND ${loggingCondition}
         GROUP BY time_bucket, ar.virtual_key_id, vk.name
         HAVING time_bucket IS NOT NULL
         ORDER BY time_bucket ASC, ar.virtual_key_id ASC`,
@@ -951,13 +979,13 @@ export const apiRequestDb = {
         SELECT COUNT(*) as total
         FROM api_requests ar
         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-        WHERE 1=1 AND ${loggingCondition}
+        WHERE ${loggingCondition}
       `;
       let dataQuery = `
         SELECT ar.*
         FROM api_requests ar
         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-        WHERE 1=1 AND ${loggingCondition}
+        WHERE ${loggingCondition}
       `;
       const params: any[] = [];
 
@@ -1027,7 +1055,10 @@ export const apiRequestDb = {
     const cutoffTime = Date.now() - daysToKeep * 24 * 60 * 60 * 1000;
     const conn = await pool.getConnection();
     try {
-      const [result] = await conn.query('DELETE FROM api_requests WHERE created_at < ?', [cutoffTime]);
+      const [result] = await conn.query(
+        'UPDATE api_requests SET request_body = NULL, response_body = NULL WHERE created_at < ? AND (request_body IS NOT NULL OR response_body IS NOT NULL)',
+        [cutoffTime]
+      );
       return (result as any).affectedRows || 0;
     } finally {
       conn.release();
@@ -1038,6 +1069,7 @@ export const apiRequestDb = {
     const { startTime, endTime } = options;
     const conn = await pool.getConnection();
     try {
+      const loggingCondition = getDisableLoggingCondition();
       const [rows] = await conn.query(
         `SELECT
           ar.model,
@@ -1047,7 +1079,8 @@ export const apiRequestDb = {
           AVG(ar.response_time) as avg_response_time
         FROM api_requests ar
         LEFT JOIN providers p ON ar.provider_id = p.id
-        WHERE ar.created_at >= ? AND ar.created_at <= ? AND ar.model IS NOT NULL
+        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        WHERE ar.created_at >= ? AND ar.created_at <= ? AND ar.model IS NOT NULL AND ${loggingCondition}
         GROUP BY ar.model, p.name
         ORDER BY request_count DESC
         LIMIT 5`,

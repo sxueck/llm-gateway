@@ -83,6 +83,12 @@
               <n-descriptions-item label="输出 Tokens">
                 <n-tag type="default" size="small">{{ selectedRequest.completion_tokens || 0 }}</n-tag>
               </n-descriptions-item>
+              <n-descriptions-item label="压缩前 Tokens" v-if="selectedRequest.compression_original_tokens">
+                <n-tag type="info" size="small">{{ selectedRequest.compression_original_tokens }}</n-tag>
+              </n-descriptions-item>
+              <n-descriptions-item label="压缩节省 Tokens" v-if="selectedRequest.compression_saved_tokens">
+                <n-tag type="success" size="small">{{ selectedRequest.compression_saved_tokens }}</n-tag>
+              </n-descriptions-item>
               <n-descriptions-item label="虚拟密钥 ID" v-if="selectedRequest.virtual_key_id">
                 <n-text code style="word-break: break-all;">{{ selectedRequest.virtual_key_id }}</n-text>
               </n-descriptions-item>
@@ -234,12 +240,18 @@ const columns: DataTableColumns<ApiRequest> = [
   {
     title: 'Tokens',
     key: 'tokens',
-    width: 140,
+    width: 180,
     render: (row) => {
       const items = [
         h('div', { style: 'font-size: 12px; color: #666;' }, `输入: ${row.prompt_tokens || 0}`),
         h('div', { style: 'font-size: 12px; color: #666;' }, `输出: ${row.completion_tokens || 0}`),
       ];
+
+      if (row.compression_saved_tokens && row.compression_saved_tokens > 0) {
+        items.push(
+          h('div', { style: 'font-size: 12px; color: #18a058; font-weight: 500;' }, `节省: ${row.compression_saved_tokens}`)
+        );
+      }
 
       return h(
         NSpace,

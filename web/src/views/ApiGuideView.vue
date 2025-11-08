@@ -374,6 +374,10 @@ const templateOptions = [
     label: '多轮对话',
     value: 'multi-turn-chat',
   },
+  {
+    label: '动态压缩测试',
+    value: 'compression-test',
+  },
 ];
 
 function applyTemplate(templateValue: string | null) {
@@ -408,6 +412,16 @@ function applyTemplate(templateValue: string | null) {
         { role: 'user', content: 'What is 2+2?' },
         { role: 'assistant', content: '2+2 equals 4.' },
         { role: 'user', content: 'What about 3+3?' }
+      ]
+    }, null, 2),
+    'compression-test': JSON.stringify({
+      model,
+      messages: [
+        { role: 'user', content: '请帮我分析以下代码：\n```python\ndef fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)\n\nfor i in range(10):\n    print(fibonacci(i))\n```' },
+        { role: 'assistant', content: '这是一个递归实现的斐波那契数列函数。代码会计算前10个斐波那契数。' },
+        { role: 'user', content: '请帮我分析以下代码：\n```python\ndef fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)\n\nfor i in range(10):\n    print(fibonacci(i))\n```\n这段代码有什么性能问题吗？' },
+        { role: 'assistant', content: '这段代码存在严重的性能问题，因为递归会导致大量重复计算。建议使用动态规划或迭代方式优化。' },
+        { role: 'user', content: '能否提供一个优化版本？' }
       ]
     }, null, 2),
   };

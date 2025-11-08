@@ -16,6 +16,8 @@ export interface ApiRequest {
   response_body: string | null;
   cache_hit: number;
   request_type: string;
+  compression_original_tokens: number | null;
+  compression_saved_tokens: number | null;
 }
 
 export interface ApiRequestListResponse {

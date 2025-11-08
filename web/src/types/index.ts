@@ -73,6 +73,7 @@ export interface VirtualKey {
   rateLimit?: number | null;
   cacheEnabled: boolean;
   disableLogging: boolean;
+  dynamicCompressionEnabled: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -149,6 +150,7 @@ export interface CreateVirtualKeyRequest {
   enabled?: boolean;
   cacheEnabled?: boolean;
   disableLogging?: boolean;
+  dynamicCompressionEnabled?: boolean;
 }
 
 export interface UpdateVirtualKeyRequest {
@@ -162,5 +164,6 @@ export interface UpdateVirtualKeyRequest {
   rateLimit?: number;
   cacheEnabled?: boolean;
   disableLogging?: boolean;
+  dynamicCompressionEnabled?: boolean;
 }
 

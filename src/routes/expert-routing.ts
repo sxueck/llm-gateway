@@ -59,6 +59,98 @@ const updateExpertRoutingSchema = z.object({
   fallback: fallbackConfigSchema,
 });
 
+async function validateModelConfig(config: any, configType: string): Promise<void> {
+  if (config.type === 'virtual') {
+    if (!config.model_id) {
+      throw new Error(`${configType}虚拟模型未指定 model_id`);
+    }
+
+    const virtualModel = await modelDb.getById(config.model_id);
+    if (!virtualModel) {
+      throw new Error(`${configType}虚拟模型不存在: ${config.model_id}`);
+    }
+
+    if (!virtualModel.enabled) {
+      throw new Error(`${configType}虚拟模型 "${virtualModel.name}" 已被禁用`);
+    }
+  } else {
+    if (!config.provider_id) {
+      throw new Error(`${configType}真实模型未指定 provider_id`);
+    }
+    if (!config.model) {
+      throw new Error(`${configType}真实模型未指定 model`);
+    }
+  }
+}
+
+async function validateClassifierConfig(classifier: any): Promise<void> {
+  await validateModelConfig(classifier, '分类器');
+
+  if (classifier.type === 'virtual') {
+    const virtualModel = await modelDb.getById(classifier.model_id);
+
+    if (virtualModel!.expert_routing_id) {
+      throw new Error(
+        `分类器不能使用专家路由虚拟模型 "${virtualModel!.name}"。` +
+        `分类器需要直接调用 LLM API,请使用真实模型或智能路由虚拟模型。`
+      );
+    }
+
+    if (!virtualModel!.routing_config_id && !virtualModel!.provider_id) {
+      throw new Error(
+        `分类器虚拟模型 "${virtualModel!.name}" 没有配置智能路由或供应商。` +
+        `请为该模型配置供应商或智能路由。`
+      );
+    }
+  }
+}
+
+async function validateExpertConfig(expert: any, currentExpertRoutingId?: string): Promise<void> {
+  await validateModelConfig(expert, `专家 "${expert.category}"`);
+
+  if (expert.type === 'virtual') {
+    const virtualModel = await modelDb.getById(expert.model_id);
+
+    if (virtualModel!.expert_routing_id) {
+      if (currentExpertRoutingId && virtualModel!.expert_routing_id === currentExpertRoutingId) {
+        throw new Error(
+          `专家 "${expert.category}" 的虚拟模型 "${virtualModel!.name}" 引用了当前专家路由配置,会导致循环依赖。` +
+          `请选择其他模型。`
+        );
+      }
+    }
+  }
+}
+
+async function validateFallbackConfig(fallback: any, currentExpertRoutingId?: string): Promise<void> {
+  await validateModelConfig(fallback, '降级');
+
+  if (fallback.type === 'virtual') {
+    const virtualModel = await modelDb.getById(fallback.model_id);
+
+    if (virtualModel!.expert_routing_id) {
+      if (currentExpertRoutingId && virtualModel!.expert_routing_id === currentExpertRoutingId) {
+        throw new Error(
+          `降级虚拟模型 "${virtualModel!.name}" 引用了当前专家路由配置,会导致循环依赖。` +
+          `请选择其他模型。`
+        );
+      }
+    }
+  }
+}
+
+async function validateExpertRoutingConfig(config: any, currentExpertRoutingId?: string): Promise<void> {
+  await validateClassifierConfig(config.classifier);
+
+  for (const expert of config.experts) {
+    await validateExpertConfig(expert, currentExpertRoutingId);
+  }
+
+  if (config.fallback) {
+    await validateFallbackConfig(config.fallback, currentExpertRoutingId);
+  }
+}
+
 export async function expertRoutingRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
 
@@ -115,6 +207,8 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         experts: body.experts,
         fallback: body.fallback,
       };
+
+      await validateExpertRoutingConfig(configData);
 
       const configId = nanoid();
       const config = await expertRoutingConfigDb.create({
@@ -183,11 +277,14 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       let configData;
       if (body.classifier || body.experts || body.fallback !== undefined) {
         const currentConfig = JSON.parse(existingConfig.config);
+
         configData = {
           classifier: body.classifier || currentConfig.classifier,
           experts: body.experts || currentConfig.experts,
           fallback: body.fallback !== undefined ? body.fallback : currentConfig.fallback,
         };
+
+        await validateExpertRoutingConfig(configData, id);
       }
 
       await expertRoutingConfigDb.update(id, {

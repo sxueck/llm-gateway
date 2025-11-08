@@ -4,6 +4,7 @@ import { apiRequestDb } from '../../db/index.js';
 import { memoryLogger } from '../../services/logger.js';
 import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse } from '../../utils/request-logger.js';
 import { promptProcessor } from '../../services/prompt-processor.js';
+import { messageCompressor } from '../../services/message-compressor.js';
 import { makeHttpRequest, makeStreamHttpRequest } from './http-client.js';
 import { checkCache, setCacheIfNeeded, getCacheStatus } from './cache.js';
 import { authenticateVirtualKey } from './auth.js';
@@ -70,6 +71,7 @@ export function createProxyHandler() {
     const startTime = Date.now();
     let virtualKeyValue: string | undefined;
     let providerId: string | undefined;
+    let compressionStats: { originalTokens: number; savedTokens: number } | undefined;
 
     try {
       // 反爬虫检测
@@ -146,6 +148,32 @@ export function createProxyHandler() {
             }
           }
         }
+
+        if (virtualKey.dynamic_compression_enabled === 1) {
+          try {
+            const { messages: compressedMessages, stats } = messageCompressor.compressMessages(
+              (request.body as any).messages
+            );
+
+            (request.body as any).messages = compressedMessages;
+
+            compressionStats = {
+              originalTokens: stats.originalTokenEstimate,
+              savedTokens: stats.originalTokenEstimate - stats.compressedTokenEstimate
+            };
+
+            memoryLogger.info(
+              `消息压缩完成 | 虚拟密钥: ${vkDisplay} | 压缩率: ${(stats.compressionRatio * 100).toFixed(1)}% | ` +
+              `Token 节省: ${compressionStats.savedTokens}`,
+              'Proxy'
+            );
+          } catch (compressionError: any) {
+            memoryLogger.error(
+              `消息压缩失败: ${compressionError.message}`,
+              'Proxy'
+            );
+          }
+        }
       }
 
       let requestBody: string | undefined;
@@ -175,7 +203,8 @@ export function createProxyHandler() {
           vkDisplay,
           virtualKey,
           providerId,
-          startTime
+          startTime,
+          compressionStats
         );
       }
 
@@ -187,7 +216,8 @@ export function createProxyHandler() {
         providerId,
         isStreamRequest,
         path,
-        startTime
+        startTime,
+        compressionStats
       );
     } catch (error: any) {
       const duration = Date.now() - startTime;
@@ -220,6 +250,8 @@ export function createProxyHandler() {
             error_message: error.message,
             request_body: truncatedRequest,
             response_body: undefined,
+            compression_original_tokens: compressionStats?.originalTokens,
+            compression_saved_tokens: compressionStats?.savedTokens,
           });
         }
       }
@@ -247,7 +279,8 @@ async function handleStreamRequest(
   vkDisplay: string,
   virtualKey: any,
   providerId: string,
-  startTime: number
+  startTime: number,
+  compressionStats?: { originalTokens: number; savedTokens: number }
 ) {
   memoryLogger.info(
     `流式请求开始: ${path} | virtual key: ${vkDisplay}`,
@@ -309,6 +342,8 @@ async function handleStreamRequest(
       request_body: truncatedRequest,
       response_body: truncatedResponse,
       cache_hit: 0,
+      compression_original_tokens: compressionStats?.originalTokens,
+      compression_saved_tokens: compressionStats?.savedTokens,
     });
 
     return;
@@ -341,6 +376,8 @@ async function handleStreamRequest(
       error_message: streamError.message,
       request_body: truncatedRequest,
       response_body: undefined,
+      compression_original_tokens: compressionStats?.originalTokens,
+      compression_saved_tokens: compressionStats?.savedTokens,
     });
 
     // 流式请求失败时，如果响应已经发送，则不再处理
@@ -357,7 +394,8 @@ async function handleNonStreamRequest(
   providerId: string,
   isStreamRequest: boolean,
   path: string,
-  startTime: number
+  startTime: number,
+  compressionStats?: { originalTokens: number; savedTokens: number }
 ) {
   let fromCache = false;
   const isEmbeddingsRequest = path.startsWith('/v1/embeddings');
@@ -408,6 +446,8 @@ async function handleNonStreamRequest(
       request_body: truncatedRequest,
       response_body: truncatedResponse,
       cache_hit: 1,
+      compression_original_tokens: compressionStats?.originalTokens,
+      compression_saved_tokens: compressionStats?.savedTokens,
     });
 
     memoryLogger.info(
@@ -547,6 +587,8 @@ async function handleNonStreamRequest(
     request_body: truncatedRequest,
     response_body: truncatedResponse,
     cache_hit: fromCache ? 1 : 0,
+    compression_original_tokens: compressionStats?.originalTokens,
+    compression_saved_tokens: compressionStats?.savedTokens,
   });
 
   if (isSuccess) {
