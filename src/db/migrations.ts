@@ -158,7 +158,7 @@ export const migrations: Migration[] = [
         console.log('  - 添加 api_requests 压缩统计字段');
         await conn.query(`
           ALTER TABLE api_requests
-          ADD COLUMN compression_original_tokens INT DEFAULT NULL AFTER cache_hit,
+          ADD COLUMN compression_original_tokens INT DEFAULT NULL AFTER request_type,
           ADD COLUMN compression_saved_tokens INT DEFAULT NULL AFTER compression_original_tokens
         `);
       } else {
