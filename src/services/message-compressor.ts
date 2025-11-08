@@ -3,8 +3,6 @@ import { memoryLogger } from './logger.js';
 import { countTokensForMessages } from './token-counter.js';
 
 // 配置常量
-const MAX_MESSAGE_LENGTH = parseInt(process.env.MAX_MESSAGE_LENGTH || '200000', 10);
-const CHUNK_SIZE = parseInt(process.env.COMPRESSION_CHUNK_SIZE || '20000', 10);
 const MIN_CODE_LENGTH = parseInt(process.env.MIN_CODE_LENGTH || '100', 10);
 const MIN_TEXT_LENGTH = parseInt(process.env.MIN_TEXT_LENGTH || '200', 10);
 
@@ -34,8 +32,6 @@ interface CompressionStats {
 export class MessageCompressor {
   private readonly MIN_CODE_LENGTH = MIN_CODE_LENGTH;
   private readonly MIN_TEXT_LENGTH = MIN_TEXT_LENGTH;
-  private readonly MAX_MESSAGE_LENGTH = MAX_MESSAGE_LENGTH;
-  private readonly CHUNK_SIZE = CHUNK_SIZE;
 
   compressMessages(messages: MessageContent[]): { messages: MessageContent[]; stats: CompressionStats } {
     if (!messages || messages.length < 3) {
@@ -43,20 +39,6 @@ export class MessageCompressor {
         messages,
         stats: this.createEmptyStats(messages.length)
       };
-    }
-
-    // 检查消息长度，使用分块处理策略
-    const totalLength = messages.reduce((sum, msg) => {
-      const text = this.extractTextContent(msg.content);
-      return sum + (text ? text.length : 0);
-    }, 0);
-    
-    if (totalLength > this.MAX_MESSAGE_LENGTH) {
-      memoryLogger.warn(
-        `消息总长度 ${totalLength} 超过限制 ${this.MAX_MESSAGE_LENGTH}，使用分块压缩`,
-        'MessageCompressor'
-      );
-      return this.compressInChunks(messages);
     }
 
     const startTime = Date.now();
@@ -147,7 +129,7 @@ export class MessageCompressor {
         const lastOccurrence = prints[prints.length - 1];
         if (lastOccurrence.messageIndex === index) continue;
 
-        const referenceMsg = `[已压缩: 重复内容见后续消息 #${lastOccurrence.messageIndex + 1}]`;
+        const referenceMsg = `[... #${lastOccurrence.messageIndex + 1}]`;
 
         replacements.push({
           content: currentPrint.content,
@@ -427,58 +409,7 @@ export class MessageCompressor {
     };
   }
 
-  /**
-   * 分块压缩策略 - 处理超长消息
-   * 关键改进：先提取全局指纹，再分块压缩，确保跨块重复内容也能被识别
-   */
-  private compressInChunks(messages: MessageContent[]): { messages: MessageContent[]; stats: CompressionStats } {
-    const startTime = Date.now();
-    
-    // 保留最后两条消息不压缩
-    const lastTwoMessages = messages.slice(-2);
-    const historyMessages = messages.slice(0, -2);
 
-    memoryLogger.info(
-      `超长消息分块处理 | 总消息数: ${messages.length} | 历史消息: ${historyMessages.length}`,
-      'MessageCompressor'
-    );
-
-
-    const globalFingerprints = this.extractFingerprints(historyMessages);
-    
-    // 统计去重数量
-    let totalDuplicates = 0;
-    for (const prints of globalFingerprints.values()) {
-      if (prints.length > 1) {
-        totalDuplicates += prints.length - 1;
-      }
-    }
-
-    // 使用全局指纹压缩所有历史消息
-    const compressedHistory = this.compressHistoryMessages(historyMessages, globalFingerprints);
-    const compressedMessages = [...compressedHistory, ...lastTwoMessages];
-
-    const totalOriginalTokens = this.estimateTokens(messages);
-    const totalCompressedTokens = this.estimateTokens(compressedMessages);
-
-    const duration = Date.now() - startTime;
-    const stats: CompressionStats = {
-      originalMessageCount: messages.length,
-      compressedMessageCount: compressedMessages.length,
-      originalTokenEstimate: totalOriginalTokens,
-      compressedTokenEstimate: totalCompressedTokens,
-      duplicatesFound: totalDuplicates,
-      compressionRatio: totalCompressedTokens / totalOriginalTokens
-    };
-
-    memoryLogger.info(
-      `分块压缩完成 | 原始: ${stats.originalMessageCount} 条 | 压缩后: ${stats.compressedMessageCount} 条 | ` +
-      `去重: ${stats.duplicatesFound} 个 | Token保留率: ${(stats.compressionRatio * 100).toFixed(1)}% | 耗时: ${duration}ms`,
-      'MessageCompressor'
-    );
-
-    return { messages: compressedMessages, stats };
-  }
 }
 
 export const messageCompressor = new MessageCompressor();
