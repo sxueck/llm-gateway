@@ -417,11 +417,50 @@ function applyTemplate(templateValue: string | null) {
     'compression-test': JSON.stringify({
       model,
       messages: [
-        { role: 'user', content: '请帮我分析以下代码：\n```python\ndef fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)\n\nfor i in range(10):\n    print(fibonacci(i))\n```' },
-        { role: 'assistant', content: '这是一个递归实现的斐波那契数列函数。代码会计算前10个斐波那契数。' },
-        { role: 'user', content: '请帮我分析以下代码：\n```python\ndef fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)\n\nfor i in range(10):\n    print(fibonacci(i))\n```\n这段代码有什么性能问题吗？' },
-        { role: 'assistant', content: '这段代码存在严重的性能问题，因为递归会导致大量重复计算。建议使用动态规划或迭代方式优化。' },
-        { role: 'user', content: '能否提供一个优化版本？' }
+        {
+          role: 'user',
+          content: '请帮我分析以下代码：\n```python\ndef fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)\n\nfor i in range(10):\n    print(fibonacci(i))\n```\n这段代码的时间复杂度是多少？'
+        },
+        {
+          role: 'assistant',
+          content: '这是一个递归实现的斐波那契数列函数。时间复杂度是 O(2^n)，因为每次调用会产生两个子调用，形成指数级增长。空间复杂度是 O(n)，取决于递归调用栈的深度。'
+        },
+        {
+          role: 'user',
+          content: '请帮我分析以下代码：\n```python\ndef fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)\n\nfor i in range(10):\n    print(fibonacci(i))\n```\n这段代码有什么性能问题吗？能详细说明一下吗？'
+        },
+        {
+          role: 'assistant',
+          content: '这段代码存在严重的性能问题：\n\n1. **重复计算**：递归会导致大量重复计算。例如计算 fibonacci(5) 时，fibonacci(3) 会被计算多次。\n2. **指数时间复杂度**：随着 n 增大，计算时间呈指数级增长。\n3. **栈溢出风险**：对于较大的 n 值，可能导致递归栈溢出。\n\n建议使用动态规划或迭代方式优化，可以将时间复杂度降低到 O(n)。'
+        },
+        {
+          role: 'user',
+          content: '能否提供一个优化版本？最好包含多种实现方式。'
+        },
+        {
+          role: 'assistant',
+          content: '当然可以！这里提供三种优化方案：\n\n**方案1：动态规划（自底向上）**\n```python\ndef fibonacci_dp(n):\n    if n <= 1:\n        return n\n    dp = [0] * (n + 1)\n    dp[1] = 1\n    for i in range(2, n + 1):\n        dp[i] = dp[i-1] + dp[i-2]\n    return dp[n]\n\nfor i in range(10):\n    print(fibonacci_dp(i))\n```\n\n**方案2：空间优化的迭代**\n```python\ndef fibonacci_iter(n):\n    if n <= 1:\n        return n\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b\n\nfor i in range(10):\n    print(fibonacci_iter(i))\n```\n\n**方案3：记忆化递归**\n```python\ndef fibonacci_memo(n, memo={}):\n    if n in memo:\n        return memo[n]\n    if n <= 1:\n        return n\n    memo[n] = fibonacci_memo(n-1, memo) + fibonacci_memo(n-2, memo)\n    return memo[n]\n\nfor i in range(10):\n    print(fibonacci_memo(i))\n```\n\n这三种方案的时间复杂度都是 O(n)，性能大幅提升。'
+        },
+        {
+          role: 'user',
+          content: '太好了！那么请帮我分析一下这三种方案的优缺点。另外，我还想看看原始代码：\n```python\ndef fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)\n\nfor i in range(10):\n    print(fibonacci(i))\n```\n和优化后的代码在实际运行时的性能差异。'
+        },
+        {
+          role: 'assistant',
+          content: '很好的问题！让我详细对比一下：\n\n**三种优化方案对比：**\n\n1. **动态规划（自底向上）**\n   - 优点：逻辑清晰，易于理解，性能稳定\n   - 缺点：需要 O(n) 的额外空间存储数组\n   - 适用场景：需要保存所有中间结果的情况\n\n2. **空间优化的迭代**\n   - 优点：空间复杂度仅 O(1)，最节省内存\n   - 缺点：只能获取最终结果，无法保留中间值\n   - 适用场景：只需要计算单个斐波那契数\n\n3. **记忆化递归**\n   - 优点：保持递归的简洁性，同时避免重复计算\n   - 缺点：仍有递归调用开销，可能栈溢出\n   - 适用场景：需要多次调用且希望保持代码简洁\n\n**性能测试代码：**\n```python\nimport time\n\ndef benchmark(func, n, name):\n    start = time.time()\n    result = func(n)\n    end = time.time()\n    print(f"{name}: {result}, 耗时: {(end-start)*1000:.4f}ms")\n\nn = 35\nprint(f"计算 fibonacci({n}):")\nbenchmark(fibonacci, n, "原始递归")\nbenchmark(fibonacci_dp, n, "动态规划")\nbenchmark(fibonacci_iter, n, "迭代优化")\nbenchmark(fibonacci_memo, n, "记忆化递归")\n```\n\n**预期性能差异：**\n- 原始递归：约 3000-5000ms（n=35时）\n- 动态规划：约 0.01-0.02ms\n- 迭代优化：约 0.005-0.01ms\n- 记忆化递归：约 0.01-0.02ms\n\n可以看到优化后的方案性能提升了数十万倍！'
+        },
+        {
+          role: 'user',
+          content: '非常详细！现在我想测试一下这些代码。请问如何在实际项目中集成这些优化？另外，我注意到原始代码：\n```python\ndef fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)\n\nfor i in range(10):\n    print(fibonacci(i))\n```\n在某些场景下可能还是有用的，比如教学演示。你觉得呢？'
+        },
+        {
+          role: 'assistant',
+          content: '你说得对！原始递归实现确实有其价值：\n\n**原始递归的适用场景：**\n1. **教学演示**：直观展示递归思想和问题分解\n2. **小规模数据**：当 n < 20 时，性能差异不明显\n3. **算法理解**：帮助理解递归的本质和性能陷阱\n\n**实际项目集成建议：**\n\n```python\nclass FibonacciCalculator:\n    """斐波那契数列计算器 - 支持多种算法\"\"\"\n    \n    def __init__(self, method="iter"):\n        self.method = method\n        self.memo = {}\n    \n    def calculate(self, n):\n        if self.method == "recursive":\n            return self._recursive(n)\n        elif self.method == "dp":\n            return self._dp(n)\n        elif self.method == "memo":\n            return self._memo(n)\n        else:\n            return self._iter(n)\n    \n    def _recursive(self, n):\n        if n <= 1:\n            return n\n        return self._recursive(n-1) + self._recursive(n-2)\n    \n    def _dp(self, n):\n        if n <= 1:\n            return n\n        dp = [0] * (n + 1)\n        dp[1] = 1\n        for i in range(2, n + 1):\n            dp[i] = dp[i-1] + dp[i-2]\n        return dp[n]\n    \n    def _iter(self, n):\n        if n <= 1:\n            return n\n        a, b = 0, 1\n        for _ in range(2, n + 1):\n            a, b = b, a + b\n        return b\n    \n    def _memo(self, n):\n        if n in self.memo:\n            return self.memo[n]\n        if n <= 1:\n            return n\n        self.memo[n] = self._memo(n-1) + self._memo(n-2)\n        return self.memo[n]\n\ncalc = FibonacciCalculator(method="iter")\nfor i in range(10):\n    print(f"F({i}) = {calc.calculate(i)}")\n```\n\n这样可以灵活切换不同实现，既保留了教学价值，又确保了生产环境的性能。'
+        },
+        {
+          role: 'user',
+          content: '完美！最后一个问题：如果我要计算非常大的斐波那契数（比如 n=1000），应该注意什么？'
+        }
       ]
     }, null, 2),
   };
