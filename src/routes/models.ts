@@ -317,7 +317,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
         body: JSON.stringify({
           model: model.model_identifier,
           messages: [{ role: 'user', content: '测试' }],
-          max_tokens: 10,
+          max_tokens: 4096,
           temperature: 0.1,
         }),
         signal: AbortSignal.timeout(30000),

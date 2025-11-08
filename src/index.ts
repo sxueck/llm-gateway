@@ -227,8 +227,6 @@ try {
   console.log(`Server listening on http://localhost:${appConfig.port}`);
   memoryLogger.info(`Server started on port ${appConfig.port}`, 'System');
 
-  await cleanOldApiRequests();
-
   setInterval(cleanOldApiRequests, 24 * 60 * 60 * 1000);
   memoryLogger.info(
     `已启动请求日志自动清理任务，每 24 小时执行一次，保留 ${appConfig.apiRequestLogRetentionDays} 天`,
