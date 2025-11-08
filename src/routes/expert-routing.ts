@@ -29,6 +29,7 @@ const classifierConfigSchema = z.object({
   ignore_system_messages: z.boolean().optional(),
   max_messages_to_classify: z.number().optional(),
   ignored_tags: z.array(z.string()).optional(),
+  enable_structured_output: z.boolean().optional(),
 });
 
 const fallbackConfigSchema = z.object({
