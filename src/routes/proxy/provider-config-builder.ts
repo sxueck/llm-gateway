@@ -28,7 +28,8 @@ export async function buildProviderConfig(
   virtualKey: any,
   virtualKeyValue: string,
   providerId: string,
-  request: FastifyRequest
+  request: FastifyRequest,
+  currentModel?: any
 ): Promise<ProviderConfigResult | ProviderConfigError> {
   const decryptedApiKey = decryptApiKey(provider.api_key);
   const baseUrl = provider.base_url || '';
@@ -75,12 +76,21 @@ export async function buildProviderConfig(
   const isStreamRequest = (request.body as any)?.stream === true;
   const model = (request.body as any)?.model || 'unknown';
 
+  let modelAttributes: any = undefined;
+  if (currentModel?.model_attributes) {
+    try {
+      modelAttributes = JSON.parse(currentModel.model_attributes);
+    } catch (e) {
+    }
+  }
+
   const protocolConfig: ProtocolConfig = {
     provider: normalized.provider,
     apiKey: normalized.apiKey,
     baseUrl: normalized.baseUrl || undefined,
     model,
     protocol: normalized.protocol,
+    modelAttributes,
   };
 
   const redactedApiKey = decryptedApiKey && decryptedApiKey.length > 10

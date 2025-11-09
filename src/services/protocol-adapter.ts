@@ -11,6 +11,7 @@ export interface ProtocolConfig {
   baseUrl?: string;
   model: string;
   protocol?: string;
+  modelAttributes?: any;
 }
 
 export interface ProtocolResponse {
@@ -186,6 +187,13 @@ export class ProtocolAdapter {
     if (options.response_format !== undefined) requestParams.response_format = options.response_format;
     if (options.seed !== undefined) requestParams.seed = options.seed;
 
+    if (config.modelAttributes?.supports_interleaved_thinking) {
+      requestParams.extra_body = {
+        ...requestParams.extra_body,
+        interleaved_thinking_format: true,
+      };
+    }
+
     const response = await client.chat.completions.create(requestParams);
 
     return response as any;
@@ -281,6 +289,13 @@ export class ProtocolAdapter {
     if (options.tool_choice !== undefined) requestParams.tool_choice = options.tool_choice;
     if (options.response_format !== undefined) requestParams.response_format = options.response_format;
     if (options.seed !== undefined) requestParams.seed = options.seed;
+
+    if (config.modelAttributes?.supports_interleaved_thinking) {
+      requestParams.extra_body = {
+        ...requestParams.extra_body,
+        interleaved_thinking_format: true,
+      };
+    }
 
     const stream = await client.chat.completions.create(requestParams) as unknown as AsyncIterable<any>;
 

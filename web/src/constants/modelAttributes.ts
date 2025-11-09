@@ -109,6 +109,15 @@ export const MODEL_ATTRIBUTE_CONFIGS: AttributeConfig[] = [
     type: 'boolean',
     category: '功能支持',
   },
+  {
+    key: 'supports_interleaved_thinking',
+    label: 'Interleaved Thinking',
+    labelKey: 'modelAttributes.features.interleavedThinking.label',
+    description: '支持 Interleaved Thinking 友好格式',
+    descriptionKey: 'modelAttributes.features.interleavedThinking.description',
+    type: 'boolean',
+    category: '功能支持',
+  },
 ];
 
 export const ATTRIBUTE_CATEGORIES = ['性能参数', '成本参数', '功能支持'] as const;

@@ -60,6 +60,7 @@ export interface ModelAttributes {
   supports_audio_input?: boolean;
   supports_audio_output?: boolean;
   supports_pdf_input?: boolean;
+  supports_interleaved_thinking?: boolean;
   litellm_provider?: string;
   mode?: string;
 }

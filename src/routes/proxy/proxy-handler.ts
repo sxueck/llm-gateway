@@ -110,7 +110,7 @@ export function createProxyHandler() {
       const { provider, providerId: resolvedProviderId, currentModel } = modelResult;
       providerId = resolvedProviderId;
 
-      const configResult = await buildProviderConfig(provider, virtualKey, virtualKeyValue!, providerId, request);
+      const configResult = await buildProviderConfig(provider, virtualKey, virtualKeyValue!, providerId, request, currentModel);
       if ('code' in configResult) {
         return reply.code(configResult.code).send(configResult.body);
       }

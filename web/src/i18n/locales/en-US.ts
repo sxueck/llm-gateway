@@ -190,6 +190,10 @@ export default {
         label: 'Audio Output',
         description: 'Supports generating voice output. Can convert text to natural and fluent audio',
       },
+      interleavedThinking: {
+        label: 'Interleaved Thinking',
+        description: 'Supports Interleaved Thinking friendly format for tool calling scenarios in models like MiniMax',
+      },
     },
   },
   virtualModels: {

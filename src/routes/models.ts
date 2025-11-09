@@ -27,6 +27,7 @@ const modelAttributesSchema = z.object({
   supports_audio_input: z.boolean().optional(),
   supports_audio_output: z.boolean().optional(),
   supports_pdf_input: z.boolean().optional(),
+  supports_interleaved_thinking: z.boolean().optional(),
   litellm_provider: z.string().optional(),
   mode: z.string().optional(),
 }).optional();

@@ -191,6 +191,10 @@ export default {
         label: '音频输出',
         description: '支持生成语音输出，可将文本转换为自然流畅的音频',
       },
+      interleavedThinking: {
+        label: 'Interleaved Thinking',
+        description: '支持 Interleaved Thinking 友好格式，适用于 MiniMax 等模型的工具调用场景',
+      },
     },
   },
   virtualModels: {
