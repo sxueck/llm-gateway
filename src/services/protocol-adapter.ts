@@ -224,10 +224,17 @@ export class ProtocolAdapter {
     if (options.response_format !== undefined) requestParams.response_format = options.response_format;
     if (options.seed !== undefined) requestParams.seed = options.seed;
 
+    if (config.modelAttributes?.supports_reasoning) {
+      requestParams.extra_body = {
+        ...requestParams.extra_body,
+        enable_thinking: true,
+      };
+    }
+
     if (config.modelAttributes?.supports_interleaved_thinking) {
       requestParams.extra_body = {
         ...requestParams.extra_body,
-        interleaved_thinking_format: true,
+        reasoning_split: true,
       };
     }
 
@@ -330,10 +337,17 @@ export class ProtocolAdapter {
     if (options.response_format !== undefined) requestParams.response_format = options.response_format;
     if (options.seed !== undefined) requestParams.seed = options.seed;
 
+    if (config.modelAttributes?.supports_reasoning) {
+      requestParams.extra_body = {
+        ...requestParams.extra_body,
+        enable_thinking: true,
+      };
+    }
+
     if (config.modelAttributes?.supports_interleaved_thinking) {
       requestParams.extra_body = {
         ...requestParams.extra_body,
-        interleaved_thinking_format: true,
+        reasoning_split: true,
       };
     }
 
