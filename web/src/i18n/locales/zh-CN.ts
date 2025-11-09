@@ -452,6 +452,11 @@ export default {
     expertDescription: '专家描述',
     expertDescriptionPlaceholder: '描述此专家的用途',
     expertColor: '显示颜色',
+    capabilities: {
+      title: '专家能力',
+      supportsReasoning: '理解推理过程',
+      supportsToolCalls: '支持工具调用',
+    },
     enableFallback: '启用降级',
     fallbackModel: '降级模型',
     smartRoutingName: '智能路由名称',

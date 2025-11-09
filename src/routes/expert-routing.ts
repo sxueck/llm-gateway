@@ -4,6 +4,11 @@ import { nanoid } from 'nanoid';
 import { expertRoutingConfigDb, expertRoutingLogDb, modelDb, systemConfigDb } from '../db/index.js';
 import { memoryLogger } from '../services/logger.js';
 
+const expertCapabilitiesSchema = z.object({
+  supportsReasoning: z.boolean().optional(),
+  supportsToolCalls: z.boolean().optional(),
+}).optional();
+
 const expertTargetSchema = z.object({
   id: z.string(),
   category: z.string(),
@@ -13,6 +18,7 @@ const expertTargetSchema = z.object({
   model: z.string().optional(),
   description: z.string().optional(),
   color: z.string().optional(),
+  capabilities: expertCapabilitiesSchema,
 });
 
 const classifierConfigSchema = z.object({

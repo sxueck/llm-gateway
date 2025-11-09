@@ -61,6 +61,19 @@
       <n-form-item :label="t('expertRouting.expertColor')">
         <n-color-picker v-model:value="formValue.color" :modes="['hex']" />
       </n-form-item>
+
+      <n-divider />
+
+      <n-form-item :label="t('expertRouting.capabilities.title')">
+        <n-space vertical>
+          <n-checkbox v-model:checked="capabilitiesValue.supportsReasoning">
+            {{ t('expertRouting.capabilities.supportsReasoning') }}
+          </n-checkbox>
+          <n-checkbox v-model:checked="capabilitiesValue.supportsToolCalls">
+            {{ t('expertRouting.capabilities.supportsToolCalls') }}
+          </n-checkbox>
+        </n-space>
+      </n-form-item>
     </n-form>
 
     <n-space justify="end" style="margin-top: 16px">
@@ -83,9 +96,11 @@ import {
   NColorPicker,
   NSpace,
   NButton,
+  NDivider,
+  NCheckbox,
 } from 'naive-ui';
 import { useModelStore } from '@/stores/model';
-import type { ExpertTarget } from '@/api/expert-routing';
+import type { ExpertTarget, ExpertCapabilities } from '@/api/expert-routing';
 
 const { t } = useI18n();
 const modelStore = useModelStore();
@@ -104,6 +119,11 @@ const emit = defineEmits<{
 
 const formValue = ref<ExpertTarget>({ ...props.expert });
 
+const capabilitiesValue = ref<ExpertCapabilities>({
+  supportsReasoning: props.expert.capabilities?.supportsReasoning || false,
+  supportsToolCalls: props.expert.capabilities?.supportsToolCalls || false,
+});
+
 const providerModelOptions = computed(() => {
   if (!formValue.value.provider_id) {
     return [];
@@ -121,11 +141,22 @@ function handleProviderChange() {
 }
 
 function handleSave() {
-  emit('save', formValue.value);
+  const hasAnyCapability =
+    capabilitiesValue.value.supportsReasoning ||
+    capabilitiesValue.value.supportsToolCalls;
+
+  emit('save', {
+    ...formValue.value,
+    capabilities: hasAnyCapability ? capabilitiesValue.value : undefined,
+  });
 }
 
 watch(() => props.expert, (newExpert) => {
   formValue.value = { ...newExpert };
+  capabilitiesValue.value = {
+    supportsReasoning: newExpert.capabilities?.supportsReasoning || false,
+    supportsToolCalls: newExpert.capabilities?.supportsToolCalls || false,
+  };
 }, { deep: true });
 </script>
 

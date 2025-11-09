@@ -5,6 +5,7 @@ import { decryptApiKey } from '../utils/crypto.js';
 import { ExpertRoutingConfig } from '../types/index.js';
 import { ExpertTarget } from '../types/expert-routing.js';
 import { buildChatCompletionsEndpoint } from '../utils/api-endpoint-builder.js';
+import { contextCleaner } from '../utils/context-cleaner.js';
 import crypto from 'crypto';
 
 // 常量定义
@@ -225,6 +226,15 @@ export class ExpertRouter {
       }
 
       throw new Error(`No expert found for category: ${classificationResult.category}`);
+    }
+
+    const previousExpert = this.detectPreviousExpert(messages);
+    if (request.body?.messages) {
+      request.body.messages = contextCleaner.cleanMessagesForExpert(
+        request.body.messages,
+        expert,
+        previousExpert
+      );
     }
 
     const classificationTime = Date.now() - startTime;
@@ -714,6 +724,40 @@ export class ExpertRouter {
     };
 
     return roleMap[role.toLowerCase()] || role;
+  }
+
+  /**
+   * 检测上一轮对话使用的专家类型
+   * @param messages 消息列表
+   * @returns 上一个专家的配置（如果能检测到）
+   */
+  private detectPreviousExpert(messages: ChatMessage[]): ExpertTarget | undefined {
+    const assistantMessages = messages.filter(m => m.role === 'assistant');
+    if (assistantMessages.length === 0) {
+      return undefined;
+    }
+
+    const lastAssistant = assistantMessages[assistantMessages.length - 1];
+    const content = typeof lastAssistant.content === 'string'
+      ? lastAssistant.content
+      : JSON.stringify(lastAssistant.content);
+
+    const hasThinkTags = /<think>[\s\S]*?<\/think>/.test(content);
+    const hasThinkingBlocks = !!(lastAssistant as any).thinking_blocks;
+    const hasReasoningContent = !!(lastAssistant as any).reasoning_content;
+
+    if (hasThinkTags || hasThinkingBlocks || hasReasoningContent) {
+      return {
+        id: 'previous-reasoning-expert',
+        category: 'unknown',
+        type: 'virtual',
+        capabilities: {
+          supportsReasoning: true
+        }
+      };
+    }
+
+    return undefined;
   }
 }
 

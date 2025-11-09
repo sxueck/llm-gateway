@@ -4,11 +4,6 @@
       <n-card :title="t('expertRouting.statistics')" size="small">
         <n-space vertical :size="12">
           <n-statistic :label="t('expertRouting.totalRequests')" :value="statistics.totalRequests" />
-          <n-statistic
-            :label="t('expertRouting.avgClassificationTime')"
-            :value="statistics.avgClassificationTime"
-            suffix="ms"
-          />
         </n-space>
       </n-card>
 

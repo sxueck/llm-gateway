@@ -1,3 +1,8 @@
+export interface ExpertCapabilities {
+  supportsReasoning?: boolean;
+  supportsToolCalls?: boolean;
+}
+
 export interface ExpertTarget {
   id: string;
   category: string;
@@ -7,6 +12,7 @@ export interface ExpertTarget {
   model?: string;
   description?: string;
   color?: string;
+  capabilities?: ExpertCapabilities;
 }
 
 export interface ClassifierConfig {

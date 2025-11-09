@@ -456,6 +456,11 @@ export default {
     expertDescription: 'Expert Description',
     expertDescriptionPlaceholder: 'Describe the purpose of this expert',
     expertColor: 'Display Color',
+    capabilities: {
+      title: 'Expert Capabilities',
+      supportsReasoning: 'Understands reasoning process',
+      supportsToolCalls: 'Supports tool calls',
+    },
     enableFallback: 'Enable Fallback',
     fallbackModel: 'Fallback Model',
     smartRoutingName: 'Smart Routing Name',

@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { FastifyReply } from 'fastify';
 import { memoryLogger } from './logger.js';
 import { extractReasoningFromChoice } from '../utils/request-logger.js';
+import { contextCleaner } from '../utils/context-cleaner.js';
 import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-client.js';
 
 export interface ProtocolConfig {
@@ -382,7 +383,21 @@ export class ProtocolAdapter {
     let toolCalls: any[] = [];
 
     for await (const chunk of stream) {
-      const chunkData = JSON.stringify(chunk);
+      let processedChunk = chunk;
+
+      if (config.modelAttributes?.supports_interleaved_thinking) {
+        if (chunk.choices?.[0]?.delta?.content) {
+          processedChunk = {
+            ...chunk,
+            choices: [{
+              ...chunk.choices[0],
+              delta: contextCleaner.removeThinkTagsFromDelta(chunk.choices[0].delta)
+            }]
+          };
+        }
+      }
+
+      const chunkData = JSON.stringify(processedChunk);
       const sseData = `data: ${chunkData}\n\n`;
 
       streamChunks.push(sseData);
