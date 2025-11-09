@@ -95,63 +95,6 @@ npm run start:all
 4. (可选) 为虚拟模型配置 Prompt 管理规则，实现 prompt 的动态修改和增强
 5. 在应用中使用虚拟密钥访问 LLM Gateway 的 API
 
-## 技术栈
-
-### 后端
-- **运行时**: Node.js v20+
-- **框架**: Fastify 5.x - 高性能 Web 框架
-- **语言**: TypeScript 5.x
-- **数据库**: SQL.js - 轻量级 SQLite 数据库
-- **认证**: JWT (@fastify/jwt)
-- **日志**: Pino - 高性能日志库
-- **验证**: Zod - TypeScript 优先的模式验证
-- **其他**: Tiktoken (Token 计数)、nanoid (ID 生成)
-
-### 前端
-- **框架**: Vue 3.5+
-- **构建工具**: Vite 6.x
-- **UI 组件库**: Naive UI 2.4+
-- **状态管理**: Pinia 2.3+
-- **路由**: Vue Router 4.5+
-- **HTTP 客户端**: Axios 1.7+
-- **国际化**: Vue i18n 9.14+
-- **图标**: Ionicons 5 & Material Icons
-
-## 项目结构
-
-```
-llm-gateway/
-├── src/                          # 后端源代码
-│   ├── config/                   # 配置管理
-│   ├── db/                       # 数据库操作
-│   ├── routes/                   # API 路由
-│   ├── services/                 # 业务逻辑服务
-│   ├── types/                    # TypeScript 类型定义
-│   ├── utils/                    # 工具函数
-│   └── index.ts                  # 应用入口
-├── web/                          # 前端源代码
-│   ├── src/
-│   │   ├── components/           # Vue 组件
-│   │   ├── views/                # 页面视图
-│   │   ├── stores/               # Pinia 状态管理
-│   │   ├── router/               # 路由配置
-│   │   ├── i18n/                 # 国际化配置
-│   │   ├── utils/                # 工具函数
-│   │   └── main.ts               # 应用入口
-│   └── vite.config.ts            # Vite 配置
-├── docs/                         # 文档
-│   ├── DOCKER_DEPLOYMENT.md      # Docker 部署指南
-│   └── screenshot.md             # 服务截图
-├── scripts/                      # 构建和工具脚本
-├── data/                         # 数据存储目录
-├── portkey-config/               # Portkey 配置文件
-├── docker-compose.yml            # Docker Compose 配置
-├── Dockerfile                    # Docker 镜像配置
-├── package.json                  # 后端依赖配置
-├── tsconfig.json                 # TypeScript 配置
-└── README.md                     # 本文件
-```
-
 ## 开发指南
 
 ### 开发环境设置

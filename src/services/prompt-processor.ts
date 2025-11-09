@@ -77,6 +77,14 @@ export class PromptProcessor {
       context
     );
 
+    if (newContent.trim().length === 0) {
+      memoryLogger.warn(
+        'Replace 操作后内容为空，保留原始消息',
+        'PromptProcessor'
+      );
+      return messages;
+    }
+
     memoryLogger.debug(
       `Replace 操作完成 | 原始长度: ${userPromptText.length} | 新长度: ${newContent.length}`,
       'PromptProcessor'
@@ -103,6 +111,14 @@ export class PromptProcessor {
     );
 
     const newContent = `${prependContent}\n\n${userPromptText}`;
+
+    if (newContent.trim().length === 0) {
+      memoryLogger.warn(
+        'Prepend 操作后内容为空，保留原始消息',
+        'PromptProcessor'
+      );
+      return messages;
+    }
 
     memoryLogger.debug(
       `Prepend 操作完成 | 添加长度: ${prependContent.length} | 总长度: ${newContent.length}`,
@@ -132,6 +148,14 @@ export class PromptProcessor {
       userPromptText,
       context
     );
+
+    if (systemContent.trim().length === 0) {
+      memoryLogger.warn(
+        'System 操作后内容为空，保留原始消息',
+        'PromptProcessor'
+      );
+      return messages;
+    }
 
     const existingSystemIndex = messages.findIndex(m => m.role === 'system');
 

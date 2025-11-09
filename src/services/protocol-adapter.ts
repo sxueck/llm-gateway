@@ -86,18 +86,53 @@ export class ProtocolAdapter {
     if (protocol) {
       return protocol.toLowerCase();
     }
-    
+
     const normalized = provider.toLowerCase();
-    
+
     if (normalized === 'claude' || normalized.includes('anthropic')) {
       return 'anthropic';
     }
-    
+
     if (normalized === 'gemini' || normalized.includes('google')) {
       return 'google';
     }
-    
+
     return 'openai';
+  }
+
+  private validateAndCleanMessages(messages: any[]): any[] {
+    if (!Array.isArray(messages) || messages.length === 0) {
+      throw new Error('messages 数组不能为空');
+    }
+
+    const cleanedMessages = messages.filter(msg => {
+      if (!msg || typeof msg !== 'object') {
+        return false;
+      }
+
+      const content = msg.content;
+
+      if (typeof content === 'string') {
+        return content.trim().length > 0;
+      }
+
+      if (Array.isArray(content)) {
+        return content.some(part => {
+          if (part.type === 'text' && part.text) {
+            return part.text.trim().length > 0;
+          }
+          return part.type === 'image_url' || part.type === 'image';
+        });
+      }
+
+      return false;
+    });
+
+    if (cleanedMessages.length === 0) {
+      throw new Error('过滤后的 messages 数组为空，所有消息内容均为空白');
+    }
+
+    return cleanedMessages;
   }
 
   private convertToAnthropicFormat(messages: any[]): { system?: string; messages: any[] } {
@@ -162,9 +197,11 @@ export class ProtocolAdapter {
   ): Promise<ProtocolResponse> {
     const client = this.getOpenAIClient(config);
 
+    const cleanedMessages = this.validateAndCleanMessages(messages);
+
     const requestParams: any = {
       model: config.model,
-      messages,
+      messages: cleanedMessages,
       stream: false,
     };
 
@@ -205,7 +242,8 @@ export class ProtocolAdapter {
     options: any
   ): Promise<ProtocolResponse> {
     const client = this.getAnthropicClient(config);
-    const { system, messages: anthropicMessages } = this.convertToAnthropicFormat(messages);
+    const cleanedMessages = this.validateAndCleanMessages(messages);
+    const { system, messages: anthropicMessages } = this.convertToAnthropicFormat(cleanedMessages);
 
     const requestParams: any = {
       model: config.model,
@@ -266,9 +304,11 @@ export class ProtocolAdapter {
   ): Promise<StreamTokenUsage> {
     const client = this.getOpenAIClient(config);
 
+    const cleanedMessages = this.validateAndCleanMessages(messages);
+
     const requestParams: any = {
       model: config.model,
-      messages,
+      messages: cleanedMessages,
       stream: true,
       stream_options: { include_usage: true },
     };
@@ -358,7 +398,8 @@ export class ProtocolAdapter {
     reply: FastifyReply
   ): Promise<StreamTokenUsage> {
     const client = this.getAnthropicClient(config);
-    const { system, messages: anthropicMessages } = this.convertToAnthropicFormat(messages);
+    const cleanedMessages = this.validateAndCleanMessages(messages);
+    const { system, messages: anthropicMessages } = this.convertToAnthropicFormat(cleanedMessages);
 
     const requestParams: any = {
       model: config.model,

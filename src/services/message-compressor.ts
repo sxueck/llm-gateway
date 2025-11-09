@@ -152,10 +152,20 @@ export class MessageCompressor {
         }
       }
 
-      compressedMessages.push({
-        ...msg,
-        content: compressionCount > 0 ? compressedContent : msg.content
-      });
+      const finalContent = compressionCount > 0 ? compressedContent : msg.content;
+
+      if (typeof finalContent === 'string' && finalContent.trim().length === 0) {
+        memoryLogger.warn(
+          `压缩后消息 #${index + 1} 内容为空，保留原始消息`,
+          'MessageCompressor'
+        );
+        compressedMessages.push(msg);
+      } else {
+        compressedMessages.push({
+          ...msg,
+          content: finalContent
+        });
+      }
     });
 
     return compressedMessages;
