@@ -1,6 +1,6 @@
 # LLM Gateway
 
-A lightweight LLM gateway management system based on Portkey Gateway, providing an intuitive Web UI interface for managing multiple LLM providers, virtual keys, routing configurations, and model management.
+A lightweight LLM gateway management system providing an intuitive Web UI interface for managing multiple LLM providers, virtual keys, routing configurations, and model management.
 
 <img width="2290" height="1363" alt="Screenshot" src="https://github.com/user-attachments/assets/662d8585-b523-40a5-bb2a-33ad570f0d30" />
 
@@ -24,7 +24,7 @@ For more screenshots, see [Service Screenshots](./docs/screenshot.md)
 
 - Node.js v20 or higher
 - npm / cnpm
-- Docker (optional, for running Portkey Gateway)
+- Docker (optional)
 
 ### Installation
 
@@ -56,7 +56,6 @@ Edit the `.env` file:
 PORT=3000
 NODE_ENV=development
 DB_PATH=./data/gateway.db
-PORTKEY_CONFIG_PATH=./portkey-config/conf.json
 LOG_LEVEL=info
 JWT_SECRET=your-secret-key-change-this-in-production
 ```
@@ -81,9 +80,6 @@ Please refer to [Docker Deployment Guide](./docs/DOCKER_DEPLOYMENT.md)
 
 - **Web UI**: http://localhost:5173
 - **Backend API**: http://localhost:3000
-- **Portkey Gateway**: http://localhost:8787 (local access only, not exposed externally)
-
-**Security Note**: Portkey Gateway is configured to listen only on the local loopback address (127.0.0.1). External networks cannot access it directly. All API requests must be forwarded through LLM Gateway to ensure unified authentication and access control.
 
 ### Quick Usage
 
@@ -102,7 +98,6 @@ See the `.env.example` file for details. Main configuration items:
 | PORT | Backend service port | 3000 |
 | NODE_ENV | Runtime environment | development |
 | DB_PATH | Database file path | ./data/gateway.db |
-| PORTKEY_CONFIG_PATH | Portkey config file path | ./portkey-config/conf.json |
 | LOG_LEVEL | Log level | info |
 | JWT_SECRET | JWT secret (at least 32 characters) | Required |
 | PUBLIC_URL | Public access URL | http://localhost:3000 |
@@ -126,6 +121,5 @@ MIT License - See [LICENSE](./LICENSE) file for details
 
 ## Acknowledgments
 
-- [Portkey Gateway](https://github.com/Portkey-AI/gateway) - Core gateway service
 - [Naive UI](https://www.naiveui.com/) - UI component library
 - [Fastify](https://www.fastify.io/) - High-performance web framework

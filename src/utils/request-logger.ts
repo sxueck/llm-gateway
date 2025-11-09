@@ -3,15 +3,41 @@ const MAX_BODY_LENGTH = 10000;
 export interface ReasoningExtraction {
   reasoningContent: string;
   thinkingBlocks: any[];
+  toolCalls?: any[];
+}
+
+export function buildFullRequestBody(
+  requestBody: any,
+  modelAttributes?: any
+): any {
+  const fullRequest: any = { ...requestBody };
+
+  if (modelAttributes?.supports_reasoning) {
+    fullRequest.extra_body = {
+      ...fullRequest.extra_body,
+      enable_thinking: true,
+    };
+  }
+
+  if (modelAttributes?.supports_interleaved_thinking) {
+    fullRequest.extra_body = {
+      ...fullRequest.extra_body,
+      reasoning_split: true,
+    };
+  }
+
+  return fullRequest;
 }
 
 export function extractReasoningFromChoice(
   choice: any,
   existingReasoning: string = '',
-  existingBlocks: any[] = []
+  existingBlocks: any[] = [],
+  existingToolCalls: any[] = []
 ): ReasoningExtraction {
   let reasoningContent = existingReasoning;
   const thinkingBlocks = [...existingBlocks];
+  const toolCalls = [...existingToolCalls];
 
   if (choice.delta?.reasoning_content) {
     reasoningContent += choice.delta.reasoning_content;
@@ -36,7 +62,39 @@ export function extractReasoningFromChoice(
     }
   }
 
-  return { reasoningContent, thinkingBlocks };
+  if (choice.delta?.tool_calls && Array.isArray(choice.delta.tool_calls)) {
+    for (const deltaToolCall of choice.delta.tool_calls) {
+      const index = deltaToolCall.index;
+      if (index !== undefined) {
+        if (!toolCalls[index]) {
+          toolCalls[index] = {
+            id: deltaToolCall.id || '',
+            type: deltaToolCall.type || 'function',
+            function: {
+              name: deltaToolCall.function?.name || '',
+              arguments: deltaToolCall.function?.arguments || ''
+            }
+          };
+        } else {
+          if (deltaToolCall.id) toolCalls[index].id = deltaToolCall.id;
+          if (deltaToolCall.function?.name) toolCalls[index].function.name = deltaToolCall.function.name;
+          if (deltaToolCall.function?.arguments) {
+            toolCalls[index].function.arguments += deltaToolCall.function.arguments;
+          }
+        }
+      }
+    }
+  }
+
+  if (choice.message?.tool_calls && Array.isArray(choice.message.tool_calls)) {
+    toolCalls.push(...choice.message.tool_calls);
+  }
+
+  return {
+    reasoningContent,
+    thinkingBlocks,
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined
+  };
 }
 
 export function truncateRequestBody(body: any): string {
@@ -44,25 +102,32 @@ export function truncateRequestBody(body: any): string {
 
   try {
     const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
-    
+
     if (bodyStr.length <= MAX_BODY_LENGTH) {
       return bodyStr;
     }
 
     try {
       const parsed = typeof body === 'string' ? JSON.parse(body) : body;
-      
+
       const truncated: any = {};
-      
-      if (parsed.model) truncated.model = parsed.model;
-      if (parsed.stream !== undefined) truncated.stream = parsed.stream;
-      if (parsed.temperature !== undefined) truncated.temperature = parsed.temperature;
-      if (parsed.max_tokens !== undefined) truncated.max_tokens = parsed.max_tokens;
-      
+
+      for (const key in parsed) {
+        if (key === 'messages') {
+          continue;
+        } else if (key === 'tools') {
+          truncated.tools = `[${parsed.tools.length} 个工具定义]`;
+        } else if (key === 'functions') {
+          truncated.functions = `[${parsed.functions.length} 个函数定义]`;
+        } else {
+          truncated[key] = parsed[key];
+        }
+      }
+
       if (parsed.messages && Array.isArray(parsed.messages)) {
         truncated.messages = parsed.messages.map((msg: any) => {
           const truncatedMsg: any = { role: msg.role };
-          
+
           if (typeof msg.content === 'string') {
             truncatedMsg.content = msg.content.length > 1000
               ? msg.content.substring(0, 1000) + '...[truncated]'
@@ -82,23 +147,15 @@ export function truncateRequestBody(body: any): string {
           } else {
             truncatedMsg.content = msg.content;
           }
-          
+
           if (msg.name) truncatedMsg.name = msg.name;
           if (msg.tool_calls) truncatedMsg.tool_calls = '[工具调用已截断]';
           if (msg.tool_call_id) truncatedMsg.tool_call_id = msg.tool_call_id;
-          
+
           return truncatedMsg;
         });
       }
-      
-      if (parsed.tools) {
-        truncated.tools = `[${parsed.tools.length} 个工具定义]`;
-      }
-      
-      if (parsed.functions) {
-        truncated.functions = `[${parsed.functions.length} 个函数定义]`;
-      }
-      
+
       const result = JSON.stringify(truncated);
       return result.length <= MAX_BODY_LENGTH
         ? result
@@ -208,6 +265,7 @@ export function accumulateStreamResponse(chunks: string[]): string {
     const messages: any[] = [];
     let reasoningContent = '';
     let thinkingBlocks: any[] = [];
+    let toolCalls: any[] = [];
     let lastUsage: any = null;
     let model = '';
     let id = '';
@@ -235,9 +293,10 @@ export function accumulateStreamResponse(chunks: string[]): string {
               messages.push(choice.delta.content);
             }
 
-            const extraction = extractReasoningFromChoice(choice, reasoningContent, thinkingBlocks);
+            const extraction = extractReasoningFromChoice(choice, reasoningContent, thinkingBlocks, toolCalls);
             reasoningContent = extraction.reasoningContent;
             thinkingBlocks = extraction.thinkingBlocks;
+            toolCalls = extraction.toolCalls || [];
           }
 
           if (parsed.usage) {
@@ -266,6 +325,10 @@ export function accumulateStreamResponse(chunks: string[]): string {
 
     if (thinkingBlocks.length > 0) {
       accumulated.choices[0].message.thinking_blocks = thinkingBlocks;
+    }
+
+    if (toolCalls.length > 0) {
+      accumulated.choices[0].message.tool_calls = toolCalls;
     }
 
     if (lastUsage) {

@@ -2,7 +2,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { nanoid } from 'nanoid';
 import { apiRequestDb } from '../../db/index.js';
 import { memoryLogger } from '../../services/logger.js';
-import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse } from '../../utils/request-logger.js';
+import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse, buildFullRequestBody } from '../../utils/request-logger.js';
 import { promptProcessor } from '../../services/prompt-processor.js';
 import { messageCompressor } from '../../services/message-compressor.js';
 import { makeHttpRequest, makeStreamHttpRequest } from './http-client.js';
@@ -72,6 +72,7 @@ export function createProxyHandler() {
     let virtualKeyValue: string | undefined;
     let providerId: string | undefined;
     let compressionStats: { originalTokens: number; savedTokens: number } | undefined;
+    let currentModel: any | undefined;
 
     try {
       // 反爬虫检测
@@ -107,8 +108,9 @@ export function createProxyHandler() {
         return reply.code(modelResult.code).send(modelResult.body);
       }
 
-      const { provider, providerId: resolvedProviderId, currentModel } = modelResult;
+      const { provider, providerId: resolvedProviderId, currentModel: resolvedModel } = modelResult;
       providerId = resolvedProviderId;
+      currentModel = resolvedModel;
 
       const configResult = await buildProviderConfig(provider, virtualKey, virtualKeyValue!, providerId, request, currentModel);
       if ('code' in configResult) {
@@ -204,7 +206,8 @@ export function createProxyHandler() {
           virtualKey,
           providerId,
           startTime,
-          compressionStats
+          compressionStats,
+          currentModel
         );
       }
 
@@ -217,7 +220,8 @@ export function createProxyHandler() {
         isStreamRequest,
         path,
         startTime,
-        compressionStats
+        compressionStats,
+        currentModel
       );
     } catch (error: any) {
       const duration = Date.now() - startTime;
@@ -233,7 +237,17 @@ export function createProxyHandler() {
         const virtualKey = await virtualKeyDb.getByKeyValue(virtualKeyValue);
         if (virtualKey) {
           const shouldLogBody = shouldLogRequestBody(virtualKey);
-          const truncatedRequest = shouldLogBody ? truncateRequestBody(request.body) : undefined;
+
+          let modelAttributes: any = undefined;
+          if (currentModel?.model_attributes) {
+            try {
+              modelAttributes = JSON.parse(currentModel.model_attributes);
+            } catch (e) {
+            }
+          }
+
+          const fullRequestBody = buildFullRequestBody(request.body, modelAttributes);
+          const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
 
           const tokenCount = await calculateTokensIfNeeded(0, request.body);
 
@@ -280,7 +294,8 @@ async function handleStreamRequest(
   virtualKey: any,
   providerId: string,
   startTime: number,
-  compressionStats?: { originalTokens: number; savedTokens: number }
+  compressionStats?: { originalTokens: number; savedTokens: number },
+  currentModel?: any
 ) {
   memoryLogger.info(
     `流式请求开始: ${path} | virtual key: ${vkDisplay}`,
@@ -297,6 +312,9 @@ async function handleStreamRequest(
       frequency_penalty: (request.body as any)?.frequency_penalty,
       presence_penalty: (request.body as any)?.presence_penalty,
       stop: (request.body as any)?.stop,
+      tools: (request.body as any)?.tools,
+      tool_choice: (request.body as any)?.tool_choice,
+      parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
     };
 
     const tokenUsage = await makeStreamHttpRequest(
@@ -325,7 +343,17 @@ async function handleStreamRequest(
     );
 
     const shouldLogBody = shouldLogRequestBody(virtualKey);
-    const truncatedRequest = shouldLogBody ? truncateRequestBody(request.body) : undefined;
+
+    let modelAttributes: any = undefined;
+    if (currentModel?.model_attributes) {
+      try {
+        modelAttributes = JSON.parse(currentModel.model_attributes);
+      } catch (e) {
+      }
+    }
+
+    const fullRequestBody = buildFullRequestBody(request.body, modelAttributes);
+    const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
     const truncatedResponse = shouldLogBody ? accumulateStreamResponse(tokenUsage.streamChunks) : undefined;
 
     await apiRequestDb.create({
@@ -359,7 +387,17 @@ async function handleStreamRequest(
     );
 
     const shouldLogBody = shouldLogRequestBody(virtualKey);
-    const truncatedRequest = shouldLogBody ? truncateRequestBody(request.body) : undefined;
+
+    let modelAttributes: any = undefined;
+    if (currentModel?.model_attributes) {
+      try {
+        modelAttributes = JSON.parse(currentModel.model_attributes);
+      } catch (e) {
+      }
+    }
+
+    const fullRequestBody = buildFullRequestBody(request.body, modelAttributes);
+    const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
 
     const tokenCount = await calculateTokensIfNeeded(0, request.body);
 
@@ -395,7 +433,8 @@ async function handleNonStreamRequest(
   isStreamRequest: boolean,
   path: string,
   startTime: number,
-  compressionStats?: { originalTokens: number; savedTokens: number }
+  compressionStats?: { originalTokens: number; savedTokens: number },
+  currentModel?: any
 ) {
   let fromCache = false;
   const isEmbeddingsRequest = path.startsWith('/v1/embeddings');
@@ -422,7 +461,17 @@ async function handleNonStreamRequest(
 
     const duration = Date.now() - startTime;
     const shouldLogBody = shouldLogRequestBody(virtualKey);
-    const truncatedRequest = shouldLogBody ? truncateRequestBody(request.body) : undefined;
+
+    let modelAttributes: any = undefined;
+    if (currentModel?.model_attributes) {
+      try {
+        modelAttributes = JSON.parse(currentModel.model_attributes);
+      } catch (e) {
+      }
+    }
+
+    const fullRequestBody = buildFullRequestBody(request.body, modelAttributes);
+    const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
     const truncatedResponse = shouldLogBody ? truncateResponseBody(cacheResult.cached.response) : undefined;
 
     const usageTokens = cacheResult.cached.response?.usage?.total_tokens || 0;
@@ -470,6 +519,9 @@ async function handleNonStreamRequest(
     encoding_format: (request.body as any)?.encoding_format,
     dimensions: (request.body as any)?.dimensions,
     user: (request.body as any)?.user,
+    tools: (request.body as any)?.tools,
+    tool_choice: (request.body as any)?.tool_choice,
+    parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
   };
 
   const input = isEmbeddingsRequest ? (request.body as any)?.input : undefined;
@@ -563,7 +615,17 @@ async function handleNonStreamRequest(
   const isSuccess = response.statusCode >= 200 && response.statusCode < 300;
 
   const shouldLogBody = shouldLogRequestBody(virtualKey);
-  const truncatedRequest = shouldLogBody ? truncateRequestBody(request.body) : undefined;
+
+  let modelAttributes: any = undefined;
+  if (currentModel?.model_attributes) {
+    try {
+      modelAttributes = JSON.parse(currentModel.model_attributes);
+    } catch (e) {
+    }
+  }
+
+  const fullRequestBody = buildFullRequestBody(request.body, modelAttributes);
+  const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
   const truncatedResponse = shouldLogBody ? truncateResponseBody(responseData) : undefined;
 
   const usageTokens = responseData?.usage?.total_tokens || 0;

@@ -22,20 +22,6 @@ services:
       timeout: 5s
       retries: 5
 
-  portkey-gateway:
-    image: portkeyai/gateway:latest
-    container_name: portkey-gateway
-    ports:
-      - "127.0.0.1:8787:8787"
-    volumes:
-      - ./portkey-config:/app/config
-      - ./portkey-config/conf.json:/app/conf.json
-    environment:
-      - CONFIG_PATH=/app/config/conf.json
-    restart: unless-stopped
-    networks:
-      - llm-gateway-network
-
   llm-gateway:
     image: ghcr.io/sxueck/llm-gateway:latest
     container_name: llm-gateway
@@ -43,16 +29,13 @@ services:
       - "13030:3000"
     volumes:
       - ./data:/app/data
-      - ./portkey-config:/app/portkey-config
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - NODE_ENV=production
       - PORT=3000
       - DB_PATH=/app/data/gateway.db
-      - PORTKEY_CONFIG_PATH=/app/portkey-config/conf.json
       - LOG_LEVEL=info
       - JWT_SECRET=${JWT_SECRET:-please-change-this-secret-key-to-a-random-string-at-least-32-chars}
-      - PORTKEY_GATEWAY_URL=http://portkey-gateway:8787
       - PUBLIC_URL=${PUBLIC_URL:-http://localhost:3000}
       - API_REQUEST_LOG_RETENTION_DAYS=${API_REQUEST_LOG_RETENTION_DAYS:-3}
       - MYSQL_HOST=mysql

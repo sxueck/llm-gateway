@@ -110,6 +110,14 @@ export class ProtocolAdapter {
         return false;
       }
 
+      if (msg.role === 'tool') {
+        return msg.tool_call_id && msg.content;
+      }
+
+      if (msg.tool_calls && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+        return true;
+      }
+
       const content = msg.content;
 
       if (typeof content === 'string') {
@@ -221,6 +229,7 @@ export class ProtocolAdapter {
     if (options.user !== undefined) requestParams.user = options.user;
     if (options.tools !== undefined) requestParams.tools = options.tools;
     if (options.tool_choice !== undefined) requestParams.tool_choice = options.tool_choice;
+    if (options.parallel_tool_calls !== undefined) requestParams.parallel_tool_calls = options.parallel_tool_calls;
     if (options.response_format !== undefined) requestParams.response_format = options.response_format;
     if (options.seed !== undefined) requestParams.seed = options.seed;
 
@@ -327,6 +336,9 @@ export class ProtocolAdapter {
     } else if (options.max_completion_tokens !== undefined) {
       requestParams.max_tokens = options.max_completion_tokens;
     }
+    if (options.tools !== undefined) requestParams.tools = options.tools;
+    if (options.tool_choice !== undefined) requestParams.tool_choice = options.tool_choice;
+    if (options.parallel_tool_calls !== undefined) requestParams.parallel_tool_calls = options.parallel_tool_calls;
     if (options.top_p !== undefined) requestParams.top_p = options.top_p;
     if (options.frequency_penalty !== undefined) requestParams.frequency_penalty = options.frequency_penalty;
     if (options.presence_penalty !== undefined) requestParams.presence_penalty = options.presence_penalty;
@@ -367,11 +379,12 @@ export class ProtocolAdapter {
     const streamChunks: string[] = [];
     let reasoningContent = '';
     let thinkingBlocks: ThinkingBlock[] = [];
+    let toolCalls: any[] = [];
 
     for await (const chunk of stream) {
       const chunkData = JSON.stringify(chunk);
       const sseData = `data: ${chunkData}\n\n`;
-      
+
       streamChunks.push(sseData);
       reply.raw.write(sseData);
 
@@ -385,10 +398,12 @@ export class ProtocolAdapter {
         const extraction = extractReasoningFromChoice(
           chunk.choices[0],
           reasoningContent,
-          thinkingBlocks
+          thinkingBlocks,
+          toolCalls
         );
         reasoningContent = extraction.reasoningContent;
         thinkingBlocks = extraction.thinkingBlocks as ThinkingBlock[];
+        toolCalls = extraction.toolCalls || [];
       }
     }
 
