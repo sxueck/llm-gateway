@@ -82,7 +82,6 @@ export interface UpdateExpertRoutingRequest {
 
 export interface ExpertRoutingStatistics {
   totalRequests: number;
-  avgClassificationTime: number;
   categoryDistribution: Record<string, number>;
 }
 

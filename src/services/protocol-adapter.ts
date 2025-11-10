@@ -46,7 +46,7 @@ export class ProtocolAdapter {
     if (!this.openaiClients.has(cacheKey)) {
       const clientConfig: any = {
         apiKey: config.apiKey,
-        maxRetries: 3,
+        maxRetries: 0,
         timeout: 60000,
       };
 
@@ -67,7 +67,7 @@ export class ProtocolAdapter {
     if (!this.anthropicClients.has(cacheKey)) {
       const clientConfig: any = {
         apiKey: config.apiKey,
-        maxRetries: 3,
+        maxRetries: 0,
         timeout: 60000,
       };
 

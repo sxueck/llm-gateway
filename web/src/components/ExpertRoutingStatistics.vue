@@ -4,11 +4,6 @@
       <n-card :title="t('expertRouting.statistics')" size="small">
         <n-space vertical :size="12">
           <n-statistic :label="t('expertRouting.totalRequests')" :value="statistics.totalRequests" />
-          <n-statistic
-            :label="t('expertRouting.avgClassificationTime')"
-            :value="statistics.avgClassificationTime"
-            suffix="ms"
-          />
         </n-space>
       </n-card>
 
@@ -185,7 +180,6 @@ const props = defineProps<Props>();
 
 const statistics = ref<ExpertRoutingStatistics>({
   totalRequests: 0,
-  avgClassificationTime: 0,
   categoryDistribution: {},
 });
 const logs = ref<ExpertRoutingLog[]>([]);
