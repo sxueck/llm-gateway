@@ -5,6 +5,7 @@ import { countTokensForMessages } from './token-counter.js';
 // 配置常量
 const MIN_CODE_LENGTH = parseInt(process.env.MIN_CODE_LENGTH || '100', 10);
 const MIN_TEXT_LENGTH = parseInt(process.env.MIN_TEXT_LENGTH || '200', 10);
+const KEEP_RECENT_MESSAGES = parseInt(process.env.KEEP_RECENT_MESSAGES || '5', 10);
 
 interface MessageContent {
   role: string;
@@ -32,9 +33,11 @@ interface CompressionStats {
 export class MessageCompressor {
   private readonly MIN_CODE_LENGTH = MIN_CODE_LENGTH;
   private readonly MIN_TEXT_LENGTH = MIN_TEXT_LENGTH;
+  private readonly KEEP_RECENT_MESSAGES = KEEP_RECENT_MESSAGES;
 
   compressMessages(messages: MessageContent[]): { messages: MessageContent[]; stats: CompressionStats } {
-    if (!messages || messages.length < 3) {
+    // 如果消息数量不足以进行压缩（需要至少比保留数量多1条），则直接返回
+    if (!messages || messages.length <= this.KEEP_RECENT_MESSAGES) {
       return {
         messages,
         stats: this.createEmptyStats(messages.length)
@@ -43,12 +46,12 @@ export class MessageCompressor {
 
     const startTime = Date.now();
     const originalMessages = [...messages];
-    const lastTwoMessages = messages.slice(-2);
-    const historyMessages = messages.slice(0, -2);
+    const recentMessages = messages.slice(-this.KEEP_RECENT_MESSAGES);
+    const historyMessages = messages.slice(0, -this.KEEP_RECENT_MESSAGES);
 
     const fingerprints = this.extractFingerprints(historyMessages);
     const compressedHistory = this.compressHistoryMessages(historyMessages, fingerprints);
-    const compressedMessages = [...compressedHistory, ...lastTwoMessages];
+    const compressedMessages = [...compressedHistory, ...recentMessages];
 
     const stats = this.calculateStats(originalMessages, compressedMessages, fingerprints);
     const duration = Date.now() - startTime;
