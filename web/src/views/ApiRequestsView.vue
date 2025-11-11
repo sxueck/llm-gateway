@@ -314,7 +314,6 @@ const columns: DataTableColumns<ApiRequest> = [
 ];
 
 
-
 const loadRequests = async () => {
   loading.value = true;
   try {
@@ -423,7 +422,6 @@ onMounted(() => {
   background: #b0b0b0;
 }
 
-<style scoped>
 :deep(.n-data-table-th) {
   font-size: 13px;
   padding: 10px 12px;
