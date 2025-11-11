@@ -389,6 +389,15 @@ const loadVirtualKeys = async () => {
     message.error(error.message || '加载虚拟密钥列表失败');
   }
 };
+onMounted(() => {
+  const now = Date.now();
+  const oneDayAgo = now - 24 * 60 * 60 * 1000;
+  timeRange.value = [oneDayAgo, now];
+  loadVirtualKeys();
+  loadRequests();
+});
+</script>
+
 <style scoped>
 .clean-dialog-modal .modal-content-wrapper {
   max-height: calc(85vh - 200px);
@@ -413,16 +422,6 @@ const loadVirtualKeys = async () => {
 .modal-content-wrapper::-webkit-scrollbar-thumb:hover {
   background: #b0b0b0;
 }
-</style>
-
-onMounted(() => {
-  const now = Date.now();
-  const oneDayAgo = now - 24 * 60 * 60 * 1000;
-  timeRange.value = [oneDayAgo, now];
-  loadVirtualKeys();
-  loadRequests();
-});
-</script>
 
 <style scoped>
 :deep(.n-data-table-th) {

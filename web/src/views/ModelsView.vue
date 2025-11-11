@@ -172,7 +172,7 @@
 
 <script setup lang="ts">
 import { ref, h, computed, onMounted, watch } from 'vue';
-import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NPopconfirm, NDivider, NScrollbar, NIcon } from 'naive-ui';
+import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NPopconfirm, NDivider, NIcon } from 'naive-ui';
 import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined } from '@vicons/material';
 import { useI18n } from 'vue-i18n';
 import { useModelStore } from '@/stores/model';

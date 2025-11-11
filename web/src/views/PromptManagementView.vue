@@ -81,7 +81,7 @@
 
 <script setup lang="ts">
 import { ref, h, computed, onMounted, watch } from 'vue';
-import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NInput, NTag, NPopconfirm, NScrollbar, NIcon, NAlert, NSelect, NFormItem } from 'naive-ui';
+import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NInput, NTag, NPopconfirm, NIcon, NAlert, NSelect, NFormItem } from 'naive-ui';
 import { EditOutlined, DeleteOutlined } from '@vicons/material';
 import { SearchOutline, RefreshOutline, AddOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
@@ -326,7 +326,8 @@ onMounted(() => {
 </script>
 <style scoped>
 .prompt-modal :deep(.n-card__content) {
-  padding: 0overflow: hidden;
+  padding: 0;
+  overflow: hidden;
 }
 
 .modal-content-wrapper {
