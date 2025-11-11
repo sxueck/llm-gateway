@@ -71,22 +71,23 @@
             <span style="font-size: 12px; color: #999;">自动压缩历史消息中的重复内容,节省 Token</span>
           </n-space>
         </n-form-item>
-        <n-form-item label="拦截Zero温度">
+        <n-form-item label="拦截空温度">
           <n-space vertical :size="4">
-            <n-switch v-model:value="formValue.interceptZeroTemperature" size="small" />
+            <n-space :size="12" align="center">
+              <n-switch v-model:value="formValue.interceptZeroTemperature" size="small" />
+              <n-input-number
+                v-model:value="formValue.zeroTemperatureReplacement"
+                :disabled="!formValue.interceptZeroTemperature"
+                :min="0"
+                :max="2"
+                :step="0.1"
+                placeholder="例如: 0.7"
+                style="width: 150px"
+                size="small"
+              />
+            </n-space>
             <span style="font-size: 12px; color: #999;">开启后,将传入的 temperature=0 替换为指定值</span>
           </n-space>
-        </n-form-item>
-        <n-form-item v-if="formValue.interceptZeroTemperature" label="替换温度值" path="zeroTemperatureReplacement">
-          <n-input-number
-            v-model:value="formValue.zeroTemperatureReplacement"
-            :min="0"
-            :max="2"
-            :step="0.1"
-            placeholder="例如: 0.7"
-            style="width: 100%"
-            size="small"
-          />
         </n-form-item>
         <n-form-item label="启用">
           <n-switch v-model:value="formValue.enabled" size="small" />

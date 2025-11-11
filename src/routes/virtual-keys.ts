@@ -19,6 +19,8 @@ const createVirtualKeySchema = z.object({
   cacheEnabled: z.boolean().optional(),
   disableLogging: z.boolean().optional(),
   dynamicCompressionEnabled: z.boolean().optional(),
+  interceptZeroTemperature: z.boolean().optional(),
+  zeroTemperatureReplacement: z.number().min(0).max(2).optional(),
 });
 
 const updateVirtualKeySchema = z.object({
@@ -33,6 +35,8 @@ const updateVirtualKeySchema = z.object({
   cacheEnabled: z.boolean().optional(),
   disableLogging: z.boolean().optional(),
   dynamicCompressionEnabled: z.boolean().optional(),
+  interceptZeroTemperature: z.boolean().optional(),
+  zeroTemperatureReplacement: z.number().min(0).max(2).optional(),
 });
 
 const validateKeySchema = z.object({
@@ -59,6 +63,8 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
         cacheEnabled: vk.cache_enabled === 1,
         disableLogging: vk.disable_logging === 1,
         dynamicCompressionEnabled: vk.dynamic_compression_enabled === 1,
+        interceptZeroTemperature: vk.intercept_zero_temperature === 1,
+        zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
         createdAt: vk.created_at,
         updatedAt: vk.updated_at,
       })),
@@ -87,6 +93,8 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       cacheEnabled: vk.cache_enabled === 1,
       disableLogging: vk.disable_logging === 1,
       dynamicCompressionEnabled: vk.dynamic_compression_enabled === 1,
+      interceptZeroTemperature: vk.intercept_zero_temperature === 1,
+      zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
       createdAt: vk.created_at,
       updatedAt: vk.updated_at,
     };
@@ -154,8 +162,8 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       cache_enabled: body.cacheEnabled ? 1 : 0,
       disable_logging: body.disableLogging ? 1 : 0,
       dynamic_compression_enabled: body.dynamicCompressionEnabled ? 1 : 0,
-      intercept_zero_temperature: 0,
-      zero_temperature_replacement: null,
+      intercept_zero_temperature: body.interceptZeroTemperature ? 1 : 0,
+      zero_temperature_replacement: body.zeroTemperatureReplacement || null,
     });
 
     return {
@@ -173,6 +181,8 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
         cacheEnabled: vk.cache_enabled === 1,
         disableLogging: vk.disable_logging === 1,
         dynamicCompressionEnabled: vk.dynamic_compression_enabled === 1,
+        interceptZeroTemperature: vk.intercept_zero_temperature === 1,
+        zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
         createdAt: vk.created_at,
         updatedAt: vk.updated_at,
       },
@@ -224,6 +234,8 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     if (body.cacheEnabled !== undefined) updates.cache_enabled = body.cacheEnabled ? 1 : 0;
     if (body.disableLogging !== undefined) updates.disable_logging = body.disableLogging ? 1 : 0;
     if (body.dynamicCompressionEnabled !== undefined) updates.dynamic_compression_enabled = body.dynamicCompressionEnabled ? 1 : 0;
+    if (body.interceptZeroTemperature !== undefined) updates.intercept_zero_temperature = body.interceptZeroTemperature ? 1 : 0;
+    if (body.zeroTemperatureReplacement !== undefined) updates.zero_temperature_replacement = body.zeroTemperatureReplacement;
 
     await virtualKeyDb.update(id, updates);
 
@@ -246,6 +258,8 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       cacheEnabled: updated.cache_enabled === 1,
       disableLogging: updated.disable_logging === 1,
       dynamicCompressionEnabled: updated.dynamic_compression_enabled === 1,
+      interceptZeroTemperature: updated.intercept_zero_temperature === 1,
+      zeroTemperatureReplacement: updated.zero_temperature_replacement ? Number(updated.zero_temperature_replacement) : null,
       createdAt: updated.created_at,
       updatedAt: updated.updated_at,
     };

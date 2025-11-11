@@ -174,7 +174,7 @@ export const migrations: Migration[] = [
     },
   },
   {
-    version: 6,
+    version: 7,
     name: 'add_intercept_zero_temperature_to_virtual_keys',
     up: async (conn: Connection) => {
       const [tables] = await conn.query(`
@@ -191,7 +191,7 @@ export const migrations: Migration[] = [
         await conn.query(`
           ALTER TABLE virtual_keys
           ADD COLUMN intercept_zero_temperature TINYINT DEFAULT 0 AFTER dynamic_compression_enabled,
-        ADD COLUMN zero_temperature_replacement DECIMAL(3,2) DEFAULT NULL AFTER intercept_zero_temperature
+          ADD COLUMN zero_temperature_replacement DECIMAL(3,2) DEFAULT NULL AFTER intercept_zero_temperature
         `);
       } else {
         console.log('  - virtual_keys.intercept_zero_temperature 字段已存在,跳过');
