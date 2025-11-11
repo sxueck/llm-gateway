@@ -154,6 +154,8 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       cache_enabled: body.cacheEnabled ? 1 : 0,
       disable_logging: body.disableLogging ? 1 : 0,
       dynamic_compression_enabled: body.dynamicCompressionEnabled ? 1 : 0,
+      intercept_zero_temperature: 0,
+      zero_temperature_replacement: null,
     });
 
     return {

@@ -172,17 +172,18 @@ export const migrations: Migration[] = [
         DROP COLUMN compression_saved_tokens
       `);
     },
+  },
   {
     version: 6,
     name: 'add_intercept_zero_temperature_to_virtual_keys',
     up: async (conn: Connection) => {
       const [tables] = await conn.query(`
-        SELECT COUNT(*) as count
-        FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME = 'virtual_keys'
-        AND COLUMN_NAME = 'intercept_zero_temperature'
-      `);
+          SELECT COUNT(*) as count
+          FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'virtual_keys'
+          AND COLUMN_NAME = 'intercept_zero_temperature'
+        `);
       const result = tables as any[];
 
       if (result[0].count === 0) {
@@ -190,7 +191,7 @@ export const migrations: Migration[] = [
         await conn.query(`
           ALTER TABLE virtual_keys
           ADD COLUMN intercept_zero_temperature TINYINT DEFAULT 0 AFTER dynamic_compression_enabled,
-          ADD COLUMN zero_temperature_replacement DECIMAL(3,2) DEFAULT NULL AFTER intercept_zero_temperature
+        ADD COLUMN zero_temperature_replacement DECIMAL(3,2) DEFAULT NULL AFTER intercept_zero_temperature
         `);
       } else {
         console.log('  - virtual_keys.intercept_zero_temperature 字段已存在,跳过');
@@ -203,7 +204,6 @@ export const migrations: Migration[] = [
         DROP COLUMN zero_temperature_replacement
       `);
     },
-  },
   },
 ];
 
