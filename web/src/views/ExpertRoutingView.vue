@@ -167,27 +167,39 @@
       v-model:show="showEditorModal"
       preset="card"
       :title="editingId ? t('expertRouting.editExpertRouting') : t('expertRouting.createExpertRouting')"
-      style="width: 90%; max-width: 1200px; max-height: 85vh"
-      :segmented="{ content: 'soft' }"
-      :content-style="{ maxHeight: 'calc(85vh - 120px)', overflowY: 'auto' }"
+      class="expert-routing-modal"
+      :style="{ width: '90%', maxWidth: '1200px', maxHeight: '85vh' }"
+      :segmented="{
+        content: 'soft',
+        footer: 'soft'
+      }"
     >
-      <ExpertRoutingEditor
-        v-if="showEditorModal"
-        :config="editingConfig"
-        :editing-id="editingId"
-        @save="handleSave"
-        @cancel="handleCancel"
-        :saving="saving"
-      />
+      <div class="modal-content-wrapper">
+        <ExpertRoutingEditor
+          v-if="showEditorModal"
+          :config="editingConfig"
+          :editing-id="editingId"
+          @save="handleSave"
+          @cancel="handleCancel"
+          :saving="saving"
+        />
+      </div>
     </n-modal>
 
     <n-modal
       v-model:show="showStatisticsModal"
       preset="card"
       :title="t('expertRouting.statistics')"
-      style="width: 800px"
+      class="statistics-modal"
+      :style="{ width: '800px', maxHeight: '85vh' }"
+      :segmented="{
+        content: 'soft',
+        footer: 'soft'
+      }"
     >
-      <ExpertRoutingStatistics v-if="showStatisticsModal" :config-id="selectedConfigId" />
+      <div class="modal-content-wrapper">
+        <ExpertRoutingStatistics v-if="showStatisticsModal" :config-id="selectedConfigId" />
+      </div>
     </n-modal>
   </div>
 </template>
@@ -305,6 +317,43 @@
 }
 
 @media (max-width: 768px) {
+.expert-routing-modal :deep(.n-card__content),
+.statistics-modal :deep(.n-card__content) {
+  padding: 0;
+  overflow: hidden;
+}
+
+.modal-content-wrapper {
+  max-height: calc(85vh - 180px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 20px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 3px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar-thumb {
+  background: #d0d0d0;
+  border-radius: 3px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #b0b0b0;
+}
+
+.expert-routing-modal :deep(.n-card__footer),
+.statistics-modal :deep(.n-card__footer) {
+  padding: 12px 20px;
+  border-top: 1px solid #e8e8e8;
+  background: #ffffff;
+}
   .config-grid {
     flex-direction: column;
   }

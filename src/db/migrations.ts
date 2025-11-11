@@ -173,6 +173,38 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 7,
+    name: 'add_intercept_zero_temperature_to_virtual_keys',
+    up: async (conn: Connection) => {
+      const [tables] = await conn.query(`
+          SELECT COUNT(*) as count
+          FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'virtual_keys'
+          AND COLUMN_NAME = 'intercept_zero_temperature'
+        `);
+      const result = tables as any[];
+
+      if (result[0].count === 0) {
+        console.log('  - 添加 virtual_keys.intercept_zero_temperature 和 zero_temperature_replacement 字段');
+        await conn.query(`
+          ALTER TABLE virtual_keys
+          ADD COLUMN intercept_zero_temperature TINYINT DEFAULT 0 AFTER dynamic_compression_enabled,
+          ADD COLUMN zero_temperature_replacement DECIMAL(3,2) DEFAULT NULL AFTER intercept_zero_temperature
+        `);
+      } else {
+        console.log('  - virtual_keys.intercept_zero_temperature 字段已存在,跳过');
+      }
+    },
+    down: async (conn: Connection) => {
+      await conn.query(`
+        ALTER TABLE virtual_keys
+        DROP COLUMN intercept_zero_temperature,
+        DROP COLUMN zero_temperature_replacement
+      `);
+    },
+  },
 ];
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {

@@ -125,20 +125,28 @@
       </n-drawer-content>
     </n-drawer>
 
-    <n-modal v-model:show="showCleanDialog" preset="dialog" title="清理旧日志">
+    <n-modal
+      v-model:show="showCleanDialog"
+      preset="dialog"
+      title="清理旧日志"
+      class="clean-dialog-modal"
+      :style="{ maxHeight: '85vh' }"
+    >
       <template #default>
-        <n-space vertical :size="16">
-          <n-text>删除超过指定天数的请求日志记录</n-text>
-          <n-input-number
-            v-model:value="cleanDays"
-            :min="1"
-            :max="365"
-            placeholder="保留天数"
-            style="width: 100%;"
-          >
-            <template #suffix>天</template>
-          </n-input-number>
-        </n-space>
+        <div class="modal-content-wrapper">
+          <n-space vertical :size="16">
+            <n-text>删除超过指定天数的请求日志记录</n-text>
+            <n-input-number
+              v-model:value="cleanDays"
+              :min="1"
+              :max="365"
+              placeholder="保留天数"
+              style="width: 100%;"
+            >
+              <template #suffix>天</template>
+            </n-input-number>
+          </n-space>
+        </div>
       </template>
       <template #action>
         <n-space>
@@ -381,6 +389,31 @@ const loadVirtualKeys = async () => {
     message.error(error.message || '加载虚拟密钥列表失败');
   }
 };
+<style scoped>
+.clean-dialog-modal .modal-content-wrapper {
+  max-height: calc(85vh - 200px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.modal-content-wrapper::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 3px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar-thumb {
+  background: #d0d0d0;
+  border-radius: 3px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #b0b0b0;
+}
+</style>
 
 onMounted(() => {
   const now = Date.now();

@@ -39,23 +39,47 @@
       </n-card>
     </n-space>
 
-    <n-modal v-model:show="showCreateModal" preset="card" :title="editingId ? '编辑智能路由' : '创建智能路由'" style="width: 700px">
-      <VirtualModelWizard
-        v-model:config-type="configType"
-        v-model:form-value="formValue"
-        :provider-options="providerOptions"
-        :get-model-options-by-provider="getModelOptionsByProvider"
-        :status-code-options="statusCodeOptions"
-        @save="handleSave"
-        @cancel="handleCancel"
-        :saving="saving"
-        :is-editing="!!editingId"
-      />
+    <n-modal
+      v-model:show="showCreateModal"
+      preset="card"
+      :title="editingId ? '编辑智能路由' : '创建智能路由'"
+      class="virtual-model-modal"
+      :style="{ width: '700px', maxHeight: '85vh' }"
+      :segmented="{
+        content: 'soft',
+        footer: 'soft'
+      }"
+    >
+      <div class="modal-content-wrapper">
+        <VirtualModelWizard
+          v-model:config-type="configType"
+          v-model:form-value="formValue"
+          :provider-options="providerOptions"
+          :get-model-options-by-provider="getModelOptionsByProvider"
+          :status-code-options="statusCodeOptions"
+          @save="handleSave"
+          @cancel="handleCancel"
+          :saving="saving"
+          :is-editing="!!editingId"
+        />
+      </div>
     </n-modal>
 
-    <n-modal v-model:show="showPreviewModal" preset="card" title="配置预览" style="width: 700px">
-      <div class="code-preview">
-        <n-code :code="previewConfig" />
+    <n-modal
+      v-model:show="showPreviewModal"
+      preset="card"
+      title="配置预览"
+      class="preview-modal"
+      :style="{ width: '700px', maxHeight: '85vh' }"
+      :segmented="{
+        content: 'soft',
+        footer: 'soft'
+      }"
+    >
+      <div class="modal-content-wrapper">
+        <div class="code-preview">
+          <n-code :code="previewConfig" />
+        </div>
       </div>
       <template #footer>
         <n-space justify="end">
@@ -456,5 +480,42 @@ onMounted(async () => {
 .code-preview {
   max-height: 420px;
   overflow: auto;
+}
+.virtual-model-modal :deep(.n-card__content),
+.preview-modal :deep(.n-card__content) {
+  padding: 0;
+  overflow: hidden;
+}
+
+.modal-content-wrapper {
+  max-height: calc(85vh - 180px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 20px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 3px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar-thumb {
+  background: #d0d0d0;
+  border-radius: 3px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #b0b0b0;
+}
+
+.virtual-model-modal :deep(.n-card__footer),
+.preview-modal :deep(.n-card__footer) {
+  padding: 12px 20px;
+  border-top: 1px solid #e8e8e8;
+  background: #ffffff;
 }
 </style>

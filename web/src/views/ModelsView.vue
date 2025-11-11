@@ -69,9 +69,13 @@
       preset="card"
       :title="editingId ? t('models.editModel') : t('models.addModel')"
       class="model-modal"
-      :style="{ width: '750px' }"
+      :style="{ width: '750px', maxHeight: '85vh' }"
+      :segmented="{
+        content: 'soft',
+        footer: 'soft'
+      }"
     >
-      <n-scrollbar style="max-height: 65vh; padding-right: 12px;">
+      <div class="modal-content-wrapper">
         <n-form ref="formRef" :model="formValue" :rules="rules" label-placement="left" label-width="100" size="small">
           <n-form-item :label="t('models.modelName')" path="name">
             <n-input v-model:value="formValue.name" :placeholder="t('models.modelNamePlaceholder')" size="small" />
@@ -104,7 +108,7 @@
 
           <ModelAttributesEditor v-model="formValue.modelAttributes" />
         </n-form>
-      </n-scrollbar>
+      </div>
       <template #footer>
         <n-space justify="end" :size="8">
           <n-button @click="showModal = false" size="small">{{ t('common.cancel') }}</n-button>
@@ -579,32 +583,39 @@ onMounted(async () => {
 }
 
 .model-modal :deep(.n-card__content) {
-  padding: 16px 20px;
-  max-height: calc(50vh - 140px);
-  overflow-y: auto;
+  padding: 0;
+  overflow: hidden;
 }
 
-.model-modal :deep(.n-card__content)::-webkit-scrollbar {
+.modal-content-wrapper {
+  max-height: calc(85vh - 180px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 20px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar {
   width: 6px;
 }
 
-.model-modal :deep(.n-card__content)::-webkit-scrollbar-track {
+.modal-content-wrapper::-webkit-scrollbar-track {
   background: #f0f0f0;
   border-radius: 3px;
 }
 
-.model-modal :deep(.n-card__content)::-webkit-scrollbar-thumb {
+.modal-content-wrapper::-webkit-scrollbar-thumb {
   background: #d0d0d0;
   border-radius: 3px;
 }
 
-.model-modal :deep(.n-card__content)::-webkit-scrollbar-thumb:hover {
+.modal-content-wrapper::-webkit-scrollbar-thumb:hover {
   background: #b0b0b0;
 }
 
 .model-modal :deep(.n-card__footer) {
   padding: 12px 20px;
   border-top: 1px solid #e8e8e8;
+  background: #ffffff;
 }
 
 .table-card :deep(.n-card__header) {

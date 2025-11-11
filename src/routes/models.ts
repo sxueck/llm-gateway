@@ -212,7 +212,9 @@ export async function modelRoutes(fastify: FastifyInstance) {
     if (body.modelIdentifier !== undefined) updates.model_identifier = body.modelIdentifier;
     if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
     if (body.modelAttributes !== undefined) {
-      updates.model_attributes = body.modelAttributes ? JSON.stringify(body.modelAttributes) : null;
+      updates.model_attributes = body.modelAttributes && Object.keys(body.modelAttributes).length > 0
+        ? JSON.stringify(body.modelAttributes)
+        : null;
     }
     if (body.promptConfig !== undefined) {
       updates.prompt_config = body.promptConfig ? JSON.stringify(body.promptConfig) : null;

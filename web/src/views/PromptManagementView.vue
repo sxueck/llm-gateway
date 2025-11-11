@@ -42,9 +42,14 @@
       v-model:show="showModal"
       preset="card"
       :title="editingModel ? t('promptManagement.editPrompt') : t('promptManagement.createPrompt')"
-      :style="{ width: '600px' }"
+      class="prompt-modal"
+      :style="{ width: '600px', maxHeight: '85vh' }"
+      :segmented="{
+        content: 'soft',
+        footer: 'soft'
+      }"
     >
-      <n-scrollbar style="max-height: 500px; padding-right: 12px;">
+      <div class="modal-content-wrapper">
         <n-space vertical :size="16">
           <n-form-item v-if="!editingModel" :label="t('promptManagement.selectModel')" :show-feedback="false">
             <n-select
@@ -61,7 +66,7 @@
 
           <PromptConfigEditor v-model="promptConfig" />
         </n-space>
-      </n-scrollbar>
+      </div>
       <template #footer>
         <n-space justify="end" :size="8">
           <n-button @click="showModal = false" size="small">{{ t('common.cancel') }}</n-button>
@@ -319,4 +324,40 @@ onMounted(() => {
   handleRefresh();
 });
 </script>
+<style scoped>
+.prompt-modal :deep(.n-card__content) {
+  padding: 0overflow: hidden;
+}
+
+.modal-content-wrapper {
+  max-height: calc(85vh - 180px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 20px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 3px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar-thumb {
+  background: #d0d0d0;
+  border-radius: 3px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #b0b0b0;
+}
+
+.prompt-modal :deep(.n-card__footer) {
+  padding: 12px 20px;
+  border-top: 1px solid #e8e8e8;
+  background: #ffffff;
+}
+</style>
 

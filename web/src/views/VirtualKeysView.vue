@@ -28,9 +28,14 @@
       preset="card"
       :title="editingId ? '编辑虚拟密钥' : '创建虚拟密钥'"
       class="key-modal"
-      :style="{ width: '600px', maxHeight: '50vh' }"
+      :style="{ width: '600px', maxHeight: '85vh' }"
+      :segmented="{
+        content: 'soft',
+        footer: 'soft'
+      }"
     >
-      <n-form ref="formRef" :model="formValue" :rules="rules" label-placement="left" label-width="90" size="small">
+      <div class="modal-form-wrapper">
+        <n-form ref="formRef" :model="formValue" :rules="rules" label-placement="left" label-width="90" size="small">
         <n-form-item label="密钥名称" path="name">
           <n-input v-model:value="formValue.name" placeholder="如: 生产环境密钥" size="small" />
         </n-form-item>
@@ -71,10 +76,29 @@
             <span style="font-size: 12px; color: #999;">自动压缩历史消息中的重复内容,节省 Token</span>
           </n-space>
         </n-form-item>
+        <n-form-item label="拦截空温度">
+          <n-space vertical :size="4">
+            <n-space :size="12" align="center">
+              <n-switch v-model:value="formValue.interceptZeroTemperature" size="small" />
+              <n-input-number
+                v-model:value="formValue.zeroTemperatureReplacement"
+                :disabled="!formValue.interceptZeroTemperature"
+                :min="0"
+                :max="2"
+                :step="0.1"
+                placeholder="例如: 0.7"
+                style="width: 150px"
+                size="small"
+              />
+            </n-space>
+            <span style="font-size: 12px; color: #999;">开启后,将传入的 temperature=0 替换为指定值</span>
+          </n-space>
+        </n-form-item>
         <n-form-item label="启用">
           <n-switch v-model:value="formValue.enabled" size="small" />
         </n-form-item>
       </n-form>
+      </div>
       <template #footer>
         <n-space justify="end" :size="8">
           <n-button @click="showModal = false" size="small">取消</n-button>
@@ -155,6 +179,8 @@ const formValue = ref({
   cacheEnabled: false,
   disableLogging: false,
   dynamicCompressionEnabled: false,
+  interceptZeroTemperature: false,
+  zeroTemperatureReplacement: 0.7 as number | undefined,
 });
 
 const modelOptions = computed(() => {
@@ -310,6 +336,8 @@ function handleEdit(vk: VirtualKey) {
     cacheEnabled: vk.cacheEnabled,
     disableLogging: vk.disableLogging,
     dynamicCompressionEnabled: vk.dynamicCompressionEnabled,
+    interceptZeroTemperature: vk.interceptZeroTemperature,
+    zeroTemperatureReplacement: vk.zeroTemperatureReplacement || 0.7,
   };
   showModal.value = true;
 }
@@ -337,6 +365,8 @@ async function handleSubmit() {
         rateLimit: formValue.value.rateLimit,
         cacheEnabled: formValue.value.cacheEnabled,
         disableLogging: formValue.value.disableLogging,
+        interceptZeroTemperature: formValue.value.interceptZeroTemperature,
+        zeroTemperatureReplacement: formValue.value.zeroTemperatureReplacement,
         dynamicCompressionEnabled: formValue.value.dynamicCompressionEnabled,
       });
       message.success('更新成功');
@@ -370,6 +400,8 @@ function resetForm() {
     enabled: true,
     cacheEnabled: false,
     disableLogging: false,
+    interceptZeroTemperature: false,
+    zeroTemperatureReplacement: 0.7,
     dynamicCompressionEnabled: false,
   };
 }
@@ -493,32 +525,39 @@ watch(showModal, async (val) => {
 }
 
 .key-modal :deep(.n-card__content) {
-  padding: 16px 20px;
-  max-height: calc(50vh - 140px);
-  overflow-y: auto;
+  padding: 0;
+  overflow: hidden;
 }
 
-.key-modal :deep(.n-card__content)::-webkit-scrollbar {
+.modal-form-wrapper {
+  max-height: calc(85vh - 180px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 20px;
+}
+
+.modal-form-wrapper::-webkit-scrollbar {
   width: 6px;
 }
 
-.key-modal :deep(.n-card__content)::-webkit-scrollbar-track {
+.modal-form-wrapper::-webkit-scrollbar-track {
   background: #f0f0f0;
   border-radius: 3px;
 }
 
-.key-modal :deep(.n-card__content)::-webkit-scrollbar-thumb {
+.modal-form-wrapper::-webkit-scrollbar-thumb {
   background: #d0d0d0;
   border-radius: 3px;
 }
 
-.key-modal :deep(.n-card__content)::-webkit-scrollbar-thumb:hover {
+.modal-form-wrapper::-webkit-scrollbar-thumb:hover {
   background: #b0b0b0;
 }
 
 .key-modal :deep(.n-card__footer) {
   padding: 12px 20px;
   border-top: 1px solid #e8e8e8;
+  background: #ffffff;
 }
 </style>
 

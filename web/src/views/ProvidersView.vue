@@ -53,23 +53,29 @@
       preset="card"
       :title="editingId ? '编辑提供商' : '添加提供商'"
       class="provider-modal"
-      :style="{ width: '950px', maxHeight: '50vh' }"
+      :style="{ width: '950px', maxHeight: '85vh' }"
+      :segmented="{
+        content: 'soft',
+        footer: 'soft'
+      }"
     >
-      <div class="modal-content">
-        <n-tabs v-if="!editingId" v-model:value="activeTab" type="line" size="small">
-          <n-tab-pane name="preset" tab="选择预设">
-            <ProviderPresetSelector v-model="selectedPreset" />
-            <n-space justify="end" style="margin-top: 12px">
-              <n-button @click="usePreset" :disabled="!selectedPreset" type="primary" size="small">
-                使用此预设
-              </n-button>
-            </n-space>
-          </n-tab-pane>
-          <n-tab-pane name="custom" tab="自定义配置">
-            <ProviderForm ref="formRef" v-model="formValue" :editing-id="editingId" />
-          </n-tab-pane>
-        </n-tabs>
-        <ProviderForm v-else ref="formRef" v-model="formValue" :editing-id="editingId" />
+      <div class="modal-content-wrapper">
+        <div class="modal-content">
+          <n-tabs v-if="!editingId" v-model:value="activeTab" type="line" size="small">
+            <n-tab-pane name="preset" tab="选择预设">
+              <ProviderPresetSelector v-model="selectedPreset" />
+              <n-space justify="end" style="margin-top: 12px">
+                <n-button @click="usePreset" :disabled="!selectedPreset" type="primary" size="small">
+                  使用此预设
+                </n-button>
+              </n-space>
+            </n-tab-pane>
+            <n-tab-pane name="custom" tab="自定义配置">
+              <ProviderForm ref="formRef" v-model="formValue" :editing-id="editingId" />
+            </n-tab-pane>
+          </n-tabs>
+          <ProviderForm v-else ref="formRef" v-model="formValue" :editing-id="editingId" />
+        </div>
       </div>
       <template #footer>
         <n-space justify="end" :size="8">
@@ -567,36 +573,43 @@ onMounted(() => {
 }
 
 .provider-modal :deep(.n-card__content) {
-  padding: 16px 20px;
-  max-height: calc(50vh - 140px);
-  overflow-y: auto;
+  padding: 0;
+  overflow: hidden;
 }
 
-.provider-modal :deep(.n-card__content)::-webkit-scrollbar {
+.modal-content-wrapper {
+  max-height: calc(85vh - 180px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.modal-content-wrapper::-webkit-scrollbar {
   width: 6px;
 }
 
-.provider-modal :deep(.n-card__content)::-webkit-scrollbar-track {
+.modal-content-wrapper::-webkit-scrollbar-track {
   background: #f0f0f0;
   border-radius: 3px;
 }
 
-.provider-modal :deep(.n-card__content)::-webkit-scrollbar-thumb {
+.modal-content-wrapper::-webkit-scrollbar-thumb {
   background: #d0d0d0;
   border-radius: 3px;
 }
 
-.provider-modal :deep(.n-card__content)::-webkit-scrollbar-thumb:hover {
+.modal-content-wrapper::-webkit-scrollbar-thumb:hover {
   background: #b0b0b0;
 }
 
 .provider-modal :deep(.n-card__footer) {
   padding: 12px 20px;
   border-top: 1px solid #e8e8e8;
+  background: #ffffff;
 }
 
 .modal-content {
   min-height: 200px;
+  padding: 16px 20px;
 }
 
 .provider-modal :deep(.n-tabs-nav) {
