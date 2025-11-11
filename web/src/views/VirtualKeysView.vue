@@ -71,6 +71,23 @@
             <span style="font-size: 12px; color: #999;">自动压缩历史消息中的重复内容,节省 Token</span>
           </n-space>
         </n-form-item>
+        <n-form-item label="拦截Zero温度">
+          <n-space vertical :size="4">
+            <n-switch v-model:value="formValue.interceptZeroTemperature" size="small" />
+            <span style="font-size: 12px; color: #999;">开启后,将传入的 temperature=0 替换为指定值</span>
+          </n-space>
+        </n-form-item>
+        <n-form-item v-if="formValue.interceptZeroTemperature" label="替换温度值" path="zeroTemperatureReplacement">
+          <n-input-number
+            v-model:value="formValue.zeroTemperatureReplacement"
+            :min="0"
+            :max="2"
+            :step="0.1"
+            placeholder="例如: 0.7"
+            style="width: 100%"
+            size="small"
+          />
+        </n-form-item>
         <n-form-item label="启用">
           <n-switch v-model:value="formValue.enabled" size="small" />
         </n-form-item>
@@ -155,6 +172,8 @@ const formValue = ref({
   cacheEnabled: false,
   disableLogging: false,
   dynamicCompressionEnabled: false,
+  interceptZeroTemperature: false,
+  zeroTemperatureReplacement: 0.7 as number | undefined,
 });
 
 const modelOptions = computed(() => {
@@ -310,6 +329,8 @@ function handleEdit(vk: VirtualKey) {
     cacheEnabled: vk.cacheEnabled,
     disableLogging: vk.disableLogging,
     dynamicCompressionEnabled: vk.dynamicCompressionEnabled,
+    interceptZeroTemperature: vk.interceptZeroTemperature,
+    zeroTemperatureReplacement: vk.zeroTemperatureReplacement || 0.7,
   };
   showModal.value = true;
 }
@@ -337,6 +358,8 @@ async function handleSubmit() {
         rateLimit: formValue.value.rateLimit,
         cacheEnabled: formValue.value.cacheEnabled,
         disableLogging: formValue.value.disableLogging,
+        interceptZeroTemperature: formValue.value.interceptZeroTemperature,
+        zeroTemperatureReplacement: formValue.value.zeroTemperatureReplacement,
         dynamicCompressionEnabled: formValue.value.dynamicCompressionEnabled,
       });
       message.success('更新成功');
@@ -370,6 +393,8 @@ function resetForm() {
     enabled: true,
     cacheEnabled: false,
     disableLogging: false,
+    interceptZeroTemperature: false,
+    zeroTemperatureReplacement: 0.7,
     dynamicCompressionEnabled: false,
   };
 }

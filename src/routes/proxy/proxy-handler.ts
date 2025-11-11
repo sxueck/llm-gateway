@@ -177,6 +177,16 @@ export function createProxyHandler() {
           }
         }
       }
+      // 拦截Zero温度功能
+      if (virtualKey.intercept_zero_temperature === 1 && 
+          virtualKey.zero_temperature_replacement !== null &&
+          (request.body as any)?.temperature === 0) {
+        (request.body as any).temperature = virtualKey.zero_temperature_replacement;
+        memoryLogger.info(
+          `拦截Zero温度: 将 temperature=0 替换为 ${virtualKey.zero_temperature_replacement} | 虚拟密钥: ${vkDisplay}`,
+          'Proxy'
+        );
+      }
 
       let requestBody: string | undefined;
 
