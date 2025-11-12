@@ -83,6 +83,7 @@
                 <ExpertRoutingVisualization
                   :experts="config.config.experts"
                   :classifier-config="config.config.classifier"
+                  :virtual-model-options="virtualModelOptions"
                   :editable="false"
                 />
                 <div
@@ -317,43 +318,43 @@
 }
 
 @media (max-width: 768px) {
-.expert-routing-modal :deep(.n-card__content),
-.statistics-modal :deep(.n-card__content) {
-  padding: 0;
-  overflow: hidden;
-}
+  .expert-routing-modal :deep(.n-card__content),
+  .statistics-modal :deep(.n-card__content) {
+    padding: 0;
+    overflow: hidden;
+  }
 
-.modal-content-wrapper {
-  max-height: calc(85vh - 180px);
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 16px 20px;
-}
+  .modal-content-wrapper {
+    max-height: calc(85vh - 180px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 16px 20px;
+  }
 
-.modal-content-wrapper::-webkit-scrollbar {
-  width: 6px;
-}
+  .modal-content-wrapper::-webkit-scrollbar {
+    width: 6px;
+  }
 
-.modal-content-wrapper::-webkit-scrollbar-track {
-  background: #f0f0f0;
-  border-radius: 3px;
-}
+  .modal-content-wrapper::-webkit-scrollbar-track {
+    background: #f0f0f0;
+    border-radius: 3px;
+  }
 
-.modal-content-wrapper::-webkit-scrollbar-thumb {
-  background: #d0d0d0;
-  border-radius: 3px;
-}
+  .modal-content-wrapper::-webkit-scrollbar-thumb {
+    background: #d0d0d0;
+    border-radius: 3px;
+  }
 
-.modal-content-wrapper::-webkit-scrollbar-thumb:hover {
-  background: #b0b0b0;
-}
+  .modal-content-wrapper::-webkit-scrollbar-thumb:hover {
+    background: #b0b0b0;
+  }
 
-.expert-routing-modal :deep(.n-card__footer),
-.statistics-modal :deep(.n-card__footer) {
-  padding: 12px 20px;
-  border-top: 1px solid #e8e8e8;
-  background: #ffffff;
-}
+  .expert-routing-modal :deep(.n-card__footer),
+  .statistics-modal :deep(.n-card__footer) {
+    padding: 12px 20px;
+    border-top: 1px solid #e8e8e8;
+    background: #ffffff;
+  }
   .config-grid {
     flex-direction: column;
   }
@@ -401,10 +402,23 @@ import { expertRoutingApi, type ExpertRouting, type CreateExpertRoutingRequest }
 import ExpertRoutingEditor from '@/components/ExpertRoutingEditor.vue';
 import ExpertRoutingVisualization from '@/components/ExpertRoutingVisualization.vue';
 import ExpertRoutingStatistics from '@/components/ExpertRoutingStatistics.vue';
+import { useModelStore } from '@/stores/model';
 import { createDefaultExpertRoutingConfig } from '@/utils/expert-routing';
 
 const { t } = useI18n();
 const message = useMessage();
+const modelStore = useModelStore();
+
+const virtualModels = computed(() => {
+  return modelStore.models.filter(m => m.isVirtual);
+});
+
+const virtualModelOptions = computed(() => {
+  return virtualModels.value.map(m => ({
+    label: m.name,
+    value: m.id,
+  }));
+});
 
 const EXPERIMENTAL_ALERT_KEY = 'expert-routing-experimental-alert-closed';
 
@@ -480,7 +494,8 @@ async function savePreviewWidthToServer(width: number) {
 
 function getClassifierLabel(classifier: any): string {
   if (classifier.type === 'virtual') {
-    return classifier.model_id || t('expertRouting.virtualModel');
+    const virtualModel = modelStore.models.find(m => m.id === classifier.model_id);
+    return virtualModel?.name || classifier.model_id || t('expertRouting.virtualModel');
   } else {
     return classifier.model || t('expertRouting.realModel');
   }
@@ -582,28 +597,11 @@ async function loadPreviewWidth() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await modelStore.fetchModels(); // 获取所有模型数据
   loadConfigs();
   loadPreviewWidth();
 });
 </script>
 
-<style scoped>
-.page-title {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-  color: #333;
-}
-
-.page-subtitle {
-  margin: 4px 0 0 0;
-  font-size: 14px;
-  color: #666;
-}
-
-.table-card {
-  border-radius: 8px;
-}
-</style>
 

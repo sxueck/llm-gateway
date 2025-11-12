@@ -74,6 +74,7 @@
         content: 'soft',
         footer: 'soft'
       }"
+      to="body"
     >
       <div class="modal-content-wrapper">
         <n-form ref="formRef" :model="formValue" :rules="rules" label-placement="left" label-width="100" size="small">
@@ -124,6 +125,7 @@
       preset="card"
       :title="t('models.searchFromModelPresetsTitle')"
       :style="{ width: '800px' }"
+      to="body"
     >
       <ModelPresetSelector @select="handleModelPresetSelect" />
     </n-modal>
@@ -133,6 +135,7 @@
       preset="card"
       :title="t('models.batchAddTitle')"
       :style="{ width: '900px' }"
+      to="body"
     >
       <n-space vertical :size="16">
         <n-form-item :label="t('models.selectProvider')" :rule="{ required: true, message: t('validation.providerRequired') }">
@@ -164,6 +167,7 @@
       preset="card"
       :title="t('models.testModel')"
       :style="{ width: '700px' }"
+      to="body"
     >
       <ModelTester v-if="testingModel" :model="testingModel" />
     </n-modal>
