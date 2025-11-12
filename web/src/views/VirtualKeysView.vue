@@ -366,13 +366,21 @@ async function handleSubmit() {
         cacheEnabled: formValue.value.cacheEnabled,
         disableLogging: formValue.value.disableLogging,
         interceptZeroTemperature: formValue.value.interceptZeroTemperature,
-        zeroTemperatureReplacement: formValue.value.zeroTemperatureReplacement,
+        zeroTemperatureReplacement: formValue.value.zeroTemperatureReplacement !== undefined
+          ? Number(formValue.value.zeroTemperatureReplacement)
+          : undefined,
         dynamicCompressionEnabled: formValue.value.dynamicCompressionEnabled,
       });
       message.success('更新成功');
       showModal.value = false;
     } else {
-      const result = await virtualKeyApi.create(formValue.value);
+      const createData = {
+        ...formValue.value,
+        zeroTemperatureReplacement: formValue.value.zeroTemperatureReplacement !== undefined
+          ? Number(formValue.value.zeroTemperatureReplacement)
+          : undefined,
+      };
+      const result = await virtualKeyApi.create(createData);
       createdKeyValue.value = result.keyValue;
       showModal.value = false;
       showKeyModal.value = true;
