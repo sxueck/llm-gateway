@@ -193,50 +193,31 @@ const columns = computed(() => [
   {
     title: t('common.actions'),
     key: 'actions',
-    width: 200,
-    render: (row: Model) => {
-      return h(NSpace, { size: 4 }, {
-        default: () => [
-          h(
-            NButton,
-            {
-              size: 'small',
-              onClick: () => handleEdit(row),
-              style: {
-                borderRadius: '8px',
-              },
-            },
-            {
-              default: () => t('common.edit'),
-              icon: () => h(NIcon, null, { default: () => h(EditOutlined) }),
-            }
-          ),
-          row.promptConfig && row.promptConfig.enabled
-            ? h(
-                NPopconfirm,
-                {
-                  onPositiveClick: () => handleDelete(row.id),
-                },
-                {
-                  default: () => t('promptManagement.confirmDelete'),
-                  trigger: () => h(
-                    NButton,
-                    {
-                      size: 'small',
-                      type: 'error',
-                      text: true,
-                    },
-                    {
-                      default: () => t('common.delete'),
-                      icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) }),
-                    }
-                  ),
-                }
-              )
-            : null,
-        ],
-      });
-    },
+    width: 150,
+    render: (row: Model) => h(NSpace, { size: 6 }, {
+      default: () => [
+        h(NButton, {
+          size: 'small',
+          quaternary: true,
+          circle: true,
+          onClick: () => handleEdit(row),
+        }, {
+          icon: () => h(NIcon, null, { default: () => h(EditOutlined) }),
+        }),
+        h(NPopconfirm, {
+          onPositiveClick: () => handleDelete(row.id),
+          }, {
+            default: () => t('promptManagement.confirmDelete'),
+          trigger: () => h(NButton, {
+            size: 'small',
+            quaternary: true,
+            circle: true,
+          }, {
+            icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) }),
+          }),
+        }),
+      ],
+    }),
   },
 ]);
 
