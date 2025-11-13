@@ -178,7 +178,7 @@ export function createProxyHandler() {
         }
       }
       // 拦截Zero温度功能
-      if (virtualKey.intercept_zero_temperature === 1 && 
+      if (virtualKey.intercept_zero_temperature === 1 &&
           virtualKey.zero_temperature_replacement !== null &&
           (request.body as any)?.temperature === 0) {
         (request.body as any).temperature = virtualKey.zero_temperature_replacement;
@@ -186,6 +186,27 @@ export function createProxyHandler() {
           `拦截Zero温度: 将 temperature=0 替换为 ${virtualKey.zero_temperature_replacement} | 虚拟密钥: ${vkDisplay}`,
           'Proxy'
         );
+      }
+
+      // 应用模型属性到请求体
+      if (currentModel?.model_attributes) {
+        try {
+          const modelAttributes = JSON.parse(currentModel.model_attributes);
+          const enhancedRequestBody = buildFullRequestBody(request.body, modelAttributes);
+          request.body = enhancedRequestBody;
+          
+          if (modelAttributes.supports_prompt_caching) {
+            memoryLogger.info(
+              `已注入 cache_control 字段 | 模型: ${currentModel.name}`,
+              'Proxy'
+            );
+          }
+        } catch (e: any) {
+          memoryLogger.error(
+            `应用模型属性失败: ${e.message}`,
+            'Proxy'
+          );
+        }
       }
 
       let requestBody: string | undefined;

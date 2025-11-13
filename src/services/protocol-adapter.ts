@@ -247,6 +247,13 @@ export class ProtocolAdapter {
       };
     }
 
+    // 处理 cache_control
+    if (config.modelAttributes?.supports_prompt_caching) {
+      requestParams.cache_control = {
+        type: 'ephemeral',
+      };
+    }
+
     const response = await client.chat.completions.create(requestParams);
 
     return response as any;
@@ -360,6 +367,13 @@ export class ProtocolAdapter {
       requestParams.extra_body = {
         ...requestParams.extra_body,
         reasoning_split: true,
+      };
+    }
+
+    // 处理 cache_control
+    if (config.modelAttributes?.supports_prompt_caching) {
+      requestParams.cache_control = {
+        type: 'ephemeral',
       };
     }
 

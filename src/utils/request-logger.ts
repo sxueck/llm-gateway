@@ -26,6 +26,12 @@ export function buildFullRequestBody(
     };
   }
 
+  if (modelAttributes?.supports_prompt_caching) {
+    fullRequest.cache_control = {
+      type: 'ephemeral',
+    };
+  }
+
   return fullRequest;
 }
 
