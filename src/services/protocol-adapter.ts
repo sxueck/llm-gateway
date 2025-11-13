@@ -143,13 +143,27 @@ export class ProtocolAdapter {
     return cleanedMessages;
   }
 
-  private convertToAnthropicFormat(messages: any[]): { system?: string; messages: any[] } {
+  private convertToAnthropicFormat(messages: any[], supportsCaching: boolean = false): { system?: string | any[]; messages: any[] } {
     const systemMessages = messages.filter(m => m.role === 'system');
     const nonSystemMessages = messages.filter(m => m.role !== 'system');
-    
-    const system = systemMessages.length > 0 
-      ? systemMessages.map(m => m.content).join('\n')
-      : undefined;
+
+    let system: string | any[] | undefined;
+
+    if (systemMessages.length > 0) {
+      const systemContent = systemMessages.map(m => m.content).join('\n');
+
+      if (supportsCaching) {
+        system = [
+          {
+            type: 'text',
+            text: systemContent,
+            cache_control: { type: 'ephemeral' }
+          }
+        ];
+      } else {
+        system = systemContent;
+      }
+    }
 
     return {
       system,
@@ -247,13 +261,6 @@ export class ProtocolAdapter {
       };
     }
 
-    // 处理 cache_control
-    if (config.modelAttributes?.supports_prompt_caching) {
-      requestParams.cache_control = {
-        type: 'ephemeral',
-      };
-    }
-
     const response = await client.chat.completions.create(requestParams);
 
     return response as any;
@@ -266,7 +273,8 @@ export class ProtocolAdapter {
   ): Promise<ProtocolResponse> {
     const client = this.getAnthropicClient(config);
     const cleanedMessages = this.validateAndCleanMessages(messages);
-    const { system, messages: anthropicMessages } = this.convertToAnthropicFormat(cleanedMessages);
+    const supportsCaching = config.modelAttributes?.supports_prompt_caching || false;
+    const { system, messages: anthropicMessages } = this.convertToAnthropicFormat(cleanedMessages, supportsCaching);
 
     const requestParams: any = {
       model: config.model,
@@ -370,13 +378,6 @@ export class ProtocolAdapter {
       };
     }
 
-    // 处理 cache_control
-    if (config.modelAttributes?.supports_prompt_caching) {
-      requestParams.cache_control = {
-        type: 'ephemeral',
-      };
-    }
-
     const stream = await client.chat.completions.create(requestParams) as unknown as AsyncIterable<any>;
 
     reply.raw.writeHead(200, {
@@ -442,7 +443,8 @@ export class ProtocolAdapter {
   ): Promise<StreamTokenUsage> {
     const client = this.getAnthropicClient(config);
     const cleanedMessages = this.validateAndCleanMessages(messages);
-    const { system, messages: anthropicMessages } = this.convertToAnthropicFormat(cleanedMessages);
+    const supportsCaching = config.modelAttributes?.supports_prompt_caching || false;
+    const { system, messages: anthropicMessages } = this.convertToAnthropicFormat(cleanedMessages, supportsCaching);
 
     const requestParams: any = {
       model: config.model,
