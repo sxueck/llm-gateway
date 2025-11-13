@@ -102,16 +102,13 @@ Latest: "[read_file for 'error.log'] Result: Error: undefined..."
 → `{"type": "debug"}` (tool result, inherit previous classification)
 
 History: [1] User: 帮我写一个函数 [2] Assistant: (classified as "code") [3] User: <write_to_file>...
-Latest: "File written successfully"
-→ `{"type": "code"}` (tool confirmation, inherit previous classification)
-
-History: [1] User: 设计一个系统架构 [2] Assistant: (classified as "plan") [3] User: <execute_command>...
-Latest: "<execute_command><command>mkdir architecture</command></execute_command>"
-→ `{"type": "plan"}` (tool use in planning context, inherit "plan")
+Latest: "<attempt_completion><result>已完成函数编写</result></attempt_completion>"
+→ `{"type": "other"}` (attempt_completion always returns "other")
 
 # Key Rules
 
 **Tool use detection and handling:**
+- **EXCEPTION**: If latest prompt contains `<attempt_completion>` tag → always classify as "other" (final summary)
 - If latest prompt contains tool execution patterns (e.g., `<tool_name>`, `[tool_result]`, `Result:`, `Output:`), it's a tool use continuation
 - Tool use continuation → **MUST** inherit the previous classification from history
 - Look for the most recent `[N] Assistant:` message containing a classification result
@@ -120,6 +117,7 @@ Latest: "<execute_command><command>mkdir architecture</command></execute_command
   - `[read_file for 'path'] Result:`
   - `Tool execution successful`
   - `Command output:`
+  - **EXCEPTION**: `<attempt_completion>` → "other" (do not inherit)
 
 **Multi-turn handling:**
 - Pronouns (这个/that/it) or continuation words (再/还/also) → check history to resolve reference
@@ -139,6 +137,11 @@ Latest: "<execute_command><command>mkdir architecture</command></execute_command
 - Tool use with no clear history → classify based on tool intent (read_file → "review", write_to_file → "code", execute_command → context-dependent)
 - Multiple tool uses in sequence → all inherit the same original classification
 - Tool use after a new user request → classify the new request, not the tool use
+
+**Special case: attempt_completion tag**
+- If the latest prompt contains `<attempt_completion>`, `</attempt_completion>`, or `attempt_completion` tag, classify as "other"
+- This is a final summary step and should not be routed to any expert model
+- Example: `<attempt_completion><result>...</result></attempt_completion>` → `{"type": "other"}`
 
 # Output Format
 You MUST respond with ONLY a valid JSON object in the following format:
