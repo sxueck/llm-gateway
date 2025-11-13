@@ -53,6 +53,10 @@ export async function resolveModelAndProvider(
       const result = await resolveProviderFromModel(model, request as any, virtualKey.id);
       provider = result.provider;
       providerId = result.providerId;
+      // 如果路由返回了 resolvedModel，使用它覆盖 currentModel
+      if (result.resolvedModel) {
+        currentModel = result.resolvedModel;
+      }
     } catch (routingError: any) {
       memoryLogger.error(`Smart routing failed: ${routingError.message}`, 'Proxy');
       return {
@@ -139,6 +143,10 @@ export async function resolveModelAndProvider(
         const result = await resolveProviderFromModel(model, request as any, virtualKey.id);
         provider = result.provider;
         providerId = result.providerId;
+        // 如果路由返回了 resolvedModel，使用它覆盖 currentModel
+        if (result.resolvedModel) {
+          currentModel = result.resolvedModel;
+        }
       } catch (routingError: any) {
         memoryLogger.error(`Smart routing failed: ${routingError.message}`, 'Proxy');
         return {

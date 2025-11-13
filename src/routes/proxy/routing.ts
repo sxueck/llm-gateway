@@ -24,6 +24,7 @@ export interface ResolveProviderResult {
   provider: any;
   providerId: string;
   modelOverride?: string;
+  resolvedModel?: any;
 }
 
 export interface ProxyRequest {
@@ -176,7 +177,10 @@ export async function resolveExpertRouting(
         throw new Error(`Virtual model not found: ${result.expertModelId}`);
       }
 
-      return await resolveProviderFromModel(virtualModel, request, virtualKeyId, depth + 1);
+      const resolvedResult = await resolveProviderFromModel(virtualModel, request, virtualKeyId, depth + 1);
+      // 保留虚拟模型信息，以便后续获取模型属性
+      resolvedResult.resolvedModel = virtualModel;
+      return resolvedResult;
     }
 
     if (result.modelOverride) {
@@ -184,10 +188,17 @@ export async function resolveExpertRouting(
       request.body.model = result.modelOverride;
     }
 
+    // 对于 real 类型的专家，尝试获取模型信息
+    let resolvedModel;
+    if (result.expert.model_id) {
+      resolvedModel = await modelDb.getById(result.expert.model_id);
+    }
+
     return {
       provider: result.provider,
       providerId: result.providerId,
-      modelOverride: result.modelOverride
+      modelOverride: result.modelOverride,
+      resolvedModel
     };
 
   } catch (e: any) {
