@@ -161,8 +161,6 @@ import {
 } from 'naive-ui';
 import {
   FlashOutline,
-  CheckmarkCircleOutline,
-  CloseCircleOutline,
 } from '@vicons/ionicons5';
 import { modelApi } from '@/api/model';
 import type { Model } from '@/types';
