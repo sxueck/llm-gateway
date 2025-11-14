@@ -305,13 +305,19 @@ export async function modelRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: '关联的提供商不存在' });
     }
 
-    const startTime = Date.now();
+    const apiKey = decryptApiKey(provider.api_key);
+    
+    // Test /chat/completions endpoint
+    const chatStartTime = Date.now();
+    let chatResult: any = {
+      success: false,
+      message: '未测试',
+      responseTime: 0,
+    };
 
     try {
-      const apiKey = decryptApiKey(provider.api_key);
-      const endpoint = buildChatCompletionsEndpoint(provider.base_url);
-
-      const response = await fetch(endpoint, {
+      const chatEndpoint = buildChatCompletionsEndpoint(provider.base_url);
+      const chatResponse = await fetch(chatEndpoint, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -320,46 +326,116 @@ export async function modelRoutes(fastify: FastifyInstance) {
         body: JSON.stringify({
           model: model.model_identifier,
           messages: [{ role: 'user', content: '测试' }],
-          max_tokens: 4096,
+          max_tokens: 200,
           temperature: 0.1,
         }),
         signal: AbortSignal.timeout(30000),
       });
 
-      const responseTime = Date.now() - startTime;
+      const chatResponseTime = Date.now() - chatStartTime;
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        return {
+      if (!chatResponse.ok) {
+        const errorText = await chatResponse.text();
+        chatResult = {
           success: false,
-          status: response.status,
-          message: `测试失败: HTTP ${response.status}`,
+          status: chatResponse.status,
+          message: `Chat 测试失败: HTTP ${chatResponse.status}`,
           error: errorText,
-          responseTime,
+          responseTime: chatResponseTime,
+        };
+      } else {
+        const data: any = await chatResponse.json();
+        const content = data?.choices?.[0]?.message?.content || '无响应内容';
+        chatResult = {
+          success: true,
+          status: chatResponse.status,
+          message: 'Chat 测试成功',
+          responseTime: chatResponseTime,
+          response: {
+            content,
+            usage: data?.usage,
+          },
         };
       }
-
-      const data: any = await response.json();
-      const content = data?.choices?.[0]?.message?.content || '无响应内容';
-
-      return {
-        success: true,
-        status: response.status,
-        message: '测试成功',
-        responseTime,
-        response: {
-          content,
-          usage: data?.usage,
-        },
-      };
     } catch (error: any) {
-      const responseTime = Date.now() - startTime;
-      return {
+      const chatResponseTime = Date.now() - chatStartTime;
+      chatResult = {
         success: false,
-        message: error.message || '测试失败',
-        responseTime,
+        message: `Chat 测试失败: ${error.message}`,
+        responseTime: chatResponseTime,
         error: error.stack,
       };
     }
+
+    // Test /responses endpoint
+    const responsesStartTime = Date.now();
+    let responsesResult: any = {
+      success: false,
+      message: '未测试',
+      responseTime: 0,
+    };
+
+    try {
+      // Build responses endpoint (replace /chat/completions with /responses)
+      const responsesEndpoint = provider.base_url.replace(/\/+$/, '') + '/responses';
+      
+      const responsesResponse = await fetch(responsesEndpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: model.model_identifier,
+          input: '测试',
+          max_tokens: 100,
+          temperature: 0.1,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+
+      const responsesResponseTime = Date.now() - responsesStartTime;
+
+      if (!responsesResponse.ok) {
+        const errorText = await responsesResponse.text();
+        responsesResult = {
+          success: false,
+          status: responsesResponse.status,
+          message: `Responses 测试失败: HTTP ${responsesResponse.status}`,
+          error: errorText,
+          responseTime: responsesResponseTime,
+        };
+      } else {
+        const data: any = await responsesResponse.json();
+        const content = data?.output_text || data?.output || '无响应内容';
+        responsesResult = {
+          success: true,
+          status: responsesResponse.status,
+          message: 'Responses 测试成功',
+          responseTime: responsesResponseTime,
+          response: {
+            content,
+            usage: data?.usage,
+          },
+        };
+      }
+    } catch (error: any) {
+      const responsesResponseTime = Date.now() - responsesStartTime;
+      responsesResult = {
+        success: false,
+        message: `Responses 测试失败: ${error.message}`,
+        responseTime: responsesResponseTime,
+        error: error.stack,
+      };
+    }
+
+    // Return combined results
+    const overallSuccess = chatResult.success || responsesResult.success;
+    return {
+      success: overallSuccess,
+      message: overallSuccess ? '至少一个接口测试成功' : '所有接口测试失败',
+      chat: chatResult,
+      responses: responsesResult,
+    };
   });
 }

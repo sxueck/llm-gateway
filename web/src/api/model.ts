@@ -37,14 +37,29 @@ export const modelApi = {
 
   test(id: string): Promise<{
     success: boolean;
-    status?: number;
     message: string;
-    responseTime: number;
-    response?: {
-      content: string;
-      usage?: any;
+    chat: {
+      success: boolean;
+      status?: number;
+      message: string;
+      responseTime: number;
+      response?: {
+        content: string;
+        usage?: any;
+      };
+      error?: string;
     };
-    error?: string;
+    responses: {
+      success: boolean;
+      status?: number;
+      message: string;
+      responseTime: number;
+      response?: {
+        content: string;
+        usage?: any;
+      };
+      error?: string;
+    };
   }> {
     return request.post(`/admin/models/${id}/test`);
   },
