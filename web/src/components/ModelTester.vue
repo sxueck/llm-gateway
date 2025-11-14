@@ -22,24 +22,7 @@
       </n-space>
 
       <div v-if="testResult" class="test-result">
-        <n-card size="small" :class="['result-card', testResult.success ? 'success' : 'error']">
-          <template #header>
-            <n-space :size="8" align="center">
-              <n-icon :size="18" :color="testResult.success ? '#18a058' : '#d03050'">
-                <CheckmarkCircleOutline v-if="testResult.success" />
-                <CloseCircleOutline v-else />
-              </n-icon>
-              <span>{{ testResult.message }}</span>
-              <n-tag
-                :type="testResult.success ? 'success' : 'error'"
-                size="small"
-                round
-              >
-                {{ testResult.success ? t('common.success') : t('common.failed') }}
-              </n-tag>
-            </n-space>
-          </template>
-
+        <n-card size="small" class="result-card">
           <n-space vertical :size="16">
             <!-- Chat Completions 测试结果 -->
             <div class="endpoint-result">
@@ -199,8 +182,6 @@ interface EndpointTestResult {
 }
 
 interface TestResult {
-  success: boolean;
-  message: string;
   chat: EndpointTestResult;
   responses: EndpointTestResult;
   timestamp: number;
@@ -226,8 +207,6 @@ async function handleTest() {
   try {
     const result = await modelApi.test(props.model.id);
     const testData: TestResult = {
-      success: result.success,
-      message: result.message,
       chat: result.chat,
       responses: result.responses,
       timestamp: Date.now(),
@@ -235,15 +214,19 @@ async function handleTest() {
 
     testResult.value = testData;
 
-    if (result.success) {
-      message.success(t('models.testSuccess'));
+    // 根据两个接口的测试结果显示消息
+    const chatSuccess = result.chat.success;
+    const responsesSuccess = result.responses.success;
+    
+    if (chatSuccess && responsesSuccess) {
+      message.success('两个接口测试均成功');
+    } else if (chatSuccess || responsesSuccess) {
+      message.warning('部分接口测试成功');
     } else {
-      message.error(t('models.testFailed'));
+      message.error('两个接口测试均失败');
     }
   } catch (error: any) {
     const testData: TestResult = {
-      success: false,
-      message: error.message || t('models.testRequestFailed'),
       chat: {
         success: false,
         message: '请求失败',

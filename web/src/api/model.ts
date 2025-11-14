@@ -36,8 +36,6 @@ export const modelApi = {
   },
 
   test(id: string): Promise<{
-    success: boolean;
-    message: string;
     chat: {
       success: boolean;
       status?: number;

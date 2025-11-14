@@ -430,10 +430,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
     }
 
     // Return combined results
-    const overallSuccess = chatResult.success || responsesResult.success;
     return {
-      success: overallSuccess,
-      message: overallSuccess ? '至少一个接口测试成功' : '所有接口测试失败',
       chat: chatResult,
       responses: responsesResult,
     };
