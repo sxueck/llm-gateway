@@ -18,10 +18,6 @@ function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
   return !virtualKey.disable_logging;
 }
 
-function shouldRetryLoadBalance(statusCode: number): boolean {
-  // 对于 429 (rate limit), 503 (service unavailable), 500 (internal error) 等错误进行重试
-  return statusCode === 429 || statusCode === 503 || statusCode === 500 || statusCode === 502 || statusCode === 504;
-}
 
 async function calculateTokensIfNeeded(
   totalTokens: number,
@@ -78,7 +74,6 @@ export function createProxyHandler() {
     let providerId: string | undefined;
     let compressionStats: { originalTokens: number; savedTokens: number } | undefined;
     let currentModel: any | undefined;
-    let retryContext: import('./routing.js').LoadBalanceRetryContext | undefined;
 
     try {
       // 反爬虫检测
@@ -114,10 +109,9 @@ export function createProxyHandler() {
         return reply.code(modelResult.code).send(modelResult.body);
       }
 
-      const { provider, providerId: resolvedProviderId, currentModel: resolvedModel, retryContext: modelRetryContext } = modelResult;
+      const { provider, providerId: resolvedProviderId, currentModel: resolvedModel } = modelResult;
       providerId = resolvedProviderId;
       currentModel = resolvedModel;
-      retryContext = modelRetryContext;
 
       const configResult = await buildProviderConfig(provider, virtualKey, virtualKeyValue!, providerId, request, currentModel);
       if ('code' in configResult) {
@@ -245,8 +239,7 @@ export function createProxyHandler() {
           providerId,
           startTime,
           compressionStats,
-          currentModel,
-          retryContext
+          currentModel
         );
       }
 
@@ -260,8 +253,7 @@ export function createProxyHandler() {
         path,
         startTime,
         compressionStats,
-        currentModel,
-        retryContext
+        currentModel
       );
     } catch (error: any) {
       const duration = Date.now() - startTime;
@@ -336,7 +328,6 @@ export async function handleStreamRequest(
   startTime: number,
   compressionStats?: { originalTokens: number; savedTokens: number },
   currentModel?: any,
-  retryContext?: import('./routing.js').LoadBalanceRetryContext
 ) {
   memoryLogger.info(
     `流式请求开始: ${path} | virtual key: ${vkDisplay}`,
@@ -427,61 +418,6 @@ export async function handleStreamRequest(
       { error: streamError.stack }
     );
 
-    // 负载均衡重试逻辑：如果有 retryContext 且响应未发送，尝试下一个目标
-    if (retryContext && !reply.sent && shouldRetryLoadBalance(streamError.status || 500)) {
-      memoryLogger.info(
-        `负载均衡重试(流式): 检测到失败，尝试下一个目标`,
-        'Proxy'
-      );
-      
-      const { retryNextLoadBalanceTarget } = await import('./routing.js');
-      const nextTarget = await retryNextLoadBalanceTarget(retryContext);
-      
-      if (nextTarget) {
-        memoryLogger.info(
-          `负载均衡重试(流式): 切换到新目标 provider=${nextTarget.providerId}`,
-          'Proxy'
-        );
-        
-        // 更新 request.body.model 如果有 override
-        if (nextTarget.modelOverride) {
-          (request.body as any).model = nextTarget.modelOverride;
-        }
-        
-        // 重新构建 provider config 并重试请求
-        const { buildProviderConfig } = await import('./provider-config-builder.js');
-        const configResult = await buildProviderConfig(
-          nextTarget.provider,
-          virtualKey,
-          vkDisplay,
-          nextTarget.providerId,
-          request,
-          currentModel
-        );
-        
-        if (!('code' in configResult)) {
-          // 递归调用自己进行重试
-          return await handleStreamRequest(
-            request,
-            reply,
-            configResult.protocolConfig,
-            path,
-            vkDisplay,
-            virtualKey,
-            nextTarget.providerId,
-            startTime,
-            compressionStats,
-            currentModel,
-            nextTarget.retryContext
-          );
-        }
-      } else {
-        memoryLogger.warn(
-          `负载均衡重试(流式): 没有更多可用目标`,
-          'Proxy'
-        );
-      }
-    }
 
     const shouldLogBody = shouldLogRequestBody(virtualKey);
 
@@ -532,7 +468,6 @@ export async function handleNonStreamRequest(
   startTime: number,
   compressionStats?: { originalTokens: number; savedTokens: number },
   currentModel?: any,
-  retryContext?: import('./routing.js').LoadBalanceRetryContext
 ) {
   let fromCache = false;
   const isEmbeddingsRequest = path.startsWith('/v1/embeddings');
@@ -779,61 +714,6 @@ export async function handleNonStreamRequest(
       'Proxy'
     );
 
-    // 负载均衡重试逻辑：如果有 retryContext 且是可重试的错误，尝试下一个目标
-    if (retryContext && shouldRetryLoadBalance(response.statusCode)) {
-      memoryLogger.info(
-        `负载均衡重试: 检测到失败 (${response.statusCode})，尝试下一个目标`,
-        'Proxy'
-      );
-      
-      const { retryNextLoadBalanceTarget } = await import('./routing.js');
-      const nextTarget = await retryNextLoadBalanceTarget(retryContext);
-      
-      if (nextTarget) {
-        memoryLogger.info(
-          `负载均衡重试: 切换到新目标 provider=${nextTarget.providerId}`,
-          'Proxy'
-        );
-        
-        // 更新 request.body.model 如果有 override
-        if (nextTarget.modelOverride) {
-          (request.body as any).model = nextTarget.modelOverride;
-        }
-        
-        // 重新构建 provider config 并重试请求
-        const { buildProviderConfig } = await import('./provider-config-builder.js');
-        const configResult = await buildProviderConfig(
-          nextTarget.provider,
-          virtualKey,
-          virtualKeyValue,
-          nextTarget.providerId,
-          request,
-          currentModel
-        );
-        
-        if (!('code' in configResult)) {
-          // 递归调用自己进行重试
-          return await handleNonStreamRequest(
-            request,
-            reply,
-            configResult.protocolConfig,
-            virtualKey,
-            nextTarget.providerId,
-            isStreamRequest,
-            path,
-            startTime,
-            compressionStats,
-            currentModel,
-            nextTarget.retryContext
-          );
-        }
-      } else {
-        memoryLogger.warn(
-          `负载均衡重试: 没有更多可用目标，返回错误给客户端`,
-          'Proxy'
-        );
-      }
-    }
   }
 
   reply.header('Content-Type', 'application/json');

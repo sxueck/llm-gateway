@@ -182,11 +182,6 @@ Latest: "<attempt_completion><result>已完成函数编写</result></attempt_com
 - Multiple tool uses in sequence → all inherit the same original classification
 - Tool use after a new user request → classify the new request, not the tool use
 
-**Special case: attempt_completion tag**
-- If the latest prompt contains `<attempt_completion>`, `</attempt_completion>`, or `attempt_completion` tag, classify as "other"
-- This is a final summary step and should not be routed to any expert model
-- Example: `<attempt_completion><result>...</result></attempt_completion>` → `{"type": "other"}`
-
 # Output Format
 You MUST respond with ONLY a valid JSON object in the following format:
 ```json

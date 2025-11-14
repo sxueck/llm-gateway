@@ -7,7 +7,6 @@ export interface ModelResolutionResult {
   provider: any;
   providerId: string;
   currentModel?: any;
-  retryContext?: import('./routing.js').LoadBalanceRetryContext;
 }
 
 export interface ModelResolutionError {
@@ -30,7 +29,6 @@ export async function resolveModelAndProvider(
   let provider;
   let currentModel;
   let providerId: string | undefined;
-  let retryContext: import('./routing.js').LoadBalanceRetryContext | undefined;
 
   if (virtualKey.model_id) {
     const model = await modelDb.getById(virtualKey.model_id);
@@ -55,7 +53,6 @@ export async function resolveModelAndProvider(
       const result = await resolveProviderFromModel(model, request as any, virtualKey.id);
       provider = result.provider;
       providerId = result.providerId;
-      retryContext = result.retryContext;
       // 如果路由返回了 resolvedModel，使用它覆盖 currentModel
       if (result.resolvedModel) {
         currentModel = result.resolvedModel;
@@ -146,7 +143,6 @@ export async function resolveModelAndProvider(
         const result = await resolveProviderFromModel(model, request as any, virtualKey.id);
         provider = result.provider;
         providerId = result.providerId;
-        retryContext = result.retryContext;
         // 如果路由返回了 resolvedModel，使用它覆盖 currentModel
         if (result.resolvedModel) {
           currentModel = result.resolvedModel;
@@ -230,8 +226,7 @@ export async function resolveModelAndProvider(
   return {
     provider,
     providerId: providerId!,
-    currentModel,
-    retryContext
+    currentModel
   };
 }
 

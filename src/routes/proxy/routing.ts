@@ -25,14 +25,6 @@ export interface ResolveProviderResult {
   providerId: string;
   modelOverride?: string;
   resolvedModel?: any;
-  retryContext?: LoadBalanceRetryContext;
-}
-
-export interface LoadBalanceRetryContext {
-  isLoadBalance: boolean;
-  routingConfigId: string;
-  config: RoutingConfig;
-  triedProviders: Set<string>;
 }
 
 export interface ProxyRequest {
@@ -111,13 +103,6 @@ export async function resolveSmartRouting(model: any): Promise<ResolveProviderRe
 
   try {
     const config = JSON.parse(routingConfig.config);
-    
-    // 对于 loadbalance 模式，返回第一个目标并附带重试上下文
-    if (routingConfig.type === 'loadbalance' || config.strategy?.mode === 'loadbalance') {
-      return await resolveSmartRoutingWithRetryContext(config, routingConfig.type, model.routing_config_id);
-    }
-    
-    // fallback 模式保持原有逻辑
     const selectedTarget = selectRoutingTarget(config, routingConfig.type, model.routing_config_id);
 
     if (!selectedTarget) {
@@ -154,114 +139,6 @@ export async function resolveSmartRouting(model: any): Promise<ResolveProviderRe
     memoryLogger.error(`Failed to parse smart routing config: ${e.message}`, 'Proxy');
     throw new Error(`Smart routing config parse error: ${e.message}`);
   }
-}
-
-async function resolveSmartRoutingWithRetryContext(
-  config: RoutingConfig,
-  type: string,
-  configId?: string
-): Promise<ResolveProviderResult> {
-  const availableTargets = config.targets.filter(t => circuitBreaker.isAvailable(t.provider));
-  
-  if (availableTargets.length === 0) {
-    memoryLogger.error(
-      `负载均衡: 所有目标均不可用 | total: ${config.targets.length}`,
-      'Routing'
-    );
-    throw new Error('All load balance targets are unavailable');
-  }
-
-  // 选择第一个目标
-  const selectedTarget = selectRoutingTarget(config, type, configId);
-  
-  if (!selectedTarget) {
-    memoryLogger.error(`负载均衡: 无法选择目标`, 'Routing');
-    throw new Error('No target selected from load balance config');
-  }
-
-  const provider = await providerDb.getById(selectedTarget.provider);
-  if (!provider) {
-    memoryLogger.error(`负载均衡: Provider 未找到: ${selectedTarget.provider}`, 'Routing');
-    throw new Error(`Load balance target provider not found: ${selectedTarget.provider}`);
-  }
-
-  const result: ResolveProviderResult = {
-    provider,
-    providerId: selectedTarget.provider,
-    retryContext: {
-      isLoadBalance: true,
-      routingConfigId: configId!,
-      config,
-      triedProviders: new Set([selectedTarget.provider])
-    }
-  };
-
-  if (selectedTarget.override_params?.model) {
-    result.modelOverride = selectedTarget.override_params.model;
-  }
-
-  memoryLogger.info(
-    `负载均衡: 初始目标选择 | provider=${provider.name} | model=${selectedTarget.override_params?.model || 'default'} | 可用目标数: ${availableTargets.length}`,
-    'Routing'
-  );
-
-  return result;
-}
-
-export async function retryNextLoadBalanceTarget(
-  retryContext: LoadBalanceRetryContext
-): Promise<ResolveProviderResult | null> {
-  const { config, triedProviders, routingConfigId } = retryContext;
-  
-  const availableTargets = config.targets.filter(
-    t => circuitBreaker.isAvailable(t.provider) && !triedProviders.has(t.provider)
-  );
-
-  if (availableTargets.length === 0) {
-    memoryLogger.warn(
-      `负载均衡重试: 没有更多可用目标 | 已尝试: ${triedProviders.size}/${config.targets.length}`,
-      'Routing'
-    );
-    return null;
-  }
-
-  // 从剩余的可用目标中选择
-  const selectedTarget = selectRoutingTarget(
-    { ...config, targets: availableTargets },
-    'loadbalance',
-    routingConfigId
-  );
-
-  if (!selectedTarget) {
-    memoryLogger.warn(`负载均衡重试: 无法选择下一个目标`, 'Routing');
-    return null;
-  }
-
-  const provider = await providerDb.getById(selectedTarget.provider);
-  if (!provider) {
-    memoryLogger.warn(`负载均衡重试: Provider 未找到: ${selectedTarget.provider}`, 'Routing');
-    triedProviders.add(selectedTarget.provider);
-    return await retryNextLoadBalanceTarget(retryContext);
-  }
-
-  triedProviders.add(selectedTarget.provider);
-
-  const result: ResolveProviderResult = {
-    provider,
-    providerId: selectedTarget.provider,
-    retryContext
-  };
-
-  if (selectedTarget.override_params?.model) {
-    result.modelOverride = selectedTarget.override_params.model;
-  }
-
-  memoryLogger.info(
-    `负载均衡重试: 切换到下一个目标 | provider=${provider.name} | model=${selectedTarget.override_params?.model || 'default'} | 已尝试: ${triedProviders.size}/${config.targets.length}`,
-    'Routing'
-  );
-
-  return result;
 }
 
 export async function resolveExpertRouting(
