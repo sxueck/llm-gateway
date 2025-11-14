@@ -102,7 +102,7 @@ export async function buildProviderConfig(
     'Proxy'
   );
   memoryLogger.debug(
-    `协议配置 | provider: ${normalized.provider} | protocol: ${normalized.protocol} | baseUrl: ${normalized.baseUrl || 'default'} | apiKey: ${redactedApiKey}`,
+    `协议配置 | provider: ${normalized.provider} | protocol: ${normalized.protocol} | baseUrl: ${normalized.baseUrl || 'default'} | model: ${model} | apiKey: ${redactedApiKey}`,
     'Proxy'
   );
 

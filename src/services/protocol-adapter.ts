@@ -190,11 +190,62 @@ export class ProtocolAdapter {
   }
 
   /**
-   * Add cache_control breakpoints to messages following Anthropic's best practices:
-   * - Add cache_control to the last content block of the last 2-3 user messages
+   * Add cache_control to the last tool in the tools array
+   */
+  private addCacheControlToTools(tools: any[]): any[] {
+    if (!tools || tools.length === 0) {
+      return tools;
+    }
+
+    const result = [...tools];
+    const lastIndex = result.length - 1;
+
+    result[lastIndex] = {
+      ...result[lastIndex],
+      cache_control: { type: 'ephemeral' }
+    };
+
+    return result;
+  }
+
+  /**
+   * Add cache_control to messages
+   * Adds cache_control to the last content block of the last 2-3 user messages and system messages
    */
   private addCacheControlToMessages(messages: any[]): any[] {
     const result = [...messages];
+
+    // Find system messages and add cache_control to their last content block
+    for (let i = 0; i < result.length; i++) {
+      const message = result[i];
+      if (message.role === 'system') {
+        if (typeof message.content === 'string') {
+          result[i] = {
+            ...message,
+            content: [
+              {
+                type: 'text',
+                text: message.content,
+                cache_control: { type: 'ephemeral' }
+              }
+            ]
+          };
+        } else if (Array.isArray(message.content)) {
+          const contentArray = [...message.content];
+          const lastIndex = contentArray.length - 1;
+          if (lastIndex >= 0) {
+            contentArray[lastIndex] = {
+              ...contentArray[lastIndex],
+              cache_control: { type: 'ephemeral' }
+            };
+            result[i] = {
+              ...message,
+              content: contentArray
+            };
+          }
+        }
+      }
+    }
 
     // Find the indices of the last 2-3 user messages
     const userMessageIndices: number[] = [];
@@ -204,7 +255,7 @@ export class ProtocolAdapter {
       }
     }
 
-    // Add cache_control to these messages
+    // Add cache_control to these user messages
     userMessageIndices.forEach((idx) => {
       const message = result[idx];
 
@@ -245,22 +296,43 @@ export class ProtocolAdapter {
   }
 
   /**
-   * Add cache_control to the last tool in the tools array
+   * Prepare messages with cache_control if caching is supported
    */
-  private addCacheControlToTools(tools: any[]): any[] {
-    if (!tools || tools.length === 0) {
-      return tools;
+  private prepareMessagesWithCaching(
+    messages: any[],
+    config: ProtocolConfig
+  ): { messages: any[]; supportsCaching: boolean } {
+    let cleanedMessages = this.validateAndCleanMessages(messages);
+    const supportsCaching = config.modelAttributes?.supports_prompt_caching || false;
+
+    if (supportsCaching) {
+      cleanedMessages = this.addCacheControlToMessages(cleanedMessages);
+      const systemMessageCount = cleanedMessages.filter(m => m.role === 'system').length;
+      const userMessageCount = cleanedMessages.filter(m => m.role === 'user').length;
+      const cacheableUserCount = Math.min(userMessageCount, 3);
+
+      memoryLogger.debug(
+        `已在 ${systemMessageCount} 个 system 消息和最后 ${cacheableUserCount} 个 user 消息上添加 cache_control`,
+        'Protocol'
+      );
     }
 
-    const result = [...tools];
-    const lastIndex = result.length - 1;
+    return { messages: cleanedMessages, supportsCaching };
+  }
 
-    result[lastIndex] = {
-      ...result[lastIndex],
-      cache_control: { type: 'ephemeral' }
-    };
-
-    return result;
+  /**
+   * Prepare tools with cache_control if caching is supported
+   */
+  private prepareToolsWithCaching(tools: any[], supportsCaching: boolean): any[] {
+    if (supportsCaching && Array.isArray(tools) && tools.length > 0) {
+      const result = this.addCacheControlToTools(tools);
+      memoryLogger.debug(
+        `已在 ${tools.length} 个工具定义的最后一个工具上添加 cache_control`,
+        'Protocol'
+      );
+      return result;
+    }
+    return tools;
   }
 
   private convertAnthropicToOpenAIFormat(response: any): ProtocolResponse {
@@ -311,7 +383,10 @@ export class ProtocolAdapter {
   ): Promise<ProtocolResponse> {
     const client = this.getOpenAIClient(config);
 
-    const cleanedMessages = this.validateAndCleanMessages(messages);
+    const { messages: cleanedMessages, supportsCaching } = this.prepareMessagesWithCaching(
+      messages,
+      config
+    );
 
     const requestParams: any = {
       model: config.model,
@@ -333,7 +408,12 @@ export class ProtocolAdapter {
     if (options.n !== undefined) requestParams.n = options.n;
     if (options.logit_bias !== undefined) requestParams.logit_bias = options.logit_bias;
     if (options.user !== undefined) requestParams.user = options.user;
-    if (options.tools !== undefined) requestParams.tools = options.tools;
+
+    // Add tools with cache_control if caching is supported
+    if (options.tools !== undefined) {
+      requestParams.tools = this.prepareToolsWithCaching(options.tools, supportsCaching);
+    }
+
     if (options.tool_choice !== undefined) requestParams.tool_choice = options.tool_choice;
     if (options.parallel_tool_calls !== undefined) requestParams.parallel_tool_calls = options.parallel_tool_calls;
     if (options.response_format !== undefined) requestParams.response_format = options.response_format;
@@ -440,7 +520,10 @@ export class ProtocolAdapter {
   ): Promise<StreamTokenUsage> {
     const client = this.getOpenAIClient(config);
 
-    const cleanedMessages = this.validateAndCleanMessages(messages);
+    const { messages: cleanedMessages, supportsCaching } = this.prepareMessagesWithCaching(
+      messages,
+      config
+    );
 
     const requestParams: any = {
       model: config.model,
@@ -456,7 +539,12 @@ export class ProtocolAdapter {
     } else if (options.max_completion_tokens !== undefined) {
       requestParams.max_tokens = options.max_completion_tokens;
     }
-    if (options.tools !== undefined) requestParams.tools = options.tools;
+
+    // Add tools with cache_control if caching is supported
+    if (options.tools !== undefined) {
+      requestParams.tools = this.prepareToolsWithCaching(options.tools, supportsCaching);
+    }
+
     if (options.tool_choice !== undefined) requestParams.tool_choice = options.tool_choice;
     if (options.parallel_tool_calls !== undefined) requestParams.parallel_tool_calls = options.parallel_tool_calls;
     if (options.top_p !== undefined) requestParams.top_p = options.top_p;
@@ -464,8 +552,6 @@ export class ProtocolAdapter {
     if (options.presence_penalty !== undefined) requestParams.presence_penalty = options.presence_penalty;
     if (options.stop !== undefined) requestParams.stop = options.stop;
     if (options.n !== undefined) requestParams.n = options.n;
-    if (options.tools !== undefined) requestParams.tools = options.tools;
-    if (options.tool_choice !== undefined) requestParams.tool_choice = options.tool_choice;
     if (options.response_format !== undefined) requestParams.response_format = options.response_format;
     if (options.seed !== undefined) requestParams.seed = options.seed;
 
