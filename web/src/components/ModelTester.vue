@@ -22,65 +22,120 @@
       </n-space>
 
       <div v-if="testResult" class="test-result">
-        <n-card size="small" :class="['result-card', testResult.success ? 'success' : 'error']">
-          <template #header>
-            <n-space :size="8" align="center">
-              <n-icon :size="18" :color="testResult.success ? '#18a058' : '#d03050'">
-                <CheckmarkCircleOutline v-if="testResult.success" />
-                <CloseCircleOutline v-else />
-              </n-icon>
-              <span>{{ testResult.message }}</span>
-              <n-tag
-                :type="testResult.success ? 'success' : 'error'"
-                size="small"
-                round
-              >
-                {{ testResult.success ? t('common.success') : t('common.failed') }}
-              </n-tag>
-            </n-space>
-          </template>
+        <n-card size="small" class="result-card">
+          <n-space vertical :size="16">
+            <!-- Chat Completions 测试结果 -->
+            <div class="endpoint-result">
+              <n-divider style="margin: 8px 0;">
+                <n-space :size="8" align="center">
+                  <span style="font-weight: bold;">Chat Completions API</span>
+                  <n-tag
+                    :type="testResult.chat.success ? 'success' : 'error'"
+                    size="small"
+                    round
+                  >
+                    {{ testResult.chat.success ? '成功' : '失败' }}
+                  </n-tag>
+                </n-space>
+              </n-divider>
 
-          <n-space vertical :size="12">
-            <n-descriptions :column="2" size="small" bordered>
-              <n-descriptions-item :label="t('common.responseTime')">
-                <n-text :type="getResponseTimeType(testResult.responseTime)">
-                  {{ testResult.responseTime }}ms
-                </n-text>
-              </n-descriptions-item>
-              <n-descriptions-item :label="t('apiRequests.statusCode')" v-if="testResult.status">
-                <n-tag :type="testResult.status < 400 ? 'success' : 'error'" size="small">
-                  {{ testResult.status }}
-                </n-tag>
-              </n-descriptions-item>
-            </n-descriptions>
-
-            <div v-if="testResult.success && testResult.response" class="response-section">
-              <n-divider style="margin: 8px 0;">响应内容</n-divider>
-              <n-card size="small" class="response-content">
-                <n-text code>{{ testResult.response.content }}</n-text>
-              </n-card>
-              
-              <div v-if="testResult.response.usage" class="usage-info">
-                <n-divider style="margin: 8px 0;">Token 使用情况</n-divider>
-                <n-descriptions :column="3" size="small">
-                  <n-descriptions-item label="输入 Tokens">
-                    {{ testResult.response.usage.prompt_tokens || 0 }}
+              <n-space vertical :size="12">
+                <n-descriptions :column="2" size="small" bordered>
+                  <n-descriptions-item label="响应时间">
+                    <n-text :type="getResponseTimeType(testResult.chat.responseTime)">
+                      {{ testResult.chat.responseTime }}ms
+                    </n-text>
                   </n-descriptions-item>
-                  <n-descriptions-item label="输出 Tokens">
-                    {{ testResult.response.usage.completion_tokens || 0 }}
-                  </n-descriptions-item>
-                  <n-descriptions-item label="总计 Tokens">
-                    {{ testResult.response.usage.total_tokens || 0 }}
+                  <n-descriptions-item label="状态码" v-if="testResult.chat.status">
+                    <n-tag :type="testResult.chat.status < 400 ? 'success' : 'error'" size="small">
+                      {{ testResult.chat.status }}
+                    </n-tag>
                   </n-descriptions-item>
                 </n-descriptions>
-              </div>
+
+                <div v-if="testResult.chat.success && testResult.chat.response" class="response-section">
+                  <n-card size="small" class="response-content">
+                    <n-text code>{{ testResult.chat.response.content }}</n-text>
+                  </n-card>
+                  
+                  <div v-if="testResult.chat.response.usage" class="usage-info">
+                    <n-descriptions :column="3" size="small" style="margin-top: 8px;">
+                      <n-descriptions-item label="输入 Tokens">
+                        {{ testResult.chat.response.usage.prompt_tokens || 0 }}
+                      </n-descriptions-item>
+                      <n-descriptions-item label="输出 Tokens">
+                        {{ testResult.chat.response.usage.completion_tokens || 0 }}
+                      </n-descriptions-item>
+                      <n-descriptions-item label="总计 Tokens">
+                        {{ testResult.chat.response.usage.total_tokens || 0 }}
+                      </n-descriptions-item>
+                    </n-descriptions>
+                  </div>
+                </div>
+
+                <div v-if="!testResult.chat.success && testResult.chat.error" class="error-section">
+                  <n-card size="small" class="error-content">
+                    <n-text code style="font-size: 12px; white-space: pre-wrap;">{{ testResult.chat.error }}</n-text>
+                  </n-card>
+                </div>
+              </n-space>
             </div>
 
-            <div v-if="!testResult.success && testResult.error" class="error-section">
-              <n-divider style="margin: 8px 0;">错误详情</n-divider>
-              <n-card size="small" class="error-content">
-                <n-text code style="font-size: 12px; white-space: pre-wrap;">{{ testResult.error }}</n-text>
-              </n-card>
+            <!-- Responses API 测试结果 -->
+            <div class="endpoint-result">
+              <n-divider style="margin: 8px 0;">
+                <n-space :size="8" align="center">
+                  <span style="font-weight: bold;">Responses API</span>
+                  <n-tag
+                    :type="testResult.responses.success ? 'success' : 'error'"
+                    size="small"
+                    round
+                  >
+                    {{ testResult.responses.success ? '成功' : '失败' }}
+                  </n-tag>
+                </n-space>
+              </n-divider>
+
+              <n-space vertical :size="12">
+                <n-descriptions :column="2" size="small" bordered>
+                  <n-descriptions-item label="响应时间">
+                    <n-text :type="getResponseTimeType(testResult.responses.responseTime)">
+                      {{ testResult.responses.responseTime }}ms
+                    </n-text>
+                  </n-descriptions-item>
+                  <n-descriptions-item label="状态码" v-if="testResult.responses.status">
+                    <n-tag :type="testResult.responses.status < 400 ? 'success' : 'error'" size="small">
+                      {{ testResult.responses.status }}
+                    </n-tag>
+                  </n-descriptions-item>
+                </n-descriptions>
+
+                <div v-if="testResult.responses.success && testResult.responses.response" class="response-section">
+                  <n-card size="small" class="response-content">
+                    <n-text code>{{ testResult.responses.response.content }}</n-text>
+                  </n-card>
+                  
+                  <div v-if="testResult.responses.response.usage" class="usage-info">
+                    <n-descriptions :column="3" size="small" style="margin-top: 8px;">
+                      <n-descriptions-item label="输入 Tokens">
+                        {{ testResult.responses.response.usage.prompt_tokens || 0 }}
+                      </n-descriptions-item>
+                      <n-descriptions-item label="输出 Tokens">
+                        {{ testResult.responses.response.usage.completion_tokens || 0 }}
+                      </n-descriptions-item>
+                      <n-descriptions-item label="总计 Tokens">
+                        {{ testResult.responses.response.usage.total_tokens || 0 }}
+                      </n-descriptions-item>
+                    </n-descriptions>
+                  </div>
+                </div>
+
+                <div v-if="!testResult.responses.success && testResult.responses.error" class="error-section">
+                  <n-card size="small" class="error-content">
+                    <n-text code style="font-size: 12px; white-space: pre-wrap;">{{ testResult.responses.error }}</n-text>
+                  </n-card>
+                </div>
+              </n-space>
             </div>
           </n-space>
         </n-card>
@@ -106,15 +161,13 @@ import {
 } from 'naive-ui';
 import {
   FlashOutline,
-  CheckmarkCircleOutline,
-  CloseCircleOutline,
 } from '@vicons/ionicons5';
 import { modelApi } from '@/api/model';
 import type { Model } from '@/types';
 
 const { t } = useI18n();
 
-interface TestResult {
+interface EndpointTestResult {
   success: boolean;
   status?: number;
   message: string;
@@ -124,6 +177,11 @@ interface TestResult {
     usage?: any;
   };
   error?: string;
+}
+
+interface TestResult {
+  chat: EndpointTestResult;
+  responses: EndpointTestResult;
   timestamp: number;
 }
 
@@ -147,23 +205,38 @@ async function handleTest() {
   try {
     const result = await modelApi.test(props.model.id);
     const testData: TestResult = {
-      ...result,
+      chat: result.chat,
+      responses: result.responses,
       timestamp: Date.now(),
     };
 
     testResult.value = testData;
 
-    if (result.success) {
-      message.success(t('models.testSuccess'));
+    // 根据两个接口的测试结果显示消息
+    const chatSuccess = result.chat.success;
+    const responsesSuccess = result.responses.success;
+    
+    if (chatSuccess && responsesSuccess) {
+      message.success('两个接口测试均成功');
+    } else if (chatSuccess || responsesSuccess) {
+      message.warning('部分接口测试成功');
     } else {
-      message.error(t('models.testFailed'));
+      message.error('两个接口测试均失败');
     }
   } catch (error: any) {
     const testData: TestResult = {
-      success: false,
-      message: error.message || t('models.testRequestFailed'),
-      responseTime: 0,
-      error: error.message,
+      chat: {
+        success: false,
+        message: '请求失败',
+        responseTime: 0,
+        error: error.message,
+      },
+      responses: {
+        success: false,
+        message: '请求失败',
+        responseTime: 0,
+        error: error.message,
+      },
       timestamp: Date.now(),
     };
 
