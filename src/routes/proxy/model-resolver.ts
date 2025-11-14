@@ -3,6 +3,42 @@ import { providerDb, modelDb, routingConfigDb } from '../../db/index.js';
 import { memoryLogger } from '../../services/logger.js';
 import { resolveProviderFromModel, selectRoutingTarget, type RoutingConfig } from './routing.js';
 
+/**
+ * 解析模型请求，支持以下格式：
+ * - "gpt-4" - 只指定模型名
+ * - "gpt-4@OpenAI" - 指定模型名和供应商名
+ * - "gpt-4(OpenAI)" - 指定模型名和供应商名（括号格式）
+ */
+interface ParsedModelRequest {
+  modelName: string;
+  providerName?: string;
+}
+
+function parseModelRequest(requestedModel: string): ParsedModelRequest {
+  // 尝试解析 model@provider 格式
+  const atMatch = requestedModel.match(/^(.+?)@(.+)$/);
+  if (atMatch) {
+    return {
+      modelName: atMatch[1].trim(),
+      providerName: atMatch[2].trim()
+    };
+  }
+
+  // 尝试解析 model(provider) 格式
+  const parenMatch = requestedModel.match(/^(.+?)\((.+?)\)$/);
+  if (parenMatch) {
+    return {
+      modelName: parenMatch[1].trim(),
+      providerName: parenMatch[2].trim()
+    };
+  }
+
+  // 默认只有模型名
+  return {
+    modelName: requestedModel.trim()
+  };
+}
+
 export interface ModelResolutionResult {
   provider: any;
   providerId: string;
@@ -108,12 +144,81 @@ export async function resolveModelAndProvider(
       let targetModelId: string | undefined;
 
       if (requestedModel) {
+        const parsedRequest = parseModelRequest(requestedModel);
+
+        // 强制要求必须指定供应商
+        if (!parsedRequest.providerName) {
+          memoryLogger.error(`模型格式错误: ${requestedModel}，必须使用 "模型名@供应商名" 格式`, 'ModelResolver');
+          return {
+            code: 400,
+            body: {
+              error: {
+                message: `Invalid model format: "${requestedModel}". Must use "model@provider" format (e.g., "gpt-4@OpenAI")`,
+                type: 'invalid_request_error',
+                param: null,
+                code: 'invalid_model_format'
+              }
+            }
+          };
+        }
+
         for (const modelId of parsedModelIds) {
           const model = await modelDb.getById(modelId);
-          if (model && (model.model_identifier === requestedModel || model.name === requestedModel)) {
+          if (!model) continue;
+
+          // 检查模型名称是否匹配
+          const modelNameMatch = model.model_identifier === parsedRequest.modelName ||
+                                 model.name === parsedRequest.modelName;
+
+          if (!modelNameMatch) continue;
+
+          // 对于虚拟模型（智能路由），只匹配模型名即可（因为它没有固定的 provider_id）
+          if (model.is_virtual === 1 && (model.routing_config_id || model.expert_routing_id)) {
             targetModelId = modelId;
+            memoryLogger.info(
+              `虚拟模型匹配成功: ${parsedRequest.modelName}@${parsedRequest.providerName} -> ${model.name} (智能路由)`,
+              'ModelResolver'
+            );
             break;
           }
+
+          // 对于普通模型，必须同时匹配模型名和供应商名
+          if (model.provider_id) {
+            const provider = await providerDb.getById(model.provider_id);
+            if (provider && provider.name === parsedRequest.providerName) {
+              targetModelId = modelId;
+              memoryLogger.info(
+                `模型匹配成功: ${parsedRequest.modelName}@${parsedRequest.providerName} -> ${model.name}`,
+                'ModelResolver'
+              );
+              break;
+            }
+          } else {
+            // 普通模型但没有 provider_id，记录警告
+            memoryLogger.warn(
+              `模型 ${model.name} (${modelId}) 没有关联供应商，跳过`,
+              'ModelResolver'
+            );
+          }
+        }
+
+        // 如果没有找到匹配的模型，记录错误
+        if (!targetModelId) {
+          memoryLogger.error(
+            `未找到匹配的模型: ${parsedRequest.modelName}@${parsedRequest.providerName}`,
+            'ModelResolver'
+          );
+          return {
+            code: 404,
+            body: {
+              error: {
+                message: `Model not found: ${parsedRequest.modelName}@${parsedRequest.providerName}. Please check your virtual key configuration.`,
+                type: 'invalid_request_error',
+                param: null,
+                code: 'model_not_found'
+              }
+            }
+          };
         }
       }
 
