@@ -111,11 +111,31 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     }
 
     if (body.modelIds && body.modelIds.length > 0) {
+      const modelIdentifiers = new Set<string>();
+      const modelNames = new Set<string>();
+
       for (const modelId of body.modelIds) {
         const model = await modelDb.getById(modelId);
         if (!model) {
           return reply.code(400).send({ error: `模型 ${modelId} 不存在` });
         }
+
+        // 检查是否有同名模型（基于 model_identifier）
+        if (modelIdentifiers.has(model.model_identifier)) {
+          return reply.code(400).send({
+            error: `不允许绑定同名模型: 模型标识 "${model.model_identifier}" 已存在于配置中`
+          });
+        }
+
+        // 检查是否有同名模型（基于 name）
+        if (modelNames.has(model.name)) {
+          return reply.code(400).send({
+            error: `不允许绑定同名模型: 模型名称 "${model.name}" 已存在于配置中`
+          });
+        }
+
+        modelIdentifiers.add(model.model_identifier);
+        modelNames.add(model.name);
       }
     }
 
@@ -207,11 +227,31 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     }
 
     if (body.modelIds && body.modelIds.length > 0) {
+      const modelIdentifiers = new Set<string>();
+      const modelNames = new Set<string>();
+
       for (const modelId of body.modelIds) {
         const model = await modelDb.getById(modelId);
         if (!model) {
           return reply.code(400).send({ error: `模型 ${modelId} 不存在` });
         }
+
+        // 检查是否有同名模型（基于 model_identifier）
+        if (modelIdentifiers.has(model.model_identifier)) {
+          return reply.code(400).send({
+            error: `不允许绑定同名模型: 模型标识 "${model.model_identifier}" 已存在于配置中`
+          });
+        }
+
+        // 检查是否有同名模型（基于 name）
+        if (modelNames.has(model.name)) {
+          return reply.code(400).send({
+            error: `不允许绑定同名模型: 模型名称 "${model.name}" 已存在于配置中`
+          });
+        }
+
+        modelIdentifiers.add(model.model_identifier);
+        modelNames.add(model.name);
       }
     }
 
