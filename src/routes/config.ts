@@ -279,7 +279,6 @@ export async function configRoutes(fastify: FastifyInstance) {
         createVirtualModel?: boolean;
         virtualModelName?: string;
         providerId?: string;
-        modelAttributes?: any;
       };
 
       const configId = nanoid();
@@ -304,7 +303,7 @@ export async function configRoutes(fastify: FastifyInstance) {
           is_virtual: 1,
           routing_config_id: configId,
           enabled: 1,
-          model_attributes: body.modelAttributes ? JSON.stringify(body.modelAttributes) : null,
+          model_attributes: null,
           prompt_config: null,
           compression_config: null,
         });
@@ -344,7 +343,6 @@ export async function configRoutes(fastify: FastifyInstance) {
         type?: string;
         config?: any;
         virtualModelName?: string;
-        modelAttributes?: any;
       };
 
       const existingConfig = await routingConfigDb.getById(id);
@@ -361,17 +359,10 @@ export async function configRoutes(fastify: FastifyInstance) {
 
       const allModels = await modelDb.getAll();
       const virtualModel = allModels.find((m: any) => m.routing_config_id === id && m.is_virtual === 1);
-      if (virtualModel) {
-        const updates: any = {};
-        if (body.virtualModelName) {
-          updates.name = body.virtualModelName;
-        }
-        if (body.modelAttributes !== undefined) {
-          updates.model_attributes = body.modelAttributes ? JSON.stringify(body.modelAttributes) : null;
-        }
-        if (Object.keys(updates).length > 0) {
-          await modelDb.update(virtualModel.id, updates);
-        }
+      if (virtualModel && body.virtualModelName) {
+        await modelDb.update(virtualModel.id, {
+          name: body.virtualModelName
+        });
       }
 
       memoryLogger.info(`更新路由配置: ${id}`, 'Config');

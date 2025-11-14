@@ -16,6 +16,15 @@
               style="width: 150px;"
               @update:value="loadLogs"
             />
+            <n-button @click="toggleAutoRefresh">
+              <template #icon>
+                <n-icon>
+                  <PlayOutline v-if="isAutoRefreshPaused" />
+                  <PauseOutline v-else />
+                </n-icon>
+              </template>
+              {{ isAutoRefreshPaused ? '恢复刷新' : '暂停刷新' }}
+            </n-button>
             <n-button @click="loadLogs" :loading="loading">
               刷新
             </n-button>
@@ -46,7 +55,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMessage, NSpace, NCard, NButton, NSelect, NInput, NIcon, NEmpty } from 'naive-ui';
-import { SearchOutline } from '@vicons/ionicons5';
+import { SearchOutline, PlayOutline, PauseOutline } from '@vicons/ionicons5';
 import { configApi, type LogEntry } from '@/api/config';
 import { formatTimestamp } from '@/utils/common';
 
@@ -56,6 +65,7 @@ const allLogsText = ref('');
 const searchText = ref('');
 const selectedLevel = ref<string>('ALL');
 const logLimit = ref(100);
+const isAutoRefreshPaused = ref(false);
 let autoRefreshTimer: number | null = null;
 
 const levelOptions = [
@@ -120,15 +130,29 @@ async function loadLogs() {
 }
 
 function startAutoRefresh() {
-  autoRefreshTimer = window.setInterval(() => {
-    loadLogs();
-  }, 10000);
+  if (!isAutoRefreshPaused.value && autoRefreshTimer === null) {
+    autoRefreshTimer = window.setInterval(() => {
+      loadLogs();
+    }, 10000);
+  }
 }
 
 function stopAutoRefresh() {
   if (autoRefreshTimer !== null) {
     clearInterval(autoRefreshTimer);
     autoRefreshTimer = null;
+  }
+}
+
+function toggleAutoRefresh() {
+  isAutoRefreshPaused.value = !isAutoRefreshPaused.value;
+  
+  if (isAutoRefreshPaused.value) {
+    stopAutoRefresh();
+    message.info('已暂停自动刷新');
+  } else {
+    startAutoRefresh();
+    message.success('已恢复自动刷新');
   }
 }
 

@@ -4,7 +4,6 @@
       <n-step :title="t('wizard.selectTypeStep')" />
       <n-step :title="t('wizard.basicInfoStep')" />
       <n-step :title="t('wizard.targetConfigStep')" />
-      <n-step :title="t('wizard.modelAttributesStep')" />
     </n-steps>
 
     <div class="step-content">
@@ -145,32 +144,8 @@
         </n-space>
       </div>
 
-      <div v-if="currentStep === 4" class="step-panel">
-        <n-alert type="info" style="margin-bottom: 16px;">
-          <div style="font-size: 13px;">{{ t('wizard.modelAttributesInfo') }}</div>
-        </n-alert>
-
-        <n-space vertical :size="12">
-          <n-button
-            size="small"
-            @click="showModelPresetSelector = true"
-          >
-            {{ t('wizard.searchFromModelPresets') }}
-          </n-button>
-
-          <ModelAttributesEditor v-model="localFormValue.modelAttributes" />
-        </n-space>
-      </div>
     </div>
 
-    <n-modal
-      v-model:show="showModelPresetSelector"
-      preset="card"
-      :title="t('wizard.modelPresetSelectorTitle')"
-      :style="{ width: '800px' }"
-    >
-      <ModelPresetSelector @select="handleModelPresetSelect" />
-    </n-modal>
 
     <div class="wizard-footer">
       <n-space justify="space-between">
@@ -178,7 +153,7 @@
         <div v-else></div>
         <n-space :size="8">
           <n-button @click="handleCancel" size="small">{{ t('common.cancel') }}</n-button>
-          <n-button v-if="currentStep < 4" type="primary" @click="nextStep" size="small">{{ t('common.next') }}</n-button>
+          <n-button v-if="currentStep < 3" type="primary" @click="nextStep" size="small">{{ t('common.next') }}</n-button>
           <n-button v-else type="primary" @click="handleSave" :loading="saving" size="small">
             {{ isEditing ? t('common.save') : t('virtualModels.addVirtualModel') }}
           </n-button>
@@ -217,10 +192,6 @@ import {
   ArrowUpOutline,
   ArrowDownOutline,
 } from '@vicons/ionicons5';
-import { modelPresetsApi } from '@/api/model-presets';
-import type { ModelPresetSearchResult } from '@/api/model-presets';
-import ModelAttributesEditor from '@/components/ModelAttributesEditor.vue';
-import ModelPresetSelector from '@/components/ModelPresetSelector.vue';
 
 interface Target {
   providerId: string;
@@ -259,7 +230,6 @@ const emit = defineEmits<{
 const message = useMessage();
 const currentStep = ref(1);
 const basicFormRef = ref();
-const showModelPresetSelector = ref(false);
 
 const localConfigType = computed({
   get: () => props.configType,
@@ -349,22 +319,6 @@ function handleSave() {
 
 function handleCancel() {
   emit('cancel');
-}
-
-async function handleModelPresetSelect(result: ModelPresetSearchResult) {
-  try {
-    const detail = await modelPresetsApi.getModelDetail(result.modelName);
-
-    localFormValue.value.modelAttributes = {
-      ...localFormValue.value.modelAttributes,
-      ...detail.attributes,
-    };
-
-    showModelPresetSelector.value = false;
-    message.success(`已应用 ${result.modelName} 的预设属性`);
-  } catch (error: any) {
-    message.error(error.message || '应用预设失败');
-  }
 }
 
 watch(() => localConfigType.value, () => {
