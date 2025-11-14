@@ -23,7 +23,7 @@
             <tr v-for="attr in featureAttrs" :key="attr.key">
               <td style="width: 180px;">{{ attr.labelKey ? t(attr.labelKey) : attr.label }}</td>
               <td style="width: 80px; text-align: center;">
-                <n-switch v-model:value="localAttributes[attr.key]" size="small" />
+                <n-switch v-model:value="localAttributes[attr.key] as boolean" size="small" />
               </td>
               <td style="color: #999; font-size: 12px;">{{ attr.descriptionKey ? t(attr.descriptionKey) : attr.description }}</td>
             </tr>
@@ -112,7 +112,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { NCollapse, NCollapseItem, NSpace, NFormItem, NInputNumber, NSwitch, NTooltip, NIcon, NTable, NInput, NButton, NText } from 'naive-ui';
+import { NCollapse, NCollapseItem, NSpace, NFormItem, NInputNumber, NSwitch, NTooltip, NIcon, NTable, NInput, NText } from 'naive-ui';
 import { getAttributesByCategory } from '@/constants/modelAttributes';
 import { MILLION, COST_PRECISION } from '@/constants/numbers';
 import type { ModelAttributes } from '@/types';

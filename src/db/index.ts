@@ -144,10 +144,23 @@ async function flushApiRequestBuffer() {
   try {
     await conn.beginTransaction();
 
+    const MAX_BODY_LENGTH = 512000; // 512KB
     const values: any[] = [];
     const placeholders: string[] = [];
 
     for (const request of requests) {
+      // 直接截断过大的 body 数据
+      let requestBody = request.request_body || null;
+      let responseBody = request.response_body || null;
+      
+      if (requestBody && requestBody.length > MAX_BODY_LENGTH) {
+        requestBody = requestBody.substring(0, MAX_BODY_LENGTH) + '\n...[truncated]';
+      }
+      
+      if (responseBody && responseBody.length > MAX_BODY_LENGTH) {
+        responseBody = responseBody.substring(0, MAX_BODY_LENGTH) + '\n...[truncated]';
+      }
+
       placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       values.push(
         request.id,
@@ -160,8 +173,8 @@ async function flushApiRequestBuffer() {
         request.status,
         request.response_time || null,
         request.error_message || null,
-        request.request_body || null,
-        request.response_body || null,
+        requestBody,
+        responseBody,
         request.cache_hit || 0,
         request.request_type || 'chat',
         request.compression_original_tokens || null,
@@ -186,6 +199,7 @@ async function flushApiRequestBuffer() {
   } catch (error: any) {
     await conn.rollback();
     console.error('[数据库] 批量写入 API 请求日志失败:', error.message);
+    // 失败时放回缓冲区
     apiRequestBuffer.unshift(...requests);
   } finally {
     conn.release();
@@ -315,8 +329,8 @@ async function createTables() {
         status VARCHAR(50),
         response_time INT,
         error_message TEXT,
-        request_body TEXT,
-        response_body TEXT,
+        request_body MEDIUMTEXT,
+        response_body MEDIUMTEXT,
         cache_hit TINYINT DEFAULT 0,
         request_type VARCHAR(50) DEFAULT 'chat',
         compression_original_tokens INT DEFAULT NULL,
