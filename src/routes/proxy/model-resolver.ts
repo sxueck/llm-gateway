@@ -7,6 +7,9 @@ export interface ModelResolutionResult {
   provider: any;
   providerId: string;
   currentModel?: any;
+  excludeProviders?: Set<string>;
+  canRetry?: boolean; // 是否支持重试（仅智能路由模式）
+  modelId?: string; // 用于重试时重新解析
 }
 
 export interface ModelResolutionError {
@@ -57,6 +60,18 @@ export async function resolveModelAndProvider(
       if (result.resolvedModel) {
         currentModel = result.resolvedModel;
       }
+
+      // 检查是否是智能路由（loadbalance/hash/affinity），如果是则支持重试
+      const canRetry = !!(model.is_virtual && model.routing_config_id && result.excludeProviders);
+
+      return {
+        provider,
+        providerId: providerId!,
+        currentModel,
+        excludeProviders: result.excludeProviders,
+        canRetry,
+        modelId: virtualKey.model_id
+      };
     } catch (routingError: any) {
       memoryLogger.error(`Smart routing failed: ${routingError.message}`, 'Proxy');
       return {
@@ -147,6 +162,18 @@ export async function resolveModelAndProvider(
         if (result.resolvedModel) {
           currentModel = result.resolvedModel;
         }
+
+        // 检查是否是智能路由（loadbalance/hash/affinity），如果是则支持重试
+        const canRetry = !!(model.is_virtual && model.routing_config_id && result.excludeProviders);
+
+        return {
+          provider,
+          providerId: providerId!,
+          currentModel,
+          excludeProviders: result.excludeProviders,
+          canRetry,
+          modelId: targetModelId
+        };
       } catch (routingError: any) {
         memoryLogger.error(`Smart routing failed: ${routingError.message}`, 'Proxy');
         return {
@@ -228,5 +255,88 @@ export async function resolveModelAndProvider(
     providerId: providerId!,
     currentModel
   };
+}
+
+/**
+ * 智能路由重试：使用 excludeProviders 重新解析 provider
+ */
+export async function retrySmartRouting(
+  virtualKey: any,
+  request: FastifyRequest,
+  modelId: string,
+  excludeProviders: Set<string>
+): Promise<ModelResolutionResult | ModelResolutionError> {
+  const model = await modelDb.getById(modelId);
+  if (!model) {
+    memoryLogger.error(`Model not found for retry: ${modelId}`, 'Proxy');
+    return {
+      code: 500,
+      body: {
+        error: {
+          message: 'Model config not found',
+          type: 'internal_error',
+          param: null,
+          code: 'model_not_found'
+        }
+      }
+    };
+  }
+
+  try {
+    // 调用 resolveProviderFromModel，传入 excludeProviders
+    const result = await resolveProviderFromModel(model, request as any, virtualKey.id);
+
+    // 使用 excludeProviders 重新选择
+    const retryResult = await resolveSmartRoutingWithExclude(
+      model,
+      request as any,
+      virtualKey.id,
+      excludeProviders
+    );
+
+    if (!retryResult) {
+      throw new Error('No more available targets for retry');
+    }
+
+    let currentModel = model;
+    if (retryResult.resolvedModel) {
+      currentModel = retryResult.resolvedModel;
+    }
+
+    // 检查是否还有更多可用目标（简单判断：已排除数量 < targets 数量）
+    const canRetry = !!retryResult.excludeProviders;
+
+    return {
+      provider: retryResult.provider,
+      providerId: retryResult.providerId!,
+      currentModel,
+      excludeProviders: retryResult.excludeProviders,
+      canRetry,
+      modelId
+    };
+  } catch (error: any) {
+    memoryLogger.error(`Smart routing retry failed: ${error.message}`, 'Proxy');
+    return {
+      code: 500,
+      body: {
+        error: {
+          message: error.message || 'Smart routing retry failed',
+          type: 'internal_error',
+          param: null,
+          code: 'smart_routing_retry_error'
+        }
+      }
+    };
+  }
+}
+
+async function resolveSmartRoutingWithExclude(
+  model: any,
+  request: any,
+  virtualKeyId?: string,
+  excludeProviders?: Set<string>
+): Promise<any> {
+  const { resolveSmartRouting } = await import('./routing.js');
+  return await resolveSmartRouting(model, request, virtualKeyId, excludeProviders);
 }
 

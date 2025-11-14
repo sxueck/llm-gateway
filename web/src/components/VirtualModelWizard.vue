@@ -22,6 +22,18 @@
                 <div class="option-description">{{ t('wizard.fallbackOptionDesc') }}</div>
               </div>
             </n-radio>
+            <n-radio value="hash">
+              <div class="config-type-option">
+                <div class="option-title">一致性哈希</div>
+                <div class="option-description">基于虚拟密钥或请求特征哈希，相同来源总是路由到相同provider，最大化缓存命中率</div>
+              </div>
+            </n-radio>
+            <n-radio value="affinity">
+              <div class="config-type-option">
+                <div class="option-title">时间窗口亲和</div>
+                <div class="option-description">在短时间窗口内持续使用同一provider，最大化缓存效益</div>
+              </div>
+            </n-radio>
           </n-space>
         </n-radio-group>
       </div>
@@ -31,7 +43,7 @@
           <n-form-item :label="t('wizard.virtualModelNameLabel')" path="virtualModelName" :rule="{ required: true, message: t('wizard.virtualModelNameRequired') }">
             <n-input
               v-model:value="localFormValue.virtualModelName"
-              :placeholder="localConfigType === 'loadbalance' ? 'GPT-4-LB' : 'GPT-4-Fallback'"
+              :placeholder="localConfigType === 'loadbalance' ? 'GPT-4-LB' : localConfigType === 'hash' ? 'GPT-4-Hash' : localConfigType === 'affinity' ? 'GPT-4-Affinity' : 'GPT-4-Fallback'"
             />
           </n-form-item>
           <n-form-item :label="t('wizard.descriptionLabel')">
@@ -42,12 +54,55 @@
               :rows="2"
             />
           </n-form-item>
+
+          <n-form-item v-if="localConfigType === 'hash'" label="哈希源">
+            <n-radio-group v-model:value="localFormValue.hashSource">
+              <n-space vertical :size="8">
+                <n-radio value="virtualKey">
+                  <div class="config-type-option">
+                    <div class="option-title" style="font-size: 13px;">虚拟密钥</div>
+                    <div class="option-description" style="font-size: 11px;">相同API Key的请求总是路由到同一provider</div>
+                  </div>
+                </n-radio>
+                <n-radio value="request">
+                  <div class="config-type-option">
+                    <div class="option-title" style="font-size: 13px;">请求内容</div>
+                    <div class="option-description" style="font-size: 11px;">相同请求内容路由到同一provider（更细粒度）</div>
+                  </div>
+                </n-radio>
+              </n-space>
+            </n-radio-group>
+          </n-form-item>
+
+          <n-form-item v-if="localConfigType === 'affinity'" label="亲和性持续时间（秒）">
+            <n-input-number
+              v-model:value="localFormValue.affinityTTLSeconds"
+              :min="10"
+              :max="3600"
+              :step="10"
+              placeholder="300"
+              style="width: 100%"
+            >
+              <template #suffix>
+                秒
+              </template>
+            </n-input-number>
+            <div style="font-size: 11px; color: #8c8c8c; margin-top: 4px;">
+              在此时间内，所有请求将使用同一provider（默认300秒/5分钟）
+            </div>
+          </n-form-item>
         </n-form>
       </div>
 
       <div v-if="currentStep === 3" class="step-panel">
         <n-alert v-if="localConfigType === 'fallback'" type="info" style="margin-bottom: 16px;">
           <div style="font-size: 13px;">{{ t('wizard.fallbackPriorityTip') }}</div>
+        </n-alert>
+        <n-alert v-if="localConfigType === 'hash'" type="info" style="margin-bottom: 16px;">
+          <div style="font-size: 13px;">Hash模式：权重决定了哈希空间的分配，权重越高，被分配到的概率越大</div>
+        </n-alert>
+        <n-alert v-if="localConfigType === 'affinity'" type="info" style="margin-bottom: 16px;">
+          <div style="font-size: 13px;">Affinity模式：每次选择新provider时基于权重随机选择，在TTL时间内持续使用</div>
         </n-alert>
 
         <n-space vertical :size="12">
@@ -110,7 +165,7 @@
                   :disabled="!target.providerId"
                 />
               </div>
-              <div v-if="localConfigType === 'loadbalance'" class="form-row">
+              <div v-if="['loadbalance', 'hash', 'affinity'].includes(localConfigType)" class="form-row">
                 <label class="form-label">权重</label>
                 <n-input-number
                   v-model:value="target.weight"
@@ -166,6 +221,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import type { VirtualModelFormValue, VirtualModelTarget, RoutingConfigType } from '@/types/virtual-model';
 
 const { t } = useI18n();
 import {
@@ -193,25 +249,9 @@ import {
   ArrowDownOutline,
 } from '@vicons/ionicons5';
 
-interface Target {
-  providerId: string;
-  modelId?: string;
-  weight?: number;
-  onStatusCodes?: number[];
-}
-
-interface FormValue {
-  name: string;
-  description: string;
-  targets: Target[];
-  createVirtualModel: boolean;
-  virtualModelName: string;
-  modelAttributes?: any;
-}
-
 interface Props {
-  configType: 'loadbalance' | 'fallback';
-  formValue: FormValue;
+  configType: RoutingConfigType;
+  formValue: VirtualModelFormValue;
   providerOptions: Array<{ label: string; value: string }>;
   getModelOptionsByProvider: (providerId: string) => Array<{ label: string; value: string }>;
   statusCodeOptions: Array<{ label: string; value: number }>;
@@ -221,8 +261,8 @@ interface Props {
 
 const props = defineProps<Props>();
 const emit = defineEmits<{
-  'update:configType': [value: 'loadbalance' | 'fallback'];
-  'update:formValue': [value: FormValue];
+  'update:configType': [value: RoutingConfigType];
+  'update:formValue': [value: VirtualModelFormValue];
   save: [];
   cancel: [];
 }>();
@@ -277,7 +317,7 @@ function addTarget() {
   localFormValue.value.targets.push({
     providerId: '',
     modelId: '',
-    weight: localConfigType.value === 'loadbalance' ? 0.5 : undefined,
+    weight: ['loadbalance', 'hash', 'affinity'].includes(localConfigType.value) ? 0.5 : undefined,
     onStatusCodes: localConfigType.value === 'fallback' ? [] : undefined,
   });
 }

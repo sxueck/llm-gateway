@@ -122,6 +122,7 @@ import { useModelStore } from '@/stores/model';
 import { configApi } from '@/api/config';
 import VirtualModelWizard from '@/components/VirtualModelWizard.vue';
 import { copyToClipboard } from '@/utils/common';
+import type { VirtualModelFormValue, RoutingConfigType } from '@/types/virtual-model';
 
 const message = useMessage();
 const providerStore = useProviderStore();
@@ -131,24 +132,19 @@ const loading = ref(false);
 const saving = ref(false);
 const showCreateModal = ref(false);
 const showPreviewModal = ref(false);
-const configType = ref<'loadbalance' | 'fallback'>('loadbalance');
+const configType = ref<RoutingConfigType>('loadbalance');
 const configs = ref<any[]>([]);
 const previewConfig = ref('');
 const editingId = ref<string | null>(null);
 
-interface Target {
-  providerId: string;
-  modelId?: string;
-  weight?: number;
-  onStatusCodes?: number[];
-}
-
-const formValue = ref({
+const formValue = ref<VirtualModelFormValue>({
   name: '',
   description: '',
-  targets: [] as Target[],
+  targets: [],
   createVirtualModel: true,
   virtualModelName: '',
+  hashSource: 'virtualKey',
+  affinityTTLSeconds: 300, // 默认300秒（5分钟）
 });
 
 const statusCodeOptions = [
@@ -180,7 +176,20 @@ function getModelOptionsByProvider(providerId: string) {
 
 const columns = [
   { title: '智能路由名称', key: 'name' },
-  { title: '类型', key: 'type', render: (row: any) => h(NTag, { type: row.type === 'loadbalance' ? 'info' : 'warning' }, { default: () => row.type === 'loadbalance' ? '负载均衡' : '故障转移' }) },
+  {
+    title: '类型',
+    key: 'type',
+    render: (row: any) => {
+      const typeMap: Record<string, { label: string; type: 'info' | 'warning' | 'success' | 'error' }> = {
+        'loadbalance': { label: '负载均衡', type: 'info' },
+        'fallback': { label: '故障转移', type: 'warning' },
+        'hash': { label: '一致性哈希', type: 'success' },
+        'affinity': { label: '时间窗口亲和', type: 'error' }
+      };
+      const config = typeMap[row.type] || { label: row.type, type: 'info' };
+      return h(NTag, { type: config.type }, { default: () => config.label });
+    }
+  },
   { title: '目标数量', key: 'targetCount' },
   { title: '描述', key: 'description', ellipsis: { tooltip: true } },
   {
@@ -225,16 +234,30 @@ const columns = [
 
 
 function generatePortkeyConfig() {
+  const strategy: any = {
+    mode: configType.value,
+  };
+
+  // Hash 模式的特殊配置
+  if (configType.value === 'hash') {
+    strategy.hashSource = formValue.value.hashSource || 'virtualKey';
+  }
+
+  // Affinity 模式的特殊配置
+  if (configType.value === 'affinity') {
+    // 将秒转换为毫秒
+    strategy.affinityTTL = (formValue.value.affinityTTLSeconds || 300) * 1000;
+  }
+
   const config: any = {
-    strategy: {
-      mode: configType.value,
-    },
+    strategy,
     targets: formValue.value.targets.map(target => {
       const targetConfig: any = {
         provider: target.providerId,
       };
 
-      if (configType.value === 'loadbalance' && target.weight !== undefined) {
+      // loadbalance, hash, affinity 模式都支持权重
+      if (['loadbalance', 'hash', 'affinity'].includes(configType.value) && target.weight !== undefined) {
         targetConfig.weight = target.weight;
       }
 
@@ -320,6 +343,8 @@ function handleEdit(row: any) {
     }),
     createVirtualModel: true,
     virtualModelName: virtualModel?.name || '',
+    hashSource: row.config.strategy?.hashSource || 'virtualKey',
+    affinityTTLSeconds: row.config.strategy?.affinityTTL ? row.config.strategy.affinityTTL / 1000 : 300,
   };
 
   showCreateModal.value = true;
@@ -357,6 +382,8 @@ function resetForm() {
     targets: [],
     createVirtualModel: true,
     virtualModelName: '',
+    hashSource: 'virtualKey',
+    affinityTTLSeconds: 300,
   };
   configType.value = 'loadbalance';
 }
@@ -366,7 +393,7 @@ async function loadConfigs() {
     loading.value = true;
     const result = await configApi.getRoutingConfigs();
     configs.value = result.configs
-      .filter(c => c.type === 'loadbalance' || c.type === 'fallback')
+      .filter(c => ['loadbalance', 'fallback', 'hash', 'affinity'].includes(c.type))
       .map(c => ({
         ...c,
         targetCount: c.config.targets?.length || 0,

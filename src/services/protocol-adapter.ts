@@ -149,6 +149,7 @@ export class ProtocolAdapter {
 
     let system: string | any[] | undefined;
 
+    // Handle system messages with caching
     if (systemMessages.length > 0) {
       const systemContent = systemMessages.map(m => m.content).join('\n');
 
@@ -160,15 +161,106 @@ export class ProtocolAdapter {
             cache_control: { type: 'ephemeral' }
           }
         ];
+        memoryLogger.debug('已在 system 消息上添加 cache_control', 'Protocol');
       } else {
         system = systemContent;
       }
     }
 
+    // Handle user/assistant messages with caching
+    let processedMessages = nonSystemMessages;
+
+    if (supportsCaching && nonSystemMessages.length > 0) {
+      const userMessageCount = nonSystemMessages.filter(m => m.role === 'user').length;
+      const cacheableCount = Math.min(userMessageCount, 3);
+      processedMessages = this.addCacheControlToMessages(nonSystemMessages);
+
+      if (cacheableCount > 0) {
+        memoryLogger.debug(
+          `已在最后 ${cacheableCount} 个 user 消息上添加 cache_control`,
+          'Protocol'
+        );
+      }
+    }
+
     return {
       system,
-      messages: nonSystemMessages
+      messages: processedMessages
     };
+  }
+
+  /**
+   * Add cache_control breakpoints to messages following Anthropic's best practices:
+   * - Add cache_control to the last content block of the last 2-3 user messages
+   */
+  private addCacheControlToMessages(messages: any[]): any[] {
+    const result = [...messages];
+
+    // Find the indices of the last 2-3 user messages
+    const userMessageIndices: number[] = [];
+    for (let i = result.length - 1; i >= 0 && userMessageIndices.length < 3; i--) {
+      if (result[i].role === 'user') {
+        userMessageIndices.unshift(i);
+      }
+    }
+
+    // Add cache_control to these messages
+    userMessageIndices.forEach((idx) => {
+      const message = result[idx];
+
+      // Handle string content
+      if (typeof message.content === 'string') {
+        result[idx] = {
+          ...message,
+          content: [
+            {
+              type: 'text',
+              text: message.content,
+              cache_control: { type: 'ephemeral' }
+            }
+          ]
+        };
+      }
+      // Handle array content
+      else if (Array.isArray(message.content)) {
+        const contentArray = [...message.content];
+        const lastIndex = contentArray.length - 1;
+
+        if (lastIndex >= 0) {
+          // Add cache_control to the last content block
+          contentArray[lastIndex] = {
+            ...contentArray[lastIndex],
+            cache_control: { type: 'ephemeral' }
+          };
+
+          result[idx] = {
+            ...message,
+            content: contentArray
+          };
+        }
+      }
+    });
+
+    return result;
+  }
+
+  /**
+   * Add cache_control to the last tool in the tools array
+   */
+  private addCacheControlToTools(tools: any[]): any[] {
+    if (!tools || tools.length === 0) {
+      return tools;
+    }
+
+    const result = [...tools];
+    const lastIndex = result.length - 1;
+
+    result[lastIndex] = {
+      ...result[lastIndex],
+      cache_control: { type: 'ephemeral' }
+    };
+
+    return result;
   }
 
   private convertAnthropicToOpenAIFormat(response: any): ProtocolResponse {
@@ -300,6 +392,19 @@ export class ProtocolAdapter {
 
     if (options.stop_sequences !== undefined) {
       requestParams.stop_sequences = options.stop_sequences;
+    }
+
+    // Add tools with cache_control if caching is supported
+    if (options.tools && Array.isArray(options.tools) && options.tools.length > 0) {
+      if (supportsCaching) {
+        requestParams.tools = this.addCacheControlToTools(options.tools);
+        memoryLogger.debug(
+          `已在 ${options.tools.length} 个工具定义的最后一个工具上添加 cache_control`,
+          'Protocol'
+        );
+      } else {
+        requestParams.tools = options.tools;
+      }
     }
 
     const response = await client.messages.create(requestParams);
@@ -471,6 +576,19 @@ export class ProtocolAdapter {
 
     if (options.stop_sequences !== undefined) {
       requestParams.stop_sequences = options.stop_sequences;
+    }
+
+    // Add tools with cache_control if caching is supported
+    if (options.tools && Array.isArray(options.tools) && options.tools.length > 0) {
+      if (supportsCaching) {
+        requestParams.tools = this.addCacheControlToTools(options.tools);
+        memoryLogger.debug(
+          `已在 ${options.tools.length} 个工具定义的最后一个工具上添加 cache_control`,
+          'Protocol'
+        );
+      } else {
+        requestParams.tools = options.tools;
+      }
     }
 
     reply.raw.writeHead(200, {

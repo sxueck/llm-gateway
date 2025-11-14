@@ -59,12 +59,10 @@ interface ClassifierModelResult {
 
 /**
  * 解析分类器模型配置，获取 provider 和 model
- * 返回所有可用的负载均衡目标（如果适用）
  */
 async function resolveClassifierModel(
-  classifierConfig: ExpertRoutingConfig['classifier'],
-  excludeProviders?: Set<string>
-): Promise<ClassifierModelResult & { isLoadBalance?: boolean; allTargets?: any[]; virtualModelId?: string }> {
+  classifierConfig: ExpertRoutingConfig['classifier']
+): Promise<ClassifierModelResult> {
   let provider;
   let model: string;
 
@@ -86,75 +84,24 @@ async function resolveClassifierModel(
 
       try {
         const config = JSON.parse(routingConfig.config);
-        const { circuitBreaker } = await import('../services/circuit-breaker.js');
         const { selectRoutingTarget } = await import('../routes/proxy/routing.js');
-        
-        // 对于负载均衡模式，返回所有可用目标以支持重试
-        const isLoadBalance = routingConfig.type === 'loadbalance' || config.strategy?.mode === 'loadbalance';
-        
-        if (isLoadBalance) {
-          // 获取所有可用且未尝试过的目标
-          const availableTargets = config.targets.filter((t: any) =>
-            circuitBreaker.isAvailable(t.provider) &&
-            (!excludeProviders || !excludeProviders.has(t.provider))
+
+        const selectedTarget = selectRoutingTarget(config, routingConfig.type, virtualModel.routing_config_id);
+
+        if (!selectedTarget) {
+          throw new Error(
+            `No available target in routing config for classifier virtual model "${virtualModel.name}"`
           );
-          
-          if (availableTargets.length === 0) {
-            throw new Error(
-              `No available target in routing config for classifier virtual model "${virtualModel.name}"` +
-              (excludeProviders ? ` (已排除 ${excludeProviders.size} 个失败目标)` : '')
-            );
-          }
-          
-          // 选择第一个可用目标
-          const selectedTarget = selectRoutingTarget(
-            { ...config, targets: availableTargets },
-            routingConfig.type,
-            virtualModel.routing_config_id
-          );
-
-          if (!selectedTarget) {
-            throw new Error(
-              `No target selected from routing config for classifier virtual model "${virtualModel.name}"`
-            );
-          }
-
-          provider = await providerDb.getById(selectedTarget.provider);
-          if (!provider) {
-            throw new Error(
-              `Provider not found for routing target: ${selectedTarget.provider}`
-            );
-          }
-
-          model = selectedTarget.override_params?.model || virtualModel.model_identifier;
-          
-          // 返回负载均衡信息以支持重试
-          return {
-            provider,
-            model,
-            isLoadBalance: true,
-            allTargets: availableTargets,
-            virtualModelId: virtualModel.id
-          };
-        } else {
-          // fallback 模式使用原有逻辑
-          const selectedTarget = selectRoutingTarget(config, routingConfig.type, virtualModel.routing_config_id);
-
-          if (!selectedTarget) {
-            throw new Error(
-              `No available target in routing config for classifier virtual model "${virtualModel.name}"`
-            );
-          }
-
-          provider = await providerDb.getById(selectedTarget.provider);
-          if (!provider) {
-            throw new Error(
-              `Provider not found for routing target: ${selectedTarget.provider}`
-            );
-          }
-
-          model = selectedTarget.override_params?.model || virtualModel.model_identifier;
         }
+
+        provider = await providerDb.getById(selectedTarget.provider);
+        if (!provider) {
+          throw new Error(
+            `Provider not found for routing target: ${selectedTarget.provider}`
+          );
+        }
+
+        model = selectedTarget.override_params?.model || virtualModel.model_identifier;
       } catch (e: any) {
         throw new Error(
           `Failed to resolve routing config for classifier virtual model "${virtualModel.name}": ${e.message}`
@@ -305,22 +252,6 @@ export class ExpertRouter {
     classifierRequest: any;
     classifierResponse: any;
   }> {
-    // 使用递归重试逻辑处理负载均衡
-    return await this.classifyWithRetry(messages, classifierConfig, new Set());
-  }
-
-  /**
-   * 分类方法的内部实现，支持负载均衡重试
-   */
-  private async classifyWithRetry(
-    messages: ChatMessage[],
-    classifierConfig: ExpertRoutingConfig['classifier'],
-    excludeProviders: Set<string>
-  ): Promise<{
-    category: string;
-    classifierRequest: any;
-    classifierResponse: any;
-  }> {
     let messagesToClassify = messages;
 
     if (classifierConfig.max_messages_to_classify && classifierConfig.max_messages_to_classify > 0) {
@@ -389,9 +320,9 @@ export class ExpertRouter {
       }
     }
 
-    // 使用提取的函数解析分类器模型，传入已排除的提供者
-    const resolvedModel = await resolveClassifierModel(classifierConfig, excludeProviders);
-    const { provider, model, isLoadBalance } = resolvedModel;
+    // 使用提取的函数解析分类器模型
+    const resolvedModel = await resolveClassifierModel(classifierConfig);
+    const { provider, model } = resolvedModel;
 
     const apiKey = decryptApiKey(provider.api_key);
     const endpoint = buildChatCompletionsEndpoint(provider.base_url);
@@ -426,35 +357,7 @@ export class ExpertRouter {
       } catch (e) {
         errorDetail = response.statusText;
       }
-      
-      const statusCode = response.status;
-      
-      // 对于负载均衡模式，在429、500、502、503、504错误时尝试重试
-      if (isLoadBalance && this.shouldRetryClassification(statusCode)) {
-        memoryLogger.warn(
-          `分类器请求失败 (HTTP ${statusCode})，尝试负载均衡重试 | provider=${provider.name}`,
-          'ExpertRouter'
-        );
-        
-        // 标记当前提供者为已尝试
-        excludeProviders.add(provider.id);
-        
-        try {
-          // 递归调用，尝试下一个目标
-          return await this.classifyWithRetry(messages, classifierConfig, excludeProviders);
-        } catch (retryError: any) {
-          // 如果重试也失败，抛出包含所有尝试信息的错误
-          memoryLogger.error(
-            `分类器负载均衡重试全部失败 (已尝试 ${excludeProviders.size} 个目标): ${retryError.message}`,
-            'ExpertRouter'
-          );
-          throw new Error(
-            `Classification failed after trying ${excludeProviders.size + 1} targets. ` +
-            `Last error: HTTP ${statusCode} - ${errorDetail}`
-          );
-        }
-      }
-      
+
       throw new Error(`Classification failed: HTTP ${response.status} - ${errorDetail}`);
     }
 
@@ -816,13 +719,6 @@ export class ExpertRouter {
     return roleMap[role.toLowerCase()] || role;
   }
 
-  /**
-   * 判断是否应该对分类请求进行重试
-   */
-  private shouldRetryClassification(statusCode: number): boolean {
-    // 对于 429 (rate limit), 500, 502, 503, 504 错误进行重试
-    return statusCode === 429 || statusCode === 500 || statusCode === 502 || statusCode === 503 || statusCode === 504;
-  }
 }
 
 export const expertRouter = new ExpertRouter();

@@ -195,10 +195,14 @@ export function createProxyHandler() {
           const modelAttributes = JSON.parse(currentModel.model_attributes);
           const enhancedRequestBody = buildFullRequestBody(request.body, modelAttributes);
           request.body = enhancedRequestBody;
-          
+
           if (modelAttributes.supports_prompt_caching) {
+            const messageCount = (request.body as any)?.messages?.length || 0;
+            const toolsCount = (request.body as any)?.tools?.length || 0;
+
             memoryLogger.info(
-              `已注入 cache_control 字段 | 模型: ${currentModel.name}`,
+              `Prompt Caching 已启用 | 模型: ${currentModel.name} | ` +
+              `消息数: ${messageCount} | 工具数: ${toolsCount}`,
               'Proxy'
             );
           }
@@ -253,7 +257,9 @@ export function createProxyHandler() {
         path,
         startTime,
         compressionStats,
-        currentModel
+        currentModel,
+        modelResult,
+        virtualKeyValue!
       );
     } catch (error: any) {
       const duration = Date.now() - startTime;
@@ -468,6 +474,8 @@ export async function handleNonStreamRequest(
   startTime: number,
   compressionStats?: { originalTokens: number; savedTokens: number },
   currentModel?: any,
+  modelResult?: any,
+  virtualKeyValueParam?: string
 ) {
   let fromCache = false;
   const isEmbeddingsRequest = path.startsWith('/v1/embeddings');
@@ -475,8 +483,8 @@ export async function handleNonStreamRequest(
   const vkDisplay = virtualKey.key_value && virtualKey.key_value.length > 10
     ? `${virtualKey.key_value.slice(0, 6)}...${virtualKey.key_value.slice(-4)}`
     : virtualKey.key_value;
-  
-  const virtualKeyValue = virtualKey.key_value;
+
+  const virtualKeyValue = virtualKeyValueParam || virtualKey.key_value;
 
   const cacheResult = checkCache(
     virtualKey,
@@ -648,6 +656,38 @@ export async function handleNonStreamRequest(
 
   const duration = Date.now() - startTime;
   const isSuccess = response.statusCode >= 200 && response.statusCode < 300;
+
+  // 智能路由重试逻辑
+  if (!isSuccess && modelResult && virtualKeyValue) {
+    const { shouldRetrySmartRouting } = await import('./routing.js');
+    if (modelResult.canRetry && shouldRetrySmartRouting(response.statusCode)) {
+      memoryLogger.info(
+        `智能路由重试: 检测到失败 (${response.statusCode})，尝试下一个目标`,
+        'Proxy'
+      );
+
+      const { handleNonStreamRetry } = await import('./retry-handler.js');
+      const retried = await handleNonStreamRetry(request, reply, response.statusCode, {
+        virtualKey,
+        virtualKeyValue,
+        modelResult,
+        currentModel,
+        compressionStats,
+        startTime
+      });
+
+      if (retried) {
+        // 重试成功，已经发送新的响应，直接返回
+        return;
+      }
+
+      // 重试失败，继续发送原始错误响应
+      memoryLogger.warn(
+        `智能路由重试失败: 没有更多可用目标`,
+        'Proxy'
+      );
+    }
+  }
 
   const shouldLogBody = shouldLogRequestBody(virtualKey);
 
