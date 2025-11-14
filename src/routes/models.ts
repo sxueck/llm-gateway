@@ -1,9 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
+import Anthropic from '@anthropic-ai/sdk';
 import { modelDb, providerDb, virtualKeyDb } from '../db/index.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { buildChatCompletionsEndpoint } from '../utils/api-endpoint-builder.js';
+import { isAnthropicProtocol } from '../utils/protocol-utils.js';
+import type { Model } from '../db/index.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -30,6 +33,7 @@ const modelAttributesSchema = z.object({
   supports_interleaved_thinking: z.boolean().optional(),
   litellm_provider: z.string().optional(),
   mode: z.string().optional(),
+  headers: z.record(z.string()).optional(),
 }).optional();
 
 const promptConfigSchema = z.object({
@@ -44,6 +48,7 @@ const createModelSchema = z.object({
   name: z.string(),
   providerId: z.string().optional(),
   modelIdentifier: z.string(),
+  protocol: z.enum(['openai', 'anthropic', 'google']).optional(),
   isVirtual: z.boolean().optional(),
   routingConfigId: z.string().optional(),
   enabled: z.boolean().optional(),
@@ -54,10 +59,92 @@ const createModelSchema = z.object({
 const updateModelSchema = z.object({
   name: z.string().optional(),
   modelIdentifier: z.string().optional(),
+  protocol: z.enum(['openai', 'anthropic', 'google']).optional(),
   enabled: z.boolean().optional(),
   modelAttributes: modelAttributesSchema,
   promptConfig: promptConfigSchema,
 });
+
+async function testAnthropicModel(model: Model, provider: any, apiKey: string) {
+  const startTime = Date.now();
+  let result: any = {
+    success: false,
+    message: '未测试',
+    responseTime: 0,
+  };
+
+  try {
+    const modelAttributes = model.model_attributes ? JSON.parse(model.model_attributes) : {};
+    const headers = modelAttributes.headers;
+
+    const clientConfig: any = {
+      apiKey,
+      maxRetries: 0,
+      timeout: 30000,
+    };
+
+    if (provider.base_url) {
+      clientConfig.baseURL = provider.base_url.replace(/\/$/, '');
+    }
+
+    if (headers && Object.keys(headers).length > 0) {
+      clientConfig.defaultHeaders = headers;
+    }
+
+    const client = new Anthropic(clientConfig);
+
+    const response = await client.messages.create({
+      model: model.model_identifier,
+      max_tokens: 200,
+      messages: [{ role: 'user', content: '测试' }],
+      temperature: 0.1,
+    });
+
+    const responseTime = Date.now() - startTime;
+    const content = response.content[0]?.type === 'text' ? response.content[0].text : '无响应内容';
+
+    result = {
+      success: true,
+      status: 200,
+      message: 'Anthropic 测试成功',
+      responseTime,
+      response: {
+        content,
+        usage: response.usage,
+      },
+    };
+  } catch (error: any) {
+    const responseTime = Date.now() - startTime;
+    const statusCode = error.status || 500;
+
+    // 检查是否为超时错误
+    const isTimeout = error.code === 'ETIMEDOUT' ||
+                      error.message?.includes('timeout') ||
+                      error.message?.includes('timed out') ||
+                      responseTime >= 30000;
+
+    const errorMessage = isTimeout
+      ? '请求超时（30秒）'
+      : error.message;
+
+    result = {
+      success: false,
+      status: statusCode,
+      message: `Anthropic 测试失败: ${errorMessage}`,
+      responseTime,
+      error: errorMessage,
+    };
+  }
+
+  return {
+    chat: result,
+    responses: {
+      success: false,
+      message: 'Anthropic 协议不支持 /responses 端点',
+      responseTime: 0,
+    },
+  };
+}
 
 export async function modelRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
@@ -91,6 +178,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
         providerId: m.provider_id,
         providerName: m.is_virtual === 1 ? '虚拟模型' : (provider?.name || '未知提供商'),
         modelIdentifier: m.model_identifier,
+        protocol: m.protocol,
         isVirtual: m.is_virtual === 1,
         routingConfigId: m.routing_config_id,
         expertRoutingId: m.expert_routing_id,
@@ -137,6 +225,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
       providerId: model.provider_id,
       providerName: model.is_virtual === 1 ? '虚拟模型' : (provider?.name || '未知提供商'),
       modelIdentifier: model.model_identifier,
+      protocol: model.protocol,
       enabled: model.enabled === 1,
       modelAttributes,
       promptConfig,
@@ -163,6 +252,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
       name: body.name,
       provider_id: body.providerId || null,
       model_identifier: body.modelIdentifier,
+      protocol: body.protocol || null,
       is_virtual: body.isVirtual ? 1 : 0,
       routing_config_id: body.routingConfigId || null,
       enabled: body.enabled !== false ? 1 : 0,
@@ -188,6 +278,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
       name: model.name,
       providerId: model.provider_id,
       modelIdentifier: model.model_identifier,
+      protocol: model.protocol,
       isVirtual: model.is_virtual === 1,
       routingConfigId: model.routing_config_id,
       enabled: model.enabled === 1,
@@ -210,6 +301,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
     const updates: any = {};
     if (body.name !== undefined) updates.name = body.name;
     if (body.modelIdentifier !== undefined) updates.model_identifier = body.modelIdentifier;
+    if (body.protocol !== undefined) updates.protocol = body.protocol || null;
     if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
     if (body.modelAttributes !== undefined) {
       updates.model_attributes = body.modelAttributes && Object.keys(body.modelAttributes).length > 0
@@ -244,6 +336,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
       name: updated.name,
       providerId: updated.provider_id,
       modelIdentifier: updated.model_identifier,
+      protocol: updated.protocol,
       enabled: updated.enabled === 1,
       modelAttributes,
       promptConfig,
@@ -306,8 +399,14 @@ export async function modelRoutes(fastify: FastifyInstance) {
     }
 
     const apiKey = decryptApiKey(provider.api_key);
-    
-    // Test /chat/completions endpoint
+
+    console.log(`[Test] Model: ${model.name}, Protocol: ${model.protocol || 'openai'}`);
+
+    if (isAnthropicProtocol(model)) {
+      return await testAnthropicModel(model, provider, apiKey);
+    }
+
+    // Test /chat/completions endpoint (OpenAI protocol)
     const chatStartTime = Date.now();
     let chatResult: any = {
       success: false,

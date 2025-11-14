@@ -300,6 +300,7 @@ export async function configRoutes(fastify: FastifyInstance) {
           name: body.virtualModelName,
           provider_id: null,
           model_identifier: `virtual-${configId}`,
+          protocol: null,
           is_virtual: 1,
           routing_config_id: configId,
           enabled: 1,

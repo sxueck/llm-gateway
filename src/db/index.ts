@@ -29,6 +29,7 @@ export interface Model {
   name: string;
   provider_id: string | null;
   model_identifier: string;
+  protocol: string | null; // 'openai' | 'anthropic' | 'google' - 模型级别的协议声明
   is_virtual: number;
   routing_config_id: string | null;
   expert_routing_id?: string | null;
@@ -244,6 +245,7 @@ async function createTables() {
         name VARCHAR(255) NOT NULL,
         provider_id VARCHAR(255),
         model_identifier VARCHAR(255) NOT NULL,
+        protocol VARCHAR(50),
         is_virtual TINYINT DEFAULT 0,
         routing_config_id VARCHAR(255),
         expert_routing_id VARCHAR(255),
@@ -260,7 +262,8 @@ async function createTables() {
         INDEX idx_models_routing_config (routing_config_id),
         INDEX idx_models_prompt_config (prompt_config(255)),
         INDEX idx_models_compression_config (compression_config(255)),
-        INDEX idx_models_expert_routing (expert_routing_id)
+        INDEX idx_models_expert_routing (expert_routing_id),
+        INDEX idx_models_protocol (protocol)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
@@ -469,8 +472,8 @@ export const providerDb = {
     const conn = await pool.getConnection();
     try {
       await conn.query(
-        'INSERT INTO providers (id, name, base_url, api_key, protocol, model_mapping, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [provider.id, provider.name, provider.base_url, provider.api_key, provider.protocol || 'openai', provider.model_mapping || null, provider.enabled, now, now]
+        'INSERT INTO providers (id, name, base_url, api_key, model_mapping, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [provider.id, provider.name, provider.base_url, provider.api_key, provider.model_mapping || null, provider.enabled, now, now]
       );
       return { ...provider, created_at: now, updated_at: now };
     } finally {
@@ -496,10 +499,6 @@ export const providerDb = {
       if (updates.api_key !== undefined) {
         fields.push('api_key = ?');
         values.push(updates.api_key);
-      }
-      if (updates.protocol !== undefined) {
-        fields.push('protocol = ?');
-        values.push(updates.protocol);
       }
       if (updates.model_mapping !== undefined) {
         fields.push('model_mapping = ?');
@@ -570,8 +569,8 @@ export const modelDb = {
     const conn = await pool.getConnection();
     try {
       await conn.query(
-        'INSERT INTO models (id, name, provider_id, model_identifier, is_virtual, routing_config_id, expert_routing_id, enabled, model_attributes, prompt_config, compression_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [model.id, model.name, model.provider_id, model.model_identifier, model.is_virtual, model.routing_config_id, model.expert_routing_id || null, model.enabled, model.model_attributes, model.prompt_config, model.compression_config, now, now]
+        'INSERT INTO models (id, name, provider_id, model_identifier, protocol, is_virtual, routing_config_id, expert_routing_id, enabled, model_attributes, prompt_config, compression_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [model.id, model.name, model.provider_id, model.model_identifier, model.protocol || null, model.is_virtual, model.routing_config_id, model.expert_routing_id || null, model.enabled, model.model_attributes, model.prompt_config, model.compression_config, now, now]
       );
       return { ...model, created_at: now, updated_at: now };
     } finally {

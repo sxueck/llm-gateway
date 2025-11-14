@@ -1,5 +1,4 @@
 import OpenAI from 'openai';
-import Anthropic from '@anthropic-ai/sdk';
 import { FastifyReply } from 'fastify';
 import { memoryLogger } from './logger.js';
 import { extractReasoningFromChoice } from '../utils/request-logger.js';
@@ -38,10 +37,29 @@ export interface ProtocolResponse {
 
 export class ProtocolAdapter {
   private openaiClients: Map<string, OpenAI> = new Map();
-  private anthropicClients: Map<string, Anthropic> = new Map();
+
+  /**
+   * 生成稳定的 headers 缓存 key
+   * 通过对键排序并拼接键值对来生成稳定的标识符
+   */
+  private getHeadersCacheKey(headers?: Record<string, string>): string {
+    if (!headers || Object.keys(headers).length === 0) {
+      return '';
+    }
+
+    // 按键排序后拼接，确保相同的 headers 对象生成相同的 key
+    return Object.keys(headers)
+      .sort()
+      .map(key => `${key}:${headers[key]}`)
+      .join('|');
+  }
 
   private getOpenAIClient(config: ProtocolConfig): OpenAI {
-    const cacheKey = `${config.provider}-${config.baseUrl || 'default'}`;
+    // 使用优化的 headers key 生成方式，避免 JSON.stringify 导致的缓存失效
+    const headersKey = this.getHeadersCacheKey(config.modelAttributes?.headers);
+    const cacheKey = headersKey
+      ? `${config.provider}-${config.baseUrl || 'default'}-${headersKey}`
+      : `${config.provider}-${config.baseUrl || 'default'}`;
 
     if (!this.openaiClients.has(cacheKey)) {
       const clientConfig: any = {
@@ -54,50 +72,20 @@ export class ProtocolAdapter {
         clientConfig.baseURL = config.baseUrl;
       }
 
+      // 添加自定义请求头支持
+      if (config.modelAttributes?.headers && Object.keys(config.modelAttributes.headers).length > 0) {
+        clientConfig.defaultHeaders = config.modelAttributes.headers;
+        memoryLogger.debug(
+          `添加自定义请求头 | provider: ${config.provider} | headers: ${JSON.stringify(config.modelAttributes.headers)}`,
+          'Protocol'
+        );
+      }
+
       this.openaiClients.set(cacheKey, new OpenAI(clientConfig));
       memoryLogger.debug(`创建 OpenAI 客户端 | provider: ${config.provider} | baseUrl: ${config.baseUrl || 'default'}`, 'Protocol');
     }
 
     return this.openaiClients.get(cacheKey)!;
-  }
-
-  private getAnthropicClient(config: ProtocolConfig): Anthropic {
-    const cacheKey = `${config.provider}-${config.baseUrl || 'default'}`;
-
-    if (!this.anthropicClients.has(cacheKey)) {
-      const clientConfig: any = {
-        apiKey: config.apiKey,
-        maxRetries: 0,
-        timeout: 60000,
-      };
-
-      if (config.baseUrl) {
-        clientConfig.baseURL = config.baseUrl;
-      }
-
-      this.anthropicClients.set(cacheKey, new Anthropic(clientConfig));
-      memoryLogger.debug(`创建 Anthropic 客户端 | provider: ${config.provider} | baseUrl: ${config.baseUrl || 'default'}`, 'Protocol');
-    }
-
-    return this.anthropicClients.get(cacheKey)!;
-  }
-
-  private detectProtocol(provider: string, protocol?: string): string {
-    if (protocol) {
-      return protocol.toLowerCase();
-    }
-
-    const normalized = provider.toLowerCase();
-
-    if (normalized === 'claude' || normalized.includes('anthropic')) {
-      return 'anthropic';
-    }
-
-    if (normalized === 'gemini' || normalized.includes('google')) {
-      return 'google';
-    }
-
-    return 'openai';
   }
 
   private validateAndCleanMessages(messages: any[]): any[] {
@@ -143,235 +131,15 @@ export class ProtocolAdapter {
     return cleanedMessages;
   }
 
-  private convertToAnthropicFormat(messages: any[], supportsCaching: boolean = false): { system?: string | any[]; messages: any[] } {
-    const systemMessages = messages.filter(m => m.role === 'system');
-    const nonSystemMessages = messages.filter(m => m.role !== 'system');
-
-    let system: string | any[] | undefined;
-
-    // Handle system messages with caching
-    if (systemMessages.length > 0) {
-      const systemContent = systemMessages.map(m => m.content).join('\n');
-
-      if (supportsCaching) {
-        system = [
-          {
-            type: 'text',
-            text: systemContent,
-            cache_control: { type: 'ephemeral' }
-          }
-        ];
-        memoryLogger.debug('已在 system 消息上添加 cache_control', 'Protocol');
-      } else {
-        system = systemContent;
-      }
-    }
-
-    // Handle user/assistant messages with caching
-    let processedMessages = nonSystemMessages;
-
-    if (supportsCaching && nonSystemMessages.length > 0) {
-      const userMessageCount = nonSystemMessages.filter(m => m.role === 'user').length;
-      const cacheableCount = Math.min(userMessageCount, 3);
-      processedMessages = this.addCacheControlToMessages(nonSystemMessages);
-
-      if (cacheableCount > 0) {
-        memoryLogger.debug(
-          `已在最后 ${cacheableCount} 个 user 消息上添加 cache_control`,
-          'Protocol'
-        );
-      }
-    }
-
-    return {
-      system,
-      messages: processedMessages
-    };
-  }
-
-  /**
-   * Add cache_control to the last tool in the tools array
-   */
-  private addCacheControlToTools(tools: any[]): any[] {
-    if (!tools || tools.length === 0) {
-      return tools;
-    }
-
-    const result = [...tools];
-    const lastIndex = result.length - 1;
-
-    result[lastIndex] = {
-      ...result[lastIndex],
-      cache_control: { type: 'ephemeral' }
-    };
-
-    return result;
-  }
-
-  /**
-   * Add cache_control to messages
-   * Adds cache_control to the last content block of the last 2-3 user messages and system messages
-   */
-  private addCacheControlToMessages(messages: any[]): any[] {
-    const result = [...messages];
-
-    // Find system messages and add cache_control to their last content block
-    for (let i = 0; i < result.length; i++) {
-      const message = result[i];
-      if (message.role === 'system') {
-        if (typeof message.content === 'string') {
-          result[i] = {
-            ...message,
-            content: [
-              {
-                type: 'text',
-                text: message.content,
-                cache_control: { type: 'ephemeral' }
-              }
-            ]
-          };
-        } else if (Array.isArray(message.content)) {
-          const contentArray = [...message.content];
-          const lastIndex = contentArray.length - 1;
-          if (lastIndex >= 0) {
-            contentArray[lastIndex] = {
-              ...contentArray[lastIndex],
-              cache_control: { type: 'ephemeral' }
-            };
-            result[i] = {
-              ...message,
-              content: contentArray
-            };
-          }
-        }
-      }
-    }
-
-    // Find the indices of the last 2-3 user messages
-    const userMessageIndices: number[] = [];
-    for (let i = result.length - 1; i >= 0 && userMessageIndices.length < 3; i--) {
-      if (result[i].role === 'user') {
-        userMessageIndices.unshift(i);
-      }
-    }
-
-    // Add cache_control to these user messages
-    userMessageIndices.forEach((idx) => {
-      const message = result[idx];
-
-      // Handle string content
-      if (typeof message.content === 'string') {
-        result[idx] = {
-          ...message,
-          content: [
-            {
-              type: 'text',
-              text: message.content,
-              cache_control: { type: 'ephemeral' }
-            }
-          ]
-        };
-      }
-      // Handle array content
-      else if (Array.isArray(message.content)) {
-        const contentArray = [...message.content];
-        const lastIndex = contentArray.length - 1;
-
-        if (lastIndex >= 0) {
-          // Add cache_control to the last content block
-          contentArray[lastIndex] = {
-            ...contentArray[lastIndex],
-            cache_control: { type: 'ephemeral' }
-          };
-
-          result[idx] = {
-            ...message,
-            content: contentArray
-          };
-        }
-      }
-    });
-
-    return result;
-  }
-
-  /**
-   * Prepare messages with cache_control if caching is supported
-   */
-  private prepareMessagesWithCaching(
-    messages: any[],
-    config: ProtocolConfig
-  ): { messages: any[]; supportsCaching: boolean } {
-    let cleanedMessages = this.validateAndCleanMessages(messages);
-    const supportsCaching = config.modelAttributes?.supports_prompt_caching || false;
-
-    if (supportsCaching) {
-      cleanedMessages = this.addCacheControlToMessages(cleanedMessages);
-      const systemMessageCount = cleanedMessages.filter(m => m.role === 'system').length;
-      const userMessageCount = cleanedMessages.filter(m => m.role === 'user').length;
-      const cacheableUserCount = Math.min(userMessageCount, 3);
-
-      memoryLogger.debug(
-        `已在 ${systemMessageCount} 个 system 消息和最后 ${cacheableUserCount} 个 user 消息上添加 cache_control`,
-        'Protocol'
-      );
-    }
-
-    return { messages: cleanedMessages, supportsCaching };
-  }
-
-  /**
-   * Prepare tools with cache_control if caching is supported
-   */
-  private prepareToolsWithCaching(tools: any[], supportsCaching: boolean): any[] {
-    if (supportsCaching && Array.isArray(tools) && tools.length > 0) {
-      const result = this.addCacheControlToTools(tools);
-      memoryLogger.debug(
-        `已在 ${tools.length} 个工具定义的最后一个工具上添加 cache_control`,
-        'Protocol'
-      );
-      return result;
-    }
-    return tools;
-  }
-
-  private convertAnthropicToOpenAIFormat(response: any): ProtocolResponse {
-    return {
-      id: response.id,
-      object: 'chat.completion',
-      created: Math.floor(Date.now() / 1000),
-      model: response.model,
-      choices: [{
-        index: 0,
-        message: {
-          role: 'assistant',
-          content: response.content[0]?.text || '',
-        },
-        finish_reason: response.stop_reason || 'stop'
-      }],
-      usage: {
-        prompt_tokens: response.usage.input_tokens,
-        completion_tokens: response.usage.output_tokens,
-        total_tokens: response.usage.input_tokens + response.usage.output_tokens
-      }
-    };
-  }
-
   async chatCompletion(
     config: ProtocolConfig,
     messages: any[],
     options: any
   ): Promise<ProtocolResponse> {
-    const protocol = this.detectProtocol(config.provider, config.protocol);
-
     memoryLogger.debug(
-      `协议适配器请求 | protocol: ${protocol} | model: ${config.model}`,
+      `直接转发请求 | model: ${config.model}`,
       'Protocol'
     );
-
-    if (protocol === 'anthropic') {
-      return await this.anthropicChatCompletion(config, messages, options);
-    }
 
     return await this.openaiChatCompletion(config, messages, options);
   }
@@ -383,10 +151,7 @@ export class ProtocolAdapter {
   ): Promise<ProtocolResponse> {
     const client = this.getOpenAIClient(config);
 
-    const { messages: cleanedMessages, supportsCaching } = this.prepareMessagesWithCaching(
-      messages,
-      config
-    );
+    const cleanedMessages = this.validateAndCleanMessages(messages);
 
     const requestParams: any = {
       model: config.model,
@@ -395,7 +160,6 @@ export class ProtocolAdapter {
     };
 
     if (options.temperature !== undefined) requestParams.temperature = options.temperature;
-    // 优先使用 max_tokens,如果不存在则使用 max_completion_tokens
     if (options.max_tokens !== undefined) {
       requestParams.max_tokens = options.max_tokens;
     } else if (options.max_completion_tokens !== undefined) {
@@ -409,9 +173,8 @@ export class ProtocolAdapter {
     if (options.logit_bias !== undefined) requestParams.logit_bias = options.logit_bias;
     if (options.user !== undefined) requestParams.user = options.user;
 
-    // Add tools with cache_control if caching is supported
     if (options.tools !== undefined) {
-      requestParams.tools = this.prepareToolsWithCaching(options.tools, supportsCaching);
+      requestParams.tools = options.tools;
     }
 
     if (options.tool_choice !== undefined) requestParams.tool_choice = options.tool_choice;
@@ -438,76 +201,16 @@ export class ProtocolAdapter {
     return response as any;
   }
 
-  private async anthropicChatCompletion(
-    config: ProtocolConfig,
-    messages: any[],
-    options: any
-  ): Promise<ProtocolResponse> {
-    const client = this.getAnthropicClient(config);
-    const cleanedMessages = this.validateAndCleanMessages(messages);
-    const supportsCaching = config.modelAttributes?.supports_prompt_caching || false;
-    const { system, messages: anthropicMessages } = this.convertToAnthropicFormat(cleanedMessages, supportsCaching);
-
-    const requestParams: any = {
-      model: config.model,
-      messages: anthropicMessages,
-      max_tokens: options.max_tokens || 4096,
-    };
-
-    if (system) {
-      requestParams.system = system;
-    }
-
-    if (options.temperature !== undefined) {
-      requestParams.temperature = options.temperature;
-    }
-
-    if (options.top_p !== undefined) {
-      requestParams.top_p = options.top_p;
-    }
-
-    if (options.top_k !== undefined) {
-      requestParams.top_k = options.top_k;
-    }
-
-    if (options.stop_sequences !== undefined) {
-      requestParams.stop_sequences = options.stop_sequences;
-    }
-
-    // Add tools with cache_control if caching is supported
-    if (options.tools && Array.isArray(options.tools) && options.tools.length > 0) {
-      if (supportsCaching) {
-        requestParams.tools = this.addCacheControlToTools(options.tools);
-        memoryLogger.debug(
-          `已在 ${options.tools.length} 个工具定义的最后一个工具上添加 cache_control`,
-          'Protocol'
-        );
-      } else {
-        requestParams.tools = options.tools;
-      }
-    }
-
-    const response = await client.messages.create(requestParams);
-
-    return this.convertAnthropicToOpenAIFormat(response);
-  }
-
   async streamChatCompletion(
     config: ProtocolConfig,
     messages: any[],
     options: any,
     reply: FastifyReply
   ): Promise<StreamTokenUsage> {
-    const protocol = this.detectProtocol(config.provider, config.protocol);
-
     memoryLogger.debug(
-      `协议适配器流式请求 | protocol: ${protocol} | model: ${config.model}`,
+      `直接转发流式请求 | model: ${config.model}`,
       'Protocol'
     );
-
-    if (protocol === 'anthropic') {
-      return await this.anthropicStreamChatCompletion(config, messages, options, reply);
-    }
 
     return await this.openaiStreamChatCompletion(config, messages, options, reply);
   }
@@ -520,10 +223,7 @@ export class ProtocolAdapter {
   ): Promise<StreamTokenUsage> {
     const client = this.getOpenAIClient(config);
 
-    const { messages: cleanedMessages, supportsCaching } = this.prepareMessagesWithCaching(
-      messages,
-      config
-    );
+    const cleanedMessages = this.validateAndCleanMessages(messages);
 
     const requestParams: any = {
       model: config.model,
@@ -533,16 +233,14 @@ export class ProtocolAdapter {
     };
 
     if (options.temperature !== undefined) requestParams.temperature = options.temperature;
-    // 优先使用 max_tokens,如果不存在则使用 max_completion_tokens
     if (options.max_tokens !== undefined) {
       requestParams.max_tokens = options.max_tokens;
     } else if (options.max_completion_tokens !== undefined) {
       requestParams.max_tokens = options.max_completion_tokens;
     }
 
-    // Add tools with cache_control if caching is supported
     if (options.tools !== undefined) {
-      requestParams.tools = this.prepareToolsWithCaching(options.tools, supportsCaching);
+      requestParams.tools = options.tools;
     }
 
     if (options.tool_choice !== undefined) requestParams.tool_choice = options.tool_choice;
@@ -626,161 +324,15 @@ export class ProtocolAdapter {
     };
   }
 
-  private async anthropicStreamChatCompletion(
-    config: ProtocolConfig,
-    messages: any[],
-    options: any,
-    reply: FastifyReply
-  ): Promise<StreamTokenUsage> {
-    const client = this.getAnthropicClient(config);
-    const cleanedMessages = this.validateAndCleanMessages(messages);
-    const supportsCaching = config.modelAttributes?.supports_prompt_caching || false;
-    const { system, messages: anthropicMessages } = this.convertToAnthropicFormat(cleanedMessages, supportsCaching);
-
-    const requestParams: any = {
-      model: config.model,
-      messages: anthropicMessages,
-      max_tokens: options.max_tokens || 4096,
-      stream: true,
-    };
-
-    if (system) {
-      requestParams.system = system;
-    }
-
-    if (options.temperature !== undefined) {
-      requestParams.temperature = options.temperature;
-    }
-
-    if (options.top_p !== undefined) {
-      requestParams.top_p = options.top_p;
-    }
-
-    if (options.top_k !== undefined) {
-      requestParams.top_k = options.top_k;
-    }
-
-    if (options.stop_sequences !== undefined) {
-      requestParams.stop_sequences = options.stop_sequences;
-    }
-
-    // Add tools with cache_control if caching is supported
-    if (options.tools && Array.isArray(options.tools) && options.tools.length > 0) {
-      if (supportsCaching) {
-        requestParams.tools = this.addCacheControlToTools(options.tools);
-        memoryLogger.debug(
-          `已在 ${options.tools.length} 个工具定义的最后一个工具上添加 cache_control`,
-          'Protocol'
-        );
-      } else {
-        requestParams.tools = options.tools;
-      }
-    }
-
-    reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-      'X-Accel-Buffering': 'no',
-      'Connection': 'keep-alive',
-      'Transfer-Encoding': 'chunked',
-    });
-
-    let promptTokens = 0;
-    let completionTokens = 0;
-    const streamChunks: string[] = [];
-    let contentBuffer = '';
-
-    const stream = await client.messages.stream(requestParams);
-
-    for await (const event of stream) {
-      if (event.type === 'message_start') {
-        promptTokens = event.message.usage.input_tokens;
-      } else if (event.type === 'content_block_delta') {
-        if (event.delta.type === 'text_delta') {
-          contentBuffer += event.delta.text;
-          
-          const openaiChunk = {
-            id: `chatcmpl-${Date.now()}`,
-            object: 'chat.completion.chunk',
-            created: Math.floor(Date.now() / 1000),
-            model: config.model,
-            choices: [{
-              index: 0,
-              delta: { content: event.delta.text },
-              finish_reason: null
-            }]
-          };
-
-          const sseData = `data: ${JSON.stringify(openaiChunk)}\n\n`;
-          streamChunks.push(sseData);
-          reply.raw.write(sseData);
-        }
-      } else if (event.type === 'message_delta') {
-        if (event.usage) {
-          completionTokens = event.usage.output_tokens;
-        }
-      }
-    }
-
-    const usageChunk = {
-      id: `chatcmpl-${Date.now()}`,
-      object: 'chat.completion.chunk',
-      created: Math.floor(Date.now() / 1000),
-      model: config.model,
-      choices: [],
-      usage: {
-        prompt_tokens: promptTokens,
-        completion_tokens: completionTokens,
-        total_tokens: promptTokens + completionTokens
-      }
-    };
-
-    const usageSseData = `data: ${JSON.stringify(usageChunk)}\n\n`;
-    streamChunks.push(usageSseData);
-    reply.raw.write(usageSseData);
-
-    const finalChunk = {
-      id: `chatcmpl-${Date.now()}`,
-      object: 'chat.completion.chunk',
-      created: Math.floor(Date.now() / 1000),
-      model: config.model,
-      choices: [{
-        index: 0,
-        delta: {},
-        finish_reason: 'stop'
-      }]
-    };
-
-    const finalSseData = `data: ${JSON.stringify(finalChunk)}\n\n`;
-    streamChunks.push(finalSseData);
-    reply.raw.write(finalSseData);
-
-    reply.raw.write('data: [DONE]\n\n');
-    reply.raw.end();
-
-    return {
-      promptTokens,
-      completionTokens,
-      totalTokens: promptTokens + completionTokens,
-      streamChunks,
-    };
-  }
-
   async createEmbedding(
     config: ProtocolConfig,
     input: string | string[],
     options: any = {}
   ): Promise<any> {
-    const protocol = this.detectProtocol(config.provider, config.protocol);
-
     memoryLogger.debug(
-      `协议适配器 Embeddings 请求 | protocol: ${protocol} | model: ${config.model}`,
+      `直接转发 Embeddings 请求 | model: ${config.model}`,
       'Protocol'
     );
-
-    if (protocol === 'anthropic') {
-      throw new Error('Anthropic 不支持 embeddings API');
-    }
 
     return await this.openaiCreateEmbedding(config, input, options);
   }

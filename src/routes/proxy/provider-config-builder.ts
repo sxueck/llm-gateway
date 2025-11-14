@@ -34,11 +34,14 @@ export async function buildProviderConfig(
   const decryptedApiKey = decryptApiKey(provider.api_key);
   const baseUrl = provider.base_url || '';
 
+  // 使用模型级别的protocol，如果没有则默认为 openai
+  const effectiveProtocol = currentModel?.protocol || 'openai';
+
   const normalized = ProviderAdapterFactory.normalizeProviderConfig({
     provider: provider.id,
     baseUrl,
     apiKey: decryptedApiKey,
-    protocol: provider.protocol || 'openai',
+    protocol: effectiveProtocol,
   });
 
   const vkDisplay = virtualKeyValue && virtualKeyValue.length > 10

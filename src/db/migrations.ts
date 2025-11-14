@@ -82,36 +82,6 @@ export const migrations: Migration[] = [
     },
   },
   {
-    version: 3,
-    name: 'add_protocol_to_providers',
-    up: async (conn: Connection) => {
-      const [tables] = await conn.query(`
-        SELECT COUNT(*) as count
-        FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME = 'providers'
-        AND COLUMN_NAME = 'protocol'
-      `);
-      const result = tables as any[];
-
-      if (result[0].count === 0) {
-        console.log('  - 添加 providers.protocol 字段');
-        await conn.query(`
-          ALTER TABLE providers
-          ADD COLUMN protocol VARCHAR(20) DEFAULT 'openai' AFTER api_key
-        `);
-      } else {
-        console.log('  - providers.protocol 字段已存在,跳过');
-      }
-    },
-    down: async (conn: Connection) => {
-      await conn.query(`
-        ALTER TABLE providers
-        DROP COLUMN protocol
-      `);
-    },
-  },
-  {
     version: 4,
     name: 'add_dynamic_compression_to_virtual_keys',
     up: async (conn: Connection) => {
@@ -174,6 +144,17 @@ export const migrations: Migration[] = [
     },
   },
   {
+    version: 6,
+    name: 'add_full_request_logging_to_api_requests',
+    up: async (conn: Connection) => {
+      // 该迁移已在数据库中应用，保留定义以保持版本一致性
+      console.log('  - 跳过已应用的迁移 v6');
+    },
+    down: async (conn: Connection) => {
+      // 回滚操作（如果需要）
+    },
+  },
+  {
     version: 7,
     name: 'add_intercept_zero_temperature_to_virtual_keys',
     up: async (conn: Connection) => {
@@ -202,6 +183,36 @@ export const migrations: Migration[] = [
         ALTER TABLE virtual_keys
         DROP COLUMN intercept_zero_temperature,
         DROP COLUMN zero_temperature_replacement
+      `);
+    },
+  },
+  {
+    version: 8,
+    name: 'add_protocol_to_models',
+    up: async (conn: Connection) => {
+      const [tables] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'models'
+        AND COLUMN_NAME = 'protocol'
+      `);
+      const result = tables as any[];
+
+      if (result[0].count === 0) {
+        console.log('  - 添加 models.protocol 字段');
+        await conn.query(`
+          ALTER TABLE models
+          ADD COLUMN protocol VARCHAR(20) DEFAULT NULL AFTER model_identifier
+        `);
+      } else {
+        console.log('  - models.protocol 字段已存在,跳过');
+      }
+    },
+    down: async (conn: Connection) => {
+      await conn.query(`
+        ALTER TABLE models
+        DROP COLUMN protocol
       `);
     },
   },
@@ -248,6 +259,8 @@ export async function applyMigrations(conn: Connection): Promise<void> {
     console.log(`发现 ${pendingMigrations.length} 个待应用的迁移`);
 
     for (const migration of pendingMigrations) {
+      // 每个迁移在独立的事务中执行
+      await conn.beginTransaction();
       try {
         console.log(`应用迁移 v${migration.version}: ${migration.name}`);
         await migration.up(conn);
@@ -257,8 +270,10 @@ export async function applyMigrations(conn: Connection): Promise<void> {
           [migration.version, migration.name, Date.now()]
         );
 
+        await conn.commit();
         console.log(`迁移 v${migration.version} 应用成功`);
       } catch (e: any) {
+        await conn.rollback();
         console.error(`迁移 v${migration.version} 应用失败:`, e.message);
         console.error('错误详情:', e);
         throw e;

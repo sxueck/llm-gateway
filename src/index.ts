@@ -15,6 +15,7 @@ import { virtualKeyRoutes } from './routes/virtual-keys.js';
 import { configRoutes } from './routes/config.js';
 import { publicConfigRoutes } from './routes/public-config.js';
 import { proxyRoutes } from './routes/proxy.js';
+import { anthropicRoutes } from './routes/anthropic.js';
 import { modelPresetsRoutes } from './routes/model-presets.js';
 import { expertRoutingRoutes } from './routes/expert-routing.js';
 import { memoryLogger } from './services/logger.js';
@@ -43,7 +44,7 @@ await fastify.register(cors, {
   },
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS', 'HEAD', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-portkey-config', 'Accept', 'Origin'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-portkey-config', 'Accept', 'Origin', 'anthropic-version', 'x-api-key'],
 });
 
 await fastify.register(jwt, {
@@ -139,6 +140,7 @@ fastify.get('/health', async () => {
 });
 
 await fastify.register(proxyRoutes);
+await fastify.register(anthropicRoutes);
 await fastify.register(authRoutes, { prefix: '/api/auth' });
 await fastify.register(publicConfigRoutes, { prefix: '/api/public' });
 await fastify.register(providerRoutes, { prefix: '/api/admin/providers' });

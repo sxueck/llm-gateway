@@ -26,15 +26,6 @@
       <n-input v-model:value="formValue.name" placeholder="如: DeepSeek" size="small" />
     </n-form-item>
 
-    <n-form-item label="协议类型" path="protocol">
-      <n-select
-        v-model:value="formValue.protocol"
-        :options="protocolOptions"
-        placeholder="选择上游协议"
-        size="small"
-      />
-    </n-form-item>
-
     <n-form-item label="Base URL" path="baseUrl">
       <n-space vertical style="width: 100%" :size="6">
         <n-input
@@ -191,12 +182,6 @@ const idSuggestions = computed(() => {
   return suggestions.map(id => ({ label: id, value: id }));
 });
 
-const protocolOptions = [
-  { label: 'OpenAI 协议', value: 'openai' },
-  { label: 'Anthropic 协议 (Claude)', value: 'anthropic' },
-  { label: 'Google 协议 (Gemini)', value: 'google' },
-];
-
 const modelOptions = computed(() => {
   return availableModels.value.map(model => ({
     label: model.name,
@@ -217,7 +202,6 @@ const rules = {
     },
   ],
   name: [{ required: true, message: '请输入显示名称', trigger: 'blur' }],
-  protocol: [{ required: true, message: '请选择协议类型', trigger: 'change' }],
   baseUrl: [
     { required: true, message: '请输入 Base URL', trigger: 'blur' },
     {

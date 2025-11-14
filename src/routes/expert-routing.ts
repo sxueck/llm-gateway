@@ -231,6 +231,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
           name: virtualModelName,
           provider_id: null,
           model_identifier: `expert-${configId}`,
+          protocol: null,
           is_virtual: 1,
           routing_config_id: null,
           expert_routing_id: configId,

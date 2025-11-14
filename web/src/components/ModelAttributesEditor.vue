@@ -1,6 +1,22 @@
 <template>
   <div class="model-attributes-editor">
     <n-collapse :default-expanded-names="['features']">
+      <n-collapse-item name="advanced" title="高级属性">
+        <n-space vertical :size="8">
+          <n-text depth="3" style="font-size: 12px;">自定义请求头 (Headers)</n-text>
+          <n-input
+            v-model:value="headersText"
+            type="textarea"
+            placeholder="User-Agent: MyApp/1.0&#10;X-API-Key: your-key&#10;Authorization: Bearer token"
+            :rows="4"
+            size="small"
+          />
+          <n-text depth="3" style="font-size: 11px; color: #999;">
+            每行一个请求头，格式: Key: Value
+          </n-text>
+        </n-space>
+      </n-collapse-item>
+
       <n-collapse-item name="features" :title="t('models.featureSupport')">
         <n-table :bordered="false" :single-line="false" size="small">
           <tbody>
@@ -96,7 +112,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { NCollapse, NCollapseItem, NSpace, NFormItem, NInputNumber, NSwitch, NTooltip, NIcon, NTable } from 'naive-ui';
+import { NCollapse, NCollapseItem, NSpace, NFormItem, NInputNumber, NSwitch, NTooltip, NIcon, NTable, NInput, NButton, NText } from 'naive-ui';
 import { getAttributesByCategory } from '@/constants/modelAttributes';
 import { MILLION, COST_PRECISION } from '@/constants/numbers';
 import type { ModelAttributes } from '@/types';
@@ -112,6 +128,7 @@ const emit = defineEmits<{
 }>();
 
 const localAttributes = ref<ModelAttributes>({});
+const headersText = ref<string>('');
 
 const performanceAttrs = computed(() => getAttributesByCategory('性能参数'));
 const costAttrs = computed(() => getAttributesByCategory('成本参数'));
@@ -149,6 +166,36 @@ function convertToToken(value: unknown): number | null {
   return value / MILLION;
 }
 
+/**
+ * 将 headers 对象转换为文本格式
+ */
+function headersToText(headers: Record<string, string>): string {
+  return Object.entries(headers)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join('\n');
+}
+
+/**
+ * 将文本格式转换为 headers 对象
+ */
+function textToHeaders(text: string): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const lines = text.split('\n').filter(line => line.trim());
+
+  for (const line of lines) {
+    const colonIndex = line.indexOf(':');
+    if (colonIndex > 0) {
+      const key = line.substring(0, colonIndex).trim();
+      const value = line.substring(colonIndex + 1).trim();
+      if (key && value) {
+        headers[key] = value;
+      }
+    }
+  }
+
+  return headers;
+}
+
 watch(() => props.modelValue, async (newValue) => {
   isUpdatingFromProps.value = true;
   if (newValue) {
@@ -163,35 +210,91 @@ watch(() => props.modelValue, async (newValue) => {
       }
     });
     localAttributes.value = converted;
+    headersText.value = newValue.headers ? headersToText(newValue.headers) : '';
   } else {
     localAttributes.value = {};
+    headersText.value = '';
   }
   await nextTick();
   isUpdatingFromProps.value = false;
 }, { immediate: true, deep: true });
 
-watch(localAttributes, (newValue) => {
-  if (isUpdatingFromProps.value) return;
+/**
+ * 清理单个属性值，处理成本相关的单位转换
+ */
+function cleanAttributeValue(key: keyof ModelAttributes, value: any): number | boolean | string | null {
+  if (COST_KEYS.includes(key)) {
+    return convertToToken(value);
+  }
+  return value as any;
+}
 
+/**
+ * 构建清理后的属性对象
+ */
+function buildCleanedAttributes(): ModelAttributes {
   const cleanedValue: ModelAttributes = {};
-  Object.entries(newValue).forEach(([key, value]) => {
+
+  Object.entries(localAttributes.value).forEach(([key, value]) => {
     if (value !== null && value !== undefined && value !== '') {
       const typedKey = key as keyof ModelAttributes;
-      let finalValue: number | boolean | string | undefined = value as any;
-      
-      if (COST_KEYS.includes(typedKey)) {
-        const converted = convertToToken(value);
-        if (converted !== null) {
-          finalValue = converted;
-        } else {
-          return;
-        }
+      const finalValue = cleanAttributeValue(typedKey, value);
+
+      if (finalValue !== null) {
+        cleanedValue[typedKey] = finalValue as any;
       }
-      cleanedValue[typedKey] = finalValue as any;
     }
   });
+
+  return cleanedValue;
+}
+
+/**
+ * 构建 headers 对象
+ */
+function buildHeaders(parsedHeaders: Record<string, string>): Record<string, string> | undefined {
+  // 文本框为空，显式设置为 undefined 以清空数据库中的值
+  if (headersText.value.trim() === '') {
+    return undefined;
+  }
+
+  // 文本框有内容，解析后设置
+  if (Object.keys(parsedHeaders).length > 0) {
+    const cleanedHeaders: Record<string, string> = {};
+    Object.entries(parsedHeaders).forEach(([key, value]) => {
+      if (key && value) {
+        cleanedHeaders[key] = value;
+      }
+    });
+
+    if (Object.keys(cleanedHeaders).length > 0) {
+      return cleanedHeaders;
+    }
+  }
+
+  return undefined;
+}
+
+function emitValue() {
+  if (isUpdatingFromProps.value) return;
+
+  const parsedHeaders = textToHeaders(headersText.value);
+  const cleanedValue = buildCleanedAttributes();
+  cleanedValue.headers = buildHeaders(parsedHeaders);
+
   emit('update:modelValue', cleanedValue);
+}
+
+watch(localAttributes, () => {
+  emitValue();
 }, { deep: true });
+
+// 暴露方法给父组件，用于在保存前强制更新一次
+defineExpose({
+  syncHeaders: () => {
+    emitValue();
+  }
+});
 </script>
 
 <style scoped>

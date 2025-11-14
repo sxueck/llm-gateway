@@ -12,7 +12,6 @@ export interface Provider {
   base_url: string;
   api_key: string;
   model_mapping: string | null;
-  protocol: string; // 'openai' | 'anthropic' | 'google'
   enabled: number;
   created_at: number;
   updated_at: number;
@@ -65,6 +64,7 @@ export interface ModelAttributes {
   supports_interleaved_thinking?: boolean;
   litellm_provider?: string;
   mode?: string;
+  headers?: Record<string, string>;
 }
 
 export interface PromptConfig {

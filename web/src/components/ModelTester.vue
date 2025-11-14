@@ -28,7 +28,7 @@
             <div class="endpoint-result">
               <n-divider style="margin: 8px 0;">
                 <n-space :size="8" align="center">
-                  <span style="font-weight: bold;">Chat Completions API</span>
+                  <span style="font-weight: bold;">{{ getChatEndpointName() }}</span>
                   <n-tag
                     :type="testResult.chat.success ? 'success' : 'error'"
                     size="small"
@@ -61,13 +61,13 @@
                   <div v-if="testResult.chat.response.usage" class="usage-info">
                     <n-descriptions :column="3" size="small" style="margin-top: 8px;">
                       <n-descriptions-item label="输入 Tokens">
-                        {{ testResult.chat.response.usage.prompt_tokens || 0 }}
+                        {{ getInputTokens(testResult.chat.response.usage) }}
                       </n-descriptions-item>
                       <n-descriptions-item label="输出 Tokens">
-                        {{ testResult.chat.response.usage.completion_tokens || 0 }}
+                        {{ getOutputTokens(testResult.chat.response.usage) }}
                       </n-descriptions-item>
                       <n-descriptions-item label="总计 Tokens">
-                        {{ testResult.chat.response.usage.total_tokens || 0 }}
+                        {{ getTotalTokens(testResult.chat.response.usage) }}
                       </n-descriptions-item>
                     </n-descriptions>
                   </div>
@@ -82,7 +82,7 @@
             </div>
 
             <!-- Responses API 测试结果 -->
-            <div class="endpoint-result">
+            <div class="endpoint-result" v-if="!isAnthropicProtocol()">
               <n-divider style="margin: 8px 0;">
                 <n-space :size="8" align="center">
                   <span style="font-weight: bold;">Responses API</span>
@@ -118,13 +118,13 @@
                   <div v-if="testResult.responses.response.usage" class="usage-info">
                     <n-descriptions :column="3" size="small" style="margin-top: 8px;">
                       <n-descriptions-item label="输入 Tokens">
-                        {{ testResult.responses.response.usage.prompt_tokens || 0 }}
+                        {{ getInputTokens(testResult.responses.response.usage) }}
                       </n-descriptions-item>
                       <n-descriptions-item label="输出 Tokens">
-                        {{ testResult.responses.response.usage.completion_tokens || 0 }}
+                        {{ getOutputTokens(testResult.responses.response.usage) }}
                       </n-descriptions-item>
                       <n-descriptions-item label="总计 Tokens">
-                        {{ testResult.responses.response.usage.total_tokens || 0 }}
+                        {{ getTotalTokens(testResult.responses.response.usage) }}
                       </n-descriptions-item>
                     </n-descriptions>
                   </div>
@@ -163,6 +163,7 @@ import {
   FlashOutline,
 } from '@vicons/ionicons5';
 import { modelApi } from '@/api/model';
+import { isAnthropicProtocol as checkIsAnthropicProtocol } from '@/utils/protocol-utils';
 import type { Model } from '@/types';
 
 const { t } = useI18n();
@@ -212,16 +213,23 @@ async function handleTest() {
 
     testResult.value = testData;
 
-    // 根据两个接口的测试结果显示消息
     const chatSuccess = result.chat.success;
     const responsesSuccess = result.responses.success;
-    
-    if (chatSuccess && responsesSuccess) {
-      message.success('两个接口测试均成功');
-    } else if (chatSuccess || responsesSuccess) {
-      message.warning('部分接口测试成功');
+
+    if (isAnthropicProtocol()) {
+      if (chatSuccess) {
+        message.success('测试成功');
+      } else {
+        message.error('测试失败');
+      }
     } else {
-      message.error('两个接口测试均失败');
+      if (chatSuccess && responsesSuccess) {
+        message.success('两个接口测试均成功');
+      } else if (chatSuccess || responsesSuccess) {
+        message.warning('部分接口测试成功');
+      } else {
+        message.error('两个接口测试均失败');
+      }
     }
   } catch (error: any) {
     const testData: TestResult = {
@@ -251,6 +259,35 @@ function getResponseTimeType(responseTime: number): 'default' | 'success' | 'war
   if (responseTime < 1000) return 'success';
   if (responseTime < 3000) return 'warning';
   return 'error';
+}
+
+function isAnthropicProtocol(): boolean {
+  return checkIsAnthropicProtocol(props.model);
+}
+
+function getChatEndpointName(): string {
+  const protocol = props.model.protocol;
+  if (protocol === 'anthropic') {
+    return 'Messages API (Anthropic)';
+  } else if (protocol === 'google') {
+    return 'Chat Completions API (Google 兼容)';
+  }
+  return 'Chat Completions API (OpenAI)';
+}
+
+function getInputTokens(usage: any): number {
+  return usage?.input_tokens || usage?.prompt_tokens || 0;
+}
+
+function getOutputTokens(usage: any): number {
+  return usage?.output_tokens || usage?.completion_tokens || 0;
+}
+
+function getTotalTokens(usage: any): number {
+  if (usage?.total_tokens) {
+    return usage.total_tokens;
+  }
+  return getInputTokens(usage) + getOutputTokens(usage);
 }
 </script>
 

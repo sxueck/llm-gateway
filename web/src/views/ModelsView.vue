@@ -91,6 +91,15 @@
               size="small"
             />
           </n-form-item>
+          <n-form-item label="协议类型">
+            <n-select
+              v-model:value="formValue.protocol"
+              :options="protocolOptions"
+              placeholder="选择协议（可选，默认使用供应商协议）"
+              size="small"
+              clearable
+            />
+          </n-form-item>
           <n-form-item :label="t('common.enabled')">
             <n-switch v-model:value="formValue.enabled" size="small" />
           </n-form-item>
@@ -107,7 +116,7 @@
             </n-space>
           </n-divider>
 
-          <ModelAttributesEditor v-model="formValue.modelAttributes" />
+          <ModelAttributesEditor ref="modelAttributesEditorRef" v-model="formValue.modelAttributes" />
         </n-form>
       </div>
       <template #footer>
@@ -200,6 +209,7 @@ const showModelPresetSelector = ref(false);
 const showBatchModal = ref(false);
 const showTestModal = ref(false);
 const formRef = ref();
+const modelAttributesEditorRef = ref();
 const batchAdderRef = ref();
 const submitting = ref(false);
 const editingId = ref<string | null>(null);
@@ -256,12 +266,14 @@ const formValue = ref<{
   name: string;
   providerId: string;
   modelIdentifier: string;
+  protocol?: string | null;
   enabled: boolean;
   modelAttributes?: ModelAttributes;
 }>({
   name: '',
   providerId: '',
   modelIdentifier: '',
+  protocol: null,
   enabled: true,
   modelAttributes: undefined,
 });
@@ -280,6 +292,12 @@ const providerOptions = computed(() => {
       value: p.id,
     }));
 });
+
+const protocolOptions = [
+  { label: 'OpenAI 协议', value: 'openai' },
+  { label: 'Anthropic 协议 (Claude)', value: 'anthropic' },
+  { label: 'Google 协议 (Gemini)', value: 'google' },
+];
 
 const columns = computed(() => [
   {
@@ -362,6 +380,7 @@ function handleEdit(model: Model) {
     name: model.name,
     providerId: model.providerId,
     modelIdentifier: model.modelIdentifier,
+    protocol: model.protocol || null,
     enabled: model.enabled,
     modelAttributes: model.modelAttributes || undefined,
   };
@@ -381,11 +400,16 @@ async function handleDelete(id: string) {
 async function handleSubmit() {
   try {
     await formRef.value?.validate();
+
+    // 在保存前同步 headers
+    modelAttributesEditorRef.value?.syncHeaders();
+
     submitting.value = true;
 
     const payload = {
       name: formValue.value.name,
       modelIdentifier: formValue.value.modelIdentifier,
+      protocol: formValue.value.protocol || undefined,
       enabled: formValue.value.enabled,
       modelAttributes: formValue.value.modelAttributes,
     };
@@ -419,6 +443,7 @@ function resetForm() {
     name: '',
     providerId: '',
     modelIdentifier: '',
+    protocol: null,
     enabled: true,
     modelAttributes: undefined,
   };
