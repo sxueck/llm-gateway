@@ -413,7 +413,28 @@ export async function resolveExpertRouting(
 
     // 对于 real 类型的专家，尝试获取模型信息
     let resolvedModel;
-    if (result.expert.model_id) {
+    if (result.expertType === 'real' && result.providerId && result.modelOverride) {
+      // 从 provider 下查找匹配的真实模型（类似智能路由的处理）
+      const providerModels = await modelDb.getByProviderId(result.providerId);
+      resolvedModel = providerModels.find(m =>
+        m.is_virtual !== 1 && (
+          m.model_identifier === result.modelOverride ||
+          m.name === result.modelOverride
+        )
+      );
+
+      if (resolvedModel) {
+        memoryLogger.debug(
+          `专家路由解析真实模型: ${resolvedModel.name} | protocol: ${resolvedModel.protocol || 'auto'}`,
+          'ExpertRouter'
+        );
+      } else {
+        memoryLogger.warn(
+          `专家路由未找到真实模型: ${result.modelOverride} in provider: ${result.providerId}`,
+          'ExpertRouter'
+        );
+      }
+    } else if (result.expert.model_id) {
       resolvedModel = await modelDb.getById(result.expert.model_id);
     }
 
