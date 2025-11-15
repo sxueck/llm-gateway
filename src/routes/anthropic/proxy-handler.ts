@@ -52,6 +52,12 @@ export function createAnthropicProxyHandler() {
         return reply.code(400).send(error);
       }
 
+      // 标记协议类型为 Anthropic
+      const proxyRequest: any = {
+        body: requestBody,
+        protocol: 'anthropic' as const
+      };
+
       if (!requestBody.messages || !Array.isArray(requestBody.messages)) {
         const error = createAnthropicError('Missing required field: messages', 'invalid_request_error');
         return reply.code(400).send(error);
@@ -62,7 +68,7 @@ export function createAnthropicProxyHandler() {
         return reply.code(400).send(error);
       }
 
-      const modelResult = await resolveModelAndProvider(virtualKey, request, virtualKeyValue!);
+      const modelResult = await resolveModelAndProvider(virtualKey, proxyRequest, virtualKeyValue!);
       if ('code' in modelResult) {
         const anthropicError = createAnthropicError(
           modelResult.body.error?.message || 'Model resolution failed',

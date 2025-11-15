@@ -34,6 +34,7 @@ export interface ResolveProviderResult {
 
 export interface ProxyRequest {
   body: any;
+  protocol?: 'openai' | 'anthropic';
 }
 
 const routingTargetIndexMap = new Map<string, number>();
@@ -388,9 +389,20 @@ export async function resolveExpertRouting(
         throw new Error(`Virtual model not found: ${result.expertModelId}`);
       }
 
+      memoryLogger.debug(
+        `专家路由递归解析虚拟模型: ${virtualModel.name}`,
+        'ExpertRouter'
+      );
+
       const resolvedResult = await resolveProviderFromModel(virtualModel, request, virtualKeyId, depth + 1);
-      // 保留虚拟模型信息，以便后续获取模型属性
-      resolvedResult.resolvedModel = virtualModel;
+
+      if (resolvedResult.resolvedModel) {
+        memoryLogger.debug(
+          `专家路由最终解析模型: ${resolvedResult.resolvedModel.name} | protocol: ${resolvedResult.resolvedModel.protocol || 'auto'}`,
+          'ExpertRouter'
+        );
+      }
+
       return resolvedResult;
     }
 
@@ -426,6 +438,11 @@ export async function resolveProviderFromModel(
 ): Promise<ResolveProviderResult> {
   if (depth > 5) {
     throw new Error('Maximum routing depth exceeded (possible circular reference)');
+  }
+
+  // 自动设置协议标记（如果尚未设置）
+  if (!request.protocol) {
+    request.protocol = 'openai'; // 默认为 OpenAI 协议
   }
 
   if (model.expert_routing_id) {

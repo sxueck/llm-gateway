@@ -36,6 +36,11 @@ export async function buildProviderConfig(
 
   // 协议优先级：currentModel.protocol（真实模型的协议）> 'openai'
   const effectiveProtocol = currentModel?.protocol || 'openai';
+  
+  memoryLogger.debug(
+    `协议选择 | currentModel: ${currentModel?.name || 'none'} | currentModel.protocol: ${currentModel?.protocol || 'none'} | effectiveProtocol: ${effectiveProtocol}`,
+    'ProviderConfig'
+  );
 
   const normalized = ProviderAdapterFactory.normalizeProviderConfig({
     provider: provider.id,

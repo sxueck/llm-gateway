@@ -8,7 +8,6 @@ import { buildChatCompletionsEndpoint } from '../utils/api-endpoint-builder.js';
 import crypto from 'crypto';
 
 // 常量定义
-const MAX_CONTEXT_MESSAGES = 3;
 const DEFAULT_CLASSIFICATION_TIMEOUT = 10000;
 const DEFAULT_MAX_TOKENS = 100;
 
@@ -21,8 +20,10 @@ interface ProxyRequest {
   body?: {
     messages?: ChatMessage[];
     model?: string;
+    system?: string | any[];
     [key: string]: any;
   };
+  protocol?: 'openai' | 'anthropic';
   [key: string]: any;
 }
 
@@ -192,14 +193,13 @@ export class ExpertRouter {
 
     const config: ExpertRoutingConfig = JSON.parse(expertRoutingConfig.config);
 
-    const messages = request.body?.messages || [];
-    if (messages.length === 0) {
+    if (!request.body?.messages || request.body.messages.length === 0) {
       throw new Error('No messages in request');
     }
 
     let classificationResult;
     try {
-      classificationResult = await this.classify(messages, config.classifier);
+      classificationResult = await this.classify(request, config.classifier);
     } catch (classifyError: any) {
       memoryLogger.error(
         `分类失败: ${classifyError.message}`,
@@ -245,13 +245,17 @@ export class ExpertRouter {
   }
 
   private async classify(
-    messages: ChatMessage[],
+    request: ProxyRequest,
     classifierConfig: ExpertRoutingConfig['classifier']
   ): Promise<{
     category: string;
     classifierRequest: any;
     classifierResponse: any;
   }> {
+    const messages = request.body?.messages || [];
+    const system = request.body?.system; // Anthropic 格式
+    const protocol = request.protocol || 'openai';
+
     let messagesToClassify = messages;
 
     if (classifierConfig.max_messages_to_classify && classifierConfig.max_messages_to_classify > 0) {
@@ -262,38 +266,29 @@ export class ExpertRouter {
       messagesToClassify = messagesToClassify.filter(m => m.role !== 'system');
     }
 
-    const userMessages = messagesToClassify.filter(m => m.role === 'user');
-    if (userMessages.length === 0) {
-      throw new Error('No user message found for classification');
-    }
+    // 使用新的消息提取工具
+    const { extractUserMessagesForClassification } = await import('../utils/message-extractor.js');
+    const { lastUserMessage, conversationHistory } = extractUserMessagesForClassification(
+      messagesToClassify,
+      system
+    );
 
-    const lastUserMessage = userMessages.at(-1);
-    if (!lastUserMessage) {
-      throw new Error('No user message found for classification');
-    }
-    let userPrompt = typeof lastUserMessage.content === 'string'
-      ? lastUserMessage.content
-      : JSON.stringify(lastUserMessage.content);
-
+    // 应用忽略标签过滤
+    let userPrompt = lastUserMessage;
     if (classifierConfig.ignored_tags && classifierConfig.ignored_tags.length > 0) {
       userPrompt = this.filterIgnoredTags(userPrompt, classifierConfig.ignored_tags);
     }
 
-    // 构建对话历史上下文
-    const conversationContext = this.buildConversationContext(
-      messagesToClassify,
-      lastUserMessage,
-      classifierConfig.ignored_tags
-    );
-
     // 验证模板格式并处理用户提示符
-    const { systemMessage, userMessageContent } = this.processPromptTemplate(classifierConfig.prompt_template, userPrompt);
+    const { systemMessage, userMessageContent } = this.processPromptTemplate(
+      classifierConfig.prompt_template,
+      userPrompt
+    );
 
     // 组装完整的用户消息（包含历史和最新输入）
-    const userMessageWithHistory = this.assembleUserMessageWithHistory(
-      conversationContext,
-      userMessageContent
-    );
+    const userMessageWithHistory = conversationHistory
+      ? `${conversationHistory}\n\n---\nLatest User Prompt:\n${userMessageContent}`
+      : userMessageContent;
 
     const classificationRequest: any = {
       messages: [
@@ -624,99 +619,6 @@ export class ExpertRouter {
       systemMessage: promptTemplate.trim(),
       userMessageContent: userPrompt
     };
-  }
-
-  /**
-   * 构建对话历史上下文
-   * @param messages 待分类的消息列表
-   * @param lastUserMessage 最后一条用户消息
-   * @param ignoredTags 需要过滤的标签列表
-   * @returns 格式化的对话历史字符串
-   */
-  private buildConversationContext(
-    messages: ChatMessage[],
-    lastUserMessage: ChatMessage,
-    ignoredTags?: string[]
-  ): string {
-    const lastUserIndex = messages.lastIndexOf(lastUserMessage);
-    
-    // 如果最后一条用户消息是第一条消息，则没有历史
-    if (lastUserIndex <= 0) {
-      return '';
-    }
-
-    // 提取历史消息（最多 MAX_CONTEXT_MESSAGES * 2 条，包含用户和助手消息）
-    const startIndex = Math.max(0, lastUserIndex - MAX_CONTEXT_MESSAGES * 2);
-    const contextMessages = messages.slice(startIndex, lastUserIndex);
-
-    if (contextMessages.length === 0) {
-      return '';
-    }
-
-    // 格式化历史消息
-    const formattedMessages = contextMessages.map((msg, index) => {
-      let content = typeof msg.content === 'string'
-        ? msg.content
-        : JSON.stringify(msg.content);
-
-      // 过滤忽略的标签
-      if (ignoredTags && ignoredTags.length > 0) {
-        content = this.filterIgnoredTags(content, ignoredTags);
-      }
-
-      // 确定角色标签
-      const roleLabel = this.getRoleLabel(msg.role);
-      
-      // 添加序号以便追踪对话顺序
-      const messageNumber = index + 1;
-      
-      return `[${messageNumber}] ${roleLabel}: ${content}`;
-    });
-
-    // 构建完整的历史上下文
-    return [
-      '# Conversation History (for context)',
-      ...formattedMessages,
-      ''
-    ].join('\n');
-  }
-
-  /**
-   * 组装包含历史的完整用户消息
-   * @param conversationContext 对话历史上下文
-   * @param currentUserPrompt 当前用户输入
-   * @returns 完整的用户消息
-   */
-  private assembleUserMessageWithHistory(
-    conversationContext: string,
-    currentUserPrompt: string
-  ): string {
-    if (!conversationContext) {
-      return currentUserPrompt;
-    }
-
-    return [
-      conversationContext.trim(),
-      '',
-      '---',
-      'Latest User Prompt:',
-      currentUserPrompt
-    ].join('\n');
-  }
-
-  /**
-   * 获取角色标签
-   * @param role 消息角色
-   * @returns 格式化的角色标签
-   */
-  private getRoleLabel(role: string): string {
-    const roleMap: Record<string, string> = {
-      'user': 'User',
-      'assistant': 'Assistant',
-      'system': 'System'
-    };
-
-    return roleMap[role.toLowerCase()] || role;
   }
 
 }
