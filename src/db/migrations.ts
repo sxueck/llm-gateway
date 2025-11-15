@@ -216,6 +216,36 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 9,
+    name: 'remove_protocol_from_providers',
+    up: async (conn: Connection) => {
+      const [tables] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'providers'
+        AND COLUMN_NAME = 'protocol'
+      `);
+      const result = tables as any[];
+
+      if (result[0].count > 0) {
+        console.log('  - 删除 providers.protocol 字段');
+        await conn.query(`
+          ALTER TABLE providers
+          DROP COLUMN protocol
+        `);
+      } else {
+        console.log('  - providers.protocol 字段不存在,跳过');
+      }
+    },
+    down: async (conn: Connection) => {
+      await conn.query(`
+        ALTER TABLE providers
+        ADD COLUMN protocol VARCHAR(20) DEFAULT 'openai' AFTER api_key
+      `);
+    },
+  },
 ];
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {

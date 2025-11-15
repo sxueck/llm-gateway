@@ -151,7 +151,6 @@ interface Props {
     name: string;
     baseUrl: string;
     apiKey: string;
-    protocol: string;
     enabled: boolean;
   };
   editingId?: string | null;

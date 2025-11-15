@@ -244,7 +244,6 @@ async function createTables() {
         name VARCHAR(255) NOT NULL,
         base_url TEXT NOT NULL,
         api_key TEXT NOT NULL,
-        protocol VARCHAR(20) DEFAULT 'openai',
         model_mapping TEXT,
         enabled TINYINT DEFAULT 1,
         created_at BIGINT NOT NULL,

@@ -307,8 +307,33 @@ export async function resolveSmartRouting(
       excludeProviders: updatedExcludeProviders
     };
 
+    // 查找真实模型配置（用于获取 protocol）
+    let resolvedModel: any = null;
     if (selectedTarget.override_params?.model) {
       result.modelOverride = selectedTarget.override_params.model;
+
+      // 从 provider 下查找匹配的真实模型
+      const providerModels = await modelDb.getByProviderId(selectedTarget.provider);
+      resolvedModel = providerModels.find(m =>
+        m.is_virtual !== 1 && (
+          m.model_identifier === selectedTarget.override_params!.model ||
+          m.name === selectedTarget.override_params!.model
+        )
+      );
+
+      if (resolvedModel) {
+        result.resolvedModel = resolvedModel;
+        memoryLogger.debug(
+          `Smart routing resolved real model: ${resolvedModel.name} | protocol: ${resolvedModel.protocol || 'auto'}`,
+          'Routing'
+        );
+      } else {
+        memoryLogger.warn(
+          `Smart routing could not find real model for: ${selectedTarget.override_params.model} in provider: ${provider.name}`,
+          'Routing'
+        );
+      }
+
       memoryLogger.debug(
         `Smart routing model override: ${selectedTarget.override_params.model}`,
         'Proxy'
@@ -316,7 +341,7 @@ export async function resolveSmartRouting(
     }
 
     memoryLogger.info(
-      `Smart routing target selected: provider=${provider.name} | model=${selectedTarget.override_params?.model || 'default'}`,
+      `Smart routing target selected: provider=${provider.name} | model=${selectedTarget.override_params?.model || 'default'} | protocol=${resolvedModel?.protocol || 'auto'}`,
       'Proxy'
     );
 
@@ -419,7 +444,8 @@ export async function resolveProviderFromModel(
     return {
       provider: smartRoutingResult.provider,
       providerId: smartRoutingResult.providerId,
-      excludeProviders: smartRoutingResult.excludeProviders
+      excludeProviders: smartRoutingResult.excludeProviders,
+      resolvedModel: smartRoutingResult.resolvedModel
     };
   }
 
