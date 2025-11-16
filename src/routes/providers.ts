@@ -8,7 +8,7 @@ const protocolMappingSchema = z.object({
   openai: z.string().url().optional(),
   anthropic: z.string().url().optional(),
   google: z.string().url().optional(),
-}).optional();
+}).nullable().optional();
 
 const createProviderSchema = z.object({
   id: z.string(),

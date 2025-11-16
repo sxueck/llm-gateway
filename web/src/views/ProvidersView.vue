@@ -213,8 +213,6 @@ async function handleEdit(provider: Provider) {
     const fullProvider = await providerApi.getById(provider.id, true);
     originalApiKey.value = fullProvider.apiKey || '';
 
-    console.log('[ProvidersView] Loaded provider for editing:', fullProvider);
-
     formValue.value = {
       id: fullProvider.id,
       name: fullProvider.name,
@@ -256,6 +254,9 @@ async function handleDelete(id: string) {
 
 async function handleSubmit() {
   try {
+    // 在提交前同步 protocolMappings
+    formRef.value?.syncProtocolMappings?.();
+
     await formRef.value?.validate();
 
     if (editingId.value && formValue.value.apiKey !== originalApiKey.value) {
@@ -295,7 +296,6 @@ async function handleSubmit() {
       if (formValue.value.apiKey !== originalApiKey.value) {
         updateData.apiKey = formValue.value.apiKey;
       }
-      console.log('[ProvidersView] Updating provider:', editingId.value, updateData);
       await providerApi.update(editingId.value, updateData);
 
       const selectedModelsInfo = formRef.value?.getSelectedModelsInfo?.() || [];

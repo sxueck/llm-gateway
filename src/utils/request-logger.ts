@@ -1,9 +1,45 @@
 const MAX_BODY_LENGTH = 10000;
+const MAX_STRING_LENGTH = 1000; // 单个字符串字段的最大长度
 
 export interface ReasoningExtraction {
   reasoningContent: string;
   thinkingBlocks: any[];
   toolCalls?: any[];
+}
+
+/**
+ * 递归截断对象中所有过长的字符串字段
+ */
+function truncateStringsRecursively(obj: any, maxLength: number = MAX_STRING_LENGTH): any {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  // 如果是字符串，直接截断
+  if (typeof obj === 'string') {
+    return obj.length > maxLength
+      ? obj.substring(0, maxLength) + '...[truncated]'
+      : obj;
+  }
+
+  // 如果是数组，递归处理每个元素
+  if (Array.isArray(obj)) {
+    return obj.map(item => truncateStringsRecursively(item, maxLength));
+  }
+
+  // 如果是对象，递归处理每个属性
+  if (typeof obj === 'object') {
+    const result: any = {};
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        result[key] = truncateStringsRecursively(obj[key], maxLength);
+      }
+    }
+    return result;
+  }
+
+  // 其他类型（number, boolean 等）直接返回
+  return obj;
 }
 
 export function buildFullRequestBody(
@@ -101,94 +137,36 @@ export function truncateRequestBody(body: any): string {
   if (!body) return '';
 
   try {
-    const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
+    const parsed = typeof body === 'string' ? JSON.parse(body) : body;
 
-    if (bodyStr.length <= MAX_BODY_LENGTH) {
-      return bodyStr;
+    const truncated: any = {};
+
+    for (const key in parsed) {
+      if (key === 'tools') {
+        // 工具定义通常很长，只显示数量
+        truncated.tools = Array.isArray(parsed.tools)
+          ? `[${parsed.tools.length} 个工具定义]`
+          : parsed.tools;
+      } else if (key === 'functions') {
+        // 函数定义通常很长，只显示数量
+        truncated.functions = Array.isArray(parsed.functions)
+          ? `[${parsed.functions.length} 个函数定义]`
+          : parsed.functions;
+      } else {
+        // 对所有其他字段进行递归截断
+        truncated[key] = truncateStringsRecursively(parsed[key]);
+      }
     }
 
-    try {
-      const parsed = typeof body === 'string' ? JSON.parse(body) : body;
-
-      const truncated: any = {};
-
-      for (const key in parsed) {
-        if (key === 'messages' || key === 'system') {
-          // 跳过 messages 和 system，稍后单独处理
-          continue;
-        } else if (key === 'tools') {
-          truncated.tools = `[${parsed.tools.length} 个工具定义]`;
-        } else if (key === 'functions') {
-          truncated.functions = `[${parsed.functions.length} 个函数定义]`;
-        } else {
-          truncated[key] = parsed[key];
-        }
-      }
-
-      // 处理 Anthropic API 的 system 参数
-      if (parsed.system) {
-        if (typeof parsed.system === 'string') {
-          truncated.system = parsed.system.length > 1000
-            ? parsed.system.substring(0, 1000) + '...[truncated]'
-            : parsed.system;
-        } else if (Array.isArray(parsed.system)) {
-          truncated.system = parsed.system.map((block: any) => {
-            if (block.type === 'text' && block.text) {
-              return {
-                ...block,
-                text: block.text.length > 1000
-                  ? block.text.substring(0, 1000) + '...[truncated]'
-                  : block.text
-              };
-            }
-            return block;
-          });
-        } else {
-          truncated.system = parsed.system;
-        }
-      }
-
-      if (parsed.messages && Array.isArray(parsed.messages)) {
-        truncated.messages = parsed.messages.map((msg: any) => {
-          const truncatedMsg: any = { role: msg.role };
-
-          if (typeof msg.content === 'string') {
-            truncatedMsg.content = msg.content.length > 1000
-              ? msg.content.substring(0, 1000) + '...[truncated]'
-              : msg.content;
-          } else if (Array.isArray(msg.content)) {
-            truncatedMsg.content = msg.content.map((item: any) => {
-              if (item.type === 'text' && item.text) {
-                return {
-                  type: 'text',
-                  text: item.text.length > 1000
-                    ? item.text.substring(0, 1000) + '...[truncated]'
-                    : item.text
-                };
-              }
-              return item;
-            });
-          } else {
-            truncatedMsg.content = msg.content;
-          }
-
-          if (msg.name) truncatedMsg.name = msg.name;
-          if (msg.tool_calls) truncatedMsg.tool_calls = '[工具调用已截断]';
-          if (msg.tool_call_id) truncatedMsg.tool_call_id = msg.tool_call_id;
-
-          return truncatedMsg;
-        });
-      }
-
-      const result = JSON.stringify(truncated);
-      return result.length <= MAX_BODY_LENGTH
-        ? result
-        : result.substring(0, MAX_BODY_LENGTH) + '...[truncated]';
-    } catch {
-      return bodyStr.substring(0, MAX_BODY_LENGTH) + '...[truncated]';
-    }
+    const result = JSON.stringify(truncated);
+    // 如果最终结果还是太长，进行整体截断
+    return result.length <= MAX_BODY_LENGTH
+      ? result
+      : result.substring(0, MAX_BODY_LENGTH) + '...[truncated]';
   } catch {
-    return '';
+    // 如果解析失败，尝试作为字符串处理
+    const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
+    return bodyStr.substring(0, MAX_BODY_LENGTH) + '...[truncated]';
   }
 }
 
@@ -196,91 +174,41 @@ export function truncateResponseBody(body: any): string {
   if (!body) return '';
 
   try {
-    const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
-    
-    if (bodyStr.length <= MAX_BODY_LENGTH) {
-      return bodyStr;
-    }
+    const parsed = typeof body === 'string' ? JSON.parse(body) : body;
 
-    try {
-      const parsed = typeof body === 'string' ? JSON.parse(body) : body;
-      
-      const truncated: any = {};
-      
-      if (parsed.id) truncated.id = parsed.id;
-      if (parsed.object) truncated.object = parsed.object;
-      if (parsed.created) truncated.created = parsed.created;
-      if (parsed.model) truncated.model = parsed.model;
-      
-      if (parsed.choices && Array.isArray(parsed.choices)) {
+    const truncated: any = {};
+
+    for (const key in parsed) {
+      if (key === 'choices' && Array.isArray(parsed.choices)) {
+        // 特殊处理 choices，需要简化 tool_calls 和 function_call
         truncated.choices = parsed.choices.map((choice: any) => {
-          const truncatedChoice: any = { index: choice.index };
-          
-          if (choice.message) {
-            const msg = choice.message;
-            truncatedChoice.message = { role: msg.role };
+          const truncatedChoice = truncateStringsRecursively(choice);
 
-            if (typeof msg.content === 'string') {
-              truncatedChoice.message.content = msg.content.length > 1000
-                ? msg.content.substring(0, 1000) + '...[truncated]'
-                : msg.content;
-            } else {
-              truncatedChoice.message.content = msg.content;
-            }
-
-            if (msg.reasoning_content) {
-              truncatedChoice.message.reasoning_content = msg.reasoning_content.length > 1000
-                ? msg.reasoning_content.substring(0, 1000) + '...[truncated]'
-                : msg.reasoning_content;
-            }
-
-            if (msg.thinking_blocks && Array.isArray(msg.thinking_blocks)) {
-              truncatedChoice.message.thinking_blocks = msg.thinking_blocks.map((block: any) => ({
-                type: block.type,
-                thinking: block.thinking?.length > 500
-                  ? block.thinking.substring(0, 500) + '...[truncated]'
-                  : block.thinking,
-                signature: block.signature ? '[signature]' : undefined
-              }));
-            }
-
-            if (msg.tool_calls) {
-              truncatedChoice.message.tool_calls = '[工具调用已截断]';
-            }
-            if (msg.function_call) {
-              truncatedChoice.message.function_call = '[函数调用已截断]';
-            }
+          // 简化工具调用信息（通常很长且调试价值不高）
+          if (truncatedChoice.message?.tool_calls) {
+            truncatedChoice.message.tool_calls = '[工具调用已截断]';
           }
-          
-          if (choice.delta) {
-            truncatedChoice.delta = choice.delta;
+          if (truncatedChoice.message?.function_call) {
+            truncatedChoice.message.function_call = '[函数调用已截断]';
           }
-          
-          if (choice.finish_reason) {
-            truncatedChoice.finish_reason = choice.finish_reason;
-          }
-          
+
           return truncatedChoice;
         });
+      } else {
+        // 对其他所有字段进行递归截断
+        truncated[key] = truncateStringsRecursively(parsed[key]);
       }
-      
-      if (parsed.usage) {
-        truncated.usage = parsed.usage;
-      }
-      
-      if (parsed.error) {
-        truncated.error = parsed.error;
-      }
-      
-      const result = JSON.stringify(truncated);
-      return result.length <= MAX_BODY_LENGTH
-        ? result
-        : result.substring(0, MAX_BODY_LENGTH) + '...[truncated]';
-    } catch {
-      return bodyStr.substring(0, MAX_BODY_LENGTH) + '...[truncated]';
     }
+
+    const result = JSON.stringify(truncated);
+    // 如果最终结果还是太长，进行整体截断
+    return result.length <= MAX_BODY_LENGTH
+      ? result
+      : result.substring(0, MAX_BODY_LENGTH) + '...[truncated]';
   } catch {
-    return '';
+    // 如果解析失败，尝试作为字符串处理
+    const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
+    return bodyStr.substring(0, MAX_BODY_LENGTH) + '...[truncated]';
   }
 }
 

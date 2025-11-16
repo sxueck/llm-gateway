@@ -103,6 +103,84 @@
               </n-space>
             </n-collapse-item>
 
+            <n-collapse-item title="POST /v1/messages - Anthropic 协议" name="anthropic-messages">
+              <n-space vertical :size="16">
+                <n-form label-placement="left" label-width="100">
+                  <n-form-item label="虚拟密钥">
+                    <n-select
+                      v-model:value="selectedVirtualKeyAnthropic"
+                      :options="virtualKeyOptions"
+                      placeholder="选择虚拟密钥"
+                      clearable
+                    />
+                  </n-form-item>
+                  <n-form-item label="模型">
+                    <n-select
+                      v-model:value="selectedModelAnthropic"
+                      :options="modelOptions"
+                      placeholder="选择模型"
+                      clearable
+                      filterable
+                    />
+                  </n-form-item>
+                  <n-form-item label="请求模板">
+                    <n-select
+                      v-model:value="selectedTemplateAnthropic"
+                      :options="anthropicTemplateOptions"
+                      placeholder="选择模板"
+                      @update:value="applyAnthropicTemplate"
+                    />
+                  </n-form-item>
+                </n-form>
+
+                <div>
+                  <n-text strong>请求体</n-text>
+                  <n-input
+                    v-model:value="requestBodyAnthropic"
+                    type="textarea"
+                    :rows="12"
+                    placeholder="输入请求体"
+                    style="margin-top: 8px; font-family: monospace;"
+                  />
+                </div>
+
+                <n-space>
+                  <n-button type="primary" @click="sendAnthropicRequest" :loading="sendingAnthropic" :disabled="!selectedVirtualKeyAnthropic">
+                    <template #icon>
+                      <n-icon><SendOutline /></n-icon>
+                    </template>
+                    发送请求
+                  </n-button>
+                  <n-button @click="clearAnthropicResponse">
+                    清空响应
+                  </n-button>
+                </n-space>
+
+                <div v-if="anthropicResponse">
+                  <n-divider />
+                  <n-space vertical :size="12">
+                    <n-space align="center">
+                      <n-text strong>响应状态:</n-text>
+                      <n-tag :type="anthropicResponse.status >= 200 && anthropicResponse.status < 300 ? 'success' : 'error'">
+                        {{ anthropicResponse.status }} {{ anthropicResponse.statusText }}
+                      </n-tag>
+                      <n-text depth="3">响应时间: {{ anthropicResponse.duration }}ms</n-text>
+                    </n-space>
+
+                    <div v-if="anthropicResponse.headers">
+                      <n-text strong>响应头</n-text>
+                      <pre class="code-block" style="margin-top: 8px;">{{ formatJson(anthropicResponse.headers) }}</pre>
+                    </div>
+
+                    <div>
+                      <n-text strong>响应体</n-text>
+                      <pre class="code-block" style="margin-top: 8px;">{{ formatJson(anthropicResponse.data) }}</pre>
+                    </div>
+                  </n-space>
+                </div>
+              </n-space>
+            </n-collapse-item>
+
             <n-collapse-item title="GET /models - 获取模型列表" name="models">
               <n-space vertical :size="16">
                 <n-form label-placement="left" label-width="100">
@@ -255,12 +333,18 @@ const modelStore = useModelStore();
 
 const selectedVirtualKey = ref<string | null>(null);
 const selectedVirtualKeyModels = ref<string | null>(null);
+const selectedVirtualKeyAnthropic = ref<string | null>(null);
 const selectedModel = ref<string | null>(null);
+const selectedModelAnthropic = ref<string | null>(null);
 const selectedTemplate = ref<string | null>(null);
+const selectedTemplateAnthropic = ref<string | null>(null);
 const requestBody = ref('');
+const requestBodyAnthropic = ref('');
 const sending = ref(false);
+const sendingAnthropic = ref(false);
 const gettingModels = ref(false);
 const response = ref<any>(null);
+const anthropicResponse = ref<any>(null);
 const modelsResponse = ref<any>(null);
 
 const llmGatewayUrl = ref<string>('http://localhost:3000');
@@ -381,6 +465,25 @@ const templateOptions = [
   {
     label: '动态压缩测试',
     value: 'compression-test',
+  },
+];
+
+const anthropicTemplateOptions = [
+  {
+    label: '简单对话',
+    value: 'anthropic-simple',
+  },
+  {
+    label: '系统提示词对话',
+    value: 'anthropic-system',
+  },
+  {
+    label: '流式响应',
+    value: 'anthropic-stream',
+  },
+  {
+    label: '多轮对话',
+    value: 'anthropic-multi-turn',
   },
 ];
 
@@ -549,6 +652,90 @@ function clearModelsResponse() {
   modelsResponse.value = null;
 }
 
+function applyAnthropicTemplate(templateValue: string | null) {
+  if (!templateValue) return;
+
+  const model = selectedModelAnthropic.value || 'claude-3-5-sonnet-20241022';
+
+  const templates: Record<string, string> = {
+    'anthropic-simple': JSON.stringify({
+      model,
+      max_tokens: 1024,
+      messages: [
+        { role: 'user', content: 'Hello! How are you?' }
+      ]
+    }, null, 2),
+    'anthropic-system': JSON.stringify({
+      model,
+      max_tokens: 1024,
+      system: 'You are a helpful assistant.',
+      messages: [
+        { role: 'user', content: 'What is the capital of France?' }
+      ]
+    }, null, 2),
+    'anthropic-stream': JSON.stringify({
+      model,
+      max_tokens: 1024,
+      stream: true,
+      messages: [
+        { role: 'user', content: 'Tell me a short story.' }
+      ]
+    }, null, 2),
+    'anthropic-multi-turn': JSON.stringify({
+      model,
+      max_tokens: 1024,
+      messages: [
+        { role: 'user', content: 'What is 2+2?' },
+        { role: 'assistant', content: '2+2 equals 4.' },
+        { role: 'user', content: 'What about 3+3?' }
+      ]
+    }, null, 2),
+  };
+
+  requestBodyAnthropic.value = templates[templateValue] || '';
+}
+
+async function sendAnthropicRequest() {
+  if (!selectedVirtualKeyAnthropic.value) {
+    message.error('请选择虚拟密钥');
+    return;
+  }
+
+  try {
+    sendingAnthropic.value = true;
+    const startTime = Date.now();
+
+    const res = await fetch(`${llmGatewayUrl.value}/v1/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${selectedVirtualKeyAnthropic.value}`,
+        'anthropic-version': '2023-06-01',
+      },
+      body: requestBodyAnthropic.value,
+    });
+
+    const duration = Date.now() - startTime;
+    const data = await res.json();
+
+    anthropicResponse.value = {
+      status: res.status,
+      statusText: res.statusText,
+      duration,
+      headers: Object.fromEntries(res.headers.entries()),
+      data,
+    };
+  } catch (error: any) {
+    message.error(error.message || '请求失败');
+  } finally {
+    sendingAnthropic.value = false;
+  }
+}
+
+function clearAnthropicResponse() {
+  anthropicResponse.value = null;
+}
+
 onMounted(async () => {
   await Promise.all([
     virtualKeyStore.fetchVirtualKeys(),
@@ -564,6 +751,7 @@ onMounted(async () => {
 
   if (modelOptions.value.length > 0) {
     selectedModel.value = modelOptions.value[0].value;
+    selectedModelAnthropic.value = modelOptions.value[0].value;
   }
 });
 </script>

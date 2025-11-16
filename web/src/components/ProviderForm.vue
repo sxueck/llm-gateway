@@ -217,11 +217,15 @@ if (props.modelValue.protocolMappings) {
 
 // 监听 modelValue.protocolMappings 的变化，用于编辑模式下异步加载数据
 watch(() => props.modelValue.protocolMappings, (newMappings) => {
-  console.log('[ProviderForm] protocolMappings changed:', newMappings);
   if (newMappings) {
-    multiProtocolEnabled.value = true;
-    protocolUrls.value = { ...newMappings };
-  } else {
+    // 仅在值实际变化时更新
+    const hasChanged = !protocolUrls.value.openai && !protocolUrls.value.anthropic && !protocolUrls.value.google;
+    if (hasChanged || JSON.stringify(protocolUrls.value) !== JSON.stringify(newMappings)) {
+      multiProtocolEnabled.value = true;
+      protocolUrls.value = { ...newMappings };
+    }
+  } else if (multiProtocolEnabled.value) {
+    // 仅在当前启用多协议时才禁用
     multiProtocolEnabled.value = false;
     protocolUrls.value = {
       openai: '',
@@ -238,29 +242,31 @@ const formValue = computed({
 
 // 监听多协议开关变化
 watch(multiProtocolEnabled, (enabled) => {
-  console.log('[ProviderForm] multiProtocolEnabled changed:', enabled);
   if (enabled) {
-    // 启用多协议时,如果有baseUrl,将其设置为openai协议的URL
-    if (formValue.value.baseUrl) {
+    // 启用多协议时
+    // 仅当所有协议 URL 都为空时（首次启用多协议），才将 baseUrl 复制到 openai URL
+    const allProtocolsEmpty = !protocolUrls.value.openai && !protocolUrls.value.anthropic && !protocolUrls.value.google;
+    if (allProtocolsEmpty && formValue.value.baseUrl) {
       protocolUrls.value.openai = formValue.value.baseUrl;
     }
     updateProtocolMappings();
   } else {
-    // 禁用多协议时,如果有openai URL,将其设置为baseUrl
+    // 禁用多协议时,将 protocolMappings 设置为 null
+    // 如果有 openai URL，将其设置为 baseUrl
     if (protocolUrls.value.openai) {
       formValue.value.baseUrl = protocolUrls.value.openai;
     }
     formValue.value.protocolMappings = null;
-    console.log('[ProviderForm] protocolMappings set to null');
+    // 清空协议 URLs
+    protocolUrls.value = {
+      openai: '',
+      anthropic: '',
+      google: '',
+    };
   }
 });
 
-// 监听协议URL变化
-watch(protocolUrls, () => {
-  if (multiProtocolEnabled.value) {
-    updateProtocolMappings();
-  }
-}, { deep: true });
+// 移除实时监听，改为在需要时手动调用 updateProtocolMappings()
 
 function updateProtocolMappings() {
   const mappings: ProtocolMapping = {};
@@ -268,15 +274,21 @@ function updateProtocolMappings() {
   if (protocolUrls.value.anthropic) mappings.anthropic = protocolUrls.value.anthropic;
   if (protocolUrls.value.google) mappings.google = protocolUrls.value.google;
 
-  formValue.value.protocolMappings = Object.keys(mappings).length > 0 ? mappings : null;
-  // 设置默认baseUrl为openai或第一个可用的协议URL
-  formValue.value.baseUrl = mappings.openai || mappings.anthropic || mappings.google || '';
+  const newMappings = Object.keys(mappings).length > 0 ? mappings : null;
 
-  console.log('[ProviderForm] updateProtocolMappings:', {
-    protocolUrls: protocolUrls.value,
-    mappings,
-    resultProtocolMappings: formValue.value.protocolMappings,
-    resultBaseUrl: formValue.value.baseUrl,
+  // 当启用多协议时，baseUrl 设置为第一个可用的协议 URL（作为后备）
+  // 但在实际使用时，后端会优先使用 protocolMappings 中对应协议的 URL
+  const newBaseUrl = newMappings
+    ? (mappings.openai || mappings.anthropic || mappings.google || '')
+    : '';
+
+  // 更新 formValue
+  formValue.value.protocolMappings = newMappings;
+  formValue.value.baseUrl = newBaseUrl;
+
+  console.log('[ProviderForm] Protocol mappings synced:', {
+    protocolMappings: newMappings,
+    baseUrl: newBaseUrl,
   });
 }
 
@@ -306,9 +318,22 @@ const rules = {
   ],
   name: [{ required: true, message: '请输入显示名称', trigger: 'blur' }],
   baseUrl: [
-    { required: true, message: '请输入 Base URL', trigger: 'blur' },
+    {
+      // 仅在未启用多协议时才要求必填
+      required: () => !multiProtocolEnabled.value,
+      message: '请输入 Base URL',
+      trigger: 'blur'
+    },
     {
       validator: (_rule: any, value: string) => {
+        // 如果启用了多协议，baseUrl 会被自动设置，跳过验证
+        if (multiProtocolEnabled.value) {
+          return true;
+        }
+        // 单协议模式下，验证 baseUrl 格式
+        if (!value) {
+          return false;
+        }
         const validation = validateBaseUrl(value);
         return validation.isValid;
       },
@@ -408,6 +433,12 @@ defineExpose({
     return availableModels.value.filter(model =>
       selectedModels.value.includes(model.id)
     );
+  },
+  // 在提交前调用此方法以更新 protocolMappings
+  syncProtocolMappings: () => {
+    if (multiProtocolEnabled.value) {
+      updateProtocolMappings();
+    }
   },
 });
 </script>

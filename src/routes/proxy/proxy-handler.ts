@@ -218,9 +218,7 @@ export function createProxyHandler() {
 
       if (request.method !== 'GET' && request.method !== 'HEAD') {
         requestBody = JSON.stringify(request.body);
-        const truncatedBody = requestBody.length > 500
-          ? `${requestBody.substring(0, 500)}... (total length: ${requestBody.length} chars)`
-          : requestBody;
+        const truncatedBody = truncateRequestBody(request.body);
         memoryLogger.debug(
           `Request body: ${truncatedBody}`,
           'Proxy'
