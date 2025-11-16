@@ -1,6 +1,6 @@
 # LLM Gateway
 
-基于 Portkey Gateway 的轻量级 LLM 网关管理系统，提供直观的 Web UI 界面，用于管理多个 LLM 提供商、虚拟密钥、路由配置和模型管理。
+轻量级 LLM 网关管理系统，提供直观的 Web UI 界面，用于管理多个 LLM 提供商、虚拟密钥、路由配置和模型管理。
 
 <img width="3798" height="1967" alt="image" src="https://github.com/user-attachments/assets/1e1d9c6c-7a6b-4cef-9f1d-b188cd38dfbe" />
 <img width="1778" height="977" alt="image" src="https://github.com/user-attachments/assets/fe65a33e-73f3-481e-90b1-cb4a732122fa" />
@@ -26,7 +26,7 @@
 
 - Node.js v20 或更高版本
 - npm / cnpm
-- Docker (可选,用于运行 Portkey Gateway)
+- Docker (可选,用于容器化部署)
 
 ### 安装
 
@@ -58,7 +58,6 @@ cp .env.example .env
 PORT=3000
 NODE_ENV=development
 DB_PATH=./data/gateway.db
-PORTKEY_CONFIG_PATH=./portkey-config/conf.json
 LOG_LEVEL=info
 JWT_SECRET=your-secret-key-change-this-in-production
 ```
@@ -83,9 +82,6 @@ npm run start:all
 
 - **Web UI**: http://localhost:5173
 - **后端 API**: http://localhost:3000
-- **Portkey Gateway**: http://localhost:8787 (仅本地访问，不对外开放)
-
-**安全说明**: Portkey Gateway 已配置为仅监听本地回环地址 (127.0.0.1)，外部网络无法直接访问。所有 API 请求必须通过 LLM Gateway 进行转发，确保统一的认证和访问控制。
 
 ### 快速使用
 
@@ -129,7 +125,6 @@ cd web && npm run build && cd ..
 | PORT | 后端服务端口 | 3000 |
 | NODE_ENV | 运行环境 | development |
 | DB_PATH | 数据库文件路径 | ./data/gateway.db |
-| PORTKEY_CONFIG_PATH | Portkey 配置文件路径 | ./portkey-config/conf.json |
 | LOG_LEVEL | 日志级别 | info |
 | JWT_SECRET | JWT 密钥 (至少 32 字符) | 必填 |
 | PUBLIC_URL | 公开访问 URL | http://localhost:3000 |
@@ -153,6 +148,5 @@ MIT License - 详见 [LICENSE](./LICENSE) 文件
 
 ## 致谢
 
-- [Portkey Gateway](https://github.com/Portkey-AI/gateway) - 核心网关服务
 - [Naive UI](https://www.naiveui.com/) - UI 组件库
 - [Fastify](https://www.fastify.io/) - 高性能 Web 框架

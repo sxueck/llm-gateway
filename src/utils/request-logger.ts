@@ -1,5 +1,5 @@
-const MAX_BODY_LENGTH = 10000;
-const MAX_STRING_LENGTH = 1000; // 单个字符串字段的最大长度
+const MAX_BODY_LENGTH = 2000; // 最大字节长度限制
+const MAX_STRING_LENGTH = 500; // 单个字符串字段的最大字符长度（保守估计，确保总体不超过 2000 字节）
 
 export interface ReasoningExtraction {
   reasoningContent: string;

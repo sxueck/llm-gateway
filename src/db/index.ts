@@ -130,6 +130,46 @@ function startBufferFlush() {
   }, BUFFER_FLUSH_INTERVAL);
 }
 
+/**
+ * 计算字符串的 UTF-8 字节长度
+ */
+function getByteLength(str: string): number {
+  return Buffer.byteLength(str, 'utf8');
+}
+
+/**
+ * 按字节长度截断字符串，确保不会超过指定的字节数
+ * 同时确保不会在 UTF-8 多字节字符中间截断
+ */
+function truncateToByteLength(str: string, maxBytes: number): string {
+  if (getByteLength(str) <= maxBytes) {
+    return str;
+  }
+
+  // 预留一些空间给截断标记
+  const suffix = '...[truncated]';
+  const suffixBytes = getByteLength(suffix);
+  const targetBytes = maxBytes - suffixBytes;
+
+  // 使用二分查找找到合适的截断点
+  let low = 0;
+  let high = str.length;
+  let result = '';
+
+  while (low < high) {
+    const mid = Math.floor((low + high + 1) / 2);
+    const substr = str.substring(0, mid);
+    if (getByteLength(substr) <= targetBytes) {
+      result = substr;
+      low = mid;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return result + suffix;
+}
+
 async function flushApiRequestBuffer() {
   if (apiRequestBuffer.length === 0) {
     return;
@@ -147,21 +187,19 @@ async function flushApiRequestBuffer() {
     const values: any[] = [];
     const placeholders: string[] = [];
 
-    // MEDIUMTEXT 最大长度约为 16MB，我们使用更保守的限制
-    const MAX_COLUMN_LENGTH = 65535; // 64KB，安全限制
+    // 限制每个字段最大 2000 字节
+    const MAX_COLUMN_BYTES = 2000;
 
     for (const request of requests) {
-      // request_body 和 response_body 已经在 proxy-handler 中通过 truncateRequestBody/truncateResponseBody 截断
-      // 这里只需要做最终的长度安全检查
       let requestBody = request.request_body;
       let responseBody = request.response_body;
 
-      // 最终安全检查：确保不会超过数据库列的最大长度
-      if (requestBody && requestBody.length > MAX_COLUMN_LENGTH) {
-        requestBody = requestBody.substring(0, MAX_COLUMN_LENGTH) + '...[truncated]';
+      // 最终安全检查：确保不会超过数据库列的最大字节长度
+      if (requestBody && getByteLength(requestBody) > MAX_COLUMN_BYTES) {
+        requestBody = truncateToByteLength(requestBody, MAX_COLUMN_BYTES);
       }
-      if (responseBody && responseBody.length > MAX_COLUMN_LENGTH) {
-        responseBody = responseBody.substring(0, MAX_COLUMN_LENGTH) + '...[truncated]';
+      if (responseBody && getByteLength(responseBody) > MAX_COLUMN_BYTES) {
+        responseBody = truncateToByteLength(responseBody, MAX_COLUMN_BYTES);
       }
 
       placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');

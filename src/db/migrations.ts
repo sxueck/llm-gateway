@@ -246,6 +246,45 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 10,
+    name: 'extend_api_requests_body_fields_to_mediumtext',
+    up: async (conn: Connection) => {
+      try {
+        const [tables] = await conn.query(`
+          SELECT COLUMN_TYPE
+          FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'api_requests'
+          AND COLUMN_NAME = 'request_body'
+        `);
+        const result = tables as any[];
+
+        if (result.length > 0 && result[0].COLUMN_TYPE !== 'mediumtext') {
+          console.log('  - 扩展 api_requests.request_body 和 response_body 为 MEDIUMTEXT');
+          await conn.query(`
+            ALTER TABLE api_requests
+            MODIFY COLUMN request_body MEDIUMTEXT,
+            MODIFY COLUMN response_body MEDIUMTEXT
+          `);
+        } else if (result.length > 0) {
+          console.log('  - api_requests body 字段已是 MEDIUMTEXT,跳过');
+        } else {
+          console.log('  - api_requests 表不存在或字段不存在,跳过');
+        }
+      } catch (e: any) {
+        console.error('  - 迁移 v10 执行出错:', e.message);
+        throw e;
+      }
+    },
+    down: async (conn: Connection) => {
+      await conn.query(`
+        ALTER TABLE api_requests
+        MODIFY COLUMN request_body TEXT,
+        MODIFY COLUMN response_body TEXT
+      `);
+    },
+  },
 ];
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {
