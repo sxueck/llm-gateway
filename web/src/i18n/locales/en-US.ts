@@ -135,6 +135,8 @@ export default {
     modelId: 'Model Identifier',
     modelIdPlaceholder: 'e.g., gpt-4, claude-3-opus',
     provider: 'Provider',
+    protocol: 'Protocol',
+    defaultProtocol: 'Default',
     selectProvider: 'Select Provider',
     modelAttributes: 'Model Attributes',
     searchFromLiteLLM: 'Search from Presets',

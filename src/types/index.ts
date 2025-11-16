@@ -6,12 +6,19 @@ export interface User {
   updated_at: number;
 }
 
+export interface ProtocolMapping {
+  openai?: string;
+  anthropic?: string;
+  google?: string;
+}
+
 export interface Provider {
   id: string;
   name: string;
   base_url: string;
   api_key: string;
   model_mapping: string | null;
+  protocol_mappings: string | null; // JSON string of ProtocolMapping
   enabled: number;
   created_at: number;
   updated_at: number;

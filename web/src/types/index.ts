@@ -3,10 +3,17 @@ export interface User {
   username: string;
 }
 
+export interface ProtocolMapping {
+  openai?: string;
+  anthropic?: string;
+  google?: string;
+}
+
 export interface Provider {
   id: string;
   name: string;
   baseUrl: string;
+  protocolMappings?: ProtocolMapping | null;
   apiKey?: string;
   modelMapping?: Record<string, string> | null;
   enabled: boolean;
@@ -107,6 +114,7 @@ export interface CreateProviderRequest {
   id: string;
   name: string;
   baseUrl: string;
+  protocolMappings?: ProtocolMapping;
   apiKey: string;
   modelMapping?: Record<string, string>;
   enabled?: boolean;
@@ -115,6 +123,7 @@ export interface CreateProviderRequest {
 export interface UpdateProviderRequest {
   name?: string;
   baseUrl?: string;
+  protocolMappings?: ProtocolMapping;
   apiKey?: string;
   modelMapping?: Record<string, string>;
   enabled?: boolean;

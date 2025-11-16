@@ -2,6 +2,7 @@ import mysql from 'mysql2/promise';
 import { appConfig } from '../config/index.js';
 import { User, Provider, VirtualKey, SystemConfig } from '../types/index.js';
 import { applyMigrations } from './migrations.js';
+import { truncateBodyContent } from '../utils/content-truncator.js';
 
 let pool: mysql.Pool;
 
@@ -144,22 +145,13 @@ async function flushApiRequestBuffer() {
   try {
     await conn.beginTransaction();
 
-    const MAX_BODY_LENGTH = 512000; // 512KB
     const values: any[] = [];
     const placeholders: string[] = [];
 
     for (const request of requests) {
-      // 直接截断过大的 body 数据
-      let requestBody = request.request_body || null;
-      let responseBody = request.response_body || null;
-      
-      if (requestBody && requestBody.length > MAX_BODY_LENGTH) {
-        requestBody = requestBody.substring(0, MAX_BODY_LENGTH) + '\n...[truncated]';
-      }
-      
-      if (responseBody && responseBody.length > MAX_BODY_LENGTH) {
-        responseBody = responseBody.substring(0, MAX_BODY_LENGTH) + '\n...[truncated]';
-      }
+      // 使用共享的截断工具函数
+      let requestBody = truncateBodyContent(request.request_body);
+      let responseBody = truncateBodyContent(request.response_body);
 
       placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       values.push(
@@ -243,6 +235,7 @@ async function createTables() {
         id VARCHAR(255) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         base_url TEXT NOT NULL,
+        protocol_mappings TEXT,
         api_key TEXT NOT NULL,
         model_mapping TEXT,
         enabled TINYINT DEFAULT 1,
@@ -485,8 +478,8 @@ export const providerDb = {
     const conn = await pool.getConnection();
     try {
       await conn.query(
-        'INSERT INTO providers (id, name, base_url, api_key, model_mapping, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [provider.id, provider.name, provider.base_url, provider.api_key, provider.model_mapping || null, provider.enabled, now, now]
+        'INSERT INTO providers (id, name, base_url, protocol_mappings, api_key, model_mapping, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [provider.id, provider.name, provider.base_url, provider.protocol_mappings || null, provider.api_key, provider.model_mapping || null, provider.enabled, now, now]
       );
       return { ...provider, created_at: now, updated_at: now };
     } finally {
@@ -508,6 +501,10 @@ export const providerDb = {
       if (updates.base_url !== undefined) {
         fields.push('base_url = ?');
         values.push(updates.base_url);
+      }
+      if (updates.protocol_mappings !== undefined) {
+        fields.push('protocol_mappings = ?');
+        values.push(updates.protocol_mappings);
       }
       if (updates.api_key !== undefined) {
         fields.push('api_key = ?');

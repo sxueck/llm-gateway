@@ -198,6 +198,7 @@ import BatchModelAdder from '@/components/BatchModelAdder.vue';
 import ModelTester from '@/components/ModelTester.vue';
 import type { Model, ModelAttributes } from '@/types';
 import type { ModelPresetSearchResult } from '@/api/model-presets';
+import { PROTOCOL_OPTIONS, getProtocolInfo } from '@/utils/protocol-utils';
 
 const { t } = useI18n();
 const message = useMessage();
@@ -293,11 +294,7 @@ const providerOptions = computed(() => {
     }));
 });
 
-const protocolOptions = [
-  { label: 'OpenAI 协议', value: 'openai' },
-  { label: 'Anthropic 协议 (Claude)', value: 'anthropic' },
-  { label: 'Google 协议 (Gemini)', value: 'google' },
-];
+const protocolOptions = PROTOCOL_OPTIONS;
 
 const columns = computed(() => [
   {
@@ -323,6 +320,14 @@ const columns = computed(() => [
   },
   { title: t('models.provider'), key: 'providerName' },
   { title: t('models.modelId'), key: 'modelIdentifier' },
+  {
+    title: t('models.protocol'),
+    key: 'protocol',
+    render: (row: Model) => {
+      const protocolInfo = getProtocolInfo(row.protocol);
+      return h(NTag, { type: protocolInfo.type, size: 'small' }, { default: () => protocolInfo.label });
+    },
+  },
   {
     title: t('common.status'),
     key: 'enabled',

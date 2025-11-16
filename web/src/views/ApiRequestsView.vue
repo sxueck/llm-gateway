@@ -167,6 +167,7 @@ import { apiRequestApi, type ApiRequest } from '@/api/api-request';
 import { virtualKeyApi } from '@/api/virtual-key';
 import type { DataTableColumns, PaginationProps } from 'naive-ui';
 import { formatJson, formatTimestamp } from '@/utils/common';
+import { extractRequestPreview, extractResponsePreview } from '@/utils/content-truncator';
 
 const message = useMessage();
 const loading = ref(false);
@@ -275,23 +276,7 @@ const columns: DataTableColumns<ApiRequest> = [
     ellipsis: {
       tooltip: true,
     },
-    render: (row) => {
-      if (!row.request_body) return '-';
-      try {
-        const parsed = JSON.parse(row.request_body);
-        const messageContent = parsed.messages?.[0]?.content;
-        if (messageContent) {
-          const content = typeof messageContent === 'string' ? messageContent : JSON.stringify(messageContent);
-          return content.length > 50 ? content.substring(0, 50) + '...' : content;
-        }
-        if (parsed.model) {
-          return parsed.model;
-        }
-        return '...';
-      } catch {
-        return row.request_body.substring(0, 50) + '...';
-      }
-    },
+    render: (row) => extractRequestPreview(row.request_body),
   },
   {
     title: '响应预览',
@@ -300,16 +285,7 @@ const columns: DataTableColumns<ApiRequest> = [
     ellipsis: {
       tooltip: true,
     },
-    render: (row) => {
-      if (!row.response_body) return '-';
-      try {
-        const parsed = JSON.parse(row.response_body);
-        const content = parsed.choices?.[0]?.message?.content || parsed.error?.message || '...';
-        return content.length > 50 ? content.substring(0, 50) + '...' : content;
-      } catch {
-        return row.response_body.substring(0, 50) + '...';
-      }
-    },
+    render: (row) => extractResponsePreview(row.response_body),
   },
 ];
 

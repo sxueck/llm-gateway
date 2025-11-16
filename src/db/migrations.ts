@@ -216,6 +216,36 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 9,
+    name: 'add_protocol_mappings_to_providers',
+    up: async (conn: Connection) => {
+      const [tables] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'providers'
+        AND COLUMN_NAME = 'protocol_mappings'
+      `);
+      const result = tables as any[];
+
+      if (result[0].count === 0) {
+        console.log('  - 添加 providers.protocol_mappings 字段');
+        await conn.query(`
+          ALTER TABLE providers
+          ADD COLUMN protocol_mappings TEXT DEFAULT NULL AFTER base_url
+        `);
+      } else {
+        console.log('  - providers.protocol_mappings 字段已存在,跳过');
+      }
+    },
+    down: async (conn: Connection) => {
+      await conn.query(`
+        ALTER TABLE providers
+        DROP COLUMN protocol_mappings
+      `);
+    },
+  },
 ];
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {

@@ -136,6 +136,8 @@ export default {
     modelId: '模型标识符',
     modelIdPlaceholder: '如: gpt-4, claude-3-opus',
     provider: '所属提供商',
+    protocol: '模型协议',
+    defaultProtocol: '默认',
     selectProvider: '选择提供商',
     modelAttributes: '模型属性配置',
     searchFromModelPresets: '从预设库搜索',

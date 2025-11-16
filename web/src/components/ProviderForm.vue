@@ -1,5 +1,5 @@
 <template>
-  <n-form ref="formRef" :model="formValue" :rules="rules" label-placement="left" label-width="90" size="small">
+  <n-form ref="formRef" :model="formValue" :rules="rules" label-placement="left" label-width="120" size="small">
     <n-form-item label="提供商 ID" path="id">
       <n-space vertical style="width: 100%" :size="6">
         <n-auto-complete
@@ -26,7 +26,11 @@
       <n-input v-model:value="formValue.name" placeholder="如: DeepSeek" size="small" />
     </n-form-item>
 
-    <n-form-item label="Base URL" path="baseUrl">
+    <n-form-item label="多协议支持">
+      <n-switch v-model:value="multiProtocolEnabled" size="small" />
+    </n-form-item>
+
+    <n-form-item v-if="!multiProtocolEnabled" label="Base URL" path="baseUrl">
       <n-space vertical style="width: 100%" :size="6">
         <n-input
           v-model:value="formValue.baseUrl"
@@ -44,6 +48,32 @@
         />
       </n-space>
     </n-form-item>
+
+    <template v-if="multiProtocolEnabled">
+      <n-form-item label="OpenAI 协议 URL">
+        <n-input
+          v-model:value="protocolUrls.openai"
+          placeholder="https://xx.com/v1"
+          size="small"
+        />
+      </n-form-item>
+
+      <n-form-item label="Anthropic 协议 URL">
+        <n-input
+          v-model:value="protocolUrls.anthropic"
+          placeholder="https://xx.com/claude"
+          size="small"
+        />
+      </n-form-item>
+
+      <n-form-item label="Google 协议 URL">
+        <n-input
+          v-model:value="protocolUrls.google"
+          placeholder="https://xx.com/gemini"
+          size="small"
+        />
+      </n-form-item>
+    </template>
 
     <n-form-item label="API Key" path="apiKey">
       <n-space vertical style="width: 100%" :size="6">
@@ -144,12 +174,14 @@ import {
   getProviderIdSuggestions
 } from '@/utils/provider-validation';
 import { providerApi, type ModelInfo } from '@/api/provider';
+import type { ProtocolMapping } from '@/types';
 
 interface Props {
   modelValue: {
     id: string;
     name: string;
     baseUrl: string;
+    protocolMappings?: ProtocolMapping | null;
     apiKey: string;
     enabled: boolean;
   };
@@ -170,11 +202,58 @@ const fetchingModels = ref(false);
 const availableModels = ref<ModelInfo[]>([]);
 const selectedModels = ref<string[]>([]);
 const fetchError = ref<string>('');
+const multiProtocolEnabled = ref(false);
+const protocolUrls = ref<ProtocolMapping>({
+  openai: '',
+  anthropic: '',
+  google: '',
+});
+
+// 初始化多协议状态
+if (props.modelValue.protocolMappings) {
+  multiProtocolEnabled.value = true;
+  protocolUrls.value = { ...props.modelValue.protocolMappings };
+}
 
 const formValue = computed({
   get: () => props.modelValue,
   set: (value) => emit('update:modelValue', value),
 });
+
+// 监听多协议开关变化
+watch(multiProtocolEnabled, (enabled) => {
+  if (enabled) {
+    // 启用多协议时,如果有baseUrl,将其设置为openai协议的URL
+    if (formValue.value.baseUrl) {
+      protocolUrls.value.openai = formValue.value.baseUrl;
+    }
+    updateProtocolMappings();
+  } else {
+    // 禁用多协议时,如果有openai URL,将其设置为baseUrl
+    if (protocolUrls.value.openai) {
+      formValue.value.baseUrl = protocolUrls.value.openai;
+    }
+    formValue.value.protocolMappings = null;
+  }
+});
+
+// 监听协议URL变化
+watch(protocolUrls, () => {
+  if (multiProtocolEnabled.value) {
+    updateProtocolMappings();
+  }
+}, { deep: true });
+
+function updateProtocolMappings() {
+  const mappings: ProtocolMapping = {};
+  if (protocolUrls.value.openai) mappings.openai = protocolUrls.value.openai;
+  if (protocolUrls.value.anthropic) mappings.anthropic = protocolUrls.value.anthropic;
+  if (protocolUrls.value.google) mappings.google = protocolUrls.value.google;
+  
+  formValue.value.protocolMappings = Object.keys(mappings).length > 0 ? mappings : null;
+  // 设置默认baseUrl为openai或第一个可用的协议URL
+  formValue.value.baseUrl = mappings.openai || mappings.anthropic || mappings.google || '';
+}
 
 const idSuggestions = computed(() => {
   const suggestions = getProviderIdSuggestions(formValue.value.id);
@@ -260,7 +339,11 @@ function getIdValidationType(): 'success' | 'error' {
 }
 
 async function handleFetchModels() {
-  if (!formValue.value.baseUrl || !formValue.value.apiKey) {
+  const baseUrlToUse = multiProtocolEnabled.value
+    ? (protocolUrls.value.openai || protocolUrls.value.anthropic || protocolUrls.value.google)
+    : formValue.value.baseUrl;
+
+  if (!baseUrlToUse || !formValue.value.apiKey) {
     message.warning('请先填写 Base URL 和 API Key');
     return;
   }
@@ -268,7 +351,7 @@ async function handleFetchModels() {
   try {
     fetchingModels.value = true;
     fetchError.value = '';
-    const result = await providerApi.fetchModels(formValue.value.baseUrl, formValue.value.apiKey);
+    const result = await providerApi.fetchModels(baseUrlToUse, formValue.value.apiKey);
 
     if (result.success) {
       availableModels.value = result.models;

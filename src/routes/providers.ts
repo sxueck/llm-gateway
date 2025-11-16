@@ -4,10 +4,17 @@ import { providerDb } from '../db/index.js';
 import { encryptApiKey, decryptApiKey } from '../utils/crypto.js';
 import { buildModelsEndpoint } from '../utils/api-endpoint-builder.js';
 
+const protocolMappingSchema = z.object({
+  openai: z.string().url().optional(),
+  anthropic: z.string().url().optional(),
+  google: z.string().url().optional(),
+}).optional();
+
 const createProviderSchema = z.object({
   id: z.string(),
   name: z.string(),
   baseUrl: z.string().url(),
+  protocolMappings: protocolMappingSchema,
   apiKey: z.string(),
   modelMapping: z.record(z.string()).optional(),
   enabled: z.boolean().optional(),
@@ -16,6 +23,7 @@ const createProviderSchema = z.object({
 const updateProviderSchema = z.object({
   name: z.string().optional(),
   baseUrl: z.string().url().optional(),
+  protocolMappings: protocolMappingSchema,
   apiKey: z.string().optional(),
   modelMapping: z.record(z.string()).optional(),
   enabled: z.boolean().optional(),
@@ -42,6 +50,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
         id: p.id,
         name: p.name,
         baseUrl: p.base_url,
+        protocolMappings: p.protocol_mappings ? JSON.parse(p.protocol_mappings) : null,
         apiKey: '***',
         modelMapping: p.model_mapping ? JSON.parse(p.model_mapping) : null,
         enabled: p.enabled === 1,
@@ -64,6 +73,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
       id: provider.id,
       name: provider.name,
       baseUrl: provider.base_url,
+      protocolMappings: provider.protocol_mappings ? JSON.parse(provider.protocol_mappings) : null,
       apiKey: includeApiKey === 'true' ? decryptApiKey(provider.api_key) : '***',
       modelMapping: provider.model_mapping ? JSON.parse(provider.model_mapping) : null,
       enabled: provider.enabled === 1,
@@ -84,6 +94,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
       id: body.id,
       name: body.name,
       base_url: body.baseUrl,
+      protocol_mappings: body.protocolMappings ? JSON.stringify(body.protocolMappings) : null,
       api_key: encryptApiKey(body.apiKey),
       model_mapping: body.modelMapping ? JSON.stringify(body.modelMapping) : null,
       enabled: body.enabled !== false ? 1 : 0,
@@ -93,6 +104,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
       id: provider.id,
       name: provider.name,
       baseUrl: provider.base_url,
+      protocolMappings: provider.protocol_mappings ? JSON.parse(provider.protocol_mappings) : null,
       modelMapping: provider.model_mapping ? JSON.parse(provider.model_mapping) : null,
       enabled: provider.enabled === 1,
       createdAt: provider.created_at,
@@ -112,6 +124,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
     const updates: any = {};
     if (body.name !== undefined) updates.name = body.name;
     if (body.baseUrl !== undefined) updates.base_url = body.baseUrl;
+    if (body.protocolMappings !== undefined) updates.protocol_mappings = body.protocolMappings ? JSON.stringify(body.protocolMappings) : null;
     if (body.apiKey !== undefined) updates.api_key = encryptApiKey(body.apiKey);
     if (body.modelMapping !== undefined) updates.model_mapping = JSON.stringify(body.modelMapping);
     if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
@@ -127,6 +140,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
       id: updated.id,
       name: updated.name,
       baseUrl: updated.base_url,
+      protocolMappings: updated.protocol_mappings ? JSON.parse(updated.protocol_mappings) : null,
       modelMapping: updated.model_mapping ? JSON.parse(updated.model_mapping) : null,
       enabled: updated.enabled === 1,
       createdAt: updated.created_at,
@@ -260,6 +274,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
           id: providerData.id,
           name: providerData.name,
           base_url: providerData.baseUrl,
+          protocol_mappings: null,
           api_key: encryptApiKey(providerData.apiKey),
           model_mapping: null,
           enabled: providerData.enabled !== false ? 1 : 0,
