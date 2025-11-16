@@ -64,6 +64,7 @@ export class AntiBotService {
     allowedUserAgents: [],
     blockedUserAgents: [],
     logOnly: true,
+    logHeaders: false,
   };
 
   constructor() {
@@ -73,6 +74,10 @@ export class AntiBotService {
   private async loadConfig() {
     try {
       this.config = await loadAntiBotConfig();
+      memoryLogger.debug(
+        `反爬虫配置已加载 | enabled: ${this.config.enabled} | logHeaders: ${this.config.logHeaders} | logOnly: ${this.config.logOnly}`,
+        'AntiBot'
+      );
     } catch (error) {
       memoryLogger.error(`加载反爬虫配置失败: ${error}`, 'AntiBot');
     }
@@ -186,7 +191,7 @@ export class AntiBotService {
     };
   }
 
-  logDetection(userAgent: string, result: ReturnType<typeof this.detect>, ip?: string) {
+  logDetection(userAgent: string, result: ReturnType<typeof this.detect>, ip?: string, headers?: Record<string, string | string[] | undefined>) {
     const logLevel = result.shouldBlock ? 'WARN' : 'INFO';
     const message = `反爬虫检测 | IP: ${ip || 'unknown'} | UA: ${userAgent.substring(0, 100)}${userAgent.length > 100 ? '...' : ''} | 结果: ${result.reason}`;
     
@@ -197,6 +202,42 @@ export class AntiBotService {
     } else {
       memoryLogger.debug(message, 'AntiBot');
     }
+
+    // 如果启用了记录请求头功能，则输出完整请求头
+    if (this.config.logHeaders && headers) {
+      const sanitizedHeaders = this.sanitizeHeaders(headers);
+      const headersMessage = `Headers: ${JSON.stringify(sanitizedHeaders, null, 2)}`;
+      memoryLogger.debug(headersMessage, 'AntiBot');
+    }
+  }
+
+  private sanitizeHeaders(headers: Record<string, string | string[] | undefined>): Record<string, string> {
+    const sanitized: Record<string, string> = {};
+    for (const [key, value] of Object.entries(headers)) {
+      if (value === undefined) continue;
+      
+      const lowerKey = key.toLowerCase();
+      let headerValue = Array.isArray(value) ? value.join(', ') : value;
+      
+      // 对敏感头进行脱敏处理
+      if (lowerKey === 'authorization') {
+        // 保留前缀和部分密钥信息用于调试
+        if (headerValue.startsWith('Bearer ')) {
+          const token = headerValue.substring(7);
+          if (token.length > 10) {
+            headerValue = `Bearer ${token.substring(0, 6)}...${token.substring(token.length - 4)}`;
+          }
+        } else if (headerValue.length > 10) {
+          headerValue = `${headerValue.substring(0, 6)}...${headerValue.substring(headerValue.length - 4)}`;
+        }
+      } else if (lowerKey === 'cookie' || lowerKey === 'set-cookie') {
+        // 完全隐藏 cookie 内容
+        headerValue = '[REDACTED]';
+      }
+      
+      sanitized[key] = headerValue;
+    }
+    return sanitized;
   }
 
   getConfig(): AntiBotConfig {

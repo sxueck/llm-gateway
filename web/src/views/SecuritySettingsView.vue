@@ -47,6 +47,14 @@
                 <n-switch :value="antiBotBlockSuspicious" @update:value="onToggleAntiBotBlockSuspicious" />
               </n-space>
 
+              <n-space align="center" justify="space-between">
+                <div>
+                  <div>{{ $t('settings.antiBot.logHeaders') }}</div>
+                  <n-text depth="3" style="font-size: 12px;">{{ $t('settings.antiBot.logHeadersDesc') }}</n-text>
+                </div>
+                <n-switch :value="antiBotLogHeaders" @update:value="onToggleAntiBotLogHeaders" />
+              </n-space>
+
               <n-space vertical :size="8" style="width: 100%;">
                 <div>
                   <div>{{ $t('settings.antiBot.allowedUserAgents') }}</div>
@@ -119,6 +127,7 @@ const antiBotEnabled = ref(false);
 const antiBotBlockBots = ref(true);
 const antiBotBlockSuspicious = ref(false);
 const antiBotLogOnly = ref(true);
+const antiBotLogHeaders = ref(false);
 const antiBotAllowedUa = ref('');
 const antiBotBlockedUa = ref('');
 const antiBotAllowedUaOriginal = ref('');
@@ -180,6 +189,18 @@ async function onToggleAntiBotBlockSuspicious(val: boolean) {
   }
 }
 
+async function onToggleAntiBotLogHeaders(val: boolean) {
+  const result = await handleAsyncOperation(
+    () => configApi.updateSystemSettings({ antiBot: { logHeaders: val } }),
+    message,
+    t('messages.operationSuccess'),
+    t('messages.operationFailed')
+  );
+  if (result) {
+    antiBotLogHeaders.value = val;
+  }
+}
+
 async function onSaveAntiBotAllowedUa() {
   const list = antiBotAllowedUa.value.split('\n').map(s => s.trim()).filter(s => s);
   const result = await handleAsyncOperation(
@@ -215,6 +236,7 @@ onMounted(async () => {
     antiBotBlockBots.value = s.antiBot.blockBots;
     antiBotBlockSuspicious.value = s.antiBot.blockSuspicious;
     antiBotLogOnly.value = s.antiBot.logOnly;
+    antiBotLogHeaders.value = s.antiBot.logHeaders;
     antiBotAllowedUa.value = s.antiBot.allowedUserAgents.join('\n');
     antiBotBlockedUa.value = s.antiBot.blockedUserAgents.join('\n');
     antiBotAllowedUaOriginal.value = antiBotAllowedUa.value;

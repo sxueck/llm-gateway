@@ -309,6 +309,8 @@ export default {
       blockSuspiciousDesc: 'Block requests when suspicious User-Agent is detected',
       logOnly: 'Log Only Mode',
       logOnlyDesc: 'Only log bot detections without actually blocking them',
+      logHeaders: 'Log Request Headers',
+      logHeadersDesc: 'Log complete HTTP request headers for debugging and analyzing suspicious requests',
       allowedUserAgents: 'Allowed User-Agents (Whitelist)',
       allowedUserAgentsDesc: 'User-Agents in the whitelist will not be blocked (one per line, regex supported)',
       allowedUserAgentsPlaceholder: 'e.g.: Mozilla/5.0.*Chrome.*\nMyApp/1.0',

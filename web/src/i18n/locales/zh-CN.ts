@@ -310,6 +310,8 @@ export default {
       blockSuspiciousDesc: '检测到可疑User-Agent时拦截请求',
       logOnly: '仅记录日志',
       logOnlyDesc: '检测到爬虫时仅记录日志，不实际拦截',
+      logHeaders: '记录请求头',
+      logHeadersDesc: '在日志中记录完整的HTTP请求头信息，便于调试和分析可疑请求',
       allowedUserAgents: '白名单User-Agent',
       allowedUserAgentsDesc: '白名单中的User-Agent将不会被拦截（每行一个，支持正则表达式）',
       allowedUserAgentsPlaceholder: '例如：Mozilla/5.0.*Chrome.*\nMyApp/1.0',

@@ -35,6 +35,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         blockBots?: boolean;
         blockSuspicious?: boolean;
         logOnly?: boolean;
+        logHeaders?: boolean;
         allowedUserAgents?: string[];
         blockedUserAgents?: string[];
       };
@@ -108,6 +109,10 @@ export async function configRoutes(fastify: FastifyInstance) {
       }
       if (antiBot.logOnly !== undefined) {
         await systemConfigDb.set('anti_bot_log_only', antiBot.logOnly ? 'true' : 'false', '是否仅记录日志不拦截');
+      }
+      if (antiBot.logHeaders !== undefined) {
+        await systemConfigDb.set('anti_bot_log_headers', antiBot.logHeaders ? 'true' : 'false', '是否在日志中记录完整请求头');
+        memoryLogger.info(`反爬虫请求头记录已更新: ${antiBot.logHeaders ? '启用' : '禁用'}`, 'Config');
       }
       if (antiBot.allowedUserAgents !== undefined) {
         await systemConfigDb.set('anti_bot_allowed_user_agents', antiBot.allowedUserAgents.join(','), '白名单User-Agent列表');

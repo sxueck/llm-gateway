@@ -82,7 +82,7 @@ export function createProxyHandler() {
       const ip = request.ip || request.headers['x-forwarded-for'] || request.headers['x-real-ip'] || 'unknown';
       const antiBotResult = antiBotService.detect(userAgent);
       
-      antiBotService.logDetection(userAgent, antiBotResult, typeof ip === 'string' ? ip : 'unknown');
+      antiBotService.logDetection(userAgent, antiBotResult, typeof ip === 'string' ? ip : 'unknown', request.headers);
       
       if (antiBotResult.shouldBlock) {
         memoryLogger.warn(`拦截爬虫请求 | IP: ${ip} | UA: ${userAgent}`, 'AntiBot');

@@ -33,6 +33,20 @@ export function createAnthropicProxyHandler() {
     let currentModel: any | undefined;
 
     try {
+      // 反爬虫检测
+      const { antiBotService } = await import('../../services/anti-bot.js');
+      const userAgent = request.headers['user-agent'] || '';
+      const ip = request.ip || request.headers['x-forwarded-for'] || request.headers['x-real-ip'] || 'unknown';
+      const antiBotResult = antiBotService.detect(userAgent);
+      
+      antiBotService.logDetection(userAgent, antiBotResult, typeof ip === 'string' ? ip : 'unknown', request.headers);
+      
+      if (antiBotResult.shouldBlock) {
+        memoryLogger.warn(`拦截爬虫请求 | IP: ${ip} | UA: ${userAgent}`, 'AntiBot');
+        const anthropicError = createAnthropicError('Access denied: Bot detected', 'authentication_error');
+        return reply.code(403).send(anthropicError);
+      }
+
       const authResult = await authenticateVirtualKey(request.headers.authorization);
       if ('error' in authResult) {
         const anthropicError = createAnthropicError(

@@ -7,6 +7,7 @@ export interface AntiBotConfig {
   allowedUserAgents: string[];
   blockedUserAgents: string[];
   logOnly: boolean;
+  logHeaders: boolean;
 }
 
 const DEFAULT_CONFIG: AntiBotConfig = {
@@ -16,6 +17,7 @@ const DEFAULT_CONFIG: AntiBotConfig = {
   allowedUserAgents: [],
   blockedUserAgents: [],
   logOnly: true,
+  logHeaders: false,
 };
 
 export async function loadAntiBotConfig(): Promise<AntiBotConfig> {
@@ -26,6 +28,7 @@ export async function loadAntiBotConfig(): Promise<AntiBotConfig> {
     const allowedUaCfg = await systemConfigDb.get('anti_bot_allowed_user_agents');
     const blockedUaCfg = await systemConfigDb.get('anti_bot_blocked_user_agents');
     const logOnlyCfg = await systemConfigDb.get('anti_bot_log_only');
+    const logHeadersCfg = await systemConfigDb.get('anti_bot_log_headers');
 
     return {
       enabled: enabledCfg ? enabledCfg.value === 'true' : DEFAULT_CONFIG.enabled,
@@ -34,6 +37,7 @@ export async function loadAntiBotConfig(): Promise<AntiBotConfig> {
       allowedUserAgents: allowedUaCfg ? allowedUaCfg.value.split(',').map(s => s.trim()).filter(s => s) : DEFAULT_CONFIG.allowedUserAgents,
       blockedUserAgents: blockedUaCfg ? blockedUaCfg.value.split(',').map(s => s.trim()).filter(s => s) : DEFAULT_CONFIG.blockedUserAgents,
       logOnly: logOnlyCfg ? logOnlyCfg.value === 'true' : DEFAULT_CONFIG.logOnly,
+      logHeaders: logHeadersCfg ? logHeadersCfg.value === 'true' : DEFAULT_CONFIG.logHeaders,
     };
   } catch (error) {
     throw new Error(`加载反爬虫配置失败: ${error}`);

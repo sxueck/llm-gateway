@@ -139,6 +139,7 @@ export const configApi = {
       blockBots: boolean;
       blockSuspicious: boolean;
       logOnly: boolean;
+      logHeaders: boolean;
       allowedUserAgents: string[];
       blockedUserAgents: string[];
     };
@@ -160,6 +161,7 @@ export const configApi = {
       blockBots?: boolean;
       blockSuspicious?: boolean;
       logOnly?: boolean;
+      logHeaders?: boolean;
       allowedUserAgents?: string[];
       blockedUserAgents?: string[];
     };
