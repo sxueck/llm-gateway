@@ -5,7 +5,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { modelDb, providerDb, virtualKeyDb } from '../db/index.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { buildChatCompletionsEndpoint } from '../utils/api-endpoint-builder.js';
-import { isAnthropicProtocol } from '../utils/protocol-utils.js';
+import { isAnthropicProtocol, getBaseUrlForProtocol } from '../utils/protocol-utils.js';
 import type { Model } from '../db/index.js';
 
 declare module 'fastify' {
@@ -83,8 +83,11 @@ async function testAnthropicModel(model: Model, provider: any, apiKey: string) {
       timeout: 30000,
     };
 
-    if (provider.base_url) {
-      clientConfig.baseURL = provider.base_url.replace(/\/$/, '');
+    // 根据模型协议获取正确的 baseURL（支持多协议）
+    const baseUrl = getBaseUrlForProtocol(provider, model.protocol);
+    if (baseUrl) {
+      clientConfig.baseURL = baseUrl.replace(/\/$/, '');
+      console.log(`[Test] Anthropic 模型测试 | 协议: ${model.protocol || 'default'} | baseUrl: ${baseUrl}`);
     }
 
     if (headers && Object.keys(headers).length > 0) {
@@ -415,7 +418,10 @@ export async function modelRoutes(fastify: FastifyInstance) {
     };
 
     try {
-      const chatEndpoint = buildChatCompletionsEndpoint(provider.base_url);
+      // 根据模型协议获取正确的 baseURL（支持多协议）
+      const baseUrl = getBaseUrlForProtocol(provider, model.protocol);
+      console.log(`[Test] Chat Completions 测试 | 协议: ${model.protocol || 'default'} | baseUrl: ${baseUrl}`);
+      const chatEndpoint = buildChatCompletionsEndpoint(baseUrl);
       const chatResponse = await fetch(chatEndpoint, {
         method: 'POST',
         headers: {
@@ -475,8 +481,11 @@ export async function modelRoutes(fastify: FastifyInstance) {
     };
 
     try {
+      // 根据模型协议获取正确的 baseURL（支持多协议）
+      const baseUrl = getBaseUrlForProtocol(provider, model.protocol);
+      console.log(`[Test] Responses API 测试 | 协议: ${model.protocol || 'default'} | baseUrl: ${baseUrl}`);
       // Build responses endpoint (replace /chat/completions with /responses)
-      const responsesEndpoint = provider.base_url.replace(/\/+$/, '') + '/responses';
+      const responsesEndpoint = baseUrl.replace(/\/+$/, '') + '/responses';
       
       const responsesResponse = await fetch(responsesEndpoint, {
         method: 'POST',

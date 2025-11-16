@@ -60,3 +60,32 @@ export function getProtocolInfo(protocol: string | null | undefined): ProtocolIn
   }
   return PROTOCOL_MAP[protocol as ProtocolType] || { label: protocol, type: 'info' };
 }
+
+/**
+ * 根据模型协议获取正确的 baseURL
+ * 支持多协议：优先使用 protocol_mappings 中的 URL，否则使用默认 base_url
+ * @param provider 提供商对象，包含 base_url 和 protocol_mappings
+ * @param protocol 协议类型
+ * @returns 对应协议的 baseURL
+ */
+export function getBaseUrlForProtocol(
+  provider: { base_url: string; protocol_mappings: string | null },
+  protocol: string | null
+): string {
+  let baseUrl = provider.base_url || '';
+
+  if (provider.protocol_mappings && protocol) {
+    try {
+      const protocolMappings = JSON.parse(provider.protocol_mappings);
+      const protocolSpecificUrl = protocolMappings[protocol];
+
+      if (protocolSpecificUrl) {
+        baseUrl = protocolSpecificUrl;
+      }
+    } catch (e: any) {
+      // 解析失败时静默失败，使用默认 base_url
+    }
+  }
+
+  return baseUrl;
+}

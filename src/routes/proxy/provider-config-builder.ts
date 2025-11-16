@@ -2,6 +2,7 @@ import { FastifyRequest } from 'fastify';
 import { decryptApiKey } from '../../utils/crypto.js';
 import { memoryLogger } from '../../services/logger.js';
 import { ProviderAdapterFactory } from '../../services/provider-adapter.js';
+import { getBaseUrlForProtocol } from '../../utils/protocol-utils.js';
 import type { ProtocolConfig } from '../../services/protocol-adapter.js';
 
 export interface ProviderConfigResult {
@@ -32,38 +33,11 @@ export async function buildProviderConfig(
   currentModel?: any
 ): Promise<ProviderConfigResult | ProviderConfigError> {
   const decryptedApiKey = decryptApiKey(provider.api_key);
-  
+
   // 协议优先级：currentModel.protocol（真实模型的协议）> 'openai'
   const effectiveProtocol = currentModel?.protocol || 'openai';
-  
-  // 多协议支持：根据模型协议选择对应的 baseUrl
-  let baseUrl = provider.base_url || '';
-  
-  if (provider.protocol_mappings) {
-    try {
-      const protocolMappings = JSON.parse(provider.protocol_mappings);
-      const protocolSpecificUrl = protocolMappings[effectiveProtocol];
-      
-      if (protocolSpecificUrl) {
-        baseUrl = protocolSpecificUrl;
-        memoryLogger.info(
-          `多协议支持 | 使用 ${effectiveProtocol} 协议的 baseUrl: ${baseUrl}`,
-          'ProviderConfig'
-        );
-      } else {
-        memoryLogger.debug(
-          `多协议支持 | 未找到 ${effectiveProtocol} 协议的 baseUrl，使用默认 baseUrl: ${baseUrl}`,
-          'ProviderConfig'
-        );
-      }
-    } catch (e: any) {
-      memoryLogger.error(
-        `解析 protocol_mappings 失败: ${e.message}`,
-        'ProviderConfig'
-      );
-    }
-  }
-  
+  const baseUrl = getBaseUrlForProtocol(provider, effectiveProtocol);
+
   memoryLogger.debug(
     `协议选择 | currentModel: ${currentModel?.name || 'none'} | currentModel.protocol: ${currentModel?.protocol || 'none'} | effectiveProtocol: ${effectiveProtocol} | baseUrl: ${baseUrl}`,
     'ProviderConfig'
