@@ -147,6 +147,7 @@ const formValue = ref({
   id: '',
   name: '',
   baseUrl: '',
+  protocolMappings: null as any,
   apiKey: '',
   enabled: true,
 });
@@ -212,10 +213,13 @@ async function handleEdit(provider: Provider) {
     const fullProvider = await providerApi.getById(provider.id, true);
     originalApiKey.value = fullProvider.apiKey || '';
 
+    console.log('[ProvidersView] Loaded provider for editing:', fullProvider);
+
     formValue.value = {
       id: fullProvider.id,
       name: fullProvider.name,
       baseUrl: fullProvider.baseUrl,
+      protocolMappings: fullProvider.protocolMappings || null,
       apiKey: fullProvider.apiKey || '',
       enabled: fullProvider.enabled,
     };
@@ -285,11 +289,13 @@ async function handleSubmit() {
       const updateData: any = {
         name: formValue.value.name,
         baseUrl: formValue.value.baseUrl,
+        protocolMappings: formValue.value.protocolMappings,
         enabled: formValue.value.enabled,
       };
       if (formValue.value.apiKey !== originalApiKey.value) {
         updateData.apiKey = formValue.value.apiKey;
       }
+      console.log('[ProvidersView] Updating provider:', editingId.value, updateData);
       await providerApi.update(editingId.value, updateData);
 
       const selectedModelsInfo = formRef.value?.getSelectedModelsInfo?.() || [];
@@ -366,6 +372,7 @@ function resetForm() {
     id: '',
     name: '',
     baseUrl: '',
+    protocolMappings: null,
     apiKey: '',
     enabled: true,
   };
@@ -378,6 +385,7 @@ function usePreset() {
     id: selectedPreset.value.id,
     name: selectedPreset.value.name,
     baseUrl: selectedPreset.value.baseUrl,
+    protocolMappings: null,
     apiKey: '',
     enabled: true,
   };

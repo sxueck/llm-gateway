@@ -53,7 +53,7 @@
       <n-form-item label="OpenAI 协议 URL">
         <n-input
           v-model:value="protocolUrls.openai"
-          placeholder="https://xx.com/v1"
+          placeholder="https://api.openai.com/v1"
           size="small"
         />
       </n-form-item>
@@ -61,7 +61,7 @@
       <n-form-item label="Anthropic 协议 URL">
         <n-input
           v-model:value="protocolUrls.anthropic"
-          placeholder="https://xx.com/claude"
+          placeholder="https://api.anthropic.com/claude"
           size="small"
         />
       </n-form-item>
@@ -69,7 +69,7 @@
       <n-form-item label="Google 协议 URL">
         <n-input
           v-model:value="protocolUrls.google"
-          placeholder="https://xx.com/gemini"
+          placeholder="https://api.generativelanguage.googleapis.com/gemini"
           size="small"
         />
       </n-form-item>
@@ -215,6 +215,22 @@ if (props.modelValue.protocolMappings) {
   protocolUrls.value = { ...props.modelValue.protocolMappings };
 }
 
+// 监听 modelValue.protocolMappings 的变化，用于编辑模式下异步加载数据
+watch(() => props.modelValue.protocolMappings, (newMappings) => {
+  console.log('[ProviderForm] protocolMappings changed:', newMappings);
+  if (newMappings) {
+    multiProtocolEnabled.value = true;
+    protocolUrls.value = { ...newMappings };
+  } else {
+    multiProtocolEnabled.value = false;
+    protocolUrls.value = {
+      openai: '',
+      anthropic: '',
+      google: '',
+    };
+  }
+}, { immediate: false });
+
 const formValue = computed({
   get: () => props.modelValue,
   set: (value) => emit('update:modelValue', value),
@@ -222,6 +238,7 @@ const formValue = computed({
 
 // 监听多协议开关变化
 watch(multiProtocolEnabled, (enabled) => {
+  console.log('[ProviderForm] multiProtocolEnabled changed:', enabled);
   if (enabled) {
     // 启用多协议时,如果有baseUrl,将其设置为openai协议的URL
     if (formValue.value.baseUrl) {
@@ -234,6 +251,7 @@ watch(multiProtocolEnabled, (enabled) => {
       formValue.value.baseUrl = protocolUrls.value.openai;
     }
     formValue.value.protocolMappings = null;
+    console.log('[ProviderForm] protocolMappings set to null');
   }
 });
 
@@ -249,10 +267,17 @@ function updateProtocolMappings() {
   if (protocolUrls.value.openai) mappings.openai = protocolUrls.value.openai;
   if (protocolUrls.value.anthropic) mappings.anthropic = protocolUrls.value.anthropic;
   if (protocolUrls.value.google) mappings.google = protocolUrls.value.google;
-  
+
   formValue.value.protocolMappings = Object.keys(mappings).length > 0 ? mappings : null;
   // 设置默认baseUrl为openai或第一个可用的协议URL
   formValue.value.baseUrl = mappings.openai || mappings.anthropic || mappings.google || '';
+
+  console.log('[ProviderForm] updateProtocolMappings:', {
+    protocolUrls: protocolUrls.value,
+    mappings,
+    resultProtocolMappings: formValue.value.protocolMappings,
+    resultBaseUrl: formValue.value.baseUrl,
+  });
 }
 
 const idSuggestions = computed(() => {

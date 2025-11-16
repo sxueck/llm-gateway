@@ -69,7 +69,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: '提供商不存在' });
     }
 
-    return {
+    const result = {
       id: provider.id,
       name: provider.name,
       baseUrl: provider.base_url,
@@ -80,6 +80,14 @@ export async function providerRoutes(fastify: FastifyInstance) {
       createdAt: provider.created_at,
       updatedAt: provider.updated_at,
     };
+
+    fastify.log.info({
+      providerId: id,
+      protocolMappingsRaw: provider.protocol_mappings,
+      protocolMappingsParsed: result.protocolMappings
+    }, '[Providers] Getting provider by id');
+
+    return result;
   });
 
   fastify.post('/', async (request, reply) => {
@@ -116,6 +124,8 @@ export async function providerRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     const body = updateProviderSchema.parse(request.body);
 
+    fastify.log.info({ providerId: id, body }, '[Providers] Updating provider');
+
     const provider = await providerDb.getById(id);
     if (!provider) {
       return reply.code(404).send({ error: '提供商不存在' });
@@ -124,10 +134,20 @@ export async function providerRoutes(fastify: FastifyInstance) {
     const updates: any = {};
     if (body.name !== undefined) updates.name = body.name;
     if (body.baseUrl !== undefined) updates.base_url = body.baseUrl;
-    if (body.protocolMappings !== undefined) updates.protocol_mappings = body.protocolMappings ? JSON.stringify(body.protocolMappings) : null;
+    if (body.protocolMappings !== undefined) {
+      updates.protocol_mappings = body.protocolMappings ? JSON.stringify(body.protocolMappings) : null;
+      fastify.log.info({
+        protocolMappings: body.protocolMappings,
+        stringified: updates.protocol_mappings
+      }, '[Providers] Protocol mappings update');
+    }
     if (body.apiKey !== undefined) updates.api_key = encryptApiKey(body.apiKey);
-    if (body.modelMapping !== undefined) updates.model_mapping = JSON.stringify(body.modelMapping);
+    if (body.modelMapping !== undefined) {
+      updates.model_mapping = body.modelMapping ? JSON.stringify(body.modelMapping) : null;
+    }
     if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
+
+    fastify.log.info({ updates }, '[Providers] Final updates to apply');
 
     await providerDb.update(id, updates);
 
