@@ -319,25 +319,20 @@ const rules = {
   name: [{ required: true, message: '请输入显示名称', trigger: 'blur' }],
   baseUrl: [
     {
-      // 仅在未启用多协议时才要求必填
-      required: () => !multiProtocolEnabled.value,
-      message: '请输入 Base URL',
-      trigger: 'blur'
-    },
-    {
       validator: (_rule: any, value: string) => {
         // 如果启用了多协议，baseUrl 会被自动设置，跳过验证
         if (multiProtocolEnabled.value) {
           return true;
         }
-        // 单协议模式下，验证 baseUrl 格式
+        // 单协议模式下，验证 baseUrl 是否必填
         if (!value) {
           return false;
         }
+        // 验证 baseUrl 格式
         const validation = validateBaseUrl(value);
         return validation.isValid;
       },
-      message: 'Base URL 格式不正确',
+      message: '请输入 Base URL',
       trigger: 'blur',
     },
   ],
