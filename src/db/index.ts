@@ -2,7 +2,6 @@ import mysql from 'mysql2/promise';
 import { appConfig } from '../config/index.js';
 import { User, Provider, VirtualKey, SystemConfig } from '../types/index.js';
 import { applyMigrations } from './migrations.js';
-import { truncateBodyContent } from '../utils/content-truncator.js';
 
 let pool: mysql.Pool;
 
@@ -148,10 +147,22 @@ async function flushApiRequestBuffer() {
     const values: any[] = [];
     const placeholders: string[] = [];
 
+    // MEDIUMTEXT 最大长度约为 16MB，我们使用更保守的限制
+    const MAX_COLUMN_LENGTH = 65535; // 64KB，安全限制
+
     for (const request of requests) {
-      // 使用共享的截断工具函数
-      let requestBody = truncateBodyContent(request.request_body);
-      let responseBody = truncateBodyContent(request.response_body);
+      // request_body 和 response_body 已经在 proxy-handler 中通过 truncateRequestBody/truncateResponseBody 截断
+      // 这里只需要做最终的长度安全检查
+      let requestBody = request.request_body;
+      let responseBody = request.response_body;
+
+      // 最终安全检查：确保不会超过数据库列的最大长度
+      if (requestBody && requestBody.length > MAX_COLUMN_LENGTH) {
+        requestBody = requestBody.substring(0, MAX_COLUMN_LENGTH) + '...[truncated]';
+      }
+      if (responseBody && responseBody.length > MAX_COLUMN_LENGTH) {
+        responseBody = responseBody.substring(0, MAX_COLUMN_LENGTH) + '...[truncated]';
+      }
 
       placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       values.push(

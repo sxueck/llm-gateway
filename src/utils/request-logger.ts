@@ -113,7 +113,8 @@ export function truncateRequestBody(body: any): string {
       const truncated: any = {};
 
       for (const key in parsed) {
-        if (key === 'messages') {
+        if (key === 'messages' || key === 'system') {
+          // 跳过 messages 和 system，稍后单独处理
           continue;
         } else if (key === 'tools') {
           truncated.tools = `[${parsed.tools.length} 个工具定义]`;
@@ -121,6 +122,29 @@ export function truncateRequestBody(body: any): string {
           truncated.functions = `[${parsed.functions.length} 个函数定义]`;
         } else {
           truncated[key] = parsed[key];
+        }
+      }
+
+      // 处理 Anthropic API 的 system 参数
+      if (parsed.system) {
+        if (typeof parsed.system === 'string') {
+          truncated.system = parsed.system.length > 1000
+            ? parsed.system.substring(0, 1000) + '...[truncated]'
+            : parsed.system;
+        } else if (Array.isArray(parsed.system)) {
+          truncated.system = parsed.system.map((block: any) => {
+            if (block.type === 'text' && block.text) {
+              return {
+                ...block,
+                text: block.text.length > 1000
+                  ? block.text.substring(0, 1000) + '...[truncated]'
+                  : block.text
+              };
+            }
+            return block;
+          });
+        } else {
+          truncated.system = parsed.system;
         }
       }
 
