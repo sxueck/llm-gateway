@@ -45,9 +45,9 @@ function normalizeError(error: any): { statusCode: number; errorResponse: any } 
     statusCode = error.status || 500;
     message = error.message;
     
-    // 记录 request_id 用于调试
-    if (error.request_id) {
-      message += ` (Request ID: ${error.request_id})`;
+    // 记录 requestID 用于调试
+    if (error.requestID) {
+      message += ` (Request ID: ${error.requestID})`;
     }
   } else if (error instanceof OpenAI.APIUserAbortError) {
     statusCode = 499; // Client Closed Request

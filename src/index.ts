@@ -167,7 +167,7 @@ fastify.setNotFoundHandler((request, reply) => {
   }
 });
 
-fastify.setErrorHandler((error, request, reply) => {
+fastify.setErrorHandler((error: any, request, reply) => {
   fastify.log.error(error);
 
   if (error.validation) {
@@ -241,7 +241,7 @@ try {
   memoryLogger.info('已启动模型预设自动更新任务，每 24 小时检查一次', 'System');
 
   await demoModeService.start();
-} catch (err) {
+} catch (err: any) {
   fastify.log.error(err);
   memoryLogger.error(`Failed to start server: ${err}`, 'System');
   process.exit(1);
@@ -261,7 +261,7 @@ const gracefulShutdown = async (signal: string) => {
     memoryLogger.info('数据库已安全关闭', 'System');
 
     process.exit(0);
-  } catch (err) {
+  } catch (err: any) {
     memoryLogger.error(`优雅关闭失败: ${err}`, 'System');
     process.exit(1);
   }
