@@ -1,5 +1,6 @@
 import { FastifyReply } from 'fastify';
 import { ProtocolAdapter, type ProtocolConfig } from '../../services/protocol-adapter.js';
+import OpenAI from 'openai';
 
 export interface HttpResponse {
   statusCode: number;
@@ -22,6 +23,15 @@ export interface StreamTokenUsage {
   thinkingBlocks?: ThinkingBlock[];
 }
 
+export interface RequestOptions {
+  messages?: any[];
+  options?: any;
+  input?: string | string[] | any[];
+  isEmbeddingsRequest?: boolean;
+  isResponsesRequest?: boolean;
+  abortSignal?: AbortSignal;
+}
+
 const protocolAdapter = new ProtocolAdapter();
 
 function normalizeError(error: any): { statusCode: number; errorResponse: any } {
@@ -30,7 +40,21 @@ function normalizeError(error: any): { statusCode: number; errorResponse: any } 
   let errorCode = 'llm_error';
   let message = error.message || 'LLM 请求失败';
 
-  if (error.status) {
+  // 处理 OpenAI SDK 特定错误
+  if (error instanceof OpenAI.APIError) {
+    statusCode = error.status || 500;
+    message = error.message;
+    
+    // 记录 request_id 用于调试
+    if (error.request_id) {
+      message += ` (Request ID: ${error.request_id})`;
+    }
+  } else if (error instanceof OpenAI.APIUserAbortError) {
+    statusCode = 499; // Client Closed Request
+    errorType = 'request_cancelled';
+    errorCode = 'user_aborted';
+    message = '请求已被取消';
+  } else if (error.status) {
     statusCode = error.status;
   }
 
@@ -66,15 +90,19 @@ export async function makeHttpRequest(
   messages: any[],
   options: any,
   isEmbeddingsRequest: boolean = false,
-  input?: string | string[]
+  input?: string | string[],
+  isResponsesRequest: boolean = false,
+  abortSignal?: AbortSignal
 ): Promise<HttpResponse> {
   try {
     let response: any;
 
     if (isEmbeddingsRequest) {
-      response = await protocolAdapter.createEmbedding(config, input || [], options);
+      response = await protocolAdapter.createEmbedding(config, input || [], options, abortSignal);
+    } else if (isResponsesRequest) {
+      response = await protocolAdapter.createResponse(config, input || '', options, abortSignal);
     } else {
-      response = await protocolAdapter.chatCompletion(config, messages, options);
+      response = await protocolAdapter.chatCompletion(config, messages, options, abortSignal);
     }
 
     return {
@@ -97,19 +125,32 @@ export async function makeStreamHttpRequest(
   config: ProtocolConfig,
   messages: any[],
   options: any,
-  reply: FastifyReply
+  reply: FastifyReply,
+  input?: string | any[],
+  isResponsesRequest: boolean = false,
+  abortSignal?: AbortSignal
 ): Promise<StreamTokenUsage> {
   try {
-    return await protocolAdapter.streamChatCompletion(config, messages, options, reply);
+    if (isResponsesRequest) {
+      return await protocolAdapter.streamResponse(config, input || '', options, reply, abortSignal);
+    }
+    return await protocolAdapter.streamChatCompletion(config, messages, options, reply, abortSignal);
   } catch (error: any) {
     const { statusCode, errorResponse } = normalizeError(error);
 
-    reply.raw.writeHead(statusCode, {
-      'Content-Type': 'application/json',
-    });
-
-    reply.raw.write(JSON.stringify(errorResponse));
-    reply.raw.end();
+    // 检查响应头是否已发送，避免重复写入
+    if (!reply.raw.headersSent) {
+      reply.raw.writeHead(statusCode, {
+        'Content-Type': 'application/json',
+      });
+      reply.raw.write(JSON.stringify(errorResponse));
+      reply.raw.end();
+    } else {
+      // 如果响应头已发送，说明流已经开始，只能尝试结束流
+      if (!reply.raw.writableEnded) {
+        reply.raw.end();
+      }
+    }
 
     throw error;
   }

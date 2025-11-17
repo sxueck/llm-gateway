@@ -20,3 +20,7 @@ export function buildModelsEndpoint(baseUrl: string): string {
 export function buildChatCompletionsEndpoint(baseUrl: string): string {
   return buildEndpointUrl(baseUrl, 'chat/completions');
 }
+
+export function buildResponsesEndpoint(baseUrl: string): string {
+  return buildEndpointUrl(baseUrl, 'responses');
+}

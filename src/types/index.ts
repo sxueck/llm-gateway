@@ -72,6 +72,10 @@ export interface ModelAttributes {
   litellm_provider?: string;
   mode?: string;
   headers?: Record<string, string>;
+  // 请求配置优化
+  timeout?: number;
+  maxRetries?: number;
+  requestTimeout?: number;
 }
 
 export interface PromptConfig {

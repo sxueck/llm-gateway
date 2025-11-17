@@ -230,6 +230,9 @@ export function createProxyHandler() {
         'Proxy'
       );
 
+      // 检测是否为 Responses API 请求
+      const isResponsesApi = path.startsWith('/v1/responses');
+
       if (isStreamRequest) {
         return await handleStreamRequest(
           request,
@@ -241,7 +244,8 @@ export function createProxyHandler() {
           providerId,
           startTime,
           compressionStats,
-          currentModel
+          currentModel,
+          isResponsesApi
         );
       }
 
@@ -257,7 +261,8 @@ export function createProxyHandler() {
         compressionStats,
         currentModel,
         modelResult,
-        virtualKeyValue!
+        virtualKeyValue!,
+        isResponsesApi
       );
     } catch (error: any) {
       const duration = Date.now() - startTime;
@@ -332,33 +337,82 @@ export async function handleStreamRequest(
   startTime: number,
   compressionStats?: { originalTokens: number; savedTokens: number },
   currentModel?: any,
+  isResponsesApi: boolean = false
 ) {
   memoryLogger.info(
     `流式请求开始: ${path} | virtual key: ${vkDisplay}`,
     'Proxy'
   );
 
-  try {
-    const messages = (request.body as any)?.messages || [];
-    const options = {
-      temperature: (request.body as any)?.temperature,
-      max_tokens: (request.body as any)?.max_tokens,
-      max_completion_tokens: (request.body as any)?.max_completion_tokens,
-      top_p: (request.body as any)?.top_p,
-      frequency_penalty: (request.body as any)?.frequency_penalty,
-      presence_penalty: (request.body as any)?.presence_penalty,
-      stop: (request.body as any)?.stop,
-      tools: (request.body as any)?.tools,
-      tool_choice: (request.body as any)?.tool_choice,
-      parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
-    };
+  // 创建 AbortController 用于取消请求
+  const abortController = new AbortController();
+  
+  // 监听客户端断开连接
+  reply.raw.on('close', () => {
+    if (!reply.raw.writableEnded) {
+      abortController.abort();
+      memoryLogger.info('客户端断开连接，取消上游请求', 'Proxy');
+    }
+  });
 
-    const tokenUsage = await makeStreamHttpRequest(
-      protocolConfig,
-      messages,
-      options,
-      reply
-    );
+  try {
+    let tokenUsage: any;
+
+    if (isResponsesApi) {
+      // Responses API 请求
+      const input = (request.body as any)?.input;
+      const options = {
+        instructions: (request.body as any)?.instructions,
+        temperature: (request.body as any)?.temperature,
+        max_output_tokens: (request.body as any)?.max_output_tokens,
+        top_p: (request.body as any)?.top_p,
+        store: (request.body as any)?.store,
+        metadata: (request.body as any)?.metadata,
+        tools: (request.body as any)?.tools,
+        tool_choice: (request.body as any)?.tool_choice,
+        parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
+        reasoning: (request.body as any)?.reasoning,
+        text: (request.body as any)?.text,
+        truncation: (request.body as any)?.truncation,
+        user: (request.body as any)?.user,
+        include: (request.body as any)?.include,
+      };
+
+      tokenUsage = await makeStreamHttpRequest(
+        protocolConfig,
+        [],
+        options,
+        reply,
+        input,
+        true,
+        abortController.signal
+      );
+    } else {
+      // Chat Completions API 请求
+      const messages = (request.body as any)?.messages || [];
+      const options = {
+        temperature: (request.body as any)?.temperature,
+        max_tokens: (request.body as any)?.max_tokens,
+        max_completion_tokens: (request.body as any)?.max_completion_tokens,
+        top_p: (request.body as any)?.top_p,
+        frequency_penalty: (request.body as any)?.frequency_penalty,
+        presence_penalty: (request.body as any)?.presence_penalty,
+        stop: (request.body as any)?.stop,
+        tools: (request.body as any)?.tools,
+        tool_choice: (request.body as any)?.tool_choice,
+        parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
+      };
+
+      tokenUsage = await makeStreamHttpRequest(
+        protocolConfig,
+        messages,
+        options,
+        reply,
+        undefined,
+        false,
+        abortController.signal
+      );
+    }
 
     const duration = Date.now() - startTime;
 
@@ -413,6 +467,13 @@ export async function handleStreamRequest(
     return;
   } catch (streamError: any) {
     const duration = Date.now() - startTime;
+
+    // 检查是否是用户取消
+    if (streamError.name === 'AbortError' || abortController.signal.aborted) {
+      memoryLogger.info('流式请求被客户端取消', 'Proxy');
+      // 不记录为失败，因为这是正常的取消操作
+      return;
+    }
 
     circuitBreaker.recordFailure(providerId, streamError);
 
@@ -473,7 +534,8 @@ export async function handleNonStreamRequest(
   compressionStats?: { originalTokens: number; savedTokens: number },
   currentModel?: any,
   modelResult?: any,
-  virtualKeyValueParam?: string
+  virtualKeyValueParam?: string,
+  isResponsesApi: boolean = false
 ) {
   let fromCache = false;
   const isEmbeddingsRequest = path.startsWith('/v1/embeddings');
@@ -548,32 +610,78 @@ export async function handleNonStreamRequest(
     return reply.send(cacheResult.cached.response);
   }
 
-  const messages = (request.body as any)?.messages || [];
-  const options = {
-    temperature: (request.body as any)?.temperature,
-    max_tokens: (request.body as any)?.max_tokens,
-    max_completion_tokens: (request.body as any)?.max_completion_tokens,
-    top_p: (request.body as any)?.top_p,
-    frequency_penalty: (request.body as any)?.frequency_penalty,
-    presence_penalty: (request.body as any)?.presence_penalty,
-    stop: (request.body as any)?.stop,
-    encoding_format: (request.body as any)?.encoding_format,
-    dimensions: (request.body as any)?.dimensions,
-    user: (request.body as any)?.user,
-    tools: (request.body as any)?.tools,
-    tool_choice: (request.body as any)?.tool_choice,
-    parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
-  };
+  let response: any;
 
-  const input = isEmbeddingsRequest ? (request.body as any)?.input : undefined;
+  if (isResponsesApi) {
+    // Responses API 请求
+    const input = (request.body as any)?.input;
+    const options = {
+      instructions: (request.body as any)?.instructions,
+      temperature: (request.body as any)?.temperature,
+      max_output_tokens: (request.body as any)?.max_output_tokens,
+      top_p: (request.body as any)?.top_p,
+      store: (request.body as any)?.store,
+      metadata: (request.body as any)?.metadata,
+      tools: (request.body as any)?.tools,
+      tool_choice: (request.body as any)?.tool_choice,
+      parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
+      reasoning: (request.body as any)?.reasoning,
+      text: (request.body as any)?.text,
+      previous_response_id: (request.body as any)?.previous_response_id,
+      truncation: (request.body as any)?.truncation,
+      user: (request.body as any)?.user,
+      include: (request.body as any)?.include,
+    };
 
-  const response = await makeHttpRequest(
-    protocolConfig,
-    messages,
-    options,
-    isEmbeddingsRequest,
-    input
-  );
+    response = await makeHttpRequest(
+      protocolConfig,
+      [],
+      options,
+      false,
+      input,
+      true
+    );
+  } else if (isEmbeddingsRequest) {
+    // Embeddings API 请求
+    const messages = (request.body as any)?.messages || [];
+    const options = {
+      encoding_format: (request.body as any)?.encoding_format,
+      dimensions: (request.body as any)?.dimensions,
+      user: (request.body as any)?.user,
+    };
+    const input = (request.body as any)?.input;
+
+    response = await makeHttpRequest(
+      protocolConfig,
+      messages,
+      options,
+      true,
+      input
+    );
+  } else {
+    // Chat Completions API 请求
+    const messages = (request.body as any)?.messages || [];
+    const options = {
+      temperature: (request.body as any)?.temperature,
+      max_tokens: (request.body as any)?.max_tokens,
+      max_completion_tokens: (request.body as any)?.max_completion_tokens,
+      top_p: (request.body as any)?.top_p,
+      frequency_penalty: (request.body as any)?.frequency_penalty,
+      presence_penalty: (request.body as any)?.presence_penalty,
+      stop: (request.body as any)?.stop,
+      user: (request.body as any)?.user,
+      tools: (request.body as any)?.tools,
+      tool_choice: (request.body as any)?.tool_choice,
+      parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
+    };
+
+    response = await makeHttpRequest(
+      protocolConfig,
+      messages,
+      options,
+      false
+    );
+  }
 
   const responseHeaders: Record<string, string> = {};
   Object.entries(response.headers).forEach(([key, value]) => {

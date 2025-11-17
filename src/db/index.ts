@@ -187,8 +187,8 @@ async function flushApiRequestBuffer() {
     const values: any[] = [];
     const placeholders: string[] = [];
 
-    // 限制每个字段最大 2000 字节
-    const MAX_COLUMN_BYTES = 2000;
+    // 限制每个字段最大 5000 字节
+    const MAX_COLUMN_BYTES = 5000;
 
     for (const request of requests) {
       let requestBody = request.request_body;

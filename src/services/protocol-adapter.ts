@@ -64,8 +64,8 @@ export class ProtocolAdapter {
     if (!this.openaiClients.has(cacheKey)) {
       const clientConfig: any = {
         apiKey: config.apiKey,
-        maxRetries: 0,
-        timeout: 60000,
+        maxRetries: config.modelAttributes?.maxRetries ?? 2, // 恢复默认重试
+        timeout: config.modelAttributes?.timeout ?? 60000,
       };
 
       if (config.baseUrl) {
@@ -82,7 +82,10 @@ export class ProtocolAdapter {
       }
 
       this.openaiClients.set(cacheKey, new OpenAI(clientConfig));
-      memoryLogger.debug(`创建 OpenAI 客户端 | provider: ${config.provider} | baseUrl: ${config.baseUrl || 'default'}`, 'Protocol');
+      memoryLogger.debug(
+        `创建 OpenAI 客户端 | provider: ${config.provider} | baseUrl: ${config.baseUrl || 'default'} | maxRetries: ${clientConfig.maxRetries}`,
+        'Protocol'
+      );
     }
 
     return this.openaiClients.get(cacheKey)!;
@@ -134,20 +137,22 @@ export class ProtocolAdapter {
   async chatCompletion(
     config: ProtocolConfig,
     messages: any[],
-    options: any
+    options: any,
+    abortSignal?: AbortSignal
   ): Promise<ProtocolResponse> {
     memoryLogger.debug(
       `直接转发请求 | model: ${config.model}`,
       'Protocol'
     );
 
-    return await this.openaiChatCompletion(config, messages, options);
+    return await this.openaiChatCompletion(config, messages, options, abortSignal);
   }
 
   private async openaiChatCompletion(
     config: ProtocolConfig,
     messages: any[],
-    options: any
+    options: any,
+    abortSignal?: AbortSignal
   ): Promise<ProtocolResponse> {
     const client = this.getOpenAIClient(config);
 
@@ -196,7 +201,19 @@ export class ProtocolAdapter {
       };
     }
 
-    const response = await client.chat.completions.create(requestParams);
+    // 构建请求选项，支持超时和取消
+    const requestOptions: any = {};
+    if (options.requestTimeout !== undefined) {
+      requestOptions.timeout = options.requestTimeout;
+    }
+    if (abortSignal) {
+      requestOptions.signal = abortSignal;
+    }
+
+    const response = await client.chat.completions.create(
+      requestParams,
+      Object.keys(requestOptions).length > 0 ? requestOptions : undefined
+    );
 
     return response as any;
   }
@@ -205,21 +222,23 @@ export class ProtocolAdapter {
     config: ProtocolConfig,
     messages: any[],
     options: any,
-    reply: FastifyReply
+    reply: FastifyReply,
+    abortSignal?: AbortSignal
   ): Promise<StreamTokenUsage> {
     memoryLogger.debug(
       `直接转发流式请求 | model: ${config.model}`,
       'Protocol'
     );
 
-    return await this.openaiStreamChatCompletion(config, messages, options, reply);
+    return await this.openaiStreamChatCompletion(config, messages, options, reply, abortSignal);
   }
 
   private async openaiStreamChatCompletion(
     config: ProtocolConfig,
     messages: any[],
     options: any,
-    reply: FastifyReply
+    reply: FastifyReply,
+    abortSignal?: AbortSignal
   ): Promise<StreamTokenUsage> {
     const client = this.getOpenAIClient(config);
 
@@ -267,7 +286,19 @@ export class ProtocolAdapter {
       };
     }
 
-    const stream = await client.chat.completions.create(requestParams) as unknown as AsyncIterable<any>;
+    // 构建请求选项，支持超时和取消
+    const requestOptions: any = {};
+    if (options.requestTimeout !== undefined) {
+      requestOptions.timeout = options.requestTimeout;
+    }
+    if (abortSignal) {
+      requestOptions.signal = abortSignal;
+    }
+
+    const stream = await client.chat.completions.create(
+      requestParams,
+      Object.keys(requestOptions).length > 0 ? requestOptions : undefined
+    ) as unknown as AsyncIterable<any>;
 
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -285,34 +316,57 @@ export class ProtocolAdapter {
     let thinkingBlocks: ThinkingBlock[] = [];
     let toolCalls: any[] = [];
 
-    for await (const chunk of stream) {
-      const chunkData = JSON.stringify(chunk);
-      const sseData = `data: ${chunkData}\n\n`;
+    try {
+      for await (const chunk of stream) {
+        // 检查客户端是否断开连接
+        if (reply.raw.destroyed || reply.raw.writableEnded) {
+          memoryLogger.info('客户端已断开连接，停止流式传输', 'Protocol');
+          break;
+        }
 
-      streamChunks.push(sseData);
-      reply.raw.write(sseData);
+        const chunkData = JSON.stringify(chunk);
+        const sseData = `data: ${chunkData}\n\n`;
 
-      if (chunk.usage) {
-        promptTokens = chunk.usage.prompt_tokens || promptTokens;
-        completionTokens = chunk.usage.completion_tokens || completionTokens;
-        totalTokens = chunk.usage.total_tokens || totalTokens;
+        streamChunks.push(sseData);
+        
+        // 使用背压控制优化内存
+        if (!reply.raw.write(sseData)) {
+          // 如果写入缓冲区已满，等待 drain 事件
+          await new Promise<void>((resolve) => {
+            reply.raw.once('drain', resolve);
+          });
+        }
+
+        if (chunk.usage) {
+          promptTokens = chunk.usage.prompt_tokens || promptTokens;
+          completionTokens = chunk.usage.completion_tokens || completionTokens;
+          totalTokens = chunk.usage.total_tokens || totalTokens;
+        }
+
+        if (chunk.choices && chunk.choices[0]) {
+          const extraction = extractReasoningFromChoice(
+            chunk.choices[0],
+            reasoningContent,
+            thinkingBlocks,
+            toolCalls
+          );
+          reasoningContent = extraction.reasoningContent;
+          thinkingBlocks = extraction.thinkingBlocks as ThinkingBlock[];
+          toolCalls = extraction.toolCalls || [];
+        }
       }
-
-      if (chunk.choices && chunk.choices[0]) {
-        const extraction = extractReasoningFromChoice(
-          chunk.choices[0],
-          reasoningContent,
-          thinkingBlocks,
-          toolCalls
-        );
-        reasoningContent = extraction.reasoningContent;
-        thinkingBlocks = extraction.thinkingBlocks as ThinkingBlock[];
-        toolCalls = extraction.toolCalls || [];
+    } catch (error: any) {
+      // 检查是否是用户取消
+      if (error.name === 'AbortError' || abortSignal?.aborted) {
+        memoryLogger.info('流式请求被用户取消', 'Protocol');
       }
+      throw error;
     }
 
-    reply.raw.write('data: [DONE]\n\n');
-    reply.raw.end();
+    if (!reply.raw.destroyed && !reply.raw.writableEnded) {
+      reply.raw.write('data: [DONE]\n\n');
+      reply.raw.end();
+    }
 
     return {
       promptTokens,
@@ -327,20 +381,22 @@ export class ProtocolAdapter {
   async createEmbedding(
     config: ProtocolConfig,
     input: string | string[],
-    options: any = {}
+    options: any = {},
+    abortSignal?: AbortSignal
   ): Promise<any> {
     memoryLogger.debug(
       `直接转发 Embeddings 请求 | model: ${config.model}`,
       'Protocol'
     );
 
-    return await this.openaiCreateEmbedding(config, input, options);
+    return await this.openaiCreateEmbedding(config, input, options, abortSignal);
   }
 
   private async openaiCreateEmbedding(
     config: ProtocolConfig,
     input: string | string[],
-    options: any
+    options: any,
+    abortSignal?: AbortSignal
   ): Promise<any> {
     const client = this.getOpenAIClient(config);
 
@@ -361,8 +417,201 @@ export class ProtocolAdapter {
       requestParams.user = options.user;
     }
 
-    const response = await client.embeddings.create(requestParams);
+    // 构建请求选项
+    const requestOptions: any = {};
+    if (options.requestTimeout !== undefined) {
+      requestOptions.timeout = options.requestTimeout;
+    }
+    if (abortSignal) {
+      requestOptions.signal = abortSignal;
+    }
+
+    const response = await client.embeddings.create(
+      requestParams,
+      Object.keys(requestOptions).length > 0 ? requestOptions : undefined
+    );
 
     return response;
+  }
+
+  async createResponse(
+    config: ProtocolConfig,
+    input: string | any[],
+    options: any,
+    abortSignal?: AbortSignal
+  ): Promise<any> {
+    memoryLogger.debug(
+      `使用 Responses API | model: ${config.model}`,
+      'Protocol'
+    );
+
+    return await this.openaiCreateResponse(config, input, options, abortSignal);
+  }
+
+  private async openaiCreateResponse(
+    config: ProtocolConfig,
+    input: string | any[],
+    options: any,
+    abortSignal?: AbortSignal
+  ): Promise<any> {
+    const client = this.getOpenAIClient(config);
+
+    const requestParams: any = {
+      model: config.model,
+      input,
+    };
+
+    // 添加 Responses API 支持的参数
+    if (options.instructions !== undefined) requestParams.instructions = options.instructions;
+    if (options.temperature !== undefined) requestParams.temperature = options.temperature;
+    if (options.max_output_tokens !== undefined) requestParams.max_output_tokens = options.max_output_tokens;
+    if (options.top_p !== undefined) requestParams.top_p = options.top_p;
+    if (options.store !== undefined) requestParams.store = options.store;
+    if (options.metadata !== undefined) requestParams.metadata = options.metadata;
+    if (options.tools !== undefined) requestParams.tools = options.tools;
+    if (options.tool_choice !== undefined) requestParams.tool_choice = options.tool_choice;
+    if (options.parallel_tool_calls !== undefined) requestParams.parallel_tool_calls = options.parallel_tool_calls;
+    if (options.reasoning !== undefined) requestParams.reasoning = options.reasoning;
+    if (options.text !== undefined) requestParams.text = options.text;
+    if (options.previous_response_id !== undefined) requestParams.previous_response_id = options.previous_response_id;
+    if (options.truncation !== undefined) requestParams.truncation = options.truncation;
+    if (options.user !== undefined) requestParams.user = options.user;
+    if (options.include !== undefined) requestParams.include = options.include;
+
+    // 构建请求选项
+    const requestOptions: any = {};
+    if (options.requestTimeout !== undefined) {
+      requestOptions.timeout = options.requestTimeout;
+    }
+    if (abortSignal) {
+      requestOptions.signal = abortSignal;
+    }
+
+    const response = await client.responses.create(
+      requestParams,
+      Object.keys(requestOptions).length > 0 ? requestOptions : undefined
+    );
+
+    return response;
+  }
+
+  async streamResponse(
+    config: ProtocolConfig,
+    input: string | any[],
+    options: any,
+    reply: FastifyReply,
+    abortSignal?: AbortSignal
+  ): Promise<StreamTokenUsage> {
+    memoryLogger.debug(
+      `使用 Responses API 流式请求 | model: ${config.model}`,
+      'Protocol'
+    );
+
+    return await this.openaiStreamResponse(config, input, options, reply, abortSignal);
+  }
+
+  private async openaiStreamResponse(
+    config: ProtocolConfig,
+    input: string | any[],
+    options: any,
+    reply: FastifyReply,
+    abortSignal?: AbortSignal
+  ): Promise<StreamTokenUsage> {
+    const client = this.getOpenAIClient(config);
+
+    const requestParams: any = {
+      model: config.model,
+      input,
+      stream: true,
+    };
+
+    // 添加 Responses API 支持的参数
+    if (options.instructions !== undefined) requestParams.instructions = options.instructions;
+    if (options.temperature !== undefined) requestParams.temperature = options.temperature;
+    if (options.max_output_tokens !== undefined) requestParams.max_output_tokens = options.max_output_tokens;
+    if (options.top_p !== undefined) requestParams.top_p = options.top_p;
+    if (options.store !== undefined) requestParams.store = options.store;
+    if (options.metadata !== undefined) requestParams.metadata = options.metadata;
+    if (options.tools !== undefined) requestParams.tools = options.tools;
+    if (options.tool_choice !== undefined) requestParams.tool_choice = options.tool_choice;
+    if (options.parallel_tool_calls !== undefined) requestParams.parallel_tool_calls = options.parallel_tool_calls;
+    if (options.reasoning !== undefined) requestParams.reasoning = options.reasoning;
+    if (options.text !== undefined) requestParams.text = options.text;
+    if (options.truncation !== undefined) requestParams.truncation = options.truncation;
+    if (options.user !== undefined) requestParams.user = options.user;
+    if (options.include !== undefined) requestParams.include = options.include;
+
+    // 构建请求选项
+    const requestOptions: any = {};
+    if (options.requestTimeout !== undefined) {
+      requestOptions.timeout = options.requestTimeout;
+    }
+    if (abortSignal) {
+      requestOptions.signal = abortSignal;
+    }
+
+    const stream = await client.responses.create(
+      requestParams,
+      Object.keys(requestOptions).length > 0 ? requestOptions : undefined
+    ) as unknown as AsyncIterable<any>;
+
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'X-Accel-Buffering': 'no',
+      'Connection': 'keep-alive',
+      'Transfer-Encoding': 'chunked',
+    });
+
+    let promptTokens = 0;
+    let completionTokens = 0;
+    let totalTokens = 0;
+    const streamChunks: string[] = [];
+
+    try {
+      for await (const chunk of stream) {
+        // 检查客户端是否断开连接
+        if (reply.raw.destroyed || reply.raw.writableEnded) {
+          memoryLogger.info('客户端已断开连接，停止流式传输', 'Protocol');
+          break;
+        }
+
+        const chunkData = JSON.stringify(chunk);
+        const sseData = `data: ${chunkData}\n\n`;
+
+        streamChunks.push(sseData);
+        
+        // 使用背压控制优化内存
+        if (!reply.raw.write(sseData)) {
+          await new Promise<void>((resolve) => {
+            reply.raw.once('drain', resolve);
+          });
+        }
+
+        // 从 Responses API 流中提取 usage 信息
+        if (chunk.usage) {
+          promptTokens = chunk.usage.input_tokens || promptTokens;
+          completionTokens = chunk.usage.output_tokens || completionTokens;
+          totalTokens = chunk.usage.total_tokens || totalTokens;
+        }
+      }
+    } catch (error: any) {
+      if (error.name === 'AbortError' || abortSignal?.aborted) {
+        memoryLogger.info('流式请求被用户取消', 'Protocol');
+      }
+      throw error;
+    }
+
+    if (!reply.raw.destroyed && !reply.raw.writableEnded) {
+      reply.raw.write('data: [DONE]\n\n');
+      reply.raw.end();
+    }
+
+    return {
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      streamChunks,
+    };
   }
 }
