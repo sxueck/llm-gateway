@@ -193,9 +193,11 @@ export async function makeAnthropicStreamRequest(
     });
 
     const stream = client.messages.stream(requestParams);
-
-    let promptTokens = 0;
-    let completionTokens = 0;
+ 
+    let inputTokens = 0;
+    let cacheCreationInputTokens = 0;
+    let cacheReadInputTokens = 0;
+    let outputTokens = 0;
     const streamChunks: string[] = [];
 
     for await (const event of stream) {
@@ -203,11 +205,17 @@ export async function makeAnthropicStreamRequest(
 
       if (eventData.type === 'message_start') {
         if (eventData.message?.usage) {
-          promptTokens = eventData.message.usage.input_tokens || 0;
+          inputTokens = eventData.message.usage.input_tokens || 0;
+          // Prompt caching usage (if present)
+          // These keys are not always present; default to 0
+          const anyUsage: any = eventData.message.usage as any;
+          cacheCreationInputTokens = anyUsage?.cache_creation_input_tokens || 0;
+          cacheReadInputTokens = anyUsage?.cache_read_input_tokens || 0;
         }
       } else if (eventData.type === 'message_delta') {
-        if (eventData.usage?.output_tokens !== undefined) {
-          completionTokens = eventData.usage.output_tokens;
+        const anyUsage: any = (eventData as any).usage;
+        if (anyUsage && anyUsage.output_tokens !== undefined) {
+          outputTokens = anyUsage.output_tokens as number;
         }
       }
 
@@ -216,8 +224,22 @@ export async function makeAnthropicStreamRequest(
       reply.raw.write(sseData);
     }
 
+    // After stream completes, prefer SDK final snapshot usage for accuracy
+    try {
+      const finalMessage: any = await (stream as any).finalMessage?.();
+      if (finalMessage?.usage) {
+        inputTokens = finalMessage.usage.input_tokens ?? inputTokens;
+        outputTokens = finalMessage.usage.output_tokens ?? outputTokens;
+        cacheCreationInputTokens = finalMessage.usage.cache_creation_input_tokens ?? cacheCreationInputTokens;
+        cacheReadInputTokens = finalMessage.usage.cache_read_input_tokens ?? cacheReadInputTokens;
+      }
+    } catch {}
+ 
     reply.raw.end();
-
+ 
+    const promptTokens = inputTokens + cacheCreationInputTokens + cacheReadInputTokens;
+    const completionTokens = outputTokens;
+ 
     return {
       promptTokens,
       completionTokens,

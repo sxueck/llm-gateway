@@ -53,7 +53,19 @@ export interface AnthropicTool {
     type: 'ephemeral';
   };
 }
-
+ 
+export interface AnthropicUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+  cache_creation?: {
+    ephemeral_5m_input_tokens?: number;
+    ephemeral_1h_input_tokens?: number;
+  };
+  service_tier?: string;
+}
+ 
 export interface AnthropicResponse {
   id: string;
   type: 'message';
@@ -62,10 +74,7 @@ export interface AnthropicResponse {
   model: string;
   stop_reason: 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use' | null;
   stop_sequence?: string | null;
-  usage: {
-    input_tokens: number;
-    output_tokens: number;
-  };
+  usage: AnthropicUsage;
 }
 
 export interface AnthropicStreamEvent {
@@ -80,10 +89,7 @@ export interface AnthropicStreamEvent {
     stop_reason?: string;
     stop_sequence?: string;
   };
-  usage?: {
-    input_tokens?: number;
-    output_tokens?: number;
-  };
+  usage?: Partial<AnthropicUsage>;
   error?: {
     type: string;
     message: string;

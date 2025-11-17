@@ -29,11 +29,9 @@ services:
       - "13030:3000"
     volumes:
       - ./data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - DB_PATH=/app/data/gateway.db
       - LOG_LEVEL=info
       - JWT_SECRET=${JWT_SECRET:-please-change-this-secret-key-to-a-random-string-at-least-32-chars}
       - PUBLIC_URL=${PUBLIC_URL:-http://localhost:3000}
