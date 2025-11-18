@@ -338,9 +338,17 @@ export class ProtocolAdapter {
         }
 
         if (chunk.usage) {
-          promptTokens = chunk.usage.prompt_tokens || promptTokens;
-          completionTokens = chunk.usage.completion_tokens || completionTokens;
-          totalTokens = chunk.usage.total_tokens || totalTokens;
+          const u: any = chunk.usage;
+          const basePrompt = u.prompt_tokens ?? 0;
+          const cachedDetail =
+            (u.prompt_tokens_details && typeof u.prompt_tokens_details.cached_tokens === 'number')
+              ? u.prompt_tokens_details.cached_tokens
+              : 0;
+          const normalizedPrompt = basePrompt === 0 ? basePrompt + cachedDetail : basePrompt;
+
+          promptTokens = normalizedPrompt || promptTokens;
+          completionTokens = (u.completion_tokens ?? completionTokens);
+          totalTokens = (u.total_tokens ?? totalTokens);
         }
 
         if (chunk.choices && chunk.choices[0]) {
@@ -588,11 +596,21 @@ export class ProtocolAdapter {
           });
         }
 
-        // 从 Responses API 流中提取 usage 信息
+        // 从 Responses API 流中提取 usage 信息（合并缓存命中）
         if (chunk.usage) {
-          promptTokens = chunk.usage.input_tokens || promptTokens;
-          completionTokens = chunk.usage.output_tokens || completionTokens;
-          totalTokens = chunk.usage.total_tokens || totalTokens;
+          const u: any = chunk.usage;
+          const baseInput = u.input_tokens ?? 0;
+          const cachedDetail =
+            (u.input_tokens_details && typeof u.input_tokens_details.cached_tokens === 'number')
+              ? u.input_tokens_details.cached_tokens
+              : ((u.prompt_tokens_details && typeof u.prompt_tokens_details.cached_tokens === 'number')
+                ? u.prompt_tokens_details.cached_tokens
+                : 0);
+          const normalizedInput = baseInput === 0 ? baseInput + cachedDetail : baseInput;
+
+          promptTokens = normalizedInput || promptTokens;
+          completionTokens = (u.output_tokens ?? completionTokens);
+          totalTokens = (u.total_tokens ?? totalTokens);
         }
       }
     } catch (error: any) {

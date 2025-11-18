@@ -276,7 +276,9 @@ function getChatEndpointName(): string {
 }
 
 function getInputTokens(usage: any): number {
-  return usage?.input_tokens || usage?.prompt_tokens || 0;
+  const base = (usage?.input_tokens ?? usage?.prompt_tokens ?? 0);
+  const cached = (usage?.input_tokens_details?.cached_tokens ?? usage?.prompt_tokens_details?.cached_tokens ?? 0);
+  return base === 0 ? base + cached : base;
 }
 
 function getOutputTokens(usage: any): number {
