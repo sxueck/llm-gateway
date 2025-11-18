@@ -1,3 +1,4 @@
+import { createInitialAggregate, processResponsesEvent } from './responses-parser.js';
 const MAX_BODY_LENGTH = 2000; // 最大字节长度限制
 const MAX_STRING_LENGTH = 500; // 单个字符串字段的最大字符长度（保守估计，确保总体不超过 2000 字节）
 
@@ -255,7 +256,7 @@ export function accumulateStreamResponse(chunks: string[]): string {
             lastUsage = parsed.usage;
           }
         } catch {
-          continue;
+            continue;
         }
       }
     }
@@ -286,6 +287,47 @@ export function accumulateStreamResponse(chunks: string[]): string {
     if (lastUsage) {
       accumulated.usage = lastUsage;
     }
+
+    return truncateResponseBody(accumulated);
+  } catch {
+    return chunks.join('').substring(0, MAX_BODY_LENGTH) + '...[truncated]';
+  }
+}
+
+/**
+ * 累计 OpenAI Responses API 的流式事件，聚合 output_text 与 usage，用于日志/存档。
+ */
+export function accumulateResponsesStream(chunks: string[]): string {
+  try {
+    let agg = createInitialAggregate();
+
+    for (const chunk of chunks) {
+      if (!chunk.trim() || chunk.trim() === 'data: [DONE]') continue;
+
+      const lines = chunk.split('\n');
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+
+        const data = line.substring(6).trim();
+        if (!data || data === '[DONE]') continue;
+
+        try {
+          const ev = JSON.parse(data);
+          agg = processResponsesEvent(agg, ev);
+        } catch {
+          continue;
+        }
+      }
+    }
+
+    const accumulated: any = {
+      type: 'responses.accumulated',
+      id: agg.id,
+      model: agg.model,
+      status: agg.status,
+      output_text: agg.outputText,
+      usage: agg.usage,
+    };
 
     return truncateResponseBody(accumulated);
   } catch {

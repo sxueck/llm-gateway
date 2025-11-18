@@ -2,7 +2,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { nanoid } from 'nanoid';
 import { apiRequestDb } from '../../db/index.js';
 import { memoryLogger } from '../../services/logger.js';
-import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse, buildFullRequestBody } from '../../utils/request-logger.js';
+import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse, buildFullRequestBody, accumulateResponsesStream } from '../../utils/request-logger.js';
 import { promptProcessor } from '../../services/prompt-processor.js';
 import { messageCompressor } from '../../services/message-compressor.js';
 import { makeHttpRequest, makeStreamHttpRequest } from './http-client.js';
@@ -465,7 +465,9 @@ export async function handleStreamRequest(
 
     const fullRequestBody = buildFullRequestBody(request.body, modelAttributes);
     const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
-    const truncatedResponse = shouldLogBody ? accumulateStreamResponse(tokenUsage.streamChunks) : undefined;
+    const truncatedResponse = shouldLogBody
+      ? (isResponsesApi ? accumulateResponsesStream(tokenUsage.streamChunks) : accumulateStreamResponse(tokenUsage.streamChunks))
+      : undefined;
 
     await apiRequestDb.create({
       id: nanoid(),

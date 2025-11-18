@@ -78,10 +78,10 @@
                 </n-tag>
               </n-descriptions-item>
               <n-descriptions-item label="输入 Tokens">
-                <n-tag type="default" size="small">{{ selectedRequest.prompt_tokens || 0 }}</n-tag>
+                <n-tag type="default" size="small">{{ getInputTokens(selectedRequest as ApiRequest) }}</n-tag>
               </n-descriptions-item>
               <n-descriptions-item label="输出 Tokens">
-                <n-tag type="default" size="small">{{ selectedRequest.completion_tokens || 0 }}</n-tag>
+                <n-tag type="default" size="small">{{ getOutputTokens(selectedRequest as ApiRequest) }}</n-tag>
               </n-descriptions-item>
               <n-descriptions-item label="压缩前 Tokens" v-if="selectedRequest.compression_original_tokens">
                 <n-tag type="info" size="small">{{ selectedRequest.compression_original_tokens }}</n-tag>
@@ -182,6 +182,39 @@ const showCleanDialog = ref(false);
 const cleanDays = ref(30);
 const cleanLoading = ref(false);
 
+// ---- Token display helpers (fallback to response_body.usage when DB columns are 0) ----
+function parseUsageFromBody(body: string | null): any | null {
+  if (!body) return null;
+  try {
+    return JSON.parse(body)?.usage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function getInputTokensFromUsage(usage: any): number {
+  const base = (usage?.input_tokens ?? usage?.prompt_tokens ?? 0);
+  const cached =
+    (usage?.input_tokens_details?.cached_tokens ?? usage?.prompt_tokens_details?.cached_tokens ?? 0);
+  return base === 0 ? base + cached : base;
+}
+
+function getOutputTokensFromUsage(usage: any): number {
+  return usage?.output_tokens ?? usage?.completion_tokens ?? 0;
+}
+
+function getInputTokens(row: ApiRequest): number {
+  if (row?.prompt_tokens && row.prompt_tokens > 0) return row.prompt_tokens;
+  const usage = parseUsageFromBody(row?.response_body || null);
+  return usage ? getInputTokensFromUsage(usage) : 0;
+}
+
+function getOutputTokens(row: ApiRequest): number {
+  if (row?.completion_tokens && row.completion_tokens > 0) return row.completion_tokens;
+  const usage = parseUsageFromBody(row?.response_body || null);
+  return usage ? getOutputTokensFromUsage(usage) : 0;
+}
+
 const handlePageChange = (page: number) => {
   pagination.page = page;
   loadRequests();
@@ -252,8 +285,8 @@ const columns: DataTableColumns<ApiRequest> = [
     width: 180,
     render: (row) => {
       const items = [
-        h('div', { style: 'font-size: 12px; color: #666;' }, `输入: ${row.prompt_tokens || 0}`),
-        h('div', { style: 'font-size: 12px; color: #666;' }, `输出: ${row.completion_tokens || 0}`),
+        h('div', { style: 'font-size: 12px; color: #666;' }, `输入: ${getInputTokens(row)}`),
+        h('div', { style: 'font-size: 12px; color: #666;' }, `输出: ${getOutputTokens(row)}`),
       ];
 
       if (row.compression_saved_tokens && row.compression_saved_tokens > 0) {
