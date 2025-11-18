@@ -5,9 +5,7 @@ import fastifyStatic from '@fastify/static';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { appConfig, setPublicUrl } from './config/index.js';
-import { initDatabase, apiRequestDb, systemConfigDb, shutdownDatabase, getDatabase } from './db/index.js';
-import { migrateFromSQLite } from './db/migration-from-sqlite.js';
-import { existsSync } from 'fs';
+import { initDatabase, apiRequestDb, systemConfigDb, shutdownDatabase } from './db/index.js';
 import { authRoutes } from './routes/auth.js';
 import { providerRoutes } from './routes/providers.js';
 import { modelRoutes } from './routes/models.js';
@@ -75,38 +73,6 @@ fastify.decorate('authenticate', async function(request: any, reply: any) {
 await initDatabase();
 
 memoryLogger.info('Database initialized', 'System');
-
-if (existsSync(appConfig.dbPath)) {
-  memoryLogger.info('检测到 SQLite 数据库文件，开始迁移到 MySQL...', 'System');
-  try {
-    const pool = getDatabase();
-    const connection = await pool.getConnection();
-
-    const result = await migrateFromSQLite(
-      appConfig.dbPath,
-      connection as any,
-      (progress) => {
-        memoryLogger.info(
-          `迁移进度: ${progress.table} (${progress.current}/${progress.total})`,
-          'Migration'
-        );
-      }
-    );
-
-    connection.release();
-
-    if (result.success) {
-      memoryLogger.info(`数据迁移成功: ${result.message}`, 'Migration');
-      memoryLogger.info(`已迁移的表: ${result.migratedTables.join(', ')}`, 'Migration');
-    } else {
-      memoryLogger.error(`数据迁移失败: ${result.message}`, 'Migration');
-    }
-  } catch (error: any) {
-    memoryLogger.error(`数据迁移异常: ${error.message}`, 'Migration');
-  }
-}
-
-
 
 const publicUrlCfg = await systemConfigDb.get('public_url');
 if (publicUrlCfg) {

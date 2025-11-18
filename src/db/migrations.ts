@@ -280,8 +280,8 @@ export const migrations: Migration[] = [
     down: async (conn: Connection) => {
       await conn.query(`
         ALTER TABLE api_requests
-        MODIFY COLUMN request_body TEXT,
-        MODIFY COLUMN response_body TEXT
+        MODIFY COLUMN request_body MEDIUMTEXT,
+        MODIFY COLUMN response_body MEDIUMTEXT
       `);
     },
   },

@@ -1,10 +1,9 @@
 # LLM Gateway
 
-轻量级 LLM 网关管理系统，提供直观的 Web UI 界面，用于管理多个 LLM 提供商、虚拟密钥、路由配置和模型管理。
+一个轻量级 LLM 网关管理系统，提供直观的 Web UI 界面，用于管理多个 LLM 提供商、虚拟密钥、路由配置和模型管理
 
 <img width="3798" height="1967" alt="image" src="https://github.com/user-attachments/assets/1e1d9c6c-7a6b-4cef-9f1d-b188cd38dfbe" />
 <img width="1778" height="977" alt="image" src="https://github.com/user-attachments/assets/fe65a33e-73f3-481e-90b1-cb4a732122fa" />
-
 
 更多截图请见 [服务截图](./docs/screenshot.md)
 
@@ -17,7 +16,6 @@
 - **多端点支持**: 提供 `/v1/chat/completions`、`/v1/responses`、`/v1/messages` 等多个兼容端点
 - **Prompt 管理**: 为虚拟模型配置 prompt 处理规则，支持替换、前置添加、系统消息等操作
 - **LiteLLM 预设集成**: 自动从 LiteLLM 官方库获取模型配置，支持搜索和一键应用
-- **智能路由**: 基于模型、提供商、地区等规则实现智能请求分发
 - **用户认证**: 基于 JWT 的安全认证机制
 - **实时监控**: 仪表盘展示系统状态和配置信息
 
@@ -79,10 +77,6 @@ npm run start:all
 
 请参考 [Docker 部署指南](./docs/DOCKER_DEPLOYMENT.md)
 
-### 访问应用
-
-- **Web UI**: http://localhost:5173
-- **后端 API**: http://localhost:3000
 
 ### 快速使用
 
@@ -103,41 +97,9 @@ pnpm install
 # 安装前端依赖
 cd web && pnpm install && cd ..
 
-# 启动开发服务器
-npm run dev
+# 直接启动前后端
+npm run start:all
 ```
-
-### 构建
-
-```bash
-# 构建后端
-npm run build
-
-# 构建前端
-cd web && npm run build && cd ..
-```
-
-### 环境变量
-
-详见 `.env.example` 文件，主要配置项：
-
-| 变量名 | 说明 | 默认值 |
-|--------|------|--------|
-| PORT | 后端服务端口 | 3000 |
-| NODE_ENV | 运行环境 | development |
-| DB_PATH | 数据库文件路径 | ./data/gateway.db |
-| LOG_LEVEL | 日志级别 | info |
-| JWT_SECRET | JWT 密钥 (至少 32 字符) | 必填 |
-| PUBLIC_URL | 公开访问 URL | http://localhost:3000 |
-| DEMO_MODE | 演示模式 | false |
-
-## Demo
-
-[Demo](http://demo-api.sxueck.com:3000/)
-
-账户: demo / demo1234
-
-注意：Demo 站会每 3 天自动清空数据，同时请不要填写真实的 API 密钥
 
 ## 贡献
 

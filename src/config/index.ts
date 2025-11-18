@@ -7,7 +7,6 @@ config();
 const envSchema = z.object({
   PORT: z.string().default('3000'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  DB_PATH: z.string().default('./data/gateway.db'),
   LOG_LEVEL: z.string().default('info'),
   JWT_SECRET: z.string().min(32),
   API_REQUEST_LOG_RETENTION_DAYS: z.string().default('3'),
@@ -28,7 +27,6 @@ const defaultPublicUrl = env.PUBLIC_URL || `http://localhost:${port}`;
 export const appConfig = {
   port,
   nodeEnv: env.NODE_ENV,
-  dbPath: env.DB_PATH,
   logLevel: env.LOG_LEVEL,
   jwtSecret: env.JWT_SECRET,
   apiRequestLogRetentionDays: parseInt(env.API_REQUEST_LOG_RETENTION_DAYS, 10),
