@@ -527,8 +527,8 @@ export const providerDb = {
     const conn = await pool.getConnection();
     try {
       await conn.query(
-        'INSERT INTO providers (id, name, base_url, protocol_mappings, api_key, model_mapping, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [provider.id, provider.name, provider.base_url, provider.protocol_mappings || null, provider.api_key, provider.model_mapping || null, provider.enabled, now, now]
+        'INSERT INTO providers (id, name, description, base_url, protocol_mappings, api_key, model_mapping, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [provider.id, provider.name, provider.description || null, provider.base_url, provider.protocol_mappings || null, provider.api_key, provider.model_mapping || null, provider.enabled, now, now]
       );
       return { ...provider, created_at: now, updated_at: now };
     } finally {
@@ -546,6 +546,10 @@ export const providerDb = {
       if (updates.name !== undefined) {
         fields.push('name = ?');
         values.push(updates.name);
+      }
+      if (updates.description !== undefined) {
+        fields.push('description = ?');
+        values.push(updates.description);
       }
       if (updates.base_url !== undefined) {
         fields.push('base_url = ?');
