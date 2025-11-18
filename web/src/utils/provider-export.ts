@@ -7,6 +7,7 @@ export interface ProviderExportData {
   providers: Array<{
     id: string;
     name: string;
+    description?: string;
     baseUrl: string;
     enabled: boolean;
     isPortkeySupported: boolean;
@@ -27,6 +28,7 @@ export function exportProviders(providers: Provider[]): ProviderExportData {
       return {
         id: provider.id,
         name: provider.name,
+        description: provider.description || undefined,
         baseUrl: provider.baseUrl,
         enabled: provider.enabled,
         isPortkeySupported: !!preset,
@@ -177,6 +179,7 @@ export function parseImportFile(file: File): Promise<{
 export function convertImportDataToProviders(data: ProviderExportData): Array<{
   id: string;
   name: string;
+  description?: string;
   baseUrl: string;
   enabled: boolean;
   needsApiKey: boolean;
@@ -186,6 +189,7 @@ export function convertImportDataToProviders(data: ProviderExportData): Array<{
   return data.providers.map(provider => ({
     id: provider.id,
     name: provider.name,
+    description: provider.description,
     baseUrl: provider.baseUrl,
     enabled: provider.enabled ?? true,
     needsApiKey: true, // 导入的提供商都需要重新设置 API Key

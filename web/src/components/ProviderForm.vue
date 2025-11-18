@@ -26,6 +26,10 @@
       <n-input v-model:value="formValue.name" placeholder="如: DeepSeek" size="small" />
     </n-form-item>
 
+    <n-form-item label="描述">
+      <n-input v-model:value="formValue.description" placeholder="提供商的简短描述（可选）" size="small" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" />
+    </n-form-item>
+
     <n-form-item label="多协议支持">
       <n-switch v-model:value="multiProtocolEnabled" size="small" />
     </n-form-item>
@@ -180,6 +184,7 @@ interface Props {
   modelValue: {
     id: string;
     name: string;
+    description?: string | null;
     baseUrl: string;
     protocolMappings?: ProtocolMapping | null;
     apiKey: string;

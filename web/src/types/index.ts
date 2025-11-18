@@ -12,6 +12,7 @@ export interface ProtocolMapping {
 export interface Provider {
   id: string;
   name: string;
+  description?: string | null;
   baseUrl: string;
   protocolMappings?: ProtocolMapping | null;
   apiKey?: string;
@@ -113,6 +114,7 @@ export interface AuthResponse {
 export interface CreateProviderRequest {
   id: string;
   name: string;
+  description?: string | null;
   baseUrl: string;
   protocolMappings?: ProtocolMapping;
   apiKey: string;
@@ -122,6 +124,7 @@ export interface CreateProviderRequest {
 
 export interface UpdateProviderRequest {
   name?: string;
+  description?: string | null;
   baseUrl?: string;
   protocolMappings?: ProtocolMapping;
   apiKey?: string;
@@ -183,4 +186,3 @@ export interface UpdateVirtualKeyRequest {
   interceptZeroTemperature?: boolean;
   zeroTemperatureReplacement?: number;
 }
-

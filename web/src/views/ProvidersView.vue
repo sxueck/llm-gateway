@@ -146,6 +146,7 @@ const exportOptions = [
 const formValue = ref({
   id: '',
   name: '',
+  description: '',
   baseUrl: '',
   protocolMappings: null as any,
   apiKey: '',
@@ -160,6 +161,7 @@ const apiKeyChanged = ref(false);
 const columns = [
   { title: 'ID', key: 'id' },
   { title: '名称', key: 'name' },
+  { title: '描述', key: 'description', ellipsis: { tooltip: true } },
   { title: 'Base URL', key: 'baseUrl' },
   {
     title: '状态',
@@ -216,6 +218,7 @@ async function handleEdit(provider: Provider) {
     formValue.value = {
       id: fullProvider.id,
       name: fullProvider.name,
+      description: fullProvider.description || '',
       baseUrl: fullProvider.baseUrl,
       protocolMappings: fullProvider.protocolMappings || null,
       apiKey: fullProvider.apiKey || '',
@@ -289,6 +292,7 @@ async function handleSubmit() {
     if (editingId.value) {
       const updateData: any = {
         name: formValue.value.name,
+        description: formValue.value.description,
         baseUrl: formValue.value.baseUrl,
         protocolMappings: formValue.value.protocolMappings,
         enabled: formValue.value.enabled,
@@ -371,6 +375,7 @@ function resetForm() {
   formValue.value = {
     id: '',
     name: '',
+    description: '',
     baseUrl: '',
     protocolMappings: null,
     apiKey: '',
@@ -384,6 +389,7 @@ function usePreset() {
   formValue.value = {
     id: selectedPreset.value.id,
     name: selectedPreset.value.name,
+    description: '',
     baseUrl: selectedPreset.value.baseUrl,
     protocolMappings: null,
     apiKey: '',
@@ -447,7 +453,7 @@ async function handleImportFile(data: { file: Required<UploadFileInfo>; fileList
   }
 }
 
-async function executeImport(providers: Array<{ id: string; name: string; baseUrl: string; enabled?: boolean }>) {
+async function executeImport(providers: Array<{ id: string; name: string; description?: string; baseUrl: string; enabled?: boolean }>) {
   try {
     const providersWithDummyKey = providers.map(p => ({
       ...p,
