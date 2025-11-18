@@ -13,6 +13,7 @@ const protocolMappingSchema = z.object({
 const createProviderSchema = z.object({
   id: z.string(),
   name: z.string(),
+  description: z.string().nullable().optional(),
   baseUrl: z.string().url(),
   protocolMappings: protocolMappingSchema,
   apiKey: z.string(),
@@ -22,6 +23,7 @@ const createProviderSchema = z.object({
 
 const updateProviderSchema = z.object({
   name: z.string().optional(),
+  description: z.string().nullable().optional(),
   baseUrl: z.string().url().optional(),
   protocolMappings: protocolMappingSchema,
   apiKey: z.string().optional(),
@@ -33,6 +35,7 @@ const batchImportSchema = z.object({
   providers: z.array(z.object({
     id: z.string(),
     name: z.string(),
+    description: z.string().nullable().optional(),
     baseUrl: z.string().url(),
     apiKey: z.string(),
     enabled: z.boolean().optional(),
@@ -49,6 +52,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
       providers: providers.map(p => ({
         id: p.id,
         name: p.name,
+        description: p.description,
         baseUrl: p.base_url,
         protocolMappings: p.protocol_mappings ? JSON.parse(p.protocol_mappings) : null,
         apiKey: '***',
@@ -72,6 +76,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
     const result = {
       id: provider.id,
       name: provider.name,
+      description: provider.description,
       baseUrl: provider.base_url,
       protocolMappings: provider.protocol_mappings ? JSON.parse(provider.protocol_mappings) : null,
       apiKey: includeApiKey === 'true' ? decryptApiKey(provider.api_key) : '***',
@@ -101,6 +106,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
     const provider = await providerDb.create({
       id: body.id,
       name: body.name,
+      description: body.description,
       base_url: body.baseUrl,
       protocol_mappings: body.protocolMappings ? JSON.stringify(body.protocolMappings) : null,
       api_key: encryptApiKey(body.apiKey),
@@ -111,6 +117,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
     return {
       id: provider.id,
       name: provider.name,
+      description: provider.description,
       baseUrl: provider.base_url,
       protocolMappings: provider.protocol_mappings ? JSON.parse(provider.protocol_mappings) : null,
       modelMapping: provider.model_mapping ? JSON.parse(provider.model_mapping) : null,
@@ -133,6 +140,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
 
     const updates: any = {};
     if (body.name !== undefined) updates.name = body.name;
+    if (body.description !== undefined) updates.description = body.description;
     if (body.baseUrl !== undefined) updates.base_url = body.baseUrl;
     if (body.protocolMappings !== undefined) {
       updates.protocol_mappings = body.protocolMappings ? JSON.stringify(body.protocolMappings) : null;
@@ -159,6 +167,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
     return {
       id: updated.id,
       name: updated.name,
+      description: updated.description,
       baseUrl: updated.base_url,
       protocolMappings: updated.protocol_mappings ? JSON.parse(updated.protocol_mappings) : null,
       modelMapping: updated.model_mapping ? JSON.parse(updated.model_mapping) : null,
@@ -293,6 +302,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
         await providerDb.create({
           id: providerData.id,
           name: providerData.name,
+          description: providerData.description,
           base_url: providerData.baseUrl,
           protocol_mappings: null,
           api_key: encryptApiKey(providerData.apiKey),
@@ -317,4 +327,3 @@ export async function providerRoutes(fastify: FastifyInstance) {
     };
   });
 }
-

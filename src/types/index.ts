@@ -15,6 +15,7 @@ export interface ProtocolMapping {
 export interface Provider {
   id: string;
   name: string;
+  description?: string | null;
   base_url: string;
   api_key: string;
   model_mapping: string | null;
