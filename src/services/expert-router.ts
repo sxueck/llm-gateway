@@ -19,6 +19,8 @@ interface ChatMessage {
 interface ProxyRequest {
   body?: {
     messages?: ChatMessage[];
+    input?: string | any[]; // Responses API
+    instructions?: string; // Responses API
     model?: string;
     system?: string | any[];
     [key: string]: any;
@@ -193,8 +195,26 @@ export class ExpertRouter {
 
     const config: ExpertRoutingConfig = JSON.parse(expertRoutingConfig.config);
 
-    if (!request.body?.messages || request.body.messages.length === 0) {
-      throw new Error('No messages in request');
+    // 支持 Chat Completions API 和 Responses API（含 text 字段）
+    const bodyAny: any = request.body || {};
+    const hasMessages = Array.isArray(bodyAny.messages) && bodyAny.messages.length > 0;
+
+    let hasInput = false;
+    if ('input' in bodyAny) {
+      const v = bodyAny.input;
+      if (typeof v === 'string') {
+        hasInput = v.trim().length > 0;
+      } else if (Array.isArray(v)) {
+        hasInput = v.length > 0;
+      } else if (v && typeof v === 'object') {
+        hasInput = Object.keys(v).length > 0;
+      }
+    }
+
+    const hasText = typeof bodyAny.text === 'string' && bodyAny.text.trim().length > 0;
+
+    if (!hasMessages && !hasInput && !hasText) {
+      throw new Error('No messages or input/text in request');
     }
 
     let classificationResult;
@@ -252,26 +272,77 @@ export class ExpertRouter {
     classifierRequest: any;
     classifierResponse: any;
   }> {
-    const messages = request.body?.messages || [];
-    const system = request.body?.system; // Anthropic 格式
     const protocol = request.protocol || 'openai';
+    let lastUserMessage: string;
+    let conversationHistory: string = '';
 
-    let messagesToClassify = messages;
+    // 检测是否为 Responses API 请求
+    if (request.body?.input !== undefined || typeof (request.body as any)?.text === 'string') {
+      // Responses API 格式
+      const input = (request.body as any).input ?? (request.body as any).text;
+      const instructions = (request.body as any).instructions;
 
-    if (classifierConfig.max_messages_to_classify && classifierConfig.max_messages_to_classify > 0) {
-      messagesToClassify = messagesToClassify.slice(-classifierConfig.max_messages_to_classify);
+      // 提取输入内容
+      if (typeof input === 'string') {
+        lastUserMessage = input;
+      } else if (Array.isArray(input)) {
+        // 如果 input 是数组（Responses Items 形态），尽可能提取文本
+        const texts: string[] = [];
+        for (const item of input) {
+          if (!item || typeof item !== 'object') continue;
+
+          // 典型: { type: 'message', role: 'user', content: [ { type: 'input_text', text: '...' }, ... ] }
+          if (item.type === 'message' && Array.isArray(item.content)) {
+            for (const part of item.content) {
+              if (part && typeof part === 'object') {
+                if (part.type === 'input_text' && typeof part.text === 'string') {
+                  texts.push(part.text);
+                } else if (typeof part.text === 'string') {
+                  texts.push(part.text);
+                } else if (typeof part.content === 'string') {
+                  texts.push(part.content);
+                }
+              }
+            }
+          } else if (typeof item.text === 'string') {
+            texts.push(item.text);
+          }
+        }
+        lastUserMessage = texts.join('\n').trim();
+        if (!lastUserMessage) {
+          lastUserMessage = JSON.stringify(input);
+        }
+      } else {
+        lastUserMessage = JSON.stringify(input);
+      }
+
+      // 如果有 instructions，作为系统提示添加到上下文
+      if (instructions) {
+        conversationHistory = `System Instructions: ${instructions}`;
+      }
+    } else {
+      // Chat Completions API 格式
+      const messages = request.body?.messages || [];
+      const system = request.body?.system; // Anthropic 格式
+
+      let messagesToClassify = messages;
+
+      if (classifierConfig.max_messages_to_classify && classifierConfig.max_messages_to_classify > 0) {
+        messagesToClassify = messagesToClassify.slice(-classifierConfig.max_messages_to_classify);
+      }
+
+      if (classifierConfig.ignore_system_messages) {
+        messagesToClassify = messagesToClassify.filter(m => m.role !== 'system');
+      }
+
+      const { extractUserMessagesForClassification } = await import('../utils/message-extractor.js');
+      const extracted = extractUserMessagesForClassification(
+        messagesToClassify,
+        system
+      );
+      lastUserMessage = extracted.lastUserMessage;
+      conversationHistory = extracted.conversationHistory;
     }
-
-    if (classifierConfig.ignore_system_messages) {
-      messagesToClassify = messagesToClassify.filter(m => m.role !== 'system');
-    }
-
-    // 使用新的消息提取工具
-    const { extractUserMessagesForClassification } = await import('../utils/message-extractor.js');
-    const { lastUserMessage, conversationHistory } = extractUserMessagesForClassification(
-      messagesToClassify,
-      system
-    );
 
     // 应用忽略标签过滤
     let userPrompt = lastUserMessage;
@@ -465,7 +536,12 @@ export class ExpertRouter {
       selected_expert_type: expert.type,
       selected_expert_name: resolved.expertName,
       classification_time: classificationTime,
-      original_request: JSON.stringify(request.body?.messages || []),
+      original_request: JSON.stringify(
+        (request.body as any)?.messages ??
+        (request.body as any)?.input ??
+        (request.body as any)?.text ??
+        []
+      ),
       classifier_request: JSON.stringify(classificationResult.classifierRequest),
       classifier_response: JSON.stringify(classificationResult.classifierResponse),
     });
@@ -519,8 +595,20 @@ export class ExpertRouter {
   }
 
   private generateRequestHash(request: ProxyRequest): string {
-    const messages = request.body?.messages || [];
-    const content = JSON.stringify(messages);
+    // 支持 Chat Completions API 和 Responses API
+    const body: any = request.body || {};
+    let content: string;
+    if (body.input !== undefined || typeof body.text === 'string') {
+      // Responses API: 使用 input/text 作为哈希源
+      content = JSON.stringify({
+        input: body.input ?? body.text,
+        instructions: body.instructions
+      });
+    } else {
+      // Chat Completions API: 使用 messages
+      const messages = body.messages || [];
+      content = JSON.stringify(messages);
+    }
     return crypto.createHash('md5').update(content).digest('hex');
   }
 
