@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="expert-routing-editor">
     <div class="steps-container">
       <n-steps :current="currentStep" :status="currentStatus">
         <n-step :title="t('expertRouting.basicInfo')" />
@@ -191,7 +191,7 @@
 
     </div>
 
-    <n-space justify="space-between" style="margin-top: 24px">
+    <n-space class="footer-actions" justify="space-between">
       <n-button @click="handlePrevious" :disabled="currentStep === 1">
         {{ t('common.previous') }}
       </n-button>
@@ -370,6 +370,14 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.expert-routing-editor {
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;  /* 跟随外层容器高度 */
+  overflow: visible; /* 让 sticky 参考外层滚动容器 (.modal-content-wrapper) */
+  box-sizing: border-box;
+}
+
 .steps-container {
   display: flex;
   justify-content: center;
@@ -378,7 +386,20 @@ onMounted(async () => {
 
 .step-content {
   margin-top: 24px;
-  min-height: 400px;
+  flex: 1;             /* 让内容区占满中间空间 */
+  min-height: 0;       /* 配合 flex:1 才能正确收缩 */
+  overflow: visible;   /* 将滚动交给 .modal-content-wrapper */
+  padding-bottom: 12px;/* 避免最后一行被底部操作区遮挡 */
+}
+
+.footer-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  padding-top: 12px;
+  border-top: 1px solid var(--divider-color, rgba(0,0,0,0.06));
+  background-color: var(--modal-color, rgba(255,255,255,0.9));
+  backdrop-filter: saturate(140%) blur(3px);
 }
 </style>
 

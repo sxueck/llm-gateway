@@ -206,6 +206,19 @@
 </template>
 
 <style scoped>
+.expert-routing-modal :deep(.n-card__content) {
+  padding: 0;
+  overflow: hidden;
+}
+
+.modal-content-wrapper {
+  /* 估算扣除卡片头部/内边距的高度，确保内容内部滚动而非撑破模态 */
+  max-height: calc(85vh - 160px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 20px;
+}
+
 .page-title {
   margin: 0;
   font-size: 20px;
