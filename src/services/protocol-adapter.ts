@@ -610,7 +610,13 @@ export class ProtocolAdapter {
 
           promptTokens = normalizedInput || promptTokens;
           completionTokens = (u.output_tokens ?? completionTokens);
-          totalTokens = (u.total_tokens ?? totalTokens);
+          
+          // 如果 total_tokens 不存在，则计算它
+          if (typeof u.total_tokens === 'number') {
+            totalTokens = u.total_tokens;
+          } else {
+            totalTokens = promptTokens + completionTokens;
+          }
         }
       }
     } catch (error: any) {

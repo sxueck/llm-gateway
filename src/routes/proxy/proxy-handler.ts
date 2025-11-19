@@ -569,11 +569,30 @@ export async function handleNonStreamRequest(
     const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
     const truncatedResponse = shouldLogBody ? truncateResponseBody(cacheResult.cached.response) : undefined;
 
-    const usageTokens = cacheResult.cached.response?.usage?.total_tokens || 0;
+    // 对于 Responses API，需要特殊处理 usage 字段
+    let usageTokens = 0;
+    let promptTokensFromResponse = 0;
+    let completionTokensFromResponse = 0;
+    
+    if (isResponsesApi && cacheResult.cached.response?.usage) {
+      // Responses API 使用 input_tokens 和 output_tokens
+      promptTokensFromResponse = cacheResult.cached.response.usage.input_tokens || 0;
+      completionTokensFromResponse = cacheResult.cached.response.usage.output_tokens || 0;
+      usageTokens = cacheResult.cached.response.usage.total_tokens || (promptTokensFromResponse + completionTokensFromResponse);
+    } else {
+      // 标准 Chat Completions API
+      usageTokens = cacheResult.cached.response?.usage?.total_tokens || 0;
+      promptTokensFromResponse = cacheResult.cached.response?.usage?.prompt_tokens || 0;
+      completionTokensFromResponse = cacheResult.cached.response?.usage?.completion_tokens || 0;
+    }
+    
     const tokenCount = await calculateTokensIfNeeded(
       usageTokens,
       request.body,
-      cacheResult.cached.response
+      cacheResult.cached.response,
+      undefined,
+      promptTokensFromResponse,
+      completionTokensFromResponse
     );
 
     await apiRequestDb.create({
@@ -801,11 +820,30 @@ export async function handleNonStreamRequest(
   const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
   const truncatedResponse = shouldLogBody ? truncateResponseBody(responseData) : undefined;
 
-  const usageTokens = responseData?.usage?.total_tokens || 0;
+  // 对于 Responses API，需要特殊处理 usage 字段
+  let usageTokens = 0;
+  let promptTokensFromResponse = 0;
+  let completionTokensFromResponse = 0;
+  
+  if (isResponsesApi && responseData?.usage) {
+    // Responses API 使用 input_tokens 和 output_tokens
+    promptTokensFromResponse = responseData.usage.input_tokens || 0;
+    completionTokensFromResponse = responseData.usage.output_tokens || 0;
+    usageTokens = responseData.usage.total_tokens || (promptTokensFromResponse + completionTokensFromResponse);
+  } else {
+    // 标准 Chat Completions API
+    usageTokens = responseData?.usage?.total_tokens || 0;
+    promptTokensFromResponse = responseData?.usage?.prompt_tokens || 0;
+    completionTokensFromResponse = responseData?.usage?.completion_tokens || 0;
+  }
+  
   const tokenCount = await calculateTokensIfNeeded(
     usageTokens,
     request.body,
-    responseData
+    responseData,
+    undefined,
+    promptTokensFromResponse,
+    completionTokensFromResponse
   );
 
   await apiRequestDb.create({
