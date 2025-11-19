@@ -55,7 +55,7 @@
         <n-data-table
           v-else
           :columns="columns"
-          :data="modelStore.models"
+          :data="visibleModels"
           :loading="modelStore.loading"
           :pagination="paginationConfig"
           :bordered="false"
@@ -234,6 +234,21 @@ const paginationConfig = computed(() => ({
   pageSize: pageSize.value,
 }));
 
+// 仅展示可见模型：虚拟模型始终可见；普通模型需供应商已启用
+const visibleModels = computed(() => {
+  const enabledProviderIds = new Set(
+    providerStore.providers.filter(p => p.enabled).map(p => p.id)
+  );
+  return modelStore.models.filter((m) => {
+    // 虚拟模型不受供应商状态影响
+    if ((m as any).isVirtual) return true;
+    // 无 providerId 的模型（理论上不存在）保留显示
+    if (!m.providerId) return true;
+    // 仅显示启用供应商下的模型
+    return enabledProviderIds.has(m.providerId);
+  });
+});
+
 const groupedModels = computed(() => {
   if (!groupByProvider.value) {
     return [];
@@ -241,7 +256,7 @@ const groupedModels = computed(() => {
 
   const groups = new Map<string, { providerId: string; providerName: string; models: Model[] }>();
 
-  modelStore.models.forEach(model => {
+  visibleModels.value.forEach(model => {
     const providerId = model.providerId || 'virtual';
     const providerName = model.providerName || t('models.virtualModel');
 

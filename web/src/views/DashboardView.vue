@@ -6,7 +6,7 @@
           <h2 class="page-title">{{ t('dashboard.title') }}</h2>
           <p class="page-subtitle">{{ t('dashboard.subtitle') }}</p>
         </div>
-        <n-space :size="12">
+        <n-space :size="12" class="dashboard-controls">
           <n-button secondary round @click="loadData">
             <template #icon>
               <n-icon><RefreshOutline /></n-icon>
@@ -17,13 +17,13 @@
             v-model:value="selectedPeriod"
             :options="periodOptions"
             size="medium"
-            style="width: 160px;"
+            :style="{ width: windowWidth < 640 ? '140px' : '160px' }"
             @update:value="loadStats"
           />
         </n-space>
       </div>
 
-      <n-grid :cols="4" :x-gap="20" :y-gap="20">
+      <n-grid :cols="gridCols" :x-gap="gridGap" :y-gap="gridGap">
         <n-gi>
           <n-card class="stat-card stat-card-primary">
             <div class="stat-content">
@@ -129,7 +129,7 @@
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">热门模型</div>
-              <div class="stat-main-value" style="font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ topModel }}</div>
+              <div class="stat-main-value top-model-name">{{ topModel }}</div>
               <div class="stat-provider">{{ topModelProvider }}</div>
               <div class="stat-details">
                 <span class="stat-detail-item">
@@ -148,9 +148,9 @@
 
       <n-card class="trend-card">
         <template #header>
-          <n-space justify="space-between" align="center">
+          <n-space justify="space-between" align="center" class="trend-header">
             <span>请求趋势</span>
-            <n-space :size="12">
+            <n-space :size="8" class="trend-buttons">
               <n-button
                 :type="chartMetric === 'requests' ? 'primary' : 'default'"
                 size="small"
@@ -205,7 +205,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useMessage, NSpace, NGrid, NGi, NCard, NSelect, NEmpty, NButton, NIcon, NSpin, NResult } from 'naive-ui';
 import { RefreshOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
@@ -246,12 +246,25 @@ const selectedPeriod = ref<'24h' | '7d' | '30d'>('24h');
 const chartMetric = ref<'requests' | 'tokens'>('requests');
 const loading = ref(false);
 const loadError = ref<string | null>(null);
+const windowWidth = ref(window.innerWidth);
 
 const periodOptions = computed(() => [
   { label: t('dashboard.period.last24Hours'), value: '24h' },
   { label: t('dashboard.period.last7Days'), value: '7d' },
   { label: t('dashboard.period.last30Days'), value: '30d' },
 ]);
+
+const gridCols = computed(() => {
+  if (windowWidth.value < 640) return 1; // 手机端：1列
+  if (windowWidth.value < 1024) return 2; // 平板端：2列
+  if (windowWidth.value < 1280) return 3; // 小桌面：3列
+  return 4; // 大桌面：4列
+});
+
+const gridGap = computed(() => {
+  if (windowWidth.value < 640) return 12; // 手机端：较小间距
+  return 20; // 桌面端：正常间距
+});
 
 const enabledKeysCount = computed(() => {
   return virtualKeyStore.virtualKeys.filter(k => k.enabled).length;
@@ -345,6 +358,8 @@ const chartOption = computed(() => {
     return {};
   }
 
+  const isMobile = windowWidth.value < 640;
+
   const series = trendData.value.map((keyTrend, index) => {
     const colorScheme = COLOR_PALETTE[index % COLOR_PALETTE.length];
 
@@ -354,12 +369,12 @@ const chartOption = computed(() => {
       smooth: true,
       smoothMonotone: 'x',
       symbol: 'circle',
-      symbolSize: 7,
+      symbolSize: isMobile ? 5 : 7,
       showSymbol: false,
       lineStyle: {
-        width: 3,
+        width: isMobile ? 2 : 3,
         shadowColor: colorScheme.line,
-        shadowBlur: 8,
+        shadowBlur: isMobile ? 4 : 8,
         shadowOffsetY: 2,
       },
       itemStyle: {
@@ -404,9 +419,9 @@ const chartOption = computed(() => {
       borderWidth: 1,
       textStyle: {
         color: '#1f2937',
-        fontSize: 13,
+        fontSize: isMobile ? 11 : 13,
       },
-      padding: [12, 16],
+      padding: isMobile ? [8, 12] : [12, 16],
       axisPointer: {
         type: 'line',
         lineStyle: {
@@ -426,15 +441,19 @@ const chartOption = computed(() => {
         if (dataIndex === undefined || dataIndex >= timePoints.length) return '';
         const timestamp = timePoints[dataIndex];
         if (!timestamp || isNaN(timestamp)) return '';
-        let result = `<div style="font-weight: 600; margin-bottom: 10px; color: #111827; font-size: 14px;">${formatTimestamp(timestamp, selectedPeriod.value)}</div>`;
+        const headerFontSize = isMobile ? 12 : 14;
+        const itemFontSize = isMobile ? 11 : 13;
+        const marginBottom = isMobile ? 6 : 10;
+        const itemMargin = isMobile ? 4 : 6;
+        let result = `<div style="font-weight: 600; margin-bottom: ${marginBottom}px; color: #111827; font-size: ${headerFontSize}px;">${formatTimestamp(timestamp, selectedPeriod.value)}</div>`;
         params.forEach((param: any) => {
           const value = chartMetric.value === 'requests'
             ? `${formatNumber(param.value)} 次`
             : `${formatTokenNumber(param.value)} tokens`;
-          result += `<div style="display: flex; align-items: center; margin: 6px 0;">
-            <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background-color: ${param.color}; margin-right: 10px;"></span>
-            <span style="flex: 1; color: #4b5563; font-size: 13px;">${param.seriesName}</span>
-            <span style="font-weight: 600; margin-left: 16px; color: #111827; font-size: 13px;">${value}</span>
+          result += `<div style="display: flex; align-items: center; margin: ${itemMargin}px 0;">
+            <span style="display: inline-block; width: ${isMobile ? 10 : 12}px; height: ${isMobile ? 10 : 12}px; border-radius: 3px; background-color: ${param.color}; margin-right: ${isMobile ? 8 : 10}px;"></span>
+            <span style="flex: 1; color: #4b5563; font-size: ${itemFontSize}px;">${param.seriesName}</span>
+            <span style="font-weight: 600; margin-left: ${isMobile ? 12 : 16}px; color: #111827; font-size: ${itemFontSize}px;">${value}</span>
           </div>`;
         });
         return result;
@@ -442,16 +461,16 @@ const chartOption = computed(() => {
     },
     legend: {
       data: trendData.value.map(t => t.virtualKeyName),
-      top: 12,
+      top: isMobile ? 8 : 12,
       left: 'center',
       type: 'scroll',
       pageButtonPosition: 'end',
-      itemWidth: 14,
-      itemHeight: 14,
-      itemGap: 20,
+      itemWidth: isMobile ? 12 : 14,
+      itemHeight: isMobile ? 12 : 14,
+      itemGap: isMobile ? 12 : 20,
       textStyle: {
         color: '#6b7280',
-        fontSize: 13,
+        fontSize: isMobile ? 11 : 13,
         fontWeight: 500,
       },
       pageIconColor: '#0f6b4a',
@@ -461,10 +480,10 @@ const chartOption = computed(() => {
       },
     },
     grid: {
-      left: '2%',
-      right: '2%',
-      bottom: '5%',
-      top: 70,
+      left: isMobile ? '1%' : '2%',
+      right: isMobile ? '1%' : '2%',
+      bottom: isMobile ? '3%' : '5%',
+      top: isMobile ? 55 : 70,
       containLabel: true
     },
     xAxis: {
@@ -484,8 +503,8 @@ const chartOption = computed(() => {
         rotate: selectedPeriod.value === '24h' ? 0 : 45,
         interval: 'auto',
         color: '#9ca3af',
-        fontSize: 12,
-        margin: 12,
+        fontSize: isMobile ? 10 : 12,
+        margin: isMobile ? 8 : 12,
       },
       splitLine: {
         show: false,
@@ -501,8 +520,8 @@ const chartOption = computed(() => {
       },
       axisLabel: {
         color: '#9ca3af',
-        fontSize: 12,
-        margin: 12,
+        fontSize: isMobile ? 10 : 12,
+        margin: isMobile ? 8 : 12,
         formatter: (value: number) => {
           if (chartMetric.value === 'requests') {
             return formatNumber(value);
@@ -553,8 +572,17 @@ async function loadStats() {
   }
 }
 
+const handleResize = () => {
+  windowWidth.value = window.innerWidth;
+};
+
 onMounted(() => {
   loadData();
+  window.addEventListener('resize', handleResize);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize);
 });
 </script>
 
@@ -562,7 +590,14 @@ onMounted(() => {
 .dashboard-view {
   max-width: 1400px;
   margin: 0 auto;
+  padding: 0 16px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+@media (max-width: 639px) {
+  .dashboard-view {
+    padding: 0 12px;
+  }
 }
 
 .dashboard-header {
@@ -570,6 +605,20 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+@media (max-width: 639px) {
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .dashboard-controls {
+    width: 100%;
+  }
 }
 
 .page-title {
@@ -580,11 +629,23 @@ onMounted(() => {
   letter-spacing: -0.03em;
 }
 
+@media (max-width: 639px) {
+  .page-title {
+    font-size: 24px;
+  }
+}
+
 .page-subtitle {
   font-size: 14px;
   color: #8c8c8c;
   margin: 4px 0 0 0;
   font-weight: 400;
+}
+
+@media (max-width: 639px) {
+  .page-subtitle {
+    font-size: 13px;
+  }
 }
 
 .stat-card {
@@ -594,6 +655,12 @@ onMounted(() => {
   transition: all 0.3s ease;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   height: 100%;
+}
+
+@media (max-width: 639px) {
+  .stat-card {
+    border-radius: 12px;
+  }
 }
 
 .stat-card :deep(.n-card__content) {
@@ -635,6 +702,12 @@ onMounted(() => {
   padding: 24px;
 }
 
+@media (max-width: 639px) {
+  .stat-content {
+    padding: 20px;
+  }
+}
+
 .stat-header {
   font-size: 12px;
   font-weight: 500;
@@ -653,12 +726,37 @@ onMounted(() => {
   margin-bottom: 8px;
 }
 
+@media (max-width: 639px) {
+  .stat-main-value {
+    font-size: 36px;
+  }
+}
+
+.top-model-name {
+  font-size: 16px !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 639px) {
+  .top-model-name {
+    font-size: 14px !important;
+  }
+}
+
 .stat-provider {
   font-size: 13px;
   font-weight: 500;
   color: #0f6b4a;
   margin-bottom: auto;
   padding-bottom: 16px;
+}
+
+@media (max-width: 639px) {
+  .stat-provider {
+    font-size: 12px;
+  }
 }
 
 .stat-value-error {
@@ -677,6 +775,13 @@ onMounted(() => {
   gap: 20px;
   font-size: 13px;
   margin-top: auto;
+}
+
+@media (max-width: 639px) {
+  .stat-details {
+    gap: 12px;
+    font-size: 12px;
+  }
 }
 
 .stat-detail-item {
@@ -735,6 +840,12 @@ onMounted(() => {
   transition: box-shadow 0.3s ease;
 }
 
+@media (max-width: 639px) {
+  .trend-card {
+    border-radius: 12px;
+  }
+}
+
 .trend-card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
@@ -744,6 +855,12 @@ onMounted(() => {
   border-bottom: 1px solid #f3f4f6;
 }
 
+@media (max-width: 639px) {
+  .trend-card :deep(.n-card__header) {
+    padding: 20px 16px 16px;
+  }
+}
+
 .trend-card :deep(.n-card-header__main) {
   font-size: 18px;
   font-weight: 600;
@@ -751,14 +868,42 @@ onMounted(() => {
   letter-spacing: -0.02em;
 }
 
+@media (max-width: 639px) {
+  .trend-card :deep(.n-card-header__main) {
+    font-size: 16px;
+  }
+
+  .trend-header {
+    flex-wrap: wrap;
+  }
+
+  .trend-buttons {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
 .trend-chart-container {
   padding: 24px 16px 16px;
   min-height: 400px;
 }
 
+@media (max-width: 639px) {
+  .trend-chart-container {
+    padding: 16px 8px 12px;
+    min-height: 300px;
+  }
+}
+
 .trend-chart {
   width: 100%;
   height: 420px;
+}
+
+@media (max-width: 639px) {
+  .trend-chart {
+    height: 320px;
+  }
 }
 
 .trend-loading {
@@ -778,9 +923,21 @@ onMounted(() => {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
+@media (max-width: 639px) {
+  .overview-card {
+    border-radius: 12px;
+  }
+}
+
 .overview-card :deep(.n-card__header) {
   padding: 24px 28px;
   border-bottom: 1px solid #f0f0f0;
+}
+
+@media (max-width: 639px) {
+  .overview-card :deep(.n-card__header) {
+    padding: 20px 16px;
+  }
 }
 
 .overview-card :deep(.n-card-header__main) {
@@ -790,10 +947,30 @@ onMounted(() => {
   letter-spacing: -0.02em;
 }
 
+@media (max-width: 639px) {
+  .overview-card :deep(.n-card-header__main) {
+    font-size: 16px;
+  }
+}
+
 .overview-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 24px;
+}
+
+@media (max-width: 1023px) {
+  .overview-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+}
+
+@media (max-width: 639px) {
+  .overview-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
 }
 
 .overview-item {
@@ -813,6 +990,18 @@ onMounted(() => {
   font-weight: 500;
   color: #1a1a1a;
   font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 639px) {
+  .overview-value {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 639px) {
+  .overview-label {
+    font-size: 12px;
+  }
 }
 </style>
 
