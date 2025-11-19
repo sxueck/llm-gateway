@@ -33,13 +33,17 @@ export async function calculateTokensIfNeeded(
   promptTokensFromStream?: number,
   completionTokensFromStream?: number
 ): Promise<TokenCalculationResult> {
-  // 优先使用从流中解析的 usage 信息
+  // 优先使用从流中解析的 usage 信息；仅当两者之和大于 0 时才直接采用，
+  // 否则回退到响应 usage 或本地估算，避免 0/0 提前返回导致不计入总量
   if (promptTokensFromStream !== undefined && completionTokensFromStream !== undefined) {
-    return {
-      promptTokens: promptTokensFromStream,
-      completionTokens: completionTokensFromStream,
-      totalTokens: promptTokensFromStream + completionTokensFromStream
-    };
+    const sum = (promptTokensFromStream || 0) + (completionTokensFromStream || 0);
+    if (sum > 0) {
+      return {
+        promptTokens: promptTokensFromStream,
+        completionTokens: completionTokensFromStream,
+        totalTokens: sum
+      };
+    }
   }
 
   // 优先使用响应中的 usage 信息（即使 totalTokens 为 0）
