@@ -195,7 +195,9 @@ export function createProxyHandler() {
           startTime,
           compressionStats,
           currentModel,
-          isResponsesApi
+          isResponsesApi,
+          modelResult,
+          virtualKeyValue!
         );
       }
 
@@ -287,7 +289,9 @@ export async function handleStreamRequest(
   startTime: number,
   compressionStats?: { originalTokens: number; savedTokens: number },
   currentModel?: any,
-  isResponsesApi: boolean = false
+  isResponsesApi: boolean = false,
+  modelResult?: any,
+  virtualKeyValueParam?: string
 ) {
   memoryLogger.info(
     `流式请求开始: ${path} | virtual key: ${vkDisplay}`,
@@ -435,7 +439,29 @@ export async function handleStreamRequest(
       { error: streamError.stack }
     );
 
+    // 智能路由重试（在未发送任何响应的情况下）
+    const statusForRetry = (streamError?.statusCode || streamError?.status || 500) as number;
+    try {
+      const { shouldRetrySmartRouting } = await import('./routing.js');
+      if (modelResult?.canRetry && virtualKeyValueParam && shouldRetrySmartRouting(statusForRetry) && !reply.sent && !reply.raw.headersSent) {
+        const { handleStreamRetry } = await import('./retry-handler.js');
+        const retried = await handleStreamRetry(request, reply, statusForRetry, {
+          virtualKey,
+          virtualKeyValue: virtualKeyValueParam,
+          modelResult,
+          currentModel,
+          compressionStats,
+          startTime
+        });
+        if (retried) {
+          return;
+        }
+      }
+    } catch (_e) {
+      // 忽略重试流程中的异常，继续走错误返回
+    }
 
+    // 记录失败请求
     const shouldLogBody = shouldLogRequestBody(virtualKey);
 
     let modelAttributes: any = undefined;
@@ -468,8 +494,22 @@ export async function handleStreamRequest(
       compression_saved_tokens: compressionStats?.savedTokens,
     });
 
-    // 流式请求失败时，如果响应已经发送，则不再处理
-    // http-client 会处理错误响应的发送
+    // 若仍未发送任何响应，则返回规范化错误
+    if (!reply.raw.headersSent && !reply.sent) {
+      const errorPayload = streamError?.errorResponse || {
+        error: {
+          message: streamError?.message || 'Stream request failed',
+          type: 'api_error',
+          param: null,
+          code: 'stream_error'
+        }
+      };
+      const finalStatus = statusForRetry || 500;
+      reply.raw.writeHead(finalStatus, { 'Content-Type': 'application/json' });
+      reply.raw.write(JSON.stringify(errorPayload));
+      reply.raw.end();
+    }
+
     return;
   }
 }

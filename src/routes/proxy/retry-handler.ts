@@ -188,7 +188,10 @@ export async function handleStreamRetry(
     retryResult.providerId,
     context.startTime,
     context.compressionStats,
-    retryResult.currentModel
+    retryResult.currentModel,
+    false,
+    context.modelResult,
+    context.virtualKeyValue
   );
 
   return true;

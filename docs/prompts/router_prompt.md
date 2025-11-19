@@ -162,6 +162,8 @@ Latest: "<attempt_completion><result>已完成函数编写</result></attempt_com
   - `Tool execution successful`
   - `Command output:`
   - **EXCEPTION**: `<attempt_completion>` → "other" (do not inherit)
+  - Read/Summarize tools classification: For read/summarize-type tools (e.g., `read_file`, `search_files`, documentation retrieval, summarizers), classify these tool invocations as "other" for calling.
+  - Other tools classification: For all other tools, inherit the last valid user intent's classification when continuing tool use.
 
 **Multi-turn handling:**
 - Pronouns (这个/that/it) or continuation words (再/还/also) → check history to resolve reference
@@ -178,7 +180,7 @@ Latest: "<attempt_completion><result>已完成函数编写</result></attempt_com
 - "design/architect" → "plan"
 
 **Tool use edge cases:**
-- Tool use with no clear history → classify based on tool intent (read_file → "review", write_to_file → "code", execute_command → context-dependent)
+- Tool use with no clear history → classify based on tool intent (read/summarize → "other"; write_to_file → "code"; execute_command → context-dependent)
 - Multiple tool uses in sequence → all inherit the same original classification
 - Tool use after a new user request → classify the new request, not the tool use
 

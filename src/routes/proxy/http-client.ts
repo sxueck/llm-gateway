@@ -137,22 +137,11 @@ export async function makeStreamHttpRequest(
     return await protocolAdapter.streamChatCompletion(config, messages, options, reply, abortSignal);
   } catch (error: any) {
     const { statusCode, errorResponse } = normalizeError(error);
-
-    // 检查响应头是否已发送，避免重复写入
-    if (!reply.raw.headersSent) {
-      reply.raw.writeHead(statusCode, {
-        'Content-Type': 'application/json',
-      });
-      reply.raw.write(JSON.stringify(errorResponse));
-      reply.raw.end();
-    } else {
-      // 如果响应头已发送，说明流已经开始，只能尝试结束流
-      if (!reply.raw.writableEnded) {
-        reply.raw.end();
-      }
-    }
-
-    throw error;
+    // 不直接向客户端写入错误，交由上层决定是否重试或返回
+    const enriched = new Error(errorResponse?.error?.message || 'Stream request failed');
+    (enriched as any).statusCode = statusCode;
+    (enriched as any).errorResponse = errorResponse;
+    throw enriched;
   }
 }
 
