@@ -340,15 +340,18 @@ export class ProtocolAdapter {
 
         if (chunk.usage) {
           const norm = normalizeUsageCounts(chunk.usage);
-          if (typeof norm.promptTokens === 'number') {
-            promptTokens = norm.promptTokens || promptTokens;
+          // 只有当新值大于当前值时才更新，避免0值被||运算符忽略
+          if (typeof norm.promptTokens === 'number' && norm.promptTokens > 0) {
+            promptTokens = norm.promptTokens;
           }
-          if (typeof norm.completionTokens === 'number') {
-            completionTokens = norm.completionTokens || completionTokens;
+          if (typeof norm.completionTokens === 'number' && norm.completionTokens > 0) {
+            completionTokens = norm.completionTokens;
           }
-          totalTokens = (typeof norm.totalTokens === 'number' && norm.totalTokens > 0)
-            ? norm.totalTokens
-            : (promptTokens + completionTokens);
+          if (typeof norm.totalTokens === 'number' && norm.totalTokens > 0) {
+            totalTokens = norm.totalTokens;
+          } else if (promptTokens > 0 || completionTokens > 0) {
+            totalTokens = promptTokens + completionTokens;
+          }
         }
 
         if (chunk.choices && chunk.choices[0]) {
@@ -600,15 +603,17 @@ export class ProtocolAdapter {
         const usageInChunk: any = (chunk?.usage ?? (chunk?.response && (chunk.response as any).usage) ?? null);
         if (usageInChunk) {
           const norm = normalizeUsageCounts(usageInChunk);
-          if (typeof norm.promptTokens === 'number') {
-            promptTokens = norm.promptTokens || promptTokens;
+          if (typeof norm.promptTokens === 'number' && norm.promptTokens > 0) {
+            promptTokens = norm.promptTokens;
           }
-          if (typeof norm.completionTokens === 'number') {
-            completionTokens = norm.completionTokens || completionTokens;
+          if (typeof norm.completionTokens === 'number' && norm.completionTokens > 0) {
+            completionTokens = norm.completionTokens;
           }
-          totalTokens = (typeof norm.totalTokens === 'number' && norm.totalTokens > 0)
-            ? norm.totalTokens
-            : ((promptTokens || 0) + (completionTokens || 0));
+          if (typeof norm.totalTokens === 'number' && norm.totalTokens > 0) {
+            totalTokens = norm.totalTokens;
+          } else if (promptTokens > 0 || completionTokens > 0) {
+            totalTokens = promptTokens + completionTokens;
+          }
         }
       }
     } catch (error: any) {
