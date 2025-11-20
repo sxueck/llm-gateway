@@ -8,6 +8,7 @@ export interface ApiRequest {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  cached_tokens: number | null;
   status: string;
   response_time: number | null;
   error_message: string | null;
