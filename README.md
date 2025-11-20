@@ -2,8 +2,9 @@
 
 一个轻量级 LLM 网关管理系统，提供直观的 Web UI 界面，用于管理多个 LLM 提供商、虚拟密钥、路由配置和模型管理
 
-<img width="3798" height="1967" alt="image" src="https://github.com/user-attachments/assets/1e1d9c6c-7a6b-4cef-9f1d-b188cd38dfbe" />
-<img width="1778" height="977" alt="image" src="https://github.com/user-attachments/assets/fe65a33e-73f3-481e-90b1-cb4a732122fa" />
+<img width="2158" height="1577" alt="image" src="https://github.com/user-attachments/assets/7632e901-e572-4373-ac85-44c46ec86526" />
+<img width="2682" height="1397" alt="image" src="https://github.com/user-attachments/assets/196adf78-2346-41f9-903b-a18920464486" />
+
 
 更多截图请见 [服务截图](./docs/screenshot.md)
 
