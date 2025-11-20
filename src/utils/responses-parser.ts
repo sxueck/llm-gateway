@@ -7,6 +7,7 @@
  * - Usage snapshot tracking when available
  */
 
+import { normalizeUsageCounts } from './usage-normalizer.js';
 export type ResponsesStatus = 'in_progress' | 'completed' | 'incomplete' | 'cancelled' | 'errored' | 'unknown';
 
 export interface ResponsesUsageDetails {
@@ -227,12 +228,10 @@ export function summarizeUsage(usage?: ResponsesUsageDetails): {
   completionTokens: number;
   totalTokens: number;
 } {
-  const prompt = usage?.input_tokens ?? 0;
-  const completion = usage?.output_tokens ?? 0;
-  const total = typeof usage?.total_tokens === 'number' ? usage!.total_tokens! : (prompt + completion);
+  const norm = normalizeUsageCounts(usage as any);
   return {
-    promptTokens: prompt,
-    completionTokens: completion,
-    totalTokens: total,
+    promptTokens: norm.promptTokens,
+    completionTokens: norm.completionTokens,
+    totalTokens: norm.totalTokens,
   };
 }

@@ -198,8 +198,19 @@ export async function countStreamResponseTokens(
 
             try {
               const parsed = JSON.parse(data);
+
+              // Chat Completions SSE 解析
               if (parsed.choices && parsed.choices[0]?.delta?.content) {
                 contentParts.push(parsed.choices[0].delta.content);
+              }
+              // OpenAI Responses API SSE 解析：response.output_text.delta
+              else if (parsed.type && typeof parsed.type === 'string' && parsed.type.includes('output_text.delta')) {
+                const txt = (parsed.delta && typeof parsed.delta.text === 'string')
+                  ? parsed.delta.text
+                  : (typeof parsed.text === 'string' ? parsed.text : '');
+                if (txt) {
+                  contentParts.push(txt);
+                }
               }
             } catch {
               continue;

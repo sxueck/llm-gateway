@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { FastifyReply } from 'fastify';
 import { memoryLogger } from './logger.js';
 import { extractReasoningFromChoice } from '../utils/request-logger.js';
+import { normalizeUsageCounts } from '../utils/usage-normalizer.js';
 import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-client.js';
 
 export interface ProtocolConfig {
@@ -338,17 +339,16 @@ export class ProtocolAdapter {
         }
 
         if (chunk.usage) {
-          const u: any = chunk.usage;
-          const basePrompt = u.prompt_tokens ?? 0;
-          const cachedDetail =
-            (u.prompt_tokens_details && typeof u.prompt_tokens_details.cached_tokens === 'number')
-              ? u.prompt_tokens_details.cached_tokens
-              : 0;
-          const normalizedPrompt = basePrompt === 0 ? basePrompt + cachedDetail : basePrompt;
-
-          promptTokens = normalizedPrompt || promptTokens;
-          completionTokens = (u.completion_tokens ?? completionTokens);
-          totalTokens = (u.total_tokens ?? totalTokens);
+          const norm = normalizeUsageCounts(chunk.usage);
+          if (typeof norm.promptTokens === 'number') {
+            promptTokens = norm.promptTokens || promptTokens;
+          }
+          if (typeof norm.completionTokens === 'number') {
+            completionTokens = norm.completionTokens || completionTokens;
+          }
+          totalTokens = (typeof norm.totalTokens === 'number' && norm.totalTokens > 0)
+            ? norm.totalTokens
+            : (promptTokens + completionTokens);
         }
 
         if (chunk.choices && chunk.choices[0]) {
@@ -596,27 +596,19 @@ export class ProtocolAdapter {
           });
         }
 
-        // 从 Responses API 流中提取 usage 信息（合并缓存命中）
-        if (chunk.usage) {
-          const u: any = chunk.usage;
-          const baseInput = u.input_tokens ?? 0;
-          const cachedDetail =
-            (u.input_tokens_details && typeof u.input_tokens_details.cached_tokens === 'number')
-              ? u.input_tokens_details.cached_tokens
-              : ((u.prompt_tokens_details && typeof u.prompt_tokens_details.cached_tokens === 'number')
-                ? u.prompt_tokens_details.cached_tokens
-                : 0);
-          const normalizedInput = baseInput === 0 ? baseInput + cachedDetail : baseInput;
-
-          promptTokens = normalizedInput || promptTokens;
-          completionTokens = (u.output_tokens ?? completionTokens);
-          
-          // 如果 total_tokens 不存在，则计算它
-          if (typeof u.total_tokens === 'number') {
-            totalTokens = u.total_tokens;
-          } else {
-            totalTokens = promptTokens + completionTokens;
+        // 从 Responses API 流中提取 usage 信息（支持根级与 response.usage），统一归一化
+        const usageInChunk: any = (chunk?.usage ?? (chunk?.response && (chunk.response as any).usage) ?? null);
+        if (usageInChunk) {
+          const norm = normalizeUsageCounts(usageInChunk);
+          if (typeof norm.promptTokens === 'number') {
+            promptTokens = norm.promptTokens || promptTokens;
           }
+          if (typeof norm.completionTokens === 'number') {
+            completionTokens = norm.completionTokens || completionTokens;
+          }
+          totalTokens = (typeof norm.totalTokens === 'number' && norm.totalTokens > 0)
+            ? norm.totalTokens
+            : ((promptTokens || 0) + (completionTokens || 0));
         }
       }
     } catch (error: any) {
