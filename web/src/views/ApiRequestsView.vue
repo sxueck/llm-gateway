@@ -83,6 +83,9 @@
               <n-descriptions-item label="输出 Tokens">
                 <n-tag type="default" size="small">{{ getOutputTokens(selectedRequest as ApiRequest) }}</n-tag>
               </n-descriptions-item>
+              <n-descriptions-item label="缓存 Tokens" v-if="selectedRequest.cached_tokens">
+                <n-tag type="warning" size="small">{{ selectedRequest.cached_tokens }}</n-tag>
+              </n-descriptions-item>
               <n-descriptions-item label="压缩前 Tokens" v-if="selectedRequest.compression_original_tokens">
                 <n-tag type="info" size="small">{{ selectedRequest.compression_original_tokens }}</n-tag>
               </n-descriptions-item>

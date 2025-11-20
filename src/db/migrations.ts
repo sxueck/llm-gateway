@@ -105,10 +105,24 @@ export const migrations: Migration[] = [
       }
     },
     down: async (conn: Connection) => {
-      await conn.query(`
-        ALTER TABLE virtual_keys
-        DROP COLUMN dynamic_compression_enabled
+      const [tables] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'virtual_keys'
+        AND COLUMN_NAME = 'dynamic_compression_enabled'
       `);
+      const result = tables as any[];
+
+      if (result[0].count > 0) {
+        console.log('  - 回滚: 移除 virtual_keys.dynamic_compression_enabled 字段');
+        await conn.query(`
+          ALTER TABLE virtual_keys
+          DROP COLUMN dynamic_compression_enabled
+        `);
+      } else {
+        console.log('  - 回滚: dynamic_compression_enabled 字段不存在,跳过');
+      }
     },
   },
   {
@@ -136,11 +150,25 @@ export const migrations: Migration[] = [
       }
     },
     down: async (conn: Connection) => {
-      await conn.query(`
-        ALTER TABLE api_requests
-        DROP COLUMN compression_original_tokens,
-        DROP COLUMN compression_saved_tokens
+      const [tables] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'api_requests'
+        AND COLUMN_NAME = 'compression_original_tokens'
       `);
+      const result = tables as any[];
+
+      if (result[0].count > 0) {
+        console.log('  - 回滚: 移除 api_requests 压缩统计字段');
+        await conn.query(`
+          ALTER TABLE api_requests
+          DROP COLUMN compression_original_tokens,
+          DROP COLUMN compression_saved_tokens
+        `);
+      } else {
+        console.log('  - 回滚: 压缩统计字段不存在,跳过');
+      }
     },
   },
   {
@@ -179,11 +207,25 @@ export const migrations: Migration[] = [
       }
     },
     down: async (conn: Connection) => {
-      await conn.query(`
-        ALTER TABLE virtual_keys
-        DROP COLUMN intercept_zero_temperature,
-        DROP COLUMN zero_temperature_replacement
+      const [tables] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'virtual_keys'
+        AND COLUMN_NAME = 'intercept_zero_temperature'
       `);
+      const result = tables as any[];
+
+      if (result[0].count > 0) {
+        console.log('  - 回滚: 移除 virtual_keys.intercept_zero_temperature 和 zero_temperature_replacement 字段');
+        await conn.query(`
+          ALTER TABLE virtual_keys
+          DROP COLUMN intercept_zero_temperature,
+          DROP COLUMN zero_temperature_replacement
+        `);
+      } else {
+        console.log('  - 回滚: intercept_zero_temperature 字段不存在,跳过');
+      }
     },
   },
   {
@@ -210,10 +252,24 @@ export const migrations: Migration[] = [
       }
     },
     down: async (conn: Connection) => {
-      await conn.query(`
-        ALTER TABLE models
-        DROP COLUMN protocol
+      const [tables] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'models'
+        AND COLUMN_NAME = 'protocol'
       `);
+      const result = tables as any[];
+
+      if (result[0].count > 0) {
+        console.log('  - 回滚: 移除 models.protocol 字段');
+        await conn.query(`
+          ALTER TABLE models
+          DROP COLUMN protocol
+        `);
+      } else {
+        console.log('  - 回滚: protocol 字段不存在,跳过');
+      }
     },
   },
   {
@@ -240,10 +296,24 @@ export const migrations: Migration[] = [
       }
     },
     down: async (conn: Connection) => {
-      await conn.query(`
-        ALTER TABLE providers
-        DROP COLUMN protocol_mappings
+      const [tables] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'providers'
+        AND COLUMN_NAME = 'protocol_mappings'
       `);
+      const result = tables as any[];
+
+      if (result[0].count > 0) {
+        console.log('  - 回滚: 移除 providers.protocol_mappings 字段');
+        await conn.query(`
+          ALTER TABLE providers
+          DROP COLUMN protocol_mappings
+        `);
+      } else {
+        console.log('  - 回滚: protocol_mappings 字段不存在,跳过');
+      }
     },
   },
   {
@@ -309,7 +379,65 @@ export const migrations: Migration[] = [
       }
     },
     down: async (conn: Connection) => {
-      await conn.query(`ALTER TABLE providers DROP COLUMN description`);
+      const [tables] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'providers'
+        AND COLUMN_NAME = 'description'
+      `);
+      const result = tables as any[];
+
+      if (result[0].count > 0) {
+        console.log('  - 回滚: 移除 providers.description 字段');
+        await conn.query(`ALTER TABLE providers DROP COLUMN description`);
+      } else {
+        console.log('  - 回滚: description 字段不存在,跳过');
+      }
+    },
+  },
+  {
+    version: 12,
+    name: 'add_cached_tokens_to_api_requests',
+    up: async (conn: Connection) => {
+      const [tables] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'api_requests'
+        AND COLUMN_NAME = 'cached_tokens'
+      `);
+      const result = tables as any[];
+
+      if (result[0].count === 0) {
+        console.log('  - 添加 api_requests.cached_tokens 字段');
+        await conn.query(`
+          ALTER TABLE api_requests
+          ADD COLUMN cached_tokens INT DEFAULT 0 AFTER total_tokens
+        `);
+      } else {
+        console.log('  - api_requests.cached_tokens 字段已存在,跳过');
+      }
+    },
+    down: async (conn: Connection) => {
+      const [tables] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'api_requests'
+        AND COLUMN_NAME = 'cached_tokens'
+      `);
+      const result = tables as any[];
+
+      if (result[0].count > 0) {
+        console.log('  - 回滚: 移除 api_requests.cached_tokens 字段');
+        await conn.query(`
+          ALTER TABLE api_requests
+          DROP COLUMN cached_tokens
+        `);
+      } else {
+        console.log('  - 回滚: cached_tokens 字段不存在,跳过');
+      }
     },
   },
 ];

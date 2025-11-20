@@ -13,6 +13,7 @@ type ApiRequestBuffer = {
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
+  cached_tokens?: number;
   status: string;
   response_time?: number;
   error_message?: string;
@@ -202,7 +203,7 @@ async function flushApiRequestBuffer() {
         responseBody = truncateToByteLength(responseBody, MAX_COLUMN_BYTES);
       }
 
-      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       values.push(
         request.id,
         request.virtual_key_id || null,
@@ -211,6 +212,7 @@ async function flushApiRequestBuffer() {
         request.prompt_tokens || 0,
         request.completion_tokens || 0,
         request.total_tokens || 0,
+        request.cached_tokens || 0,
         request.status,
         request.response_time || null,
         request.error_message || null,
@@ -228,7 +230,7 @@ async function flushApiRequestBuffer() {
       await conn.query(
         `INSERT INTO api_requests (
           id, virtual_key_id, provider_id, model,
-          prompt_tokens, completion_tokens, total_tokens,
+          prompt_tokens, completion_tokens, total_tokens, cached_tokens,
           status, response_time, error_message, request_body, response_body, cache_hit,
           request_type, compression_original_tokens, compression_saved_tokens, created_at
         ) VALUES ${placeholders.join(', ')}`,
@@ -883,8 +885,10 @@ export const apiRequestDb = {
           SUM(CASE WHEN ar.cache_hit = 0 THEN ar.total_tokens ELSE 0 END) as total_tokens,
           SUM(CASE WHEN ar.cache_hit = 0 THEN ar.prompt_tokens ELSE 0 END) as prompt_tokens,
           SUM(CASE WHEN ar.cache_hit = 0 THEN ar.completion_tokens ELSE 0 END) as completion_tokens,
+          SUM(ar.cached_tokens) as cached_tokens,
           AVG(ar.response_time) as avg_response_time,
           SUM(CASE WHEN ar.cache_hit = 1 THEN 1 ELSE 0 END) as cache_hits,
+          SUM(CASE WHEN ar.cached_tokens > 0 THEN 1 ELSE 0 END) as prompt_cache_hits,
           0 as cache_saved_tokens
         FROM api_requests ar
         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
@@ -901,8 +905,10 @@ export const apiRequestDb = {
           totalTokens: 0,
           promptTokens: 0,
           completionTokens: 0,
+          cachedTokens: 0,
           avgResponseTime: 0,
           cacheHits: 0,
+          promptCacheHits: 0,
           cacheSavedTokens: 0,
         };
       }
@@ -915,8 +921,10 @@ export const apiRequestDb = {
         totalTokens: row.total_tokens || 0,
         promptTokens: row.prompt_tokens || 0,
         completionTokens: row.completion_tokens || 0,
+        cachedTokens: row.cached_tokens || 0,
         avgResponseTime: row.avg_response_time || 0,
         cacheHits: row.cache_hits || 0,
+        promptCacheHits: row.prompt_cache_hits || 0,
         cacheSavedTokens: row.cache_saved_tokens || 0,
       };
     } finally {

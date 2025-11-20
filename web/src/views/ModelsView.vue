@@ -95,7 +95,7 @@
             <n-select
               v-model:value="formValue.protocol"
               :options="protocolOptions"
-              placeholder="选择协议（可选，默认使用供应商协议）"
+              placeholder="选择协议（可选，默认使用 OpenAI 协议）"
               size="small"
               clearable
             />

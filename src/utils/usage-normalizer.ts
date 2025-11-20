@@ -9,6 +9,7 @@ export interface NormalizedTokenCounts {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  cachedTokens: number;
 }
 
 /**
@@ -16,7 +17,7 @@ export interface NormalizedTokenCounts {
  */
 export function normalizeUsageCounts(usage: any): NormalizedTokenCounts {
   if (!usage || typeof usage !== 'object') {
-    return { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    return { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedTokens: 0 };
   }
 
   // Base prompt/input tokens
@@ -45,9 +46,12 @@ export function normalizeUsageCounts(usage: any): NormalizedTokenCounts {
     ? usage.cache_read_input_tokens
     : 0;
 
+  // Total cached tokens (OpenAI + Anthropic)
+  const totalCached = openaiCached + anthropicCacheCreation + anthropicCacheRead;
+
   // Only add cached tokens when base is zero (defensive, avoid double counting)
   if (prompt === 0) {
-    prompt = prompt + openaiCached + anthropicCacheCreation + anthropicCacheRead;
+    prompt = prompt + totalCached;
   }
 
   // Total tokens: prefer provided value, else sum
@@ -59,5 +63,6 @@ export function normalizeUsageCounts(usage: any): NormalizedTokenCounts {
     promptTokens: prompt || 0,
     completionTokens: completion || 0,
     totalTokens: total || 0,
+    cachedTokens: totalCached || 0,
   };
 }

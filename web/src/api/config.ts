@@ -25,8 +25,10 @@ export interface ApiStats {
   totalTokens: number;
   promptTokens: number;
   completionTokens: number;
+  cachedTokens: number;
   avgResponseTime: number;
   cacheHits: number;
+  promptCacheHits: number;
   cacheSavedTokens: number;
 }
 

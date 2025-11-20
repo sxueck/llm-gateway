@@ -312,6 +312,7 @@ export class ProtocolAdapter {
     let promptTokens = 0;
     let completionTokens = 0;
     let totalTokens = 0;
+    let cachedTokens = 0;
     const streamChunks: string[] = [];
     let reasoningContent = '';
     let thinkingBlocks: ThinkingBlock[] = [];
@@ -329,7 +330,7 @@ export class ProtocolAdapter {
         const sseData = `data: ${chunkData}\n\n`;
 
         streamChunks.push(sseData);
-        
+
         // 使用背压控制优化内存
         if (!reply.raw.write(sseData)) {
           // 如果写入缓冲区已满，等待 drain 事件
@@ -351,6 +352,9 @@ export class ProtocolAdapter {
             totalTokens = norm.totalTokens;
           } else if (promptTokens > 0 || completionTokens > 0) {
             totalTokens = promptTokens + completionTokens;
+          }
+          if (typeof norm.cachedTokens === 'number' && norm.cachedTokens > 0) {
+            cachedTokens = norm.cachedTokens;
           }
         }
 
@@ -383,6 +387,7 @@ export class ProtocolAdapter {
       promptTokens,
       completionTokens,
       totalTokens,
+      cachedTokens,
       streamChunks,
       reasoningContent: reasoningContent || undefined,
       thinkingBlocks: thinkingBlocks.length > 0 ? thinkingBlocks : undefined
@@ -445,6 +450,26 @@ export class ProtocolAdapter {
     return response;
   }
 
+  private buildResponsesRequestParams(options: any, includePreviousResponseId: boolean): any {
+    const params: any = {};
+    if (options.instructions !== undefined) params.instructions = options.instructions;
+    if (options.temperature !== undefined) params.temperature = options.temperature;
+    if (options.max_output_tokens !== undefined) params.max_output_tokens = options.max_output_tokens;
+    if (options.top_p !== undefined) params.top_p = options.top_p;
+    if (options.store !== undefined) params.store = options.store;
+    if (options.metadata !== undefined) params.metadata = options.metadata;
+    if (options.tools !== undefined) params.tools = options.tools;
+    if (options.tool_choice !== undefined) params.tool_choice = options.tool_choice;
+    if (options.parallel_tool_calls !== undefined) params.parallel_tool_calls = options.parallel_tool_calls;
+    if (options.reasoning !== undefined) params.reasoning = options.reasoning;
+    if (options.text !== undefined) params.text = options.text;
+    if (includePreviousResponseId && options.previous_response_id !== undefined) params.previous_response_id = options.previous_response_id;
+    if (options.truncation !== undefined) params.truncation = options.truncation;
+    if (options.user !== undefined) params.user = options.user;
+    if (options.include !== undefined) params.include = options.include;
+    return params;
+  }
+
   async createResponse(
     config: ProtocolConfig,
     input: string | any[],
@@ -473,21 +498,7 @@ export class ProtocolAdapter {
     };
 
     // 添加 Responses API 支持的参数
-    if (options.instructions !== undefined) requestParams.instructions = options.instructions;
-    if (options.temperature !== undefined) requestParams.temperature = options.temperature;
-    if (options.max_output_tokens !== undefined) requestParams.max_output_tokens = options.max_output_tokens;
-    if (options.top_p !== undefined) requestParams.top_p = options.top_p;
-    if (options.store !== undefined) requestParams.store = options.store;
-    if (options.metadata !== undefined) requestParams.metadata = options.metadata;
-    if (options.tools !== undefined) requestParams.tools = options.tools;
-    if (options.tool_choice !== undefined) requestParams.tool_choice = options.tool_choice;
-    if (options.parallel_tool_calls !== undefined) requestParams.parallel_tool_calls = options.parallel_tool_calls;
-    if (options.reasoning !== undefined) requestParams.reasoning = options.reasoning;
-    if (options.text !== undefined) requestParams.text = options.text;
-    if (options.previous_response_id !== undefined) requestParams.previous_response_id = options.previous_response_id;
-    if (options.truncation !== undefined) requestParams.truncation = options.truncation;
-    if (options.user !== undefined) requestParams.user = options.user;
-    if (options.include !== undefined) requestParams.include = options.include;
+    Object.assign(requestParams, this.buildResponsesRequestParams(options, true));
 
     // 构建请求选项
     const requestOptions: any = {};
@@ -537,20 +548,7 @@ export class ProtocolAdapter {
     };
 
     // 添加 Responses API 支持的参数
-    if (options.instructions !== undefined) requestParams.instructions = options.instructions;
-    if (options.temperature !== undefined) requestParams.temperature = options.temperature;
-    if (options.max_output_tokens !== undefined) requestParams.max_output_tokens = options.max_output_tokens;
-    if (options.top_p !== undefined) requestParams.top_p = options.top_p;
-    if (options.store !== undefined) requestParams.store = options.store;
-    if (options.metadata !== undefined) requestParams.metadata = options.metadata;
-    if (options.tools !== undefined) requestParams.tools = options.tools;
-    if (options.tool_choice !== undefined) requestParams.tool_choice = options.tool_choice;
-    if (options.parallel_tool_calls !== undefined) requestParams.parallel_tool_calls = options.parallel_tool_calls;
-    if (options.reasoning !== undefined) requestParams.reasoning = options.reasoning;
-    if (options.text !== undefined) requestParams.text = options.text;
-    if (options.truncation !== undefined) requestParams.truncation = options.truncation;
-    if (options.user !== undefined) requestParams.user = options.user;
-    if (options.include !== undefined) requestParams.include = options.include;
+    Object.assign(requestParams, this.buildResponsesRequestParams(options, false));
 
     // 构建请求选项
     const requestOptions: any = {};
@@ -577,6 +575,7 @@ export class ProtocolAdapter {
     let promptTokens = 0;
     let completionTokens = 0;
     let totalTokens = 0;
+    let cachedTokens = 0;
     const streamChunks: string[] = [];
 
     try {
@@ -591,7 +590,7 @@ export class ProtocolAdapter {
         const sseData = `data: ${chunkData}\n\n`;
 
         streamChunks.push(sseData);
-        
+
         // 使用背压控制优化内存
         if (!reply.raw.write(sseData)) {
           await new Promise<void>((resolve) => {
@@ -614,6 +613,9 @@ export class ProtocolAdapter {
           } else if (promptTokens > 0 || completionTokens > 0) {
             totalTokens = promptTokens + completionTokens;
           }
+          if (typeof norm.cachedTokens === 'number' && norm.cachedTokens > 0) {
+            cachedTokens = norm.cachedTokens;
+          }
         }
       }
     } catch (error: any) {
@@ -632,6 +634,7 @@ export class ProtocolAdapter {
       promptTokens,
       completionTokens,
       totalTokens,
+      cachedTokens,
       streamChunks,
     };
   }

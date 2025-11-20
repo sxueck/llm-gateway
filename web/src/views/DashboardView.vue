@@ -82,16 +82,16 @@
         <n-gi>
           <n-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-header">缓存命中</div>
-              <div class="stat-main-value">{{ formatNumber(stats?.cacheHits || 0) }}</div>
+              <div class="stat-header">缓存 Tokens</div>
+              <div class="stat-main-value">{{ formatTokenNumber(stats?.cachedTokens || 0) }}</div>
               <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">缓存命中:</span>
+                  <span class="stat-detail-value">{{ formatNumber(stats?.promptCacheHits || 0) }}</span>
+                </span>
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">命中率:</span>
                   <span class="stat-detail-value">{{ formatPercentage(cacheHitRate) }}%</span>
-                </span>
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">节省:</span>
-                  <span class="stat-detail-value">{{ formatTokenNumber(stats?.cacheSavedTokens || 0) }}</span>
                 </span>
               </div>
             </div>
@@ -313,8 +313,11 @@ const topModelTokens = computed(() => {
 });
 
 const cacheHitRate = computed(() => {
-  if (!stats.value || stats.value.totalRequests === 0) return 0;
-  return (stats.value.cacheHits / stats.value.totalRequests) * 100;
+  if (!stats.value) return 0;
+  const cached = stats.value.cachedTokens || 0;
+  const prompt = stats.value.promptTokens || 0;
+  const denom = cached + prompt;
+  return denom === 0 ? 0 : (cached / denom) * 100;
 });
 
 const promptTokens = computed(() => {
