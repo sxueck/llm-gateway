@@ -188,20 +188,6 @@ export class ProtocolAdapter {
     if (options.response_format !== undefined) requestParams.response_format = options.response_format;
     if (options.seed !== undefined) requestParams.seed = options.seed;
 
-    if (config.modelAttributes?.supports_reasoning) {
-      requestParams.extra_body = {
-        ...requestParams.extra_body,
-        enable_thinking: true,
-      };
-    }
-
-    if (config.modelAttributes?.supports_interleaved_thinking) {
-      requestParams.extra_body = {
-        ...requestParams.extra_body,
-        reasoning_split: true,
-      };
-    }
-
     // 构建请求选项，支持超时和取消
     const requestOptions: any = {};
     if (options.requestTimeout !== undefined) {
@@ -272,20 +258,6 @@ export class ProtocolAdapter {
     if (options.n !== undefined) requestParams.n = options.n;
     if (options.response_format !== undefined) requestParams.response_format = options.response_format;
     if (options.seed !== undefined) requestParams.seed = options.seed;
-
-    if (config.modelAttributes?.supports_reasoning) {
-      requestParams.extra_body = {
-        ...requestParams.extra_body,
-        enable_thinking: true,
-      };
-    }
-
-    if (config.modelAttributes?.supports_interleaved_thinking) {
-      requestParams.extra_body = {
-        ...requestParams.extra_body,
-        reasoning_split: true,
-      };
-    }
 
     // 构建请求选项，支持超时和取消
     const requestOptions: any = {};
