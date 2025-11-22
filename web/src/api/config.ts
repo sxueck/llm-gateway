@@ -136,6 +136,8 @@ export const configApi = {
     corsEnabled: boolean;
     publicUrl: string;
     litellmCompatEnabled: boolean;
+    healthMonitoringEnabled: boolean;
+    persistentMonitoringEnabled: boolean;
     antiBot: {
       enabled: boolean;
       blockBots: boolean;
@@ -158,6 +160,8 @@ export const configApi = {
     corsEnabled?: boolean;
     publicUrl?: string;
     litellmCompatEnabled?: boolean;
+    healthMonitoringEnabled?: boolean;
+    persistentMonitoringEnabled?: boolean;
     antiBot?: {
       enabled?: boolean;
       blockBots?: boolean;
@@ -169,6 +173,31 @@ export const configApi = {
     };
   }): Promise<{ success: boolean }> {
     return request.post('/admin/config/system-settings', data);
+  },
+
+  getHealthTargets(): Promise<{ targets: any[] }> {
+    return request.get('/admin/config/health-targets');
+  },
+
+  createHealthTarget(data: {
+    type: 'model' | 'virtual_model';
+    target_id: string;
+    check_interval_seconds?: number;
+    check_prompt?: string;
+  }): Promise<any> {
+    return request.post('/admin/config/health-targets', data);
+  },
+
+  updateHealthTarget(id: string, data: {
+    enabled?: boolean;
+    check_interval_seconds?: number;
+    check_prompt?: string;
+  }): Promise<any> {
+    return request.put(`/admin/config/health-targets/${id}`, data);
+  },
+
+  deleteHealthTarget(id: string): Promise<{ success: boolean }> {
+    return request.delete(`/admin/config/health-targets/${id}`);
   },
 };
 

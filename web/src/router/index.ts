@@ -17,6 +17,12 @@ const router = createRouter({
       meta: { requiresAuth: false },
     },
     {
+      path: '/status',
+      name: 'HealthStatus',
+      component: () => import('@/views/HealthStatusView.vue'),
+      meta: { requiresAuth: false },
+    },
+    {
       path: '/',
       component: () => import('@/layouts/MainLayout.vue'),
       meta: { requiresAuth: true },
@@ -84,6 +90,11 @@ const router = createRouter({
           path: 'security-settings',
           name: 'SecuritySettings',
           component: () => import('@/views/SecuritySettingsView.vue'),
+        },
+        {
+          path: 'health-monitoring-settings',
+          name: 'HealthMonitoringSettings',
+          component: () => import('@/views/HealthMonitoringSettingsView.vue'),
         },
       ],
     },

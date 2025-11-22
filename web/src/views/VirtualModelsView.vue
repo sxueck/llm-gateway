@@ -22,9 +22,6 @@
         </n-space>
       </n-space>
 
-      <n-alert type="info">
-        智能路由作为统一入口,请求会根据配置的策略分发到目标模型。实际请求仍会通过目标模型匹配的 Portkey 网关路由规则进行转发。
-      </n-alert>
 
       <n-card class="table-card">
         <n-data-table

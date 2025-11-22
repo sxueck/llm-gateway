@@ -239,13 +239,21 @@ const columns = [
       const models = uniqueModelIds.map(id => modelStore.models.find(m => m.id === id)).filter(Boolean);
 
       return h(NSpace, { size: 4, wrap: true }, {
-        default: () => models.map(model => {
-          if (!model) return null;
-          if (model.isVirtual) {
-            return h(NTag, { type: 'info', size: 'small', round: true }, { default: () => model.name });
+        default: () => {
+          const max = 5;
+          const tags = models.slice(0, max).map(model => {
+            if (!model) return null;
+            if (model.isVirtual) {
+              return h(NTag, { type: 'info', size: 'small', round: true }, { default: () => model.name });
+            }
+            return h(NTag, { type: 'default', size: 'small' }, { default: () => model.name });
+          }).filter(Boolean);
+          const remaining = models.length - max;
+          if (remaining > 0) {
+            tags.push(h(NTag, { type: 'default', size: 'small' }, { default: () => `+${remaining}` }));
           }
-          return h(NTag, { type: 'default', size: 'small' }, { default: () => model.name });
-        }).filter(Boolean),
+          return tags;
+        },
       });
     },
   },

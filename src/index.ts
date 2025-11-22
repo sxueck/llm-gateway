@@ -16,9 +16,12 @@ import { proxyRoutes } from './routes/proxy.js';
 import { anthropicRoutes } from './routes/anthropic.js';
 import { modelPresetsRoutes } from './routes/model-presets.js';
 import { expertRoutingRoutes } from './routes/expert-routing.js';
+import { healthRoutes } from './routes/health.js';
 import { memoryLogger } from './services/logger.js';
 import { modelPresetsService } from './services/model-presets.js';
 import { demoModeService } from './services/demo-mode.js';
+import { healthCheckerService } from './services/health-checker.js';
+import { healthRunDb } from './db/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -115,6 +118,7 @@ await fastify.register(virtualKeyRoutes, { prefix: '/api/admin/virtual-keys' });
 await fastify.register(configRoutes, { prefix: '/api/admin/config' });
 await fastify.register(modelPresetsRoutes, { prefix: '/api/admin/model-presets' });
 await fastify.register(expertRoutingRoutes, { prefix: '/api/admin/expert-routing' });
+await fastify.register(healthRoutes);
 
 memoryLogger.info('Routes registered', 'System');
 
@@ -206,6 +210,27 @@ try {
   setInterval(checkAndUpdateModelPresets, 24 * 60 * 60 * 1000);
   memoryLogger.info('已启动模型预设自动更新任务，每 24 小时检查一次', 'System');
 
+  // 根据系统设置决定是否启动健康检查服务
+  const persistentMonitoringCfg = await systemConfigDb.get('persistent_monitoring_enabled');
+  if (persistentMonitoringCfg && persistentMonitoringCfg.value === 'true') {
+    await healthCheckerService.start();
+    memoryLogger.info('健康检查服务已启动', 'System');
+  } else {
+    memoryLogger.info('持久监控未启用，未启动健康检查服务', 'System');
+  }
+
+  // 每天清理一次健康检查历史记录（保留7天）
+  setInterval(async () => {
+    try {
+      const deletedCount = await healthRunDb.cleanOldRecords(7);
+      if (deletedCount > 0) {
+        memoryLogger.info(`清理健康检查历史记录: 删除 ${deletedCount} 条记录`, 'System');
+      }
+    } catch (error: any) {
+      memoryLogger.error(`清理健康检查历史记录失败: ${error.message}`, 'System');
+    }
+  }, 24 * 60 * 60 * 1000);
+
   await demoModeService.start();
 } catch (err: any) {
   fastify.log.error(err);
@@ -217,6 +242,9 @@ const gracefulShutdown = async (signal: string) => {
   memoryLogger.info(`收到 ${signal} 信号，开始优雅关闭...`, 'System');
 
   try {
+    await healthCheckerService.stop();
+    memoryLogger.info('健康检查服务已停止', 'System');
+
     demoModeService.stop();
     memoryLogger.info('演示模式服务已停止', 'System');
 

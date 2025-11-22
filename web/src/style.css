@@ -55,20 +55,6 @@ body {
   font-family: inherit;
 }
 
-.n-button--primary-type {
-  background: linear-gradient(135deg, #0f6b4a 0%, #0d5a3e 100%);
-  border: none;
-}
-
-.n-button--primary-type:hover {
-  background: linear-gradient(135deg, #0d5a3e 0%, #0a4830 100%);
-  box-shadow: 0 2px 8px rgba(15, 107, 74, 0.3);
-}
-
-.n-button--primary-type:active {
-  background: linear-gradient(135deg, #0a4830 0%, #083624 100%);
-}
-
 .n-data-table {
   background: transparent;
 }

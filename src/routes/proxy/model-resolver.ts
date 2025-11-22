@@ -1,5 +1,5 @@
 import { FastifyRequest } from 'fastify';
-import { providerDb, modelDb, routingConfigDb } from '../../db/index.js';
+import { providerDb, modelDb, routingConfigDb, systemConfigDb } from '../../db/index.js';
 import { memoryLogger } from '../../services/logger.js';
 import { resolveProviderFromModel, selectRoutingTarget, type RoutingConfig } from './routing.js';
 
@@ -32,6 +32,87 @@ export async function resolveModelAndProvider(
   let provider;
   let currentModel;
   let providerId: string | undefined;
+
+  // 放宽监控专用密钥限制：健康检查请求可不依赖虚拟密钥已绑定模型
+  try {
+    const isHealthCheck = String((request.headers['x-health-check'] as any) || '').toLowerCase() === 'true';
+    if (isHealthCheck) {
+      const monitoringKeyIdCfg = await systemConfigDb.get('monitoring_virtual_key_id');
+      if (monitoringKeyIdCfg && monitoringKeyIdCfg.value === virtualKey.id) {
+        const requestedModel = (request.body as any)?.model;
+        if (!requestedModel) {
+          return {
+            code: 400,
+            body: {
+              error: {
+                message: 'Missing model for health check',
+                type: 'invalid_request_error',
+                param: null,
+                code: 'missing_model'
+              }
+            }
+          };
+        }
+
+        const allModels = await modelDb.getAll();
+        const model = (allModels as any[]).find(m =>
+          m?.model_identifier === requestedModel || m?.name === requestedModel
+        );
+
+        if (!model) {
+          memoryLogger.error(`Health check model not found: ${requestedModel}`, 'ModelResolver');
+          return {
+            code: 404,
+            body: {
+              error: {
+                message: `Model not found for health check: ${requestedModel}`,
+                type: 'invalid_request_error',
+                param: null,
+                code: 'model_not_found'
+              }
+            }
+          };
+        }
+
+        currentModel = model;
+        try {
+          const result = await resolveProviderFromModel(model, request as any, virtualKey.id);
+          provider = result.provider;
+          providerId = result.providerId;
+
+          if (result.resolvedModel) {
+            currentModel = result.resolvedModel;
+          }
+
+          const canRetry = !!(model.is_virtual && model.routing_config_id && result.excludeProviders);
+
+          return {
+            provider,
+            providerId: providerId!,
+            currentModel,
+            excludeProviders: result.excludeProviders,
+            canRetry,
+            modelId: model.id
+          };
+        } catch (e: any) {
+          memoryLogger.error(`Health check provider resolution failed: ${e.message}`, 'ModelResolver');
+          return {
+            code: 500,
+            body: {
+              error: {
+                message: e.message || 'Health check resolution failed',
+                type: 'internal_error',
+                param: null,
+                code: 'health_check_resolution_failed'
+              }
+            }
+          };
+        }
+      }
+    }
+  } catch (_e) {
+    // 忽略健康检查快速路径中的异常，继续走常规分支
+  }
 
   if (virtualKey.model_id) {
     const model = await modelDb.getById(virtualKey.model_id);

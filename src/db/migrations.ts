@@ -440,6 +440,114 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 13,
+    name: 'create_health_monitoring_tables',
+    up: async (conn: Connection) => {
+      // 创建 health_targets 表
+      const [healthTargets] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'health_targets'
+      `);
+      const healthTargetsExists = (healthTargets as any[])[0].count > 0;
+
+      if (!healthTargetsExists) {
+        console.log('  - 创建 health_targets 表');
+        await conn.query(`
+          CREATE TABLE health_targets (
+            id VARCHAR(255) PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            type ENUM('model', 'virtual_model') NOT NULL,
+            target_id VARCHAR(255) NOT NULL COMMENT '模型或虚拟模型的ID',
+            enabled TINYINT DEFAULT 1,
+            check_interval_seconds INT DEFAULT 300 COMMENT '检查频率(秒)',
+            check_prompt TEXT DEFAULT NULL COMMENT '健康检查使用的提示词',
+            check_config TEXT DEFAULT NULL COMMENT 'JSON配置: 超时、重试、并发等',
+            created_at BIGINT NOT NULL,
+            updated_at BIGINT NOT NULL,
+            INDEX idx_health_targets_type (type),
+            INDEX idx_health_targets_enabled (enabled),
+            INDEX idx_health_targets_target_id (target_id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+      } else {
+        console.log('  - health_targets 表已存在,跳过');
+      }
+
+      // 创建 health_runs 表
+      const [healthRuns] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'health_runs'
+      `);
+      const healthRunsExists = (healthRuns as any[])[0].count > 0;
+
+      if (!healthRunsExists) {
+        console.log('  - 创建 health_runs 表');
+        await conn.query(`
+          CREATE TABLE health_runs (
+            id VARCHAR(255) PRIMARY KEY,
+            target_id VARCHAR(255) NOT NULL,
+            status ENUM('success', 'error') NOT NULL,
+            latency_ms INT NOT NULL COMMENT '总耗时(毫秒)',
+            error_type VARCHAR(100) DEFAULT NULL COMMENT '错误类型',
+            error_message TEXT DEFAULT NULL COMMENT '错误摘要',
+            request_id VARCHAR(255) DEFAULT NULL COMMENT '请求ID,对齐api_requests',
+            created_at BIGINT NOT NULL,
+            FOREIGN KEY (target_id) REFERENCES health_targets(id) ON DELETE CASCADE,
+            INDEX idx_health_runs_target (target_id),
+            INDEX idx_health_runs_created_at (created_at),
+            INDEX idx_health_runs_status (status)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+      } else {
+        console.log('  - health_runs 表已存在,跳过');
+      }
+
+      // 创建 health_summaries 表 (可选,MVP阶段可以不创建)
+      const [healthSummaries] = await conn.query(`
+        SELECT COUNT(*) as count
+        FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'health_summaries'
+      `);
+      const healthSummariesExists = (healthSummaries as any[])[0].count > 0;
+
+      if (!healthSummariesExists) {
+        console.log('  - 创建 health_summaries 表');
+        await conn.query(`
+          CREATE TABLE health_summaries (
+            id VARCHAR(255) PRIMARY KEY,
+            target_id VARCHAR(255) NOT NULL,
+            window_start BIGINT NOT NULL COMMENT '时间窗口起点',
+            window_end BIGINT NOT NULL COMMENT '时间窗口终点',
+            total_checks INT DEFAULT 0,
+            success_count INT DEFAULT 0,
+            error_count INT DEFAULT 0,
+            avg_latency_ms INT DEFAULT 0,
+            p50_latency_ms INT DEFAULT 0,
+            p95_latency_ms INT DEFAULT 0,
+            p99_latency_ms INT DEFAULT 0,
+            created_at BIGINT NOT NULL,
+            FOREIGN KEY (target_id) REFERENCES health_targets(id) ON DELETE CASCADE,
+            INDEX idx_health_summaries_target (target_id),
+            INDEX idx_health_summaries_window (window_start, window_end)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+      } else {
+        console.log('  - health_summaries 表已存在,跳过');
+      }
+    },
+    down: async (conn: Connection) => {
+      console.log('  - 回滚: 删除健康检查相关表');
+      await conn.query('DROP TABLE IF EXISTS health_summaries');
+      await conn.query('DROP TABLE IF EXISTS health_runs');
+      await conn.query('DROP TABLE IF EXISTS health_targets');
+    },
+  },
 ];
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {

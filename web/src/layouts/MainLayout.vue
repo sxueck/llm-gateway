@@ -107,6 +107,7 @@ import {
   FlaskOutline,
   GitBranchOutline,
   ShieldOutline,
+  PulseOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
@@ -207,6 +208,11 @@ const generalMenuOptions = computed(() => [
         label: t('settings.security'),
         key: 'security-settings',
         icon: () => h(NIcon, null, { default: () => h(ShieldOutline) }),
+      },
+      {
+        label: t('settings.healthMonitoring'),
+        key: 'health-monitoring-settings',
+        icon: () => h(NIcon, null, { default: () => h(PulseOutline) }),
       },
     ],
   },
