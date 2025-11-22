@@ -96,16 +96,6 @@
                 <div class="target-header">
                   <div class="target-title-row">
                     <span class="target-title">{{ target.displayTitle || target.targetName }}</span>
-                    <n-button
-                      text
-                      size="tiny"
-                      @click="openEditModal(target)"
-                      style="margin-left: 8px"
-                    >
-                      <template #icon>
-                        <n-icon :component="CreateOutline" />
-                      </template>
-                    </n-button>
                   </div>
                   <n-space :size="6" style="margin-top: 4px">
                     <n-tag size="tiny" :type="target.targetType === 'virtual_model' ? 'info' : 'default'">
@@ -165,56 +155,6 @@
     />
 
     <!-- 编辑目标弹窗 -->
-    <n-modal
-      v-model:show="showEditModal"
-      preset="dialog"
-      title="编辑监控目标"
-      :show-icon="false"
-      style="width: 500px"
-    >
-      <n-form
-        ref="editFormRef"
-        :model="editForm"
-        label-placement="left"
-        label-width="120"
-        style="margin-top: 16px"
-      >
-        <n-form-item label="目标名称">
-          <n-input :value="editForm.targetName" disabled />
-        </n-form-item>
-        <n-form-item label="显示标题">
-          <n-input
-            v-model:value="editForm.display_title"
-            placeholder="留空使用默认名称"
-          />
-        </n-form-item>
-        <n-form-item label="检查间隔(秒)">
-          <n-input-number
-            v-model:value="editForm.check_interval_seconds"
-            :min="30"
-            :step="30"
-            style="width: 100%"
-          />
-        </n-form-item>
-        <n-form-item label="检查提示词">
-          <n-input
-            v-model:value="editForm.check_prompt"
-            type="textarea"
-            :rows="3"
-            placeholder="留空使用默认提示词"
-          />
-        </n-form-item>
-        <n-form-item label="启用状态">
-          <n-switch v-model:value="editForm.enabled" />
-        </n-form-item>
-      </n-form>
-      <template #action>
-        <n-space>
-          <n-button @click="showEditModal = false">取消</n-button>
-          <n-button type="primary" @click="saveEdit" :loading="saving">保存</n-button>
-        </n-space>
-      </template>
-    </n-modal>
   </div>
 </template>
 
@@ -234,11 +174,6 @@ import {
   NSelect,
   NEmpty,
   NIcon,
-  NModal,
-  NForm,
-  NFormItem,
-  NInputNumber,
-  NSwitch,
   useMessage,
 } from 'naive-ui';
 import {
@@ -246,7 +181,6 @@ import {
   CloseCircle,
   WarningOutline,
   SearchOutline,
-  CreateOutline,
 } from '@vicons/ionicons5';
 import request from '@/utils/request';
 import HealthTimeline from '@/components/HealthTimeline.vue';
@@ -303,7 +237,6 @@ interface TargetSummary {
 
 const message = useMessage();
 const loading = ref(false);
-const saving = ref(false);
 const globalSummary = ref<GlobalSummary | null>(null);
 const targets = ref<TargetSummary[]>([]);
 const searchKeyword = ref('');
@@ -319,16 +252,6 @@ const selectedCheck = ref<{
   errorMessage?: string;
 } | null>(null);
 
-const showEditModal = ref(false);
-const editFormRef = ref();
-const editForm = ref({
-  targetId: '',
-  targetName: '',
-  display_title: '',
-  check_interval_seconds: 300,
-  check_prompt: '',
-  enabled: true,
-});
 
 const statusOptions = [
   { label: '健康', value: 'ok' },
@@ -399,41 +322,7 @@ function handleCheckClick(check: { status: 'success' | 'error'; timestamp: numbe
   showCheckDetail.value = true;
 }
 
-function openEditModal(target: TargetSummary) {
-  editForm.value = {
-    targetId: target.targetId,
-    targetName: target.targetName,
-    display_title: target.displayTitle || '',
-    check_interval_seconds: target.checkIntervalSeconds,
-    check_prompt: '',
-    enabled: true,
-  };
-  showEditModal.value = true;
-}
 
-async function saveEdit() {
-  saving.value = true;
-  try {
-    const updates: any = {
-      display_title: editForm.value.display_title || null,
-      check_interval_seconds: editForm.value.check_interval_seconds,
-      enabled: editForm.value.enabled,
-    };
-
-    if (editForm.value.check_prompt) {
-      updates.check_prompt = editForm.value.check_prompt;
-    }
-
-    await request.patch(`/api/admin/health/targets/${editForm.value.targetId}`, updates);
-    message.success('更新成功');
-    showEditModal.value = false;
-    refresh();
-  } catch (error: any) {
-    message.error('更新失败: ' + (error.response?.data?.error?.message || error.message));
-  } finally {
-    saving.value = false;
-  }
-}
 
 function toggleAutoRefresh() {
   autoRefresh.value = !autoRefresh.value;
