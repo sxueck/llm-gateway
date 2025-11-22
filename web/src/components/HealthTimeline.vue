@@ -26,7 +26,7 @@ interface HealthCheck {
   errorMessage?: string;
 }
 
-const props = defineProps<{
+defineProps<{
   history: HealthCheck[];
 }>();
 

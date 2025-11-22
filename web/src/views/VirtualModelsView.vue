@@ -106,7 +106,6 @@ import {
   NCode,
   NTag,
   NPopconfirm,
-  NAlert,
 } from 'naive-ui';
 import {
   AddOutline,

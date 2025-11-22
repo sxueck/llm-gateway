@@ -338,7 +338,16 @@ function handleTypeChange() {
 
 async function handleAddTarget() {
   try {
-    await configApi.createHealthTarget(addTargetForm.value);
+    if (!addTargetForm.value.target_id) {
+      message.error('请选择目标模型');
+      return false;
+    }
+    await configApi.createHealthTarget({
+      type: addTargetForm.value.type,
+      target_id: addTargetForm.value.target_id,
+      check_interval_seconds: addTargetForm.value.check_interval_seconds,
+      check_prompt: addTargetForm.value.check_prompt,
+    });
     message.success(t('messages.operationSuccess'));
     showAddTargetModal.value = false;
     await loadHealthTargets();
