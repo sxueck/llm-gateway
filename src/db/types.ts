@@ -18,6 +18,7 @@ export interface Model {
 export interface HealthTarget {
   id: string;
   name: string;
+  display_title: string | null;
   type: 'model' | 'virtual_model';
   target_id: string;
   enabled: number;

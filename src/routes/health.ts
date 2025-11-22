@@ -1,6 +1,13 @@
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { healthAggregatorService } from '../services/health-aggregator.js';
 import { healthTargetDb, systemConfigDb } from '../db/index.js';
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    authenticate: (request: any, reply: any) => Promise<void>;
+  }
+}
 
 // 简单的内存限流器
 class RateLimiter {
@@ -52,8 +59,15 @@ setInterval(() => {
 }, 600000);
 
 export async function healthRoutes(fastify: FastifyInstance) {
-  // 公开接口开关门控
+  // 公开接口开关门控（仅作用于 /public/health 与 /api/public/health）
   fastify.addHook('preHandler', async (request, reply) => {
+    const url: string = request.url || '';
+    const isPublic = url.startsWith('/public/health') || url.startsWith('/api/public/health');
+    if (!isPublic) {
+      // 非公开健康接口（例如 admin 接口）不受此门控影响
+      return;
+    }
+
     const persistentCfg = await systemConfigDb.get('persistent_monitoring_enabled');
     const publicCfg = await systemConfigDb.get('health_monitoring_enabled');
     const persistent = persistentCfg ? persistentCfg.value === 'true' : false;
@@ -71,8 +85,14 @@ export async function healthRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // 限流中间件
+  // 限流中间件（仅作用于公开健康接口）
   fastify.addHook('preHandler', async (request, reply) => {
+    const url: string = request.url || '';
+    const isPublic = url.startsWith('/public/health') || url.startsWith('/api/public/health');
+    if (!isPublic) {
+      return;
+    }
+
     const ip = request.ip;
     if (!rateLimiter.isAllowed(ip)) {
       reply.code(429).send({
@@ -401,6 +421,271 @@ export async function healthRoutes(fastify: FastifyInstance) {
           totalPages: Math.ceil(total / pageSize),
         },
         timestamp: Date.now(),
+      };
+    } catch (error: any) {
+      reply.code(500).send({
+        error: {
+          message: error.message || '服务器内部错误',
+          type: 'internal_error',
+          code: 'internal_server_error',
+        },
+      });
+    }
+  });
+
+  // ========================================
+  // Admin API Endpoints (Require Authentication)
+  // ========================================
+
+  const updateTargetSchema = z.object({
+    display_title: z.string().nullable().optional(),
+    check_interval_seconds: z.coerce.number().int().min(30).optional(),
+    check_prompt: z.string().optional(),
+    enabled: z.coerce.boolean().optional(),
+  });
+
+  /**
+   * GET /admin/health/targets
+   * 获取所有健康监控目标
+   */
+  fastify.get('/admin/health/targets', {
+    preHandler: fastify.authenticate,
+  }, async (request, reply) => {
+    try {
+      const targets = await healthTargetDb.getAll();
+      return {
+        targets,
+        total: targets.length,
+      };
+    } catch (error: any) {
+      reply.code(500).send({
+        error: {
+          message: error.message || '服务器内部错误',
+          type: 'internal_error',
+          code: 'internal_server_error',
+        },
+      });
+    }
+  });
+
+  /**
+   * PATCH /admin/health/targets/:id
+   * 更新健康监控目标
+   */
+  fastify.patch<{
+    Params: { id: string };
+    Body: z.infer<typeof updateTargetSchema>;
+  }>('/admin/health/targets/:id', {
+    preHandler: fastify.authenticate,
+  }, async (request, reply) => {
+    try {
+      const { id } = request.params;
+      const updates = updateTargetSchema.parse(request.body);
+
+      // 检查目标是否存在
+      const target = await healthTargetDb.getById(id);
+      if (!target) {
+        reply.code(404).send({
+          error: {
+            message: '目标不存在',
+            type: 'not_found_error',
+            code: 'target_not_found',
+          },
+        });
+        return;
+      }
+
+      // 转换 enabled 为数字
+      const dbUpdates: any = { ...updates };
+      if (updates.enabled !== undefined) {
+        dbUpdates.enabled = updates.enabled ? 1 : 0;
+      }
+
+      await healthTargetDb.update(id, dbUpdates);
+      healthAggregatorService.clearCache();
+
+      const updatedTarget = await healthTargetDb.getById(id);
+      return {
+        target: updatedTarget,
+      };
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        reply.code(400).send({
+          error: {
+            message: '参数验证失败',
+            type: 'invalid_request_error',
+            code: 'validation_error',
+            details: error.errors,
+          },
+        });
+        return;
+      }
+
+      reply.code(500).send({
+        error: {
+          message: error.message || '服务器内部错误',
+          type: 'internal_error',
+          code: 'internal_server_error',
+        },
+      });
+    }
+  });
+
+  /**
+   * DELETE /admin/health/targets/:id
+   * 删除健康监控目标
+   */
+  fastify.delete<{
+    Params: { id: string };
+  }>('/admin/health/targets/:id', {
+    preHandler: fastify.authenticate,
+  }, async (request, reply) => {
+    try {
+      const { id } = request.params;
+
+      // 检查目标是否存在
+      const target = await healthTargetDb.getById(id);
+      if (!target) {
+        reply.code(404).send({
+          error: {
+            message: '目标不存在',
+            type: 'not_found_error',
+            code: 'target_not_found',
+          },
+        });
+        return;
+      }
+
+      await healthTargetDb.delete(id);
+      healthAggregatorService.clearCache();
+
+      return {
+        success: true,
+      };
+    } catch (error: any) {
+      reply.code(500).send({
+        error: {
+          message: error.message || '服务器内部错误',
+          type: 'internal_error',
+          code: 'internal_server_error',
+        },
+      });
+    }
+  });
+
+  // ================================
+  // Admin API Aliases with /api prefix
+  // 兼容前端 axios baseURL '/api' 的请求路径
+  // ================================
+
+  // GET /api/admin/health/targets
+  fastify.get('/api/admin/health/targets', {
+    preHandler: fastify.authenticate,
+  }, async (request, reply) => {
+    try {
+      const targets = await healthTargetDb.getAll();
+      return {
+        targets,
+        total: targets.length,
+      };
+    } catch (error: any) {
+      reply.code(500).send({
+        error: {
+          message: error.message || '服务器内部错误',
+          type: 'internal_error',
+          code: 'internal_server_error',
+        },
+      });
+    }
+  });
+
+  // PATCH /api/admin/health/targets/:id
+  fastify.patch<{
+    Params: { id: string };
+    Body: z.infer<typeof updateTargetSchema>;
+  }>('/api/admin/health/targets/:id', {
+    preHandler: fastify.authenticate,
+  }, async (request, reply) => {
+    try {
+      const { id } = request.params;
+      const updates = updateTargetSchema.parse(request.body);
+
+      // 检查目标是否存在
+      const target = await healthTargetDb.getById(id);
+      if (!target) {
+        reply.code(404).send({
+          error: {
+            message: '目标不存在',
+            type: 'not_found_error',
+            code: 'target_not_found',
+          },
+        });
+        return;
+      }
+
+      // 转换 enabled 为数字
+      const dbUpdates: any = { ...updates };
+      if (updates.enabled !== undefined) {
+        dbUpdates.enabled = updates.enabled ? 1 : 0;
+      }
+
+      await healthTargetDb.update(id, dbUpdates);
+      healthAggregatorService.clearCache();
+
+      const updatedTarget = await healthTargetDb.getById(id);
+      return {
+        target: updatedTarget,
+      };
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        reply.code(400).send({
+          error: {
+            message: '参数验证失败',
+            type: 'invalid_request_error',
+            code: 'validation_error',
+            details: error.errors,
+          },
+        });
+        return;
+      }
+
+      reply.code(500).send({
+        error: {
+          message: error.message || '服务器内部错误',
+          type: 'internal_error',
+          code: 'internal_server_error',
+        },
+      });
+    }
+  });
+
+  // DELETE /api/admin/health/targets/:id
+  fastify.delete<{
+    Params: { id: string };
+  }>('/api/admin/health/targets/:id', {
+    preHandler: fastify.authenticate,
+  }, async (request, reply) => {
+    try {
+      const { id } = request.params;
+
+      // 检查目标是否存在
+      const target = await healthTargetDb.getById(id);
+      if (!target) {
+        reply.code(404).send({
+          error: {
+            message: '目标不存在',
+            type: 'not_found_error',
+            code: 'target_not_found',
+          },
+        });
+        return;
+      }
+
+      await healthTargetDb.delete(id);
+      healthAggregatorService.clearCache();
+
+      return {
+        success: true,
       };
     } catch (error: any) {
       reply.code(500).send({

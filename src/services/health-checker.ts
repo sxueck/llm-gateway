@@ -188,7 +188,8 @@ class HealthCheckerService {
 
       // 构建请求
       const gatewayUrl = appConfig.publicUrl || `http://localhost:${appConfig.port}`;
-      const endpoint = `${gatewayUrl}/v1/chat/completions`;
+      const isAnthropic = String(model.protocol) === 'anthropic';
+      const endpoint = `${gatewayUrl}${isAnthropic ? '/v1/messages' : '/v1/chat/completions'}`;
 
       // 创建一个简单的健康检查请求
       const requestBody = {
@@ -275,19 +276,35 @@ class HealthCheckerService {
         // 检查响应体
         const responseData = await response.json() as any;
 
-        // 验证响应结构
-        if (!responseData.choices || responseData.choices.length === 0) {
-          return {
-            success: false,
-            latencyMs,
-            errorType: 'invalid_response',
-            errorMessage: '响应格式不合法',
-            requestId,
-          };
+        // 验证响应结构（兼容 OpenAI 与 Anthropic）
+        let extractedText = '';
+        if (isAnthropic) {
+          const blocks = Array.isArray(responseData?.content) ? responseData.content : [];
+          if (!blocks || blocks.length === 0) {
+            return {
+              success: false,
+              latencyMs,
+              errorType: 'invalid_response',
+              errorMessage: '响应格式不合法（Anthropic）',
+              requestId,
+            };
+          }
+          const firstText = (blocks as any[]).find((b: any) => b?.type === 'text' && typeof b?.text === 'string');
+          extractedText = firstText?.text || '';
+        } else {
+          if (!responseData.choices || responseData.choices.length === 0) {
+            return {
+              success: false,
+              latencyMs,
+              errorType: 'invalid_response',
+              errorMessage: '响应格式不合法',
+              requestId,
+            };
+          }
+          extractedText = responseData.choices[0]?.message?.content || '';
         }
 
-        const content = responseData.choices[0]?.message?.content || '';
-        if (content.trim().length === 0) {
+        if (typeof extractedText !== 'string' || extractedText.trim().length === 0) {
           return {
             success: false,
             latencyMs,

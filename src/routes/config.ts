@@ -488,6 +488,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         targets: targets.map((t: any) => ({
           id: t.id,
           name: t.name,
+          display_title: t.display_title,
           type: t.type,
           target_id: t.target_id,
           enabled: t.enabled === 1,
@@ -533,6 +534,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       const target = await healthTargetDb.create({
         id: targetId,
         name: targetName,
+        display_title: null,
         type: body.type,
         target_id: body.target_id,
         enabled: 1,
@@ -546,6 +548,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       return {
         id: target.id,
         name: target.name,
+        display_title: target.display_title,
         type: target.type,
         target_id: target.target_id,
         enabled: target.enabled === 1,
@@ -592,6 +595,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       return {
         id: updatedTarget!.id,
         name: updatedTarget!.name,
+        display_title: updatedTarget!.display_title,
         type: updatedTarget!.type,
         target_id: updatedTarget!.target_id,
         enabled: updatedTarget!.enabled === 1,

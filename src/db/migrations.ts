@@ -507,7 +507,7 @@ export const migrations: Migration[] = [
         console.log('  - health_runs 表已存在,跳过');
       }
 
-      // 创建 health_summaries 表 (可选,MVP阶段可以不创建)
+      // 创建 health_summaries 表
       const [healthSummaries] = await conn.query(`
         SELECT COUNT(*) as count
         FROM information_schema.TABLES
@@ -546,6 +546,36 @@ export const migrations: Migration[] = [
       await conn.query('DROP TABLE IF EXISTS health_summaries');
       await conn.query('DROP TABLE IF EXISTS health_runs');
       await conn.query('DROP TABLE IF EXISTS health_targets');
+    },
+  },
+  {
+    version: 14,
+    name: 'add_display_title_to_health_targets',
+    up: async (conn: Connection) => {
+      console.log('  - 为 health_targets 表添加 display_title 字段');
+
+      // 检查字段是否已存在
+      const [columns] = await conn.query(`
+        SELECT COLUMN_NAME
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'health_targets'
+        AND COLUMN_NAME = 'display_title'
+      `);
+
+      if ((columns as any[]).length === 0) {
+        await conn.query(`
+          ALTER TABLE health_targets
+          ADD COLUMN display_title VARCHAR(255) DEFAULT NULL COMMENT '显示标题(可自定义)' AFTER name
+        `);
+        console.log('  - display_title 字段已添加');
+      } else {
+        console.log('  - display_title 字段已存在,跳过');
+      }
+    },
+    down: async (conn: Connection) => {
+      console.log('  - 回滚: 删除 health_targets 的 display_title 字段');
+      await conn.query('ALTER TABLE health_targets DROP COLUMN IF EXISTS display_title');
     },
   },
 ];

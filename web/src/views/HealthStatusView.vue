@@ -1,9 +1,9 @@
 <template>
   <div class="health-status-view">
-    <n-card title="系统健康监控">
+    <n-card title="系统健康监控" class="header-card">
       <template #header-extra>
         <n-space>
-          <n-tag :type="autoRefresh ? 'success' : 'default'">
+          <n-tag :type="autoRefresh ? 'success' : 'default'" size="small">
             {{ autoRefresh ? '自动刷新' : '手动刷新' }}
           </n-tag>
           <n-button size="small" @click="toggleAutoRefresh">
@@ -84,29 +84,40 @@
         <div v-if="filteredTargets.length === 0" class="empty-state">
           <n-empty description="暂无监控目标" />
         </div>
-        <n-list v-else bordered>
-          <n-list-item v-for="target in filteredTargets" :key="target.targetId">
-            <template #prefix>
-              <n-icon
-                size="24"
-                :color="getStatusColor(target.currentStatus)"
-                :component="getStatusIcon(target.currentStatus)"
-              />
-            </template>
+        <div v-else class="target-grid">
+          <n-card
+            v-for="target in filteredTargets"
+            :key="target.targetId"
+            class="target-card"
+            size="small"
+          >
+            <div class="card-content">
+              <div class="card-left">
+                <div class="target-header">
+                  <div class="target-title-row">
+                    <span class="target-title">{{ target.displayTitle || target.targetName }}</span>
+                    <n-button
+                      text
+                      size="tiny"
+                      @click="openEditModal(target)"
+                      style="margin-left: 8px"
+                    >
+                      <template #icon>
+                        <n-icon :component="CreateOutline" />
+                      </template>
+                    </n-button>
+                  </div>
+                  <n-space :size="6" style="margin-top: 4px">
+                    <n-tag size="tiny" :type="target.targetType === 'virtual_model' ? 'info' : 'default'">
+                      {{ target.targetType === 'virtual_model' ? '虚拟模型' : '模型' }}
+                    </n-tag>
+                    <n-tag size="tiny" :type="getStatusTagType(target.currentStatus)">
+                      {{ getStatusText(target.currentStatus) }}
+                    </n-tag>
+                    <span class="check-interval">每 {{ target.checkIntervalSeconds }}s</span>
+                  </n-space>
+                </div>
 
-            <n-thing :title="target.targetName">
-              <template #description>
-                <n-space :size="8">
-                  <n-tag size="small" :type="target.targetType === 'virtual_model' ? 'info' : 'default'">
-                    {{ target.targetType === 'virtual_model' ? '虚拟模型' : '模型' }}
-                  </n-tag>
-                  <n-tag size="small" :type="getStatusTagType(target.currentStatus)">
-                    {{ getStatusText(target.currentStatus) }}
-                  </n-tag>
-                </n-space>
-              </template>
-
-              <template #default>
                 <div class="compact-stats">
                   <div class="stat-item-compact">
                     <span class="stat-label-compact">1h</span>
@@ -133,11 +144,17 @@
                     @check-click="handleCheckClick"
                   />
                 </div>
-              </template>
-            </n-thing>
+              </div>
 
-          </n-list-item>
-        </n-list>
+              <div class="card-right">
+                <div
+                  class="status-gradient"
+                  :class="`status-${target.currentStatus}`"
+                ></div>
+              </div>
+            </div>
+          </n-card>
+        </div>
       </n-spin>
     </n-card>
 
@@ -146,6 +163,58 @@
       v-model:show="showCheckDetail"
       :check="selectedCheck"
     />
+
+    <!-- 编辑目标弹窗 -->
+    <n-modal
+      v-model:show="showEditModal"
+      preset="dialog"
+      title="编辑监控目标"
+      :show-icon="false"
+      style="width: 500px"
+    >
+      <n-form
+        ref="editFormRef"
+        :model="editForm"
+        label-placement="left"
+        label-width="120"
+        style="margin-top: 16px"
+      >
+        <n-form-item label="目标名称">
+          <n-input :value="editForm.targetName" disabled />
+        </n-form-item>
+        <n-form-item label="显示标题">
+          <n-input
+            v-model:value="editForm.display_title"
+            placeholder="留空使用默认名称"
+          />
+        </n-form-item>
+        <n-form-item label="检查间隔(秒)">
+          <n-input-number
+            v-model:value="editForm.check_interval_seconds"
+            :min="30"
+            :step="30"
+            style="width: 100%"
+          />
+        </n-form-item>
+        <n-form-item label="检查提示词">
+          <n-input
+            v-model:value="editForm.check_prompt"
+            type="textarea"
+            :rows="3"
+            placeholder="留空使用默认提示词"
+          />
+        </n-form-item>
+        <n-form-item label="启用状态">
+          <n-switch v-model:value="editForm.enabled" />
+        </n-form-item>
+      </n-form>
+      <template #action>
+        <n-space>
+          <n-button @click="showEditModal = false">取消</n-button>
+          <n-button type="primary" @click="saveEdit" :loading="saving">保存</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -163,11 +232,13 @@ import {
   NButton,
   NInput,
   NSelect,
-  NList,
-  NListItem,
-  NThing,
   NEmpty,
   NIcon,
+  NModal,
+  NForm,
+  NFormItem,
+  NInputNumber,
+  NSwitch,
   useMessage,
 } from 'naive-ui';
 import {
@@ -175,7 +246,7 @@ import {
   CloseCircle,
   WarningOutline,
   SearchOutline,
-  HelpCircleOutline,
+  CreateOutline,
 } from '@vicons/ionicons5';
 import request from '@/utils/request';
 import HealthTimeline from '@/components/HealthTimeline.vue';
@@ -194,7 +265,9 @@ interface GlobalSummary {
 interface TargetSummary {
   targetId: string;
   targetName: string;
+  displayTitle?: string;
   targetType: 'model' | 'virtual_model';
+  checkIntervalSeconds: number;
   currentStatus: 'ok' | 'degraded' | 'down' | 'unknown';
   latestCheck?: {
     status: 'success' | 'error';
@@ -230,6 +303,7 @@ interface TargetSummary {
 
 const message = useMessage();
 const loading = ref(false);
+const saving = ref(false);
 const globalSummary = ref<GlobalSummary | null>(null);
 const targets = ref<TargetSummary[]>([]);
 const searchKeyword = ref('');
@@ -244,6 +318,17 @@ const selectedCheck = ref<{
   latencyMs: number;
   errorMessage?: string;
 } | null>(null);
+
+const showEditModal = ref(false);
+const editFormRef = ref();
+const editForm = ref({
+  targetId: '',
+  targetName: '',
+  display_title: '',
+  check_interval_seconds: 300,
+  check_prompt: '',
+  enabled: true,
+});
 
 const statusOptions = [
   { label: '健康', value: 'ok' },
@@ -267,31 +352,7 @@ const filteredTargets = computed(() => {
   return result;
 });
 
-function getStatusColor(status: string) {
-  switch (status) {
-    case 'ok':
-      return '#18a058';
-    case 'degraded':
-      return '#f0a020';
-    case 'down':
-      return '#d03050';
-    default:
-      return '#999';
-  }
-}
 
-function getStatusIcon(status: string) {
-  switch (status) {
-    case 'ok':
-      return CheckmarkCircle;
-    case 'degraded':
-      return WarningOutline;
-    case 'down':
-      return CloseCircle;
-    default:
-      return HelpCircleOutline;
-  }
-}
 
 function getStatusTagType(status: string): any {
   switch (status) {
@@ -338,6 +399,42 @@ function handleCheckClick(check: { status: 'success' | 'error'; timestamp: numbe
   showCheckDetail.value = true;
 }
 
+function openEditModal(target: TargetSummary) {
+  editForm.value = {
+    targetId: target.targetId,
+    targetName: target.targetName,
+    display_title: target.displayTitle || '',
+    check_interval_seconds: target.checkIntervalSeconds,
+    check_prompt: '',
+    enabled: true,
+  };
+  showEditModal.value = true;
+}
+
+async function saveEdit() {
+  saving.value = true;
+  try {
+    const updates: any = {
+      display_title: editForm.value.display_title || null,
+      check_interval_seconds: editForm.value.check_interval_seconds,
+      enabled: editForm.value.enabled,
+    };
+
+    if (editForm.value.check_prompt) {
+      updates.check_prompt = editForm.value.check_prompt;
+    }
+
+    await request.patch(`/api/admin/health/targets/${editForm.value.targetId}`, updates);
+    message.success('更新成功');
+    showEditModal.value = false;
+    refresh();
+  } catch (error: any) {
+    message.error('更新失败: ' + (error.response?.data?.error?.message || error.message));
+  } finally {
+    saving.value = false;
+  }
+}
+
 function toggleAutoRefresh() {
   autoRefresh.value = !autoRefresh.value;
 
@@ -382,6 +479,10 @@ onUnmounted(() => {
   margin: 0 auto;
 }
 
+.header-card {
+  margin-bottom: 20px;
+}
+
 .global-summary {
   margin-bottom: 16px;
 }
@@ -390,11 +491,94 @@ onUnmounted(() => {
   margin-bottom: 16px;
 }
 
+.target-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(450px, 1fr));
+  gap: 16px;
+}
+
+.target-card {
+  transition: all 0.2s ease;
+  border-radius: 8px;
+}
+
+.target-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.card-content {
+  display: flex;
+  gap: 12px;
+}
+
+.card-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-right {
+  width: 8px;
+  display: flex;
+  align-items: stretch;
+}
+
+.status-gradient {
+  width: 100%;
+  border-radius: 4px;
+  background: linear-gradient(to bottom, var(--status-color-top), var(--status-color-bottom));
+  box-shadow: 0 0 8px var(--status-color-glow);
+}
+
+.status-gradient.status-ok {
+  --status-color-top: #52c41a;
+  --status-color-bottom: #237804;
+  --status-color-glow: rgba(82, 196, 26, 0.3);
+}
+
+.status-gradient.status-degraded {
+  --status-color-top: #faad14;
+  --status-color-bottom: #d48806;
+  --status-color-glow: rgba(250, 173, 20, 0.3);
+}
+
+.status-gradient.status-down {
+  --status-color-top: #ff4d4f;
+  --status-color-bottom: #a8071a;
+  --status-color-glow: rgba(255, 77, 79, 0.3);
+}
+
+.status-gradient.status-unknown {
+  --status-color-top: #d9d9d9;
+  --status-color-bottom: #8c8c8c;
+  --status-color-glow: rgba(217, 217, 217, 0.3);
+}
+
+.target-header {
+  margin-bottom: 12px;
+}
+
+.target-title-row {
+  display: flex;
+  align-items: center;
+}
+
+.target-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.check-interval {
+  font-size: 11px;
+  color: #8c8c8c;
+}
+
 .compact-stats {
   display: flex;
   gap: 16px;
   flex-wrap: wrap;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .stat-item-compact {
@@ -411,16 +595,22 @@ onUnmounted(() => {
 
 .stat-value-compact {
   font-size: 13px;
-  font-weight: 500;
-  color: #333;
+  font-weight: 600;
+  color: #262626;
 }
 
 .health-timeline {
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .empty-state {
   padding: 40px 0;
   text-align: center;
+}
+
+@media (max-width: 768px) {
+  .target-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -43,8 +43,8 @@ export const healthTargetRepository = {
     const conn = await pool.getConnection();
     try {
       await conn.query(
-        'INSERT INTO health_targets (id, name, type, target_id, enabled, check_interval_seconds, check_prompt, check_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [target.id, target.name, target.type, target.target_id, target.enabled, target.check_interval_seconds, target.check_prompt, target.check_config, now, now]
+        'INSERT INTO health_targets (id, name, display_title, type, target_id, enabled, check_interval_seconds, check_prompt, check_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [target.id, target.name, target.display_title, target.type, target.target_id, target.enabled, target.check_interval_seconds, target.check_prompt, target.check_config, now, now]
       );
       return { ...target, created_at: now, updated_at: now };
     } finally {

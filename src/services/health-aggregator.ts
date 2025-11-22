@@ -3,7 +3,9 @@ import { healthTargetDb, healthRunDb } from '../db/index.js';
 interface TargetSummary {
   targetId: string;
   targetName: string;
+  displayTitle?: string;
   targetType: 'model' | 'virtual_model';
+  checkIntervalSeconds: number;
   currentStatus: 'ok' | 'degraded' | 'down' | 'unknown';
   latestCheck?: {
     status: 'success' | 'error';
@@ -155,7 +157,9 @@ class HealthAggregatorService {
     return {
       targetId: target.id,
       targetName: target.name,
+      displayTitle: target.display_title || undefined,
       targetType: target.type,
+      checkIntervalSeconds: target.check_interval_seconds,
       currentStatus,
       latestCheck: latestRun
         ? {

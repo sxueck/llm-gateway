@@ -189,11 +189,12 @@ export const configApi = {
   },
 
   updateHealthTarget(id: string, data: {
+    display_title?: string | null;
     enabled?: boolean;
     check_interval_seconds?: number;
     check_prompt?: string;
   }): Promise<any> {
-    return request.put(`/admin/config/health-targets/${id}`, data);
+    return request.patch(`/admin/health/targets/${id}`, data);
   },
 
   deleteHealthTarget(id: string): Promise<{ success: boolean }> {

@@ -69,6 +69,60 @@
       </n-card>
     </n-space>
 
+    <!-- 编辑监控目标弹窗 -->
+    <n-modal
+      v-model:show="showEditModal"
+      preset="dialog"
+      :title="$t('common.edit')"
+      :positive-text="$t('common.confirm')"
+      :negative-text="$t('common.cancel')"
+      @positive-click="handleEditTarget"
+    >
+      <n-form
+        ref="editFormRef"
+        :model="editForm"
+        label-placement="left"
+        label-width="120"
+        style="margin-top: 16px;"
+      >
+        <n-form-item :label="$t('healthMonitoring.targetName')" path="name">
+          <n-input :value="editForm.name" disabled />
+        </n-form-item>
+
+        <n-form-item label="显示标题" path="display_title">
+          <n-input
+            v-model:value="editForm.display_title"
+            placeholder="留空使用默认名称"
+          />
+        </n-form-item>
+
+        <n-form-item :label="$t('healthMonitoring.checkInterval')" path="check_interval_seconds">
+          <n-input-number
+            v-model:value="editForm.check_interval_seconds"
+            :min="30"
+            :max="3600"
+            :step="30"
+            style="width: 100%"
+          >
+            <template #suffix>{{ $t('healthMonitoring.seconds') }}</template>
+          </n-input-number>
+        </n-form-item>
+
+        <n-form-item :label="$t('healthMonitoring.checkPrompt')" path="check_prompt">
+          <n-input
+            v-model:value="editForm.check_prompt"
+            type="textarea"
+            :rows="3"
+            placeholder="留空使用默认提示词"
+          />
+        </n-form-item>
+
+        <n-form-item :label="$t('common.status')" path="enabled">
+          <n-switch v-model:value="editForm.enabled" />
+        </n-form-item>
+      </n-form>
+    </n-modal>
+
     <!-- 添加监控目标弹窗 -->
     <n-modal
       v-model:show="showAddTargetModal"
@@ -161,7 +215,9 @@ const loadingTargets = ref(false);
 const loadingModels = ref(false);
 const healthTargets = ref<any[]>([]);
 const showAddTargetModal = ref(false);
+const showEditModal = ref(false);
 const addTargetFormRef = ref();
+const editFormRef = ref();
 const availableModels = ref<any[]>([]);
 const availableVirtualModels = ref<any[]>([]);
 
@@ -170,6 +226,15 @@ const addTargetForm = ref({
   target_id: null as string | null,
   check_interval_seconds: 300,
   check_prompt: "Say 'OK'",
+});
+
+const editForm = ref({
+  id: '',
+  name: '',
+  display_title: '',
+  check_interval_seconds: 300,
+  check_prompt: '',
+  enabled: true,
 });
 
 const publicStatusUrl = computed(() => {
@@ -199,6 +264,13 @@ const targetColumns: DataTableColumns<any> = [
   {
     title: () => t('healthMonitoring.targetName'),
     key: 'name',
+  },
+  {
+    title: () => '显示标题',
+    key: 'display_title',
+    render(row) {
+      return row.display_title || h(NText, { depth: 3 }, { default: () => '(默认)' });
+    },
   },
   {
     title: () => t('healthMonitoring.targetType'),
@@ -240,6 +312,14 @@ const targetColumns: DataTableColumns<any> = [
     render(row) {
       return h(NSpace, {}, {
         default: () => [
+          h(NButton, {
+            size: 'small',
+            text: true,
+            type: 'info',
+            onClick: () => openEditModal(row),
+          }, {
+            default: () => t('common.edit')
+          }),
           h(NButton, {
             size: 'small',
             text: true,
@@ -381,6 +461,40 @@ async function deleteTarget(targetId: string) {
     await loadHealthTargets();
   } catch (error: any) {
     message.error(error.message || t('messages.operationFailed'));
+  }
+}
+
+function openEditModal(target: any) {
+  editForm.value = {
+    id: target.id,
+    name: target.name,
+    display_title: target.display_title || '',
+    check_interval_seconds: target.check_interval_seconds,
+    check_prompt: target.check_prompt || '',
+    enabled: target.enabled === 1 || target.enabled === true,
+  };
+  showEditModal.value = true;
+}
+
+async function handleEditTarget() {
+  try {
+    const updates: any = {
+      display_title: editForm.value.display_title || null,
+      check_interval_seconds: editForm.value.check_interval_seconds,
+      enabled: editForm.value.enabled,
+    };
+
+    if (editForm.value.check_prompt) {
+      updates.check_prompt = editForm.value.check_prompt;
+    }
+
+    await configApi.updateHealthTarget(editForm.value.id, updates);
+    message.success(t('messages.operationSuccess'));
+    showEditModal.value = false;
+    await loadHealthTargets();
+  } catch (error: any) {
+    message.error(error.message || t('messages.operationFailed'));
+    return false;
   }
 }
 
