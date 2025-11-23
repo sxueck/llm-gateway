@@ -134,6 +134,22 @@ export function extractReasoningFromChoice(
   };
 }
 
+export function stripFieldRecursively(obj: any, field: string): void {
+  if (!obj || typeof obj !== 'object') return;
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      stripFieldRecursively(item, field);
+    }
+    return;
+  }
+  if (Object.prototype.hasOwnProperty.call(obj, field)) {
+    delete (obj as any)[field];
+  }
+  for (const key of Object.keys(obj)) {
+    stripFieldRecursively((obj as any)[key], field);
+  }
+}
+
 export function truncateRequestBody(body: any): string {
   if (!body) return '';
 
@@ -177,9 +193,20 @@ export function truncateResponseBody(body: any): string {
   try {
     const parsed = typeof body === 'string' ? JSON.parse(body) : body;
 
+    // 递归移除上游调试指令字段，避免泄露与放大日志体积
+    try {
+      stripFieldRecursively(parsed, 'instructions');
+    } catch (_e) {}
+
     const truncated: any = {};
 
     for (const key in parsed) {
+      // 移除上游调试指令字段，避免泄露与异常放大日志
+      if (key === 'instructions') {
+        truncated[key] = '[removed:instructions]';
+        continue;
+      }
+
       if (key === 'choices' && Array.isArray(parsed.choices)) {
         // 特殊处理 choices，需要简化 tool_calls 和 function_call
         truncated.choices = parsed.choices.map((choice: any) => {

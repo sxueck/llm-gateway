@@ -2,7 +2,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { nanoid } from 'nanoid';
 import { apiRequestDb } from '../../db/index.js';
 import { memoryLogger } from '../../services/logger.js';
-import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse, buildFullRequestBody, accumulateResponsesStream } from '../../utils/request-logger.js';
+import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse, buildFullRequestBody, accumulateResponsesStream, stripFieldRecursively } from '../../utils/request-logger.js';
 import { promptProcessor } from '../../services/prompt-processor.js';
 import { messageCompressor } from '../../services/message-compressor.js';
 import { makeHttpRequest, makeStreamHttpRequest } from './http-client.js';
@@ -556,6 +556,12 @@ export async function handleNonStreamRequest(
     });
     reply.code(200);
 
+    // 在返回与记录前净化缓存响应，去除上游调试 instructions 字段
+    let cachedResponseForClient: any = cacheResult.cached.response;
+    try {
+      stripFieldRecursively(cachedResponseForClient, 'instructions');
+    } catch (_e) {}
+
     const duration = Date.now() - startTime;
     const shouldLogBody = shouldLogRequestBody(virtualKey);
 
@@ -569,7 +575,7 @@ export async function handleNonStreamRequest(
 
     const fullRequestBody = buildFullRequestBody(request.body, modelAttributes);
     const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
-    const truncatedResponse = shouldLogBody ? truncateResponseBody(cacheResult.cached.response) : undefined;
+    const truncatedResponse = shouldLogBody ? truncateResponseBody(cachedResponseForClient) : undefined;
 
     // 使用统一归一化解析 usage，兼容 Responses 与 Chat Completions
     const normCached = normalizeUsageCounts(cacheResult.cached.response?.usage);
@@ -606,7 +612,7 @@ export async function handleNonStreamRequest(
       'Proxy'
     );
 
-    return reply.send(cacheResult.cached.response);
+    return reply.send(cachedResponseForClient);
   }
 
   let response: any;
@@ -722,6 +728,10 @@ export async function handleNonStreamRequest(
 
   try {
     responseData = responseText ? JSON.parse(responseText) : { error: { message: 'Empty response body' } };
+    // 移除上游调试字段（例如 instructions）
+    try {
+      stripFieldRecursively(responseData, 'instructions');
+    } catch (_e) {}
 
     const responseDataStr = JSON.stringify(responseData);
     let logMessage = '';
