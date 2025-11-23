@@ -254,8 +254,8 @@ const availableModelsOptions = computed(() => {
     ? availableVirtualModels.value
     : availableModels.value;
 
-  return models.map(m => ({
-    label: m.name,
+  return models.map((m: any) => ({
+    label: m?.providerName ? `${m.name}(${m.providerName})` : m.name,
     value: m.id,
   }));
 });

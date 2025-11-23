@@ -64,8 +64,15 @@ function buildChatBody(modelIdentifier: string, prompt: string) {
 function buildResponsesBody(modelIdentifier: string, prompt: string) {
   return {
     model: modelIdentifier,
-    input: prompt,
-    max_tokens: 100,
+    input: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+        ],
+      },
+    ],
+    max_output_tokens: 100,
     temperature: 0.1,
   };
 }
