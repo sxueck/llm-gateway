@@ -1,11 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import Anthropic from '@anthropic-ai/sdk';
 import { modelDb, providerDb, virtualKeyDb } from '../db/index.js';
 import { decryptApiKey } from '../utils/crypto.js';
-import { buildChatCompletionsEndpoint } from '../utils/api-endpoint-builder.js';
-import { isAnthropicProtocol, getBaseUrlForProtocol } from '../utils/protocol-utils.js';
+import { probeService } from '../services/probe-service.js';
 import type { Model } from '../db/index.js';
 
 declare module 'fastify' {
@@ -65,89 +63,6 @@ const updateModelSchema = z.object({
   promptConfig: promptConfigSchema,
 });
 
-async function testAnthropicModel(model: Model, provider: any, apiKey: string) {
-  const startTime = Date.now();
-  let result: any = {
-    success: false,
-    message: '未测试',
-    responseTime: 0,
-  };
-
-  try {
-    const modelAttributes = model.model_attributes ? JSON.parse(model.model_attributes) : {};
-    const headers = modelAttributes.headers;
-
-    const clientConfig: any = {
-      apiKey,
-      maxRetries: 0,
-      timeout: 30000,
-    };
-
-    // 根据模型协议获取正确的 baseURL（支持多协议）
-    const baseUrl = getBaseUrlForProtocol(provider, model.protocol);
-    if (baseUrl) {
-      clientConfig.baseURL = baseUrl.replace(/\/$/, '');
-      console.log(`[Test] Anthropic 模型测试 | 协议: ${model.protocol || 'default'} | baseUrl: ${baseUrl}`);
-    }
-
-    if (headers && Object.keys(headers).length > 0) {
-      clientConfig.defaultHeaders = headers;
-    }
-
-    const client = new Anthropic(clientConfig);
-
-    const response = await client.messages.create({
-      model: model.model_identifier,
-      max_tokens: 200,
-      messages: [{ role: 'user', content: '测试' }],
-      temperature: 0.1,
-    });
-
-    const responseTime = Date.now() - startTime;
-    const content = response.content[0]?.type === 'text' ? response.content[0].text : '无响应内容';
-
-    result = {
-      success: true,
-      status: 200,
-      message: 'Anthropic 测试成功',
-      responseTime,
-      response: {
-        content,
-        usage: response.usage,
-      },
-    };
-  } catch (error: any) {
-    const responseTime = Date.now() - startTime;
-    const statusCode = error.status || 500;
-
-    // 检查是否为超时错误
-    const isTimeout = error.code === 'ETIMEDOUT' ||
-                      error.message?.includes('timeout') ||
-                      error.message?.includes('timed out') ||
-                      responseTime >= 30000;
-
-    const errorMessage = isTimeout
-      ? '请求超时（30秒）'
-      : error.message;
-
-    result = {
-      success: false,
-      status: statusCode,
-      message: `Anthropic 测试失败: ${errorMessage}`,
-      responseTime,
-      error: errorMessage,
-    };
-  }
-
-  return {
-    chat: result,
-    responses: {
-      success: false,
-      message: 'Anthropic 协议不支持 /responses 端点',
-      responseTime: 0,
-    },
-  };
-}
 
 export async function modelRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
@@ -402,145 +317,15 @@ export async function modelRoutes(fastify: FastifyInstance) {
     }
 
     const apiKey = decryptApiKey(provider.api_key);
+    const result = await probeService.probeModelViaProvider({
+      modelIdentifier: model.model_identifier,
+      protocol: model.protocol as any,
+      provider,
+      apiKey,
+      prompt: '测试',
+      timeoutMs: 30000,
+    });
 
-    console.log(`[Test] Model: ${model.name}, Protocol: ${model.protocol || 'openai'}`);
-
-    if (isAnthropicProtocol(model)) {
-      return await testAnthropicModel(model, provider, apiKey);
-    }
-
-    // Test /chat/completions endpoint (OpenAI protocol)
-    const chatStartTime = Date.now();
-    let chatResult: any = {
-      success: false,
-      message: '未测试',
-      responseTime: 0,
-    };
-
-    try {
-      // 根据模型协议获取正确的 baseURL（支持多协议）
-      const baseUrl = getBaseUrlForProtocol(provider, model.protocol);
-      console.log(`[Test] Chat Completions 测试 | 协议: ${model.protocol || 'default'} | baseUrl: ${baseUrl}`);
-      const chatEndpoint = buildChatCompletionsEndpoint(baseUrl);
-      const chatResponse = await fetch(chatEndpoint, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: model.model_identifier,
-          messages: [{ role: 'user', content: '测试' }],
-          max_tokens: 200,
-          temperature: 0.1,
-        }),
-        signal: AbortSignal.timeout(30000),
-      });
-
-      const chatResponseTime = Date.now() - chatStartTime;
-
-      if (!chatResponse.ok) {
-        const errorText = await chatResponse.text();
-        chatResult = {
-          success: false,
-          status: chatResponse.status,
-          message: `Chat 测试失败: HTTP ${chatResponse.status}`,
-          error: errorText,
-          responseTime: chatResponseTime,
-        };
-      } else {
-        const data: any = await chatResponse.json();
-        const content = data?.choices?.[0]?.message?.content || '无响应内容';
-        chatResult = {
-          success: true,
-          status: chatResponse.status,
-          message: 'Chat 测试成功',
-          responseTime: chatResponseTime,
-          response: {
-            content,
-            usage: data?.usage,
-          },
-        };
-      }
-    } catch (error: any) {
-      const chatResponseTime = Date.now() - chatStartTime;
-      chatResult = {
-        success: false,
-        message: `Chat 测试失败: ${error.message}`,
-        responseTime: chatResponseTime,
-        error: error.stack,
-      };
-    }
-
-    // Test /responses endpoint
-    const responsesStartTime = Date.now();
-    let responsesResult: any = {
-      success: false,
-      message: '未测试',
-      responseTime: 0,
-    };
-
-    try {
-      // 根据模型协议获取正确的 baseURL（支持多协议）
-      const baseUrl = getBaseUrlForProtocol(provider, model.protocol);
-      console.log(`[Test] Responses API 测试 | 协议: ${model.protocol || 'default'} | baseUrl: ${baseUrl}`);
-      // Build responses endpoint (replace /chat/completions with /responses)
-      const responsesEndpoint = baseUrl.replace(/\/+$/, '') + '/responses';
-      
-      const responsesResponse = await fetch(responsesEndpoint, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: model.model_identifier,
-          input: '测试',
-          max_tokens: 100,
-          temperature: 0.1,
-        }),
-        signal: AbortSignal.timeout(30000),
-      });
-
-      const responsesResponseTime = Date.now() - responsesStartTime;
-
-      if (!responsesResponse.ok) {
-        const errorText = await responsesResponse.text();
-        responsesResult = {
-          success: false,
-          status: responsesResponse.status,
-          message: `Responses 测试失败: HTTP ${responsesResponse.status}`,
-          error: errorText,
-          responseTime: responsesResponseTime,
-        };
-      } else {
-        const data: any = await responsesResponse.json();
-        const content = data?.output_text || data?.output || '无响应内容';
-        responsesResult = {
-          success: true,
-          status: responsesResponse.status,
-          message: 'Responses 测试成功',
-          responseTime: responsesResponseTime,
-          response: {
-            content,
-            usage: data?.usage,
-          },
-        };
-      }
-    } catch (error: any) {
-      const responsesResponseTime = Date.now() - responsesStartTime;
-      responsesResult = {
-        success: false,
-        message: `Responses 测试失败: ${error.message}`,
-        responseTime: responsesResponseTime,
-        error: error.stack,
-      };
-    }
-
-    // Return combined results
-    return {
-      chat: chatResult,
-      responses: responsesResult,
-    };
+    return result;
   });
 }

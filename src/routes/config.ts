@@ -10,6 +10,56 @@ import { healthCheckerService } from '../services/health-checker.js';
 export async function configRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
 
+  async function ensureMonitoringVirtualKey() {
+    const keyIdCfg = await systemConfigDb.get('monitoring_virtual_key_id');
+    let monitoringKey = keyIdCfg ? await virtualKeyDb.getById(keyIdCfg.value) : undefined;
+
+    if (!monitoringKey) {
+      const id = nanoid();
+      const keyValue = `monitor_vk_${nanoid(24)}`;
+      monitoringKey = await virtualKeyDb.create({
+        id,
+        key_value: keyValue,
+        key_hash: hashKey(keyValue),
+        name: 'System Monitoring Key',
+        provider_id: null,
+        model_id: null,
+        routing_strategy: 'single',
+        model_ids: null,
+        routing_config: null,
+        enabled: 1,
+        rate_limit: null,
+        cache_enabled: 0,
+        disable_logging: 1,
+        dynamic_compression_enabled: 0,
+        intercept_zero_temperature: 0,
+        zero_temperature_replacement: null,
+      });
+      await systemConfigDb.set('monitoring_virtual_key_id', monitoringKey.id, '监控专用虚拟密钥ID');
+      memoryLogger.info(`已创建监控专用虚拟密钥: ${monitoringKey.id}`, 'Config');
+    }
+
+    return monitoringKey;
+  }
+
+  async function syncMonitoringKeyModelsFromTargets() {
+    const persistentCfg = await systemConfigDb.get('persistent_monitoring_enabled');
+    if (!persistentCfg || persistentCfg.value !== 'true') {
+      return;
+    }
+
+    const monitoringKey = await ensureMonitoringVirtualKey();
+    const targets = await healthTargetDb.getAll();
+    const enabledTargets = targets.filter((t: any) => t.enabled === 1);
+    const modelIds = Array.from(new Set(enabledTargets.map((t: any) => t.target_id))).filter(Boolean);
+
+    await virtualKeyDb.update(monitoringKey.id, {
+      model_ids: JSON.stringify(modelIds),
+      routing_strategy: 'single',
+    } as any);
+    memoryLogger.info(`监控密钥已同步 ${modelIds.length} 个监控目标`, 'Config');
+  }
+
   fastify.get('/system-settings', async () => {
     const allowRegCfg = await systemConfigDb.get('allow_registration');
     const corsEnabledCfg = await systemConfigDb.get('cors_enabled');
@@ -94,55 +144,30 @@ export async function configRoutes(fastify: FastifyInstance) {
         memoryLogger.info(`持久监控已${persistentMonitoringEnabled ? '启用' : '禁用'}`, 'Config');
 
         if (persistentMonitoringEnabled) {
-          // 确保存在监控专用虚拟密钥
-          const keyIdCfg = await systemConfigDb.get('monitoring_virtual_key_id');
-          let monitoringKey = keyIdCfg ? await virtualKeyDb.getById(keyIdCfg.value) : undefined;
-
-          if (!monitoringKey) {
-            const id = nanoid();
-            const keyValue = `monitor_vk_${nanoid(24)}`;
-            monitoringKey = await virtualKeyDb.create({
-              id,
-              key_value: keyValue,
-              key_hash: hashKey(keyValue),
-              name: 'System Monitoring Key',
-              provider_id: null,
-              model_id: null,
-              routing_strategy: 'single',
-              model_ids: null,
-              routing_config: null,
-              enabled: 1,
-              rate_limit: null,
-              cache_enabled: 0,
-              disable_logging: 1,
-              dynamic_compression_enabled: 0,
-              intercept_zero_temperature: 0,
-              zero_temperature_replacement: null,
-            });
-            await systemConfigDb.set('monitoring_virtual_key_id', monitoringKey.id, '监控专用虚拟密钥ID');
-            memoryLogger.info(`已创建监控专用虚拟密钥: ${monitoringKey.id}`, 'Config');
-          }
-
-          // 将监控密钥绑定到当前全部模型，确保健康检查请求可用
+          await ensureMonitoringVirtualKey();
           try {
-            const allModels = await modelDb.getAll();
-            const allModelIds = (allModels || []).map((m: any) => m.id);
-            await virtualKeyDb.update(monitoringKey.id, {
-              model_ids: JSON.stringify(allModelIds),
-              routing_strategy: 'single',
-            } as any);
-            memoryLogger.info(`监控密钥已绑定 ${allModelIds.length} 个模型`, 'Config');
-          } catch (bindErr: any) {
-            memoryLogger.warn(`更新监控密钥模型绑定失败: ${bindErr.message}`, 'Config');
+            await syncMonitoringKeyModelsFromTargets();
+          } catch (syncErr: any) {
+            memoryLogger.warn(`同步监控密钥模型失败: ${syncErr.message}`, 'Config');
           }
 
-          // 开启健康检查服务
           await healthCheckerService.start();
           memoryLogger.info('检测到启用持久监控，健康检查服务已启动', 'Config');
         } else {
-          // 关闭健康检查服务
           await healthCheckerService.stop();
           memoryLogger.info('检测到关闭持久监控，健康检查服务已停止', 'Config');
+
+          const keyIdCfg = await systemConfigDb.get('monitoring_virtual_key_id');
+          if (keyIdCfg) {
+            try {
+              await virtualKeyDb.update(keyIdCfg.value, {
+                model_ids: JSON.stringify([]),
+              } as any);
+              memoryLogger.info('已清空监控虚拟密钥的模型绑定', 'Config');
+            } catch (clearErr: any) {
+              memoryLogger.warn(`清空监控密钥模型绑定失败: ${clearErr.message}`, 'Config');
+            }
+          }
         }
       }
 
@@ -545,6 +570,12 @@ export async function configRoutes(fastify: FastifyInstance) {
 
       memoryLogger.info(`创建健康监控目标: ${targetName} (${body.type})`, 'Config');
 
+      try {
+        await syncMonitoringKeyModelsFromTargets();
+      } catch (syncErr: any) {
+        memoryLogger.warn(`新增监控目标后同步监控密钥失败: ${syncErr.message}`, 'Config');
+      }
+
       return {
         id: target.id,
         name: target.name,
@@ -591,6 +622,12 @@ export async function configRoutes(fastify: FastifyInstance) {
 
       memoryLogger.info(`更新健康监控目标: ${id}`, 'Config');
 
+      try {
+        await syncMonitoringKeyModelsFromTargets();
+      } catch (syncErr: any) {
+        memoryLogger.warn(`更新监控目标后同步监控密钥失败: ${syncErr.message}`, 'Config');
+      }
+
       const updatedTarget = await healthTargetDb.getById(id);
       return {
         id: updatedTarget!.id,
@@ -615,6 +652,12 @@ export async function configRoutes(fastify: FastifyInstance) {
       const { id } = request.params as { id: string };
       await healthTargetDb.delete(id);
       memoryLogger.info(`删除健康监控目标: ${id}`, 'Config');
+
+      try {
+        await syncMonitoringKeyModelsFromTargets();
+      } catch (syncErr: any) {
+        memoryLogger.warn(`删除监控目标后同步监控密钥失败: ${syncErr.message}`, 'Config');
+      }
       return { success: true };
     } catch (error: any) {
       memoryLogger.error(`删除健康监控目标失败: ${error.message}`, 'Config');

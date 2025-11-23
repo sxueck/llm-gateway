@@ -3,6 +3,7 @@ import { memoryLogger } from './logger.js';
 import { nanoid } from 'nanoid';
 import fetch from 'node-fetch';
 import { appConfig } from '../config/index.js';
+import { probeService } from './probe-service.js';
 
 interface CheckConfig {
   timeout?: number;
@@ -164,9 +165,7 @@ class HealthCheckerService {
     requestId: string
   ): Promise<HealthCheckResult> {
     const startTime = Date.now();
-
     try {
-      // 根据目标类型获取模型信息
       const model = await modelDb.getById(target.target_id);
       if (!model) {
         return {
@@ -176,7 +175,6 @@ class HealthCheckerService {
           errorMessage: `目标模型不存在: ${target.target_id}`,
         };
       }
-
       if (!model.enabled) {
         return {
           success: false,
@@ -186,142 +184,47 @@ class HealthCheckerService {
         };
       }
 
-      // 构建请求
       const gatewayUrl = appConfig.publicUrl || `http://localhost:${appConfig.port}`;
-      const isAnthropic = String(model.protocol) === 'anthropic';
-      const endpoint = `${gatewayUrl}${isAnthropic ? '/v1/messages' : '/v1/chat/completions'}`;
+      const persistentCfg = await systemConfigDb.get('persistent_monitoring_enabled');
+      const isPersistent = persistentCfg ? persistentCfg.value === 'true' : false;
+      let monitoringKeyValue: string | null = null;
 
-      // 创建一个简单的健康检查请求
-      const requestBody = {
-        model: model.name,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        max_tokens: 50,
-        temperature: 0.1,
-      };
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-      try {
-        // 解析监控专用虚拟密钥
-        const persistentCfg = await systemConfigDb.get('persistent_monitoring_enabled');
-        const isPersistent = persistentCfg ? persistentCfg.value === 'true' : false;
-        let monitoringKeyValue: string | null = null;
-
-        if (isPersistent) {
-          const keyIdCfg = await systemConfigDb.get('monitoring_virtual_key_id');
-          if (keyIdCfg) {
-            const key = await virtualKeyDb.getById(keyIdCfg.value);
-            if (key && key.enabled === 1) {
-              monitoringKeyValue = key.key_value;
-            }
+      if (isPersistent) {
+        const keyIdCfg = await systemConfigDb.get('monitoring_virtual_key_id');
+        if (keyIdCfg) {
+          const key = await virtualKeyDb.getById(keyIdCfg.value);
+          if (key && key.enabled === 1) {
+            monitoringKeyValue = key.key_value;
           }
         }
+      }
 
-        if (!monitoringKeyValue) {
-          return {
-            success: false,
-            latencyMs: Date.now() - startTime,
-            errorType: 'invalid_virtual_key',
-            errorMessage: '监控虚拟密钥无效或未启用',
-            requestId,
-          };
-        }
-
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${monitoringKeyValue}`,
-            'x-health-check': 'true',
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal as any,
-        });
-
-        clearTimeout(timeoutId);
-
-        const latencyMs = Date.now() - startTime;
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          let errorType = 'http_error';
-          let errorMessage = `HTTP ${response.status}`;
-
-          // 尝试解析错误类型
-          try {
-            const errorJson = JSON.parse(errorText);
-            if (errorJson.error) {
-              errorMessage = errorJson.error.message || errorMessage;
-              errorType = errorJson.error.code || errorType;
-            }
-          } catch {
-            errorMessage = errorText.substring(0, 200);
-          }
-
-          return {
-            success: false,
-            latencyMs,
-            errorType,
-            errorMessage,
-            requestId,
-          };
-        }
-
-        // 检查响应体
-        const responseData = await response.json() as any;
-
-        // 验证响应结构（兼容 OpenAI 与 Anthropic）
-        let extractedText = '';
-        if (isAnthropic) {
-          const blocks = Array.isArray(responseData?.content) ? responseData.content : [];
-          if (!blocks || blocks.length === 0) {
-            return {
-              success: false,
-              latencyMs,
-              errorType: 'invalid_response',
-              errorMessage: '响应格式不合法（Anthropic）',
-              requestId,
-            };
-          }
-          const firstText = (blocks as any[]).find((b: any) => b?.type === 'text' && typeof b?.text === 'string');
-          extractedText = firstText?.text || '';
-        } else {
-          if (!responseData.choices || responseData.choices.length === 0) {
-            return {
-              success: false,
-              latencyMs,
-              errorType: 'invalid_response',
-              errorMessage: '响应格式不合法',
-              requestId,
-            };
-          }
-          extractedText = responseData.choices[0]?.message?.content || '';
-        }
-
-        if (typeof extractedText !== 'string' || extractedText.trim().length === 0) {
-          return {
-            success: false,
-            latencyMs,
-            errorType: 'empty_content',
-            errorMessage: '响应内容为空',
-            requestId,
-          };
-        }
-
+      if (!monitoringKeyValue) {
         return {
-          success: true,
-          latencyMs,
+          success: false,
+          latencyMs: Date.now() - startTime,
+          errorType: 'invalid_virtual_key',
+          errorMessage: '监控虚拟密钥无效或未启用',
           requestId,
         };
-      } finally {
-        clearTimeout(timeoutId);
       }
+
+      const outcome = await probeService.probeModelViaGateway({
+        protocol: (model.protocol || 'openai') as any,
+        modelName: model.name,
+        gatewayUrl,
+        bearerKey: monitoringKeyValue,
+        prompt,
+        timeoutMs: timeout,
+      });
+
+      return {
+        success: outcome.success,
+        latencyMs: outcome.latencyMs,
+        errorType: outcome.errorType,
+        errorMessage: outcome.errorMessage,
+        requestId,
+      };
     } catch (error: any) {
       const latencyMs = Date.now() - startTime;
 
