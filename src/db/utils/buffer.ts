@@ -48,6 +48,7 @@ export async function flushApiRequestBuffer() {
     for (const request of requests) {
       let requestBody = request.request_body;
       let responseBody = request.response_body;
+      let errorMessage = request.error_message;
 
       // 最终安全检查：确保不会超过数据库列的最大字节长度
       if (requestBody && getByteLength(requestBody) > MAX_COLUMN_BYTES) {
@@ -55,6 +56,9 @@ export async function flushApiRequestBuffer() {
       }
       if (responseBody && getByteLength(responseBody) > MAX_COLUMN_BYTES) {
         responseBody = truncateToByteLength(responseBody, MAX_COLUMN_BYTES);
+      }
+      if (errorMessage && getByteLength(errorMessage) > MAX_COLUMN_BYTES) {
+        errorMessage = truncateToByteLength(errorMessage, MAX_COLUMN_BYTES);
       }
 
       placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
@@ -69,7 +73,7 @@ export async function flushApiRequestBuffer() {
         request.cached_tokens || 0,
         request.status,
         request.response_time || null,
-        request.error_message || null,
+        errorMessage || null,
         requestBody,
         responseBody,
         request.cache_hit || 0,

@@ -1,6 +1,7 @@
 import { FastifyReply } from 'fastify';
 import { ProtocolAdapter, type ProtocolConfig } from '../../services/protocol-adapter.js';
 import OpenAI from 'openai';
+import { stripFieldRecursively } from '../../utils/request-logger.js';
 
 export interface HttpResponse {
   statusCode: number;
@@ -104,6 +105,12 @@ export async function makeHttpRequest(
       response = await protocolAdapter.createResponse(config, input || '', options, abortSignal);
     } else {
       response = await protocolAdapter.chatCompletion(config, messages, options, abortSignal);
+    }
+
+    try {
+      stripFieldRecursively(response, 'instructions');
+    } catch (_e) {
+      // Ignore strip errors
     }
 
     return {

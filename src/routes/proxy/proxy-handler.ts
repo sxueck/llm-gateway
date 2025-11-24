@@ -17,7 +17,97 @@ import { handleResponsesStreamRequest } from './handlers/openai-responses.js';
 import { shouldLogRequestBody, buildFullRequest, getTruncatedBodies, logApiRequest } from './handlers/shared.js';
 import type { VirtualKey } from '../../types/index.js';
 import { normalizeUsageCounts } from '../../utils/usage-normalizer.js';
+import { isChatCompletionsPath, isResponsesApiPath, isEmbeddingsPath } from '../../utils/path-detector.js';
 
+function normalizeResponsesInput(input: any): any {
+  if (!input) return input;
+
+  // 如果是字符串，直接返回
+  if (typeof input === 'string') return input;
+
+  // 如果是数组，递归处理每个元素
+  if (Array.isArray(input)) {
+    return input.map(item => {
+      if (!item || typeof item !== 'object') return item;
+
+      // 处理 message 类型的 item
+      if (item.type === 'message' && Array.isArray(item.content)) {
+        return {
+          ...item,
+          content: item.content.map((contentBlock: any) => {
+            if (!contentBlock || typeof contentBlock !== 'object') return contentBlock;
+
+            // 将 type: 'text' 转换为 type: 'input_text'
+            if (contentBlock.type === 'text') {
+              return {
+                ...contentBlock,
+                type: 'input_text'
+              };
+            }
+
+            return contentBlock;
+          })
+        };
+      }
+
+      // 处理带有 role 和 content 数组的项（如来自 health check 的输入）
+      if (item.role && Array.isArray(item.content)) {
+        return {
+          ...item,
+          content: item.content.map((contentBlock: any) => {
+            if (!contentBlock || typeof contentBlock !== 'object') return contentBlock;
+
+            // 将 type: 'text' 转换为 type: 'input_text'
+            if (contentBlock.type === 'text') {
+              return {
+                ...contentBlock,
+                type: 'input_text'
+              };
+            }
+
+            return contentBlock;
+          })
+        };
+      }
+
+      // 处理直接的 content block
+      if (item.type === 'text') {
+        return {
+          ...item,
+          type: 'input_text'
+        };
+      }
+
+      return item;
+    });
+  }
+
+  return input;
+}
+
+function buildResponsesOptions(body: any, includePrevId: boolean) {
+  const options: any = {
+    instructions: body?.instructions,
+    temperature: body?.temperature,
+    max_output_tokens: body?.max_output_tokens,
+    top_p: body?.top_p,
+    store: body?.store,
+    metadata: body?.metadata,
+    tools: body?.tools,
+    tool_choice: body?.tool_choice,
+    parallel_tool_calls: body?.parallel_tool_calls,
+    reasoning: body?.reasoning,
+    text: body?.text,
+    truncation: body?.truncation,
+    user: body?.user,
+    include: body?.include,
+  };
+  if (includePrevId && body?.previous_response_id) {
+    options.previous_response_id = body.previous_response_id;
+  }
+  return options;
+}
+ 
 export function createProxyHandler() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const startTime = Date.now();
@@ -71,7 +161,7 @@ export function createProxyHandler() {
 
       const { protocolConfig, path, vkDisplay, isStreamRequest } = configResult;
 
-      if (currentModel && (request.body as any)?.messages && path.startsWith('/v1/chat/completions')) {
+      if (currentModel && (request.body as any)?.messages && isChatCompletionsPath(path)) {
         const processorContext = {
           date: new Date().toISOString().split('T')[0],
           requestHeaders: request.headers,
@@ -182,7 +272,12 @@ export function createProxyHandler() {
       );
 
       // 检测是否为 Responses API 请求
-      const isResponsesApi = path.startsWith('/v1/responses');
+      const isResponsesApi = isResponsesApiPath(path);
+
+      // 规范化 Responses API 的 input content block types
+      if (isResponsesApi && (request.body as any)?.input) {
+        (request.body as any).input = normalizeResponsesInput((request.body as any).input);
+      }
 
       if (isStreamRequest) {
         return await handleStreamRequest(
@@ -316,22 +411,7 @@ export async function handleStreamRequest(
     if (isResponsesApi) {
       // Responses API 请求
       const input = (request.body as any)?.input;
-      const options = {
-        instructions: (request.body as any)?.instructions,
-        temperature: (request.body as any)?.temperature,
-        max_output_tokens: (request.body as any)?.max_output_tokens,
-        top_p: (request.body as any)?.top_p,
-        store: (request.body as any)?.store,
-        metadata: (request.body as any)?.metadata,
-        tools: (request.body as any)?.tools,
-        tool_choice: (request.body as any)?.tool_choice,
-        parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
-        reasoning: (request.body as any)?.reasoning,
-        text: (request.body as any)?.text,
-        truncation: (request.body as any)?.truncation,
-        user: (request.body as any)?.user,
-        include: (request.body as any)?.include,
-      };
+      const options = buildResponsesOptions((request.body as any), false);
 
       tokenUsage = await makeStreamHttpRequest(
         protocolConfig,
@@ -532,7 +612,7 @@ export async function handleNonStreamRequest(
   isResponsesApi: boolean = false
 ) {
   let fromCache = false;
-  const isEmbeddingsRequest = path.startsWith('/v1/embeddings');
+  const isEmbeddingsRequest = isEmbeddingsPath(path);
 
   const vkDisplay = virtualKey.key_value && virtualKey.key_value.length > 10
     ? `${virtualKey.key_value.slice(0, 6)}...${virtualKey.key_value.slice(-4)}`
@@ -620,23 +700,7 @@ export async function handleNonStreamRequest(
   if (isResponsesApi) {
     // Responses API 请求
     const input = (request.body as any)?.input;
-    const options = {
-      instructions: (request.body as any)?.instructions,
-      temperature: (request.body as any)?.temperature,
-      max_output_tokens: (request.body as any)?.max_output_tokens,
-      top_p: (request.body as any)?.top_p,
-      store: (request.body as any)?.store,
-      metadata: (request.body as any)?.metadata,
-      tools: (request.body as any)?.tools,
-      tool_choice: (request.body as any)?.tool_choice,
-      parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
-      reasoning: (request.body as any)?.reasoning,
-      text: (request.body as any)?.text,
-      previous_response_id: (request.body as any)?.previous_response_id,
-      truncation: (request.body as any)?.truncation,
-      user: (request.body as any)?.user,
-      include: (request.body as any)?.include,
-    };
+    const options = buildResponsesOptions((request.body as any), true);
 
     response = await makeHttpRequest(
       protocolConfig,

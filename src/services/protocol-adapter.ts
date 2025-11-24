@@ -298,6 +298,10 @@ export class ProtocolAdapter {
           break;
         }
 
+        if (chunk && typeof chunk === 'object' && 'instructions' in chunk) {
+          delete (chunk as any).instructions;
+        }
+
         const chunkData = JSON.stringify(chunk);
         const sseData = `data: ${chunkData}\n\n`;
 
@@ -467,6 +471,7 @@ export class ProtocolAdapter {
     const requestParams: any = {
       model: config.model,
       input,
+      stream: false,
     };
 
     // 添加 Responses API 支持的参数
@@ -556,6 +561,11 @@ export class ProtocolAdapter {
         if (reply.raw.destroyed || reply.raw.writableEnded) {
           memoryLogger.info('客户端已断开连接，停止流式传输', 'Protocol');
           break;
+        }
+
+        // 过滤掉上游注入的非规范字段(如 instructions)
+        if (chunk && typeof chunk === 'object' && 'instructions' in chunk) {
+          delete (chunk as any).instructions;
         }
 
         const chunkData = JSON.stringify(chunk);

@@ -4,6 +4,7 @@ import { memoryLogger } from '../../services/logger.js';
 import { ProviderAdapterFactory } from '../../services/provider-adapter.js';
 import { getBaseUrlForProtocol } from '../../utils/protocol-utils.js';
 import type { ProtocolConfig } from '../../services/protocol-adapter.js';
+import { normalizePath, isEmbeddingsPath } from '../../utils/path-detector.js';
 
 export interface ProviderConfigResult {
   protocolConfig: ProtocolConfig;
@@ -62,23 +63,17 @@ export async function buildProviderConfig(
   }
 
   let path = request.url;
-  if (path.startsWith('/v1/v1/')) {
-    path = path.replace(/^\/v1\/v1\//, '/v1/');
+  const normalizedPath = normalizePath(path);
+
+  if (normalizedPath !== path) {
     memoryLogger.debug(
-      `路径标准化: ${request.url} -> ${path}`,
+      `路径标准化: ${path} -> ${normalizedPath}`,
       'Proxy'
     );
+    path = normalizedPath;
   }
 
-  if (!path.startsWith('/v1/')) {
-    path = `/v1${path}`;
-    memoryLogger.debug(
-      `路径标准化为 v1: ${request.url} -> ${path}`,
-      'Proxy'
-    );
-  }
-
-  if (path.startsWith('/v1/embeddings') && (request as any).body && typeof (request as any).body.input === 'string') {
+  if (isEmbeddingsPath(path) && (request as any).body && typeof (request as any).body.input === 'string') {
     (request as any).body.input = [(request as any).body.input];
   }
 

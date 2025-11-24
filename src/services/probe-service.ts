@@ -72,7 +72,6 @@ function buildResponsesBody(modelIdentifier: string, prompt: string) {
         ],
       },
     ],
-    max_output_tokens: 100,
     temperature: 0.1,
   };
 }

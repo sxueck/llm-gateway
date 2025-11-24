@@ -31,25 +31,17 @@ export interface PromptConfig {
 }
 
 export interface ModelAttributes {
-  max_tokens?: number;
-  max_input_tokens?: number;
-  max_output_tokens?: number;
   input_cost_per_token?: number;
   output_cost_per_token?: number;
   input_cost_per_token_cache_hit?: number;
-  supports_function_calling?: boolean;
-  supports_vision?: boolean;
-  supports_tool_choice?: boolean;
-  supports_assistant_prefill?: boolean;
-  supports_prompt_caching?: boolean;
-  supports_reasoning?: boolean;
-  supports_audio_input?: boolean;
-  supports_audio_output?: boolean;
-  supports_pdf_input?: boolean;
-  supports_interleaved_thinking?: boolean;
-  provider?: string;
+
+  litellm_provider?: string;
+  provider?: string; // deprecated: alias of litellm_provider
   mode?: string;
   headers?: Record<string, string>;
+  timeout?: number;
+  maxRetries?: number;
+  requestTimeout?: number;
 }
 
 export interface Model {

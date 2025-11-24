@@ -12,26 +12,27 @@ declare module 'fastify' {
   }
 }
 
-const modelAttributesSchema = z.object({
-  max_tokens: z.number().optional(),
-  max_input_tokens: z.number().optional(),
-  max_output_tokens: z.number().optional(),
+const baseModelAttributesSchema = z.object({
   input_cost_per_token: z.number().optional(),
   output_cost_per_token: z.number().optional(),
   input_cost_per_token_cache_hit: z.number().optional(),
-  supports_function_calling: z.boolean().optional(),
-  supports_vision: z.boolean().optional(),
-  supports_tool_choice: z.boolean().optional(),
-  supports_assistant_prefill: z.boolean().optional(),
-  supports_prompt_caching: z.boolean().optional(),
-  supports_reasoning: z.boolean().optional(),
-  supports_audio_input: z.boolean().optional(),
-  supports_audio_output: z.boolean().optional(),
-  supports_pdf_input: z.boolean().optional(),
-  supports_interleaved_thinking: z.boolean().optional(),
+
   litellm_provider: z.string().optional(),
+  provider: z.string().optional(),
   mode: z.string().optional(),
   headers: z.record(z.string()).optional(),
+  timeout: z.number().optional(),
+  maxRetries: z.number().optional(),
+  requestTimeout: z.number().optional(),
+});
+
+const modelAttributesSchema = baseModelAttributesSchema.transform((val) => {
+  if (!val) return val;
+  const { provider, ...rest } = val as any;
+  if (provider && !rest.litellm_provider) {
+    (rest as any).litellm_provider = provider;
+  }
+  return rest as any;
 }).optional();
 
 const promptConfigSchema = z.object({
