@@ -223,9 +223,13 @@ export function createProxyHandler() {
       if (virtualKey.intercept_zero_temperature === 1 &&
           virtualKey.zero_temperature_replacement !== null &&
           (request.body as any)?.temperature === 0) {
-        (request.body as any).temperature = virtualKey.zero_temperature_replacement;
+        // 仅在替换阶段确保数值类型，避免被上游解析为字符串
+        const replacement = typeof virtualKey.zero_temperature_replacement === 'number'
+          ? virtualKey.zero_temperature_replacement
+          : Number(String(virtualKey.zero_temperature_replacement));
+        (request.body as any).temperature = replacement;
         memoryLogger.info(
-          `拦截Zero温度: 将 temperature=0 替换为 ${virtualKey.zero_temperature_replacement} | 虚拟密钥: ${vkDisplay}`,
+          `拦截Zero温度: 将 temperature=0 替换为 ${replacement} | 虚拟密钥: ${vkDisplay}`,
           'Proxy'
         );
       }
