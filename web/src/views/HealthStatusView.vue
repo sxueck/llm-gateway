@@ -130,7 +130,7 @@
                 <!-- Visual health history timeline -->
                 <div v-if="target.healthHistory && target.healthHistory.length > 0" class="health-timeline">
                   <HealthTimeline
-                    :history="target.healthHistory"
+                    :history="target.healthHistory.slice().reverse()"
                     @check-click="handleCheckClick"
                   />
                 </div>

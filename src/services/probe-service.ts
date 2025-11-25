@@ -57,7 +57,6 @@ function buildChatBody(modelIdentifier: string, prompt: string) {
     model: modelIdentifier,
     messages: [{ role: 'user', content: prompt }],
     max_tokens: 200,
-    temperature: 0.1,
   };
 }
 
@@ -72,7 +71,6 @@ function buildResponsesBody(modelIdentifier: string, prompt: string) {
         ],
       },
     ],
-    temperature: 0.1,
   };
 }
 
@@ -81,7 +79,6 @@ function buildAnthropicBody(modelIdentifier: string, prompt: string) {
     model: modelIdentifier,
     max_tokens: 200,
     messages: [{ role: 'user', content: prompt }],
-    temperature: 0.1,
   };
 }
 
@@ -328,6 +325,7 @@ export async function probeModelViaProvider(args: {
 
 /**
  * Probe a model via Gateway base URL using a Virtual Key, for health checks.
+ * - If endpoint is specified, use that endpoint directly
  * - Anthropic: POST /v1/messages
  * - OpenAI-like: try /v1/chat/completions then fallback /v1/responses; any success => healthy
  */
@@ -339,6 +337,7 @@ export async function probeModelViaGateway(args: {
   prompt?: string;
   timeoutMs?: number;
   extraHeaders?: Record<string, string>;
+  endpoint?: string | null;  // Specific endpoint to check (e.g., '/v1/chat/completions', '/v1/messages')
 }): Promise<HealthProbeOutcome> {
   const protocol = args.protocol ?? 'openai';
   const prompt = args.prompt ?? 'Say "OK"';
@@ -354,6 +353,63 @@ export async function probeModelViaGateway(args: {
     ...(args.extraHeaders || {}),
   };
 
+  // If a specific endpoint is provided, use it directly
+  if (args.endpoint) {
+    const url = normalizeBaseUrl(args.gatewayUrl) + args.endpoint;
+
+    // Determine the body format and parser based on the endpoint path
+    let body: string;
+    let parser: (json: any) => { content: string; usage?: any };
+
+    if (args.endpoint.includes('/messages')) {
+      body = JSON.stringify(buildAnthropicBody(args.modelName, prompt));
+      parser = parseAnthropicResponse;
+    } else if (args.endpoint.includes('/responses')) {
+      body = JSON.stringify(buildResponsesBody(args.modelName, prompt));
+      parser = parseResponsesResponse;
+    } else {
+      // Default to chat completions format
+      body = JSON.stringify(buildChatBody(args.modelName, prompt));
+      parser = parseChatResponse;
+    }
+
+    const timer = startAbortTimer(timeoutMs);
+    try {
+      const res = await doJsonRequest(url, {
+        method: 'POST',
+        headers: commonHeaders,
+        body,
+        signal: timer.controller.signal,
+      });
+      const latencyMs = Date.now() - started;
+      if (!res.ok) {
+        const errText = res.text || `HTTP ${res.status}`;
+        return {
+          success: false,
+          latencyMs,
+          errorType: 'http_error',
+          errorMessage: errText.substring(0, 200),
+        };
+      }
+      const parsed = parser(res.json);
+      if (!parsed.content || String(parsed.content).trim().length === 0) {
+        return {
+          success: false,
+          latencyMs,
+          errorType: 'empty_content',
+          errorMessage: '响应内容为空',
+        };
+      }
+      return { success: true, latencyMs };
+    } catch (error: any) {
+      const latencyMs = Date.now() - started;
+      return mapTransportError(error, latencyMs, timeoutMs);
+    } finally {
+      timer.clear();
+    }
+  }
+
+  // Legacy behavior: auto-detect endpoint based on protocol
   if (protocol === 'anthropic') {
     const url = buildEndpointUrl(v1, 'messages');
     const body = JSON.stringify(buildAnthropicBody(args.modelName, prompt));

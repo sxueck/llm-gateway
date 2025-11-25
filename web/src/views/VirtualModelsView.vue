@@ -166,7 +166,7 @@ function getModelOptionsByProvider(providerId: string) {
     .filter(m => m.providerId === providerId && m.enabled && !m.isVirtual)
     .map(m => ({
       label: m.name,
-      value: m.id,
+      value: m.modelIdentifier,
     }));
 }
 
@@ -257,13 +257,10 @@ function generatePortkeyConfig() {
         targetConfig.weight = target.weight;
       }
 
-      if (target.modelId) {
-        const model = modelStore.models.find(m => m.id === target.modelId);
-        if (model) {
-          targetConfig.override_params = {
-            model: model.modelIdentifier,
-          };
-        }
+      if (target.modelName) {
+        targetConfig.override_params = {
+          model: target.modelName,
+        };
       }
 
       if (configType.value === 'fallback' && target.onStatusCodes && target.onStatusCodes.length > 0) {
@@ -328,15 +325,12 @@ function handleEdit(row: any) {
   formValue.value = {
     name: row.name,
     description: row.description || '',
-    targets: row.config.targets.map((target: any) => {
-      const model = modelStore.models.find(m => m.modelIdentifier === target.override_params?.model);
-      return {
-        providerId: target.provider,
-        modelId: model?.id || '',
-        weight: target.weight,
-        onStatusCodes: target.on_status_codes || [],
-      };
-    }),
+    targets: row.config.targets.map((target: any) => ({
+      providerId: target.provider,
+      modelName: target.override_params?.model || '',
+      weight: target.weight,
+      onStatusCodes: target.on_status_codes || [],
+    })),
     createVirtualModel: true,
     virtualModelName: virtualModel?.name || '',
     hashSource: row.config.strategy?.hashSource || 'virtualKey',

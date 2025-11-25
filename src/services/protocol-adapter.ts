@@ -429,9 +429,8 @@ export class ProtocolAdapter {
   private buildResponsesRequestParams(options: any, includePreviousResponseId: boolean): any {
     const params: any = {};
     if (options.instructions !== undefined) params.instructions = options.instructions;
-    if (options.temperature !== undefined) params.temperature = options.temperature;
-    if (options.max_output_tokens !== undefined) params.max_output_tokens = options.max_output_tokens;
-    if (options.top_p !== undefined) params.top_p = options.top_p;
+    // Responses API 不支持 temperature、max_tokens/max_output_tokens、top_p 等参数
+    // 这些参数应该通过 text、reasoning 等对象来配置
     if (options.store !== undefined) params.store = options.store;
     if (options.metadata !== undefined) params.metadata = options.metadata;
     if (options.tools !== undefined) params.tools = options.tools;

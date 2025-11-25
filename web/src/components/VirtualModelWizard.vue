@@ -152,13 +152,13 @@
                   :options="providerOptions"
                   placeholder="选择提供商"
                   size="small"
-                  @update:value="() => target.modelId = ''"
+                  @update:value="() => target.modelName = ''"
                 />
               </div>
               <div class="form-row">
                 <label class="form-label">模型</label>
                 <n-select
-                  v-model:value="target.modelId"
+                  v-model:value="target.modelName"
                   :options="getModelOptionsByProvider(target.providerId)"
                   placeholder="选择模型"
                   size="small"
@@ -315,7 +315,7 @@ function prevStep() {
 function addTarget() {
   localFormValue.value.targets.push({
     providerId: '',
-    modelId: '',
+    modelName: '',
     weight: ['loadbalance', 'hash', 'affinity'].includes(localConfigType.value) ? 0.5 : undefined,
     onStatusCodes: localConfigType.value === 'fallback' ? [] : undefined,
   });

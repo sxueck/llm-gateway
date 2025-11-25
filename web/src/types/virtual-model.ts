@@ -4,7 +4,7 @@
 
 export interface VirtualModelTarget {
   providerId: string;
-  modelId?: string;
+  modelName?: string;
   weight?: number;
   onStatusCodes?: number[];
 }

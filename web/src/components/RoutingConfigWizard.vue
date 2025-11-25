@@ -123,13 +123,13 @@
                   :options="providerOptions"
                   placeholder="选择提供商"
                   size="small"
-                  @update:value="() => target.modelId = ''"
+                  @update:value="() => target.modelName = ''"
                 />
               </div>
               <div class="form-row">
                 <label class="form-label">模型</label>
                 <n-select
-                  v-model:value="target.modelId"
+                  v-model:value="target.modelName"
                   :options="getModelOptionsByProvider(target.providerId)"
                   placeholder="选择模型"
                   size="small"
@@ -216,7 +216,7 @@ import {
 
 interface Target {
   providerId: string;
-  modelId?: string;
+  modelName?: string;
   weight?: number;
   onStatusCodes?: number[];
 }
@@ -291,9 +291,9 @@ function prevStep() {
 function addTarget() {
   localFormValue.value.targets.push({
     providerId: '',
-    modelId: '',
+    modelName: '',
     weight: localConfigType.value === 'loadbalance' ? 0.5 : undefined,
-    onStatusCodes: localConfigType.value === 'fallback' ? [429, 500] : undefined,
+    onStatusCodes: localFormValue.value.targets.length === 0 && localConfigType.value === 'fallback' ? [429, 500] : localConfigType.value === 'fallback' ? [429, 500] : undefined,
   });
 }
 
@@ -328,7 +328,7 @@ function handleSave() {
       message.error('请为所有目标选择提供商');
       return;
     }
-    if (!target.modelId) {
+    if (!target.modelName) {
       message.error('请为所有目标选择模型');
       return;
     }
