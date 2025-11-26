@@ -536,7 +536,7 @@ export async function handleStreamRequest(
       // 记录最终的 instructions 和 tools（用于调试）
       if (options.instructions) {
         memoryLogger.debug(
-          `Responses API instructions (${options.instructions.length} 字符): ${options.instructions.substring(0, 200)}...`,
+          `Responses API instructions (${options.instructions.length} 字符): ${options.instructions.substring(0, 100)}...`,
           'Proxy'
         );
       }
