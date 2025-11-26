@@ -19,20 +19,54 @@ import type { VirtualKey } from '../../types/index.js';
 import { normalizeUsageCounts } from '../../utils/usage-normalizer.js';
 import { isChatCompletionsPath, isResponsesApiPath, isEmbeddingsPath } from '../../utils/path-detector.js';
 
-function normalizeResponsesInput(input: any): any {
-  if (!input) return input;
+/**
+ * 规范化 Responses API 的 input 并提取系统提示
+ *
+ * Responses API 的 input 中不应包含 system/developer 角色的消息
+ * 这些应该通过顶层的 instructions 字段传递
+ *
+ * @param input 原始 input 数据
+ * @returns { normalizedInput, systemPrompt } 规范化后的 input 和提取的系统提示
+ */
+function normalizeResponsesInput(input: any): { normalizedInput: any; systemPrompt?: string } {
+  if (!input) return { normalizedInput: input };
 
   // 如果是字符串，直接返回
-  if (typeof input === 'string') return input;
+  if (typeof input === 'string') return { normalizedInput: input };
 
   // 如果是数组，递归处理每个元素
   if (Array.isArray(input)) {
-    return input.map(item => {
-      if (!item || typeof item !== 'object') return item;
+    const systemPrompts: string[] = [];
+    const normalizedItems: any[] = [];
+
+    for (const item of input) {
+      if (!item || typeof item !== 'object') {
+        normalizedItems.push(item);
+        continue;
+      }
+
+      // 提取 developer/system 角色的消息作为系统提示
+      if ((item.role === 'developer' || item.role === 'system') && item.content) {
+        let textContent = '';
+        if (typeof item.content === 'string') {
+          textContent = item.content;
+        } else if (Array.isArray(item.content)) {
+          // 提取所有 text 类型的内容
+          textContent = item.content
+            .filter((block: any) => block?.type === 'text' || block?.type === 'input_text')
+            .map((block: any) => block.text)
+            .join('\n');
+        }
+        if (textContent) {
+          systemPrompts.push(textContent);
+        }
+        // 不将 developer/system 角色的消息添加到 normalizedItems
+        continue;
+      }
 
       // 处理 message 类型的 item
       if (item.type === 'message' && Array.isArray(item.content)) {
-        return {
+        normalizedItems.push({
           ...item,
           content: item.content.map((contentBlock: any) => {
             if (!contentBlock || typeof contentBlock !== 'object') return contentBlock;
@@ -47,12 +81,13 @@ function normalizeResponsesInput(input: any): any {
 
             return contentBlock;
           })
-        };
+        });
+        continue;
       }
 
       // 处理带有 role 和 content 数组的项（如来自 health check 的输入）
       if (item.role && Array.isArray(item.content)) {
-        return {
+        normalizedItems.push({
           ...item,
           content: item.content.map((contentBlock: any) => {
             if (!contentBlock || typeof contentBlock !== 'object') return contentBlock;
@@ -67,27 +102,56 @@ function normalizeResponsesInput(input: any): any {
 
             return contentBlock;
           })
-        };
+        });
+        continue;
       }
 
       // 处理直接的 content block
       if (item.type === 'text') {
-        return {
+        normalizedItems.push({
           ...item,
           type: 'input_text'
-        };
+        });
+        continue;
       }
 
-      return item;
-    });
+      normalizedItems.push(item);
+    }
+
+    // 合并所有提取的系统提示
+    const systemPrompt = systemPrompts.length > 0 ? systemPrompts.join('\n\n') : undefined;
+
+    return {
+      normalizedInput: normalizedItems,
+      systemPrompt
+    };
   }
 
-  return input;
+  return { normalizedInput: input };
 }
 
-function buildResponsesOptions(body: any, includePrevId: boolean) {
+/**
+ * 构建 Responses API 的 options 参数
+ *
+ * 关键：Responses API 的 instructions 字段是系统级指令（类似 Chat Completions 的 system message）
+ * 需要从 input 中提取 developer/system 角色的消息，合并到 instructions 中
+ *
+ * @param body 请求体
+ * @param includePrevId 是否包含 previous_response_id
+ * @param extractedSystemPrompt 从 input 中提取的系统提示（如果有）
+ */
+function buildResponsesOptions(body: any, includePrevId: boolean, extractedSystemPrompt?: string) {
+  // 合并系统指令：优先使用提取的系统提示，其次使用用户提供的 instructions
+  // 如果两者都存在，将它们合并（提取的系统提示在前）
+  let finalInstructions: string | undefined;
+  if (extractedSystemPrompt && body?.instructions) {
+    finalInstructions = `${extractedSystemPrompt}\n\n${body.instructions}`;
+  } else {
+    finalInstructions = extractedSystemPrompt || body?.instructions;
+  }
+
   const options: any = {
-    instructions: body?.instructions,
+    instructions: finalInstructions,
     temperature: body?.temperature,
     max_output_tokens: body?.max_output_tokens,
     top_p: body?.top_p,
@@ -294,9 +358,18 @@ export function createProxyHandler() {
       // 检测是否为 Responses API 请求
       const isResponsesApi = isResponsesApiPath(path);
 
-      // 规范化 Responses API 的 input content block types
+      let extractedSystemPrompt: string | undefined;
       if (isResponsesApi && (request.body as any)?.input) {
-        (request.body as any).input = normalizeResponsesInput((request.body as any).input);
+        const { normalizedInput, systemPrompt } = normalizeResponsesInput((request.body as any).input);
+        (request.body as any).input = normalizedInput;
+        extractedSystemPrompt = systemPrompt;
+
+        if (extractedSystemPrompt) {
+          memoryLogger.info(
+            `Responses API: 从 input 中提取系统提示 (${extractedSystemPrompt.length} 字符)`,
+            'Proxy'
+          );
+        }
       }
 
       // Responses API 只支持流式模式，非流式直接返回错误
@@ -325,7 +398,8 @@ export function createProxyHandler() {
           currentModel,
           isResponsesApi,
           modelResult,
-          virtualKeyValue!
+          virtualKeyValue!,
+          extractedSystemPrompt
         );
       }
 
@@ -418,7 +492,8 @@ export async function handleStreamRequest(
   currentModel?: any,
   isResponsesApi: boolean = false,
   modelResult?: any,
-  virtualKeyValueParam?: string
+  virtualKeyValueParam?: string,
+  extractedSystemPrompt?: string
 ) {
   memoryLogger.info(
     `流式请求开始: ${path} | virtual key: ${vkDisplay}`,
@@ -442,7 +517,8 @@ export async function handleStreamRequest(
     if (isResponsesApi) {
       // Responses API 请求
       const input = (request.body as any)?.input;
-      const options = buildResponsesOptions((request.body as any), false);
+      // 传递提取的系统提示到 buildResponsesOptions
+      const options = buildResponsesOptions((request.body as any), false, extractedSystemPrompt);
 
       const modelNameForSession = (request.body as any)?.model || currentModel?.name || 'unknown';
       const userIdForSession =
@@ -456,6 +532,14 @@ export async function handleStreamRequest(
 
       (options as any).conversationId = conversationId;
       (options as any).sessionId = sessionId;
+
+      // 记录最终的 instructions（用于调试）
+      if (options.instructions) {
+        memoryLogger.debug(
+          `Responses API instructions (${options.instructions.length} 字符): ${options.instructions.substring(0, 200)}...`,
+          'Proxy'
+        );
+      }
 
       tokenUsage = await makeStreamHttpRequest(
         protocolConfig,
