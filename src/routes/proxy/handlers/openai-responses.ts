@@ -1,7 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { memoryLogger } from '../../../services/logger.js';
 import { accumulateResponsesStream } from '../../../utils/request-logger.js';
-import { makeHttpRequest, makeStreamHttpRequest } from '../http-client.js';
+import { makeStreamHttpRequest } from '../http-client.js';
 import { calculateTokensIfNeeded } from '../token-calculator.js';
 import { circuitBreaker } from '../../../services/circuit-breaker.js';
 import { shouldLogRequestBody, buildFullRequest, getTruncatedBodies, logApiRequest } from './shared.js';
@@ -20,15 +20,6 @@ export interface ResponsesStreamParams {
   currentModel?: any;
 }
 
-export interface ResponsesNonStreamParams {
-  request: FastifyRequest;
-  protocolConfig: any;
-  virtualKey: VirtualKey;
-  providerId: string;
-  startTime: number;
-  compressionStats?: { originalTokens: number; savedTokens: number };
-  currentModel?: any;
-}
 
 /**
  * 处理OpenAI Responses API流式请求
@@ -158,41 +149,4 @@ export async function handleResponsesStreamRequest(params: ResponsesStreamParams
       compressionStats,
     });
   }
-}
-
-/**
- * 处理OpenAI Responses API非流式请求
- */
-export async function handleResponsesNonStreamRequest(params: ResponsesNonStreamParams): Promise<any> {
-  const { request, protocolConfig } = params;
-
-  const input = (request.body as any)?.input;
-  const options = {
-    instructions: (request.body as any)?.instructions,
-    temperature: (request.body as any)?.temperature,
-    max_output_tokens: (request.body as any)?.max_output_tokens,
-    top_p: (request.body as any)?.top_p,
-    store: (request.body as any)?.store,
-    metadata: (request.body as any)?.metadata,
-    tools: (request.body as any)?.tools,
-    tool_choice: (request.body as any)?.tool_choice,
-    parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
-    reasoning: (request.body as any)?.reasoning,
-    text: (request.body as any)?.text,
-    previous_response_id: (request.body as any)?.previous_response_id,
-    truncation: (request.body as any)?.truncation,
-    user: (request.body as any)?.user,
-    include: (request.body as any)?.include,
-  };
-
-  const response = await makeHttpRequest(
-    protocolConfig,
-    [],
-    options,
-    false,
-    input,
-    true
-  );
-
-  return response;
 }

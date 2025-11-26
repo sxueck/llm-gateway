@@ -535,18 +535,41 @@ export class ProtocolAdapter {
       requestOptions.signal = abortSignal;
     }
 
+    // 为 Responses API 附加会话相关头，便于上游识别会话
+    const extraHeaders: Record<string, string> = {};
+    if ((options as any).conversationId) {
+      extraHeaders['Conversation-Id'] = String((options as any).conversationId);
+    }
+    if ((options as any).sessionId) {
+      extraHeaders['Session-Id'] = String((options as any).sessionId);
+    }
+    if (Object.keys(extraHeaders).length > 0) {
+      requestOptions.headers = {
+        ...(requestOptions.headers || {}),
+        ...extraHeaders,
+      };
+    }
+
     const stream = await client.responses.create(
       requestParams,
       Object.keys(requestOptions).length > 0 ? requestOptions : undefined
     ) as unknown as AsyncIterable<any>;
 
-    reply.raw.writeHead(200, {
+    const responseHeaders: Record<string, string> = {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
       'X-Accel-Buffering': 'no',
       'Connection': 'keep-alive',
       'Transfer-Encoding': 'chunked',
-    });
+    };
+    if ((options as any).conversationId) {
+      responseHeaders['X-Conversation-Id'] = String((options as any).conversationId);
+    }
+    if ((options as any).sessionId) {
+      responseHeaders['X-Session-Id'] = String((options as any).sessionId);
+    }
+
+    reply.raw.writeHead(200, responseHeaders);
 
     let promptTokens = 0;
     let completionTokens = 0;
@@ -560,11 +583,6 @@ export class ProtocolAdapter {
         if (reply.raw.destroyed || reply.raw.writableEnded) {
           memoryLogger.info('客户端已断开连接，停止流式传输', 'Protocol');
           break;
-        }
-
-        // 过滤掉上游注入的非规范字段(如 instructions)
-        if (chunk && typeof chunk === 'object' && 'instructions' in chunk) {
-          delete (chunk as any).instructions;
         }
 
         const chunkData = JSON.stringify(chunk);

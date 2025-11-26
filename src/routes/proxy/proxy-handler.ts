@@ -107,7 +107,23 @@ function buildResponsesOptions(body: any, includePrevId: boolean) {
   }
   return options;
 }
- 
+
+const responsesConversationCache = new Map<string, { id: string; expire: number }>();
+
+function getResponsesConversationId(model: string | undefined, userId: string | undefined) {
+  const key = `${model || 'unknown'}-${userId || 'anonymous'}`;
+  const now = Date.now();
+  const existing = responsesConversationCache.get(key) as { id: string; expire: number } | undefined;
+
+  if (existing && existing.expire > now) {
+    return existing.id;
+  }
+
+  const id = nanoid();
+  responsesConversationCache.set(key, { id, expire: now + 60 * 60 * 1000 });
+  return id;
+}
+
 export function createProxyHandler() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const startTime = Date.now();
@@ -283,6 +299,18 @@ export function createProxyHandler() {
         (request.body as any).input = normalizeResponsesInput((request.body as any).input);
       }
 
+      // Responses API 只支持流式模式，非流式直接返回错误
+      if (!isStreamRequest && isResponsesApi) {
+        return reply.code(400).send({
+          error: {
+            message: 'Responses API only supports streaming mode',
+            type: 'invalid_request_error',
+            param: 'stream',
+            code: 'responses_non_stream_not_supported'
+          }
+        });
+      }
+
       if (isStreamRequest) {
         return await handleStreamRequest(
           request,
@@ -313,8 +341,7 @@ export function createProxyHandler() {
         compressionStats,
         currentModel,
         modelResult,
-        virtualKeyValue!,
-        isResponsesApi
+        virtualKeyValue!
       );
     } catch (error: any) {
       const duration = Date.now() - startTime;
@@ -416,6 +443,19 @@ export async function handleStreamRequest(
       // Responses API 请求
       const input = (request.body as any)?.input;
       const options = buildResponsesOptions((request.body as any), false);
+
+      const modelNameForSession = (request.body as any)?.model || currentModel?.name || 'unknown';
+      const userIdForSession =
+        (request.body as any)?.metadata?.user_id ||
+        virtualKey?.id?.toString?.() ||
+        virtualKey?.key_value ||
+        vkDisplay;
+
+      const conversationId = getResponsesConversationId(modelNameForSession, userIdForSession);
+      const sessionId = nanoid();
+
+      (options as any).conversationId = conversationId;
+      (options as any).sessionId = sessionId;
 
       tokenUsage = await makeStreamHttpRequest(
         protocolConfig,
@@ -612,8 +652,7 @@ export async function handleNonStreamRequest(
   compressionStats?: { originalTokens: number; savedTokens: number },
   currentModel?: any,
   modelResult?: any,
-  virtualKeyValueParam?: string,
-  isResponsesApi: boolean = false
+  virtualKeyValueParam?: string
 ) {
   let fromCache = false;
   const isEmbeddingsRequest = isEmbeddingsPath(path);
@@ -701,20 +740,7 @@ export async function handleNonStreamRequest(
 
   let response: any;
 
-  if (isResponsesApi) {
-    // Responses API 请求
-    const input = (request.body as any)?.input;
-    const options = buildResponsesOptions((request.body as any), true);
-
-    response = await makeHttpRequest(
-      protocolConfig,
-      [],
-      options,
-      false,
-      input,
-      true
-    );
-  } else if (isEmbeddingsRequest) {
+  if (isEmbeddingsRequest) {
     // Embeddings API 请求
     const messages = (request.body as any)?.messages || [];
     const options = {

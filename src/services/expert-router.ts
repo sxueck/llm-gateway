@@ -316,10 +316,6 @@ export class ExpertRouter {
         lastUserMessage = JSON.stringify(input);
       }
 
-      // 如果有 instructions，作为系统提示添加到上下文
-      if (instructions) {
-        conversationHistory = `System Instructions: ${instructions}`;
-      }
     } else {
       // Chat Completions API 格式
       const messages = request.body?.messages || [];
