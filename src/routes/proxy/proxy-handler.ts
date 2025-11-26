@@ -533,10 +533,21 @@ export async function handleStreamRequest(
       (options as any).conversationId = conversationId;
       (options as any).sessionId = sessionId;
 
-      // 记录最终的 instructions（用于调试）
+      // 记录最终的 instructions 和 tools（用于调试）
       if (options.instructions) {
         memoryLogger.debug(
           `Responses API instructions (${options.instructions.length} 字符): ${options.instructions.substring(0, 200)}...`,
+          'Proxy'
+        );
+      }
+      if (options.tools && Array.isArray(options.tools)) {
+        memoryLogger.info(
+          `Responses API tools: ${options.tools.length} 个工具 - ${options.tools.map((t: any) => t.name || t.function?.name).join(', ')}`,
+          'Proxy'
+        );
+      } else {
+        memoryLogger.warn(
+          `Responses API: 没有检测到 tools 参数，上游可能无法使用工具功能`,
           'Proxy'
         );
       }
