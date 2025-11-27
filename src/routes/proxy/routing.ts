@@ -82,8 +82,16 @@ function simpleHash(str: string): number {
 
 // 判断是否应该对智能路由进行重试
 export function shouldRetrySmartRouting(statusCode: number): boolean {
-  // 对于 429 (rate limit), 500, 502, 503, 504 错误进行重试
-  return statusCode === 429 || statusCode === 500 || statusCode === 502 || statusCode === 503 || statusCode === 504;
+  // 对于 400, 404, 429 (rate limit), 500, 502, 503, 504 错误进行重试
+  return (
+    statusCode === 400 ||
+    statusCode === 404 ||
+    statusCode === 429 ||
+    statusCode === 500 ||
+    statusCode === 502 ||
+    statusCode === 503 ||
+    statusCode === 504
+  );
 }
 
 export function selectRoutingTarget(
@@ -502,4 +510,3 @@ export async function resolveProviderFromModel(
     providerId: model.provider_id
   };
 }
-
