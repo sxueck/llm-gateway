@@ -6,6 +6,7 @@ import { nanoid } from 'nanoid';
 import { loadAntiBotConfig, validateUserAgentList } from '../utils/anti-bot-config.js';
 import { hashKey } from '../utils/crypto.js';
 import { healthCheckerService } from '../services/health-checker.js';
+import { debugModeService } from '../services/debug-mode.js';
 
 export async function configRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
@@ -67,7 +68,13 @@ export async function configRoutes(fastify: FastifyInstance) {
     const litellmCompatCfg = await systemConfigDb.get('litellm_compat_enabled');
     const healthMonitoringCfg = await systemConfigDb.get('health_monitoring_enabled');
     const persistentMonitoringCfg = await systemConfigDb.get('persistent_monitoring_enabled');
+    const debugEnabledCfg = await systemConfigDb.get('developer_debug_enabled');
+    const debugExpiresCfg = await systemConfigDb.get('developer_debug_expires_at');
     const antiBot = await loadAntiBotConfig();
+
+    const now = Date.now();
+    const rawExpiresAt = debugExpiresCfg ? Number(debugExpiresCfg.value) : 0;
+    const activeDebug = debugEnabledCfg?.value === 'true' && rawExpiresAt > now;
 
     return {
       allowRegistration: !(allowRegCfg && allowRegCfg.value === 'false'),
@@ -76,18 +83,21 @@ export async function configRoutes(fastify: FastifyInstance) {
       litellmCompatEnabled: litellmCompatCfg ? litellmCompatCfg.value === 'true' : false,
       healthMonitoringEnabled: healthMonitoringCfg ? healthMonitoringCfg.value === 'true' : true,
       persistentMonitoringEnabled: persistentMonitoringCfg ? persistentMonitoringCfg.value === 'true' : false,
+      developerDebugEnabled: activeDebug,
+      developerDebugExpiresAt: activeDebug ? rawExpiresAt : null,
       antiBot,
     };
   });
 
   fastify.post('/system-settings', async (request) => {
-    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, antiBot } = request.body as {
+    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, antiBot } = request.body as {
       allowRegistration?: boolean;
       corsEnabled?: boolean;
       publicUrl?: string;
       litellmCompatEnabled?: boolean;
       healthMonitoringEnabled?: boolean;
       persistentMonitoringEnabled?: boolean;
+      developerDebugEnabled?: boolean;
       antiBot?: {
         enabled?: boolean;
         blockBots?: boolean;
@@ -168,6 +178,22 @@ export async function configRoutes(fastify: FastifyInstance) {
               memoryLogger.warn(`清空监控密钥模型绑定失败: ${clearErr.message}`, 'Config');
             }
           }
+        }
+      }
+
+      // Developer debug mode: 15 minutes temporary window
+      if (developerDebugEnabled !== undefined) {
+        if (developerDebugEnabled) {
+          const expiresAt = Date.now() + 15 * 60 * 1000;
+          await systemConfigDb.set('developer_debug_enabled', 'true', '是否启用开发者调试模式');
+          await systemConfigDb.set('developer_debug_expires_at', String(expiresAt), '开发者调试模式到期时间');
+          debugModeService.setState(true, expiresAt);
+          memoryLogger.warn(`开发者调试模式已开启，将在 ${new Date(expiresAt).toLocaleString('zh-CN')} 自动关闭`, 'Config');
+        } else {
+          await systemConfigDb.set('developer_debug_enabled', 'false', '是否启用开发者调试模式');
+          await systemConfigDb.set('developer_debug_expires_at', '0', '开发者调试模式到期时间');
+          debugModeService.setState(false, Date.now());
+          memoryLogger.info('开发者调试模式已关闭', 'Config');
         }
       }
 

@@ -2,6 +2,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { nanoid } from 'nanoid';
 import { apiRequestDb } from '../../db/index.js';
 import { memoryLogger } from '../../services/logger.js';
+import { debugModeService } from '../../services/debug-mode.js';
 import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse, buildFullRequestBody, accumulateResponsesStream, stripFieldRecursively } from '../../utils/request-logger.js';
 import { promptProcessor } from '../../services/prompt-processor.js';
 import { messageCompressor } from '../../services/message-compressor.js';
@@ -642,6 +643,32 @@ export async function handleStreamRequest(
       compression_saved_tokens: compressionStats?.savedTokens,
     });
 
+    // Broadcast full, untruncated event to debug WebSocket clients when debug mode is active
+    if (debugModeService.isActive()) {
+      try {
+        debugModeService.broadcast({
+          type: 'api_request',
+          id: nanoid(),
+          timestamp: Date.now(),
+          protocol: isResponsesApi ? 'openai-responses' : 'openai',
+          method: request.method,
+          path,
+          stream: true,
+          success: true,
+          statusCode: 200,
+          fromCache: false,
+          virtualKeyId: virtualKey.id,
+          virtualKeyName: (virtualKey as any).name,
+          providerId,
+          model: (request.body as any)?.model || 'unknown',
+          durationMs: duration,
+          requestBody: fullRequestBody,
+          // For stream we forward raw chunks to keep all content
+          responseBody: tokenUsage.streamChunks,
+        });
+      } catch (_e) {}
+    }
+ 
     return;
   } catch (streamError: any) {
     const duration = Date.now() - startTime;
@@ -716,6 +743,30 @@ export async function handleStreamRequest(
       compression_saved_tokens: compressionStats?.savedTokens,
     });
 
+    if (debugModeService.isActive()) {
+      try {
+        debugModeService.broadcast({
+          type: 'api_request',
+          id: nanoid(),
+          timestamp: Date.now(),
+          protocol: isResponsesApi ? 'openai-responses' : 'openai',
+          method: request.method,
+          path,
+          stream: true,
+          success: false,
+          statusCode: statusForRetry || 500,
+          fromCache: false,
+          virtualKeyId: virtualKey.id,
+          virtualKeyName: (virtualKey as any).name,
+          providerId,
+          model: (request.body as any)?.model || 'unknown',
+          durationMs: duration,
+          requestBody: fullRequestBody,
+          error: streamError.message,
+        });
+      } catch (_e) {}
+    }
+ 
     // 若仍未发送任何响应，则返回规范化错误
     if (!reply.raw.headersSent && !reply.sent) {
       const errorPayload = streamError?.errorResponse || {
@@ -1008,6 +1059,32 @@ export async function handleNonStreamRequest(
   const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
   const truncatedResponse = shouldLogBody ? truncateResponseBody(responseData) : undefined;
 
+  // Developer debug mode: send full event (no truncation) to WS clients
+  if (debugModeService.isActive()) {
+    try {
+      debugModeService.broadcast({
+        type: 'api_request',
+        id: nanoid(),
+        timestamp: Date.now(),
+        protocol: 'openai',
+        method: request.method,
+        path,
+        stream: false,
+        success: isSuccess,
+        statusCode: response.statusCode,
+        fromCache,
+        virtualKeyId: virtualKey.id,
+        virtualKeyName: (virtualKey as any).name,
+        providerId,
+        model: (request.body as any)?.model || 'unknown',
+        durationMs: duration,
+        requestBody: fullRequestBody,
+        responseBody: responseData,
+        error: isSuccess ? undefined : JSON.stringify(responseData),
+      });
+    } catch (_e) {}
+  }
+ 
   // 统一归一化解析 usage，兼容两种协议字段
   const norm = normalizeUsageCounts(responseData?.usage);
   const tokenCount = await calculateTokensIfNeeded(

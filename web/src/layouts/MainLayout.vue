@@ -214,6 +214,11 @@ const generalMenuOptions = computed(() => [
         key: 'health-monitoring-settings',
         icon: () => h(NIcon, null, { default: () => h(PulseOutline) }),
       },
+      {
+        label: t('settings.developerDebug'),
+        key: 'developer-settings',
+        icon: () => h(NIcon, null, { default: () => h(FlaskOutline) }),
+      },
     ],
   },
 ]);

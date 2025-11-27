@@ -96,6 +96,11 @@ const router = createRouter({
           name: 'HealthMonitoringSettings',
           component: () => import('@/views/HealthMonitoringSettingsView.vue'),
         },
+        {
+          path: 'developer-settings',
+          name: 'DeveloperSettings',
+          component: () => import('@/views/DeveloperSettingsView.vue'),
+        },
       ],
     },
     {

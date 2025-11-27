@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import fastifyStatic from '@fastify/static';
+import websocket from '@fastify/websocket';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { appConfig, setPublicUrl } from './config/index.js';
@@ -21,7 +22,8 @@ import { memoryLogger } from './services/logger.js';
 import { modelPresetsService } from './services/model-presets.js';
 import { demoModeService } from './services/demo-mode.js';
 import { healthCheckerService } from './services/health-checker.js';
-import { healthRunDb } from './db/index.js';
+import { healthRunDb, systemConfigDb as systemConfigDbForDebug } from './db/index.js';
+import { debugModeService } from './services/debug-mode.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -57,6 +59,9 @@ await fastify.register(fastifyStatic, {
   prefix: '/',
 });
 
+// WebSocket plugin for developer debug stream
+await fastify.register(websocket);
+
 fastify.decorate('authenticate', async function(request: any, reply: any) {
   try {
     await request.jwtVerify();
@@ -73,9 +78,43 @@ fastify.decorate('authenticate', async function(request: any, reply: any) {
   }
 });
 
+// Developer debug WebSocket endpoint (JWT via query token)
+fastify.register(async (app) => {
+  app.get('/api/admin/config/debug-ws', { websocket: true }, (connection, req) => {
+    try {
+      const rawUrl = req.raw.url || '/api/admin/config/debug-ws';
+      const url = new URL(rawUrl, 'http://localhost');
+      const token = url.searchParams.get('token');
+      if (!token) {
+        connection.socket.close(1008, 'missing token');
+        return;
+      }
+
+      // Verify JWT using fastify-jwt plugin
+      (app as any).jwt.verify(token);
+    } catch (err: any) {
+      connection.socket.close(1008, 'unauthorized');
+      return;
+    }
+
+    debugModeService.addClient(connection.socket as any);
+  });
+});
+
 await initDatabase();
 
 memoryLogger.info('Database initialized', 'System');
+
+// Initialize developer debug mode state from system_config
+try {
+  const debugEnabledCfg = await systemConfigDbForDebug.get('developer_debug_enabled');
+  const debugExpiresCfg = await systemConfigDbForDebug.get('developer_debug_expires_at');
+  const debugEnabled = debugEnabledCfg ? debugEnabledCfg.value === 'true' : false;
+  const debugExpiresAt = debugExpiresCfg ? Number(debugExpiresCfg.value) : 0;
+  debugModeService.initFromConfig(debugEnabled, debugExpiresAt);
+} catch (e: any) {
+  memoryLogger.error(`初始化开发者调试模式状态失败: ${e.message}`, 'System');
+}
 
 const publicUrlCfg = await systemConfigDb.get('public_url');
 if (publicUrlCfg) {

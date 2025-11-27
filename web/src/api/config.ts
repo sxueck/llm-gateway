@@ -138,6 +138,8 @@ export const configApi = {
     litellmCompatEnabled: boolean;
     healthMonitoringEnabled: boolean;
     persistentMonitoringEnabled: boolean;
+    developerDebugEnabled: boolean;
+    developerDebugExpiresAt: number | null;
     antiBot: {
       enabled: boolean;
       blockBots: boolean;
@@ -162,6 +164,7 @@ export const configApi = {
     litellmCompatEnabled?: boolean;
     healthMonitoringEnabled?: boolean;
     persistentMonitoringEnabled?: boolean;
+    developerDebugEnabled?: boolean;
     antiBot?: {
       enabled?: boolean;
       blockBots?: boolean;

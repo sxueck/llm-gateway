@@ -2,6 +2,7 @@ import { getDatabase } from '../connection.js';
 import { ApiRequestBuffer } from '../types.js';
 import { addToBuffer, shouldFlush, flushApiRequestBuffer } from '../utils/buffer.js';
 import { generateTimeBuckets, initializeTimeBuckets } from '../utils/time-buckets.js';
+import { debugModeService } from '../../services/debug-mode.js';
 
 function getDisableLoggingCondition(): string {
   return '(ar.virtual_key_id IS NULL OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)';
@@ -9,8 +10,13 @@ function getDisableLoggingCondition(): string {
 
 export const apiRequestRepository = {
   async create(request: ApiRequestBuffer): Promise<void> {
-    addToBuffer(request);
+    // When developer debug mode is active, skip persisting request logs to database.
+    if (debugModeService.isActive()) {
+      return;
+    }
 
+    addToBuffer(request);
+ 
     if (shouldFlush()) {
       await flushApiRequestBuffer();
     }
