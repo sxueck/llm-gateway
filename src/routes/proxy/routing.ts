@@ -274,31 +274,51 @@ export async function resolveSmartRouting(
 
   try {
     const config = JSON.parse(routingConfig.config);
-
-    // 根据配置决定使用什么作为hash key
-    let hashKey: string | undefined;
-    if (config.strategy?.mode === 'hash') {
-      const hashSource = config.strategy?.hashSource || 'virtualKey';
-      if (hashSource === 'virtualKey' && virtualKeyId) {
-        hashKey = virtualKeyId;
-      } else if (hashSource === 'request' && request?.body) {
-        // 使用请求体的哈希作为key
-        hashKey = JSON.stringify(request.body);
-      }
-    }
-
-    const selectedTarget = selectRoutingTarget(
-      config,
-      routingConfig.type,
-      model.routing_config_id,
-      hashKey,
-      excludeProviders
-    );
-
-    if (!selectedTarget) {
-      memoryLogger.error(`No target selected from smart routing config: ${model.routing_config_id}`, 'Proxy');
-      throw new Error('No available target in smart routing config');
-    }
+ 
+     // 根据配置决定使用什么作为hash key
+     let hashKey: string | undefined;
+     if (config.strategy?.mode === 'hash') {
+       const hashSource = config.strategy?.hashSource || 'virtualKey';
+       if (hashSource === 'virtualKey' && virtualKeyId) {
+         hashKey = virtualKeyId;
+       } else if (hashSource === 'request' && request?.body) {
+         // 使用请求体的哈希作为key
+         hashKey = JSON.stringify(request.body);
+       }
+     }
+ 
+     // 记录当前路由配置是否存在 targets，用于后续区分配置问题 vs. 熔断/负载问题
+     const hasTargets = Array.isArray(config.targets) && config.targets.length > 0;
+ 
+     const selectedTarget = selectRoutingTarget(
+       config,
+       routingConfig.type,
+       model.routing_config_id,
+       hashKey,
+       excludeProviders
+     );
+ 
+     if (!selectedTarget) {
+       if (!hasTargets) {
+         memoryLogger.error(
+           `Smart routing config has no targets: ${model.routing_config_id}`,
+           'Proxy'
+         );
+         throw new Error('Smart routing config has no targets');
+       }
+ 
+       // 存在 targets 但没有可用目标，说明可能全部被熔断或在本次请求中轮转耗尽
+       const error: any = new Error('当前上游负载忙，请稍后重试');
+       error.statusCode = 503;
+       error.code = 'upstream_overloaded';
+ 
+       memoryLogger.warn(
+         `Smart routing: all targets unavailable (possibly circuit breaker open) | config: ${model.routing_config_id}`,
+         'Proxy'
+       );
+ 
+       throw error;
+     }
 
     const provider = await providerDb.getById(selectedTarget.provider);
     if (!provider) {

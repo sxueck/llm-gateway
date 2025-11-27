@@ -13,6 +13,8 @@ export interface RetryContext {
   startTime: number;
 }
 
+const SMART_ROUTING_RETRY_WINDOW_MS = 10_000; // 10 秒
+
 /**
  * 处理智能路由的非流式请求重试
  */
@@ -28,6 +30,15 @@ export async function handleNonStreamRetry(
     return false;
   }
 
+  // 超出单次请求的最大重试时间窗口，避免无限轮转
+  if (Date.now() - context.startTime > SMART_ROUTING_RETRY_WINDOW_MS) {
+    memoryLogger.warn(
+      `智能路由重试终止：超过最大重试窗口 ${SMART_ROUTING_RETRY_WINDOW_MS}ms` ,
+      'Proxy'
+    );
+    return false;
+  }
+ 
   if (!shouldRetrySmartRouting(statusCode)) {
     memoryLogger.debug(`状态码 ${statusCode} 不满足重试条件`, 'Proxy');
     return false;
@@ -116,6 +127,14 @@ export async function handleStreamRetry(
     return false;
   }
 
+  if (Date.now() - context.startTime > SMART_ROUTING_RETRY_WINDOW_MS) {
+    memoryLogger.warn(
+      `智能路由重试(流式)终止：超过最大重试窗口 ${SMART_ROUTING_RETRY_WINDOW_MS}ms`,
+      'Proxy'
+    );
+    return false;
+  }
+ 
   if (!shouldRetrySmartRouting(statusCode)) {
     return false;
   }

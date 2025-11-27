@@ -156,13 +156,13 @@ export async function resolveModelAndProvider(
     } catch (routingError: any) {
       memoryLogger.error(`Smart routing failed: ${routingError.message}`, 'Proxy');
       return {
-        code: 500,
+        code: routingError.statusCode || 500,
         body: {
           error: {
             message: routingError.message || 'Smart routing failed',
             type: 'internal_error',
             param: null,
-            code: 'smart_routing_error'
+            code: routingError.code || 'smart_routing_error'
           }
         }
       };
@@ -339,13 +339,13 @@ export async function resolveModelAndProvider(
       } catch (routingError: any) {
         memoryLogger.error(`Smart routing failed: ${routingError.message}`, 'Proxy');
         return {
-          code: 500,
+          code: routingError.statusCode || 500,
           body: {
             error: {
               message: routingError.message || 'Smart routing failed',
               type: 'internal_error',
               param: null,
-              code: 'smart_routing_error'
+              code: routingError.code || 'smart_routing_error'
             }
           }
         };
