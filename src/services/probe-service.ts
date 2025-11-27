@@ -449,50 +449,83 @@ export async function probeModelViaGateway(args: {
     }
   }
 
-  // OpenAI-like: try chat then responses
-  const attempts: Array<{ url: string; type: 'chat' | 'responses'; body: string }> = [
-    { url: buildChatCompletionsEndpoint(v1), type: 'chat', body: JSON.stringify(buildChatBody(args.modelName, prompt)) },
-    { url: buildResponsesEndpoint(v1), type: 'responses', body: JSON.stringify(buildResponsesBody(args.modelName, prompt)) },
-  ];
-
+  // OpenAI-like: prefer /v1/chat/completions, then fall back to streaming /v1/responses
   let lastErrorType = 'unknown';
   let lastErrorMessage = '健康检查失败';
 
-  for (const attempt of attempts) {
+  {
+    const chatUrl = buildChatCompletionsEndpoint(v1);
     const timer = startAbortTimer(timeoutMs);
     try {
-      const res = await doJsonRequest(attempt.url, {
+      const res = await doJsonRequest(chatUrl, {
         method: 'POST',
         headers: commonHeaders,
-        body: attempt.body,
+        body: JSON.stringify(buildChatBody(args.modelName, prompt)),
         signal: timer.controller.signal,
       });
       const latencyMs = Date.now() - started;
       if (!res.ok) {
         lastErrorType = 'http_error';
         lastErrorMessage = (res.text || `HTTP ${res.status}`).substring(0, 200);
-        continue;
-      }
-      // parse
-      let content = '';
-      if (attempt.type === 'chat') {
-        content = parseChatResponse(res.json).content;
       } else {
-        content = parseResponsesResponse(res.json).content;
-      }
-      if (typeof content === 'string' && content.trim().length > 0) {
-        return { success: true, latencyMs };
-      } else {
+        const content = parseChatResponse(res.json).content;
+        if (typeof content === 'string' && content.trim().length > 0) {
+          return { success: true, latencyMs };
+        }
         lastErrorType = 'empty_content';
         lastErrorMessage = '响应内容为空';
-        continue;
       }
     } catch (error: any) {
       const latencyMs = Date.now() - started;
       const mapped = mapTransportError(error, latencyMs, timeoutMs);
       lastErrorType = mapped.errorType || 'unknown';
       lastErrorMessage = mapped.errorMessage || '请求失败';
-      continue;
+    } finally {
+      timer.clear();
+    }
+  }
+
+  // 2) 回退到流式的 /responses（当前网关该端点仅支持流式）
+  {
+    const responsesUrl = buildResponsesEndpoint(v1);
+    const timer = startAbortTimer(timeoutMs);
+    try {
+      const body = JSON.stringify({
+        ...buildResponsesBody(args.modelName, prompt),
+        stream: true,
+      });
+
+      const res = await fetch(responsesUrl, {
+        method: 'POST',
+        headers: {
+          ...commonHeaders,
+          'Accept': 'text/event-stream',
+        },
+        body,
+        signal: timer.controller.signal,
+      } as any);
+
+      const latencyMs = Date.now() - started;
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        lastErrorType = 'http_error';
+        lastErrorMessage = (text || `HTTP ${res.status}`).substring(0, 200);
+      } else {
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.toLowerCase().includes('text/event-stream')) {
+          lastErrorType = 'invalid_content_type';
+          lastErrorMessage = `Unexpected Content-Type: ${ct}`.substring(0, 200);
+        } else {
+          // 对于健康检查而言，只要成功建立 SSE 连接即可认为健康
+          return { success: true, latencyMs };
+        }
+      }
+    } catch (error: any) {
+      const latencyMs = Date.now() - started;
+      const mapped = mapTransportError(error, latencyMs, timeoutMs);
+      lastErrorType = mapped.errorType || 'unknown';
+      lastErrorMessage = mapped.errorMessage || '请求失败';
     } finally {
       timer.clear();
     }

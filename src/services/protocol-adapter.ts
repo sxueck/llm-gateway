@@ -585,6 +585,11 @@ export class ProtocolAdapter {
           break;
         }
 
+        // 移除 instructions 字段避免泄露
+        if (chunk && typeof chunk === 'object' && 'instructions' in chunk) {
+          delete (chunk as any).instructions;
+        }
+
         const chunkData = JSON.stringify(chunk);
         const sseData = `data: ${chunkData}\n\n`;
 
