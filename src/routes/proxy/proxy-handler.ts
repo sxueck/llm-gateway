@@ -160,6 +160,7 @@ function buildResponsesOptions(body: any, includePrevId: boolean, extractedSyste
     tools: body?.tools,
     tool_choice: body?.tool_choice,
     parallel_tool_calls: body?.parallel_tool_calls,
+    mcp: body?.mcp,
     reasoning: body?.reasoning,
     text: body?.text,
     truncation: body?.truncation,
@@ -1091,4 +1092,3 @@ export async function handleNonStreamRequest(
 
   return reply.send(responseData);
 }
-

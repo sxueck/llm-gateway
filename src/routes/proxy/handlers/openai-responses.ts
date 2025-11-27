@@ -55,6 +55,7 @@ export async function handleResponsesStreamRequest(params: ResponsesStreamParams
       tools: (request.body as any)?.tools,
       tool_choice: (request.body as any)?.tool_choice,
       parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
+      mcp: (request.body as any)?.mcp,
       reasoning: (request.body as any)?.reasoning,
       text: (request.body as any)?.text,
       truncation: (request.body as any)?.truncation,

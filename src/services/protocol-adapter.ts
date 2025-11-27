@@ -429,13 +429,13 @@ export class ProtocolAdapter {
   private buildResponsesRequestParams(options: any, includePreviousResponseId: boolean): any {
     const params: any = {};
     if (options.instructions !== undefined) params.instructions = options.instructions;
-    // Responses API 不支持 temperature、max_tokens/max_output_tokens、top_p 等参数
-    // 这些参数应该通过 text、reasoning 等对象来配置
     if (options.store !== undefined) params.store = options.store;
     if (options.metadata !== undefined) params.metadata = options.metadata;
     if (options.tools !== undefined) params.tools = options.tools;
     if (options.tool_choice !== undefined) params.tool_choice = options.tool_choice;
     if (options.parallel_tool_calls !== undefined) params.parallel_tool_calls = options.parallel_tool_calls;
+    // 透传 MCP 配置（用于远程 MCP servers），与工具定义中的 type: 'mcp' 一起生效
+    if ((options as any).mcp !== undefined) (params as any).mcp = (options as any).mcp;
     if (options.reasoning !== undefined) params.reasoning = options.reasoning;
     if (options.text !== undefined) params.text = options.text;
     if (includePreviousResponseId && options.previous_response_id !== undefined) params.previous_response_id = options.previous_response_id;

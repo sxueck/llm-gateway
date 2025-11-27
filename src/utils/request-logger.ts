@@ -164,6 +164,9 @@ export function truncateRequestBody(body: any): string {
         truncated.tools = Array.isArray(parsed.tools)
           ? `[${parsed.tools.length} 个工具定义]`
           : parsed.tools;
+      } else if (key === 'mcp') {
+        // MCP server 配置中通常包含 URL、鉴权等敏感信息，这里避免在日志中展开
+        truncated.mcp = '[mcp 配置信息已省略]';
       } else if (key === 'functions') {
         // 函数定义通常很长，只显示数量
         truncated.functions = Array.isArray(parsed.functions)
@@ -361,4 +364,3 @@ export function accumulateResponsesStream(chunks: string[]): string {
     return chunks.join('').substring(0, MAX_BODY_LENGTH) + '...[truncated]';
   }
 }
-
