@@ -20,6 +20,66 @@ import type { VirtualKey } from '../../types/index.js';
 import { normalizeUsageCounts } from '../../utils/usage-normalizer.js';
 import { isChatCompletionsPath, isResponsesApiPath, isEmbeddingsPath } from '../../utils/path-detector.js';
 
+const MESSAGE_COMPRESSION_MIN_TOKENS = parseInt(process.env.MESSAGE_COMPRESSION_MIN_TOKENS || '2048', 10);
+
+function responsesInputNeedsNormalization(items: any[]): boolean {
+  return items.some(item => {
+    if (!item || typeof item !== 'object') {
+      return false;
+    }
+
+    if ((item.role === 'developer' || item.role === 'system') && item.content) {
+      return true;
+    }
+
+    if (item.type === 'text') {
+      return true;
+    }
+
+    if (item.type === 'message' && Array.isArray(item.content)) {
+      return item.content.some((block: any) => block?.type === 'text');
+    }
+
+    if (item.role && Array.isArray(item.content)) {
+      return item.content.some((block: any) => block?.type === 'text');
+    }
+
+    return false;
+  });
+}
+
+function estimateTokensForMessages(messages: any[]): number {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return 0;
+  }
+
+  let totalChars = 0;
+  for (const message of messages) {
+    if (!message) continue;
+    if (typeof message.content === 'string') {
+      totalChars += message.content.length;
+    } else if (Array.isArray(message.content)) {
+      for (const block of message.content) {
+        if (block && typeof block.text === 'string') {
+          totalChars += block.text.length;
+        }
+      }
+    }
+  }
+
+  return Math.ceil(totalChars / 4);
+}
+
+function buildRequestBodyForLogging(
+  requestBody: any,
+  modelAttributes: any,
+  shouldLogBody: boolean
+) {
+  if (shouldLogBody || debugModeService.isActive()) {
+    return buildFullRequestBody(requestBody, modelAttributes);
+  }
+  return requestBody;
+}
 /**
  * 规范化 Responses API 的 input 并提取系统提示
  *
@@ -37,6 +97,10 @@ function normalizeResponsesInput(input: any): { normalizedInput: any; systemProm
 
   // 如果是数组，递归处理每个元素
   if (Array.isArray(input)) {
+    if (!responsesInputNeedsNormalization(input)) {
+      return { normalizedInput: input };
+    }
+
     const systemPrompts: string[] = [];
     const normalizedItems: any[] = [];
 
@@ -275,7 +339,10 @@ export function createProxyHandler() {
           }
         }
 
-        if (virtualKey.dynamic_compression_enabled === 1) {
+        const approxTokens = estimateTokensForMessages((request.body as any).messages);
+        const shouldCompressMessages = approxTokens >= MESSAGE_COMPRESSION_MIN_TOKENS;
+
+        if (virtualKey.dynamic_compression_enabled === 1 && shouldCompressMessages) {
           try {
             const { messages: compressedMessages, stats } = messageCompressor.compressMessages(
               (request.body as any).messages
@@ -299,6 +366,11 @@ export function createProxyHandler() {
               'Proxy'
             );
           }
+        } else if (virtualKey.dynamic_compression_enabled === 1 && !shouldCompressMessages) {
+          memoryLogger.debug(
+            `跳过消息压缩 | 虚拟密钥: ${vkDisplay} | 估算 tokens: ${approxTokens} < 阈值 ${MESSAGE_COMPRESSION_MIN_TOKENS}`,
+            'Proxy'
+          );
         }
       }
       // 拦截Zero温度功能
@@ -442,7 +514,7 @@ export function createProxyHandler() {
             }
           }
 
-          const fullRequestBody = buildFullRequestBody(request.body, modelAttributes);
+          const fullRequestBody = buildRequestBodyForLogging(request.body, modelAttributes, shouldLogBody);
           const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
 
           const tokenCount = await calculateTokensIfNeeded(0, request.body);
@@ -618,7 +690,7 @@ export async function handleStreamRequest(
       }
     }
 
-    const fullRequestBody = buildFullRequestBody(request.body, modelAttributes);
+    const fullRequestBody = buildRequestBodyForLogging(request.body, modelAttributes, shouldLogBody);
     const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
     const truncatedResponse = shouldLogBody
       ? (isResponsesApi ? accumulateResponsesStream(tokenUsage.streamChunks) : accumulateStreamResponse(tokenUsage.streamChunks))
@@ -721,7 +793,7 @@ export async function handleStreamRequest(
       }
     }
 
-    const fullRequestBody = buildFullRequestBody(request.body, modelAttributes);
+    const fullRequestBody = buildRequestBodyForLogging(request.body, modelAttributes, shouldLogBody);
     const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
 
     const tokenCount = await calculateTokensIfNeeded(0, request.body);
@@ -843,7 +915,7 @@ export async function handleNonStreamRequest(
       }
     }
 
-    const fullRequestBody = buildFullRequestBody(request.body, modelAttributes);
+    const fullRequestBody = buildRequestBodyForLogging(request.body, modelAttributes, shouldLogBody);
     const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
     const truncatedResponse = shouldLogBody ? truncateResponseBody(cachedResponseForClient) : undefined;
 
@@ -1055,7 +1127,7 @@ export async function handleNonStreamRequest(
     }
   }
 
-  const fullRequestBody = buildFullRequestBody(request.body, modelAttributes);
+  const fullRequestBody = buildRequestBodyForLogging(request.body, modelAttributes, shouldLogBody);
   const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
   const truncatedResponse = shouldLogBody ? truncateResponseBody(responseData) : undefined;
 

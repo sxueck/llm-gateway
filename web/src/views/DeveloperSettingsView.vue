@@ -64,7 +64,14 @@
                 :key="event.id + '-' + event.timestamp"
                 class="event-card"
               >
-                <div class="event-header">
+                <div
+                  class="event-header"
+                  role="button"
+                  tabindex="0"
+                  @click="toggleEventDetails(event)"
+                  @keydown.enter.prevent="toggleEventDetails(event)"
+                  @keydown.space.prevent="toggleEventDetails(event)"
+                >
                   <div class="event-main-line">
                     <span class="event-timestamp">{{ formatTimestamp(event.timestamp) }}</span>
                     <n-tag size="small" type="info" class="event-method">
@@ -96,32 +103,49 @@
                       Provider: {{ event.providerId }}
                     </span>
                   </div>
-                </div>
-
-                <div class="event-body">
-                  <div class="event-column">
-                    <div class="event-column-title">{{ t('apiGuide.requestBody') }}</div>
-                    <n-code
-                      :code="formatJson(event.requestBody)"
-                      language="json"
-                      word-wrap
-                      class="event-code-block"
-                    />
-                  </div>
-                  <div class="event-column">
-                    <div class="event-column-title">{{ t('common.responseBody') }}</div>
-                    <n-code
-                      :code="event.responseBody !== undefined ? formatJson(event.responseBody) : ''"
-                      language="json"
-                      word-wrap
-                      class="event-code-block"
-                    />
+                  <div class="event-toggle">
+                    <span class="event-toggle-icon">
+                      {{ isEventExpanded(event) ? '▼' : '▶' }}
+                    </span>
+                    <span class="event-toggle-text">
+                      {{ isEventExpanded(event) ? t('common.collapse') : t('common.expand') }}
+                    </span>
                   </div>
                 </div>
 
-                <n-alert v-if="event.error" type="error" size="small" style="margin-top: 8px;">
-                  {{ event.error }}
-                </n-alert>
+                <transition name="event-expand">
+                  <div v-if="isEventExpanded(event)" class="event-body">
+                    <div class="event-column">
+                      <div class="event-column-title">{{ t('apiGuide.requestBody') }}</div>
+                      <n-code
+                        :code="formatJson(event.requestBody)"
+                        language="json"
+                        word-wrap
+                        class="event-code-block"
+                      />
+                    </div>
+                    <div class="event-column">
+                      <div class="event-column-title">{{ t('common.responseBody') }}</div>
+                      <n-code
+                        :code="event.responseBody !== undefined ? formatJson(event.responseBody) : ''"
+                        language="json"
+                        word-wrap
+                        class="event-code-block"
+                      />
+                    </div>
+                  </div>
+                </transition>
+
+                <transition name="event-expand">
+                  <n-alert
+                    v-if="isEventExpanded(event) && event.error"
+                    type="error"
+                    size="small"
+                    style="margin-top: 8px;"
+                  >
+                    {{ event.error }}
+                  </n-alert>
+                </transition>
               </div>
             </div>
           </n-scrollbar>
@@ -188,6 +212,7 @@ const developerDebugExpiresAt = ref<number | null>(null);
 const remainingSeconds = ref<number | null>(null);
 
 const events = ref<DebugApiEvent[]>([]);
+const expandedEvents = ref<Record<string, boolean>>({});
 const eventSource = ref<EventSource | null>(null);
 const connectionStatus = ref<'disconnected' | 'connecting' | 'connected' | 'error'>(
   'disconnected'
@@ -284,12 +309,20 @@ function handleDebugState(state: DebugStateMessage) {
 function handleDebugEvent(event: DebugApiEvent) {
   events.value.unshift(event);
   if (events.value.length > 200) {
-    events.value.length = 200;
+    const removed = events.value.splice(200);
+    if (removed.length) {
+      const map = { ...expandedEvents.value };
+      for (const removedEvent of removed) {
+        delete map[getEventKey(removedEvent)];
+      }
+      expandedEvents.value = map;
+    }
   }
 }
 
 function clearEvents() {
   events.value = [];
+  expandedEvents.value = {};
 }
 
 function setupCountdownTimer() {
@@ -351,6 +384,22 @@ function reconnect() {
   connect();
 }
 
+function getEventKey(event: DebugApiEvent) {
+  return `${event.id}-${event.timestamp}`;
+}
+
+function isEventExpanded(event: DebugApiEvent) {
+  return !!expandedEvents.value[getEventKey(event)];
+}
+
+function toggleEventDetails(event: DebugApiEvent) {
+  const key = getEventKey(event);
+  expandedEvents.value = {
+    ...expandedEvents.value,
+    [key]: !expandedEvents.value[key],
+  };
+}
+
 onMounted(async () => {
   await loadSystemSettings();
   setupCountdownTimer();
@@ -390,6 +439,12 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 4px;
   margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.event-header:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
 }
 
 .event-main-line {
@@ -405,6 +460,18 @@ onUnmounted(() => {
   gap: 8px;
   font-size: 12px;
   color: #8c8c8c;
+}
+
+.event-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+.event-toggle-icon {
+  font-weight: bold;
 }
 
 .event-timestamp {
@@ -437,6 +504,17 @@ onUnmounted(() => {
   padding: 0 4px;
   border-radius: 4px;
   border: 1px solid #e5e5e5;
+}
+
+.event-expand-enter-active,
+.event-expand-leave-active {
+  transition: all 0.2s ease;
+}
+
+.event-expand-enter-from,
+.event-expand-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 .event-body {

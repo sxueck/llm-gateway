@@ -51,6 +51,8 @@ export default {
     providerCount: 'Provider Count',
     virtualKeyCount: 'Virtual Key Count',
     enabledKeys: 'Enabled Keys',
+    expand: 'Expand',
+    collapse: 'Collapse',
   },
   layout: {
     appName: 'LLM Gateway',
@@ -563,4 +565,3 @@ export default {
     loadFailed: 'Load failed',
   },
 };
-

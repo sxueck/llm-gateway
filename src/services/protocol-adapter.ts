@@ -1,5 +1,7 @@
 import OpenAI from 'openai';
 import { FastifyReply } from 'fastify';
+import { Agent as HttpAgent } from 'node:http';
+import { Agent as HttpsAgent } from 'node:https';
 import { memoryLogger } from './logger.js';
 import { extractReasoningFromChoice } from '../utils/request-logger.js';
 import { normalizeUsageCounts } from '../utils/usage-normalizer.js';
@@ -38,6 +40,8 @@ export interface ProtocolResponse {
 
 export class ProtocolAdapter {
   private openaiClients: Map<string, OpenAI> = new Map();
+  private keepAliveAgents: Map<string, { httpAgent: HttpAgent; httpsAgent: HttpsAgent }> = new Map();
+  private readonly keepAliveMaxSockets = parseInt(process.env.HTTP_KEEP_ALIVE_MAX_SOCKETS || '64', 10);
 
   /**
    * 生成稳定的 headers 缓存 key
@@ -53,6 +57,24 @@ export class ProtocolAdapter {
       .sort()
       .map(key => `${key}:${headers[key]}`)
       .join('|');
+  }
+
+  private getKeepAliveAgents(cacheKey: string): { httpAgent: HttpAgent; httpsAgent: HttpsAgent } {
+    if (!this.keepAliveAgents.has(cacheKey)) {
+      const httpAgent = new HttpAgent({
+        keepAlive: true,
+        keepAliveMsecs: 1000,
+        maxSockets: this.keepAliveMaxSockets,
+      });
+      const httpsAgent = new HttpsAgent({
+        keepAlive: true,
+        keepAliveMsecs: 1000,
+        maxSockets: this.keepAliveMaxSockets,
+      });
+      this.keepAliveAgents.set(cacheKey, { httpAgent, httpsAgent });
+    }
+
+    return this.keepAliveAgents.get(cacheKey)!;
   }
 
   private getOpenAIClient(config: ProtocolConfig): OpenAI {
@@ -72,6 +94,10 @@ export class ProtocolAdapter {
       if (config.baseUrl) {
         clientConfig.baseURL = config.baseUrl;
       }
+
+      const keepAliveAgents = this.getKeepAliveAgents(cacheKey);
+      clientConfig.httpAgent = keepAliveAgents.httpAgent;
+      clientConfig.httpsAgent = keepAliveAgents.httpsAgent;
 
       // 添加自定义请求头支持
       if (config.modelAttributes?.headers && Object.keys(config.modelAttributes.headers).length > 0) {

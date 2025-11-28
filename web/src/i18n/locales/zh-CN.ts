@@ -51,6 +51,8 @@ export default {
     providerCount: '提供商数量',
     virtualKeyCount: '虚拟密钥数量',
     enabledKeys: '启用的密钥',
+    expand: '展开',
+    collapse: '收起',
   },
   layout: {
     appName: 'LLM Gateway',
@@ -559,4 +561,3 @@ export default {
     loadFailed: '加载失败',
   },
 };
-

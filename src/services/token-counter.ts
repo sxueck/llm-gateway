@@ -1,21 +1,28 @@
 import { get_encoding } from 'tiktoken';
 
+type EncodingInstance = ReturnType<typeof get_encoding>;
+
+let sharedEncoding: EncodingInstance | null = null;
+
+function acquireEncoding(): EncodingInstance {
+  if (!sharedEncoding) {
+    sharedEncoding = get_encoding('cl100k_base');
+  }
+  return sharedEncoding;
+}
+
 function countTokensForText(text: string): number {
   if (!text || typeof text !== 'string') {
     return 0;
   }
 
-  let encoding;
   try {
-    encoding = get_encoding('cl100k_base');
+    const encoding = acquireEncoding();
     const tokens = encoding.encode(text);
     return tokens.length;
   } catch (error: any) {
+    sharedEncoding = null;
     return Math.ceil(text.length / 4);
-  } finally {
-    if (encoding) {
-      encoding.free();
-    }
   }
 }
 
@@ -24,9 +31,8 @@ export function countTokensForMessages(messages: any[]): number {
     return 0;
   }
 
-  let encoding;
   try {
-    encoding = get_encoding('cl100k_base');
+    const encoding = acquireEncoding();
 
     let totalTokens = 0;
 
@@ -77,14 +83,11 @@ export function countTokensForMessages(messages: any[]): number {
 
     return totalTokens;
   } catch (error: any) {
+    sharedEncoding = null;
     const totalText = messages.map(m =>
       typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
     ).join('');
     return Math.ceil(totalText.length / 4);
-  } finally {
-    if (encoding) {
-      encoding.free();
-    }
   }
 }
 
@@ -241,3 +244,9 @@ export async function countStreamResponseTokens(
   });
 }
 
+process.once('exit', () => {
+  if (sharedEncoding) {
+    sharedEncoding.free();
+    sharedEncoding = null;
+  }
+});
