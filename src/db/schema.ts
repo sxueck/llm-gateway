@@ -5,6 +5,7 @@ export async function createTables() {
   const conn = await pool.getConnection();
 
   try {
+    // 用户表
     await conn.query(`
       CREATE TABLE IF NOT EXISTS users (
         id VARCHAR(255) PRIMARY KEY,
@@ -16,10 +17,12 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    // 提供商表
     await conn.query(`
       CREATE TABLE IF NOT EXISTS providers (
         id VARCHAR(255) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
+        description TEXT,
         base_url TEXT NOT NULL,
         protocol_mappings TEXT,
         api_key TEXT NOT NULL,
@@ -31,6 +34,7 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    // 模型表
     await conn.query(`
       CREATE TABLE IF NOT EXISTS models (
         id VARCHAR(255) PRIMARY KEY,
@@ -59,6 +63,7 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    // 虚拟密钥表
     await conn.query(`
       CREATE TABLE IF NOT EXISTS virtual_keys (
         id VARCHAR(255) PRIMARY KEY,
@@ -75,6 +80,8 @@ export async function createTables() {
         cache_enabled TINYINT DEFAULT 0,
         disable_logging TINYINT DEFAULT 0,
         dynamic_compression_enabled TINYINT DEFAULT 0,
+        intercept_zero_temperature TINYINT DEFAULT 0,
+        zero_temperature_replacement DECIMAL(3,2) DEFAULT NULL,
         created_at BIGINT NOT NULL,
         updated_at BIGINT NOT NULL,
         FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
@@ -86,15 +93,17 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    // 系统配置表
     await conn.query(`
       CREATE TABLE IF NOT EXISTS system_config (
-        \`key\` VARCHAR(255) PRIMARY KEY,
+        ` + "`key`" + ` VARCHAR(255) PRIMARY KEY,
         value TEXT NOT NULL,
         description TEXT,
         updated_at BIGINT NOT NULL
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    // API 请求日志表
     await conn.query(`
       CREATE TABLE IF NOT EXISTS api_requests (
         id VARCHAR(255) PRIMARY KEY,
@@ -104,6 +113,7 @@ export async function createTables() {
         prompt_tokens INT DEFAULT 0,
         completion_tokens INT DEFAULT 0,
         total_tokens INT DEFAULT 0,
+        cached_tokens INT DEFAULT 0,
         status VARCHAR(50),
         response_time INT,
         error_message TEXT,
@@ -123,6 +133,7 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    // 路由配置表
     await conn.query(`
       CREATE TABLE IF NOT EXISTS routing_configs (
         id VARCHAR(255) PRIMARY KEY,
@@ -138,6 +149,7 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    // 专家路由配置表
     await conn.query(`
       CREATE TABLE IF NOT EXISTS expert_routing_configs (
         id VARCHAR(255) PRIMARY KEY,
@@ -152,6 +164,7 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    // 专家路由日志表
     await conn.query(`
       CREATE TABLE IF NOT EXISTS expert_routing_logs (
         id VARCHAR(255) PRIMARY KEY,
@@ -172,6 +185,65 @@ export async function createTables() {
         INDEX idx_expert_routing_logs_config (expert_routing_id),
         INDEX idx_expert_routing_logs_created_at (created_at),
         INDEX idx_expert_routing_logs_category (classification_result)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // 健康检查目标表
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS health_targets (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        display_title VARCHAR(255) DEFAULT NULL COMMENT '显示标题(可自定义)',
+        type ENUM('model', 'virtual_model') NOT NULL,
+        target_id VARCHAR(255) NOT NULL COMMENT '模型或虚拟模型的ID',
+        enabled TINYINT DEFAULT 1,
+        check_interval_seconds INT DEFAULT 300 COMMENT '检查频率(秒)',
+        check_prompt TEXT DEFAULT NULL COMMENT '健康检查使用的提示词',
+        check_config TEXT DEFAULT NULL COMMENT 'JSON配置: 超时、重试、并发等',
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        INDEX idx_health_targets_type (type),
+        INDEX idx_health_targets_enabled (enabled),
+        INDEX idx_health_targets_target_id (target_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // 健康检查运行记录表
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS health_runs (
+        id VARCHAR(255) PRIMARY KEY,
+        target_id VARCHAR(255) NOT NULL,
+        status ENUM('success', 'error') NOT NULL,
+        latency_ms INT NOT NULL COMMENT '总耗时(毫秒)',
+        error_type VARCHAR(100) DEFAULT NULL COMMENT '错误类型',
+        error_message TEXT DEFAULT NULL COMMENT '错误摘要',
+        request_id VARCHAR(255) DEFAULT NULL COMMENT '请求ID,对齐api_requests',
+        created_at BIGINT NOT NULL,
+        FOREIGN KEY (target_id) REFERENCES health_targets(id) ON DELETE CASCADE,
+        INDEX idx_health_runs_target (target_id),
+        INDEX idx_health_runs_created_at (created_at),
+        INDEX idx_health_runs_status (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // 健康检查汇总表
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS health_summaries (
+        id VARCHAR(255) PRIMARY KEY,
+        target_id VARCHAR(255) NOT NULL,
+        window_start BIGINT NOT NULL COMMENT '时间窗口起点',
+        window_end BIGINT NOT NULL COMMENT '时间窗口终点',
+        total_checks INT DEFAULT 0,
+        success_count INT DEFAULT 0,
+        error_count INT DEFAULT 0,
+        avg_latency_ms INT DEFAULT 0,
+        p50_latency_ms INT DEFAULT 0,
+        p95_latency_ms INT DEFAULT 0,
+        p99_latency_ms INT DEFAULT 0,
+        created_at BIGINT NOT NULL,
+        FOREIGN KEY (target_id) REFERENCES health_targets(id) ON DELETE CASCADE,
+        INDEX idx_health_summaries_target (target_id),
+        INDEX idx_health_summaries_window (window_start, window_end)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
   } finally {
