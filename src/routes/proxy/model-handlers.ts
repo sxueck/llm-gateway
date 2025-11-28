@@ -35,6 +35,14 @@ export function mergeModelAttributes(baseInfo: any, attributes: any): any {
 
 export async function getModelsHandler(request: FastifyRequest, reply: FastifyReply) {
   try {
+    // 如果是浏览器直接访问 /models（Accept 包含 text/html 且没有认证头），
+    // 返回前端应用的 index.html，让前端路由接管，而不是走虚拟密钥鉴权。
+    const accept = String(request.headers.accept || '');
+    if (!request.headers.authorization && accept.includes('text/html')) {
+      reply.header('Content-Type', 'text/html; charset=utf-8');
+      return reply.sendFile('index.html');
+    }
+
     const authResult = await authenticateVirtualKey(request.headers.authorization);
     if ('error' in authResult) {
       return reply.code(authResult.error.code).send(authResult.error.body);
