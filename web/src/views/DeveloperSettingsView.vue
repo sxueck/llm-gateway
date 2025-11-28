@@ -115,6 +115,11 @@
 
                 <transition name="event-expand">
                   <div v-if="isEventExpanded(event)" class="event-body">
+                    <div class="event-actions">
+                      <n-button size="tiny" tertiary @click.stop="downloadEvent(event)">
+                        {{ t('settings.developerDebugDownload') }}
+                      </n-button>
+                    </div>
                     <div class="event-column">
                       <div class="event-column-title">{{ t('apiGuide.requestBody') }}</div>
                       <n-code
@@ -400,6 +405,48 @@ function toggleEventDetails(event: DebugApiEvent) {
   };
 }
 
+function downloadEvent(event: DebugApiEvent) {
+  try {
+    const payload = {
+      id: event.id,
+      timestamp: event.timestamp,
+      protocol: event.protocol,
+      method: event.method,
+      path: event.path,
+      stream: event.stream,
+      success: event.success,
+      statusCode: event.statusCode,
+      fromCache: event.fromCache,
+      virtualKeyId: event.virtualKeyId,
+      virtualKeyName: event.virtualKeyName,
+      providerId: event.providerId,
+      model: event.model,
+      durationMs: event.durationMs,
+      requestBody: event.requestBody,
+      responseBody: event.responseBody,
+      error: event.error,
+    };
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const timestamp = new Date(event.timestamp).toISOString().replace(/[:.]/g, '-');
+    const method = event.method.toLowerCase();
+    const cleanPath = event.path
+      .replace(/[^a-z0-9]+/gi, '-')
+      .replace(/^-+/, '')
+      .replace(/-+$/, '') || 'request';
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `debug-${method}-${cleanPath}-${timestamp}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    message.success(t('settings.developerDebugDownloadSuccess'));
+  } catch (error) {
+    console.error('Failed to export developer debug request', error);
+    message.error(t('settings.developerDebugDownloadFailed'));
+  }
+}
+
 onMounted(async () => {
   await loadSystemSettings();
   setupCountdownTimer();
@@ -521,6 +568,12 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.event-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
 }
 
 @media (max-width: 768px) {
