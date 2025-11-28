@@ -148,13 +148,11 @@ import {
   useMessage,
 } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
-import { useAuthStore } from '@/stores/auth';
 import { configApi } from '@/api/config';
 import { formatJson, formatTimestamp } from '@/utils/common';
 
 const { t } = useI18n();
 const message = useMessage();
-const authStore = useAuthStore();
 
 interface DebugApiEvent {
   type: 'api_request';
@@ -190,14 +188,14 @@ const developerDebugExpiresAt = ref<number | null>(null);
 const remainingSeconds = ref<number | null>(null);
 
 const events = ref<DebugApiEvent[]>([]);
-const ws = ref<WebSocket | null>(null);
+const eventSource = ref<EventSource | null>(null);
 const connectionStatus = ref<'disconnected' | 'connecting' | 'connected' | 'error'>(
   'disconnected'
 );
 let countdownTimer: number | null = null;
 
 const isConnected = computed(() => connectionStatus.value === 'connected');
-const canConnect = computed(() => !!authStore.token);
+const canConnect = computed(() => true);
 
 const connectionBadgeType = computed(() => {
   switch (connectionStatus.value) {
@@ -309,40 +307,25 @@ function clearCountdownTimer() {
 }
 
 function connect() {
-  if (!authStore.token) {
-    message.error(t('settings.developerDebugNoToken'));
-    return;
+  if (eventSource.value) {
+    eventSource.value.close();
+    eventSource.value = null;
   }
-
-  if (ws.value) {
-    ws.value.close();
-    ws.value = null;
-  }
-
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const url = `${protocol}://${window.location.host}/api/admin/config/debug-ws?token=${encodeURIComponent(
-    authStore.token
-  )}`;
 
   connectionStatus.value = 'connecting';
 
-  const socket = new WebSocket(url);
-  ws.value = socket;
+  const stream = new EventSource('/api/admin/config/debug-stream');
+  eventSource.value = stream;
 
-  socket.onopen = () => {
+  stream.onopen = () => {
     connectionStatus.value = 'connected';
   };
 
-  socket.onclose = () => {
-    connectionStatus.value = 'disconnected';
-    ws.value = null;
-  };
-
-  socket.onerror = () => {
+  stream.onerror = () => {
     connectionStatus.value = 'error';
   };
 
-  socket.onmessage = (event) => {
+  stream.onmessage = (event) => {
     try {
       const data: DebugMessage = JSON.parse(event.data);
       if (data.type === 'debug_state') {
@@ -357,9 +340,9 @@ function connect() {
 }
 
 function disconnect() {
-  if (ws.value) {
-    ws.value.close();
-    ws.value = null;
+  if (eventSource.value) {
+    eventSource.value.close();
+    eventSource.value = null;
   }
   connectionStatus.value = 'disconnected';
 }

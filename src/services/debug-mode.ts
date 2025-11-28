@@ -1,10 +1,9 @@
+import type { FastifyReply } from 'fastify';
 import { memoryLogger } from './logger.js';
 
-interface DebugClient {
-  // Using minimal interface here to avoid hard dependency on ws types
-  readyState?: number;
-  send(data: string): void;
-  on?(event: string, listener: (...args: any[]) => void): void;
+interface DebugStreamClient {
+  reply: FastifyReply;
+  heartbeat: NodeJS.Timeout | null;
 }
 
 export interface DebugApiEvent {
@@ -33,12 +32,14 @@ export interface DebugApiEvent {
  *
  * - State (enabled + expiresAt) is driven by system_config and updated via config routes.
  * - When active, API request logs should not be persisted to DB.
- * - Instead, full request/response payloads are pushed to connected WebSocket clients.
+ * - Instead, full request/response payloads are pushed to connected HTTP stream clients.
  */
 class DebugModeService {
   private enabled = false;
   private expiresAt = 0;
-  private clients = new Set<DebugClient>();
+  private clients = new Set<DebugStreamClient>();
+  private eventBuffer: DebugApiEvent[] = [];
+  private readonly maxBufferedEvents = 200;
 
   initFromConfig(enabled: boolean, expiresAt: number | null | undefined) {
     this.enabled = !!enabled;
@@ -59,7 +60,10 @@ class DebugModeService {
       memoryLogger.info(`开发者调试模式已开启，有效期至 ${expireDate}`, 'DebugMode');
     } else {
       memoryLogger.info('开发者调试模式已关闭', 'DebugMode');
+      this.eventBuffer = [];
     }
+
+    this.broadcastState();
   }
 
   isActive(): boolean {
@@ -70,45 +74,97 @@ class DebugModeService {
     return this.expiresAt > Date.now() ? this.expiresAt : null;
   }
 
-  addClient(socket: DebugClient) {
-    this.clients.add(socket);
+  addStreamClient(reply: FastifyReply) {
+    const client: DebugStreamClient = {
+      reply,
+      heartbeat: null,
+    };
+    client.heartbeat = setInterval(() => {
+      this.sendComment(client, 'heartbeat');
+    }, 15000);
 
-    // Best-effort cleanup when client closes
-    if (socket.on) {
-      socket.on('close', () => {
-        this.clients.delete(socket);
-      });
-      socket.on('error', () => {
-        this.clients.delete(socket);
-      });
-    }
+    this.clients.add(client);
 
-    // Send initial state so frontend can show countdown without extra HTTP call
-    try {
-      const payload = JSON.stringify({
-        type: 'debug_state',
-        active: this.isActive(),
-        expiresAt: this.getExpiresAt(),
-      });
-      socket.send(payload);
-    } catch (e) {
-      this.clients.delete(socket);
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      if (client.heartbeat) {
+        clearInterval(client.heartbeat);
+        client.heartbeat = null;
+      }
+      this.clients.delete(client);
+    };
+
+    reply.raw.on('close', cleanup);
+    reply.raw.on('error', cleanup);
+
+    this.sendStateToClient(client);
+    for (const event of this.eventBuffer) {
+      this.sendEventToClient(client, event);
     }
   }
 
   broadcast(event: DebugApiEvent) {
     if (!this.isActive()) return;
 
-    const payload = JSON.stringify(event);
+    this.eventBuffer.push(event);
+    if (this.eventBuffer.length > this.maxBufferedEvents) {
+      this.eventBuffer.shift();
+    }
+
     for (const client of this.clients) {
-      try {
-        // 1 means WebSocket.OPEN for ws library; if absent, try sending anyway
-        if (typeof client.readyState === 'number' && client.readyState !== 1) continue;
-        client.send(payload);
-      } catch (_e) {
-        // Remove broken clients
-        this.clients.delete(client);
+      this.sendEventToClient(client, event);
+    }
+  }
+
+  private broadcastState() {
+    const payload = {
+      type: 'debug_state' as const,
+      active: this.isActive(),
+      expiresAt: this.getExpiresAt(),
+    };
+
+    for (const client of this.clients) {
+      this.sendPayload(client, payload);
+    }
+  }
+
+  private sendStateToClient(client: DebugStreamClient) {
+    const payload = {
+      type: 'debug_state' as const,
+      active: this.isActive(),
+      expiresAt: this.getExpiresAt(),
+    };
+    this.sendPayload(client, payload);
+  }
+
+  private sendEventToClient(client: DebugStreamClient, event: DebugApiEvent) {
+    this.sendPayload(client, event);
+  }
+
+  private sendPayload(client: DebugStreamClient, payload: any) {
+    try {
+      client.reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+    } catch (error) {
+      if (client.heartbeat) {
+        clearInterval(client.heartbeat);
+        client.heartbeat = null;
       }
+      this.clients.delete(client);
+      memoryLogger.error(`发送调试流失败: ${(error as Error).message}`, 'DebugMode');
+    }
+  }
+
+  private sendComment(client: DebugStreamClient, comment: string) {
+    try {
+      client.reply.raw.write(`: ${comment}\n\n`);
+    } catch (_error) {
+      if (client.heartbeat) {
+        clearInterval(client.heartbeat);
+        client.heartbeat = null;
+      }
+      this.clients.delete(client);
     }
   }
 }

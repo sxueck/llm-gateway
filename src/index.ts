@@ -2,7 +2,6 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import fastifyStatic from '@fastify/static';
-import websocket from '@fastify/websocket';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { appConfig, setPublicUrl } from './config/index.js';
@@ -59,9 +58,6 @@ await fastify.register(fastifyStatic, {
   prefix: '/',
 });
 
-// WebSocket plugin for developer debug stream
-await fastify.register(websocket);
-
 fastify.decorate('authenticate', async function(request: any, reply: any) {
   try {
     await request.jwtVerify();
@@ -78,27 +74,15 @@ fastify.decorate('authenticate', async function(request: any, reply: any) {
   }
 });
 
-// Developer debug WebSocket endpoint (JWT via query token)
-fastify.register(async (app) => {
-  app.get('/api/admin/config/debug-ws', { websocket: true }, (connection, req) => {
-    try {
-      const rawUrl = req.raw.url || '/api/admin/config/debug-ws';
-      const url = new URL(rawUrl, 'http://localhost');
-      const token = url.searchParams.get('token');
-      if (!token) {
-        connection.socket.close(1008, 'missing token');
-        return;
-      }
+// Developer debug HTTP stream endpoint (SSE)
+fastify.get('/api/admin/config/debug-stream', (request, reply) => {
+  reply.raw.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  reply.raw.setHeader('Cache-Control', 'no-cache, no-transform');
+  reply.raw.setHeader('Connection', 'keep-alive');
+  reply.raw.setHeader('X-Accel-Buffering', 'no');
+  reply.hijack();
 
-      // Verify JWT using fastify-jwt plugin
-      (app as any).jwt.verify(token);
-    } catch (err: any) {
-      connection.socket.close(1008, 'unauthorized');
-      return;
-    }
-
-    debugModeService.addClient(connection.socket as any);
-  });
+  debugModeService.addStreamClient(reply);
 });
 
 await initDatabase();
