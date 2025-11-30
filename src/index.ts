@@ -17,10 +17,12 @@ import { anthropicRoutes } from './routes/anthropic.js';
 import { modelPresetsRoutes } from './routes/model-presets.js';
 import { expertRoutingRoutes } from './routes/expert-routing.js';
 import { healthRoutes } from './routes/health.js';
+import backupRoutes from './routes/backup.js';
 import { memoryLogger } from './services/logger.js';
 import { modelPresetsService } from './services/model-presets.js';
 import { demoModeService } from './services/demo-mode.js';
 import { healthCheckerService } from './services/health-checker.js';
+import { getBackupScheduler } from './services/backup-scheduler.js';
 import { healthRunDb, systemConfigDb as systemConfigDbForDebug } from './db/index.js';
 import { debugModeService } from './services/debug-mode.js';
 
@@ -142,6 +144,7 @@ await fastify.register(configRoutes, { prefix: '/api/admin/config' });
 await fastify.register(modelPresetsRoutes, { prefix: '/api/admin/model-presets' });
 await fastify.register(expertRoutingRoutes, { prefix: '/api/admin/expert-routing' });
 await fastify.register(healthRoutes);
+await fastify.register(backupRoutes);
 
 memoryLogger.info('Routes registered', 'System');
 
@@ -255,6 +258,15 @@ try {
   }, 24 * 60 * 60 * 1000);
 
   await demoModeService.start();
+
+  // Start backup scheduler if S3 is configured
+  try {
+    const backupScheduler = getBackupScheduler();
+    backupScheduler.start();
+    memoryLogger.info('Backup scheduler started', 'Backup');
+  } catch (error: any) {
+    memoryLogger.warn(`Backup scheduler not started: ${error.message}`, 'Backup');
+  }
 } catch (err: any) {
   fastify.log.error(err);
   memoryLogger.error(`Failed to start server: ${err}`, 'System');
@@ -265,6 +277,15 @@ const gracefulShutdown = async (signal: string) => {
   memoryLogger.info(`收到 ${signal} 信号，开始优雅关闭...`, 'System');
 
   try {
+    // Stop backup scheduler
+    try {
+      const backupScheduler = getBackupScheduler();
+      backupScheduler.stop();
+      memoryLogger.info('Backup scheduler stopped', 'Backup');
+    } catch (error) {
+      // Ignore if not started
+    }
+
     await healthCheckerService.stop();
     memoryLogger.info('健康检查服务已停止', 'System');
 

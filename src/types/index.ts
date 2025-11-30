@@ -121,3 +121,47 @@ export interface ExpertRoutingLog {
   classifier_response?: string | null;
 }
 
+export interface BackupRecord {
+  id: string;
+  backup_key: string;
+  backup_type: 'full' | 'incremental';
+  includes_logs: number;
+  file_size: number | null;
+  file_hash: string | null;
+  s3_key: string;
+  encryption_key_hash: string | null;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  started_at: number | null;
+  completed_at: number | null;
+  error_message: string | null;
+  record_count: number | null;
+  checksum: string | null;
+  created_at: number;
+}
+
+export interface RestoreRecord {
+  id: string;
+  backup_record_id: string;
+  restore_type: 'full' | 'partial';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'rollback';
+  started_at: number | null;
+  completed_at: number | null;
+  error_message: string | null;
+  backup_before_restore: string | null;
+  changes_made: string | null; // JSON string
+  rollback_data: string | null; // JSON string
+  created_at: number;
+}
+
+export interface BackupOptions {
+  includes_logs?: boolean;
+  backup_type?: 'full' | 'incremental';
+}
+
+export interface RestoreOptions {
+  restore_type?: 'full' | 'partial';
+  create_backup_before_restore?: boolean;
+  verify_data?: boolean;
+  tables_to_restore?: string[];
+}
+

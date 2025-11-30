@@ -108,6 +108,7 @@ import {
   GitBranchOutline,
   ShieldOutline,
   PulseOutline,
+  CloudDownloadOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
@@ -210,9 +211,9 @@ const generalMenuOptions = computed(() => [
         icon: () => h(NIcon, null, { default: () => h(ShieldOutline) }),
       },
       {
-        label: t('settings.healthMonitoring'),
-        key: 'health-monitoring-settings',
-        icon: () => h(NIcon, null, { default: () => h(PulseOutline) }),
+        label: t('settings.backup'),
+        key: 'backup',
+        icon: () => h(NIcon, null, { default: () => h(CloudDownloadOutline) }),
       },
       {
         label: t('settings.developerDebug'),

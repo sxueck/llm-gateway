@@ -9,7 +9,60 @@ export interface Migration {
 
 // 注意：schema.ts 中已经包含了全部当前需要的表结构和字段。
 // 迁移脚本仅保留版本追踪骨架，方便未来新增迁移时扩展。
-export const migrations: Migration[] = [];
+export const migrations: Migration[] = [
+  {
+    version: 16,
+    name: 'add_backup_and_restore_tables',
+    up: async (conn: Connection) => {
+      // Create backup_records table
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS backup_records (
+          id VARCHAR(255) PRIMARY KEY,
+          backup_key VARCHAR(255) NOT NULL,
+          backup_type ENUM('full', 'incremental') NOT NULL,
+          includes_logs TINYINT DEFAULT 0,
+          file_size BIGINT,
+          file_hash VARCHAR(64),
+          s3_key VARCHAR(500) NOT NULL,
+          encryption_key_hash VARCHAR(64),
+          status ENUM('pending', 'running', 'completed', 'failed') NOT NULL,
+          started_at BIGINT,
+          completed_at BIGINT,
+          error_message TEXT,
+          record_count INT,
+          checksum VARCHAR(64),
+          created_at BIGINT NOT NULL,
+          INDEX idx_backup_records_status (status),
+          INDEX idx_backup_records_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+
+      // Create restore_records table
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS restore_records (
+          id VARCHAR(255) PRIMARY KEY,
+          backup_record_id VARCHAR(255) NOT NULL,
+          restore_type ENUM('full', 'partial') NOT NULL,
+          status ENUM('pending', 'running', 'completed', 'failed', 'rollback') NOT NULL,
+          started_at BIGINT,
+          completed_at BIGINT,
+          error_message TEXT,
+          backup_before_restore VARCHAR(255),
+          changes_made JSON,
+          rollback_data JSON,
+          created_at BIGINT NOT NULL,
+          FOREIGN KEY (backup_record_id) REFERENCES backup_records(id) ON DELETE CASCADE,
+          INDEX idx_restore_records_status (status),
+          INDEX idx_restore_records_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+    },
+    down: async (conn: Connection) => {
+      await conn.query('DROP TABLE IF EXISTS restore_records');
+      await conn.query('DROP TABLE IF EXISTS backup_records');
+    }
+  }
+];
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {
   try {

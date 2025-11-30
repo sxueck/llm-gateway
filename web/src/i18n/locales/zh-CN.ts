@@ -278,6 +278,7 @@ export default {
     general: '通用设置',
     security: '安全设置',
     healthMonitoring: '监控设置',
+    backup: '备份与恢复',
     developerDebug: '开发者调试模式',
     developerDebugTitle: '开发者调试设置',
     developerDebugDesc: '开启后，完整的 API 请求/响应数据将实时推送到当前浏览器，而不会写入数据库。',

@@ -92,14 +92,14 @@ const router = createRouter({
           component: () => import('@/views/SecuritySettingsView.vue'),
         },
         {
-          path: 'health-monitoring-settings',
-          name: 'HealthMonitoringSettings',
-          component: () => import('@/views/HealthMonitoringSettingsView.vue'),
-        },
-        {
           path: 'developer-settings',
           name: 'DeveloperSettings',
           component: () => import('@/views/DeveloperSettingsView.vue'),
+        },
+        {
+          path: 'backup',
+          name: 'Backup',
+          component: () => import('@/views/BackupView.vue'),
         },
       ],
     },

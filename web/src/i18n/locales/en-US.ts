@@ -277,6 +277,7 @@ export default {
     general: 'General',
     security: 'Security',
     healthMonitoring: 'Health Monitoring',
+    backup: 'Backup & Restore',
     developerDebug: 'Developer Debug Mode',
     developerDebugTitle: 'Developer Debug Settings',
     developerDebugDesc: 'When enabled, full API request/response payloads are streamed in realtime to this browser instead of being persisted to the database.',
