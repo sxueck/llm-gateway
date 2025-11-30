@@ -197,7 +197,7 @@ export const configApi = {
     check_interval_seconds?: number;
     check_prompt?: string;
   }): Promise<any> {
-    return request.patch(`/admin/health/targets/${id}`, data);
+    return request.put(`/admin/config/health-targets/${id}`, data);
   },
 
   deleteHealthTarget(id: string): Promise<{ success: boolean }> {

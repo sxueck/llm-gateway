@@ -107,7 +107,6 @@ import {
   FlaskOutline,
   GitBranchOutline,
   ShieldOutline,
-  PulseOutline,
   CloudDownloadOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';

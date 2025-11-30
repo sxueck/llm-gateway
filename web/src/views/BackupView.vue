@@ -369,6 +369,7 @@ const backupPagination = ref({
   pageSize: 10,
   showSizePicker: true,
   pageSizes: [10, 20, 50],
+  itemCount: 0,
   onChange: (page: number) => {
     backupPagination.value.page = page;
     loadBackupList();
@@ -385,6 +386,7 @@ const restorePagination = ref({
   pageSize: 10,
   showSizePicker: true,
   pageSizes: [10, 20, 50],
+  itemCount: 0,
   onChange: (page: number) => {
     restorePagination.value.page = page;
     loadRestoreList();

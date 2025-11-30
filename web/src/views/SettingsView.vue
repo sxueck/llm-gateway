@@ -185,6 +185,116 @@
         </n-descriptions>
       </n-card>
     </n-space>
+
+    <!-- 编辑监控目标弹窗 -->
+    <n-modal
+      v-model:show="showEditModal"
+      preset="dialog"
+      :title="$t('common.edit')"
+      :positive-text="$t('common.confirm')"
+      :negative-text="$t('common.cancel')"
+      @positive-click="handleEditTarget"
+    >
+      <n-form
+        ref="editFormRef"
+        :model="editForm"
+        label-placement="left"
+        label-width="120"
+        style="margin-top: 16px;"
+      >
+        <n-form-item :label="$t('healthMonitoring.targetName')" path="name">
+          <n-input :value="editForm.name" disabled />
+        </n-form-item>
+
+        <n-form-item label="显示标题" path="display_title">
+          <n-input
+            v-model:value="editForm.display_title"
+            placeholder="留空使用默认名称"
+          />
+        </n-form-item>
+
+        <n-form-item :label="$t('healthMonitoring.checkInterval')" path="check_interval_seconds">
+          <n-input-number
+            v-model:value="editForm.check_interval_seconds"
+            :min="30"
+            :max="3600"
+            :step="30"
+            style="width: 100%"
+          >
+            <template #suffix>{{ $t('healthMonitoring.seconds') }}</template>
+          </n-input-number>
+        </n-form-item>
+
+        <n-form-item :label="$t('healthMonitoring.checkPrompt')" path="check_prompt">
+          <n-input
+            v-model:value="editForm.check_prompt"
+            type="textarea"
+            :rows="3"
+            placeholder="留空使用默认提示词"
+          />
+        </n-form-item>
+
+        <n-form-item :label="$t('common.status')" path="enabled">
+          <n-switch v-model:value="editForm.enabled" />
+        </n-form-item>
+      </n-form>
+    </n-modal>
+
+    <!-- 添加监控目标弹窗 -->
+    <n-modal
+      v-model:show="showAddTargetModal"
+      preset="dialog"
+      :title="$t('healthMonitoring.addTarget')"
+      :positive-text="$t('common.confirm')"
+      :negative-text="$t('common.cancel')"
+      @positive-click="handleAddTarget"
+    >
+      <n-form
+        ref="addTargetFormRef"
+        :model="addTargetForm"
+        label-placement="left"
+        label-width="120"
+        style="margin-top: 16px;"
+      >
+        <n-form-item :label="$t('healthMonitoring.targetType')" path="type">
+          <n-select
+            v-model:value="addTargetForm.type"
+            :options="targetTypeOptions"
+            @update:value="handleTypeChange"
+          />
+        </n-form-item>
+
+        <n-form-item :label="$t('healthMonitoring.selectModel')" path="target_id">
+          <n-select
+            v-model:value="addTargetForm.target_id"
+            :options="availableModelsOptions"
+            :loading="loadingModels"
+            filterable
+          />
+        </n-form-item>
+
+        <n-form-item :label="$t('healthMonitoring.checkInterval')" path="check_interval_seconds">
+          <n-input-number
+            v-model:value="addTargetForm.check_interval_seconds"
+            :min="60"
+            :max="3600"
+            :step="60"
+            style="width: 100%"
+          >
+            <template #suffix>{{ $t('healthMonitoring.seconds') }}</template>
+          </n-input-number>
+        </n-form-item>
+
+        <n-form-item :label="$t('healthMonitoring.checkPrompt')" path="check_prompt">
+          <n-input
+            v-model:value="addTargetForm.check_prompt"
+            type="textarea"
+            :rows="2"
+            :placeholder="$t('healthMonitoring.checkPromptPlaceholder')"
+          />
+        </n-form-item>
+      </n-form>
+    </n-modal>
   </div>
 </template>
 
@@ -476,7 +586,7 @@ async function loadAvailableModels() {
     // 使用models API获取所有模型
     const response = await fetch('/api/admin/models', {
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        Authorization: `Bearer ${localStorage.getItem('token')}`,
       },
     });
     if (!response.ok) {
@@ -527,6 +637,30 @@ async function handleAddTarget() {
   }
 }
 
+async function handleEditTarget() {
+  try {
+    const updates: any = {
+      display_title: editForm.value.display_title || null,
+      check_interval_seconds: editForm.value.check_interval_seconds,
+      enabled: editForm.value.enabled,
+    };
+
+    if (editForm.value.check_prompt) {
+      updates.check_prompt = editForm.value.check_prompt;
+    }
+
+    await configApi.updateHealthTarget(editForm.value.id, updates);
+    message.success(t('messages.operationSuccess'));
+    showEditModal.value = false;
+    await loadHealthTargets();
+  } catch (error: any) {
+    message.error(error.message || t('messages.operationFailed'));
+    return false;
+  }
+}
+
+// Health target management (toggle / delete) stays here so the table actions work.
+
 async function toggleTargetEnabled(targetId: string, enabled: boolean) {
   try {
     await configApi.updateHealthTarget(targetId, { enabled });
@@ -559,50 +693,36 @@ function openEditModal(target: any) {
   showEditModal.value = true;
 }
 
-async function handleEditTarget() {
+onMounted(async () => {
   try {
-    const updates: any = {
-      display_title: editForm.value.display_title || null,
-      check_interval_seconds: editForm.value.check_interval_seconds,
-      enabled: editForm.value.enabled,
-    };
+    const s = await configApi.getSystemSettings();
+    allowRegistration.value = s.allowRegistration;
+    corsEnabled.value = s.corsEnabled;
+    litellmCompatEnabled.value = s.litellmCompatEnabled;
+    publicUrl.value = s.publicUrl;
+    publicUrlInput.value = s.publicUrl;
+    healthMonitoringEnabled.value = s.healthMonitoringEnabled || false;
+    persistentMonitoringEnabled.value = s.persistentMonitoringEnabled || false;
 
-    if (editForm.value.check_prompt) {
-      updates.check_prompt = editForm.value.check_prompt;
+    // 加载用户列表
+    try {
+      allUsers.value = await authApi.getAllUsers();
+    } catch (error) {
+      console.error('获取用户列表失败:', error);
     }
 
-    await configApi.updateHealthTarget(editForm.value.id, updates);
-    message.success(t('messages.operationSuccess'));
-    showEditModal.value = false;
-    await loadHealthTargets();
+    // 并行加载提供商、虚拟密钥、监控目标和可用模型
+    await Promise.all([
+      providerStore.fetchProviders(),
+      virtualKeyStore.fetchVirtualKeys(),
+      loadHealthTargets(),
+      loadAvailableModels(),
+    ]);
   } catch (error: any) {
-    message.error(error.message || t('messages.operationFailed'));
-    return false;
+    console.error('初始化设置页面失败:', error);
+    message.error(error?.message || t('messages.loadFailed'));
   }
-}
- 
-onMounted(async () => {
-  const s = await configApi.getSystemSettings();
-  allowRegistration.value = s.allowRegistration;
-  corsEnabled.value = s.corsEnabled;
-  litellmCompatEnabled.value = s.litellmCompatEnabled;
-  publicUrl.value = s.publicUrl;
-  publicUrlInput.value = s.publicUrl;
-  healthMonitoringEnabled.value = s.healthMonitoringEnabled || false;
-  persistentMonitoringEnabled.value = s.persistentMonitoringEnabled || false;
-  
-  try {
-    allUsers.value = await authApi.getAllUsers();
-  } catch (error) {
-    console.error('获取用户列表失败:', error);
-  }
-  
-  await Promise.all([
-    providerStore.fetchProviders(),
-    virtualKeyStore.fetchVirtualKeys(),
-    loadHealthTargets(),
-    loadAvailableModels(),
-  ]);
 });
 </script>
+
 
