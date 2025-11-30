@@ -503,11 +503,39 @@ export default async function backupRoutes(fastify: FastifyInstance) {
       try {
         const body = request.body as {
           schedule?: string;
+          retention_days?: number;
+          max_backup_count?: number;
+          include_logs?: boolean;
         };
 
+        // Save configuration to system_config
+        if (body.schedule !== undefined) {
+          await systemConfigDb.set('backup_schedule', body.schedule, 'Backup schedule cron expression');
+        }
+        if (body.retention_days !== undefined) {
+          await systemConfigDb.set('backup_retention_days', body.retention_days.toString(), 'Backup retention in days');
+        }
+        if (body.max_backup_count !== undefined) {
+          await systemConfigDb.set('backup_max_count', body.max_backup_count.toString(), 'Maximum number of backups to keep');
+        }
+        if (body.include_logs !== undefined) {
+          await systemConfigDb.set('backup_include_logs', body.include_logs ? 'true' : 'false', 'Include logs in backup');
+        }
+
+        // Update scheduler if schedule changed
         if (body.schedule) {
           const scheduler = getBackupScheduler();
           scheduler.updateSchedule(body.schedule);
+        }
+
+        // Update scheduler config if other parameters changed
+        if (body.retention_days !== undefined || body.max_backup_count !== undefined || body.include_logs !== undefined) {
+          const scheduler = getBackupScheduler();
+          scheduler.updateConfig({
+            retentionDays: body.retention_days,
+            maxBackupCount: body.max_backup_count,
+            includeLogs: body.include_logs
+          });
         }
 
         reply.send({ message: 'Configuration updated' });

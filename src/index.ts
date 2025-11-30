@@ -262,6 +262,7 @@ try {
   // Start backup scheduler if S3 is configured
   try {
     const backupScheduler = getBackupScheduler();
+    await backupScheduler.loadConfigFromDatabase();
     backupScheduler.start();
     memoryLogger.info('Backup scheduler started', 'Backup');
   } catch (error: any) {

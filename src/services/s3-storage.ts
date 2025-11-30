@@ -1,5 +1,5 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { createReadStream, createWriteStream } from 'fs';
+import { createReadStream, createWriteStream, promises as fs } from 'fs';
 import { pipeline } from 'stream/promises';
 import { memoryLogger } from './logger.js';
 import { systemConfigDb } from '../db/index.js';
@@ -70,11 +70,13 @@ export class S3StorageService {
     }
 
     try {
-      const fileStream = createReadStream(localPath);
+      // Read full file into memory so that SDK knows exact length and does not use aws-chunked
+      const fileData = await fs.readFile(localPath);
       const uploadParams = {
         Bucket: this.config!.bucketName,
         Key: s3Key,
-        Body: fileStream
+        Body: fileData,
+        ContentLength: fileData.length
       };
 
       await this.client!.send(new PutObjectCommand(uploadParams));

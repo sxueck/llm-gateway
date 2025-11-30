@@ -633,7 +633,10 @@ async function updateBackupConfig() {
     await axios.put(
       '/api/admin/backup/config',
       {
-        schedule: backupConfig.value.schedule
+        schedule: backupConfig.value.schedule,
+        retention_days: backupConfig.value.retentionDays,
+        max_backup_count: backupConfig.value.maxBackupCount,
+        include_logs: backupConfig.value.includeLogs
       },
       {
         headers: { Authorization: `Bearer ${token}` }

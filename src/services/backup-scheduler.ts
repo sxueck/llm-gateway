@@ -1,6 +1,7 @@
 import * as cron from 'node-cron';
 import { BackupService } from './backup-service.js';
 import { backupDb } from '../db/backup.js';
+import { systemConfigDb } from '../db/index.js';
 import { memoryLogger } from './logger.js';
 
 export class BackupScheduler {
@@ -18,6 +19,35 @@ export class BackupScheduler {
     this.retentionDays = parseInt(process.env.BACKUP_RETENTION_DAYS || '30', 10);
     this.maxBackupCount = parseInt(process.env.BACKUP_MAX_COUNT || '50', 10);
     this.includeLogs = process.env.BACKUP_INCLUDE_LOGS === 'true';
+  }
+
+  async loadConfigFromDatabase(): Promise<void> {
+    try {
+      const scheduleConfig = await systemConfigDb.get('backup_schedule');
+      const retentionConfig = await systemConfigDb.get('backup_retention_days');
+      const maxCountConfig = await systemConfigDb.get('backup_max_count');
+      const includeLogsConfig = await systemConfigDb.get('backup_include_logs');
+
+      if (scheduleConfig?.value) {
+        this.schedule = scheduleConfig.value;
+      }
+      if (retentionConfig?.value) {
+        this.retentionDays = parseInt(retentionConfig.value, 10);
+      }
+      if (maxCountConfig?.value) {
+        this.maxBackupCount = parseInt(maxCountConfig.value, 10);
+      }
+      if (includeLogsConfig?.value) {
+        this.includeLogs = includeLogsConfig.value === 'true';
+      }
+
+      memoryLogger.info(
+        `Loaded backup config: schedule=${this.schedule}, retention=${this.retentionDays}d, max=${this.maxBackupCount}, logs=${this.includeLogs}`,
+        'Backup'
+      );
+    } catch (error: any) {
+      memoryLogger.warn(`Failed to load backup config from database: ${error.message}`, 'Backup');
+    }
   }
 
   start(): void {
@@ -110,6 +140,27 @@ export class BackupScheduler {
     this.start();
 
     memoryLogger.info(`Backup schedule updated to: ${newSchedule}`, 'Backup');
+  }
+
+  updateConfig(config: {
+    retentionDays?: number;
+    maxBackupCount?: number;
+    includeLogs?: boolean;
+  }): void {
+    if (config.retentionDays !== undefined) {
+      this.retentionDays = config.retentionDays;
+    }
+    if (config.maxBackupCount !== undefined) {
+      this.maxBackupCount = config.maxBackupCount;
+    }
+    if (config.includeLogs !== undefined) {
+      this.includeLogs = config.includeLogs;
+    }
+
+    memoryLogger.info(
+      `Backup config updated: retention=${this.retentionDays}d, max=${this.maxBackupCount}, logs=${this.includeLogs}`,
+      'Backup'
+    );
   }
 
   getStatus(): {
