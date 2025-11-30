@@ -56,8 +56,8 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           forcePathStyle: boolean;
         };
 
-        // Validate required fields
-        if (!body.endpoint || !body.bucketName || !body.accessKeyId || !body.secretAccessKey) {
+        // Validate required fields (except secretAccessKey which can be kept unchanged)
+        if (!body.endpoint || !body.bucketName || !body.accessKeyId) {
           return reply.code(400).send({
             error: {
               message: 'Missing required fields',
@@ -67,17 +67,40 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           });
         }
 
+        // Get existing secret key if not provided or if placeholder is sent
+        let secretAccessKey = body.secretAccessKey;
+        if (!secretAccessKey || secretAccessKey === '******') {
+          const existingSecret = await systemConfigDb.get('s3_secret_access_key');
+          if (!existingSecret?.value) {
+            return reply.code(400).send({
+              error: {
+                message: 'Secret access key is required',
+                type: 'invalid_request',
+                code: 'missing_secret_key'
+              }
+            });
+          }
+          secretAccessKey = existingSecret.value;
+        }
+
         // Save to system_config
         await systemConfigDb.set('s3_endpoint', body.endpoint, 'S3 endpoint URL');
         await systemConfigDb.set('s3_bucket_name', body.bucketName, 'S3 bucket name');
         await systemConfigDb.set('s3_region', body.region || 'us-east-1', 'S3 region');
         await systemConfigDb.set('s3_access_key_id', body.accessKeyId, 'S3 access key ID');
-        await systemConfigDb.set('s3_secret_access_key', body.secretAccessKey, 'S3 secret access key');
+        await systemConfigDb.set('s3_secret_access_key', secretAccessKey, 'S3 secret access key');
         await systemConfigDb.set('s3_force_path_style', body.forcePathStyle ? 'true' : 'false', 'S3 force path style');
 
         // Reset S3 service to use new config
         const s3Service = getS3Service();
-        s3Service.initializeClient(body as S3Config);
+        s3Service.initializeClient({
+          endpoint: body.endpoint,
+          bucketName: body.bucketName,
+          region: body.region || 'us-east-1',
+          accessKeyId: body.accessKeyId,
+          secretAccessKey,
+          forcePathStyle: body.forcePathStyle
+        });
 
         reply.send({ message: 'S3 configuration saved successfully' });
       } catch (error: any) {
@@ -103,20 +126,22 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           // Test with provided config
           const s3Service = getS3Service();
           s3Service.initializeClient(body);
-          const connected = await s3Service.testConnection();
+          const result = await s3Service.testConnection();
 
           reply.send({
-            connected,
-            message: connected ? 'S3 connection successful' : 'S3 connection failed'
+            connected: result.success,
+            message: result.success ? 'S3 connection successful' : 'S3 connection failed',
+            error: result.error
           });
         } else {
           // Test with saved config
           const s3Service = getS3Service();
-          const connected = await s3Service.testConnection();
+          const result = await s3Service.testConnection();
 
           reply.send({
-            connected,
-            message: connected ? 'S3 connection successful' : 'S3 connection failed'
+            connected: result.success,
+            message: result.success ? 'S3 connection successful' : 'S3 connection failed',
+            error: result.error
           });
         }
       } catch (error: any) {

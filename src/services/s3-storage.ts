@@ -131,9 +131,13 @@ export class S3StorageService {
     }
   }
 
-  async testConnection(): Promise<boolean> {
+  async testConnection(): Promise<{ success: boolean; error?: string }> {
     if (!this.client || !this.config) {
-      await this.initializeFromConfig();
+      try {
+        await this.initializeFromConfig();
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
     }
 
     try {
@@ -149,9 +153,12 @@ export class S3StorageService {
         Key: '.test-connection'
       }));
 
-      return true;
-    } catch (error) {
-      return false;
+      memoryLogger.info('S3 connection test successful', 'Backup');
+      return { success: true };
+    } catch (error: any) {
+      const errorMessage = error.message;
+      memoryLogger.error(`S3 connection test failed: ${errorMessage}`, 'Backup');
+      return { success: false, error: errorMessage };
     }
   }
 }

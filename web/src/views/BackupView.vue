@@ -40,10 +40,15 @@
             </n-gi>
             <n-gi>
               <n-form-item label="路径样式">
-                <n-switch v-model:value="s3Config.forcePathStyle">
-                  <template #checked>启用</template>
-                  <template #unchecked>禁用</template>
-                </n-switch>
+                <n-space vertical>
+                  <n-switch v-model:value="s3Config.forcePathStyle">
+                    <template #checked>启用</template>
+                    <template #unchecked>禁用</template>
+                  </n-switch>
+                  <n-text depth="3" style="font-size: 12px;">
+                    MinIO 需要启用，阿里云 OSS 需要禁用
+                  </n-text>
+                </n-space>
               </n-form-item>
             </n-gi>
             <n-gi>
@@ -57,7 +62,7 @@
                   v-model:value="s3Config.secretAccessKey"
                   type="password"
                   show-password-on="click"
-                  placeholder="your_secret_key"
+                  placeholder="留空则保持不变"
                 />
               </n-form-item>
             </n-gi>
@@ -548,7 +553,7 @@ async function loadS3Config() {
       bucketName: response.data.bucketName,
       region: response.data.region,
       accessKeyId: response.data.accessKeyId,
-      secretAccessKey: response.data.secretAccessKey === '******' ? '' : response.data.secretAccessKey,
+      secretAccessKey: response.data.secretAccessKey, // Already '******' from backend
       forcePathStyle: response.data.forcePathStyle
     };
   } catch (error: any) {
@@ -591,7 +596,9 @@ async function testS3Connection() {
     if (response.data.connected) {
       message.success('S3 连接测试成功');
     } else {
-      message.error('S3 连接测试失败');
+      // Show detailed error message from backend
+      const errorMsg = response.data.error || '未知错误';
+      message.error(`S3 连接测试失败: ${errorMsg}`);
     }
   } catch (error: any) {
     message.error(`S3 连接测试失败: ${error.response?.data?.error?.message || error.message}`);
