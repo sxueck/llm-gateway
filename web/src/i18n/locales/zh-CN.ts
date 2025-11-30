@@ -299,6 +299,7 @@ export default {
     developerDebugDownload: '导出请求 JSON',
     developerDebugDownloadSuccess: '请求已下载到本地。',
     developerDebugDownloadFailed: '请求导出失败，请重试。',
+    developerDebugRequestHeaders: '请求头信息',
     allowRegistration: '允许新用户注册',
     allowRegistrationDesc: '控制是否允许新用户通过注册页面创建账号',
     enableCors: '启用 CORS 跨域支持',

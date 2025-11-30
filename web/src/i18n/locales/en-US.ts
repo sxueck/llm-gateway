@@ -298,6 +298,7 @@ export default {
     developerDebugDownload: 'Export request JSON',
     developerDebugDownloadSuccess: 'Request saved locally.',
     developerDebugDownloadFailed: 'Failed to export request.',
+    developerDebugRequestHeaders: 'Request headers',
     allowRegistration: 'Allow New User Registration',
     allowRegistrationDesc: 'Control whether new users can create accounts through the registration page',
     enableCors: 'Enable CORS Cross-Origin Support',

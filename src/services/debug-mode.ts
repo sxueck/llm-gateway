@@ -25,6 +25,7 @@ export interface DebugApiEvent {
   requestBody: any;
   responseBody?: any;
   error?: string;
+  requestHeaders?: Record<string, any>;
 }
 
 /**

@@ -737,6 +737,7 @@ export async function handleStreamRequest(
           requestBody: fullRequestBody,
           // For stream we forward raw chunks to keep all content
           responseBody: tokenUsage.streamChunks,
+          requestHeaders: request.headers,
         });
       } catch (_e) {}
     }
@@ -835,6 +836,7 @@ export async function handleStreamRequest(
           durationMs: duration,
           requestBody: fullRequestBody,
           error: streamError.message,
+          requestHeaders: request.headers,
         });
       } catch (_e) {}
     }
@@ -1153,6 +1155,7 @@ export async function handleNonStreamRequest(
         requestBody: fullRequestBody,
         responseBody: responseData,
         error: isSuccess ? undefined : JSON.stringify(responseData),
+        requestHeaders: request.headers,
       });
     } catch (_e) {}
   }

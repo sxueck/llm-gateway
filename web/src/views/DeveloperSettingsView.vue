@@ -120,6 +120,20 @@
                         {{ t('settings.developerDebugDownload') }}
                       </n-button>
                     </div>
+                    <div
+                      v-if="event.requestHeaders"
+                      class="event-column event-column-full"
+                    >
+                      <div class="event-column-title">
+                        {{ t('settings.developerDebugRequestHeaders') }}
+                      </div>
+                      <n-code
+                        :code="formatJson(event.requestHeaders)"
+                        language="json"
+                        word-wrap
+                        class="event-code-block"
+                      />
+                    </div>
                     <div class="event-column">
                       <div class="event-column-title">{{ t('apiGuide.requestBody') }}</div>
                       <n-code
@@ -202,6 +216,7 @@ interface DebugApiEvent {
   requestBody: any;
   responseBody?: any;
   error?: string;
+  requestHeaders?: Record<string, any>;
 }
 
 interface DebugStateMessage {
@@ -422,6 +437,7 @@ function downloadEvent(event: DebugApiEvent) {
       providerId: event.providerId,
       model: event.model,
       durationMs: event.durationMs,
+      requestHeaders: event.requestHeaders,
       requestBody: event.requestBody,
       responseBody: event.responseBody,
       error: event.error,
@@ -587,6 +603,10 @@ onUnmounted(() => {
   font-weight: 500;
   color: #8c8c8c;
   margin-bottom: 4px;
+}
+
+.event-column-full {
+  grid-column: 1 / -1;
 }
 
 .event-code-block {
