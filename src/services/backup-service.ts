@@ -44,14 +44,10 @@ export class BackupService {
     return this.createBackup({ ...options, backup_type: 'full' });
   }
 
-  async createIncrementalBackup(options: BackupOptions = {}): Promise<BackupRecord> {
-    return this.createBackup({ ...options, backup_type: 'incremental' });
-  }
-
   private async createBackup(options: BackupOptions = {}): Promise<BackupRecord> {
     const backupId = `backup_${new Date().toISOString().replace(/[:.]/g, '-')}`;
     const timestamp = Date.now();
-    const backupType = options.backup_type || 'full';
+    const backupType = 'full'; // Always create full backup
 
     try {
       // Create backup record
@@ -72,7 +68,7 @@ export class BackupService {
         checksum: null
       });
 
-      memoryLogger.info(`Starting ${backupType} backup: ${backupId}`, 'Backup');
+      memoryLogger.info(`Starting full backup: ${backupId}`, 'Backup');
 
       // Create temp directory
       mkdirSync(this.tempDir, { recursive: true });
@@ -80,25 +76,12 @@ export class BackupService {
       mkdirSync(backupDir, { recursive: true });
       mkdirSync(join(backupDir, 'data'), { recursive: true });
 
-      // Get last successful backup for incremental
-      let lastBackupTimestamp = 0;
-      if (backupType === 'incremental') {
-        const lastBackup = await backupDb.getLastCompletedBackup();
-        if (lastBackup) {
-          lastBackupTimestamp = lastBackup.completed_at || 0;
-          memoryLogger.info(`Incremental backup since: ${new Date(lastBackupTimestamp).toISOString()}`, 'Backup');
-        } else {
-          memoryLogger.info('No previous backup found, performing full backup', 'Backup');
-        }
-      }
-
       // Export metadata
       const metadata = {
         backup_id: backupId,
         backup_type: backupType,
         includes_logs: options.includes_logs || false,
         timestamp,
-        last_backup_timestamp: lastBackupTimestamp,
         version: '1.0'
       };
       await this.writeJsonFile(join(backupDir, 'metadata.json'), metadata);
@@ -117,8 +100,7 @@ export class BackupService {
       for (const table of tablesToBackup) {
         const recordCount = await this.exportTableData(
           table,
-          join(backupDir, options.includes_logs && LOG_TABLES.includes(table) ? 'logs' : 'data', `${table}.json`),
-          backupType === 'incremental' ? lastBackupTimestamp : 0
+          join(backupDir, options.includes_logs && LOG_TABLES.includes(table) ? 'logs' : 'data', `${table}.json`)
         );
         totalRecords += recordCount;
       }
@@ -209,37 +191,12 @@ export class BackupService {
 
   private async exportTableData(
     tableName: string,
-    outputPath: string,
-    sinceTimestamp: number = 0
+    outputPath: string
   ): Promise<number> {
     const pool = getPool();
 
-    let query = `SELECT * FROM \`${tableName}\``;
-    const params: any[] = [];
-
-    // For incremental backups, filter by created_at or updated_at
-    if (sinceTimestamp > 0) {
-      // Check if table has created_at or updated_at column
-      const [columns] = await pool.query(
-        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
-         AND COLUMN_NAME IN ('created_at', 'updated_at')`,
-        [tableName]
-      );
-
-      const columnNames = (columns as any[]).map(col => col.COLUMN_NAME);
-
-      if (columnNames.includes('updated_at')) {
-        query += ` WHERE updated_at > ?`;
-        params.push(sinceTimestamp);
-      } else if (columnNames.includes('created_at')) {
-        query += ` WHERE created_at > ?`;
-        params.push(sinceTimestamp);
-      }
-      // If table has no timestamp columns, backup all data (treat as full backup for this table)
-    }
-
-    const [rows] = await pool.query(query, params);
+    const query = `SELECT * FROM \`${tableName}\``;
+    const [rows] = await pool.query(query);
     await this.writeJsonFile(outputPath, rows);
     return (rows as any[]).length;
   }
@@ -328,6 +285,60 @@ export class BackupService {
       return true;
     } catch (error) {
       return false;
+    }
+  }
+
+  async syncBackupsFromS3(): Promise<{ synced: number; errors: number }> {
+    try {
+      const s3Service = getS3Service();
+      const s3Files = await s3Service.listBackupFiles();
+
+      let syncedCount = 0;
+      let errorCount = 0;
+
+      for (const file of s3Files) {
+        try {
+          // Extract backup ID from S3 key (e.g., backups/2024/12/01/backup_xxx.tar.gz.enc)
+          const fileName = file.key.split('/').pop() || '';
+          const backupId = fileName.replace('.tar.gz.enc', '');
+
+          // Check if backup record already exists
+          const existingRecord = await backupDb.getBackupRecord(backupId);
+          if (existingRecord) {
+            continue; // Skip if already exists
+          }
+
+          // Create backup record from S3 metadata
+          await backupDb.createBackupRecord({
+            id: backupId,
+            backup_key: fileName,
+            backup_type: 'full',
+            includes_logs: 0,
+            file_size: file.size,
+            file_hash: null,
+            s3_key: file.key,
+            encryption_key_hash: this.getEncryptionKeyHash(),
+            status: 'completed',
+            started_at: file.lastModified.getTime(),
+            completed_at: file.lastModified.getTime(),
+            error_message: null,
+            record_count: null,
+            checksum: null
+          });
+
+          syncedCount++;
+          memoryLogger.info(`Synced backup from S3: ${backupId}`, 'Backup');
+        } catch (error: any) {
+          errorCount++;
+          memoryLogger.error(`Failed to sync backup ${file.key}: ${error.message}`, 'Backup');
+        }
+      }
+
+      memoryLogger.info(`S3 sync completed: ${syncedCount} synced, ${errorCount} errors`, 'Backup');
+      return { synced: syncedCount, errors: errorCount };
+    } catch (error: any) {
+      memoryLogger.error(`Failed to sync backups from S3: ${error.message}`, 'Backup');
+      throw error;
     }
   }
 }

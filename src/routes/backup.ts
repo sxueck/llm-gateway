@@ -163,18 +163,12 @@ export default async function backupRoutes(fastify: FastifyInstance) {
       try {
         const body = request.body as {
           includes_logs?: boolean;
-          backup_type?: 'full' | 'incremental';
         };
 
-        // Start backup asynchronously
-        const backupType = body.backup_type || 'full';
-        const backupPromise = backupType === 'incremental'
-          ? backupService.createIncrementalBackup({
-              includes_logs: body.includes_logs || false
-            })
-          : backupService.createFullBackup({
-              includes_logs: body.includes_logs || false
-            });
+        // Start backup asynchronously (always full backup)
+        const backupPromise = backupService.createFullBackup({
+          includes_logs: body.includes_logs || false
+        });
 
         // Return immediately with pending status
         reply.send({
@@ -227,6 +221,30 @@ export default async function backupRoutes(fastify: FastifyInstance) {
             message: error.message,
             type: 'backup_error',
             code: 'list_failed'
+          }
+        });
+      }
+    }
+  });
+
+  // Sync backups from S3
+  fastify.post('/api/admin/backup/sync', {
+    onRequest: [fastify.authenticate],
+    handler: async (request, reply) => {
+      try {
+        const result = await backupService.syncBackupsFromS3();
+
+        reply.send({
+          message: `Synced ${result.synced} backups from S3`,
+          synced: result.synced,
+          errors: result.errors
+        });
+      } catch (error: any) {
+        reply.code(500).send({
+          error: {
+            message: error.message,
+            type: 'backup_error',
+            code: 'sync_failed'
           }
         });
       }

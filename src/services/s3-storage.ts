@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { createReadStream, createWriteStream, promises as fs } from 'fs';
 import { pipeline } from 'stream/promises';
 import { memoryLogger } from './logger.js';
@@ -161,6 +161,39 @@ export class S3StorageService {
       const errorMessage = error.message;
       memoryLogger.error(`S3 connection test failed: ${errorMessage}`, 'Backup');
       return { success: false, error: errorMessage };
+    }
+  }
+
+  async listBackupFiles(): Promise<Array<{ key: string; size: number; lastModified: Date }>> {
+    if (!this.client || !this.config) {
+      await this.initializeFromConfig();
+    }
+
+    try {
+      const listParams = {
+        Bucket: this.config!.bucketName,
+        Prefix: 'backups/'
+      };
+
+      const response = await this.client!.send(new ListObjectsV2Command(listParams));
+
+      if (!response.Contents || response.Contents.length === 0) {
+        return [];
+      }
+
+      const backupFiles = response.Contents
+        .filter(obj => obj.Key && obj.Key.endsWith('.tar.gz.enc'))
+        .map(obj => ({
+          key: obj.Key!,
+          size: obj.Size || 0,
+          lastModified: obj.LastModified || new Date()
+        }));
+
+      memoryLogger.info(`Listed ${backupFiles.length} backup files from S3`, 'Backup');
+      return backupFiles;
+    } catch (error: any) {
+      memoryLogger.error(`Failed to list backups from S3: ${error.message}`, 'Backup');
+      throw error;
     }
   }
 }

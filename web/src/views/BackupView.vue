@@ -132,6 +132,12 @@
             <n-button type="primary" @click="showCreateBackupModal = true">
               创建备份
             </n-button>
+            <n-button type="info" @click="syncBackupsFromS3" :loading="syncingBackups">
+              <template #icon>
+                <n-icon><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><path d="M144 480C64.5 480 0 415.5 0 336c0-62.8 40.2-116.2 96.2-135.9c-.1-2.7-.2-5.4-.2-8.1c0-88.4 71.6-160 160-160c59.3 0 111 32.2 138.7 80.2C409.9 102 428.3 96 448 96c53 0 96 43 96 96c0 12.2-2.3 23.8-6.4 34.6C596 238.4 640 290.1 640 352c0 70.7-57.3 128-128 128H144zm79-167l80 80c9.4 9.4 24.6 9.4 33.9 0l80-80c9.4-9.4 9.4-24.6 0-33.9s-24.6-9.4-33.9 0l-39 39V184c0-13.3-10.7-24-24-24s-24 10.7-24 24V318.1l-39-39c-9.4-9.4-24.6-9.4-33.9 0s-9.4 24.6 0 33.9z"/></svg></n-icon>
+              </template>
+              从S3同步
+            </n-button>
             <n-button @click="loadBackupList">
               <template #icon>
                 <n-icon><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M105.1 202.6c7.7-21.8 20.2-42.3 37.8-59.8c62.5-62.5 163.8-62.5 226.3 0L386.3 160H336c-17.7 0-32 14.3-32 32s14.3 32 32 32H463.5c0 0 0 0 0 0h.4c17.7 0 32-14.3 32-32V64c0-17.7-14.3-32-32-32s-32 14.3-32 32v51.2L414.4 97.6c-87.5-87.5-229.3-87.5-316.8 0C73.2 122 55.6 150.7 44.8 181.4c-5.9 16.7 2.9 34.9 19.5 40.8s34.9-2.9 40.8-19.5zM39 289.3c-5 1.5-9.8 4.2-13.7 8.2c-4 4-6.7 8.8-8.1 14c-.3 1.2-.6 2.5-.8 3.8c-.3 1.7-.4 3.4-.4 5.1V448c0 17.7 14.3 32 32 32s32-14.3 32-32V396.9l17.6 17.5 0 0c87.5 87.4 229.3 87.4 316.7 0c24.4-24.4 42.1-53.1 52.9-83.7c5.9-16.7-2.9-34.9-19.5-40.8s-34.9 2.9-40.8 19.5c-7.7 21.8-20.2 42.3-37.8 59.8c-62.5 62.5-163.8 62.5-226.3 0l-.1-.1L125.6 352H176c17.7 0 32-14.3 32-32s-14.3-32-32-32H48.4c-1.6 0-3.2 .1-4.8 .3s-3.1 .5-4.6 1z"/></svg></n-icon>
@@ -176,26 +182,13 @@
     <!-- Create Backup Modal -->
     <n-modal v-model:show="showCreateBackupModal" preset="dialog" title="创建备份">
       <n-form :model="createBackupForm" label-placement="left" label-width="100">
-        <n-form-item label="备份类型">
-          <n-radio-group v-model:value="createBackupForm.backupType">
-            <n-space>
-              <n-radio value="full">完整备份</n-radio>
-              <n-radio value="incremental">增量备份</n-radio>
-            </n-space>
-          </n-radio-group>
-        </n-form-item>
         <n-form-item label="包含日志">
           <n-switch v-model:value="createBackupForm.includeLogs" />
         </n-form-item>
       </n-form>
 
       <n-alert type="info" style="margin-top: 16px;">
-        <template v-if="createBackupForm.backupType === 'full'">
-          完整备份将包含所有配置数据（提供商、模型、虚拟密钥等），并上传到 S3 存储。
-        </template>
-        <template v-else>
-          增量备份仅包含自上次备份以来发生变化的数据，可以节省存储空间和备份时间。
-        </template>
+        完整备份将包含所有配置数据(提供商、模型、虚拟密钥等),并上传到 S3 存储。
       </n-alert>
 
       <template #action>
@@ -215,8 +208,8 @@
           {{ selectedBackup?.backup_key }}
         </n-descriptions-item>
         <n-descriptions-item label="备份类型">
-          <n-tag :type="selectedBackup?.backup_type === 'full' ? 'success' : 'info'" size="small">
-            {{ selectedBackup?.backup_type === 'full' ? '完整备份' : '增量备份' }}
+          <n-tag type="success" size="small">
+            完整备份
           </n-tag>
         </n-descriptions-item>
         <n-descriptions-item label="创建时间">
@@ -346,6 +339,7 @@ const loadingBackups = ref(false);
 const loadingRestores = ref(false);
 const creatingBackup = ref(false);
 const restoringBackup = ref(false);
+const syncingBackups = ref(false);
 
 // Modals
 const showCreateBackupModal = ref(false);
@@ -353,7 +347,6 @@ const showRestoreModal = ref(false);
 
 // Forms
 const createBackupForm = ref({
-  backupType: 'full',
   includeLogs: false
 });
 
@@ -412,19 +405,6 @@ const backupColumns = [
     ellipsis: { tooltip: true }
   },
   {
-    title: '类型',
-    key: 'backup_type',
-    width: 100,
-    render(row: any) {
-      const typeMap: any = {
-        full: { type: 'success', text: '完整' },
-        incremental: { type: 'info', text: '增量' }
-      };
-      const backupType = typeMap[row.backup_type] || { type: 'default', text: row.backup_type };
-      return h(NTag, { type: backupType.type, size: 'small' }, () => backupType.text);
-    }
-  },
-  {
     title: '状态',
     key: 'status',
     width: 100,
@@ -442,7 +422,7 @@ const backupColumns = [
   {
     title: '大小',
     key: 'file_size',
-    width: 100,
+    width: 120,
     render(row: any) {
       return formatFileSize(row.file_size);
     }
@@ -707,7 +687,6 @@ async function createBackup() {
     await axios.post(
       '/api/admin/backup/create',
       {
-        backup_type: createBackupForm.value.backupType,
         includes_logs: createBackupForm.value.includeLogs
       },
       {
@@ -725,6 +704,27 @@ async function createBackup() {
     message.error(`创建备份失败: ${error.response?.data?.error?.message || error.message}`);
   } finally {
     creatingBackup.value = false;
+  }
+}
+
+async function syncBackupsFromS3() {
+  syncingBackups.value = true;
+  try {
+    const token = localStorage.getItem('token');
+    const response = await axios.post(
+      '/api/admin/backup/sync',
+      {},
+      {
+        headers: { Authorization: `Bearer ${token}` }
+      }
+    );
+
+    message.success(response.data.message);
+    await loadBackupList();
+  } catch (error: any) {
+    message.error(`同步备份失败: ${error.response?.data?.error?.message || error.message}`);
+  } finally {
+    syncingBackups.value = false;
   }
 }
 
