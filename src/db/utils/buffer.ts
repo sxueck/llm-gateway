@@ -61,7 +61,7 @@ export async function flushApiRequestBuffer() {
         errorMessage = truncateToByteLength(errorMessage, MAX_COLUMN_BYTES);
       }
 
-      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       values.push(
         request.id,
         request.virtual_key_id || null,
@@ -69,7 +69,6 @@ export async function flushApiRequestBuffer() {
         request.model || null,
         request.prompt_tokens || 0,
         request.completion_tokens || 0,
-        request.total_tokens || 0,
         request.cached_tokens || 0,
         request.status,
         request.response_time || null,
@@ -88,7 +87,7 @@ export async function flushApiRequestBuffer() {
       await conn.query(
         `INSERT INTO api_requests (
           id, virtual_key_id, provider_id, model,
-          prompt_tokens, completion_tokens, total_tokens, cached_tokens,
+          prompt_tokens, completion_tokens, cached_tokens,
           status, response_time, error_message, request_body, response_body, cache_hit,
           request_type, compression_original_tokens, compression_saved_tokens, created_at
         ) VALUES ${placeholders.join(', ')}`,

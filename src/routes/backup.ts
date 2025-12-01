@@ -402,14 +402,9 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           status: query.status || 'all'
         });
 
-        // Parse changes_made JSON for each record
-        const restores = result.records.map(record => ({
-          ...record,
-          changes_made: record.changes_made ? JSON.parse(record.changes_made) : null
-        }));
 
         reply.send({
-          restores,
+          restores: result.records,
           total: result.total,
           page: parseInt(query.page || '1', 10),
           limit: parseInt(query.limit || '10', 10)
@@ -444,13 +439,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           });
         }
 
-        // Parse changes_made JSON
-        const result = {
-          ...restore,
-          changes_made: restore.changes_made ? JSON.parse(restore.changes_made) : null
-        };
-
-        reply.send(result);
+        reply.send(restore);
       } catch (error: any) {
         reply.code(500).send({
           error: {

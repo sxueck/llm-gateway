@@ -326,13 +326,31 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     try {
       const { id } = request.params as { id: string };
 
-      const associatedModels = (await modelDb.getAll() as any[]).filter(m => m.expert_routing_id === id);
+      const existingConfig = await expertRoutingConfigDb.getById(id);
+      if (!existingConfig) {
+        throw new Error('专家路由配置不存在');
+      }
+
+      const associatedModels = await modelDb.getByExpertRoutingId(id);
+      let deletedModels = 0;
+      let detachedModels = 0;
+
       for (const model of associatedModels) {
-        await modelDb.update(model.id, { expert_routing_id: null });
+        const shouldDelete = model.is_virtual === 1 && model.model_identifier === `expert-${id}`;
+        if (shouldDelete) {
+          await modelDb.delete(model.id);
+          deletedModels++;
+        } else {
+          await modelDb.update(model.id, { expert_routing_id: null });
+          detachedModels++;
+        }
       }
 
       await expertRoutingConfigDb.delete(id);
-      memoryLogger.info(`删除专家路由配置: ${id} | 清理关联模型: ${associatedModels.length} 个`, 'ExpertRouting');
+      memoryLogger.info(
+        `删除专家路由配置: ${id} | 删除专家模型: ${deletedModels} 个 | 解绑模型: ${detachedModels} 个`,
+        'ExpertRouting'
+      );
       return { success: true };
     } catch (error: any) {
       memoryLogger.error(`删除专家路由配置失败: ${error.message}`, 'ExpertRouting');
@@ -541,4 +559,3 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     }
   });
 }
-

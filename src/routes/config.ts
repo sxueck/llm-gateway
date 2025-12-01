@@ -522,8 +522,31 @@ export async function configRoutes(fastify: FastifyInstance) {
   fastify.delete('/routing-configs/:id', async (request) => {
     try {
       const { id } = request.params as { id: string };
+
+      const existingConfig = await routingConfigDb.getById(id);
+      if (!existingConfig) {
+        throw new Error('路由配置不存在');
+      }
+
+      const associatedModels = await modelDb.getByRoutingConfigId(id);
+      let deletedModels = 0;
+      let detachedModels = 0;
+
+      for (const model of associatedModels) {
+        if (model.is_virtual === 1) {
+          await modelDb.delete(model.id);
+          deletedModels++;
+        } else {
+          await modelDb.update(model.id, { routing_config_id: null });
+          detachedModels++;
+        }
+      }
+
       await routingConfigDb.delete(id);
-      memoryLogger.info(`删除路由配置: ${id}`, 'Config');
+      memoryLogger.info(
+        `删除路由配置: ${id} | 删除虚拟模型: ${deletedModels} 个 | 解绑模型: ${detachedModels} 个`,
+        'Config'
+      );
       return { success: true };
     } catch (error: any) {
       memoryLogger.error(`删除路由配置失败: ${error.message}`, 'Config');
@@ -692,4 +715,3 @@ export async function configRoutes(fastify: FastifyInstance) {
   });
 
 }
-

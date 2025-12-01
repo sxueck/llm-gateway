@@ -31,7 +31,7 @@ export const migrations: Migration[] = [
           error_message TEXT,
           record_count INT,
           checksum VARCHAR(64),
-          created_at BIGINT NOT NULL,
+          created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
           INDEX idx_backup_records_status (status),
           INDEX idx_backup_records_created_at (created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -50,7 +50,7 @@ export const migrations: Migration[] = [
           backup_before_restore VARCHAR(255),
           changes_made JSON,
           rollback_data JSON,
-          created_at BIGINT NOT NULL,
+          created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
           FOREIGN KEY (backup_record_id) REFERENCES backup_records(id) ON DELETE CASCADE,
           INDEX idx_restore_records_status (status),
           INDEX idx_restore_records_created_at (created_at)
@@ -60,6 +60,40 @@ export const migrations: Migration[] = [
     down: async (conn: Connection) => {
       await conn.query('DROP TABLE IF EXISTS restore_records');
       await conn.query('DROP TABLE IF EXISTS backup_records');
+    }
+  },
+  {
+    version: 17,
+    name: 'add_default_timestamps_and_generated_total_tokens',
+    up: async (conn: Connection) => {
+      // 使用 ALTER TABLE 为已有表补齐 created_at 默认值和 total_tokens 生成列
+      const statements: string[] = [
+        // 基础表
+        `ALTER TABLE users MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
+        `ALTER TABLE providers MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
+        `ALTER TABLE models MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
+        `ALTER TABLE virtual_keys MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
+        `ALTER TABLE routing_configs MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
+        `ALTER TABLE expert_routing_configs MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
+        `ALTER TABLE expert_routing_logs MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
+        `ALTER TABLE health_targets MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
+        `ALTER TABLE health_runs MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
+        `ALTER TABLE health_summaries MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
+        // 备份/恢复表
+        `ALTER TABLE backup_records MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
+        `ALTER TABLE restore_records MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
+        // api_requests: total_tokens 改为生成列 + created_at 默认值
+        `ALTER TABLE api_requests MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
+        `ALTER TABLE api_requests MODIFY total_tokens INT AS (prompt_tokens + completion_tokens) STORED`
+      ];
+
+      for (const sql of statements) {
+        try {
+          await conn.query(sql);
+        } catch (e: any) {
+          console.warn('[迁移] 执行语句失败, 已跳过:', sql, e.message);
+        }
+      }
     }
   }
 ];

@@ -8,8 +8,8 @@ export const userRepository = {
     const conn = await pool.getConnection();
     try {
       await conn.query(
-        'INSERT INTO users (id, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-        [user.id, user.username, user.password_hash, now, now]
+        'INSERT INTO users (id, username, password_hash, updated_at) VALUES (?, ?, ?, ?)',
+        [user.id, user.username, user.password_hash, now]
       );
       return { ...user, created_at: now, updated_at: now };
     } finally {

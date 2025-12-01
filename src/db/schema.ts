@@ -11,7 +11,7 @@ export async function createTables() {
         id VARCHAR(255) PRIMARY KEY,
         username VARCHAR(255) NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
-        created_at BIGINT NOT NULL,
+        created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
         updated_at BIGINT NOT NULL,
         INDEX idx_username (username)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -28,7 +28,7 @@ export async function createTables() {
         api_key TEXT NOT NULL,
         model_mapping TEXT,
         enabled TINYINT DEFAULT 1,
-        created_at BIGINT NOT NULL,
+        created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
         updated_at BIGINT NOT NULL,
         INDEX idx_enabled (enabled)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -49,7 +49,7 @@ export async function createTables() {
         model_attributes TEXT,
         prompt_config TEXT,
         compression_config TEXT,
-        created_at BIGINT NOT NULL,
+        created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
         updated_at BIGINT NOT NULL,
         FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE,
         INDEX idx_models_provider (provider_id),
@@ -82,7 +82,7 @@ export async function createTables() {
         dynamic_compression_enabled TINYINT DEFAULT 0,
         intercept_zero_temperature TINYINT DEFAULT 0,
         zero_temperature_replacement DECIMAL(3,2) DEFAULT NULL,
-        created_at BIGINT NOT NULL,
+        created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
         updated_at BIGINT NOT NULL,
         FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
         FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE SET NULL,
@@ -112,7 +112,7 @@ export async function createTables() {
         model VARCHAR(255),
         prompt_tokens INT DEFAULT 0,
         completion_tokens INT DEFAULT 0,
-        total_tokens INT DEFAULT 0,
+        total_tokens INT AS (prompt_tokens + completion_tokens) STORED,
         cached_tokens INT DEFAULT 0,
         status VARCHAR(50),
         response_time INT,

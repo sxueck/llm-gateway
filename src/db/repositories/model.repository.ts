@@ -37,6 +37,28 @@ export const modelRepository = {
     }
   },
 
+  async getByRoutingConfigId(routingConfigId: string): Promise<Model[]> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM models WHERE routing_config_id = ? ORDER BY created_at DESC', [routingConfigId]);
+      return rows as Model[];
+    } finally {
+      conn.release();
+    }
+  },
+
+  async getByExpertRoutingId(expertRoutingId: string): Promise<Model[]> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query('SELECT * FROM models WHERE expert_routing_id = ? ORDER BY created_at DESC', [expertRoutingId]);
+      return rows as Model[];
+    } finally {
+      conn.release();
+    }
+  },
+
   async create(model: Omit<Model, 'created_at' | 'updated_at'>): Promise<Model> {
     const now = Date.now();
     const pool = getDatabase();

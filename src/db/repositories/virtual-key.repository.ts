@@ -1,6 +1,59 @@
 import { getDatabase } from '../connection.js';
 import { VirtualKey } from '../../types/index.js';
 
+// Count how many virtual keys reference each model id, including both
+// single-model bindings (model_id) and multi-model bindings (model_ids JSON array).
+async function countVirtualKeysByModelIds(modelIds: string[]): Promise<Map<string, number>> {
+  if (modelIds.length === 0) return new Map();
+
+  const pool = getDatabase();
+  const conn = await pool.getConnection();
+  try {
+    const placeholders = modelIds.map(() => '?').join(',');
+
+    // 1) Count keys bound via single model_id
+    const [singleRows] = await conn.query(
+      `SELECT model_id, COUNT(*) as count FROM virtual_keys WHERE model_id IN (${placeholders}) GROUP BY model_id`,
+      modelIds
+    );
+    const map = new Map<string, number>();
+    const single = singleRows as any[];
+    single.forEach(row => {
+      if (row.model_id) {
+        map.set(row.model_id, Number(row.count) || 0);
+      }
+    });
+
+    // 2) Count keys bound via multi-model model_ids (JSON array stored as TEXT)
+    const [multiRows] = await conn.query(
+      'SELECT model_ids FROM virtual_keys WHERE model_ids IS NOT NULL'
+    );
+    const multi = multiRows as any[];
+    const idSet = new Set(modelIds);
+
+    multi.forEach(row => {
+      if (!row.model_ids) return;
+      try {
+        const parsed = JSON.parse(row.model_ids);
+        if (Array.isArray(parsed)) {
+          for (const id of parsed) {
+            if (typeof id === 'string' && idSet.has(id)) {
+              map.set(id, (map.get(id) || 0) + 1);
+            }
+          }
+        }
+      } catch {
+        // Ignore malformed JSON
+      }
+    });
+
+    return map;
+  } finally {
+    conn.release();
+  }
+}
+
+
 export const virtualKeyRepository = {
   async getAll(): Promise<VirtualKey[]> {
     const pool = getDatabase();
@@ -111,36 +164,11 @@ export const virtualKeyRepository = {
   },
 
   async countByModelId(modelId: string): Promise<number> {
-    const pool = getDatabase();
-    const conn = await pool.getConnection();
-    try {
-      const [rows] = await conn.query('SELECT COUNT(*) as count FROM virtual_keys WHERE model_id = ?', [modelId]);
-      const result = rows as any[];
-      return result[0].count;
-    } finally {
-      conn.release();
-    }
+    const map = await countVirtualKeysByModelIds([modelId]);
+    return map.get(modelId) || 0;
   },
 
   async countByModelIds(modelIds: string[]): Promise<Map<string, number>> {
-    if (modelIds.length === 0) return new Map();
-
-    const pool = getDatabase();
-    const conn = await pool.getConnection();
-    try {
-      const placeholders = modelIds.map(() => '?').join(',');
-      const [rows] = await conn.query(
-        `SELECT model_id, COUNT(*) as count FROM virtual_keys WHERE model_id IN (${placeholders}) GROUP BY model_id`,
-        modelIds
-      );
-      const result = rows as any[];
-      const map = new Map<string, number>();
-      result.forEach(row => {
-        map.set(row.model_id, row.count);
-      });
-      return map;
-    } finally {
-      conn.release();
-    }
+    return countVirtualKeysByModelIds(modelIds);
   },
 };
