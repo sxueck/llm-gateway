@@ -8,11 +8,10 @@ services:
       - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
+      - ./mysql/conf.d:/etc/mysql/conf.d
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD:-your-mysql-password}
       - MYSQL_DATABASE=${MYSQL_DATABASE:-llm_gateway}
-      - MYSQL_CHARACTER_SET_SERVER=utf8mb4
-      - MYSQL_COLLATION_SERVER=utf8mb4_unicode_ci
     restart: unless-stopped
     networks:
       - llm-gateway-network
@@ -28,7 +27,7 @@ services:
     ports:
       - "13030:3000"
     volumes:
-      - ./data:/app/data
+      - ../data:/app/data
     environment:
       - NODE_ENV=production
       - PORT=3000
