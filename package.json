@@ -32,7 +32,7 @@
   },
   "homepage": "https://github.com/sxueck/llm-gateway#readme",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.20.0",
+    "@anthropic-ai/sdk": "^0.71.0",
     "@aws-sdk/client-s3": "^3.940.0",
     "@fastify/cors": "^11.1.0",
     "@fastify/jwt": "^10.0.0",

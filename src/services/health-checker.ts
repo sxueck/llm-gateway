@@ -1,7 +1,6 @@
 import { healthTargetDb, healthRunDb, modelDb, systemConfigDb, virtualKeyDb, HealthTarget } from '../db/index.js';
 import { memoryLogger } from './logger.js';
 import { nanoid } from 'nanoid';
-import fetch from 'node-fetch';
 import { appConfig } from '../config/index.js';
 import { probeService } from './probe-service.js';
 

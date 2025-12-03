@@ -20,12 +20,13 @@ export function normalizeOpenAIError(error: any): NormalizedLlmError {
 
   // 处理 OpenAI SDK 特定错误
   if (error instanceof OpenAI.APIError) {
-    statusCode = (error as OpenAI.APIError).status || 500;
-    message = error.message;
+    const apiError = error as any;
+    statusCode = typeof apiError.status === 'number' ? apiError.status : 500;
+    message = apiError.message;
 
-    // 记录 requestID 用于调试
-    if ((error as OpenAI.APIError).requestID) {
-      message += ` (Request ID: ${(error as OpenAI.APIError).requestID})`;
+    // 记录 requestID 用于调试（如果存在）
+    if (apiError.requestID) {
+      message += ` (Request ID: ${apiError.requestID})`;
     }
   } else if (error instanceof OpenAI.APIUserAbortError) {
     statusCode = 499; // Client Closed Request

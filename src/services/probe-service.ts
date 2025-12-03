@@ -1,4 +1,4 @@
-import fetch from 'node-fetch';
+// Using global fetch (Node 18+)
 import {
   buildChatCompletionsEndpoint,
   buildResponsesEndpoint,
