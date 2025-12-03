@@ -1,6 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { nanoid } from 'nanoid';
-import { apiRequestDb } from '../../db/index.js';
 import { memoryLogger } from '../../services/logger.js';
 import { debugModeService } from '../../services/debug-mode.js';
 import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse, buildFullRequestBody, accumulateResponsesStream, stripFieldRecursively } from '../../utils/request-logger.js';
@@ -15,7 +14,8 @@ import { calculateTokensIfNeeded } from './token-calculator.js';
 import { circuitBreaker } from '../../services/circuit-breaker.js';
 import { handleChatStreamRequest } from './handlers/openai-chat.js';
 import { handleResponsesStreamRequest } from './handlers/openai-responses.js';
-import { shouldLogRequestBody, buildFullRequest, getTruncatedBodies, logApiRequest } from './handlers/shared.js';
+import { shouldLogRequestBody, buildFullRequest, getTruncatedBodies } from './handlers/shared.js';
+import { logApiRequestToDb } from '../../services/api-request-logger.js';
 import type { VirtualKey } from '../../types/index.js';
 import { normalizeUsageCounts } from '../../utils/usage-normalizer.js';
 import { isChatCompletionsPath, isResponsesApiPath, isEmbeddingsPath } from '../../utils/path-detector.js';
@@ -519,21 +519,17 @@ export function createProxyHandler() {
 
           const tokenCount = await calculateTokensIfNeeded(0, request.body);
 
-          await apiRequestDb.create({
-            id: nanoid(),
-            virtual_key_id: virtualKey.id,
-            provider_id: providerId,
+          await logApiRequestToDb({
+            virtualKey,
+            providerId,
             model: (request.body as any)?.model || 'unknown',
-            prompt_tokens: tokenCount.promptTokens,
-            completion_tokens: 0,
-            total_tokens: tokenCount.promptTokens,
+            tokenCount,
             status: 'error',
-            response_time: duration,
-            error_message: error.message,
-            request_body: truncatedRequest,
-            response_body: undefined,
-            compression_original_tokens: compressionStats?.originalTokens,
-            compression_saved_tokens: compressionStats?.savedTokens,
+            responseTime: duration,
+            errorMessage: error.message,
+            truncatedRequest,
+            cacheHit: 0,
+            compressionStats,
           });
         }
       }
@@ -696,23 +692,18 @@ export async function handleStreamRequest(
       ? (isResponsesApi ? accumulateResponsesStream(tokenUsage.streamChunks) : accumulateStreamResponse(tokenUsage.streamChunks))
       : undefined;
 
-    await apiRequestDb.create({
-      id: nanoid(),
-      virtual_key_id: virtualKey.id,
-      provider_id: providerId,
+    await logApiRequestToDb({
+      virtualKey,
+      providerId,
       model: (request.body as any)?.model || 'unknown',
-      prompt_tokens: tokenCount.promptTokens,
-      completion_tokens: tokenCount.completionTokens,
-      total_tokens: tokenCount.totalTokens,
-      cached_tokens: tokenUsage.cachedTokens,
+      tokenCount,
       status: 'success',
-      response_time: duration,
-      error_message: undefined,
-      request_body: truncatedRequest,
-      response_body: truncatedResponse,
-      cache_hit: 0,
-      compression_original_tokens: compressionStats?.originalTokens,
-      compression_saved_tokens: compressionStats?.savedTokens,
+      responseTime: duration,
+      truncatedRequest,
+      truncatedResponse,
+      cacheHit: 0,
+      cachedTokens: tokenUsage.cachedTokens,
+      compressionStats,
     });
 
     // Broadcast full, untruncated event to debug WebSocket clients when debug mode is active
@@ -799,21 +790,17 @@ export async function handleStreamRequest(
 
     const tokenCount = await calculateTokensIfNeeded(0, request.body);
 
-    await apiRequestDb.create({
-      id: nanoid(),
-      virtual_key_id: virtualKey.id,
-      provider_id: providerId,
+    await logApiRequestToDb({
+      virtualKey,
+      providerId,
       model: (request.body as any)?.model || 'unknown',
-      prompt_tokens: tokenCount.promptTokens,
-      completion_tokens: 0,
-      total_tokens: tokenCount.promptTokens,
+      tokenCount,
       status: 'error',
-      response_time: duration,
-      error_message: streamError.message,
-      request_body: truncatedRequest,
-      response_body: undefined,
-      compression_original_tokens: compressionStats?.originalTokens,
-      compression_saved_tokens: compressionStats?.savedTokens,
+      responseTime: duration,
+      errorMessage: streamError.message,
+      truncatedRequest,
+      cacheHit: 0,
+      compressionStats,
     });
 
     if (debugModeService.isActive()) {
@@ -932,23 +919,18 @@ export async function handleNonStreamRequest(
       normCached.completionTokens
     );
 
-    await apiRequestDb.create({
-      id: nanoid(),
-      virtual_key_id: virtualKey.id,
-      provider_id: providerId,
+    await logApiRequestToDb({
+      virtualKey,
+      providerId,
       model: (request.body as any)?.model || 'unknown',
-      prompt_tokens: tokenCount.promptTokens,
-      completion_tokens: tokenCount.completionTokens,
-      total_tokens: tokenCount.totalTokens,
-      cached_tokens: normCached.cachedTokens,
+      tokenCount,
       status: 'success',
-      response_time: duration,
-      error_message: undefined,
-      request_body: truncatedRequest,
-      response_body: truncatedResponse,
-      cache_hit: 1,
-      compression_original_tokens: compressionStats?.originalTokens,
-      compression_saved_tokens: compressionStats?.savedTokens,
+      responseTime: duration,
+      truncatedRequest,
+      truncatedResponse,
+      cacheHit: 1,
+      cachedTokens: normCached.cachedTokens,
+      compressionStats,
     });
 
     memoryLogger.info(
@@ -1171,23 +1153,19 @@ export async function handleNonStreamRequest(
     norm.completionTokens
   );
 
-  await apiRequestDb.create({
-    id: nanoid(),
-    virtual_key_id: virtualKey.id,
-    provider_id: providerId,
+  await logApiRequestToDb({
+    virtualKey,
+    providerId,
     model: (request.body as any)?.model || 'unknown',
-    prompt_tokens: tokenCount.promptTokens,
-    completion_tokens: tokenCount.completionTokens,
-    total_tokens: tokenCount.totalTokens,
-    cached_tokens: norm.cachedTokens,
+    tokenCount,
     status: isSuccess ? 'success' : 'error',
-    response_time: duration,
-    error_message: isSuccess ? undefined : JSON.stringify(responseData),
-    request_body: truncatedRequest,
-    response_body: truncatedResponse,
-    cache_hit: fromCache ? 1 : 0,
-    compression_original_tokens: compressionStats?.originalTokens,
-    compression_saved_tokens: compressionStats?.savedTokens,
+    responseTime: duration,
+    errorMessage: isSuccess ? undefined : JSON.stringify(responseData),
+    truncatedRequest,
+    truncatedResponse,
+    cacheHit: fromCache ? 1 : 0,
+    cachedTokens: norm.cachedTokens,
+    compressionStats,
   });
 
   if (isSuccess) {

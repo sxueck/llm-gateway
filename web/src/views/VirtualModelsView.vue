@@ -118,7 +118,7 @@ import { useModelStore } from '@/stores/model';
 import { configApi } from '@/api/config';
 import VirtualModelWizard from '@/components/VirtualModelWizard.vue';
 import { copyToClipboard } from '@/utils/common';
-import type { VirtualModelFormValue, RoutingConfigType } from '@/types/virtual-model';
+import { createDefaultVirtualModelForm, type VirtualModelFormValue, type RoutingConfigType } from '@/types/virtual-model';
 
 const message = useMessage();
 const providerStore = useProviderStore();
@@ -133,15 +133,7 @@ const configs = ref<any[]>([]);
 const previewConfig = ref('');
 const editingId = ref<string | null>(null);
 
-const formValue = ref<VirtualModelFormValue>({
-  name: '',
-  description: '',
-  targets: [],
-  createVirtualModel: true,
-  virtualModelName: '',
-  hashSource: 'virtualKey',
-  affinityTTLSeconds: 300, // 默认300秒（5分钟）
-});
+const formValue = ref<VirtualModelFormValue>(createDefaultVirtualModelForm());
 
 const statusCodeOptions = [
   { label: '429 - 请求过多', value: 429 },
@@ -366,15 +358,7 @@ function handleCopyConfig() {
 
 function resetForm() {
   editingId.value = null;
-  formValue.value = {
-    name: '',
-    description: '',
-    targets: [],
-    createVirtualModel: true,
-    virtualModelName: '',
-    hashSource: 'virtualKey',
-    affinityTTLSeconds: 300,
-  };
+  formValue.value = createDefaultVirtualModelForm();
   configType.value = 'loadbalance';
 }
 

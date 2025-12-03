@@ -154,9 +154,11 @@ import {
 import { EditOutlined, DeleteOutlined, ContentCopyOutlined } from '@vicons/material';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
 import { useModelStore } from '@/stores/model';
+import { useModelOptions } from '@/composables/useModelOptions';
 import { virtualKeyApi } from '@/api/virtual-key';
 import type { VirtualKey } from '@/types';
 import { copyToClipboard } from '@/utils/common';
+import { createDefaultVirtualKeyForm } from '@/types/virtual-key';
 
 const message = useMessage();
 const virtualKeyStore = useVirtualKeyStore();
@@ -169,27 +171,12 @@ const submitting = ref(false);
 const editingId = ref<string | null>(null);
 const createdKeyValue = ref('');
 
-const formValue = ref({
-  name: '',
-  modelIds: [] as string[],
-  keyType: 'auto' as 'auto' | 'custom',
-  customKey: '',
-  rateLimit: undefined as number | undefined,
-  enabled: true,
-  cacheEnabled: false,
-  disableLogging: false,
-  dynamicCompressionEnabled: false,
-  interceptZeroTemperature: false,
-  zeroTemperatureReplacement: 0.7 as number | undefined,
-});
+const formValue = ref(createDefaultVirtualKeyForm());
 
-const modelOptions = computed(() => {
-  return modelStore.models
-    .filter(m => m.enabled)
-    .map(m => ({
-      label: `${m.name} (${m.providerName})`,
-      value: m.id,
-    }));
+const { modelOptions } = useModelOptions({
+  uniqueByIdentifier: false,
+  labelStyle: 'nameWithProvider',
+  valueField: 'id',
 });
 
 const rules = {
@@ -407,19 +394,7 @@ async function handleSubmit() {
 
 function resetForm() {
   editingId.value = null;
-  formValue.value = {
-    name: '',
-    modelIds: [],
-    keyType: 'auto',
-    customKey: '',
-    rateLimit: undefined,
-    enabled: true,
-    cacheEnabled: false,
-    disableLogging: false,
-    interceptZeroTemperature: false,
-    zeroTemperatureReplacement: 0.7,
-    dynamicCompressionEnabled: false,
-  };
+  formValue.value = createDefaultVirtualKeyForm();
 }
 
 function copyKeyValue(keyValue: string) {

@@ -1,7 +1,7 @@
 import { FastifyReply } from 'fastify';
 import { ProtocolAdapter, type ProtocolConfig } from '../../services/protocol-adapter.js';
-import OpenAI from 'openai';
 import { stripFieldRecursively } from '../../utils/request-logger.js';
+import { normalizeOpenAIError } from '../../utils/http-error-normalizer.js';
 
 export interface HttpResponse {
   statusCode: number;
@@ -37,53 +37,18 @@ export interface RequestOptions {
 const protocolAdapter = new ProtocolAdapter();
 
 function normalizeError(error: any): { statusCode: number; errorResponse: any } {
-  let statusCode = 500;
-  let errorType = 'api_error';
-  let errorCode = 'llm_error';
-  let message = error.message || 'LLM 请求失败';
-
-  // 处理 OpenAI SDK 特定错误
-  if (error instanceof OpenAI.APIError) {
-    statusCode = error.status || 500;
-    message = error.message;
-    
-    // 记录 requestID 用于调试
-    if (error.requestID) {
-      message += ` (Request ID: ${error.requestID})`;
-    }
-  } else if (error instanceof OpenAI.APIUserAbortError) {
-    statusCode = 499; // Client Closed Request
-    errorType = 'request_cancelled';
-    errorCode = 'user_aborted';
-    message = '请求已被取消';
-  } else if (error.status) {
-    statusCode = error.status;
-  }
-
-  if (statusCode === 401) {
-    errorType = 'authentication_error';
-    errorCode = 'invalid_api_key';
-  } else if (statusCode === 429) {
-    errorType = 'rate_limit_error';
-    errorCode = 'rate_limit_exceeded';
-  } else if (statusCode === 400) {
-    errorType = 'invalid_request_error';
-    errorCode = 'invalid_request';
-  } else if (statusCode >= 500) {
-    errorType = 'api_error';
-    errorCode = 'internal_server_error';
-  }
+  const norm = normalizeOpenAIError(error);
 
   return {
-    statusCode,
+    statusCode: norm.statusCode,
     errorResponse: {
       error: {
-        message,
-        type: errorType,
+        message: norm.message,
+        type: norm.errorType,
         param: null,
-        code: errorCode
-      }
-    }
+        code: norm.errorCode,
+      },
+    },
   };
 }
 

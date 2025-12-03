@@ -2,6 +2,7 @@ import { FastifyReply } from 'fastify';
 import Anthropic from '@anthropic-ai/sdk';
 import { memoryLogger } from '../../services/logger.js';
 import type { AnthropicRequest, AnthropicStreamEvent } from '../../types/anthropic.js';
+import { normalizeAnthropicError } from '../../utils/http-error-normalizer.js';
 
 export interface HttpResponse {
   statusCode: number;
@@ -40,37 +41,17 @@ function getAnthropicClient(baseUrl: string | undefined, apiKey: string, headers
 }
 
 function normalizeError(error: any): { statusCode: number; errorResponse: any } {
-  let statusCode = 500;
-  let errorType = 'api_error';
-  let message = error.message || 'Anthropic request failed';
-
-  if (error.status) {
-    statusCode = error.status;
-  }
-
-  if (statusCode === 401) {
-    errorType = 'authentication_error';
-  } else if (statusCode === 429) {
-    errorType = 'rate_limit_error';
-  } else if (statusCode === 400) {
-    errorType = 'invalid_request_error';
-  } else if (statusCode === 404) {
-    errorType = 'not_found_error';
-  } else if (statusCode === 403) {
-    errorType = 'permission_error';
-  } else if (statusCode >= 500) {
-    errorType = 'api_error';
-  }
+  const norm = normalizeAnthropicError(error);
 
   return {
-    statusCode,
+    statusCode: norm.statusCode,
     errorResponse: {
       type: 'error',
       error: {
-        type: errorType,
-        message,
-      }
-    }
+        type: norm.errorType,
+        message: norm.message,
+      },
+    },
   };
 }
 

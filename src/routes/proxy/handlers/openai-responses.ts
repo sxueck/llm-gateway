@@ -4,7 +4,8 @@ import { accumulateResponsesStream } from '../../../utils/request-logger.js';
 import { makeStreamHttpRequest } from '../http-client.js';
 import { calculateTokensIfNeeded } from '../token-calculator.js';
 import { circuitBreaker } from '../../../services/circuit-breaker.js';
-import { shouldLogRequestBody, buildFullRequest, getTruncatedBodies, logApiRequest } from './shared.js';
+import { shouldLogRequestBody, buildFullRequest, getTruncatedBodies } from './shared.js';
+import { logApiRequestToDb } from '../../../services/api-request-logger.js';
 import type { VirtualKey } from '../../../types/index.js';
 
 export interface ResponsesStreamParams {
@@ -99,10 +100,10 @@ export async function handleResponsesStreamRequest(params: ResponsesStreamParams
       currentModel
     );
 
-    await logApiRequest({
+    await logApiRequestToDb({
       virtualKey,
       providerId,
-      requestBody: request.body,
+      model: (request.body as any)?.model || 'unknown',
       tokenCount,
       status: 'success',
       responseTime: duration,
@@ -138,15 +139,16 @@ export async function handleResponsesStreamRequest(params: ResponsesStreamParams
 
     const tokenCount = await calculateTokensIfNeeded(0, request.body);
 
-    await logApiRequest({
+    await logApiRequestToDb({
       virtualKey,
       providerId,
-      requestBody: request.body,
+      model: (request.body as any)?.model || 'unknown',
       tokenCount,
       status: 'error',
       responseTime: duration,
       errorMessage: streamError.message,
       truncatedRequest,
+      cacheHit: 0,
       compressionStats,
     });
   }

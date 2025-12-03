@@ -325,11 +325,24 @@ import { SendOutline } from '@vicons/ionicons5';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
 import { useModelStore } from '@/stores/model';
 import { formatJson, copyToClipboard } from '@/utils/common';
+import { useModelOptions } from '@/composables/useModelOptions';
+import { useVirtualKeyOptions } from '@/composables/useVirtualKeyOptions';
 
 const { t } = useI18n();
 const message = useMessage();
 const virtualKeyStore = useVirtualKeyStore();
 const modelStore = useModelStore();
+
+const { modelOptions } = useModelOptions({
+  uniqueByIdentifier: true,
+  labelStyle: 'providerDashName',
+  valueField: 'modelIdentifier',
+});
+
+const { virtualKeyOptions } = useVirtualKeyOptions({
+  includeDisabled: false,
+  showKeySnippet: true,
+});
 
 const selectedVirtualKey = ref<string | null>(null);
 const selectedVirtualKeyModels = ref<string | null>(null);
@@ -414,36 +427,6 @@ async function main() {
 
 main();`);
 
-const virtualKeyOptions = computed(() => {
-  return virtualKeyStore.virtualKeys
-    .filter(vk => vk.enabled)
-    .map(vk => ({
-      label: `${vk.name} (${vk.keyValue.substring(0, 20)}...)`,
-      value: vk.keyValue,
-    }));
-});
-
-const modelOptions = computed(() => {
-  const uniqueModels = new Map<string, { label: string; value: string }>();
-  
-  modelStore.models
-    .filter(m => m.enabled)
-    .forEach(m => {
-      // 使用 modelIdentifier 作为唯一键，确保每个模型只出现一次
-      const key = m.modelIdentifier;
-      if (!uniqueModels.has(key)) {
-        uniqueModels.set(key, {
-          label: `${m.providerName} - ${m.name}`,
-          value: m.modelIdentifier,
-        });
-      }
-    });
-  
-  // 转换为数组并按 label 排序，确保顺序稳定
-  return Array.from(uniqueModels.values()).sort((a, b) =>
-    a.label.localeCompare(b.label)
-  );
-});
 
 const templateOptions = [
   {

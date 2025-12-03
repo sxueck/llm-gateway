@@ -114,6 +114,8 @@ import { useModelStore } from '@/stores/model';
 import { providerApi } from '@/api/provider';
 import { modelApi } from '@/api/model';
 import type { Provider } from '@/types';
+import type { ProviderFormValue } from '@/types/provider';
+import { createDefaultProviderForm } from '@/types/provider';
 import ProviderPresetSelector from '@/components/ProviderPresetSelector.vue';
 import ProviderForm from '@/components/ProviderForm.vue';
 import ProviderOverview from '@/components/ProviderOverview.vue';
@@ -143,15 +145,7 @@ const exportOptions = [
   },
 ];
 
-const formValue = ref({
-  id: '',
-  name: '',
-  description: '',
-  baseUrl: '',
-  protocolMappings: null as any,
-  apiKey: '',
-  enabled: true,
-});
+const formValue = ref<ProviderFormValue>(createDefaultProviderForm());
 
 const originalApiKey = ref('');
 const apiKeyChanged = ref(false);
@@ -372,15 +366,7 @@ function resetForm() {
   selectedPreset.value = null;
   originalApiKey.value = '';
   apiKeyChanged.value = false;
-  formValue.value = {
-    id: '',
-    name: '',
-    description: '',
-    baseUrl: '',
-    protocolMappings: null,
-    apiKey: '',
-    enabled: true,
-  };
+  formValue.value = createDefaultProviderForm();
 }
 
 function usePreset() {

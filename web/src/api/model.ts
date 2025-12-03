@@ -1,5 +1,8 @@
 import request from '@/utils/request';
 import type { Model, CreateModelRequest, UpdateModelRequest } from '@/types';
+import { createCrudApi } from './_crud-factory';
+
+const baseModelApi = createCrudApi<Model, CreateModelRequest, UpdateModelRequest>('/admin/models');
 
 export const modelApi = {
   getAll(): Promise<{ models: Model[] }> {
@@ -7,7 +10,7 @@ export const modelApi = {
   },
 
   getById(id: string): Promise<Model> {
-    return request.get(`/admin/models/${id}`);
+    return baseModelApi.getById(id);
   },
 
   getByProviderId(providerId: string): Promise<{ models: Model[] }> {
@@ -15,7 +18,7 @@ export const modelApi = {
   },
 
   create(data: CreateModelRequest): Promise<Model> {
-    return request.post('/admin/models', data);
+    return baseModelApi.create(data);
   },
 
   batchCreate(models: CreateModelRequest[]): Promise<{ models: Model[]; success: boolean }> {
@@ -28,11 +31,11 @@ export const modelApi = {
   },
 
   update(id: string, data: UpdateModelRequest): Promise<Model> {
-    return request.put(`/admin/models/${id}`, data);
+    return baseModelApi.update(id, data);
   },
 
   delete(id: string): Promise<{ success: boolean }> {
-    return request.delete(`/admin/models/${id}`);
+    return baseModelApi.delete(id);
   },
 
   test(id: string): Promise<{

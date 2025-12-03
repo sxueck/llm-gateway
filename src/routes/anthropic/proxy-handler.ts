@@ -1,6 +1,4 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { nanoid } from 'nanoid';
-import { apiRequestDb } from '../../db/index.js';
 import { memoryLogger } from '../../services/logger.js';
 import { authenticateVirtualKey } from '../proxy/auth.js';
 import { resolveModelAndProvider } from '../proxy/model-resolver.js';
@@ -10,6 +8,8 @@ import { isAnthropicProtocolConfig } from '../../utils/protocol-utils.js';
 import type { VirtualKey } from '../../types/index.js';
 import type { AnthropicRequest, AnthropicError } from '../../types/anthropic.js';
 import { makeAnthropicRequest, makeAnthropicStreamRequest } from './http-client.js';
+import { logApiRequestToDb } from '../../services/api-request-logger.js';
+import { calculateTokensIfNeeded } from '../proxy/token-calculator.js';
 
 function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
   return !virtualKey.disable_logging;
@@ -166,19 +166,18 @@ export function createAnthropicProxyHandler() {
           const shouldLogBody = shouldLogRequestBody(virtualKey);
           const requestBody = request.body as AnthropicRequest;
 
-          await apiRequestDb.create({
-            id: nanoid(),
-            virtual_key_id: virtualKey.id,
-            provider_id: providerId,
+          const tokenCount = await calculateTokensIfNeeded(0, requestBody);
+
+          await logApiRequestToDb({
+            virtualKey,
+            providerId: providerId!,
             model: requestBody?.model || 'unknown',
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            total_tokens: 0,
+            tokenCount,
             status: 'error',
-            response_time: duration,
-            error_message: error.message,
-            request_body: shouldLogBody ? JSON.stringify(requestBody) : undefined,
-            response_body: undefined,
+            responseTime: duration,
+            errorMessage: error.message,
+            truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
+            cacheHit: 0,
           });
         }
       }
@@ -220,20 +219,18 @@ async function handleAnthropicNonStreamRequest(
       const responseData = JSON.parse(response.body);
       const shouldLogBody = shouldLogRequestBody(virtualKey);
 
-      await apiRequestDb.create({
-        id: nanoid(),
-        virtual_key_id: virtualKey.id,
-        provider_id: providerId,
+      const tokenCount = await calculateTokensIfNeeded(0, requestBody, responseData);
+
+      await logApiRequestToDb({
+        virtualKey,
+        providerId,
         model: requestBody.model,
-        prompt_tokens: responseData.usage?.input_tokens || 0,
-        completion_tokens: responseData.usage?.output_tokens || 0,
-        total_tokens: (responseData.usage?.input_tokens || 0) + (responseData.usage?.output_tokens || 0),
+        tokenCount,
         status: 'success',
-        response_time: duration,
-        error_message: undefined,
-        request_body: shouldLogBody ? JSON.stringify(requestBody) : undefined,
-        response_body: shouldLogBody ? JSON.stringify(responseData) : undefined,
-        cache_hit: 0,
+        responseTime: duration,
+        truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
+        truncatedResponse: shouldLogBody ? JSON.stringify(responseData) : undefined,
+        cacheHit: 0,
       });
 
       memoryLogger.info(
@@ -249,19 +246,18 @@ async function handleAnthropicNonStreamRequest(
       const errorData = JSON.parse(response.body);
       const shouldLogBody = shouldLogRequestBody(virtualKey);
 
-      await apiRequestDb.create({
-        id: nanoid(),
-        virtual_key_id: virtualKey.id,
-        provider_id: providerId,
+      const tokenCount = await calculateTokensIfNeeded(0, requestBody, errorData);
+
+      await logApiRequestToDb({
+        virtualKey,
+        providerId,
         model: requestBody.model,
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        total_tokens: 0,
+        tokenCount,
         status: 'error',
-        response_time: duration,
-        error_message: JSON.stringify(errorData),
-        request_body: shouldLogBody ? JSON.stringify(requestBody) : undefined,
-        response_body: undefined,
+        responseTime: duration,
+        errorMessage: JSON.stringify(errorData),
+        truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
+        cacheHit: 0,
       });
 
       memoryLogger.error(
@@ -278,19 +274,18 @@ async function handleAnthropicNonStreamRequest(
 
     const shouldLogBody = shouldLogRequestBody(virtualKey);
 
-    await apiRequestDb.create({
-      id: nanoid(),
-      virtual_key_id: virtualKey.id,
-      provider_id: providerId,
+    const tokenCount = await calculateTokensIfNeeded(0, requestBody);
+
+    await logApiRequestToDb({
+      virtualKey,
+      providerId,
       model: requestBody.model,
-      prompt_tokens: 0,
-      completion_tokens: 0,
-      total_tokens: 0,
+      tokenCount,
       status: 'error',
-      response_time: duration,
-      error_message: error.message,
-      request_body: shouldLogBody ? JSON.stringify(requestBody) : undefined,
-      response_body: undefined,
+      responseTime: duration,
+      errorMessage: error.message,
+      truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
+      cacheHit: 0,
     });
 
     throw error;
@@ -324,20 +319,25 @@ async function handleAnthropicStreamRequest(
 
     const shouldLogBody = shouldLogRequestBody(virtualKey);
 
-    await apiRequestDb.create({
-      id: nanoid(),
-      virtual_key_id: virtualKey.id,
-      provider_id: providerId,
+    const tokenCount = await calculateTokensIfNeeded(
+      tokenUsage.totalTokens,
+      requestBody,
+      undefined,
+      undefined,
+      tokenUsage.promptTokens,
+      tokenUsage.completionTokens
+    );
+
+    await logApiRequestToDb({
+      virtualKey,
+      providerId,
       model: requestBody.model,
-      prompt_tokens: tokenUsage.promptTokens,
-      completion_tokens: tokenUsage.completionTokens,
-      total_tokens: tokenUsage.totalTokens,
+      tokenCount,
       status: 'success',
-      response_time: duration,
-      error_message: undefined,
-      request_body: shouldLogBody ? JSON.stringify(requestBody) : undefined,
-      response_body: shouldLogBody ? tokenUsage.streamChunks.join('') : undefined,
-      cache_hit: 0,
+      responseTime: duration,
+      truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
+      truncatedResponse: shouldLogBody ? tokenUsage.streamChunks.join('') : undefined,
+      cacheHit: 0,
     });
 
     memoryLogger.info(
@@ -358,19 +358,18 @@ async function handleAnthropicStreamRequest(
 
     const shouldLogBody = shouldLogRequestBody(virtualKey);
 
-    await apiRequestDb.create({
-      id: nanoid(),
-      virtual_key_id: virtualKey.id,
-      provider_id: providerId,
+    const tokenCount = await calculateTokensIfNeeded(0, requestBody);
+
+    await logApiRequestToDb({
+      virtualKey,
+      providerId,
       model: requestBody.model,
-      prompt_tokens: 0,
-      completion_tokens: 0,
-      total_tokens: 0,
+      tokenCount,
       status: 'error',
-      response_time: duration,
-      error_message: streamError.message,
-      request_body: shouldLogBody ? JSON.stringify(requestBody) : undefined,
-      response_body: undefined,
+      responseTime: duration,
+      errorMessage: streamError.message,
+      truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
+      cacheHit: 0,
     });
 
     return;

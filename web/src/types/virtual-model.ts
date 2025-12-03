@@ -21,3 +21,16 @@ export interface VirtualModelFormValue {
 }
 
 export type RoutingConfigType = 'loadbalance' | 'fallback' | 'hash' | 'affinity';
+
+export function createDefaultVirtualModelForm(): VirtualModelFormValue {
+  return {
+    name: '',
+    description: '',
+    targets: [],
+    createVirtualModel: true,
+    virtualModelName: '',
+    modelAttributes: undefined,
+    hashSource: 'virtualKey',
+    affinityTTLSeconds: 300,
+  };
+}
