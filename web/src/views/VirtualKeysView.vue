@@ -129,7 +129,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, computed, onMounted, watch } from 'vue';
+import { ref, h, onMounted, watch } from 'vue';
 import {
   useMessage,
   NSpace,

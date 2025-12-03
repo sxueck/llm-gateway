@@ -325,7 +325,10 @@ async function handleSubmit() {
     } else {
       const selectedModelsInfo = formRef.value?.getSelectedModelsInfo?.() || [];
 
-      await providerApi.create(formValue.value);
+      await providerApi.create({
+        ...formValue.value,
+        protocolMappings: formValue.value.protocolMappings || undefined,
+      });
 
       if (selectedModelsInfo.length > 0) {
         const modelsToCreate = selectedModelsInfo.map((model: any) => ({
