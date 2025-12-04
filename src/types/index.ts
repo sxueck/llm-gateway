@@ -10,6 +10,7 @@ export interface ProtocolMapping {
   openai?: string;
   anthropic?: string;
   google?: string;
+  gemini?: string;
 }
 
 export interface Provider {

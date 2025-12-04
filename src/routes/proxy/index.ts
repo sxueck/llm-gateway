@@ -35,6 +35,14 @@ const API_GROUPS: Record<string, ApiGroup> = {
     ],
     withV1Prefix: true,
   },
+  gemini: {
+    routes: [
+      // Gemini API v1beta endpoints
+      { path: '/v1beta/models/*', method: 'ALL', handler: 'proxy' },
+      { path: '/v1beta/*', method: 'ALL', handler: 'proxy' },
+    ],
+    withV1Prefix: false,
+  },
 };
 
 function registerApiGroup(
@@ -69,6 +77,7 @@ export async function proxyRoutes(fastify: FastifyInstance) {
 
   registerApiGroup(fastify, API_GROUPS.models, handlers);
   registerApiGroup(fastify, API_GROUPS.proxy, handlers);
+  registerApiGroup(fastify, API_GROUPS.gemini, handlers);
 
   startCacheStatsLogger();
 }

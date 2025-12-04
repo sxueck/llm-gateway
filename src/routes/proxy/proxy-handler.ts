@@ -18,7 +18,8 @@ import { shouldLogRequestBody, buildFullRequest, getTruncatedBodies } from './ha
 import { logApiRequestToDb } from '../../services/api-request-logger.js';
 import type { VirtualKey } from '../../types/index.js';
 import { normalizeUsageCounts } from '../../utils/usage-normalizer.js';
-import { isChatCompletionsPath, isResponsesApiPath, isEmbeddingsPath } from '../../utils/path-detector.js';
+import { isChatCompletionsPath, isResponsesApiPath, isEmbeddingsPath, hasV1BetaPrefix } from '../../utils/path-detector.js';
+import { handleGeminiNativeNonStreamRequest, handleGeminiNativeStreamRequest } from './handlers/gemini-native.js';
 
 const MESSAGE_COMPRESSION_MIN_TOKENS = parseInt(process.env.MESSAGE_COMPRESSION_MIN_TOKENS || '2048', 10);
 
@@ -306,6 +307,41 @@ export function createProxyHandler() {
       }
 
       const { protocolConfig, path, vkDisplay, isStreamRequest } = configResult;
+
+      // 检测是否为 Gemini 原生透传模式
+      const isGeminiNativeMode = protocolConfig.protocol === 'gemini' && hasV1BetaPrefix(path);
+
+      if (isGeminiNativeMode) {
+        memoryLogger.info(
+          `进入 Gemini 原生透传模式 | path: ${path} | protocol: ${protocolConfig.protocol}`,
+          'Proxy'
+        );
+
+        // Gemini 原生透传：根据是否流式分别处理
+        if (isStreamRequest) {
+          return await handleGeminiNativeStreamRequest(
+            request,
+            reply,
+            protocolConfig,
+            path,
+            virtualKey,
+            providerId,
+            startTime,
+            vkDisplay
+          );
+        } else {
+          return await handleGeminiNativeNonStreamRequest(
+            request,
+            reply,
+            protocolConfig,
+            path,
+            virtualKey,
+            providerId,
+            startTime,
+            vkDisplay
+          );
+        }
+      }
 
       if (currentModel && (request.body as any)?.messages && isChatCompletionsPath(path)) {
         const processorContext = {

@@ -96,6 +96,13 @@ export function hasV1Prefix(path: string): boolean {
 }
 
 /**
+ * Check if the path starts with /v1beta/
+ */
+export function hasV1BetaPrefix(path: string): boolean {
+  return path.startsWith('/v1beta/');
+}
+
+/**
  * Check if the path has a duplicated /v1/v1/ prefix
  */
 export function hasDuplicatedV1Prefix(path: string): boolean {
@@ -104,11 +111,17 @@ export function hasDuplicatedV1Prefix(path: string): boolean {
 
 /**
  * Normalize the path by ensuring it has the /v1/ prefix and removing duplicates
+ * For Gemini API paths with /v1beta/, keep them as is
  * @param path - The original path
  * @returns The normalized path
  */
 export function normalizePath(path: string): string {
   let normalizedPath = path;
+
+  // Keep v1beta paths as is (for Gemini API)
+  if (hasV1BetaPrefix(normalizedPath)) {
+    return normalizedPath;
+  }
 
   // Remove duplicated /v1/v1/ prefix
   if (hasDuplicatedV1Prefix(normalizedPath)) {

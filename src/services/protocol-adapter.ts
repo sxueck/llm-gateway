@@ -6,6 +6,7 @@ import { memoryLogger } from './logger.js';
 import { extractReasoningFromChoice } from '../utils/request-logger.js';
 import { normalizeUsageCounts } from '../utils/usage-normalizer.js';
 import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-client.js';
+import { GeminiAdapter } from './gemini-adapter.js';
 
 export interface ProtocolConfig {
   provider: string;
@@ -40,6 +41,7 @@ export interface ProtocolResponse {
 
 export class ProtocolAdapter {
   private openaiClients: Map<string, OpenAI> = new Map();
+  private geminiAdapter: GeminiAdapter = new GeminiAdapter();
   private keepAliveAgents: Map<string, { httpAgent: HttpAgent; httpsAgent: HttpsAgent }> = new Map();
   private readonly keepAliveMaxSockets = parseInt(process.env.HTTP_KEEP_ALIVE_MAX_SOCKETS || '64', 10);
 
@@ -168,9 +170,14 @@ export class ProtocolAdapter {
     abortSignal?: AbortSignal
   ): Promise<ProtocolResponse> {
     memoryLogger.debug(
-      `直接转发请求 | model: ${config.model}`,
+      `直接转发请求 | model: ${config.model} | protocol: ${config.protocol || 'openai'}`,
       'Protocol'
     );
+
+    // 根据协议类型选择不同的实现
+    if (config.protocol === 'gemini') {
+      return await this.geminiAdapter.chatCompletion(config, messages, options, abortSignal);
+    }
 
     return await this.openaiChatCompletion(config, messages, options, abortSignal);
   }
@@ -239,9 +246,14 @@ export class ProtocolAdapter {
     abortSignal?: AbortSignal
   ): Promise<StreamTokenUsage> {
     memoryLogger.debug(
-      `直接转发流式请求 | model: ${config.model}`,
+      `直接转发流式请求 | model: ${config.model} | protocol: ${config.protocol || 'openai'}`,
       'Protocol'
     );
+
+    // 根据协议类型选择不同的实现
+    if (config.protocol === 'gemini') {
+      return await this.geminiAdapter.streamChatCompletion(config, messages, options, reply, abortSignal);
+    }
 
     return await this.openaiStreamChatCompletion(config, messages, options, reply, abortSignal);
   }
@@ -403,9 +415,14 @@ export class ProtocolAdapter {
     abortSignal?: AbortSignal
   ): Promise<any> {
     memoryLogger.debug(
-      `直接转发 Embeddings 请求 | model: ${config.model}`,
+      `直接转发 Embeddings 请求 | model: ${config.model} | protocol: ${config.protocol || 'openai'}`,
       'Protocol'
     );
+
+    // 根据协议类型选择不同的实现
+    if (config.protocol === 'gemini') {
+      return await this.geminiAdapter.createEmbedding(config, input, options, abortSignal);
+    }
 
     return await this.openaiCreateEmbedding(config, input, options, abortSignal);
   }
