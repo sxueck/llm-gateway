@@ -7,7 +7,7 @@ import { promptProcessor } from '../../services/prompt-processor.js';
 import { messageCompressor } from '../../services/message-compressor.js';
 import { makeHttpRequest, makeStreamHttpRequest } from './http-client.js';
 import { checkCache, setCacheIfNeeded, getCacheStatus } from './cache.js';
-import { authenticateVirtualKey } from './auth.js';
+import { authenticateVirtualKey, extractVirtualKeyAuthHeader } from './auth.js';
 import { resolveModelAndProvider } from './model-resolver.js';
 import { buildProviderConfig } from './provider-config-builder.js';
 import { calculateTokensIfNeeded } from './token-calculator.js';
@@ -284,7 +284,10 @@ export function createProxyHandler() {
         });
       }
 
-      const authResult = await authenticateVirtualKey(request.headers.authorization);
+      // 支持从多种 header 读取虚拟密钥（兼容 Gemini / Claude 等 SDK 的 API Key 头）
+      const resolvedAuthHeader = extractVirtualKeyAuthHeader(request.headers as any);
+
+      const authResult = await authenticateVirtualKey(resolvedAuthHeader);
       if ('error' in authResult) {
         return reply.code((authResult.error as any).code).send((authResult.error as any).body);
       }

@@ -20,6 +20,46 @@ export interface AuthError {
   };
 }
 
+/**
+ * 从请求头中提取用于虚拟密钥认证的 header
+ * 支持：
+ * - Authorization: Bearer <virtual_key>
+ * - x-google-api-key: <virtual_key>
+ * - x-goog-api-key: <virtual_key>
+ * - x-api-key: <virtual_key>
+ * 这些头通常由标准 SDK（如 Gemini、Claude）发送，这里将它们映射为虚拟密钥认证。
+ */
+export function extractVirtualKeyAuthHeader(headers: Record<string, any> | undefined): string | undefined {
+  if (!headers) return undefined;
+
+  // 优先使用标准 Authorization 头
+  const authHeader = (headers as any).authorization || (headers as any).Authorization;
+  if (typeof authHeader === 'string' && authHeader.trim() !== '') {
+    return authHeader;
+  }
+
+  // Fastify 默认会把 header 名转换为小写，这里统一做一次降级
+  const lowered: Record<string, any> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    lowered[key.toLowerCase()] = value;
+  }
+
+  const candidate =
+    lowered['x-google-api-key'] ||
+    lowered['x-goog-api-key'] ||
+    lowered['x-api-key'];
+
+  if (typeof candidate === 'string' && candidate.trim() !== '') {
+    // 这里记录一下，方便排查认证来源
+    memoryLogger.info('Using provider-style API key header as virtual key for authentication', 'Proxy');
+    return `Bearer ${candidate.trim()}`;
+  }
+
+  return undefined;
+}
+
+
+
 export async function authenticateVirtualKey(authHeader: string | undefined): Promise<VirtualKeyAuthResult | AuthError> {
   if (!authHeader?.startsWith('Bearer ')) {
     return {
@@ -37,9 +77,9 @@ export async function authenticateVirtualKey(authHeader: string | undefined): Pr
     };
   }
 
-  const virtualKeyValue = authHeader.substring(7);
+  const token = authHeader.substring(7).trim();
+  const virtualKeyValue = token;
   const virtualKey = await virtualKeyDb.getByKeyValue(virtualKeyValue);
-
   if (!virtualKey) {
     memoryLogger.warn(`Virtual key not found: ${virtualKeyValue}`, 'Proxy');
     return {

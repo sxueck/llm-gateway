@@ -1,7 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { modelDb, systemConfigDb } from '../../db/index.js';
 import { memoryLogger } from '../../services/logger.js';
-import { authenticateVirtualKey, getModelIdsFromVirtualKey } from './auth.js';
+import { authenticateVirtualKey, extractVirtualKeyAuthHeader, getModelIdsFromVirtualKey } from './auth.js';
 
 export function parseModelAttributes(modelAttributes: string | null | undefined): any {
   if (!modelAttributes) {
@@ -43,7 +43,8 @@ export async function getModelsHandler(request: FastifyRequest, reply: FastifyRe
       return reply.sendFile('index.html');
     }
 
-    const authResult = await authenticateVirtualKey(request.headers.authorization);
+    const resolvedAuthHeader = extractVirtualKeyAuthHeader(request.headers as any);
+    const authResult = await authenticateVirtualKey(resolvedAuthHeader);
     if ('error' in authResult) {
       return reply.code(authResult.error.code).send(authResult.error.body);
     }
@@ -104,7 +105,8 @@ export async function getModelInfoHandler(request: FastifyRequest, reply: Fastif
       });
     }
 
-    const authResult = await authenticateVirtualKey(request.headers.authorization);
+    const resolvedAuthHeader = extractVirtualKeyAuthHeader(request.headers as any);
+    const authResult = await authenticateVirtualKey(resolvedAuthHeader);
     if ('error' in authResult) {
       return reply.code(authResult.error.code).send(authResult.error.body);
     }

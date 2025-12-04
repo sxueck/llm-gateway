@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { memoryLogger } from '../../services/logger.js';
-import { authenticateVirtualKey } from '../proxy/auth.js';
+import { authenticateVirtualKey, extractVirtualKeyAuthHeader } from '../proxy/auth.js';
 import { resolveModelAndProvider } from '../proxy/model-resolver.js';
 import { buildProviderConfig } from '../proxy/provider-config-builder.js';
 import { circuitBreaker } from '../../services/circuit-breaker.js';
@@ -47,7 +47,10 @@ export function createAnthropicProxyHandler() {
         return reply.code(403).send(anthropicError);
       }
 
-      const authResult = await authenticateVirtualKey(request.headers.authorization);
+      // 支持从多种 header 读取虚拟密钥（兼容 Claude / SDK 风格）
+      const resolvedAuthHeader = extractVirtualKeyAuthHeader(request.headers as any);
+
+      const authResult = await authenticateVirtualKey(resolvedAuthHeader);
       if ('error' in authResult) {
         const anthropicError = createAnthropicError(
           authResult.error.body.error.message,
