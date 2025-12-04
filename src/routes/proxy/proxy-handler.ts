@@ -295,6 +295,26 @@ export function createProxyHandler() {
       const { virtualKey, virtualKeyValue: vkValue } = authResult;
       virtualKeyValue = vkValue;
 
+      // 对于 Gemini 原生请求，需要提前从 URL 路径中提取模型名称并注入请求体
+      // 这样 resolveModelAndProvider 才能正确匹配虚拟密钥配置的模型
+      const [rawPath] = request.url.split('?');
+      const normalizedPath = rawPath || '/';
+      if (normalizedPath.startsWith('/v1beta/models/') && (!request.body || !(request.body as any)?.model)) {
+        const pathMatch = normalizedPath.match(/\/models\/([^:\/]+)/);
+        if (pathMatch && pathMatch[1]) {
+          const extractedModel = pathMatch[1];
+          if (request.body && typeof request.body === 'object') {
+            (request.body as any).model = extractedModel;
+          } else {
+            request.body = { model: extractedModel };
+          }
+          memoryLogger.debug(
+            `提前从 Gemini URL 提取模型名称: ${extractedModel}`,
+            'Proxy'
+          );
+        }
+      }
+
       const modelResult = await resolveModelAndProvider(virtualKey, request, virtualKeyValue!);
       if ('code' in modelResult) {
         return reply.code(modelResult.code).send(modelResult.body);
@@ -311,11 +331,24 @@ export function createProxyHandler() {
 
       const { protocolConfig, path, vkDisplay, isStreamRequest } = configResult;
 
-      const isGeminiNativeMode = protocolConfig.protocol === 'google' && hasV1BetaPrefix(path);
+      const isGeminiNativeMode = protocolConfig.protocol === 'google';
+
+      let geminiApiPath = path;
+      if (isGeminiNativeMode && !hasV1BetaPrefix(path)) {
+        // 如果路径不是 /v1beta/ 开头，构造标准的 Gemini API 路径
+        const modelName = (request.body as any)?.model || protocolConfig.model || 'gemini-pro';
+        const action = isStreamRequest ? 'streamGenerateContent' : 'generateContent';
+        geminiApiPath = `/v1beta/models/${modelName}:${action}`;
+
+        memoryLogger.info(
+          `Gemini 原生模式路径转换: ${path} -> ${geminiApiPath}`,
+          'Proxy'
+        );
+      }
 
       if (isGeminiNativeMode) {
         memoryLogger.info(
-          `进入 Gemini 原生透传模式 | path: ${path} | protocol: ${protocolConfig.protocol}`,
+          `进入 Gemini 原生透传模式 | path: ${geminiApiPath} | protocol: ${protocolConfig.protocol}`,
           'Proxy'
         );
 
@@ -325,7 +358,7 @@ export function createProxyHandler() {
             request,
             reply,
             protocolConfig,
-            path,
+            geminiApiPath,
             virtualKey,
             providerId,
             startTime,
@@ -336,7 +369,7 @@ export function createProxyHandler() {
             request,
             reply,
             protocolConfig,
-            path,
+            geminiApiPath,
             virtualKey,
             providerId,
             startTime,
@@ -672,7 +705,7 @@ export async function handleStreamRequest(
     } else {
       // Chat Completions API 请求
       const messages = (request.body as any)?.messages || [];
-      const options = {
+      const options: any = {
         temperature: (request.body as any)?.temperature,
         max_tokens: (request.body as any)?.max_tokens,
         max_completion_tokens: (request.body as any)?.max_completion_tokens,
@@ -684,6 +717,18 @@ export async function handleStreamRequest(
         tool_choice: (request.body as any)?.tool_choice,
         parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
       };
+
+      // 支持 Gemini 原生格式：如果请求体包含 contents 字段，传递给 options
+      if ((request.body as any)?.contents) {
+        options.contents = (request.body as any).contents;
+      }
+      if ((request.body as any)?.systemInstruction) {
+        options.systemInstruction = (request.body as any).systemInstruction;
+      }
+      if ((request.body as any)?.generationConfig) {
+        // 合并 generationConfig 到 options
+        Object.assign(options, (request.body as any).generationConfig);
+      }
 
       tokenUsage = await makeStreamHttpRequest(
         protocolConfig,
@@ -1001,7 +1046,7 @@ export async function handleNonStreamRequest(
   } else {
     // Chat Completions API 请求
     const messages = (request.body as any)?.messages || [];
-    const options = {
+    const options: any = {
       temperature: (request.body as any)?.temperature,
       max_tokens: (request.body as any)?.max_tokens,
       max_completion_tokens: (request.body as any)?.max_completion_tokens,
@@ -1014,6 +1059,18 @@ export async function handleNonStreamRequest(
       tool_choice: (request.body as any)?.tool_choice,
       parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
     };
+
+    // 支持 Gemini 原生格式：如果请求体包含 contents 字段，传递给 options
+    if ((request.body as any)?.contents) {
+      options.contents = (request.body as any).contents;
+    }
+    if ((request.body as any)?.systemInstruction) {
+      options.systemInstruction = (request.body as any).systemInstruction;
+    }
+    if ((request.body as any)?.generationConfig) {
+      // 合并 generationConfig 到 options
+      Object.assign(options, (request.body as any).generationConfig);
+    }
 
     response = await makeHttpRequest(
       protocolConfig,

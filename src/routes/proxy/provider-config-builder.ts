@@ -25,6 +25,28 @@ export interface ProviderConfigError {
   };
 }
 
+function deriveGoogleNativeBaseUrl(baseUrl?: string | null): string | undefined {
+  if (!baseUrl) {
+    return undefined;
+  }
+
+  let nativeBase = baseUrl.trim();
+  if (!nativeBase) {
+    return undefined;
+  }
+
+  nativeBase = nativeBase.replace(/\/+$/, '');
+  if (!nativeBase) {
+    return undefined;
+  }
+
+  nativeBase = nativeBase.replace(/\/v1beta\/openai$/i, '');
+  nativeBase = nativeBase.replace(/\/v1beta$/i, '');
+  nativeBase = nativeBase.replace(/\/+$/, '');
+
+  return nativeBase || undefined;
+}
+
 export async function buildProviderConfig(
   provider: any,
   virtualKey: any,
@@ -35,9 +57,36 @@ export async function buildProviderConfig(
 ): Promise<ProviderConfigResult | ProviderConfigError> {
   const decryptedApiKey = decryptApiKey(provider.api_key);
 
-  // 协议优先级：currentModel.protocol（真实模型的协议）> 'openai'
-  const effectiveProtocol = currentModel?.protocol || 'openai';
+  // 提取纯路径和查询参数部分，因为 request.url 可能包含查询字符串
+  // 例如：/v1beta/models/gemini-2.0-flash:generateContent?alt=sse ->
+  // path=/v1beta/models/gemini-2.0-flash:generateContent, query=alt=sse
+  const [rawPath, rawQuery = ''] = request.url.split('?');
+  let path = rawPath || '/';
+  const normalizedPath = normalizePath(path);
+
+  if (normalizedPath !== path) {
+    memoryLogger.debug(
+      `路径标准化: ${path} -> ${normalizedPath}`,
+      'Proxy'
+    );
+    path = normalizedPath;
+  }
+
+  // 判断是否为 Gemini 原生请求（/v1beta/models/*）
+  const isGeminiNativeRequest = normalizedPath.startsWith('/v1beta/models/');
+
+  // 通过路径或查询参数判断是否为流式 Gemini 请求
+  const isGeminiStreamByPath = /:streamGenerateContent$/i.test(normalizedPath);
+  const isGeminiStreamByQuery = /(^|&)alt=sse(&|$)/i.test(rawQuery);
+
+  // 协议优先级：
+  // - 对于 Gemini 原生路径，强制使用 google 协议，走 Gemini 透传逻辑
+  // - 其他情况复用模型配置的协议，默认为 openai
+  const effectiveProtocol: 'openai' | 'anthropic' | 'google' =
+    isGeminiNativeRequest ? 'google' : (currentModel?.protocol || 'openai');
+
   const baseUrl = getBaseUrlForProtocol(provider, effectiveProtocol);
+  const originalBaseUrl = baseUrl;
 
   memoryLogger.debug(
     `协议选择 | currentModel: ${currentModel?.name || 'none'} | currentModel.protocol: ${currentModel?.protocol || 'none'} | effectiveProtocol: ${effectiveProtocol} | baseUrl: ${baseUrl}`,
@@ -62,23 +111,51 @@ export async function buildProviderConfig(
     );
   }
 
-  let path = request.url;
-  const normalizedPath = normalizePath(path);
-
-  if (normalizedPath !== path) {
-    memoryLogger.debug(
-      `路径标准化: ${path} -> ${normalizedPath}`,
-      'Proxy'
-    );
-    path = normalizedPath;
-  }
-
   if (isEmbeddingsPath(path) && (request as any).body && typeof (request as any).body.input === 'string') {
     (request as any).body.input = [(request as any).body.input];
   }
 
-  const isStreamRequest = (request.body as any)?.stream === true;
-  const model = (request.body as any)?.model || 'unknown';
+  // 流式请求判断：
+  // - OpenAI 兼容路径依然通过 body.stream === true 判断
+  // - Gemini 原生路径通过 URL 中的 :streamGenerateContent 或 alt=sse 判断
+  const isStreamRequest = (request.body as any)?.stream === true || isGeminiStreamByPath || isGeminiStreamByQuery;
+
+  // 模型名称获取优先级：
+  // 1. 请求体中的 model 字段（OpenAI 格式）
+  // 2. 从路径中提取（Gemini 格式：/v1beta/models/{model}:generateContent）
+  // 3. currentModel.model_identifier（配置的真实模型标识符）
+  // 4. 默认为 'unknown'
+  let model = (request.body as any)?.model;
+
+  // 对于 Gemini 原生请求，从路径中提取模型名称
+  if (!model && (effectiveProtocol === 'google' || path.includes('/v1beta/models/'))) {
+    // 尝试从路径中提取 Gemini 模型名称
+    // 路径格式：/v1beta/models/gemini-2.0-flash:generateContent 或 /v1beta/models/gemini-2.0-flash:streamGenerateContent
+    const pathMatch = path.match(/\/models\/([^:\/]+)/);
+    if (pathMatch && pathMatch[1]) {
+      model = pathMatch[1];
+      // 重要：将提取的模型名称注入到请求体中，以便 model-resolver 能正确匹配
+      if (request.body && typeof request.body === 'object') {
+        (request.body as any).model = model;
+      }
+      memoryLogger.debug(
+        `从路径提取 Gemini 模型名称并注入请求体: ${model}`,
+        'ProviderConfig'
+      );
+    }
+  }
+
+  if (!model && currentModel) {
+    model = currentModel.model_identifier || currentModel.name;
+    memoryLogger.debug(
+      `使用配置的模型标识符: ${model}`,
+      'ProviderConfig'
+    );
+  }
+
+  if (!model) {
+    model = 'unknown';
+  }
 
   let modelAttributes: any = undefined;
   if (currentModel?.model_attributes) {
@@ -88,10 +165,15 @@ export async function buildProviderConfig(
     }
   }
 
+  const nativeBaseUrl = normalized.protocol === 'google'
+    ? deriveGoogleNativeBaseUrl(originalBaseUrl || normalized.baseUrl)
+    : undefined;
+
   const protocolConfig: ProtocolConfig = {
     provider: normalized.provider,
     apiKey: normalized.apiKey,
     baseUrl: normalized.baseUrl || undefined,
+    nativeBaseUrl,
     model,
     protocol: normalized.protocol,
     modelAttributes,
@@ -117,4 +199,3 @@ export async function buildProviderConfig(
     isStreamRequest,
   };
 }
-

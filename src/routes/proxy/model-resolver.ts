@@ -187,6 +187,7 @@ export async function resolveModelAndProvider(
 
       const requestedModel = (request.body as any)?.model;
       let targetModelId: string | undefined;
+      let selectedModel: any | undefined;
 
       if (requestedModel) {
         // 收集所有匹配的模型
@@ -241,7 +242,7 @@ export async function resolveModelAndProvider(
           // 只有一个匹配，使用它
           const matched = matchedModels[0];
           targetModelId = matched.modelId;
-
+          selectedModel = matched.model;
           const providerInfo = matched.provider
             ? matched.provider.name
             : '智能路由';
@@ -279,11 +280,39 @@ export async function resolveModelAndProvider(
         }
       }
 
-      if (!targetModelId) {
-        targetModelId = parsedModelIds[0];
+      if (!selectedModel) {
+        const missingModels: string[] = [];
+        for (const candidateId of parsedModelIds) {
+          const candidateModel = await modelDb.getById(candidateId);
+          if (!candidateModel) {
+            memoryLogger.warn(
+              `虚拟密钥 ${virtualKeyValue} 引用了不存在的模型: ${candidateId}，已跳过`,
+              'ModelResolver'
+            );
+            missingModels.push(candidateId);
+            continue;
+          }
+
+          targetModelId = candidateId;
+          selectedModel = candidateModel;
+          break;
+        }
+
+        // 如果所有模型都不存在，记录错误
+        if (missingModels.length === parsedModelIds.length) {
+          memoryLogger.error(
+            `虚拟密钥 ${virtualKeyValue} 的所有模型配置都不存在: ${parsedModelIds.join(', ')}`,
+            'ModelResolver'
+          );
+        } else if (missingModels.length > 0) {
+          memoryLogger.info(
+            `虚拟密钥 ${virtualKeyValue} 有 ${missingModels.length}/${parsedModelIds.length} 个模型不存在，但仍有可用模型`,
+            'ModelResolver'
+          );
+        }
       }
 
-      if (!targetModelId) {
+      if (!targetModelId || !selectedModel) {
         memoryLogger.error(`Cannot determine target model`, 'Proxy');
         return {
           code: 500,
@@ -298,21 +327,7 @@ export async function resolveModelAndProvider(
         };
       }
 
-      const model = await modelDb.getById(targetModelId);
-      if (!model) {
-        memoryLogger.error(`Model not found: ${targetModelId}`, 'Proxy');
-        return {
-          code: 500,
-          body: {
-            error: {
-              message: 'Model config not found',
-              type: 'internal_error',
-              param: null,
-              code: 'model_not_found'
-            }
-          }
-        };
-      }
+      const model = selectedModel;
 
       currentModel = model;
 
@@ -501,4 +516,3 @@ async function resolveSmartRoutingWithExclude(
   const { resolveSmartRouting } = await import('./routing.js');
   return await resolveSmartRouting(model, request, virtualKeyId, excludeProviders);
 }
-

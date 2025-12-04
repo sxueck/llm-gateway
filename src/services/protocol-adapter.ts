@@ -6,12 +6,12 @@ import { memoryLogger } from './logger.js';
 import { extractReasoningFromChoice } from '../utils/request-logger.js';
 import { normalizeUsageCounts } from '../utils/usage-normalizer.js';
 import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-client.js';
-import { GeminiAdapter } from './gemini-adapter.js';
 
 export interface ProtocolConfig {
   provider: string;
   apiKey: string;
   baseUrl?: string;
+  nativeBaseUrl?: string;
   model: string;
   protocol?: string;
   modelAttributes?: any;
@@ -41,7 +41,6 @@ export interface ProtocolResponse {
 
 export class ProtocolAdapter {
   private openaiClients: Map<string, OpenAI> = new Map();
-  private geminiAdapter: GeminiAdapter = new GeminiAdapter();
   private keepAliveAgents: Map<string, { httpAgent: HttpAgent; httpsAgent: HttpsAgent }> = new Map();
   private readonly keepAliveMaxSockets = parseInt(process.env.HTTP_KEEP_ALIVE_MAX_SOCKETS || '64', 10);
 
@@ -174,11 +173,7 @@ export class ProtocolAdapter {
       'Protocol'
     );
 
-    // 根据协议类型选择不同的实现
-    if (config.protocol === 'google') {
-      return await this.geminiAdapter.chatCompletion(config, messages, options, abortSignal);
-    }
-
+    // Google Gemini 已通过 ProviderAdapter 转换为 OpenAI 兼容接口，可以直接复用 OpenAI 逻辑
     return await this.openaiChatCompletion(config, messages, options, abortSignal);
   }
 
@@ -250,11 +245,7 @@ export class ProtocolAdapter {
       'Protocol'
     );
 
-    // 根据协议类型选择不同的实现
-    if (config.protocol === 'google') {
-      return await this.geminiAdapter.streamChatCompletion(config, messages, options, reply, abortSignal);
-    }
-
+    // Google Gemini 已通过 ProviderAdapter 转换为 OpenAI 兼容接口，可以直接复用 OpenAI 逻辑
     return await this.openaiStreamChatCompletion(config, messages, options, reply, abortSignal);
   }
 
@@ -419,11 +410,7 @@ export class ProtocolAdapter {
       'Protocol'
     );
 
-    // 根据协议类型选择不同的实现
-    if (config.protocol === 'google') {
-      return await this.geminiAdapter.createEmbedding(config, input, options, abortSignal);
-    }
-
+    // Google Gemini 已通过 ProviderAdapter 转换为 OpenAI 兼容���口
     return await this.openaiCreateEmbedding(config, input, options, abortSignal);
   }
 
