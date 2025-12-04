@@ -1,7 +1,7 @@
 /**
  * 协议类型定义
  */
-export type ProtocolType = 'openai' | 'anthropic' | 'google' | 'gemini';
+export type ProtocolType = 'openai' | 'anthropic' | 'google';
 
 /**
  * 协议显示信息
@@ -19,7 +19,6 @@ export const PROTOCOL_MAP: Record<ProtocolType, ProtocolInfo> = {
   openai: { label: 'OpenAI', type: 'info' },
   anthropic: { label: 'Anthropic', type: 'success' },
   google: { label: 'Google', type: 'warning' },
-  gemini: { label: 'Gemini', type: 'warning' },
 };
 
 /**
@@ -30,7 +29,6 @@ export const PROTOCOL_OPTIONS = [
   { label: 'OpenAI 协议', value: 'openai' },
   { label: 'Anthropic 协议 (Claude)', value: 'anthropic' },
   { label: 'Google 协议 (Gemini)', value: 'google' },
-  { label: 'Gemini 原生协议', value: 'gemini' },
 ];
 
 /**
@@ -48,7 +46,7 @@ export function isAnthropicProtocol(model: { protocol?: string | null }): boolea
  * @returns 如果使用 Gemini 协议返回 true，否则返回 false
  */
 export function isGeminiProtocol(model: { protocol?: string | null }): boolean {
-  return model.protocol === 'gemini';
+  return model.protocol === 'google';
 }
 
 /**

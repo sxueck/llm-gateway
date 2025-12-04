@@ -7,7 +7,6 @@ interface ProviderConfig {
 
 interface ProviderAdapter {
   normalizeBaseUrl(baseUrl: string): string;
-  getProviderType(baseUrl: string): string;
 }
 
 function validateUrl(url: string): void {
@@ -39,8 +38,6 @@ abstract class BaseAdapter implements ProviderAdapter {
     const normalized = baseUrl.trim().replace(/\/+$/, '');
     return normalized;
   }
-
-  abstract getProviderType(baseUrl: string): string;
 }
 
 class GoogleGeminiAdapter implements ProviderAdapter {
@@ -66,31 +63,12 @@ class GoogleGeminiAdapter implements ProviderAdapter {
 
     return normalized;
   }
-
-  getProviderType(baseUrl: string): string {
-    return 'google';
-  }
 }
 
 class OpenAICompatibleAdapter extends BaseAdapter {
-  getProviderType(baseUrl: string): string {
-    const url = baseUrl.toLowerCase();
-
-    if (url.includes('api.deepseek.com')) {
-      return 'openai';
-    }
-    if (url.includes('api.openai.com')) {
-      return 'openai';
-    }
-
-    return 'openai';
-  }
 }
 
 class AnthropicAdapter extends BaseAdapter {
-  getProviderType(baseUrl: string): string {
-    return 'anthropic';
-  }
 }
 
 export class ProviderAdapterFactory {
@@ -98,49 +76,25 @@ export class ProviderAdapterFactory {
   private static readonly anthropicAdapter = new AnthropicAdapter();
   private static readonly openaiAdapter = new OpenAICompatibleAdapter();
 
-  static getAdapter(baseUrl: string): ProviderAdapter {
-    if (!baseUrl) {
-      return this.openaiAdapter;
-    }
-
-    const url = baseUrl.toLowerCase();
-
-    if (
-      url.includes('generativelanguage.googleapis.com') ||
-      url.includes('gemini')
-    ) {
-      return this.googleAdapter;
-    }
-
-    if (
-      url.includes('api.anthropic.com') ||
-      url.includes('anthropic')
-    ) {
-      return this.anthropicAdapter;
-    }
-
-    return this.openaiAdapter;
-  }
-
   static normalizeProviderConfig(config: ProviderConfig): ProviderConfig {
+    const protocol: 'openai' | 'anthropic' | 'google' = config.protocol || 'openai';
+
     if (!config.baseUrl || config.baseUrl.trim() === '') {
       return {
         ...config,
         baseUrl: '',
-        provider: config.protocol || 'openai',
-        protocol: config.protocol || 'openai',
+        provider: protocol,
+        protocol,
       };
     }
 
-    const adapter = config.protocol
-      ? this.getAdapterByProtocol(config.protocol)
-      : this.getAdapter(config.baseUrl);
-    
+    const adapter = this.getAdapterByProtocol(protocol);
+
     return {
       ...config,
       baseUrl: adapter.normalizeBaseUrl(config.baseUrl),
-      provider: config.protocol || adapter.getProviderType(config.baseUrl),
-      protocol: config.protocol || adapter.getProviderType(config.baseUrl) as 'openai' | 'anthropic' | 'google',
+      provider: protocol,
+      protocol,
     };
   }
 

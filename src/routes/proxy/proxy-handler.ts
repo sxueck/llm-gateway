@@ -308,8 +308,7 @@ export function createProxyHandler() {
 
       const { protocolConfig, path, vkDisplay, isStreamRequest } = configResult;
 
-      // 检测是否为 Gemini 原生透传模式
-      const isGeminiNativeMode = protocolConfig.protocol === 'gemini' && hasV1BetaPrefix(path);
+      const isGeminiNativeMode = protocolConfig.protocol === 'google' && hasV1BetaPrefix(path);
 
       if (isGeminiNativeMode) {
         memoryLogger.info(

@@ -175,7 +175,7 @@ export class ProtocolAdapter {
     );
 
     // 根据协议类型选择不同的实现
-    if (config.protocol === 'gemini') {
+    if (config.protocol === 'google') {
       return await this.geminiAdapter.chatCompletion(config, messages, options, abortSignal);
     }
 
@@ -251,7 +251,7 @@ export class ProtocolAdapter {
     );
 
     // 根据协议类型选择不同的实现
-    if (config.protocol === 'gemini') {
+    if (config.protocol === 'google') {
       return await this.geminiAdapter.streamChatCompletion(config, messages, options, reply, abortSignal);
     }
 
@@ -420,7 +420,7 @@ export class ProtocolAdapter {
     );
 
     // 根据协议类型选择不同的实现
-    if (config.protocol === 'gemini') {
+    if (config.protocol === 'google') {
       return await this.geminiAdapter.createEmbedding(config, input, options, abortSignal);
     }
 
