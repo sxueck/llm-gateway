@@ -30,6 +30,8 @@ export interface ApiStats {
   cacheHits: number;
   promptCacheHits: number;
   cacheSavedTokens: number;
+  dbSize?: number;
+  dbUptime?: number;
 }
 
 export interface ExpertRoutingStats {
@@ -95,6 +97,11 @@ export const configApi = {
     trend: VirtualKeyTrend[];
     expertRoutingStats: ExpertRoutingStats;
     modelStats: ModelStat[];
+    circuitBreakerStats?: {
+      totalTriggers: number;
+      maxTriggeredProvider: string;
+      maxTriggerCount: number;
+    };
   }> {
     return request.get('/admin/config/stats', { params: { period } });
   },

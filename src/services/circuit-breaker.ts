@@ -19,6 +19,7 @@ interface ProviderStats {
   lastFailureTime: number;
   state: CircuitState;
   halfOpenAttempts: number;
+  triggerCount: number;
 }
 
 export class CircuitBreaker {
@@ -41,7 +42,8 @@ export class CircuitBreaker {
         successes: 0,
         lastFailureTime: 0,
         state: CircuitState.CLOSED,
-        halfOpenAttempts: 0
+        halfOpenAttempts: 0,
+        triggerCount: 0
       });
     }
     return this.stats.get(providerId)!;
@@ -106,6 +108,7 @@ export class CircuitBreaker {
       stats.state = CircuitState.OPEN;
       stats.successes = 0;
       stats.halfOpenAttempts = 0;
+      stats.triggerCount = (stats.triggerCount || 0) + 1;
       memoryLogger.warn(
         `熔断器重新打开 | provider: ${providerId} | error: ${error?.message || 'unknown'}`,
         'CircuitBreaker'
@@ -113,6 +116,7 @@ export class CircuitBreaker {
     } else if (stats.state === CircuitState.CLOSED) {
       if (stats.failures >= this.config.failureThreshold) {
         stats.state = CircuitState.OPEN;
+        stats.triggerCount = (stats.triggerCount || 0) + 1;
         memoryLogger.warn(
           `熔断器打开 | provider: ${providerId} | failures: ${stats.failures}`,
           'CircuitBreaker'
@@ -148,6 +152,27 @@ export class CircuitBreaker {
   resetAll(): void {
     this.stats.clear();
     memoryLogger.info('所有熔断器已重置', 'CircuitBreaker');
+  }
+
+  getGlobalStats() {
+    let totalTriggers = 0;
+    let maxTriggeredProvider = '-';
+    let maxTriggerCount = 0;
+
+    this.stats.forEach((stats, providerId) => {
+      const count = stats.triggerCount || 0;
+      totalTriggers += count;
+      if (count > maxTriggerCount) {
+        maxTriggerCount = count;
+        maxTriggeredProvider = providerId;
+      }
+    });
+
+    return {
+      totalTriggers,
+      maxTriggeredProvider,
+      maxTriggerCount
+    };
   }
 }
 

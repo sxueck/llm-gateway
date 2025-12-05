@@ -144,45 +144,152 @@
             </div>
           </n-card>
         </n-gi>
+        <n-gi>
+          <n-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-header">平均效率</div>
+              <div class="stat-main-value">{{ formatNumber(avgTokensPerRequest) }}<span class="stat-unit">Tk/Req</span></div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">输入:</span>
+                  <span class="stat-detail-value">{{ formatNumber(avgInputTokens) }}</span>
+                </span>
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">输出:</span>
+                  <span class="stat-detail-value">{{ formatNumber(avgOutputTokens) }}</span>
+                </span>
+              </div>
+            </div>
+          </n-card>
+        </n-gi>
+        <n-gi>
+          <n-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>成本分析</span>
+                <n-tag type="warning" size="small" round :bordered="false" style="font-size: 10px; height: 18px; line-height: 18px;">开发中</n-tag>
+              </div>
+              <div class="stat-main-value">¥ 0.00</div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">本月预估:</span>
+                  <span class="stat-detail-value">¥ 0.00</span>
+                </span>
+              </div>
+            </div>
+          </n-card>
+        </n-gi>
+        <n-gi>
+          <n-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-header">数据库状态</div>
+              <div class="stat-main-value">{{ stats?.dbSize || 0 }}<span class="stat-unit">MB</span></div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">状态:</span>
+                  <span class="stat-detail-value" style="color: #006241">正常</span>
+                </span>
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">运行时长:</span>
+                  <span class="stat-detail-value">{{ formatUptime(stats?.dbUptime || 0) }}</span>
+                </span>
+              </div>
+            </div>
+          </n-card>
+        </n-gi>
+        <n-gi>
+          <n-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-header">熔断器触发次数</div>
+              <div class="stat-main-value" :class="{ 'stat-value-error': (circuitBreakerStats?.totalTriggers || 0) > 0 }">
+                {{ formatNumber(circuitBreakerStats?.totalTriggers || 0) }}
+              </div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">触发最多:</span>
+                  <span class="stat-detail-value" :title="circuitBreakerStats?.maxTriggeredProvider">
+                    {{ formatProviderName(circuitBreakerStats?.maxTriggeredProvider) }}
+                  </span>
+                </span>
+              </div>
+            </div>
+          </n-card>
+        </n-gi>
       </n-grid>
 
-      <n-card class="trend-card">
-        <template #header>
-          <n-space justify="space-between" align="center" class="trend-header">
-            <span>请求趋势</span>
-            <n-space :size="8" class="trend-buttons">
-              <n-button
-                :type="chartMetric === 'requests' ? 'primary' : 'default'"
-                size="small"
-                @click="chartMetric = 'requests'"
-              >
-                请求数
-              </n-button>
-              <n-button
-                :type="chartMetric === 'tokens' ? 'primary' : 'default'"
-                size="small"
-                @click="chartMetric = 'tokens'"
-              >
-                Token 消耗
-              </n-button>
-            </n-space>
-          </n-space>
-        </template>
-        <div v-if="loading" class="trend-loading">
-          <n-spin size="large" />
-        </div>
-        <div v-else-if="loadError" class="trend-error">
-          <n-result status="error" :title="loadError" description="请稍后重试">
-            <template #footer>
-              <n-button @click="loadStats">重新加载</n-button>
+      <n-grid cols="1 l:3" responsive="screen" :x-gap="gridGap" :y-gap="gridGap">
+        <n-gi span="1 l:2">
+          <n-card class="trend-card">
+            <template #header>
+              <n-space justify="space-between" align="center" class="trend-header">
+                <span>请求趋势</span>
+                <n-space :size="8" class="trend-buttons">
+                  <n-button
+                    :type="chartMetric === 'requests' ? 'primary' : 'default'"
+                    size="small"
+                    @click="chartMetric = 'requests'"
+                  >
+                    请求数
+                  </n-button>
+                  <n-button
+                    :type="chartMetric === 'tokens' ? 'primary' : 'default'"
+                    size="small"
+                    @click="chartMetric = 'tokens'"
+                  >
+                    Token 消耗
+                  </n-button>
+                </n-space>
+              </n-space>
             </template>
-          </n-result>
-        </div>
-        <div v-else-if="trendData.length > 0" class="trend-chart-container">
-          <v-chart :option="chartOption" :autoresize="true" class="trend-chart" />
-        </div>
-        <n-empty v-else description="暂无数据" :show-icon="false" />
-      </n-card>
+            <div v-if="loading" class="trend-loading">
+              <n-spin size="large" />
+            </div>
+            <div v-else-if="loadError" class="trend-error">
+              <n-result status="error" :title="loadError" description="请稍后重试">
+                <template #footer>
+                  <n-button @click="loadStats">重新加载</n-button>
+                </template>
+              </n-result>
+            </div>
+            <div v-else-if="trendData.length > 0" class="trend-chart-container">
+              <v-chart :option="chartOption" :autoresize="true" class="trend-chart" />
+            </div>
+            <n-empty v-else description="暂无数据" :show-icon="false" />
+          </n-card>
+        </n-gi>
+        <n-gi>
+          <n-card class="trend-card">
+            <template #header>
+              <n-space justify="space-between" align="center" class="trend-header">
+                <span>模型使用占比</span>
+                <n-space :size="8" class="trend-buttons">
+                  <n-button
+                    :type="chartMetric === 'requests' ? 'primary' : 'default'"
+                    size="small"
+                    @click="chartMetric = 'requests'"
+                  >
+                    请求数
+                  </n-button>
+                  <n-button
+                    :type="chartMetric === 'tokens' ? 'primary' : 'default'"
+                    size="small"
+                    @click="chartMetric = 'tokens'"
+                  >
+                    Token
+                  </n-button>
+                </n-space>
+              </n-space>
+            </template>
+            <div v-if="loading" class="trend-loading">
+              <n-spin size="large" />
+            </div>
+            <div v-else-if="modelStats.length > 0" class="trend-chart-container">
+              <v-chart :option="modelDistributionOption" :autoresize="true" class="trend-chart" />
+            </div>
+            <n-empty v-else description="暂无数据" :show-icon="false" />
+          </n-card>
+        </n-gi>
+      </n-grid>
 
       <n-card class="overview-card" title="系统概览">
         <div class="overview-grid">
@@ -206,16 +313,16 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { useMessage, NSpace, NGrid, NGi, NCard, NSelect, NEmpty, NButton, NIcon, NSpin, NResult } from 'naive-ui';
+import { useMessage, NSpace, NGrid, NGi, NCard, NSelect, NEmpty, NButton, NIcon, NSpin, NResult, NTag } from 'naive-ui';
 import { RefreshOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
 import { configApi, type ApiStats, type VirtualKeyTrend, type ExpertRoutingStats, type ModelStat } from '@/api/config';
-import { formatNumber, formatTokenNumber, formatPercentage, formatResponseTime, formatTimestamp } from '@/utils/format';
+import { formatNumber, formatTokenNumber, formatPercentage, formatResponseTime, formatTimestamp, formatUptime } from '@/utils/format';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
-import { LineChart } from 'echarts/charts';
+import { LineChart, PieChart } from 'echarts/charts';
 import {
   TitleComponent,
   TooltipComponent,
@@ -227,6 +334,7 @@ import VChart from 'vue-echarts';
 use([
   CanvasRenderer,
   LineChart,
+  PieChart,
   TitleComponent,
   TooltipComponent,
   LegendComponent,
@@ -242,6 +350,11 @@ const stats = ref<ApiStats | null>(null);
 const trendData = ref<VirtualKeyTrend[]>([]);
 const expertRoutingStats = ref<ExpertRoutingStats | null>(null);
 const modelStats = ref<ModelStat[]>([]);
+const circuitBreakerStats = ref<{
+  totalTriggers: number;
+  maxTriggeredProvider: string;
+  maxTriggerCount: number;
+} | null>(null);
 const selectedPeriod = ref<'24h' | '7d' | '30d'>('24h');
 const chartMetric = ref<'requests' | 'tokens'>('requests');
 const loading = ref(false);
@@ -271,25 +384,47 @@ const enabledKeysCount = computed(() => {
 });
 
 const successRate = computed(() => {
-  if (!stats.value || stats.value.totalRequests === 0) return 0;
-  return (stats.value.successfulRequests / stats.value.totalRequests) * 100;
+  if (!stats.value) return 0;
+  const total = Number(stats.value.totalRequests || 0);
+  if (total === 0) return 0;
+  return (Number(stats.value.successfulRequests || 0) / total) * 100;
 });
 
 const errorRate = computed(() => {
-  if (!stats.value || stats.value.totalRequests === 0) return 0;
-  return (stats.value.failedRequests / stats.value.totalRequests) * 100;
+  if (!stats.value) return 0;
+  const total = Number(stats.value.totalRequests || 0);
+  if (total === 0) return 0;
+  return (Number(stats.value.failedRequests || 0) / total) * 100;
 });
 
 const avgResponseTime = computed(() => {
-  return stats.value?.avgResponseTime || 0;
+  return Number(stats.value?.avgResponseTime || 0);
+});
+
+const avgTokensPerRequest = computed(() => {
+  const reqs = Number(stats.value?.totalRequests || 0);
+  if (reqs === 0) return 0;
+  return Math.round(Number(stats.value?.totalTokens || 0) / reqs);
+});
+
+const avgInputTokens = computed(() => {
+  const reqs = Number(stats.value?.totalRequests || 0);
+  if (reqs === 0) return 0;
+  return Math.round(Number(stats.value?.promptTokens || 0) / reqs);
+});
+
+const avgOutputTokens = computed(() => {
+  const reqs = Number(stats.value?.totalRequests || 0);
+  if (reqs === 0) return 0;
+  return Math.round(Number(stats.value?.completionTokens || 0) / reqs);
 });
 
 const expertRoutingSpeed = computed(() => {
-  return expertRoutingStats.value?.avgClassificationTime || 0;
+  return Number(expertRoutingStats.value?.avgClassificationTime || 0);
 });
 
 const expertRoutingCount = computed(() => {
-  return expertRoutingStats.value?.totalRequests || 0;
+  return Number(expertRoutingStats.value?.totalRequests || 0);
 });
 
 const topModel = computed(() => {
@@ -304,43 +439,42 @@ const topModelProvider = computed(() => {
 
 const topModelRequests = computed(() => {
   if (modelStats.value.length === 0) return 0;
-  return modelStats.value[0].request_count || 0;
+  return Number(modelStats.value[0].request_count || 0);
 });
 
 const topModelTokens = computed(() => {
   if (modelStats.value.length === 0) return 0;
-  return modelStats.value[0].total_tokens || 0;
+  return Number(modelStats.value[0].total_tokens || 0);
 });
 
 const cacheHitRate = computed(() => {
   if (!stats.value) return 0;
-  const cached = stats.value.cachedTokens || 0;
-  const prompt = stats.value.promptTokens || 0;
+  const cached = Number(stats.value.cachedTokens || 0);
+  const prompt = Number(stats.value.promptTokens || 0);
   const denom = cached + prompt;
   return denom === 0 ? 0 : (cached / denom) * 100;
 });
 
 const promptTokens = computed(() => {
   if (!stats.value) return 0;
-  return stats.value.promptTokens || 0;
+  return Number(stats.value.promptTokens || 0);
 });
 
 const completionTokens = computed(() => {
   if (!stats.value) return 0;
-  return stats.value.completionTokens || 0;
+  return Number(stats.value.completionTokens || 0);
 });
 
+// Starbucks & Nature Inspired Palette
 const COLOR_PALETTE = [
-  { line: '#0f6b4a', gradient: ['rgba(15, 107, 74, 0.4)', 'rgba(15, 107, 74, 0.05)'] },
-  { line: '#3b82f6', gradient: ['rgba(59, 130, 246, 0.4)', 'rgba(59, 130, 246, 0.05)'] },
-  { line: '#f59e0b', gradient: ['rgba(245, 158, 11, 0.4)', 'rgba(245, 158, 11, 0.05)'] },
-  { line: '#ef4444', gradient: ['rgba(239, 68, 68, 0.4)', 'rgba(239, 68, 68, 0.05)'] },
-  { line: '#8b5cf6', gradient: ['rgba(139, 92, 246, 0.4)', 'rgba(139, 92, 246, 0.05)'] },
-  { line: '#10b981', gradient: ['rgba(16, 185, 129, 0.4)', 'rgba(16, 185, 129, 0.05)'] },
-  { line: '#f97316', gradient: ['rgba(249, 115, 22, 0.4)', 'rgba(249, 115, 22, 0.05)'] },
-  { line: '#6366f1', gradient: ['rgba(99, 102, 241, 0.4)', 'rgba(99, 102, 241, 0.05)'] },
-  { line: '#ec4899', gradient: ['rgba(236, 72, 153, 0.4)', 'rgba(236, 72, 153, 0.05)'] },
-  { line: '#14b8a6', gradient: ['rgba(20, 184, 166, 0.4)', 'rgba(20, 184, 166, 0.05)'] },
+  { line: '#006241', gradient: ['rgba(0, 98, 65, 0.4)', 'rgba(0, 98, 65, 0.05)'] }, // Starbucks Green
+  { line: '#C4996C', gradient: ['rgba(196, 153, 108, 0.4)', 'rgba(196, 153, 108, 0.05)'] }, // Coffee/Gold
+  { line: '#1E3932', gradient: ['rgba(30, 57, 50, 0.4)', 'rgba(30, 57, 50, 0.05)'] }, // House Green
+  { line: '#2D8A6D', gradient: ['rgba(45, 138, 109, 0.4)', 'rgba(45, 138, 109, 0.05)'] }, // Medium Green
+  { line: '#A89F91', gradient: ['rgba(168, 159, 145, 0.4)', 'rgba(168, 159, 145, 0.05)'] }, // Warm Gray
+  { line: '#6CA68D', gradient: ['rgba(108, 166, 141, 0.4)', 'rgba(108, 166, 141, 0.05)'] }, // Sage
+  { line: '#4A4A4A', gradient: ['rgba(74, 74, 74, 0.4)', 'rgba(74, 74, 74, 0.05)'] }, // Dark Gray
+  { line: '#D4E9E2', gradient: ['rgba(212, 233, 226, 0.4)', 'rgba(212, 233, 226, 0.05)'] }, // Mint
 ];
 
 const chartOption = computed(() => {
@@ -544,6 +678,94 @@ const chartOption = computed(() => {
   };
 });
 
+const modelDistributionOption = computed(() => {
+  if (!modelStats.value || modelStats.value.length === 0) {
+    return {};
+  }
+
+  const data = modelStats.value
+    .map(item => ({
+      name: item.model,
+      value: chartMetric.value === 'requests' ? Number(item.request_count || 0) : Number(item.total_tokens || 0)
+    }))
+    .filter(d => d.value > 0);
+
+  if (data.length === 0) return {};
+  
+  // Sort data
+  data.sort((a, b) => b.value - a.value);
+
+  const isMobile = windowWidth.value < 640;
+
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+      borderColor: '#e5e7eb',
+      borderWidth: 1,
+      textStyle: {
+        color: '#1f2937',
+        fontSize: isMobile ? 11 : 13,
+      },
+      formatter: (params: any) => {
+        const val = chartMetric.value === 'requests'
+          ? formatNumber(params.value)
+          : formatTokenNumber(params.value);
+        return `<div style="font-weight: 600; color: #111827;">${params.name}</div>
+                <div style="margin-top: 4px;">${params.marker} ${val} (${params.percent}%)</div>`;
+      }
+    },
+    legend: {
+      type: 'scroll',
+      orient: 'horizontal',
+      left: 'center',
+      bottom: 0,
+      textStyle: {
+        color: '#6b7280',
+        fontSize: isMobile ? 11 : 12
+      },
+      formatter: (name: string) => {
+        return name.length > 15 ? name.slice(0, 15) + '...' : name;
+      }
+    },
+    series: [
+      {
+        name: chartMetric.value === 'requests' ? '请求数' : 'Token 消耗',
+        type: 'pie',
+        radius: ['40%', '60%'],
+        center: ['50%', '40%'],
+        avoidLabelOverlap: false,
+        itemStyle: {
+          borderRadius: 4,
+          borderColor: '#ffffff',
+          borderWidth: 3
+        },
+        label: {
+          show: false,
+          position: 'center'
+        },
+        emphasis: {
+          label: {
+            show: true,
+            fontSize: isMobile ? 14 : 16,
+            fontWeight: '600',
+            color: '#006241',
+            formatter: '{b}\n{d}%'
+          },
+          scale: true,
+          scaleSize: 10
+        },
+        labelLine: {
+          show: false
+        },
+        data: data,
+        color: COLOR_PALETTE.map(c => c.line)
+      }
+    ]
+  };
+});
+
 async function loadData() {
   await Promise.all([
     providerStore.fetchProviders(),
@@ -566,6 +788,7 @@ async function loadStats() {
     trendData.value = result.trend || [];
     expertRoutingStats.value = result.expertRoutingStats || { totalRequests: 0, avgClassificationTime: 0 };
     modelStats.value = result.modelStats || [];
+    circuitBreakerStats.value = result.circuitBreakerStats || { totalTriggers: 0, maxTriggeredProvider: '-', maxTriggerCount: 0 };
   } catch (error: any) {
     const errorMsg = error.message || '加载数据失败';
     loadError.value = errorMsg;
@@ -577,6 +800,11 @@ async function loadStats() {
 
 const handleResize = () => {
   windowWidth.value = window.innerWidth;
+};
+
+const formatProviderName = (name: string | undefined) => {
+  if (!name || name === '-') return '-';
+  return name.length > 15 ? name.slice(0, 15) + '...' : name;
 };
 
 onMounted(() => {
@@ -593,13 +821,14 @@ onUnmounted(() => {
 .dashboard-view {
   max-width: 1400px;
   margin: 0 auto;
-  padding: 0 16px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  padding: 20px 24px;
+  font-family: 'MiSans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: #1f2937;
 }
 
 @media (max-width: 639px) {
   .dashboard-view {
-    padding: 0 12px;
+    padding: 16px 12px;
   }
 }
 
@@ -653,16 +882,16 @@ onUnmounted(() => {
 
 .stat-card {
   background: #ffffff;
-  border-radius: 16px;
-  border: none;
-  transition: all 0.3s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  border: 1px solid #f3f4f6;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
   height: 100%;
 }
 
 @media (max-width: 639px) {
   .stat-card {
-    border-radius: 12px;
+    border-radius: 10px;
   }
 }
 
@@ -673,16 +902,19 @@ onUnmounted(() => {
 
 .stat-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 12px 24px -8px rgba(0, 98, 65, 0.08);
+  border-color: #e5e7eb;
 }
 
 .stat-card-primary {
-  background: linear-gradient(135deg, #0f6b4a 0%, #0d5a3e 100%);
+  background: #006241; /* Starbucks Green */
   color: #ffffff;
+  border: none;
 }
 
 .stat-card-primary:hover {
-  box-shadow: 0 6px 16px rgba(15, 107, 74, 0.3);
+  box-shadow: 0 12px 24px -6px rgba(0, 98, 65, 0.25);
+  background: #00754a;
 }
 
 .stat-card-primary .stat-header {
@@ -750,8 +982,8 @@ onUnmounted(() => {
 
 .stat-provider {
   font-size: 13px;
-  font-weight: 500;
-  color: #0f6b4a;
+  font-weight: 600;
+  color: #006241;
   margin-bottom: auto;
   padding-bottom: 16px;
 }
@@ -805,11 +1037,11 @@ onUnmounted(() => {
 }
 
 .stat-detail-success .stat-detail-label {
-  color: #0f6b4a;
+  color: #006241;
 }
 
 .stat-detail-success .stat-detail-value {
-  color: #0f6b4a;
+  color: #006241;
 }
 
 .stat-detail-error .stat-detail-label {
@@ -831,26 +1063,29 @@ onUnmounted(() => {
 
 .stat-progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, #0f6b4a 0%, #10b981 100%);
+  background: #006241;
   border-radius: 4px;
   transition: width 0.3s ease;
 }
 
 .trend-card {
   background: #ffffff;
-  border-radius: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  transition: box-shadow 0.3s ease;
+  border-radius: 12px;
+  border: 1px solid #f3f4f6;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @media (max-width: 639px) {
   .trend-card {
-    border-radius: 12px;
+    border-radius: 10px;
   }
 }
 
 .trend-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px -8px rgba(0, 98, 65, 0.08);
+  border-color: #e5e7eb;
 }
 
 .trend-card :deep(.n-card__header) {

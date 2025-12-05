@@ -446,7 +446,7 @@ export class ProtocolAdapter {
       'Protocol'
     );
 
-    // Google Gemini 已通过 ProviderAdapter 转换为 OpenAI 兼容���口
+    // Google Gemini 已通过 ProviderAdapter 转换为 OpenAI 兼容接口
     return await this.openaiCreateEmbedding(config, input, options, abortSignal);
   }
 

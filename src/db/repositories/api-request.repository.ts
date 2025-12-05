@@ -321,4 +321,35 @@ export const apiRequestRepository = {
       conn.release();
     }
   },
+
+  async getDbSize(): Promise<number> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query(
+        `SELECT
+          ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb
+        FROM information_schema.TABLES
+        WHERE table_schema = DATABASE()`
+      );
+      const result = rows as any[];
+      if (result.length === 0) return 0;
+      return Number(result[0].size_mb) || 0;
+    } finally {
+      conn.release();
+    }
+  },
+
+  async getDbUptime(): Promise<number> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query("SHOW GLOBAL STATUS LIKE 'Uptime'");
+      const result = rows as any[];
+      if (result.length === 0) return 0;
+      return Number(result[0].Value) || 0;
+    } finally {
+      conn.release();
+    }
+  },
 };

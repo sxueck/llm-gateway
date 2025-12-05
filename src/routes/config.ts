@@ -7,6 +7,7 @@ import { loadAntiBotConfig, validateUserAgentList } from '../utils/anti-bot-conf
 import { hashKey } from '../utils/crypto.js';
 import { healthCheckerService } from '../services/health-checker.js';
 import { debugModeService } from '../services/debug-mode.js';
+import { circuitBreaker } from '../services/circuit-breaker.js';
 
 export async function configRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
@@ -302,6 +303,8 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
 
     const stats = await apiRequestDb.getStats({ startTime, endTime: now });
+    const dbSize = await apiRequestDb.getDbSize();
+    const dbUptime = await apiRequestDb.getDbUptime();
     const trend = await apiRequestDb.getTrend({
       startTime,
       endTime: now,
@@ -310,13 +313,15 @@ export async function configRoutes(fastify: FastifyInstance) {
 
     const expertRoutingStats = await expertRoutingLogDb.getGlobalStatistics(startTime);
     const modelStats = await apiRequestDb.getModelStats({ startTime, endTime: now });
+    const circuitBreakerStats = circuitBreaker.getGlobalStats();
 
     return {
       period,
-      stats,
+      stats: { ...stats, dbSize, dbUptime },
       trend,
       expertRoutingStats,
       modelStats,
+      circuitBreakerStats,
     };
   });
 
