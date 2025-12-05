@@ -259,6 +259,18 @@ export async function createTables() {
         INDEX idx_cost_mappings_enabled (enabled)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+
+    // 熔断器触发统计表（持久化存储每个 Provider 的触发次数）
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS circuit_breaker_stats (
+        provider_id VARCHAR(255) PRIMARY KEY,
+        trigger_count INT NOT NULL DEFAULT 0,
+        last_trigger_at BIGINT NOT NULL,
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        INDEX idx_circuit_breaker_trigger_count (trigger_count)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
   } finally {
     conn.release();
   }

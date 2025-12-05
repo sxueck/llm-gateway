@@ -1,4 +1,5 @@
 import { memoryLogger } from './logger.js';
+import { circuitBreakerStatsRepository } from '../db/repositories/circuit-breaker-stats.repository.js';
 
 export interface CircuitBreakerConfig {
   failureThreshold: number;
@@ -109,6 +110,10 @@ export class CircuitBreaker {
       stats.successes = 0;
       stats.halfOpenAttempts = 0;
       stats.triggerCount = (stats.triggerCount || 0) + 1;
+      // Persist trigger stats asynchronously (no need to await)
+      circuitBreakerStatsRepository.incrementTrigger(providerId).catch(err => {
+        memoryLogger.error(`持久化熔断器触发统计失败: ${err.message}`, 'CircuitBreaker');
+      });
       memoryLogger.warn(
         `熔断器重新打开 | provider: ${providerId} | error: ${error?.message || 'unknown'}`,
         'CircuitBreaker'
@@ -117,6 +122,10 @@ export class CircuitBreaker {
       if (stats.failures >= this.config.failureThreshold) {
         stats.state = CircuitState.OPEN;
         stats.triggerCount = (stats.triggerCount || 0) + 1;
+        // Persist trigger stats asynchronously (no need to await)
+        circuitBreakerStatsRepository.incrementTrigger(providerId).catch(err => {
+          memoryLogger.error(`持久化熔断器触发统计失败: ${err.message}`, 'CircuitBreaker');
+        });
         memoryLogger.warn(
           `熔断器打开 | provider: ${providerId} | failures: ${stats.failures}`,
           'CircuitBreaker'

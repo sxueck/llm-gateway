@@ -311,6 +311,15 @@ function handleModelSelect(result: any) {
   formModel.value.target_model = result.modelName;
 }
 
+function notifyCostMappingUpdated() {
+  try {
+    // Broadcast an event so the dashboard can refresh its cost statistics in real time
+    window.dispatchEvent(new CustomEvent('cost-mapping-updated'));
+  } catch (e) {
+    // Ignore errors in non-browser environments
+  }
+}
+ 
 async function handleSave() {
   try {
     await formRef.value?.validate();
@@ -325,6 +334,7 @@ async function handleSave() {
       }
       showModal.value = false;
       fetchMappings();
+      notifyCostMappingUpdated();
     } catch (error) {
       message.error(t('common.operationFailed'));
     } finally {
@@ -334,17 +344,18 @@ async function handleSave() {
     // 验证失败，不执行保存操作
   }
 }
-
+ 
 async function handleDelete(row: CostMapping) {
   try {
     await costMappingApi.delete(row.id);
     message.success(t('costAnalysis.deleteSuccess'));
     fetchMappings();
+    notifyCostMappingUpdated();
   } catch (error) {
     message.error(t('common.operationFailed'));
   }
 }
-
+ 
 async function testMapping() {
   if (!testModelName.value) return;
   testing.value = true;

@@ -190,11 +190,11 @@
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">成本分析</div>
-              <div class="stat-main-value">¥ {{ formatCost(costStats?.totalCost || 0) }}</div>
+              <div class="stat-main-value">$ {{ formatCost(costStats?.totalCost || 0) }}<span class="stat-unit">USD</span></div>
               <div class="stat-details">
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">{{ selectedPeriod === '24h' ? '今日' : selectedPeriod === '7d' ? '近7天' : '近30天' }}:</span>
-                  <span class="stat-detail-value">¥ {{ formatCost(costStats?.totalCost || 0) }}</span>
+                  <span class="stat-detail-value">$ {{ formatCost(costStats?.totalCost || 0) }} USD</span>
                 </span>
               </div>
             </div>
@@ -854,10 +854,13 @@ const formatCost = (cost: number) => {
 onMounted(() => {
   loadData();
   window.addEventListener('resize', handleResize);
+  // When cost mapping rules change, refresh dashboard stats so cost analysis updates in real time
+  window.addEventListener('cost-mapping-updated', loadStats as any);
 });
-
+ 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
+  window.removeEventListener('cost-mapping-updated', loadStats as any);
 });
 </script>
 

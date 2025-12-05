@@ -391,10 +391,11 @@ export async function configRoutes(fastify: FastifyInstance) {
       endTime: now,
       interval: period === '24h' ? 'hour' : 'day'
     });
-
+ 
     const expertRoutingStats = await expertRoutingLogDb.getGlobalStatistics(startTime);
     const modelStats = await apiRequestDb.getModelStats({ startTime, endTime: now });
-    const circuitBreakerStats = circuitBreaker.getGlobalStats();
+    // 熔断器统计改为从数据库获取持久化结果
+    const circuitBreakerStats = await import('../db/repositories/circuit-breaker-stats.repository.js').then(m => m.circuitBreakerStatsRepository.getGlobalStats());
 
     // 计算成本统计
     let costStats = null;
