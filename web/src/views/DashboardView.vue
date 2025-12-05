@@ -190,11 +190,11 @@
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">成本分析</div>
-              <div class="stat-main-value">$ {{ formatCost(costStats?.totalCost || 0) }}<span class="stat-unit">USD</span></div>
+              <div class="stat-main-value">{{ formatCost(costStats?.totalCost || 0) }}<span class="stat-unit">USD</span></div>
               <div class="stat-details">
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">{{ selectedPeriod === '24h' ? '今日' : selectedPeriod === '7d' ? '近7天' : '近30天' }}:</span>
-                  <span class="stat-detail-value">$ {{ formatCost(costStats?.totalCost || 0) }} USD</span>
+                  <span class="stat-detail-label">计费模型:</span>
+                  <span class="stat-detail-value">{{ costStats?.modelCosts?.length || 0 }} 个</span>
                 </span>
               </div>
             </div>
@@ -282,7 +282,7 @@
           <n-card class="trend-card">
             <template #header>
               <n-space justify="space-between" align="center" class="trend-header">
-                <span>模型使用占比</span>
+                <span>模型 Token 占比</span>
                 <n-space :size="8" class="trend-buttons">
                   <n-button
                     :type="chartMetric === 'requests' ? 'primary' : 'default'"
@@ -311,7 +311,27 @@
           </n-card>
         </n-gi>
       </n-grid>
-
+  
+    <n-grid cols="1" responsive="screen">
+      <n-gi>
+        <n-card class="trend-card" style="margin-bottom: 24px;">
+          <template #header>
+            <n-space justify="space-between" align="center" class="trend-header">
+              <span>响应时间分布</span>
+              <span style="font-size: 12px; color: #6b7280; font-weight: normal;">(最近 2000 次请求)</span>
+            </n-space>
+          </template>
+          <div v-if="loading" class="trend-loading">
+            <n-spin size="large" />
+          </div>
+          <div v-else-if="modelResponseTimeStats.length > 0" class="trend-chart-container">
+            <v-chart :option="responseTimeDistributionOption" :autoresize="true" class="trend-chart" />
+          </div>
+          <n-empty v-else description="暂无数据" :show-icon="false" />
+        </n-card>
+      </n-gi>
+    </n-grid>
+  
       <n-card class="overview-card" title="系统概览">
         <div class="overview-grid">
           <div class="overview-item">
@@ -339,16 +359,17 @@ import { RefreshOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
-import { configApi, type ApiStats, type VirtualKeyTrend, type ExpertRoutingStats, type ModelStat, type CostStats } from '@/api/config';
+import { configApi, type ApiStats, type VirtualKeyTrend, type ExpertRoutingStats, type ModelStat, type CostStats, type ModelResponseTimeStat } from '@/api/config';
 import { formatNumber, formatTokenNumber, formatPercentage, formatResponseTime, formatTimestamp, formatUptime } from '@/utils/format';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
-import { LineChart, PieChart } from 'echarts/charts';
+import { LineChart, PieChart, ScatterChart } from 'echarts/charts';
 import {
   TitleComponent,
   TooltipComponent,
   LegendComponent,
   GridComponent,
+  DataZoomComponent
 } from 'echarts/components';
 import VChart from 'vue-echarts';
 
@@ -356,10 +377,12 @@ use([
   CanvasRenderer,
   LineChart,
   PieChart,
+  ScatterChart,
   TitleComponent,
   TooltipComponent,
   LegendComponent,
   GridComponent,
+  DataZoomComponent
 ]);
 
 const { t } = useI18n();
@@ -373,6 +396,7 @@ const isTokenCardFlipped = ref(false);
 const trendData = ref<VirtualKeyTrend[]>([]);
 const expertRoutingStats = ref<ExpertRoutingStats | null>(null);
 const modelStats = ref<ModelStat[]>([]);
+const modelResponseTimeStats = ref<ModelResponseTimeStat[]>([]);
 const circuitBreakerStats = ref<{
   totalTriggers: number;
   maxTriggeredProvider: string;
@@ -715,6 +739,127 @@ const chartOption = computed(() => {
   };
 });
 
+const responseTimeDistributionOption = computed(() => {
+  if (!modelResponseTimeStats.value || modelResponseTimeStats.value.length === 0) {
+    return {};
+  }
+
+  const isMobile = windowWidth.value < 640;
+
+  const data = modelResponseTimeStats.value.map(item => [
+    item.created_at,
+    item.response_time,
+    item.model
+  ]);
+
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+      borderColor: '#e5e7eb',
+      borderWidth: 1,
+      textStyle: {
+        color: '#1f2937',
+        fontSize: isMobile ? 11 : 13,
+      },
+      formatter: (params: any) => {
+        const [time, duration, model] = params.data;
+        const date = new Date(time);
+        const timeStr = `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+        return `<div style="font-weight: 600; color: #111827;">${model}</div>
+                <div style="margin-top: 4px; color: #6b7280;">
+                  Time: ${timeStr}<br/>
+                  Latency: ${formatResponseTime(duration)}ms
+                </div>`;
+      }
+    },
+    grid: {
+      left: isMobile ? '2%' : '4%',
+      right: isMobile ? '4%' : '4%',
+      bottom: isMobile ? '3%' : '8%',
+      top: isMobile ? 30 : 40,
+      containLabel: true
+    },
+    xAxis: {
+      type: 'time',
+      boundaryGap: false,
+      axisLine: {
+        lineStyle: {
+          color: '#e5e7eb',
+          width: 1,
+        }
+      },
+      axisLabel: {
+        color: '#9ca3af',
+        fontSize: isMobile ? 10 : 12,
+        formatter: (value: number) => {
+          const date = new Date(value);
+          return `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
+        }
+      },
+      splitLine: {
+        show: false
+      }
+    },
+    yAxis: {
+      type: 'value',
+      name: 'ms',
+      nameTextStyle: {
+        color: '#9ca3af',
+        align: 'right',
+        padding: [0, 0, 0, 6]
+      },
+      axisLine: {
+        show: false,
+      },
+      axisTick: {
+        show: false,
+      },
+      axisLabel: {
+        color: '#9ca3af',
+        fontSize: isMobile ? 10 : 12,
+      },
+      splitLine: {
+        lineStyle: {
+          color: '#f3f4f6',
+          width: 1,
+          type: 'dashed',
+        }
+      }
+    },
+    series: [
+      {
+        name: 'Response Time',
+        type: 'scatter',
+        symbolSize: isMobile ? 5 : 8,
+        itemStyle: {
+          color: (params: any) => {
+             const modelName = params.data[2] as string;
+             let hash = 0;
+             for (let i = 0; i < modelName.length; i++) {
+               hash = modelName.charCodeAt(i) + ((hash << 5) - hash);
+             }
+             const index = Math.abs(hash) % COLOR_PALETTE.length;
+             return COLOR_PALETTE[index].line;
+          },
+          opacity: 0.6,
+          borderColor: '#fff',
+          borderWidth: 1
+        },
+        emphasis: {
+            focus: 'series',
+            itemStyle: {
+                opacity: 1,
+                borderWidth: 2
+            }
+        },
+        data: data
+      }
+    ]
+  };
+});
+
 const modelDistributionOption = computed(() => {
   if (!modelStats.value || modelStats.value.length === 0) {
     return {};
@@ -864,439 +1009,5 @@ onUnmounted(() => {
 });
 </script>
 
-<style scoped>
-.dashboard-view {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 20px 24px;
-  font-family: 'MiSans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  color: #1f2937;
-}
-
-@media (max-width: 639px) {
-  .dashboard-view {
-    padding: 16px 12px;
-  }
-}
-
-.dashboard-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-
-@media (max-width: 639px) {
-  .dashboard-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
-  .dashboard-controls {
-    width: 100%;
-  }
-}
-
-.page-title {
-  font-size: 32px;
-  font-weight: 600;
-  color: #1a1a1a;
-  margin: 0;
-  letter-spacing: -0.03em;
-}
-
-@media (max-width: 639px) {
-  .page-title {
-    font-size: 24px;
-  }
-}
-
-.page-subtitle {
-  font-size: 14px;
-  color: #8c8c8c;
-  margin: 4px 0 0 0;
-  font-weight: 400;
-}
-
-@media (max-width: 639px) {
-  .page-subtitle {
-    font-size: 13px;
-  }
-}
-
-.switchable-card {
-  height: 100%;
-  cursor: pointer;
-}
-
-.flip-icon {
-  float: right;
-  opacity: 0.7;
-}
-
-.stat-card {
-  background: #ffffff;
-  border-radius: 12px;
-  border: 1px solid #f3f4f6;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
-  height: 100%;
-}
-
-@media (max-width: 639px) {
-  .stat-card {
-    border-radius: 10px;
-  }
-}
-
-.stat-card :deep(.n-card__content) {
-  padding: 0;
-  height: 100%;
-}
-
-.stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 24px -8px rgba(0, 98, 65, 0.08);
-  border-color: #e5e7eb;
-}
-
-.stat-card-primary {
-  background: #006241; /* Starbucks Green */
-  color: #ffffff;
-  border: none;
-}
-
-.stat-card-primary:hover {
-  box-shadow: 0 12px 24px -6px rgba(0, 98, 65, 0.25);
-  background: #00754a;
-}
-
-.stat-card-primary .stat-header {
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.stat-card-primary .stat-main-value {
-  color: #ffffff;
-}
-
-.stat-card-primary .stat-detail-label,
-.stat-card-primary .stat-detail-value {
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.stat-content {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 24px;
-}
-
-@media (max-width: 639px) {
-  .stat-content {
-    padding: 20px;
-  }
-}
-
-.stat-header {
-  font-size: 12px;
-  font-weight: 500;
-  color: #8c8c8c;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 16px;
-}
-
-.stat-main-value {
-  font-size: 42px;
-  font-weight: 600;
-  color: #1a1a1a;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  margin-bottom: 8px;
-}
-
-@media (max-width: 639px) {
-  .stat-main-value {
-    font-size: 36px;
-  }
-}
-
-.top-model-name {
-  font-size: 16px !important;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-@media (max-width: 639px) {
-  .top-model-name {
-    font-size: 14px !important;
-  }
-}
-
-.stat-provider {
-  font-size: 13px;
-  font-weight: 600;
-  color: #006241;
-  margin-bottom: auto;
-  padding-bottom: 16px;
-}
-
-@media (max-width: 639px) {
-  .stat-provider {
-    font-size: 12px;
-  }
-}
-
-.stat-value-error {
-  color: #d03050;
-}
-
-.stat-unit {
-  font-size: 18px;
-  font-weight: 400;
-  margin-left: 4px;
-}
-
-.stat-details {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  font-size: 13px;
-  margin-top: auto;
-}
-
-@media (max-width: 639px) {
-  .stat-details {
-    gap: 12px;
-    font-size: 12px;
-  }
-}
-
-.stat-detail-item {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.stat-detail-label {
-  color: #8c8c8c;
-  font-weight: 400;
-}
-
-.stat-detail-value {
-  color: #1a1a1a;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-
-.stat-detail-success .stat-detail-label {
-  color: #006241;
-}
-
-.stat-detail-success .stat-detail-value {
-  color: #006241;
-}
-
-.stat-detail-error .stat-detail-label {
-  color: #d03050;
-}
-
-.stat-detail-error .stat-detail-value {
-  color: #d03050;
-}
-
-.stat-progress {
-  width: 100%;
-  height: 8px;
-  background: #f0f0f0;
-  border-radius: 4px;
-  overflow: hidden;
-  margin-top: auto;
-}
-
-.stat-progress-bar {
-  height: 100%;
-  background: #006241;
-  border-radius: 4px;
-  transition: width 0.3s ease;
-}
-
-.trend-card {
-  background: #ffffff;
-  border-radius: 12px;
-  border: 1px solid #f3f4f6;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@media (max-width: 639px) {
-  .trend-card {
-    border-radius: 10px;
-  }
-}
-
-.trend-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 24px -8px rgba(0, 98, 65, 0.08);
-  border-color: #e5e7eb;
-}
-
-.trend-card :deep(.n-card__header) {
-  padding: 24px 28px 20px;
-  border-bottom: 1px solid #f3f4f6;
-}
-
-@media (max-width: 639px) {
-  .trend-card :deep(.n-card__header) {
-    padding: 20px 16px 16px;
-  }
-}
-
-.trend-card :deep(.n-card-header__main) {
-  font-size: 18px;
-  font-weight: 600;
-  color: #1a1a1a;
-  letter-spacing: -0.02em;
-}
-
-@media (max-width: 639px) {
-  .trend-card :deep(.n-card-header__main) {
-    font-size: 16px;
-  }
-
-  .trend-header {
-    flex-wrap: wrap;
-  }
-
-  .trend-buttons {
-    width: 100%;
-    justify-content: flex-start;
-  }
-}
-
-.trend-chart-container {
-  padding: 24px 16px 16px;
-  min-height: 400px;
-}
-
-@media (max-width: 639px) {
-  .trend-chart-container {
-    padding: 16px 8px 12px;
-    min-height: 300px;
-  }
-}
-
-.trend-chart {
-  width: 100%;
-  height: 420px;
-}
-
-@media (max-width: 639px) {
-  .trend-chart {
-    height: 320px;
-  }
-}
-
-.trend-loading {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 400px;
-}
-
-.trend-error {
-  padding: 40px 20px;
-}
-
-.overview-card {
-  background: #ffffff;
-  border-radius: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
-@media (max-width: 639px) {
-  .overview-card {
-    border-radius: 12px;
-  }
-}
-
-.overview-card :deep(.n-card__header) {
-  padding: 24px 28px;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-@media (max-width: 639px) {
-  .overview-card :deep(.n-card__header) {
-    padding: 20px 16px;
-  }
-}
-
-.overview-card :deep(.n-card-header__main) {
-  font-size: 18px;
-  font-weight: 600;
-  color: #1a1a1a;
-  letter-spacing: -0.02em;
-}
-
-@media (max-width: 639px) {
-  .overview-card :deep(.n-card-header__main) {
-    font-size: 16px;
-  }
-}
-
-.overview-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
-}
-
-@media (max-width: 1023px) {
-  .overview-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 20px;
-  }
-}
-
-@media (max-width: 639px) {
-  .overview-grid {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-}
-
-.overview-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.overview-label {
-  font-size: 13px;
-  color: #8c8c8c;
-  font-weight: 400;
-}
-
-.overview-value {
-  font-size: 18px;
-  font-weight: 500;
-  color: #1a1a1a;
-  font-variant-numeric: tabular-nums;
-}
-
-@media (max-width: 639px) {
-  .overview-value {
-    font-size: 16px;
-  }
-}
-
-@media (max-width: 639px) {
-  .overview-label {
-    font-size: 12px;
-  }
-}
-</style>
+<style scoped src="@/styles/dashboard.css"></style>
 

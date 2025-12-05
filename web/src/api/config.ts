@@ -58,6 +58,12 @@ export interface ModelStat {
   avg_response_time: number;
 }
 
+export interface ModelResponseTimeStat {
+  model: string;
+  created_at: number;
+  response_time: number;
+}
+
 export interface TrendData {
   timestamp: number;
   requestCount: number;
@@ -108,6 +114,7 @@ export const configApi = {
     trend: VirtualKeyTrend[];
     expertRoutingStats: ExpertRoutingStats;
     modelStats: ModelStat[];
+    modelResponseTimeStats: ModelResponseTimeStat[];
     circuitBreakerStats?: {
       totalTriggers: number;
       maxTriggeredProvider: string;

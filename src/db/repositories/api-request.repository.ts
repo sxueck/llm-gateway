@@ -322,6 +322,33 @@ export const apiRequestRepository = {
     }
   },
 
+  async getModelResponseTimeStats(options: { startTime: number; endTime: number }) {
+    const { startTime, endTime } = options;
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const loggingCondition = getDisableLoggingCondition();
+      const [rows] = await conn.query(
+        `SELECT
+          ar.model,
+          ar.created_at,
+          ar.response_time
+        FROM api_requests ar
+        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        WHERE ar.created_at >= ? AND ar.created_at <= ?
+          AND ar.status = 'success'
+          AND ar.response_time > 0
+          AND ${loggingCondition}
+        ORDER BY ar.created_at DESC
+        LIMIT 2000`,
+        [startTime, endTime]
+      );
+      return rows as any[];
+    } finally {
+      conn.release();
+    }
+  },
+
   async getDbSize(): Promise<number> {
     const pool = getDatabase();
     const conn = await pool.getConnection();

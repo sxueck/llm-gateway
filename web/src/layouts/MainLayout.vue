@@ -1,24 +1,24 @@
 <template>
   <n-layout has-sider style="height: 100vh; background-color: #f5f5f5;">
     <n-layout-sider
-      :collapsed="false"
+      :collapsed="collapsed"
       collapse-mode="width"
       :collapsed-width="80"
       :width="260"
       :show-trigger="false"
       style="border-right: none; background-color: #f8f8f8; padding: 16px 12px;"
     >
-      <div class="logo">
+      <div class="logo" :class="{ 'logo-collapsed': collapsed }">
         <div class="logo-icon">
           <img src="/assets/logo.png" alt="LLM Gateway" style="width: 38px; height: 38px; object-fit: contain;" />
         </div>
-        <span class="logo-text">LLM Gateway</span>
+        <span v-if="!collapsed" class="logo-text">LLM Gateway</span>
       </div>
 
-      <div class="menu-section-label">{{ t('layout.menu') }}</div>
+      <div v-if="!collapsed" class="menu-section-label">{{ t('layout.menu') }}</div>
 
       <n-menu
-        :collapsed="false"
+        :collapsed="collapsed"
         :collapsed-width="64"
         :collapsed-icon-size="22"
         :options="menuOptions"
@@ -28,10 +28,10 @@
         class="custom-menu"
       />
 
-      <div class="menu-section-label">{{ t('layout.general') }}</div>
+      <div v-if="!collapsed" class="menu-section-label">{{ t('layout.general') }}</div>
 
       <n-menu
-        :collapsed="false"
+        :collapsed="collapsed"
         :collapsed-width="64"
         :collapsed-icon-size="22"
         :options="generalMenuOptions"
@@ -42,7 +42,14 @@
     </n-layout-sider>
 
     <n-layout style="background-color: #f5f5f5; height: 100vh; display: flex; flex-direction: column;">
-      <n-layout-header style="height: 72px; padding: 0 32px; display: flex; align-items: center; justify-content: flex-end; border-bottom: none; background-color: transparent; flex-shrink: 0;">
+      <n-layout-header style="height: 72px; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; border-bottom: none; background-color: transparent; flex-shrink: 0;">
+        <div class="header-left">
+          <n-button circle quaternary @click="toggleSidebar">
+            <template #icon>
+              <n-icon size="24"><MenuOutline /></n-icon>
+            </template>
+          </n-button>
+        </div>
         <div class="header-right">
           <LanguageSwitcher />
           <n-button circle quaternary class="header-icon-btn">
@@ -75,7 +82,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted } from 'vue';
+import { computed, h, onMounted, ref, onUnmounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import {
@@ -108,6 +115,7 @@ import {
   ShieldOutline,
   CloudDownloadOutline,
   CashOutline,
+  MenuOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
@@ -116,6 +124,22 @@ const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
 const { t } = useI18n();
+
+const collapsed = ref(false);
+const windowWidth = ref(window.innerWidth);
+
+const toggleSidebar = () => {
+  collapsed.value = !collapsed.value;
+};
+
+const handleResize = () => {
+  windowWidth.value = window.innerWidth;
+  if (windowWidth.value < 768) {
+    collapsed.value = true;
+  } else {
+    collapsed.value = false;
+  }
+};
 
 const menuOptions = computed(() => [
   {
@@ -251,6 +275,12 @@ onMounted(async () => {
   if (authStore.token && !authStore.user) {
     await authStore.fetchProfile();
   }
+  window.addEventListener('resize', handleResize);
+  handleResize(); // Initial check
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize);
 });
 </script>
 
@@ -263,6 +293,12 @@ onMounted(async () => {
   gap: 12px;
   margin-bottom: 24px;
   padding: 0 8px;
+  transition: all 0.3s ease;
+}
+
+.logo-collapsed {
+  padding: 0;
+  justify-content: center;
 }
 
 .logo-icon {
