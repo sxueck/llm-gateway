@@ -34,15 +34,39 @@ function getGeminiEmptyRetryLimit(protocolConfig: ProtocolConfig): number {
   return DEFAULT_GEMINI_EMPTY_RETRY_LIMIT;
 }
 
-function hasTextInParts(parts: any[] | undefined | null): boolean {
+function hasAssistantSignalInParts(parts: any[] | undefined | null): boolean {
   if (!Array.isArray(parts)) return false;
 
-  // 只关心纯文本内容，忽略函数调用、代码执行等复杂结构
   return parts.some((part) => {
-    if (!part || typeof part !== 'object') return false;
-    if (typeof part.text === 'string' && part.text.trim().length > 0) return true;
-    if (Array.isArray(part.parts) && hasTextInParts(part.parts)) return true;
-    return false;
+    if (part == null) return false;
+
+    if (typeof part === 'string') {
+      return part.trim().length > 0;
+    }
+
+    if (typeof part !== 'object') {
+      return false;
+    }
+
+    if (typeof part.text === 'string' && part.text.trim().length > 0) {
+      return true;
+    }
+
+    if (Array.isArray(part.parts) && hasAssistantSignalInParts(part.parts)) {
+      return true;
+    }
+
+    // 检查其它字段（函数调用、inlineData 等）是否存在有效内容
+    return Object.keys(part).some((key) => {
+      if (key === 'text' || key === 'parts') return false;
+      const value = (part as any)[key];
+      if (value == null) return false;
+      if (typeof value === 'string') return value.trim().length > 0;
+      if (typeof value === 'number' || typeof value === 'boolean') return true;
+      if (Array.isArray(value)) return value.length > 0;
+      if (typeof value === 'object') return Object.keys(value).length > 0;
+      return false;
+    });
   });
 }
 
@@ -57,7 +81,7 @@ function inspectGeminiContent(content: any): boolean {
     return true;
   }
 
-  if (hasTextInParts(content.parts)) {
+  if (hasAssistantSignalInParts(content.parts)) {
     return true;
   }
 
@@ -88,8 +112,13 @@ function hasGeminiAssistantContent(payload: any): boolean {
     return true;
   }
 
-  if (payload.delta && typeof payload.delta.text === 'string' && payload.delta.text.trim().length > 0) {
-    return true;
+  if (payload.delta) {
+    if (typeof payload.delta.text === 'string' && payload.delta.text.trim().length > 0) {
+      return true;
+    }
+    if (hasAssistantSignalInParts(payload.delta.parts)) {
+      return true;
+    }
   }
 
   if (typeof payload.text === 'string' && payload.text.trim().length > 0) {

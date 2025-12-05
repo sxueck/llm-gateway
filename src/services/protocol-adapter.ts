@@ -17,6 +17,31 @@ const DEFAULT_RESPONSES_EMPTY_OUTPUT_MAX_RETRIES = Math.max(
   0
 );
 
+function responsesEventHasAssistantContent(event: any): boolean {
+  if (!event || typeof event !== 'object') {
+    return false;
+  }
+
+  if (typeof event.type === 'string' && event.type.startsWith('response.output_')) {
+    return true;
+  }
+
+  if (Array.isArray((event as any).output) && (event as any).output.length > 0) {
+    return true;
+  }
+
+  const responseOutput = (event as any).response?.output;
+  if (Array.isArray(responseOutput) && responseOutput.length > 0) {
+    return true;
+  }
+
+  if (event.delta && typeof event.delta === 'object' && Object.keys(event.delta).length > 0) {
+    return true;
+  }
+
+  return false;
+}
+
 export interface ProtocolConfig {
   provider: string;
   apiKey: string;
@@ -635,7 +660,7 @@ export class ProtocolAdapter {
       const attemptStreamChunks: string[] = [];
       const pendingChunks: string[] = [];
       let buffering = true;
-      let hasAssistantText = false;
+      let hasAssistantOutput = false;
       let bypassEmptyGuard = false;
       let responsesAggregate = createInitialAggregate();
 
@@ -696,8 +721,8 @@ export class ProtocolAdapter {
           const producedText = updatedAggregate.outputText.length > previousLength;
           responsesAggregate = updatedAggregate;
 
-          if (producedText && !hasAssistantText) {
-            hasAssistantText = true;
+          if (!hasAssistantOutput && (producedText || responsesEventHasAssistantContent(chunk))) {
+            hasAssistantOutput = true;
             await flushPendingChunks();
           }
 
@@ -726,7 +751,7 @@ export class ProtocolAdapter {
           }
         }
 
-        if (!hasAssistantText && !bypassEmptyGuard) {
+        if (!hasAssistantOutput && !bypassEmptyGuard) {
           lastEmptyError = new ResponsesEmptyOutputError(
             'Responses API stream completed without assistant output',
             {
