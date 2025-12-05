@@ -32,7 +32,7 @@ axiosInstance.interceptors.response.use(
   (response) => {
     return response.data;
   },
-  (error: AxiosError<{ error: string }>) => {
+  (error: AxiosError<{ error: unknown }>) => {
     if (error.response?.status === 401) {
       const authStore = useAuthStore();
       authStore.logout();
@@ -42,10 +42,16 @@ axiosInstance.interceptors.response.use(
     }
 
     const errorData = error.response?.data?.error;
-    const message = typeof errorData === 'object' && errorData !== null
-      ? errorData.message || JSON.stringify(errorData)
-      : errorData || '请求失败';
-      
+
+    let message = '请求失败';
+
+    if (typeof errorData === 'string') {
+      message = errorData;
+    } else if (errorData && typeof errorData === 'object') {
+      const maybeMessage = (errorData as { message?: unknown }).message;
+      message = typeof maybeMessage === 'string' ? maybeMessage : JSON.stringify(errorData);
+    }
+
     return Promise.reject(new Error(message));
   }
 );

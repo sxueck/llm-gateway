@@ -126,7 +126,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, h } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useMessage, useDialog } from 'naive-ui';
+import { useMessage } from 'naive-ui';
 import { 
   AddOutline, 
   SearchOutline, 
@@ -155,7 +155,6 @@ import ModelPresetSelector from '@/components/ModelPresetSelector.vue';
 
 const { t } = useI18n();
 const message = useMessage();
-const dialog = useDialog();
 
 // State
 const mappings = ref<CostMapping[]>([]);

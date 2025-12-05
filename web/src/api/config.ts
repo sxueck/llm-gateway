@@ -102,7 +102,7 @@ export const configApi = {
     return request.get('/admin/config/logs', { params });
   },
 
-  getStats(period?: '24h' | '7d' | '30d'): Promise<{
+  getStats(period?: '24h' | '7d' | '30d' | 'all'): Promise<{
     period: string;
     stats: ApiStats;
     trend: VirtualKeyTrend[];

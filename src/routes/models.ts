@@ -152,6 +152,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
       routing_config_id: body.routingConfigId || null,
       enabled: body.enabled !== false ? 1 : 0,
       model_attributes: body.modelAttributes ? JSON.stringify(body.modelAttributes) : null,
+      prompt_config: null,
       compression_config: null,
     });
 

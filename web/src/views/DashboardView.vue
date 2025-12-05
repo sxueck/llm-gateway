@@ -25,22 +25,46 @@
 
       <n-grid :cols="gridCols" :x-gap="gridGap" :y-gap="gridGap">
         <n-gi>
-          <n-card class="stat-card stat-card-primary">
-            <div class="stat-content">
-              <div class="stat-header">{{ t('dashboard.tokenConsumption') }}</div>
-              <div class="stat-main-value">{{ formatTokenNumber(stats?.totalTokens || 0) }}</div>
-              <div class="stat-details">
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">输入:</span>
-                  <span class="stat-detail-value">{{ formatTokenNumber(promptTokens) }}</span>
-                </span>
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">输出:</span>
-                  <span class="stat-detail-value">{{ formatTokenNumber(completionTokens) }}</span>
-                </span>
+          <div class="switchable-card" @click="toggleTokenCard">
+            <n-card v-if="!isTokenCardFlipped" class="stat-card stat-card-primary">
+              <div class="stat-content">
+                <div class="stat-header">
+                  {{ t('dashboard.tokenConsumption') }}
+                  <n-icon size="14" class="flip-icon"><RefreshOutline /></n-icon>
+                </div>
+                <div class="stat-main-value">{{ formatTokenNumber(stats?.totalTokens || 0) }}</div>
+                <div class="stat-details">
+                  <span class="stat-detail-item">
+                    <span class="stat-detail-label">输入:</span>
+                    <span class="stat-detail-value">{{ formatTokenNumber(promptTokens) }}</span>
+                  </span>
+                  <span class="stat-detail-item">
+                    <span class="stat-detail-label">输出:</span>
+                    <span class="stat-detail-value">{{ formatTokenNumber(completionTokens) }}</span>
+                  </span>
+                </div>
               </div>
-            </div>
-          </n-card>
+            </n-card>
+            <n-card v-else class="stat-card stat-card-primary">
+              <div class="stat-content">
+                <div class="stat-header">
+                  历史总消耗
+                  <n-icon size="14" class="flip-icon"><RefreshOutline /></n-icon>
+                </div>
+                <div class="stat-main-value">{{ formatTokenNumber(statsAllTime?.totalTokens || 0) }}</div>
+                <div class="stat-details">
+                  <span class="stat-detail-item">
+                    <span class="stat-detail-label">输入:</span>
+                    <span class="stat-detail-value">{{ formatTokenNumber(statsAllTime?.promptTokens || 0) }}</span>
+                  </span>
+                  <span class="stat-detail-item">
+                    <span class="stat-detail-label">输出:</span>
+                    <span class="stat-detail-value">{{ formatTokenNumber(statsAllTime?.completionTokens || 0) }}</span>
+                  </span>
+                </div>
+              </div>
+            </n-card>
+          </div>
         </n-gi>
         <n-gi>
           <n-card class="stat-card">
@@ -310,7 +334,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { useMessage, NSpace, NGrid, NGi, NCard, NSelect, NEmpty, NButton, NIcon, NSpin, NResult, NTag } from 'naive-ui';
+import { useMessage, NSpace, NGrid, NGi, NCard, NSelect, NEmpty, NButton, NIcon, NSpin, NResult } from 'naive-ui';
 import { RefreshOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
 import { useProviderStore } from '@/stores/provider';
@@ -344,6 +368,8 @@ const providerStore = useProviderStore();
 const virtualKeyStore = useVirtualKeyStore();
 
 const stats = ref<ApiStats | null>(null);
+const statsAllTime = ref<ApiStats | null>(null);
+const isTokenCardFlipped = ref(false);
 const trendData = ref<VirtualKeyTrend[]>([]);
 const expertRoutingStats = ref<ExpertRoutingStats | null>(null);
 const modelStats = ref<ModelStat[]>([]);
@@ -358,6 +384,20 @@ const chartMetric = ref<'requests' | 'tokens'>('requests');
 const loading = ref(false);
 const loadError = ref<string | null>(null);
 const windowWidth = ref(window.innerWidth);
+
+async function toggleTokenCard() {
+  isTokenCardFlipped.value = !isTokenCardFlipped.value;
+  if (isTokenCardFlipped.value && !statsAllTime.value) {
+    try {
+      const result = await configApi.getStats('all');
+      if (result && result.stats) {
+        statsAllTime.value = result.stats;
+      }
+    } catch (e) {
+      console.error('Failed to load all-time stats', e);
+    }
+  }
+}
 
 const periodOptions = computed(() => [
   { label: t('dashboard.period.last24Hours'), value: '24h' },
@@ -882,6 +922,16 @@ onUnmounted(() => {
   .page-subtitle {
     font-size: 13px;
   }
+}
+
+.switchable-card {
+  height: 100%;
+  cursor: pointer;
+}
+
+.flip-icon {
+  float: right;
+  opacity: 0.7;
 }
 
 .stat-card {

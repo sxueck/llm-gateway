@@ -3,7 +3,7 @@ import type { ModelAttributes } from '../types/index.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 
-interface ModelPresetInfo {
+export interface ModelPresetInfo {
   max_tokens?: number;
   max_input_tokens?: number;
   max_output_tokens?: number;

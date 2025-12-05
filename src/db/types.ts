@@ -9,6 +9,7 @@ export interface Model {
   expert_routing_id?: string | null;
   enabled: number;
   model_attributes: string | null;
+  prompt_config: string | null;
   compression_config: string | null;
   created_at: number;
   updated_at: number;

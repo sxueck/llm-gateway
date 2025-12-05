@@ -364,7 +364,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   }
 
   fastify.get('/stats', async (request) => {
-    const { period = '24h' } = request.query as { period?: '24h' | '7d' | '30d' };
+    const { period = '24h' } = request.query as { period?: '24h' | '7d' | '30d' | 'all' };
 
     const now = Date.now();
     let startTime: number;
@@ -375,6 +375,9 @@ export async function configRoutes(fastify: FastifyInstance) {
         break;
       case '30d':
         startTime = now - 30 * 24 * 60 * 60 * 1000;
+        break;
+      case 'all':
+        startTime = 0;
         break;
       default:
         startTime = now - 24 * 60 * 60 * 1000;

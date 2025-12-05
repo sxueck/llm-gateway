@@ -103,7 +103,6 @@ import {
   ConstructOutline,
   ListOutline,
   OptionsOutline,
-  ChatbubbleEllipsesOutline,
   FlaskOutline,
   GitBranchOutline,
   ShieldOutline,

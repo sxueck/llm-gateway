@@ -24,7 +24,7 @@ export const apiRequestRepository = {
 
   async getStats(options?: { startTime?: number; endTime?: number }) {
     const now = Date.now();
-    const startTime = options?.startTime || now - 24 * 60 * 60 * 1000;
+    const startTime = options?.startTime ?? (now - 24 * 60 * 60 * 1000);
     const endTime = options?.endTime || now;
 
     const pool = getDatabase();
@@ -107,7 +107,7 @@ export const apiRequestRepository = {
 
   async getTrend(options?: { startTime?: number; endTime?: number; interval?: 'hour' | 'day' }) {
     const now = Date.now();
-    const startTime = options?.startTime || now - 24 * 60 * 60 * 1000;
+    const startTime = options?.startTime ?? (now - 24 * 60 * 60 * 1000);
     const endTime = options?.endTime || now;
     const interval = options?.interval || 'hour';
 

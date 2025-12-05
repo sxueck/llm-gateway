@@ -95,6 +95,28 @@ export const migrations: Migration[] = [
         }
       }
     }
+  },
+  {
+    version: 18,
+    name: 'remove_prompt_config_from_models',
+    up: async (conn: Connection) => {
+      // 删除 models 表中的 prompt_config 字段
+      try {
+        await conn.query(`ALTER TABLE models DROP COLUMN IF EXISTS prompt_config`);
+        console.log('[迁移] 已删除 models 表的 prompt_config 字段');
+      } catch (e: any) {
+        console.warn('[迁移] 删除 prompt_config 字段失败, 已跳过:', e.message);
+      }
+    },
+    down: async (conn: Connection) => {
+      // 回滚时重新添加 prompt_config 字段
+      try {
+        await conn.query(`ALTER TABLE models ADD COLUMN prompt_config TEXT DEFAULT NULL AFTER model_attributes`);
+        console.log('[迁移] 已恢复 models 表的 prompt_config 字段');
+      } catch (e: any) {
+        console.warn('[迁移] 恢复 prompt_config 字段失败:', e.message);
+      }
+    }
   }
 ];
 
