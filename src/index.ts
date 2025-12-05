@@ -17,6 +17,7 @@ import { anthropicRoutes } from './routes/anthropic.js';
 import { modelPresetsRoutes } from './routes/model-presets.js';
 import { expertRoutingRoutes } from './routes/expert-routing.js';
 import { healthRoutes } from './routes/health.js';
+import { costMappingRoutes } from './routes/cost-mapping.js';
 import backupRoutes from './routes/backup.js';
 import { memoryLogger } from './services/logger.js';
 import { modelPresetsService } from './services/model-presets.js';
@@ -120,12 +121,16 @@ if (corsEnabled) {
 }
 
 fastify.addHook('onRequest', async (request, reply) => {
-  const corsEnabledCfg = await systemConfigDb.get('cors_enabled');
-  const corsEnabled = corsEnabledCfg ? corsEnabledCfg.value === 'true' : true;
+  try {
+    const corsEnabledCfg = await systemConfigDb.get('cors_enabled');
+    const corsEnabled = corsEnabledCfg ? corsEnabledCfg.value === 'true' : true;
 
-  if (!corsEnabled && request.headers.origin) {
-    reply.header('Access-Control-Allow-Origin', 'null');
-    reply.header('Access-Control-Allow-Credentials', 'false');
+    if (!corsEnabled && request.headers.origin) {
+      reply.header('Access-Control-Allow-Origin', 'null');
+      reply.header('Access-Control-Allow-Credentials', 'false');
+    }
+  } catch (error: any) {
+    memoryLogger.error(`CORS 检查失败: ${error.message}`, 'System');
   }
 });
 
@@ -143,6 +148,7 @@ await fastify.register(virtualKeyRoutes, { prefix: '/api/admin/virtual-keys' });
 await fastify.register(configRoutes, { prefix: '/api/admin/config' });
 await fastify.register(modelPresetsRoutes, { prefix: '/api/admin/model-presets' });
 await fastify.register(expertRoutingRoutes, { prefix: '/api/admin/expert-routing' });
+await fastify.register(costMappingRoutes, { prefix: '/api/admin/cost-mappings' });
 await fastify.register(healthRoutes);
 await fastify.register(backupRoutes);
 

@@ -9,7 +9,6 @@ export interface Model {
   expert_routing_id?: string | null;
   enabled: number;
   model_attributes: string | null;
-  prompt_config: string | null;
   compression_config: string | null;
   created_at: number;
   updated_at: number;
@@ -38,6 +37,16 @@ export interface HealthRun {
   error_message: string | null;
   request_id: string | null;
   created_at: number;
+}
+
+export interface CostMapping {
+  id: string;
+  pattern: string;
+  target_model: string;
+  priority: number;
+  enabled: number;
+  created_at: number;
+  updated_at: number;
 }
 
 export type ApiRequestBuffer = {

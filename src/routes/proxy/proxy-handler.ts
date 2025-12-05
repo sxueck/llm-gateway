@@ -3,7 +3,6 @@ import { nanoid } from 'nanoid';
 import { memoryLogger } from '../../services/logger.js';
 import { debugModeService } from '../../services/debug-mode.js';
 import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse, buildFullRequestBody, accumulateResponsesStream, stripFieldRecursively } from '../../utils/request-logger.js';
-import { promptProcessor } from '../../services/prompt-processor.js';
 import { messageCompressor } from '../../services/message-compressor.js';
 import { makeHttpRequest, makeStreamHttpRequest } from './http-client.js';
 import { checkCache, setCacheIfNeeded, getCacheStatus } from './cache.js';
@@ -379,37 +378,6 @@ export function createProxyHandler() {
       }
 
       if (currentModel && (request.body as any)?.messages && isChatCompletionsPath(path)) {
-        const processorContext = {
-          date: new Date().toISOString().split('T')[0],
-          requestHeaders: request.headers,
-        };
-
-        if (currentModel.prompt_config) {
-          const promptConfig = promptProcessor.parsePromptConfig(currentModel.prompt_config);
-
-          if (promptConfig) {
-            try {
-              const processedMessages = promptProcessor.processMessages(
-                (request.body as any).messages,
-                promptConfig,
-                processorContext
-              );
-
-              (request.body as any).messages = processedMessages;
-
-              memoryLogger.info(
-                `Prompt 处理完成 | 模型: ${currentModel.name} | 操作: ${promptConfig.operationType}`,
-                'Proxy'
-              );
-            } catch (promptError: any) {
-              memoryLogger.error(
-                `Prompt 处理失败: ${promptError.message}`,
-                'Proxy'
-              );
-            }
-          }
-        }
-
         const approxTokens = estimateTokensForMessages((request.body as any).messages);
         const shouldCompressMessages = approxTokens >= MESSAGE_COMPRESSION_MIN_TOKENS;
 

@@ -41,7 +41,11 @@ axiosInstance.interceptors.response.use(
       }
     }
 
-    const message = error.response?.data?.error || '请求失败';
+    const errorData = error.response?.data?.error;
+    const message = typeof errorData === 'object' && errorData !== null
+      ? errorData.message || JSON.stringify(errorData)
+      : errorData || '请求失败';
+      
     return Promise.reject(new Error(message));
   }
 );

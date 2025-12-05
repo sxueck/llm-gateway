@@ -47,7 +47,6 @@ export async function createTables() {
         expert_routing_id VARCHAR(255),
         enabled TINYINT DEFAULT 1,
         model_attributes TEXT,
-        prompt_config TEXT,
         compression_config TEXT,
         created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
         updated_at BIGINT NOT NULL,
@@ -56,7 +55,6 @@ export async function createTables() {
         INDEX idx_models_enabled (enabled),
         INDEX idx_models_is_virtual (is_virtual),
         INDEX idx_models_routing_config (routing_config_id),
-        INDEX idx_models_prompt_config (prompt_config(255)),
         INDEX idx_models_compression_config (compression_config(255)),
         INDEX idx_models_expert_routing (expert_routing_id),
         INDEX idx_models_protocol (protocol)
@@ -244,6 +242,21 @@ export async function createTables() {
         FOREIGN KEY (target_id) REFERENCES health_targets(id) ON DELETE CASCADE,
         INDEX idx_health_summaries_target (target_id),
         INDEX idx_health_summaries_window (window_start, window_end)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // 成本映射规则表
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS cost_mappings (
+        id VARCHAR(255) PRIMARY KEY,
+        pattern VARCHAR(255) NOT NULL,
+        target_model VARCHAR(255) NOT NULL,
+        priority INT DEFAULT 0,
+        enabled TINYINT DEFAULT 1,
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        INDEX idx_cost_mappings_pattern (pattern),
+        INDEX idx_cost_mappings_enabled (enabled)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
   } finally {

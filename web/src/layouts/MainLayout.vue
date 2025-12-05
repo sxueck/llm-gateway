@@ -108,6 +108,7 @@ import {
   GitBranchOutline,
   ShieldOutline,
   CloudDownloadOutline,
+  CashOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
@@ -156,14 +157,14 @@ const menuOptions = computed(() => [
     icon: () => h(NIcon, null, { default: () => h(FlaskOutline) }),
     children: [
       {
-        label: t('menu.promptManagement'),
-        key: 'prompt-management',
-        icon: () => h(NIcon, null, { default: () => h(ChatbubbleEllipsesOutline) }),
-      },
-      {
         label: t('menu.expertRouting'),
         key: 'expert-routing',
         icon: () => h(NIcon, null, { default: () => h(GitBranchOutline) }),
+      },
+      {
+        label: t('menu.costAnalysis'),
+        key: 'cost-analysis',
+        icon: () => h(NIcon, null, { default: () => h(CashOutline) }),
       },
     ],
   },
@@ -307,6 +308,7 @@ onMounted(async () => {
 
 .custom-menu :deep(.n-submenu-children .n-menu-item-content) {
   padding-left: 30px !important;
+  border-radius: 6px;
 }
 
 .custom-menu :deep(.n-menu-item-content:hover) {
@@ -387,4 +389,3 @@ onMounted(async () => {
   line-height: 1.2;
 }
 </style>
-

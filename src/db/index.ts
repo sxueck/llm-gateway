@@ -28,6 +28,7 @@ import { expertRoutingConfigRepository } from './repositories/expert-routing-con
 import { expertRoutingLogRepository } from './repositories/expert-routing-log.repository.js';
 import { healthTargetRepository } from './repositories/health-target.repository.js';
 import { healthRunRepository } from './repositories/health-run.repository.js';
+import { costMappingRepository } from './repositories/cost-mapping.repository.js';
 
 // Export repositories with backward-compatible names
 export const userDb = userRepository;
@@ -41,6 +42,7 @@ export const expertRoutingConfigDb = expertRoutingConfigRepository;
 export const expertRoutingLogDb = expertRoutingLogRepository;
 export const healthTargetDb = healthTargetRepository;
 export const healthRunDb = healthRunRepository;
+export const costMappingDb = costMappingRepository;
 
 // Enhanced initDatabase that also creates tables and runs migrations
 export async function initDatabase() {

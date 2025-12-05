@@ -620,8 +620,7 @@ const chartOption = computed(() => {
       left: isMobile ? '1%' : '2%',
       right: isMobile ? '1%' : '2%',
       bottom: isMobile ? '3%' : '5%',
-      top: isMobile ? 55 : 70,
-      containLabel: true
+      top: isMobile ? 55 : 70
     },
     xAxis: {
       type: 'category',

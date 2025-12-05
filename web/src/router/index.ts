@@ -57,14 +57,14 @@ const router = createRouter({
           component: () => import('@/views/VirtualModelsView.vue'),
         },
         {
-          path: 'prompt-management',
-          name: 'PromptManagement',
-          component: () => import('@/views/PromptManagementView.vue'),
-        },
-        {
           path: 'expert-routing',
           name: 'ExpertRouting',
           component: () => import('@/views/ExpertRoutingView.vue'),
+        },
+        {
+          path: 'cost-analysis',
+          name: 'CostAnalysis',
+          component: () => import('@/views/CostAnalysisView.vue'),
         },
         {
           path: 'api-guide',

@@ -65,8 +65,8 @@ export const modelRepository = {
     const conn = await pool.getConnection();
     try {
       await conn.query(
-        'INSERT INTO models (id, name, provider_id, model_identifier, protocol, is_virtual, routing_config_id, expert_routing_id, enabled, model_attributes, prompt_config, compression_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [model.id, model.name, model.provider_id, model.model_identifier, model.protocol || null, model.is_virtual, model.routing_config_id, model.expert_routing_id || null, model.enabled, model.model_attributes, model.prompt_config, model.compression_config, now, now]
+        'INSERT INTO models (id, name, provider_id, model_identifier, protocol, is_virtual, routing_config_id, expert_routing_id, enabled, model_attributes, compression_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [model.id, model.name, model.provider_id, model.model_identifier, model.protocol || null, model.is_virtual, model.routing_config_id, model.expert_routing_id || null, model.enabled, model.model_attributes, model.compression_config, now, now]
       );
       return { ...model, created_at: now, updated_at: now };
     } finally {

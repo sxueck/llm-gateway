@@ -22,14 +22,6 @@ export interface Provider {
   updatedAt: number;
 }
 
-export interface PromptConfig {
-  operationType: 'replace' | 'prepend' | 'system';
-  templateContent: string;
-  systemMessage?: string;
-  enabled: boolean;
-  injectOnce?: boolean;
-}
-
 export interface ModelAttributes {
   input_cost_per_token?: number;
   output_cost_per_token?: number;
@@ -56,7 +48,6 @@ export interface Model {
   expertRoutingId?: string | null;
   enabled: boolean;
   modelAttributes?: ModelAttributes | null;
-  promptConfig?: PromptConfig | null;
   virtualKeyCount?: number;
   createdAt: number;
   updatedAt: number;
@@ -133,7 +124,6 @@ export interface CreateModelRequest {
   routingConfigId?: string;
   enabled?: boolean;
   modelAttributes?: ModelAttributes;
-  promptConfig?: PromptConfig;
 }
 
 export interface UpdateModelRequest {
@@ -142,7 +132,6 @@ export interface UpdateModelRequest {
   protocol?: string; // 'openai' | 'anthropic' | 'google'
   enabled?: boolean;
   modelAttributes?: ModelAttributes;
-  promptConfig?: PromptConfig | null;
 }
 
 export interface CreateVirtualKeyRequest {
