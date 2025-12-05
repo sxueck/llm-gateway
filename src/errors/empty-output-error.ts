@@ -1,5 +1,5 @@
 export interface EmptyOutputDetails {
-  source: 'gemini' | 'responses';
+  source: 'gemini' | 'responses' | 'claude';
   attempt?: number;
   totalAttempts?: number;
   status?: string;
@@ -17,6 +17,12 @@ export class EmptyOutputError extends Error {
     super(message);
     this.name = 'EmptyOutputError';
     this.details = details;
-    this.code = details?.source === 'gemini' ? 'gemini_empty_output' : 'responses_empty_output';
+    if (details?.source === 'gemini') {
+      this.code = 'gemini_empty_output';
+    } else if (details?.source === 'claude') {
+      this.code = 'claude_empty_output';
+    } else {
+      this.code = 'responses_empty_output';
+    }
   }
 }
