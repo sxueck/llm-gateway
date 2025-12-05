@@ -165,15 +165,12 @@
         <n-gi>
           <n-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-header" style="display: flex; justify-content: space-between; align-items: center;">
-                <span>成本分析</span>
-                <n-tag type="warning" size="small" round :bordered="false" style="font-size: 10px; height: 18px; line-height: 18px;">开发中</n-tag>
-              </div>
-              <div class="stat-main-value">¥ 0.00</div>
+              <div class="stat-header">成本分析</div>
+              <div class="stat-main-value">¥ {{ formatCost(costStats?.totalCost || 0) }}</div>
               <div class="stat-details">
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">本月预估:</span>
-                  <span class="stat-detail-value">¥ 0.00</span>
+                  <span class="stat-detail-label">{{ selectedPeriod === '24h' ? '今日' : selectedPeriod === '7d' ? '近7天' : '近30天' }}:</span>
+                  <span class="stat-detail-value">¥ {{ formatCost(costStats?.totalCost || 0) }}</span>
                 </span>
               </div>
             </div>
@@ -318,7 +315,7 @@ import { RefreshOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
-import { configApi, type ApiStats, type VirtualKeyTrend, type ExpertRoutingStats, type ModelStat } from '@/api/config';
+import { configApi, type ApiStats, type VirtualKeyTrend, type ExpertRoutingStats, type ModelStat, type CostStats } from '@/api/config';
 import { formatNumber, formatTokenNumber, formatPercentage, formatResponseTime, formatTimestamp, formatUptime } from '@/utils/format';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
@@ -355,6 +352,7 @@ const circuitBreakerStats = ref<{
   maxTriggeredProvider: string;
   maxTriggerCount: number;
 } | null>(null);
+const costStats = ref<CostStats | null>(null);
 const selectedPeriod = ref<'24h' | '7d' | '30d'>('24h');
 const chartMetric = ref<'requests' | 'tokens'>('requests');
 const loading = ref(false);
@@ -788,6 +786,7 @@ async function loadStats() {
     expertRoutingStats.value = result.expertRoutingStats || { totalRequests: 0, avgClassificationTime: 0 };
     modelStats.value = result.modelStats || [];
     circuitBreakerStats.value = result.circuitBreakerStats || { totalTriggers: 0, maxTriggeredProvider: '-', maxTriggerCount: 0 };
+    costStats.value = result.costStats || null;
   } catch (error: any) {
     const errorMsg = error.message || '加载数据失败';
     loadError.value = errorMsg;
@@ -804,6 +803,12 @@ const handleResize = () => {
 const formatProviderName = (name: string | undefined) => {
   if (!name || name === '-') return '-';
   return name.length > 15 ? name.slice(0, 15) + '...' : name;
+};
+
+const formatCost = (cost: number) => {
+  if (cost === 0) return '0.00';
+  if (cost < 0.01) return cost.toFixed(4);
+  return cost.toFixed(2);
 };
 
 onMounted(() => {

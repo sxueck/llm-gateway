@@ -8,6 +8,7 @@ import { hashKey } from '../utils/crypto.js';
 import { healthCheckerService } from '../services/health-checker.js';
 import { debugModeService } from '../services/debug-mode.js';
 import { circuitBreaker } from '../services/circuit-breaker.js';
+import { costMappingService } from '../services/cost-mapping.js';
 
 export async function configRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
@@ -285,6 +286,83 @@ export async function configRoutes(fastify: FastifyInstance) {
     };
   });
 
+  // 计算成本的辅助函数
+  async function calculateCostStats(startTime: number, endTime: number) {
+    const pool = await import('../db/connection.js').then(m => m.getDatabase());
+    const conn = await pool.getConnection();
+    try {
+      // 获取所有请求的模型和 token 使用情况
+      const [rows] = await conn.query(
+        `SELECT
+          ar.model,
+          SUM(ar.prompt_tokens) as total_prompt_tokens,
+          SUM(ar.completion_tokens) as total_completion_tokens,
+          SUM(ar.cached_tokens) as total_cached_tokens
+        FROM api_requests ar
+        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        WHERE ar.created_at >= ? AND ar.created_at <= ?
+          AND ar.status = 'success'
+          AND (ar.virtual_key_id IS NULL OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)
+        GROUP BY ar.model`,
+        [startTime, endTime]
+      );
+
+      const modelUsage = rows as any[];
+      let totalCost = 0;
+      const modelCosts: any[] = [];
+
+      for (const usage of modelUsage) {
+        if (!usage.model) continue;
+
+        // 尝试解析模型成本
+        const costInfo = await costMappingService.resolveModelCost(usage.model);
+        
+        if (costInfo && costInfo.info) {
+          const info = costInfo.info;
+          let modelCost = 0;
+
+          // 计算输入成本
+          if (info.input_cost_per_token && usage.total_prompt_tokens) {
+            modelCost += Number(usage.total_prompt_tokens) * Number(info.input_cost_per_token);
+          }
+
+          // 计算输出成本
+          if (info.output_cost_per_token && usage.total_completion_tokens) {
+            modelCost += Number(usage.total_completion_tokens) * Number(info.output_cost_per_token);
+          }
+
+          // 缓存 tokens 通常成本更低（如果有专门的缓存成本）
+          // 这里假设缓存成本为输入成本的 10%
+          if (info.input_cost_per_token && usage.total_cached_tokens) {
+            modelCost += Number(usage.total_cached_tokens) * Number(info.input_cost_per_token) * 0.1;
+          }
+
+          totalCost += modelCost;
+          
+          if (modelCost > 0) {
+            modelCosts.push({
+              model: usage.model,
+              cost: modelCost,
+              promptTokens: Number(usage.total_prompt_tokens || 0),
+              completionTokens: Number(usage.total_completion_tokens || 0),
+              cachedTokens: Number(usage.total_cached_tokens || 0),
+            });
+          }
+        }
+      }
+
+      // 按成本排序
+      modelCosts.sort((a, b) => b.cost - a.cost);
+
+      return {
+        totalCost,
+        modelCosts: modelCosts.slice(0, 10), // 返回前 10 个最贵的模型
+      };
+    } finally {
+      conn.release();
+    }
+  }
+
   fastify.get('/stats', async (request) => {
     const { period = '24h' } = request.query as { period?: '24h' | '7d' | '30d' };
 
@@ -315,6 +393,14 @@ export async function configRoutes(fastify: FastifyInstance) {
     const modelStats = await apiRequestDb.getModelStats({ startTime, endTime: now });
     const circuitBreakerStats = circuitBreaker.getGlobalStats();
 
+    // 计算成本统计
+    let costStats = null;
+    try {
+      costStats = await calculateCostStats(startTime, now);
+    } catch (error: any) {
+      memoryLogger.warn(`计算成本统计失败: ${error.message}`, 'Config');
+    }
+
     return {
       period,
       stats: { ...stats, dbSize, dbUptime },
@@ -322,6 +408,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       expertRoutingStats,
       modelStats,
       circuitBreakerStats,
+      costStats,
     };
   });
 

@@ -18,6 +18,17 @@ export interface LogStats {
   };
 }
 
+export interface CostStats {
+  totalCost: number;
+  modelCosts: Array<{
+    model: string;
+    cost: number;
+    promptTokens: number;
+    completionTokens: number;
+    cachedTokens: number;
+  }>;
+}
+
 export interface ApiStats {
   totalRequests: number;
   successfulRequests: number;
@@ -102,6 +113,7 @@ export const configApi = {
       maxTriggeredProvider: string;
       maxTriggerCount: number;
     };
+    costStats: CostStats | null;
   }> {
     return request.get('/admin/config/stats', { params: { period } });
   },
