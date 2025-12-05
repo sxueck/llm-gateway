@@ -4,6 +4,7 @@ import { calculateTokensIfNeeded } from '../token-calculator.js';
 import { logApiRequestToDb } from '../../../services/api-request-logger.js';
 import { shouldLogRequestBody } from './shared.js';
 import { truncateRequestBody } from '../../../utils/request-logger.js';
+import { GeminiEmptyOutputError } from '../../../errors/gemini-empty-output-error.js';
 import type { ProtocolConfig } from '../../../services/protocol-adapter.js';
 import type { VirtualKey } from '../../../types/index.js';
 
@@ -19,6 +20,121 @@ const EXCLUDED_REQUEST_HEADERS = [
   'content-length',
   'transfer-encoding',
 ];
+
+const DEFAULT_GEMINI_EMPTY_RETRY_LIMIT = Math.max(
+  parseInt(process.env.GEMINI_STREAM_EMPTY_RETRY_LIMIT || '1', 10),
+  0
+);
+
+function getGeminiEmptyRetryLimit(protocolConfig: ProtocolConfig): number {
+  const configured = protocolConfig.modelAttributes?.gemini_empty_retry_limit;
+  if (typeof configured === 'number' && Number.isFinite(configured)) {
+    return Math.max(0, Math.floor(configured));
+  }
+  return DEFAULT_GEMINI_EMPTY_RETRY_LIMIT;
+}
+
+function hasTextInParts(parts: any[] | undefined | null): boolean {
+  if (!Array.isArray(parts)) return false;
+
+  // 只关心纯文本内容，忽略函数调用、代码执行等复杂结构
+  return parts.some((part) => {
+    if (!part || typeof part !== 'object') return false;
+    if (typeof part.text === 'string' && part.text.trim().length > 0) return true;
+    if (Array.isArray(part.parts) && hasTextInParts(part.parts)) return true;
+    return false;
+  });
+}
+
+function inspectGeminiContent(content: any): boolean {
+  if (!content) return false;
+
+  if (Array.isArray(content)) {
+    return content.some((item) => inspectGeminiContent(item));
+  }
+
+  if (typeof content.text === 'string' && content.text.trim().length > 0) {
+    return true;
+  }
+
+  if (hasTextInParts(content.parts)) {
+    return true;
+  }
+
+  if (Array.isArray(content.contents)) {
+    return content.contents.some((item: any) => inspectGeminiContent(item));
+  }
+
+  return false;
+}
+
+function hasGeminiAssistantContent(payload: any): boolean {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+
+  if (Array.isArray(payload.candidates)) {
+    for (const candidate of payload.candidates) {
+      if (inspectGeminiContent(candidate?.content)) {
+        return true;
+      }
+      if (Array.isArray(candidate?.contents) && candidate.contents.some((item: any) => inspectGeminiContent(item))) {
+        return true;
+      }
+    }
+  }
+
+  if (Array.isArray(payload.contents) && payload.contents.some((item: any) => inspectGeminiContent(item))) {
+    return true;
+  }
+
+  if (payload.delta && typeof payload.delta.text === 'string' && payload.delta.text.trim().length > 0) {
+    return true;
+  }
+
+  if (typeof payload.text === 'string' && payload.text.trim().length > 0) {
+    return true;
+  }
+
+  return false;
+}
+
+function isGeminiErrorPayload(payload: any): boolean {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+
+  // 只识别最明显的错误/拦截信号，避免过度推断
+  if (payload.error) return true;
+  if (payload.promptFeedback && payload.promptFeedback.blockReason) return true;
+
+  return false;
+}
+
+function extractSseDataPayload(eventChunk: string): string | null {
+  if (!eventChunk) return null;
+  const lines = eventChunk.split('\n');
+  const dataLines: string[] = [];
+
+  for (const rawLine of lines) {
+    if (!rawLine.startsWith('data:')) continue;
+    dataLines.push(rawLine.replace(/^data:\s?/, ''));
+  }
+
+  if (dataLines.length === 0) {
+    return null;
+  }
+
+  const payload = dataLines.join('\n').trim();
+  return payload.length > 0 ? payload : null;
+}
+
+interface GeminiStreamAttemptResult {
+  streamChunks: string[];
+  totalBytes: number;
+  hasAssistantContent: boolean;
+  bypassGuard: boolean;
+}
 
 /**
  * 构建上游请求头
@@ -239,148 +355,177 @@ export async function handleGeminiNativeStreamRequest(
 
   // 创建 AbortController 用于取消请求
   const abortController = new AbortController();
-  const upstreamTimeoutId = setTimeout(() => {
-    abortController.abort();
-    memoryLogger.warn('上游请求超时 (5分钟)', 'GeminiNative');
-  }, 5 * 60 * 1000);
+  let attemptTimeout: NodeJS.Timeout | null = null;
+  const clearAttemptTimeout = () => {
+    if (attemptTimeout) {
+      clearTimeout(attemptTimeout);
+      attemptTimeout = null;
+    }
+  };
 
   // 监听客户端断开连接
   reply.raw.on('close', () => {
     if (!reply.raw.writableEnded) {
       abortController.abort();
-      clearTimeout(upstreamTimeoutId);
+      clearAttemptTimeout();
       memoryLogger.info('客户端断开连接，取消 Gemini 上游请求', 'GeminiNative');
     }
   });
 
+  const totalAttempts = Math.max(1, getGeminiEmptyRetryLimit(protocolConfig) + 1);
+  const shouldLogBody = shouldLogRequestBody(virtualKey);
+  let finalStreamChunks: string[] = [];
+  let totalBytes = 0;
+  let headersSent = false;
+  let success = false;
+  let lastEmptyError: GeminiEmptyOutputError | null = null;
+
   try {
-    const upstreamResponse = await fetch(url.toString(), {
-      method,
-      headers: upstreamHeaders,
-      body: requestBody,
-      signal: abortController.signal,
-    });
+    for (let attempt = 1; attempt <= totalAttempts; attempt++) {
+      if (abortController.signal.aborted) {
+        break;
+      }
 
-    clearTimeout(upstreamTimeoutId);
+      clearAttemptTimeout();
+      attemptTimeout = setTimeout(() => {
+        if (!abortController.signal.aborted) {
+          abortController.abort();
+          memoryLogger.warn('上游请求超时 (5分钟)', 'GeminiNative');
+        }
+      }, 5 * 60 * 1000);
 
-    // 如果上游非 2xx 响应
-    if (upstreamResponse.status < 200 || upstreamResponse.status >= 300) {
-      const errorText = await upstreamResponse.text();
-      memoryLogger.error(
-        `Gemini 上游返回错误: ${upstreamResponse.status} | ${errorText.substring(0, 200)}`,
-        'GeminiNative'
+      const upstreamResponse = await fetch(url.toString(), {
+        method,
+        headers: upstreamHeaders,
+        body: requestBody,
+        signal: abortController.signal,
+      });
+
+      clearAttemptTimeout();
+
+      if (upstreamResponse.status < 200 || upstreamResponse.status >= 300) {
+        const errorText = await upstreamResponse.text();
+        memoryLogger.error(
+          `Gemini 上游返回错误: ${upstreamResponse.status} | ${errorText.substring(0, 200)}`,
+          'GeminiNative'
+        );
+
+        let errorResponse;
+        try {
+          errorResponse = JSON.parse(errorText);
+        } catch {
+          errorResponse = { error: errorText };
+        }
+
+        const duration = Date.now() - startTime;
+        const truncatedRequest = shouldLogBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
+
+        await logApiRequestToDb({
+          virtualKey,
+          providerId,
+          model: (request.body as any)?.model || 'unknown',
+          tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+          status: 'error',
+          responseTime: duration,
+          errorMessage: `HTTP ${upstreamResponse.status}: ${errorText.substring(0, 500)}`,
+          truncatedRequest,
+          cacheHit: 0,
+        });
+
+        if (!headersSent) {
+          reply.raw.writeHead(upstreamResponse.status, { 'Content-Type': 'application/json' });
+          reply.raw.write(JSON.stringify({
+            error: {
+              message: errorResponse.error?.message || errorResponse.error || errorResponse.message || 'Upstream error',
+              type: 'upstream_error',
+              param: null,
+              code: `gemini_${upstreamResponse.status}`
+            }
+          }));
+          reply.raw.end();
+        } else if (!reply.raw.writableEnded) {
+          const payload = {
+            error: {
+              message: errorResponse.error?.message || errorResponse.error || errorResponse.message || 'Upstream error',
+              type: 'upstream_error',
+              param: null,
+              code: `gemini_${upstreamResponse.status}`
+            }
+          };
+          reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+          reply.raw.end();
+        }
+        return;
+      }
+
+      const contentType = upstreamResponse.headers.get('content-type') || '';
+      if (!contentType.includes('text/event-stream') && !contentType.includes('application/x-ndjson')) {
+        const text = await upstreamResponse.text();
+        const duration = Date.now() - startTime;
+        const truncatedRequest = shouldLogBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
+
+        await logApiRequestToDb({
+          virtualKey,
+          providerId,
+          model: (request.body as any)?.model || 'unknown',
+          tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+          status: 'success',
+          responseTime: duration,
+          truncatedRequest,
+          cacheHit: 0,
+        });
+
+        reply.raw.writeHead(200, { 'Content-Type': contentType || 'application/json' });
+        reply.raw.write(text);
+        reply.raw.end();
+        return;
+      }
+
+      if (!headersSent) {
+        reply.raw.writeHead(upstreamResponse.status, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'Transfer-Encoding': 'chunked',
+          'X-Accel-Buffering': 'no',
+        });
+        headersSent = true;
+      }
+
+      const attemptResult = await streamGeminiAttempt(
+        upstreamResponse,
+        reply,
+        abortController.signal
       );
 
-      let errorResponse;
-      try {
-        errorResponse = JSON.parse(errorText);
-      } catch {
-        errorResponse = { error: errorText };
+      if (!attemptResult.hasAssistantContent && !attemptResult.bypassGuard) {
+        lastEmptyError = new GeminiEmptyOutputError(
+          'Gemini native stream completed without assistant output',
+          { attempt, totalAttempts }
+        );
+        memoryLogger.warn(
+          `Gemini 原生流式无实际输出，准备重试 | attempt ${attempt}/${totalAttempts}`,
+          'GeminiNative'
+        );
+        continue;
       }
 
-      const duration = Date.now() - startTime;
-      const shouldLogBody = shouldLogRequestBody(virtualKey);
-      const truncatedRequest = shouldLogBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
-
-      await logApiRequestToDb({
-        virtualKey,
-        providerId,
-        model: (request.body as any)?.model || 'unknown',
-        tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-        status: 'error',
-        responseTime: duration,
-        errorMessage: `HTTP ${upstreamResponse.status}: ${errorText.substring(0, 500)}`,
-        truncatedRequest,
-        cacheHit: 0,
-      });
-
-      // 返回错误响应
-      reply.raw.writeHead(upstreamResponse.status, { 'Content-Type': 'application/json' });
-      reply.raw.write(JSON.stringify({
-        error: {
-          message: errorResponse.error?.message || errorResponse.error || errorResponse.message || 'Upstream error',
-          type: 'upstream_error',
-          param: null,
-          code: `gemini_${upstreamResponse.status}`
-        }
-      }));
-      reply.raw.end();
-      return;
+      totalBytes = attemptResult.totalBytes;
+      finalStreamChunks = attemptResult.streamChunks;
+      success = true;
+      break;
     }
 
-    // 检查 Content-Type，如果不是 SSE 则直接返回
-    const contentType = upstreamResponse.headers.get('content-type') || '';
-    if (!contentType.includes('text/event-stream') && !contentType.includes('application/x-ndjson')) {
-      const text = await upstreamResponse.text();
-      const duration = Date.now() - startTime;
-      const shouldLogBody = shouldLogRequestBody(virtualKey);
-      const truncatedRequest = shouldLogBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
-
-      await logApiRequestToDb({
-        virtualKey,
-        providerId,
-        model: (request.body as any)?.model || 'unknown',
-        tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-        status: 'success',
-        responseTime: duration,
-        truncatedRequest,
-        cacheHit: 0,
-      });
-
-      reply.raw.writeHead(200, { 'Content-Type': contentType || 'application/json' });
-      reply.raw.write(text);
-      reply.raw.end();
-      return;
-    }
-
-    // 设置 SSE 响应头
-    reply.raw.writeHead(upstreamResponse.status, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-      'Connection': 'keep-alive',
-      'Transfer-Encoding': 'chunked',
-      'X-Accel-Buffering': 'no',
-    });
-
-    // 流式透传
-    const reader = upstreamResponse.body?.getReader();
-    if (!reader) {
-      throw new Error('无法读取上游响应流');
-    }
-
-    const decoder = new TextDecoder();
-    const streamChunks: string[] = [];
-    let totalBytes = 0;
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-
-        if (done) {
-          break;
-        }
-
-        if (reply.raw.destroyed || reply.raw.writableEnded) {
-          reader.cancel();
-          break;
-        }
-
-        const chunk = decoder.decode(value, { stream: true });
-        streamChunks.push(chunk);
-        totalBytes += value.length;
-
-        // 写入下游，处理背压
-        if (!reply.raw.write(chunk)) {
-          await new Promise<void>((resolve) => {
-            reply.raw.once('drain', resolve);
-          });
-        }
+    if (!success) {
+      if (!reply.raw.destroyed && !reply.raw.writableEnded) {
+        reply.raw.end();
       }
-    } finally {
-      reader.releaseLock();
+      throw lastEmptyError || new GeminiEmptyOutputError(
+        'Gemini native stream ended without assistant output',
+        { totalAttempts }
+      );
     }
 
-    // 结束响应
     if (!reply.raw.destroyed && !reply.raw.writableEnded) {
       reply.raw.end();
     }
@@ -388,14 +533,13 @@ export async function handleGeminiNativeStreamRequest(
     const duration = Date.now() - startTime;
 
     memoryLogger.info(
-      `Gemini 原生流式透传完成: ${duration}ms | bytes: ${totalBytes} | chunks: ${streamChunks.length}`,
+      `Gemini 原生流式透传完成: ${duration}ms | bytes: ${totalBytes} | chunks: ${finalStreamChunks.length}`,
       'GeminiNative'
     );
 
-    // 从 SSE chunks 中提取 usage 信息
     let tokenCount: any = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-    for (let i = streamChunks.length - 1; i >= 0; i--) {
-      const lines = streamChunks[i].split('\n');
+    for (let i = finalStreamChunks.length - 1; i >= 0; i--) {
+      const lines = finalStreamChunks[i].split('\n');
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           const jsonStr = line.substring(6).trim();
@@ -419,8 +563,6 @@ export async function handleGeminiNativeStreamRequest(
       if (tokenCount.totalTokens > 0) break;
     }
 
-    // 记录日志
-    const shouldLogBody = shouldLogRequestBody(virtualKey);
     const truncatedRequest = shouldLogBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
 
     await logApiRequestToDb({
@@ -435,7 +577,7 @@ export async function handleGeminiNativeStreamRequest(
     });
 
   } catch (error: any) {
-    clearTimeout(upstreamTimeoutId);
+    clearAttemptTimeout();
     const duration = Date.now() - startTime;
 
     if (error.name === 'AbortError' || abortController.signal.aborted) {
@@ -448,7 +590,6 @@ export async function handleGeminiNativeStreamRequest(
       'GeminiNative'
     );
 
-    const shouldLogBody = shouldLogRequestBody(virtualKey);
     const truncatedRequest = shouldLogBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
 
     await logApiRequestToDb({
@@ -477,4 +618,135 @@ export async function handleGeminiNativeStreamRequest(
       reply.raw.end();
     }
   }
+}
+
+async function streamGeminiAttempt(
+  upstreamResponse: Response,
+  reply: FastifyReply,
+  abortSignal: AbortSignal
+): Promise<GeminiStreamAttemptResult> {
+  const reader = upstreamResponse.body?.getReader();
+  if (!reader) {
+    throw new Error('无法读取上游响应流');
+  }
+
+  const decoder = new TextDecoder();
+  const streamChunks: string[] = [];
+  const pendingChunks: string[] = [];
+  let buffering = true;
+  let hasAssistantContent = false;
+  let bypassGuard = false;
+  let parserBuffer = '';
+  let totalBytes = 0;
+
+  const writeDirect = async (chunk: string) => {
+    if (reply.raw.destroyed || reply.raw.writableEnded) {
+      return;
+    }
+    if (!reply.raw.write(chunk)) {
+      await new Promise<void>((resolve) => {
+        reply.raw.once('drain', resolve);
+      });
+    }
+  };
+
+  const flushPendingChunks = async () => {
+    if (!buffering) return;
+    buffering = false;
+    while (pendingChunks.length > 0) {
+      const pending = pendingChunks.shift();
+      if (pending) {
+        await writeDirect(pending);
+      }
+    }
+  };
+
+  const enqueueChunk = async (chunk: string) => {
+    streamChunks.push(chunk);
+    if (buffering) {
+      pendingChunks.push(chunk);
+    } else {
+      await writeDirect(chunk);
+    }
+  };
+
+  const processEvent = async (rawEvent: string) => {
+    const payload = extractSseDataPayload(rawEvent);
+    if (!payload || payload.length === 0) {
+      return;
+    }
+    if (payload === '[DONE]') {
+      if (hasAssistantContent || bypassGuard) {
+        await flushPendingChunks();
+      }
+      return;
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(payload);
+    } catch {
+      return;
+    }
+
+    if (!hasAssistantContent && hasGeminiAssistantContent(parsed)) {
+      hasAssistantContent = true;
+      await flushPendingChunks();
+    }
+
+    if (!bypassGuard && isGeminiErrorPayload(parsed)) {
+      bypassGuard = true;
+      await flushPendingChunks();
+    }
+  };
+
+  try {
+    while (true) {
+      if (abortSignal.aborted) {
+        reader.cancel();
+        break;
+      }
+
+      const { done, value } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      if (!value) {
+        continue;
+      }
+
+      if (reply.raw.destroyed || reply.raw.writableEnded) {
+        reader.cancel();
+        break;
+      }
+
+      totalBytes += value.length;
+      const chunk = decoder.decode(value, { stream: true });
+      await enqueueChunk(chunk);
+
+      parserBuffer += chunk.replace(/\r\n/g, '\n');
+      let boundaryIndex = parserBuffer.indexOf('\n\n');
+      while (boundaryIndex !== -1) {
+        const eventChunk = parserBuffer.slice(0, boundaryIndex);
+        parserBuffer = parserBuffer.slice(boundaryIndex + 2);
+        await processEvent(eventChunk);
+        boundaryIndex = parserBuffer.indexOf('\n\n');
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (parserBuffer.trim().length > 0) {
+    await processEvent(parserBuffer);
+  }
+
+  return {
+    streamChunks,
+    totalBytes,
+    hasAssistantContent,
+    bypassGuard,
+  };
 }

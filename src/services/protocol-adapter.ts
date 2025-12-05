@@ -5,7 +5,17 @@ import { Agent as HttpsAgent } from 'node:https';
 import { memoryLogger } from './logger.js';
 import { extractReasoningFromChoice } from '../utils/request-logger.js';
 import { normalizeUsageCounts } from '../utils/usage-normalizer.js';
+import { createInitialAggregate, processResponsesEvent, type ResponsesAggregate } from '../utils/responses-parser.js';
+import { EmptyOutputError } from '../errors/empty-output-error.js';
+import { StreamRetryManager, StreamBuffer, getRetryLimit, type StreamProcessor } from '../utils/stream-retry-manager.js';
 import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-client.js';
+import { ResponsesEmptyOutputError } from '../errors/responses-empty-output-error.js';
+
+// Responses API 空输出重试默认次数（可通过环境变量或模型属性配置）
+const DEFAULT_RESPONSES_EMPTY_OUTPUT_MAX_RETRIES = Math.max(
+  parseInt(process.env.RESPONSES_STREAM_EMPTY_RETRY_LIMIT || '1', 10),
+  0
+);
 
 export interface ProtocolConfig {
   provider: string;
@@ -38,6 +48,7 @@ export interface ProtocolResponse {
     total_tokens: number;
   };
 }
+
 
 export class ProtocolAdapter {
   private openaiClients: Map<string, OpenAI> = new Map();
@@ -584,11 +595,6 @@ export class ProtocolAdapter {
       };
     }
 
-    const stream = await client.responses.create(
-      requestParams,
-      Object.keys(requestOptions).length > 0 ? requestOptions : undefined
-    ) as unknown as AsyncIterable<any>;
-
     const responseHeaders: Record<string, string> = {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
@@ -605,62 +611,168 @@ export class ProtocolAdapter {
 
     reply.raw.writeHead(200, responseHeaders);
 
-    let promptTokens = 0;
-    let completionTokens = 0;
-    let totalTokens = 0;
-    let cachedTokens = 0;
-    const streamChunks: string[] = [];
+    const modelRetryLimit = typeof config.modelAttributes?.responses_empty_retry_limit === 'number'
+      ? Math.max(0, Math.floor(config.modelAttributes.responses_empty_retry_limit))
+      : DEFAULT_RESPONSES_EMPTY_OUTPUT_MAX_RETRIES;
+    const totalAttempts = Math.max(1, modelRetryLimit + 1);
+    const upstreamRequestOptions = Object.keys(requestOptions).length > 0 ? requestOptions : undefined;
 
-    try {
-      for await (const chunk of stream) {
-        // 检查客户端是否断开连接
-        if (reply.raw.destroyed || reply.raw.writableEnded) {
-          memoryLogger.info('客户端已断开连接，停止流式传输', 'Protocol');
-          break;
-        }
+    let finalPromptTokens = 0;
+    let finalCompletionTokens = 0;
+    let finalTotalTokens = 0;
+    let finalCachedTokens = 0;
+    let finalStreamChunks: string[] = [];
+    let success = false;
+    let lastEmptyError: ResponsesEmptyOutputError | null = null;
 
-        // 移除 instructions 字段避免泄露
-        if (chunk && typeof chunk === 'object' && 'instructions' in chunk) {
-          delete (chunk as any).instructions;
-        }
+    attemptLoop: for (let attempt = 1; attempt <= totalAttempts; attempt++) {
+      if (abortSignal?.aborted) {
+        const abortError = new Error('Request aborted');
+        (abortError as any).name = 'AbortError';
+        throw abortError;
+      }
 
-        const chunkData = JSON.stringify(chunk);
-        const sseData = `data: ${chunkData}\n\n`;
+      const attemptStreamChunks: string[] = [];
+      const pendingChunks: string[] = [];
+      let buffering = true;
+      let hasAssistantText = false;
+      let bypassEmptyGuard = false;
+      let responsesAggregate = createInitialAggregate();
 
-        streamChunks.push(sseData);
+      let promptTokens = 0;
+      let completionTokens = 0;
+      let totalTokens = 0;
+      let cachedTokens = 0;
 
-        // 使用背压控制优化内存
-        if (!reply.raw.write(sseData)) {
+      const writeChunk = async (data: string) => {
+        attemptStreamChunks.push(data);
+        if (!reply.raw.write(data)) {
           await new Promise<void>((resolve) => {
             reply.raw.once('drain', resolve);
           });
         }
+      };
 
-        // 从 Responses API 流中提取 usage 信息（支持根级与 response.usage），统一归一化
-        const usageInChunk: any = (chunk?.usage ?? (chunk?.response && (chunk.response as any).usage) ?? null);
-        if (usageInChunk) {
-          const norm = normalizeUsageCounts(usageInChunk);
-          if (typeof norm.promptTokens === 'number' && norm.promptTokens > 0) {
-            promptTokens = norm.promptTokens;
+      const flushPendingChunks = async () => {
+        if (!buffering) return;
+        buffering = false;
+        while (pendingChunks.length > 0) {
+          const buffered = pendingChunks.shift()!;
+          await writeChunk(buffered);
+        }
+      };
+
+      const enqueueChunk = async (data: string) => {
+        if (buffering) {
+          pendingChunks.push(data);
+        } else {
+          await writeChunk(data);
+        }
+      };
+
+      try {
+        const stream = await client.responses.create(
+          requestParams,
+          upstreamRequestOptions
+        ) as unknown as AsyncIterable<any>;
+
+        for await (const chunk of stream) {
+          if (reply.raw.destroyed || reply.raw.writableEnded) {
+            memoryLogger.info('客户端已断开连接，停止流式传输', 'Protocol');
+            break;
           }
-          if (typeof norm.completionTokens === 'number' && norm.completionTokens > 0) {
-            completionTokens = norm.completionTokens;
+
+          if (chunk && typeof chunk === 'object' && 'instructions' in chunk) {
+            delete (chunk as any).instructions;
           }
-          if (typeof norm.totalTokens === 'number' && norm.totalTokens > 0) {
-            totalTokens = norm.totalTokens;
-          } else if (promptTokens > 0 || completionTokens > 0) {
-            totalTokens = promptTokens + completionTokens;
+
+          const chunkData = JSON.stringify(chunk);
+          const sseData = `data: ${chunkData}\n\n`;
+
+          await enqueueChunk(sseData);
+
+          const previousLength = responsesAggregate.outputText.length;
+          const updatedAggregate = processResponsesEvent(responsesAggregate, chunk as any);
+          const producedText = updatedAggregate.outputText.length > previousLength;
+          responsesAggregate = updatedAggregate;
+
+          if (producedText && !hasAssistantText) {
+            hasAssistantText = true;
+            await flushPendingChunks();
           }
-          if (typeof norm.cachedTokens === 'number' && norm.cachedTokens > 0) {
-            cachedTokens = norm.cachedTokens;
+
+          if ((chunk as any)?.type === 'response.error' || (chunk as any)?.error) {
+            bypassEmptyGuard = true;
+            await flushPendingChunks();
+          }
+
+          const usageInChunk: any = (chunk?.usage ?? (chunk?.response && (chunk.response as any).usage) ?? null);
+          if (usageInChunk) {
+            const norm = normalizeUsageCounts(usageInChunk);
+            if (typeof norm.promptTokens === 'number' && norm.promptTokens > 0) {
+              promptTokens = norm.promptTokens;
+            }
+            if (typeof norm.completionTokens === 'number' && norm.completionTokens > 0) {
+              completionTokens = norm.completionTokens;
+            }
+            if (typeof norm.totalTokens === 'number' && norm.totalTokens > 0) {
+              totalTokens = norm.totalTokens;
+            } else if (promptTokens > 0 || completionTokens > 0) {
+              totalTokens = promptTokens + completionTokens;
+            }
+            if (typeof norm.cachedTokens === 'number' && norm.cachedTokens > 0) {
+              cachedTokens = norm.cachedTokens;
+            }
           }
         }
+
+        if (!hasAssistantText && !bypassEmptyGuard) {
+          lastEmptyError = new ResponsesEmptyOutputError(
+            'Responses API stream completed without assistant output',
+            {
+              attempt,
+              totalAttempts,
+              status: responsesAggregate.status,
+              lastEventType: responsesAggregate.lastEventType,
+              responseId: responsesAggregate.id,
+            }
+          );
+
+          memoryLogger.warn(
+            `[Responses API] 未检测到 assistant 输出，准备重试 | attempt ${attempt}/${totalAttempts} | ` +
+            `status=${responsesAggregate.status} | last_event=${responsesAggregate.lastEventType || 'unknown'}`,
+            'Protocol'
+          );
+
+          continue attemptLoop;
+        }
+
+        finalPromptTokens = promptTokens;
+        finalCompletionTokens = completionTokens;
+        finalTotalTokens = totalTokens;
+        finalCachedTokens = cachedTokens;
+        finalStreamChunks = attemptStreamChunks;
+        success = true;
+        break;
+      } catch (error: any) {
+        if (error.name === 'AbortError' || abortSignal?.aborted) {
+          memoryLogger.info('流式请求被用户取消', 'Protocol');
+        }
+        throw error;
       }
-    } catch (error: any) {
-      if (error.name === 'AbortError' || abortSignal?.aborted) {
-        memoryLogger.info('流式请求被用户取消', 'Protocol');
-      }
-      throw error;
+    }
+
+    if (!success) {
+      const errorToThrow =
+        lastEmptyError ||
+        new ResponsesEmptyOutputError('Responses API stream ended without assistant output', {
+          totalAttempts,
+        });
+      memoryLogger.error(
+        `[Responses API] 多次尝试仍为空返回，终止请求 | attempts=${totalAttempts}`,
+        'Protocol'
+      );
+      throw errorToThrow;
     }
 
     if (!reply.raw.destroyed && !reply.raw.writableEnded) {
@@ -669,11 +781,11 @@ export class ProtocolAdapter {
     }
 
     return {
-      promptTokens,
-      completionTokens,
-      totalTokens,
-      cachedTokens,
-      streamChunks,
+      promptTokens: finalPromptTokens,
+      completionTokens: finalCompletionTokens,
+      totalTokens: finalTotalTokens,
+      cachedTokens: finalCachedTokens,
+      streamChunks: finalStreamChunks,
     };
   }
 }
