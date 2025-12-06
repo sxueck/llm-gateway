@@ -28,7 +28,7 @@ export const providerApi = {
     return request.delete(`/admin/providers/${id}`);
   },
 
-  test(id: string): Promise<{ success: boolean; status?: number; message: string }> {
+  test(id: string): Promise<{ success: boolean; status?: number; message: string; latencyMs?: number }> {
     return request.post(`/admin/providers/${id}/test`);
   },
 
@@ -49,4 +49,3 @@ export const providerApi = {
     return request.post('/admin/providers/batch-import', { providers, skipExisting });
   },
 };
-

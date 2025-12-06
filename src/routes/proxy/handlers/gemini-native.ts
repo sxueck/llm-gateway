@@ -667,6 +667,8 @@ async function streamGeminiAttempt(
   let bypassGuard = false;
   let parserBuffer = '';
   let totalBytes = 0;
+  let earlyEmptyDetectionTimeout: NodeJS.Timeout | null = null;
+  const EARLY_EMPTY_DETECTION_TIMEOUT_MS = parseInt(process.env.GEMINI_EARLY_EMPTY_DETECTION_TIMEOUT_MS || '10000', 10);
 
   const writeDirect = async (chunk: string) => {
     if (reply.raw.destroyed || reply.raw.writableEnded) {
@@ -727,6 +729,22 @@ async function streamGeminiAttempt(
       bypassGuard = true;
       await flushPendingChunks();
     }
+
+    // 检查是否需要提前终止空返回
+    if (!hasAssistantContent && !bypassGuard && !earlyEmptyDetectionTimeout) {
+      earlyEmptyDetectionTimeout = setTimeout(() => {
+        if (!hasAssistantContent && !bypassGuard) {
+          memoryLogger.warn('Gemini 流式响应在早期检测超时时间内未返回内容，提前终止并重试', 'GeminiNative');
+          // 清除定时器
+          if (earlyEmptyDetectionTimeout) {
+            clearTimeout(earlyEmptyDetectionTimeout);
+            earlyEmptyDetectionTimeout = null;
+          }
+          // 主动终止流
+          reader.cancel();
+        }
+      }, EARLY_EMPTY_DETECTION_TIMEOUT_MS);
+    }
   };
 
   try {
@@ -766,6 +784,12 @@ async function streamGeminiAttempt(
     }
   } finally {
     reader.releaseLock();
+  }
+
+  // 清理早期检测定时器
+  if (earlyEmptyDetectionTimeout) {
+    clearTimeout(earlyEmptyDetectionTimeout);
+    earlyEmptyDetectionTimeout = null;
   }
 
   if (parserBuffer.trim().length > 0) {

@@ -223,6 +223,7 @@
   margin: 0;
   font-size: 20px;
   font-weight: 600;
+  color: #1e3932;
 }
 
 .page-subtitle {

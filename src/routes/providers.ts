@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { createConnection } from 'node:net';
 import { z } from 'zod';
 import { providerDb } from '../db/index.js';
 import { encryptApiKey, decryptApiKey } from '../utils/crypto.js';
@@ -198,22 +199,36 @@ export async function providerRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: '提供商不存在' });
     }
 
+    // 使用域名级别的 TCP Ping 测试连通性，避免 TLS 握手和上层协议开销
     try {
-      const apiKey = decryptApiKey(provider.api_key);
-      const endpoint = buildModelsEndpoint(provider.base_url);
+      const url = new URL(provider.base_url);
+      const host = url.hostname;
+      const port = url.port ? Number(url.port) : (url.protocol === 'https:' ? 443 : 80);
 
-      const response = await fetch(endpoint, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        signal: AbortSignal.timeout(10000),
+      const timeoutMs = 5000;
+      const latency = await new Promise<{ success: boolean; latencyMs: number; error?: string }>((resolve) => {
+        const started = Date.now();
+        const socket = createConnection({ host, port });
+        let settled = false;
+
+        const finish = (success: boolean, error?: Error) => {
+          if (settled) return;
+          settled = true;
+          const latencyMs = Date.now() - started;
+          socket.destroy();
+          resolve({ success, latencyMs, error: error?.message });
+        };
+
+        socket.once('connect', () => finish(true));
+        socket.once('error', (err) => finish(false, err));
+        socket.setTimeout(timeoutMs, () => finish(false, new Error(`连接超时 (${timeoutMs}ms)`)));
       });
 
       return {
-        success: response.ok,
-        status: response.status,
-        message: response.ok ? '连接成功' : '连接失败',
+        success: latency.success,
+        status: latency.success ? 200 : undefined,
+        message: latency.success ? '网络连通' : (latency.error || '连接失败'),
+        latencyMs: latency.latencyMs,
       };
     } catch (error: any) {
       return {

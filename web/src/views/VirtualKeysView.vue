@@ -429,7 +429,7 @@ watch(showModal, async (val) => {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: #1e3932;
   margin: 0;
   letter-spacing: -0.02em;
 }

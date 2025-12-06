@@ -187,5 +187,9 @@ onUnmounted(() => {
 .terminal-output::selection {
   background-color: #b3d4fc;
 }
+
+:deep(.n-card-header__main) {
+  color: #1e3932;
+}
 </style>
 

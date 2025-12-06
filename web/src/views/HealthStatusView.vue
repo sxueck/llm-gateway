@@ -447,6 +447,10 @@ onUnmounted(() => {
   margin-bottom: 12px;
 }
 
+:deep(.n-card-header__main) {
+  color: #1e3932;
+}
+
 .target-title-row {
   display: flex;
   align-items: center;

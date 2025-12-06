@@ -7,6 +7,12 @@
           <p class="page-subtitle">配置和管理 AI 模型提供商,包括 API 密钥、Base URL 等信息。支持导入导出配置</p>
         </div>
         <n-space :size="8">
+          <n-button size="small" @click="testAllProviders" :loading="isTestingAll">
+            <template #icon>
+              <n-icon><SpeedTestIcon /></n-icon>
+            </template>
+            测速
+          </n-button>
           <n-dropdown :options="exportOptions" @select="handleExportSelect">
             <n-button size="small">
               <template #icon>
@@ -107,7 +113,7 @@
 <script setup lang="ts">
 import { ref, h, onMounted } from 'vue';
 import { useMessage, useDialog, NSpace, NButton, NDataTable, NCard, NModal, NTag, NPopconfirm, NTabs, NTabPane, NDropdown, NUpload, NIcon, type UploadFileInfo } from 'naive-ui';
-import { Download as DownloadIcon, CloudUpload as UploadIcon } from '@vicons/ionicons5';
+import { Download as DownloadIcon, CloudUpload as UploadIcon, FlashOutline as SpeedTestIcon } from '@vicons/ionicons5';
 import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined } from '@vicons/material';
 import { useProviderStore } from '@/stores/provider';
 import { useModelStore } from '@/stores/model';
@@ -150,13 +156,64 @@ const formValue = ref<ProviderFormValue>(createDefaultProviderForm());
 const originalApiKey = ref('');
 const apiKeyChanged = ref(false);
 
-
+const latencies = ref<Record<string, number | null>>({});
+const testingStates = ref<Record<string, boolean>>({});
+const isTestingAll = ref(false);
 
 const columns = [
   { title: 'ID', key: 'id' },
   { title: '名称', key: 'name' },
   { title: '描述', key: 'description', ellipsis: { tooltip: true } },
   { title: 'Base URL', key: 'baseUrl' },
+  {
+    title: '延迟',
+    key: 'latency',
+    width: 120,
+    render: (row: Provider) => {
+      const isTesting = testingStates.value[row.id];
+      const latency = latencies.value[row.id];
+
+      if (isTesting) {
+        return h('span', { style: 'color: #999; font-size: 12px' }, '测速中...');
+      }
+
+      if (latency === undefined || latency === null) {
+        return h('span', { style: 'color: #ccc' }, '-');
+      }
+
+      // Starbucks Green for good
+      let color = '#00704A';
+      let bgColor = 'rgba(0, 112, 74, 0.08)';
+      
+      // Warm Gold/Bronze for warning
+      if (latency > 500) {
+        color = '#B89D6A';
+        bgColor = 'rgba(184, 157, 106, 0.12)';
+      }
+      
+      // Muted Red for error/slow
+      if (latency > 1500) {
+        color = '#D62F2F';
+        bgColor = 'rgba(214, 47, 47, 0.08)';
+      }
+
+      return h('span', {
+        style: {
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minWidth: '64px',
+          padding: '2px 8px',
+          borderRadius: '999px',
+          backgroundColor: bgColor,
+          color,
+          fontFamily: 'MiSans, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          fontSize: '12px',
+          fontWeight: 500,
+        },
+      }, `${latency}ms`);
+    }
+  },
   {
     title: '状态',
     key: 'enabled',
@@ -226,16 +283,50 @@ async function handleEdit(provider: Provider) {
   showModal.value = true;
 }
 
-async function handleTest(id: string) {
+async function handleTest(id: string, showToast = true) {
+  testingStates.value[id] = true;
+  const start = performance.now();
   try {
     const result = await providerApi.test(id);
+    const end = performance.now();
+    const latency = Math.round(end - start);
+    
     if (result.success) {
-      message.success(result.message);
+      latencies.value[id] = latency;
+      if (showToast) {
+        message.success(`${result.message} (延迟: ${latency}ms)`);
+      }
     } else {
-      message.error(result.message);
+      latencies.value[id] = null;
+      if (showToast) {
+        message.error(result.message);
+      }
     }
   } catch (error: any) {
-    message.error(error.message);
+    latencies.value[id] = null;
+    if (showToast) {
+      message.error(error.message);
+    }
+  } finally {
+    testingStates.value[id] = false;
+  }
+}
+
+async function testAllProviders() {
+  const providers = providerStore.providers.filter(p => p.enabled);
+  if (providers.length === 0) {
+    message.warning('没有已启用的提供商');
+    return;
+  }
+  
+  isTestingAll.value = true;
+  message.loading('正在测试所有提供商连接...', { duration: 2000 });
+  
+  try {
+    await Promise.all(providers.map(p => handleTest(p.id, false)));
+    message.success('测试完成');
+  } finally {
+    isTestingAll.value = false;
   }
 }
 
@@ -494,25 +585,26 @@ onMounted(() => {
 
 .page-title {
   font-size: 24px;
-  font-weight: 600;
-  color: #1a1a1a;
+  font-weight: 700;
+  color: #1e3932; /* Starbucks House Green */
   margin: 0;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
+  font-family: 'SoDo Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
 .page-subtitle {
   font-size: 14px;
-  color: #8c8c8c;
-  margin: 4px 0 0 0;
+  color: #555;
+  margin: 6px 0 0 0;
   font-weight: 400;
 }
 
 .table-card {
   background: #ffffff;
-  border-radius: 16px;
-  border: none;
+  border-radius: 12px;
+  border: 1px solid #e6e6e6;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
 }
 
 .table-card :deep(.n-data-table) {
@@ -521,18 +613,45 @@ onMounted(() => {
 
 .table-card :deep(.n-data-table-th) {
   background: #fafafa;
-  font-weight: 600;
-  font-size: 12px;
-  color: #666;
+  font-weight: 700;
+  font-size: 11px;
+  color: #1e3932; /* House Green */
   text-transform: uppercase;
-  letter-spacing: 0.02em;
-  border-bottom: 1px solid #e8e8e8;
-  padding: 10px 12px;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid #d4d4d4;
+  padding: 12px 14px;
 }
 
 
 .table-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
   border-bottom: none;
+}
+
+.table-card :deep(.n-data-table-tr:hover .n-data-table-td) {
+  background-color: #f7fbf9 !important;
+}
+
+.providers-view :deep(.n-button--primary-type) {
+  background-color: #00704A;
+  border-color: #00704A;
+}
+
+.providers-view :deep(.n-button--primary-type:hover),
+.providers-view :deep(.n-button--primary-type:focus) {
+  background-color: #005c3d;
+  border-color: #005c3d;
+}
+
+.providers-view :deep(.n-button--primary-type:pressed) {
+  background-color: #00442e;
+  border-color: #00442e;
+}
+
+.providers-view :deep(.n-button:not(.n-button--primary-type):not(.n-button--quaternary-type):hover),
+.providers-view :deep(.n-button:not(.n-button--primary-type):not(.n-button--quaternary-type):focus) {
+  color: #00704A;
+  border-color: #00704A;
+  background-color: #f7fbf9;
 }
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape) {
@@ -542,17 +661,18 @@ onMounted(() => {
 }
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:hover) {
-  background: rgba(15, 107, 74, 0.08);
-  color: #0f6b4a;
+  background: #d4e9e2; /* Starbucks Light Green */
+  color: #00704A; /* Starbucks Green */
 }
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:hover .n-icon) {
-  color: #0f6b4a;
+  color: #00704A;
 }
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape .n-icon) {
-  color: #666;
+  color: #555;
   font-size: 16px;
+  transition: color 0.2s;
 }
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:disabled) {
@@ -620,4 +740,3 @@ onMounted(() => {
   font-size: 13px;
 }
 </style>
-

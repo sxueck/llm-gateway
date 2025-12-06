@@ -723,12 +723,12 @@ export class ProtocolAdapter {
 
           if (!hasAssistantOutput && (producedText || responsesEventHasAssistantContent(chunk))) {
             hasAssistantOutput = true;
-            await flushPendingChunks();
+             await flushPendingChunks();
           }
 
           if ((chunk as any)?.type === 'response.error' || (chunk as any)?.error) {
-            bypassEmptyGuard = true;
-            await flushPendingChunks();
+             bypassEmptyGuard = true;
+             await flushPendingChunks();
           }
 
           const usageInChunk: any = (chunk?.usage ?? (chunk?.response && (chunk.response as any).usage) ?? null);

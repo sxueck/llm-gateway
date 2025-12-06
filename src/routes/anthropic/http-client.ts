@@ -242,7 +242,7 @@ export async function makeAnthropicStreamRequest(
         }
       } catch {}
 
-      if (!hasAssistantContent) {
+       if (!hasAssistantContent) {
         if (attempt < totalAttempts) {
            memoryLogger.warn(
              `Anthropic 流式无实际输出，准备重试 | attempt ${attempt}/${totalAttempts}`,

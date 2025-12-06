@@ -821,3 +821,9 @@ onMounted(() => {
   loadRestoreList();
 });
 </script>
+
+<style scoped>
+:deep(.n-card-header__main) {
+  color: #1e3932;
+}
+</style>
