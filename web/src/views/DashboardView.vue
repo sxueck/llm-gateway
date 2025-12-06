@@ -317,8 +317,18 @@
         <n-card class="trend-card" style="margin-bottom: 24px;">
           <template #header>
             <n-space justify="space-between" align="center" class="trend-header">
-              <span>响应时间分布</span>
-              <span style="font-size: 12px; color: #6b7280; font-weight: normal;">(最近 2000 次请求)</span>
+              <div>
+                <span>响应时间分布</span>
+                <span style="font-size: 12px; color: #6b7280; font-weight: normal; margin-left: 8px;">(最近 2000 次请求)</span>
+              </div>
+              <n-select
+                v-model:value="selectedLatencyModel"
+                :options="latencyModelOptions"
+                clearable
+                size="small"
+                style="width: 220px;"
+                placeholder="选择模型 (供应商/模型)"
+              />
             </n-space>
           </template>
           <div v-if="loading" class="trend-loading">
@@ -397,6 +407,8 @@ const trendData = ref<VirtualKeyTrend[]>([]);
 const expertRoutingStats = ref<ExpertRoutingStats | null>(null);
 const modelStats = ref<ModelStat[]>([]);
 const modelResponseTimeStats = ref<ModelResponseTimeStat[]>([]);
+// 当前选择用于响应时间散点图的模型（按供应商/模型组合展示）
+const selectedLatencyModel = ref<string | null>(null);
 const circuitBreakerStats = ref<{
   totalTriggers: number;
   maxTriggeredProvider: string;
@@ -525,6 +537,33 @@ const promptTokens = computed(() => {
 const completionTokens = computed(() => {
   if (!stats.value) return 0;
   return Number(stats.value.completionTokens || 0);
+});
+
+// 响应时间散点图可选模型列表（按 供应商/模型 显示）
+const latencyModelOptions = computed(() => {
+  if (!modelStats.value || modelStats.value.length === 0) return [] as { label: string; value: string }[];
+
+  const seen = new Set<string>();
+  const options: { label: string; value: string }[] = [];
+
+  for (const item of modelStats.value) {
+    if (!item.model) continue;
+    if (seen.has(item.model)) continue;
+    seen.add(item.model);
+    const provider = item.provider_name || '-';
+    options.push({
+      label: `${provider} / ${item.model}`,
+      value: item.model,
+    });
+  }
+
+  return options;
+});
+
+// 根据选择的模型过滤散点图数据；未选择则展示所有模型
+const filteredModelResponseTimeStats = computed(() => {
+  if (!selectedLatencyModel.value) return modelResponseTimeStats.value;
+  return modelResponseTimeStats.value.filter(item => item.model === selectedLatencyModel.value);
 });
 
 // Starbucks & Nature Inspired Palette
@@ -740,13 +779,13 @@ const chartOption = computed(() => {
 });
 
 const responseTimeDistributionOption = computed(() => {
-  if (!modelResponseTimeStats.value || modelResponseTimeStats.value.length === 0) {
+  if (!filteredModelResponseTimeStats.value || filteredModelResponseTimeStats.value.length === 0) {
     return {};
   }
 
   const isMobile = windowWidth.value < 640;
 
-  const data = modelResponseTimeStats.value.map(item => [
+  const data = filteredModelResponseTimeStats.value.map(item => [
     item.created_at,
     item.response_time,
     item.model
@@ -804,21 +843,20 @@ const responseTimeDistributionOption = computed(() => {
     },
     yAxis: {
       type: 'value',
-      name: 'ms',
+      name: '时延',
       nameTextStyle: {
         color: '#9ca3af',
         align: 'right',
         padding: [0, 0, 0, 6]
       },
       axisLine: {
-        show: false,
+        show: true,
       },
       axisTick: {
         show: false,
       },
       axisLabel: {
-        color: '#9ca3af',
-        fontSize: isMobile ? 10 : 12,
+        show: false,
       },
       splitLine: {
         lineStyle: {
@@ -970,6 +1008,8 @@ async function loadStats() {
     trendData.value = result.trend || [];
     expertRoutingStats.value = result.expertRoutingStats || { totalRequests: 0, avgClassificationTime: 0 };
     modelStats.value = result.modelStats || [];
+    // 响应时间分布散点图依赖的原始请求日志
+    modelResponseTimeStats.value = result.modelResponseTimeStats || [];
     circuitBreakerStats.value = result.circuitBreakerStats || { totalTriggers: 0, maxTriggeredProvider: '-', maxTriggerCount: 0 };
     costStats.value = result.costStats || null;
   } catch (error: any) {
@@ -1010,4 +1050,3 @@ onUnmounted(() => {
 </script>
 
 <style scoped src="@/styles/dashboard.css"></style>
-

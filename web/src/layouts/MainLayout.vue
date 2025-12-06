@@ -74,7 +74,7 @@
         </div>
       </n-layout-header>
 
-      <n-layout-content content-style="padding: 8px 32px 32px 32px; background-color: transparent; overflow-y: auto; flex: 1;">
+      <n-layout-content style="flex: 1; min-height: 0; overflow-y: auto;" content-style="padding: 8px 32px 32px 32px; background-color: transparent;">
         <router-view />
       </n-layout-content>
     </n-layout>
