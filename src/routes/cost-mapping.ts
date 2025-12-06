@@ -1,8 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
-import { costMappingDb } from '../db/index.js';
+import { costMappingDb, modelDb, providerDb } from '../db/index.js';
 import { costMappingService } from '../services/cost-mapping.js';
+import { modelPresetsService } from '../services/model-presets.js';
 
 const CostMappingSchema = z.object({
   pattern: z.string().min(1),
@@ -20,6 +21,50 @@ export async function costMappingRoutes(fastify: FastifyInstance) {
     } catch (error: any) {
       request.log.error(error);
       return reply.code(500).send({ error: 'Failed to fetch cost mappings' });
+    }
+  });
+
+  // Get prices for configured models
+  fastify.get('/prices', async (request, reply) => {
+    try {
+      // 1. Get all configured models and providers from DB
+      const [configuredModels, providers] = await Promise.all([
+        modelDb.getAll(),
+        providerDb.getAll(),
+      ]);
+
+      // Create a map of provider ID to provider name
+      const providerMap = new Map(providers.map((p) => [p.id, p.name]));
+
+      // 2. Resolve cost for each model
+      const results = [];
+      for (const model of configuredModels) {
+        const modelIdentifier = model.model_identifier;
+        const costInfo = await costMappingService.resolveModelCost(modelIdentifier);
+        
+        const providerName = providerMap.get(model.provider_id || '') || costInfo?.info?.provider;
+
+        if (costInfo && costInfo.info) {
+           results.push({
+             model: modelIdentifier,
+             provider: providerName,
+             ...costInfo.info,
+             source: costInfo.source
+           });
+        } else {
+           // Model configured but no cost info found
+           results.push({
+             model: modelIdentifier,
+             provider: providerName,
+             source: 'unknown'
+           });
+        }
+      }
+      
+      return results;
+    } catch (error: any) {
+      request.log.error(error);
+      return reply.code(500).send({ error: 'Failed to fetch model prices' });
     }
   });
 

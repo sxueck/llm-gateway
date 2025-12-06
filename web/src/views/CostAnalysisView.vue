@@ -6,7 +6,7 @@
         <div class="subtitle">{{ t('costAnalysis.subtitle') }}</div>
       </div>
       <div class="page-actions">
-        <n-button type="primary" @click="showAddModal">
+        <n-button v-if="activeTab === 'mappings'" type="primary" @click="showAddModal">
           <template #icon>
             <n-icon><AddOutline /></n-icon>
           </template>
@@ -16,71 +16,99 @@
     </div>
 
     <div class="main-content">
-      <!-- Search Bar -->
-      <div class="search-bar">
-        <n-input
-          v-model:value="searchQuery"
-          :placeholder="t('costAnalysis.searchPlaceholder')"
-          clearable
-        >
-          <template #prefix>
-            <n-icon><SearchOutline /></n-icon>
-          </template>
-        </n-input>
-      </div>
-
-      <!-- Mapping List -->
-      <n-data-table
-        :columns="columns"
-        :data="filteredMappings"
-        :loading="loading"
-        :pagination="pagination"
-      />
-
-      <!-- Test Section -->
-      <n-card :title="t('costAnalysis.testMapping')" class="test-section">
-        <n-space vertical>
-          <n-input-group>
+      <n-tabs type="line" v-model:value="activeTab">
+        <n-tab-pane name="mappings" :tab="t('costAnalysis.tabs.mappings')">
+          <!-- Search Bar -->
+          <div class="search-bar">
             <n-input
-              v-model:value="testModelName"
-              :placeholder="t('costAnalysis.testModelPlaceholder')"
-            />
-            <n-button type="primary" @click="testMapping" :loading="testing">
-              {{ t('common.test') }}
-            </n-button>
-          </n-input-group>
-
-          <div v-if="testResult" class="test-result">
-            <n-alert :type="testResult.source === 'direct' || testResult.source === 'mapping' ? 'success' : 'warning'">
-              <template #header>
-                {{ t('costAnalysis.matchSuccess') }}
+              v-model:value="searchQuery"
+              :placeholder="t('costAnalysis.searchPlaceholder')"
+              clearable
+            >
+              <template #prefix>
+                <n-icon><SearchOutline /></n-icon>
               </template>
-              <div class="result-details">
-                <div v-if="testResult.source === 'direct'">
-                  {{ t('costAnalysis.directMatch') }}
-                </div>
-                <div v-else-if="testResult.source === 'mapping'">
-                  {{ t('costAnalysis.mappingMatch', { pattern: testResult.mapping_pattern }) }}
-                </div>
-                
-                <div class="cost-info">
-                  <strong>{{ t('costAnalysis.targetInfo', { model: testResult.model || testResult.target_model }) }}</strong>
-                  <br />
-                  {{ t('costAnalysis.costInfo', { 
-                    input: testResult.info.input_cost_per_token * 1000000, 
-                    output: testResult.info.output_cost_per_token * 1000000 
-                  }) }}
-                </div>
+            </n-input>
+          </div>
+
+          <!-- Mapping List -->
+          <n-data-table
+            :columns="columns"
+            :data="filteredMappings"
+            :loading="loading"
+            :pagination="pagination"
+            :max-height="400"
+          />
+
+          <!-- Test Section -->
+          <n-card :title="t('costAnalysis.testMapping')" class="test-section">
+            <n-space vertical>
+              <n-input-group>
+                <n-input
+                  v-model:value="testModelName"
+                  :placeholder="t('costAnalysis.testModelPlaceholder')"
+                />
+                <n-button type="primary" @click="testMapping" :loading="testing">
+                  {{ t('common.test') }}
+                </n-button>
+              </n-input-group>
+
+              <div v-if="testResult" class="test-result">
+                <n-alert :type="testResult.source === 'direct' || testResult.source === 'mapping' ? 'success' : 'warning'">
+                  <template #header>
+                    {{ t('costAnalysis.matchSuccess') }}
+                  </template>
+                  <div class="result-details">
+                    <div v-if="testResult.source === 'direct'">
+                      {{ t('costAnalysis.directMatch') }}
+                    </div>
+                    <div v-else-if="testResult.source === 'mapping'">
+                      {{ t('costAnalysis.mappingMatch', { pattern: testResult.mapping_pattern }) }}
+                    </div>
+                    
+                    <div class="cost-info">
+                      <strong>{{ t('costAnalysis.targetInfo', { model: testResult.model || testResult.target_model }) }}</strong>
+                      <br />
+                      {{ t('costAnalysis.costInfo', {
+                        input: testResult.info.input_cost_per_token * 1000000,
+                        output: testResult.info.output_cost_per_token * 1000000
+                      }) }}
+                    </div>
+                  </div>
+                </n-alert>
               </div>
-            </n-alert>
+              <div v-else-if="testResultError">
+                 <n-alert type="error">
+                  {{ t('costAnalysis.matchFail') }}
+                </n-alert>
+              </div>
+            </n-space>
+          </n-card>
+        </n-tab-pane>
+
+        <n-tab-pane name="prices" :tab="t('costAnalysis.tabs.prices')">
+          <!-- Search Bar for Prices -->
+          <div class="search-bar">
+            <n-input
+              v-model:value="pricesSearchQuery"
+              :placeholder="t('modelPresets.searchPlaceholder')"
+              clearable
+            >
+              <template #prefix>
+                <n-icon><SearchOutline /></n-icon>
+              </template>
+            </n-input>
           </div>
-          <div v-else-if="testResultError">
-             <n-alert type="error">
-              {{ t('costAnalysis.matchFail') }}
-            </n-alert>
-          </div>
-        </n-space>
-      </n-card>
+
+          <n-data-table
+            :columns="priceColumns"
+            :data="filteredPrices"
+            :loading="pricesLoading"
+            :pagination="pagination"
+            :max-height="800"
+          />
+        </n-tab-pane>
+      </n-tabs>
     </div>
 
     <!-- Create/Edit Modal -->
@@ -124,11 +152,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, h } from 'vue';
+import { ref, computed, onMounted, h, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useMessage } from 'naive-ui';
-import { 
-  AddOutline, 
+import {
+  AddOutline,
   SearchOutline, 
   CreateOutline, 
   TrashOutline 
@@ -148,15 +176,18 @@ import {
   NModal,
   NDataTable,
   NCard,
-  NAlert
+  NAlert,
+  NTabs,
+  NTabPane
 } from 'naive-ui';
-import { costMappingApi, CostMapping, CostResolution } from '@/api/cost-mapping';
+import { costMappingApi, CostMapping, CostResolution, ModelPrice } from '@/api/cost-mapping';
 import ModelPresetSelector from '@/components/ModelPresetSelector.vue';
 
 const { t } = useI18n();
 const message = useMessage();
 
 // State
+const activeTab = ref('mappings');
 const mappings = ref<CostMapping[]>([]);
 const loading = ref(false);
 const searchQuery = ref('');
@@ -164,6 +195,10 @@ const showModal = ref(false);
 const saving = ref(false);
 const editingId = ref<string | null>(null);
 const formRef = ref<any>(null);
+
+const prices = ref<ModelPrice[]>([]);
+const pricesLoading = ref(false);
+const pricesSearchQuery = ref('');
 
 const formModel = ref({
   pattern: '',
@@ -192,9 +227,18 @@ const pagination = {
 const filteredMappings = computed(() => {
   if (!searchQuery.value) return mappings.value;
   const query = searchQuery.value.toLowerCase();
-  return mappings.value.filter(m => 
-    m.pattern.toLowerCase().includes(query) || 
+  return mappings.value.filter(m =>
+    m.pattern.toLowerCase().includes(query) ||
     m.target_model.toLowerCase().includes(query)
+  );
+});
+
+const filteredPrices = computed(() => {
+  if (!pricesSearchQuery.value) return prices.value;
+  const query = pricesSearchQuery.value.toLowerCase();
+  return prices.value.filter(p =>
+    p.model.toLowerCase().includes(query) ||
+    (p.provider && p.provider.toLowerCase().includes(query))
   );
 });
 
@@ -273,7 +317,64 @@ const columns = [
   }
 ];
 
+const priceColumns = [
+  {
+    title: t('costAnalysis.prices.model'),
+    key: 'model',
+    sorter: (a: ModelPrice, b: ModelPrice) => a.model.localeCompare(b.model)
+  },
+  {
+    title: t('costAnalysis.prices.provider'),
+    key: 'provider',
+    sorter: (a: ModelPrice, b: ModelPrice) => (a.provider || '').localeCompare(b.provider || '')
+  },
+  {
+    title: t('costAnalysis.prices.inputCost'),
+    key: 'input_cost_per_token',
+    render(row: ModelPrice) {
+      const val = row.input_cost_per_token;
+      return val ? `$${(val * 1000000).toFixed(4)}` : '-';
+    },
+    sorter: (a: ModelPrice, b: ModelPrice) => (a.input_cost_per_token || 0) - (b.input_cost_per_token || 0)
+  },
+  {
+    title: t('costAnalysis.prices.outputCost'),
+    key: 'output_cost_per_token',
+    render(row: ModelPrice) {
+      const val = row.output_cost_per_token;
+      return val ? `$${(val * 1000000).toFixed(4)}` : '-';
+    },
+    sorter: (a: ModelPrice, b: ModelPrice) => (a.output_cost_per_token || 0) - (b.output_cost_per_token || 0)
+  },
+  {
+    title: t('costAnalysis.prices.contextWindow'),
+    key: 'max_tokens',
+    render(row: ModelPrice) {
+      return row.max_tokens?.toLocaleString() || '-';
+    },
+    sorter: (a: ModelPrice, b: ModelPrice) => (a.max_tokens || 0) - (b.max_tokens || 0)
+  },
+];
+
 // Methods
+async function fetchPrices() {
+  if (prices.value.length > 0) return;
+  pricesLoading.value = true;
+  try {
+    prices.value = await costMappingApi.getPrices();
+  } catch (error) {
+    message.error(t('messages.loadFailed'));
+  } finally {
+    pricesLoading.value = false;
+  }
+}
+
+watch(activeTab, (val) => {
+  if (val === 'prices') {
+    fetchPrices();
+  }
+});
+
 async function fetchMappings() {
   loading.value = true;
   try {
@@ -379,6 +480,9 @@ onMounted(() => {
 .cost-analysis-container {
   max-width: 1200px;
   margin: 0 auto;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .page-header {
@@ -386,6 +490,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
+  flex-shrink: 0;
 }
 
 .page-title h1 {
@@ -400,13 +505,43 @@ onMounted(() => {
   margin-top: 4px;
 }
 
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.main-content :deep(.n-tabs) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.main-content :deep(.n-tabs-pane-wrapper) {
+  flex: 1;
+  overflow: hidden;
+}
+
+.main-content :deep(.n-tab-pane) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
 .search-bar {
   margin-bottom: 16px;
   max-width: 400px;
+  flex-shrink: 0;
+}
+
+.main-content :deep(.n-data-table) {
+  flex: 1;
 }
 
 .test-section {
   margin-top: 24px;
+  flex-shrink: 0;
 }
 
 .test-result {

@@ -32,9 +32,26 @@ export interface CostResolution {
   info: any; // ModelPresetInfo
 }
 
+export interface ModelPrice {
+  model: string;
+  provider?: string;
+  input_cost_per_token?: number;
+  output_cost_per_token?: number;
+  max_tokens?: number;
+  max_input_tokens?: number;
+  max_output_tokens?: number;
+  mode?: string;
+  supports_vision?: boolean;
+  supports_function_calling?: boolean;
+}
+
 export const costMappingApi = {
   getAll: () => {
     return request.get<CostMapping[]>('/admin/cost-mappings');
+  },
+
+  getPrices: () => {
+    return request.get<ModelPrice[]>('/admin/cost-mappings/prices');
   },
 
   create: (data: CreateCostMappingParams) => {

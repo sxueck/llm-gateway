@@ -528,6 +528,19 @@ export default {
     mappingMatch: '规则匹配: {pattern}',
     targetInfo: '映射目标: {model}',
     costInfo: '输入: ${input}/1M tokens, 输出: ${output}/1M tokens',
+    tabs: {
+      mappings: '映射规则',
+      prices: '模型定价',
+    },
+    prices: {
+      model: '模型',
+      provider: '提供商',
+      inputCost: '输入价格 (每 1M tokens)',
+      outputCost: '输出价格 (每 1M tokens)',
+      contextWindow: '上下文窗口',
+      maxOutput: '最大输出',
+      type: '类型',
+    },
   },
   healthMonitoring: {
     title: '健康监控设置',

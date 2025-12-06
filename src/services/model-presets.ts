@@ -208,6 +208,16 @@ export class ModelPresetsService {
     return this.cachedData[modelName] || null;
   }
 
+  getAllModels(): Array<{ modelName: string; info: ModelPresetInfo }> {
+    if (!this.cachedData) {
+      return [];
+    }
+    return Object.entries(this.cachedData).map(([modelName, info]) => ({
+      modelName,
+      info,
+    }));
+  }
+
   getStats(): {
     totalModels: number;
     lastUpdate: number;
