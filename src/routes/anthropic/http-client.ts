@@ -4,6 +4,7 @@ import { memoryLogger } from '../../services/logger.js';
 import type { AnthropicRequest, AnthropicStreamEvent } from '../../types/anthropic.js';
 import { normalizeAnthropicError } from '../../utils/http-error-normalizer.js';
 import { EmptyOutputError } from '../../errors/empty-output-error.js';
+import { sanitizeCustomHeaders } from '../../utils/header-sanitizer.js';
 
 export interface HttpResponse {
   statusCode: number;
@@ -30,10 +31,11 @@ function getAnthropicClient(baseUrl: string | undefined, apiKey: string, headers
   }
 
   // 添加自定义请求头支持
-  if (headers && Object.keys(headers).length > 0) {
-    clientConfig.defaultHeaders = headers;
+  const sanitizedHeaders = sanitizeCustomHeaders(headers);
+  if (sanitizedHeaders && Object.keys(sanitizedHeaders).length > 0) {
+    clientConfig.defaultHeaders = sanitizedHeaders;
     memoryLogger.debug(
-      `添加自定义请求头 | headers: ${JSON.stringify(headers)}`,
+      `添加自定义请求头 | headers: ${JSON.stringify(sanitizedHeaders)}`,
       'Anthropic'
     );
   }

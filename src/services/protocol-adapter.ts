@@ -10,6 +10,7 @@ import { EmptyOutputError } from '../errors/empty-output-error.js';
 import { StreamRetryManager, StreamBuffer, getRetryLimit, type StreamProcessor } from '../utils/stream-retry-manager.js';
 import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-client.js';
 import { ResponsesEmptyOutputError } from '../errors/responses-empty-output-error.js';
+import { sanitizeCustomHeaders, getSanitizedHeadersCacheKey } from '../utils/header-sanitizer.js';
 
 // Responses API 空输出重试默认次数（可通过环境变量或模型属性配置）
 const DEFAULT_RESPONSES_EMPTY_OUTPUT_MAX_RETRIES = Math.max(
@@ -80,22 +81,6 @@ export class ProtocolAdapter {
   private keepAliveAgents: Map<string, { httpAgent: HttpAgent; httpsAgent: HttpsAgent }> = new Map();
   private readonly keepAliveMaxSockets = parseInt(process.env.HTTP_KEEP_ALIVE_MAX_SOCKETS || '64', 10);
 
-  /**
-   * 生成稳定的 headers 缓存 key
-   * 通过对键排序并拼接键值对来生成稳定的标识符
-   */
-  private getHeadersCacheKey(headers?: Record<string, string>): string {
-    if (!headers || Object.keys(headers).length === 0) {
-      return '';
-    }
-
-    // 按键排序后拼接，确保相同的 headers 对象生成相同的 key
-    return Object.keys(headers)
-      .sort()
-      .map(key => `${key}:${headers[key]}`)
-      .join('|');
-  }
-
   private getKeepAliveAgents(cacheKey: string): { httpAgent: HttpAgent; httpsAgent: HttpsAgent } {
     if (!this.keepAliveAgents.has(cacheKey)) {
       const httpAgent = new HttpAgent({
@@ -115,8 +100,9 @@ export class ProtocolAdapter {
   }
 
   private getOpenAIClient(config: ProtocolConfig): OpenAI {
+    const sanitizedHeaders = sanitizeCustomHeaders(config.modelAttributes?.headers);
     // 使用优化的 headers key 生成方式，避免 JSON.stringify 导致的缓存失效
-    const headersKey = this.getHeadersCacheKey(config.modelAttributes?.headers);
+    const headersKey = getSanitizedHeadersCacheKey(sanitizedHeaders);
     const cacheKey = headersKey
       ? `${config.provider}-${config.baseUrl || 'default'}-${headersKey}`
       : `${config.provider}-${config.baseUrl || 'default'}`;
@@ -137,10 +123,10 @@ export class ProtocolAdapter {
       clientConfig.httpsAgent = keepAliveAgents.httpsAgent;
 
       // 添加自定义请求头支持
-      if (config.modelAttributes?.headers && Object.keys(config.modelAttributes.headers).length > 0) {
-        clientConfig.defaultHeaders = config.modelAttributes.headers;
+      if (sanitizedHeaders && Object.keys(sanitizedHeaders).length > 0) {
+        clientConfig.defaultHeaders = sanitizedHeaders;
         memoryLogger.debug(
-          `添加自定义请求头 | provider: ${config.provider} | headers: ${JSON.stringify(config.modelAttributes.headers)}`,
+          `添加自定义请求头 | provider: ${config.provider} | headers: ${JSON.stringify(sanitizedHeaders)}`,
           'Protocol'
         );
       }
