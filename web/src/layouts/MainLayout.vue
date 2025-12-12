@@ -1,5 +1,5 @@
 <template>
-  <n-layout has-sider style="height: 100vh; background-color: #f5f5f5;">
+  <n-layout has-sider class="app-layout" style="height: 100vh; background-color: #f5f5f5;">
     <n-layout-sider
       :collapsed="collapsed"
       collapse-mode="width"
@@ -285,6 +285,12 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.app-layout {
+  height: 100vh;
+  overflow: hidden; /* 布局容器本身不滚动，滚动统一交给内容区域 */
+  background-color: #f5f5f5;
+}
+
 .logo {
   height: 72px;
   display: flex;

@@ -111,7 +111,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted } from 'vue';
+import { ref, h, onMounted, watch } from 'vue';
 import { useMessage, useDialog, NSpace, NButton, NDataTable, NCard, NModal, NTag, NPopconfirm, NTabs, NTabPane, NDropdown, NUpload, NIcon, type UploadFileInfo } from 'naive-ui';
 import { Download as DownloadIcon, CloudUpload as UploadIcon, FlashOutline as SpeedTestIcon } from '@vicons/ionicons5';
 import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined } from '@vicons/material';
@@ -570,6 +570,13 @@ async function executeImport(providers: Array<{ id: string; name: string; descri
     message.error(`导入失败: ${error.message}`);
   }
 }
+
+// 当弹窗关闭时重置表单和编辑状态，避免下次“添加提供商”残留上一次的编辑数据
+watch(showModal, (visible) => {
+  if (!visible) {
+    resetForm();
+  }
+});
 
 onMounted(() => {
   providerStore.fetchProviders();
