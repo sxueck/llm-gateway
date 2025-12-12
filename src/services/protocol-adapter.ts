@@ -698,7 +698,9 @@ export class ProtocolAdapter {
           }
 
           const chunkData = JSON.stringify(chunk);
-          const sseData = `data: ${chunkData}\n\n`;
+          const eventName = typeof (chunk as any)?.type === 'string' ? (chunk as any).type : undefined;
+          const eventPrefix = eventName ? `event: ${eventName}\n` : '';
+          const sseData = `${eventPrefix}data: ${chunkData}\n\n`;
 
           await enqueueChunk(sseData);
 
