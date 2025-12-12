@@ -126,19 +126,29 @@ function normalizeStatus(raw?: string | null): ResponsesStatus {
  * We support multiple shapes to be robust to doc variations.
  */
 function extractTextDelta(ev: ResponsesStreamEvent): string {
+  if (!ev) return '';
+
+  const type = ev.type || '';
+  const isOutputTextEvent = type.startsWith('response.output_text.');
+  const isLegacyShapeWithoutType = !type;
+
   // Primary: event.type like 'response.output_text.delta' with ev.delta.text
-  if (ev.type?.includes('output_text.delta')) {
+  if (type.includes('output_text.delta')) {
     const txt = ev.delta?.text ?? ev.text;
     if (typeof txt === 'string') return txt;
   }
 
-  // Fallback: some implementations put 'text' directly with type hints
-  if (typeof ev.text === 'string') return ev.text;
+  // Some responses variants send the finalized text on `text`, but only treat it
+  // as part of the assistant output when the event itself is an output_text event
+  if ((isOutputTextEvent || isLegacyShapeWithoutType) && typeof ev.text === 'string') {
+    return ev.text;
+  }
 
-  // Fallback: output_text may contain delta-like payloads
-  // Try common fields defensively
+  // Fallback legacy shape: output_text payload may include `text`
   const ot = ev.output_text as any;
-  if (ot && typeof ot.text === 'string') return ot.text;
+  if ((isOutputTextEvent || isLegacyShapeWithoutType) && ot && typeof ot.text === 'string') {
+    return ot.text;
+  }
 
   return '';
 }
