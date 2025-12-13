@@ -469,6 +469,13 @@ function resetForm() {
   };
 }
 
+// 当模型编辑弹窗关闭时，重置编辑状态和表单，避免下次“新增模型”残留上一次的编辑数据
+watch(showModal, (visible) => {
+  if (!visible) {
+    resetForm();
+  }
+});
+
 async function handleModelPresetSelect(result: ModelPresetSearchResult) {
   try {
     const detail = await modelPresetsApi.getModelDetail(result.modelName);
@@ -701,4 +708,3 @@ onMounted(async () => {
   color: #8c8c8c;
 }
 </style>
-
