@@ -745,6 +745,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     try {
       const { id } = request.params as { id: string };
       const body = request.body as {
+        display_title?: string | null;
         enabled?: boolean;
         check_interval_seconds?: number;
         check_prompt?: string;
@@ -756,6 +757,9 @@ export async function configRoutes(fastify: FastifyInstance) {
       }
 
       const updates: any = {};
+      if (body.display_title !== undefined) {
+        updates.display_title = body.display_title || null;
+      }
       if (body.enabled !== undefined) {
         updates.enabled = body.enabled ? 1 : 0;
       }

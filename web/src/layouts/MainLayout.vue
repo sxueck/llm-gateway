@@ -352,21 +352,30 @@ onUnmounted(() => {
   border-radius: 6px;
 }
 
-.custom-menu :deep(.n-menu-item-content:hover) {
+.app-layout .custom-menu :deep(.n-menu-item-content:hover) {
   background: rgba(15, 107, 74, 0.06) !important;
+  color: #0f6b4a !important;
 }
 
-.custom-menu :deep(.n-menu-item-content--selected) {
+.app-layout .custom-menu :deep(.n-menu-item-content:hover .n-menu-item-content__icon) {
+  color: #0f6b4a !important;
+}
+
+.app-layout .custom-menu :deep(.n-menu-item-content:hover::before) {
+  display: none;
+}
+
+.app-layout .custom-menu :deep(.n-menu-item-content--selected) {
   background: rgba(15, 107, 74, 0.08) !important;
   color: #0f6b4a !important;
   box-shadow: none;
 }
 
-.custom-menu :deep(.n-menu-item-content--selected .n-menu-item-content__icon) {
+.app-layout .custom-menu :deep(.n-menu-item-content--selected .n-menu-item-content__icon) {
   color: #0f6b4a !important;
 }
 
-.custom-menu :deep(.n-menu-item-content--selected::before) {
+.app-layout .custom-menu :deep(.n-menu-item-content--selected::before) {
   display: none;
 }
 
