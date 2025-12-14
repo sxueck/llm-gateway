@@ -94,37 +94,12 @@ class HealthCheckerService {
       // 解析配置
       const config: CheckConfig = target.check_config ? JSON.parse(target.check_config) : {};
       const timeout = config.timeout || 20000; // 默认20秒超时
-      const maxRetries = config.maxRetries || 1;
 
       // 获取检查提示词
       const prompt = target.check_prompt || 'Say "OK"';
 
       // 执行健康检查
-      let result: HealthCheckResult | null = null;
-      let lastError: any = null;
-
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        try {
-          result = await this.performCheck(target, prompt, timeout, requestId);
-          if (result.success) {
-            break; // 成功则退出重试
-          }
-          lastError = new Error(result.errorMessage || '未知错误');
-        } catch (err: any) {
-          lastError = err;
-          memoryLogger.warn(`目标 ${target.name} 检查失败 (尝试 ${attempt + 1}/${maxRetries + 1}): ${err.message}`, 'HealthChecker');
-        }
-      }
-
-      // 记录结果
-      if (!result) {
-        result = {
-          success: false,
-          latencyMs: Date.now() - startTime,
-          errorType: 'unknown',
-          errorMessage: lastError?.message || '健康检查失败',
-        };
-      }
+      const result = await this.performCheck(target, prompt, timeout, requestId);
 
       await healthRunDb.create({
         id: nanoid(),
