@@ -110,12 +110,12 @@
 
                 <div class="compact-stats">
                   <div class="stat-item-compact">
-                    <span class="stat-label-compact">1h</span>
-                    <span class="stat-value-compact">{{ target.stats1h.availability.toFixed(1) }}%</span>
-                  </div>
-                  <div class="stat-item-compact">
                     <span class="stat-label-compact">24h</span>
                     <span class="stat-value-compact">{{ target.stats24h.availability.toFixed(1) }}%</span>
+                  </div>
+                  <div class="stat-item-compact">
+                    <span class="stat-label-compact">1week</span>
+                    <span class="stat-value-compact">{{ target.stats7d ? target.stats7d.availability.toFixed(1) : '0.0' }}%</span>
                   </div>
                   <div class="stat-item-compact">
                     <span class="stat-label-compact">P50</span>
@@ -225,6 +225,15 @@ interface TargetSummary {
     p95Latency: number;
   };
   stats24h: {
+    totalChecks: number;
+    successCount: number;
+    errorCount: number;
+    availability: number;
+    avgLatency: number;
+    p50Latency: number;
+    p95Latency: number;
+  };
+  stats7d: {
     totalChecks: number;
     successCount: number;
     errorCount: number;

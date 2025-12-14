@@ -156,11 +156,12 @@ export async function probeModelViaProvider(args: {
   const timeoutMs = args.timeoutMs ?? 30000;
 
   const base = getBaseUrlForProtocol(provider as any, protocol || null);
-  const baseUrl = normalizeBaseUrl(base);
+  let baseUrl = normalizeBaseUrl(base);
 
   if (protocol === 'anthropic') {
-    // Use /v1/messages
-    const url = buildEndpointUrl(baseUrl, 'messages');
+    const url = baseUrl.endsWith('/v1')
+      ? buildEndpointUrl(baseUrl, 'messages')
+      : buildEndpointUrl(baseUrl, 'v1/messages');
     const started = Date.now();
     const { controller, clear } = startAbortTimer(timeoutMs);
     try {

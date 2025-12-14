@@ -37,6 +37,15 @@ interface TargetSummary {
     p50Latency: number;
     p95Latency: number;
   };
+  stats7d: {
+    totalChecks: number;
+    successCount: number;
+    errorCount: number;
+    availability: number;
+    avgLatency: number;
+    p50Latency: number;
+    p95Latency: number;
+  };
 }
 
 interface GlobalSummary {
@@ -126,10 +135,24 @@ class HealthAggregatorService {
     const now = Date.now();
     const window1h = 60 * 60 * 1000;
     const window24h = 24 * 60 * 60 * 1000;
+    const window7d = 7 * 24 * 60 * 60 * 1000;
 
     // 获取最近24小时的数据
     const runs24h = await healthRunDb.getByTimeWindow(targetId, now - window24h, now);
     const runs1h = runs24h.filter(r => r.created_at >= now - window1h);
+
+    // 获取7天统计数据 (使用聚合查询以提高性能)
+    const stats7dRaw = await healthRunDb.getStats(targetId, now - window7d, now);
+    const stats7d = {
+      totalChecks: stats7dRaw.totalChecks,
+      successCount: stats7dRaw.successCount,
+      errorCount: stats7dRaw.errorCount,
+      availability: stats7dRaw.totalChecks > 0 ? (stats7dRaw.successCount / stats7dRaw.totalChecks) * 100 : 0,
+      avgLatency: stats7dRaw.avgLatency,
+      p50Latency: 0, // 聚合查询不返回百分位数
+      p95Latency: 0, // 聚合查询不返回百分位数
+    };
+    stats7d.availability = Math.round(stats7d.availability * 100) / 100;
 
     // 获取最近100次检查记录用于可视化时间轴
     const recentRuns = await healthRunDb.getByTargetId(targetId, 100);
@@ -172,6 +195,7 @@ class HealthAggregatorService {
       healthHistory,
       stats1h,
       stats24h,
+      stats7d,
     };
   }
 
