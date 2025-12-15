@@ -9,15 +9,19 @@ import { getBaseUrlForProtocol } from '../utils/protocol-utils.js';
 
 type Protocol = 'openai' | 'anthropic' | 'google' | null | undefined;
 
+interface ParsedProbeResponse {
+  content: string;
+  usage?: any;
+  conversation_id?: string;
+  session_id?: string;
+}
+
 export interface EndpointProbeResult {
   success: boolean;
   status?: number;
   message: string;
   responseTime: number;
-  response?: {
-    content: string;
-    usage?: any;
-  };
+  response?: ParsedProbeResponse;
   error?: string;
 }
 
@@ -39,6 +43,40 @@ interface CommonRequestOptions {
   headers: Record<string, string>;
   body: string;
   signal: AbortSignal;
+}
+
+function extractSessionInfo(json: any): { conversation_id?: string; session_id?: string } {
+  const pick = (candidates: any[]): string | undefined => {
+    for (const value of candidates) {
+      if (typeof value === 'string' && value.length > 0) {
+        return value;
+      }
+    }
+    return undefined;
+  };
+
+  const conversation_id = pick([
+    json?.conversation_id,
+    json?.conversationId,
+    json?.conversation?.id,
+    json?.response?.conversation_id,
+    json?.response?.conversationId,
+    json?.response?.conversation?.id,
+  ]);
+
+  const session_id = pick([
+    json?.session_id,
+    json?.sessionId,
+    json?.session?.id,
+    json?.response?.session_id,
+    json?.response?.sessionId,
+    json?.response?.session?.id,
+  ]);
+
+  return {
+    conversation_id,
+    session_id,
+  };
 }
 
 function startAbortTimer(ms: number): { controller: AbortController; clear: () => void } {
@@ -84,40 +122,49 @@ function buildAnthropicBody(modelIdentifier: string, prompt: string) {
 
 // ---------- Parsers ----------
 
-function parseChatResponse(json: any): { content: string; usage?: any } {
+function parseChatResponse(json: any): ParsedProbeResponse {
   const content = json?.choices?.[0]?.message?.content ?? '';
-  return { content: typeof content === 'string' ? content : String(content ?? '') || '无响应内容', usage: json?.usage };
+  const sessionInfo = extractSessionInfo(json);
+  return {
+    content: typeof content === 'string' ? content : String(content ?? '') || '无响应内容',
+    usage: json?.usage,
+    ...sessionInfo,
+  };
 }
 
-function parseResponsesResponse(json: any): { content: string; usage?: any } {
+function parseResponsesResponse(json: any): ParsedProbeResponse {
   // Prefer output_text; fallback to nested shapes
   if (typeof json?.output_text === 'string') {
-    return { content: json.output_text, usage: json?.usage };
+    return { content: json.output_text, usage: json?.usage, ...extractSessionInfo(json) };
   }
   if (Array.isArray(json?.output)) {
     for (const item of json.output) {
       if (typeof item?.text === 'string') {
-        return { content: item.text, usage: json?.usage };
+        return { content: item.text, usage: json?.usage, ...extractSessionInfo(json) };
       }
       if (Array.isArray(item?.content)) {
         const block = item.content.find((b: any) => (b?.type === 'output_text' || b?.type === 'text') && typeof b?.text === 'string');
         if (block?.text) {
-          return { content: block.text, usage: json?.usage };
+          return { content: block.text, usage: json?.usage, ...extractSessionInfo(json) };
         }
       }
     }
   }
-  return { content: '无响应内容', usage: json?.usage };
+  return { content: '无响应内容', usage: json?.usage, ...extractSessionInfo(json) };
 }
 
-function parseAnthropicResponse(json: any): { content: string; usage?: any } {
+function parseAnthropicResponse(json: any): ParsedProbeResponse {
   const blocks = Array.isArray(json?.content) ? json.content : [];
   if (blocks.length > 0) {
     const firstText = (blocks as any[]).find((b: any) => b?.type === 'text' && typeof b?.text === 'string');
     const text = firstText?.text ?? '';
-    return { content: typeof text === 'string' && text.length > 0 ? text : '无响应内容', usage: json?.usage };
+    return {
+      content: typeof text === 'string' && text.length > 0 ? text : '无响应内容',
+      usage: json?.usage,
+      ...extractSessionInfo(json),
+    };
   }
-  return { content: '无响应内容', usage: json?.usage };
+  return { content: '无响应内容', usage: json?.usage, ...extractSessionInfo(json) };
 }
 
 // ---------- Low-level fetch helper ----------

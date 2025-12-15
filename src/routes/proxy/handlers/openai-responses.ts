@@ -49,7 +49,6 @@ export async function handleResponsesStreamRequest(params: ResponsesStreamParams
     const options = {
       instructions: (request.body as any)?.instructions,
       temperature: (request.body as any)?.temperature,
-      max_output_tokens: (request.body as any)?.max_output_tokens,
       top_p: (request.body as any)?.top_p,
       store: (request.body as any)?.store,
       metadata: (request.body as any)?.metadata,

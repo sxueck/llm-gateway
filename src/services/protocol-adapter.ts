@@ -483,7 +483,6 @@ export class ProtocolAdapter {
     if (options.instructions !== undefined) params.instructions = options.instructions;
     // 核心调参字段
     if (options.temperature !== undefined) params.temperature = options.temperature;
-    if (options.max_output_tokens !== undefined) params.max_output_tokens = options.max_output_tokens;
     if (options.top_p !== undefined) params.top_p = options.top_p;
     if (options.store !== undefined) params.store = options.store;
     if (options.metadata !== undefined) params.metadata = options.metadata;

@@ -218,7 +218,6 @@ function buildResponsesOptions(body: any, includePrevId: boolean, extractedSyste
   const options: any = {
     instructions: finalInstructions,
     temperature: body?.temperature,
-    max_output_tokens: body?.max_output_tokens,
     top_p: body?.top_p,
     store: body?.store,
     metadata: body?.metadata,
@@ -236,22 +235,6 @@ function buildResponsesOptions(body: any, includePrevId: boolean, extractedSyste
     options.previous_response_id = body.previous_response_id;
   }
   return options;
-}
-
-const responsesConversationCache = new Map<string, { id: string; expire: number }>();
-
-function getResponsesConversationId(model: string | undefined, userId: string | undefined) {
-  const key = `${model || 'unknown'}-${userId || 'anonymous'}`;
-  const now = Date.now();
-  const existing = responsesConversationCache.get(key) as { id: string; expire: number } | undefined;
-
-  if (existing && existing.expire > now) {
-    return existing.id;
-  }
-
-  const id = nanoid();
-  responsesConversationCache.set(key, { id, expire: now + 60 * 60 * 1000 });
-  return id;
 }
 
 export function createProxyHandler() {
@@ -628,19 +611,6 @@ export async function handleStreamRequest(
       const input = (request.body as any)?.input;
       // 传递提取的系统提示到 buildResponsesOptions
       const options = buildResponsesOptions((request.body as any), false, extractedSystemPrompt);
-
-      const modelNameForSession = (request.body as any)?.model || currentModel?.name || 'unknown';
-      const userIdForSession =
-        (request.body as any)?.metadata?.user_id ||
-        virtualKey?.id?.toString?.() ||
-        virtualKey?.key_value ||
-        vkDisplay;
-
-      const conversationId = getResponsesConversationId(modelNameForSession, userIdForSession);
-      const sessionId = nanoid();
-
-      (options as any).conversationId = conversationId;
-      (options as any).sessionId = sessionId;
 
       // 记录最终的 instructions 和 tools（用于调试）
       if (options.instructions) {
