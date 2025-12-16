@@ -9,6 +9,8 @@ import { healthCheckerService } from '../services/health-checker.js';
 import { debugModeService } from '../services/debug-mode.js';
 import { circuitBreaker } from '../services/circuit-breaker.js';
 import { costMappingService } from '../services/cost-mapping.js';
+import { threatIpBlocker } from '../services/threat-ip-blocker.js';
+import { getGeoInfo } from '../utils/ip.js';
 
 export async function configRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
@@ -91,6 +93,16 @@ export async function configRoutes(fastify: FastifyInstance) {
     };
   });
 
+  fastify.post('/system-settings/refresh-threat-ip', async () => {
+    try {
+      await threatIpBlocker.refresh();
+      return { success: true, message: '威胁 IP 列表已刷新' };
+    } catch (error: any) {
+      memoryLogger.error(`手动刷新威胁 IP 列表失败: ${error.message}`, 'Config');
+      throw error;
+    }
+  });
+
   fastify.post('/system-settings', async (request) => {
     const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, antiBot } = request.body as {
       allowRegistration?: boolean;
@@ -104,6 +116,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         enabled?: boolean;
         blockBots?: boolean;
         blockSuspicious?: boolean;
+        blockThreatIPs?: boolean;
         logOnly?: boolean;
         logHeaders?: boolean;
         allowedUserAgents?: string[];
@@ -214,7 +227,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         memoryLogger.info(`LLM Gateway URL 已更新: ${publicUrl}`, 'Config');
       }
 
-    if (antiBot !== undefined) {
+      if (antiBot !== undefined) {
       if (antiBot.allowedUserAgents !== undefined) {
         const validation = validateUserAgentList(antiBot.allowedUserAgents);
         if (!validation.valid) {
@@ -237,6 +250,10 @@ export async function configRoutes(fastify: FastifyInstance) {
       }
       if (antiBot.blockSuspicious !== undefined) {
         await systemConfigDb.set('anti_bot_block_suspicious', antiBot.blockSuspicious ? 'true' : 'false', '是否拦截可疑请求');
+      }
+      if (antiBot.blockThreatIPs !== undefined) {
+        await systemConfigDb.set('anti_bot_block_threat_ips', antiBot.blockThreatIPs ? 'true' : 'false', '是否拦截威胁IP');
+        memoryLogger.info(`威胁 IP 拦截已更新: ${antiBot.blockThreatIPs ? '启用' : '禁用'}`, 'Config');
       }
       if (antiBot.logOnly !== undefined) {
         await systemConfigDb.set('anti_bot_log_only', antiBot.logOnly ? 'true' : 'false', '是否仅记录日志不拦截');
@@ -398,6 +415,26 @@ export async function configRoutes(fastify: FastifyInstance) {
     // 熔断器统计改为从数据库获取持久化结果
     const circuitBreakerStats = await import('../db/repositories/circuit-breaker-stats.repository.js').then(m => m.circuitBreakerStatsRepository.getGlobalStats());
 
+    const lastRequest = await apiRequestDb.getLastRequest();
+    const lastBlocked = threatIpBlocker.getLastBlockedInfo();
+
+    // 使用本地 GeoIP 库，不再需要 await
+    const lastRequestGeo = getGeoInfo(lastRequest?.ip);
+    const lastBlockedGeo = getGeoInfo(lastBlocked?.ip);
+
+    const requestSourceStats = {
+      lastRequest: {
+        ip: lastRequest?.ip || 'N/A',
+        geo: lastRequestGeo,
+        timestamp: lastRequest?.created_at || 0
+      },
+      lastBlocked: {
+        ip: lastBlocked?.ip || 'N/A',
+        geo: lastBlockedGeo,
+        timestamp: lastBlocked?.timestamp || 0
+      }
+    };
+
     // 计算成本统计
     let costStats = null;
     try {
@@ -415,6 +452,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       modelResponseTimeStats,
       circuitBreakerStats,
       costStats,
+      requestSourceStats,
     };
   });
 

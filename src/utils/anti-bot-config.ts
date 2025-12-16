@@ -4,6 +4,8 @@ export interface AntiBotConfig {
   enabled: boolean;
   blockBots: boolean;
   blockSuspicious: boolean;
+  // 是否基于威胁 IP 列表进行拦截
+  blockThreatIPs: boolean;
   allowedUserAgents: string[];
   blockedUserAgents: string[];
   logOnly: boolean;
@@ -14,6 +16,7 @@ const DEFAULT_CONFIG: AntiBotConfig = {
   enabled: false,
   blockBots: true,
   blockSuspicious: false,
+   blockThreatIPs: false,
   allowedUserAgents: [],
   blockedUserAgents: [],
   logOnly: true,
@@ -25,6 +28,7 @@ export async function loadAntiBotConfig(): Promise<AntiBotConfig> {
     const enabledCfg = await systemConfigDb.get('anti_bot_enabled');
     const blockBotsCfg = await systemConfigDb.get('anti_bot_block_bots');
     const blockSuspiciousCfg = await systemConfigDb.get('anti_bot_block_suspicious');
+    const blockThreatIPsCfg = await systemConfigDb.get('anti_bot_block_threat_ips');
     const allowedUaCfg = await systemConfigDb.get('anti_bot_allowed_user_agents');
     const blockedUaCfg = await systemConfigDb.get('anti_bot_blocked_user_agents');
     const logOnlyCfg = await systemConfigDb.get('anti_bot_log_only');
@@ -34,6 +38,7 @@ export async function loadAntiBotConfig(): Promise<AntiBotConfig> {
       enabled: enabledCfg ? enabledCfg.value === 'true' : DEFAULT_CONFIG.enabled,
       blockBots: blockBotsCfg ? blockBotsCfg.value === 'true' : DEFAULT_CONFIG.blockBots,
       blockSuspicious: blockSuspiciousCfg ? blockSuspiciousCfg.value === 'true' : DEFAULT_CONFIG.blockSuspicious,
+      blockThreatIPs: blockThreatIPsCfg ? blockThreatIPsCfg.value === 'true' : DEFAULT_CONFIG.blockThreatIPs,
       allowedUserAgents: allowedUaCfg ? allowedUaCfg.value.split(',').map(s => s.trim()).filter(s => s) : DEFAULT_CONFIG.allowedUserAgents,
       blockedUserAgents: blockedUaCfg ? blockedUaCfg.value.split(',').map(s => s.trim()).filter(s => s) : DEFAULT_CONFIG.blockedUserAgents,
       logOnly: logOnlyCfg ? logOnlyCfg.value === 'true' : DEFAULT_CONFIG.logOnly,
@@ -75,4 +80,3 @@ export function validateUserAgentList(patterns: string[]): { valid: boolean; err
 
   return { valid: true };
 }
-

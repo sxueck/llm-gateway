@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { memoryLogger } from '../../services/logger.js';
+import { extractIp } from '../../utils/ip.js';
 import { authenticateVirtualKey, extractVirtualKeyAuthHeader } from '../proxy/auth.js';
 import { resolveModelAndProvider } from '../proxy/model-resolver.js';
 import { buildProviderConfig } from '../proxy/provider-config-builder.js';
@@ -36,13 +37,13 @@ export function createAnthropicProxyHandler() {
       // 反爬虫检测
       const { antiBotService } = await import('../../services/anti-bot.js');
       const userAgent = request.headers['user-agent'] || '';
-      const ip = request.ip || request.headers['x-forwarded-for'] || request.headers['x-real-ip'] || 'unknown';
-      const antiBotResult = antiBotService.detect(userAgent);
-      
-      antiBotService.logDetection(userAgent, antiBotResult, typeof ip === 'string' ? ip : 'unknown', request.headers);
-      
+      const ip = extractIp(request);
+      const antiBotResult = antiBotService.detect(userAgent, ip);
+
+      antiBotService.logDetection(userAgent, antiBotResult, ip, request.headers);
+
       if (antiBotResult.shouldBlock) {
-        memoryLogger.warn(`拦截爬虫请求 | IP: ${ip} | UA: ${userAgent}`, 'AntiBot');
+        memoryLogger.warn(`拦截爬虫/威胁IP请求 | IP: ${ip} | UA: ${userAgent} | 原因: ${antiBotResult.reason}`, 'AntiBot');
         const anthropicError = createAnthropicError('Access denied: Bot detected', 'authentication_error');
         return reply.code(403).send(anthropicError);
       }
@@ -171,6 +172,8 @@ export function createAnthropicProxyHandler() {
 
           const tokenCount = await calculateTokensIfNeeded(0, requestBody);
 
+          const ipHeader = request.headers['x-forwarded-for'] || request.headers['x-real-ip'] || request.ip || 'unknown';
+          const ip = Array.isArray(ipHeader) ? ipHeader[0] : ipHeader;
           await logApiRequestToDb({
             virtualKey,
             providerId: providerId!,
@@ -181,6 +184,7 @@ export function createAnthropicProxyHandler() {
             errorMessage: error.message,
             truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
             cacheHit: 0,
+            ip,
           });
         }
       }
@@ -224,6 +228,8 @@ async function handleAnthropicNonStreamRequest(
 
       const tokenCount = await calculateTokensIfNeeded(0, requestBody, responseData);
 
+      const ipHeader = request.headers['x-forwarded-for'] || request.headers['x-real-ip'] || request.ip || 'unknown';
+      const ip = Array.isArray(ipHeader) ? ipHeader[0] : ipHeader;
       await logApiRequestToDb({
         virtualKey,
         providerId,
@@ -234,6 +240,7 @@ async function handleAnthropicNonStreamRequest(
         truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
         truncatedResponse: shouldLogBody ? JSON.stringify(responseData) : undefined,
         cacheHit: 0,
+        ip,
       });
 
       memoryLogger.info(
@@ -251,6 +258,8 @@ async function handleAnthropicNonStreamRequest(
 
       const tokenCount = await calculateTokensIfNeeded(0, requestBody, errorData);
 
+      const ipHeader = request.headers['x-forwarded-for'] || request.headers['x-real-ip'] || request.ip || 'unknown';
+      const ip = Array.isArray(ipHeader) ? ipHeader[0] : ipHeader;
       await logApiRequestToDb({
         virtualKey,
         providerId,
@@ -261,6 +270,7 @@ async function handleAnthropicNonStreamRequest(
         errorMessage: JSON.stringify(errorData),
         truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
         cacheHit: 0,
+        ip,
       });
 
       memoryLogger.error(
@@ -279,6 +289,8 @@ async function handleAnthropicNonStreamRequest(
 
     const tokenCount = await calculateTokensIfNeeded(0, requestBody);
 
+    const ipHeader = request.headers['x-forwarded-for'] || request.headers['x-real-ip'] || request.ip || 'unknown';
+    const ip = Array.isArray(ipHeader) ? ipHeader[0] : ipHeader;
     await logApiRequestToDb({
       virtualKey,
       providerId,
@@ -289,6 +301,7 @@ async function handleAnthropicNonStreamRequest(
       errorMessage: error.message,
       truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
       cacheHit: 0,
+      ip,
     });
 
     throw error;
@@ -331,6 +344,8 @@ async function handleAnthropicStreamRequest(
       tokenUsage.completionTokens
     );
 
+    const ipHeader = request.headers['x-forwarded-for'] || request.headers['x-real-ip'] || request.ip || 'unknown';
+    const ip = Array.isArray(ipHeader) ? ipHeader[0] : ipHeader;
     await logApiRequestToDb({
       virtualKey,
       providerId,
@@ -341,6 +356,7 @@ async function handleAnthropicStreamRequest(
       truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
       truncatedResponse: shouldLogBody ? tokenUsage.streamChunks.join('') : undefined,
       cacheHit: 0,
+      ip,
     });
 
     memoryLogger.info(
@@ -363,6 +379,8 @@ async function handleAnthropicStreamRequest(
 
     const tokenCount = await calculateTokensIfNeeded(0, requestBody);
 
+    const ipHeader = request.headers['x-forwarded-for'] || request.headers['x-real-ip'] || request.ip || 'unknown';
+    const ip = Array.isArray(ipHeader) ? ipHeader[0] : ipHeader;
     await logApiRequestToDb({
       virtualKey,
       providerId,
@@ -373,9 +391,9 @@ async function handleAnthropicStreamRequest(
       errorMessage: streamError.message,
       truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
       cacheHit: 0,
+      ip,
     });
 
     return;
   }
 }
-

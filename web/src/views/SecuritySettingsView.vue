@@ -49,6 +49,14 @@
 
               <n-space align="center" justify="space-between">
                 <div>
+                  <div>{{ $t('settings.antiBot.blockThreatIPs') }}</div>
+                  <n-text depth="3" style="font-size: 12px;">{{ $t('settings.antiBot.blockThreatIPsDesc') }}</n-text>
+                </div>
+                <n-switch :value="antiBotBlockThreatIPs" @update:value="onToggleAntiBotBlockThreatIPs" />
+              </n-space>
+
+              <n-space align="center" justify="space-between">
+                <div>
                   <div>{{ $t('settings.antiBot.logHeaders') }}</div>
                   <n-text depth="3" style="font-size: 12px;">{{ $t('settings.antiBot.logHeadersDesc') }}</n-text>
                 </div>
@@ -126,6 +134,7 @@ const message = useMessage();
 const antiBotEnabled = ref(false);
 const antiBotBlockBots = ref(true);
 const antiBotBlockSuspicious = ref(false);
+const antiBotBlockThreatIPs = ref(false);
 const antiBotLogOnly = ref(true);
 const antiBotLogHeaders = ref(false);
 const antiBotAllowedUa = ref('');
@@ -189,6 +198,18 @@ async function onToggleAntiBotBlockSuspicious(val: boolean) {
   }
 }
 
+async function onToggleAntiBotBlockThreatIPs(val: boolean) {
+  const result = await handleAsyncOperation(
+    () => configApi.updateSystemSettings({ antiBot: { blockThreatIPs: val } }),
+    message,
+    t('messages.operationSuccess'),
+    t('messages.operationFailed')
+  );
+  if (result) {
+    antiBotBlockThreatIPs.value = val;
+  }
+}
+
 async function onToggleAntiBotLogHeaders(val: boolean) {
   const result = await handleAsyncOperation(
     () => configApi.updateSystemSettings({ antiBot: { logHeaders: val } }),
@@ -235,6 +256,7 @@ onMounted(async () => {
     antiBotEnabled.value = s.antiBot.enabled;
     antiBotBlockBots.value = s.antiBot.blockBots;
     antiBotBlockSuspicious.value = s.antiBot.blockSuspicious;
+    antiBotBlockThreatIPs.value = s.antiBot.blockThreatIPs;
     antiBotLogOnly.value = s.antiBot.logOnly;
     antiBotLogHeaders.value = s.antiBot.logHeaders;
     antiBotAllowedUa.value = s.antiBot.allowedUserAgents.join('\n');

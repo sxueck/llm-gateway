@@ -22,6 +22,21 @@ export const apiRequestRepository = {
     }
   },
 
+  async getLastRequest() {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query(
+        `SELECT ip, created_at FROM api_requests ORDER BY created_at DESC LIMIT 1`
+      );
+      const result = rows as any[];
+      if (result.length === 0) return null;
+      return result[0];
+    } finally {
+      conn.release();
+    }
+  },
+
   async getStats(options?: { startTime?: number; endTime?: number }) {
     const now = Date.now();
     const startTime = options?.startTime ?? (now - 24 * 60 * 60 * 1000);

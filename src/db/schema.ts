@@ -121,6 +121,7 @@ export async function createTables() {
         request_type VARCHAR(50) DEFAULT 'chat',
         compression_original_tokens INT DEFAULT NULL,
         compression_saved_tokens INT DEFAULT NULL,
+        ip VARCHAR(45) DEFAULT NULL,
         created_at BIGINT NOT NULL,
         FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
         FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,

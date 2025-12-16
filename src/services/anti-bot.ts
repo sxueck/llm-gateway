@@ -1,5 +1,6 @@
 import { memoryLogger } from './logger.js';
 import { loadAntiBotConfig, type AntiBotConfig } from '../utils/anti-bot-config.js';
+import { threatIpBlocker } from './threat-ip-blocker.js';
 
 const BOT_PATTERNS = [
   /bot/i,
@@ -61,6 +62,7 @@ export class AntiBotService {
     enabled: false,
     blockBots: true,
     blockSuspicious: false,
+    blockThreatIPs: false,
     allowedUserAgents: [],
     blockedUserAgents: [],
     logOnly: true,
@@ -117,7 +119,7 @@ export class AntiBotService {
     return SUSPICIOUS_PATTERNS.some(pattern => pattern.test(userAgent));
   }
 
-  detect(userAgent: string): {
+  detect(userAgent: string, ip?: string | string[]): {
     isBot: boolean;
     isSuspicious: boolean;
     isBlocked: boolean;
@@ -135,6 +137,17 @@ export class AntiBotService {
     }
 
     const normalizedUA = userAgent.trim();
+
+    // IP 威胁检测（基于 stamparm/ipsum 列表）
+    if (this.config.blockThreatIPs && threatIpBlocker.isThreat(ip)) {
+      return {
+        isBot: true,
+        isSuspicious: false,
+        isBlocked: true,
+        shouldBlock: !this.config.logOnly,
+        reason: '命中威胁IP列表',
+      };
+    }
     
     // 检查白名单
     if (this.isAllowed(normalizedUA)) {

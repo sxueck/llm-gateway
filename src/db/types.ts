@@ -68,4 +68,5 @@ export type ApiRequestBuffer = {
   request_type?: string;
   compression_original_tokens?: number;
   compression_saved_tokens?: number;
+  ip?: string;
 };

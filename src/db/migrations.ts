@@ -117,6 +117,30 @@ export const migrations: Migration[] = [
         console.warn('[迁移] 恢复 prompt_config 字段失败:', e.message);
       }
     }
+  },
+  {
+    version: 19,
+    name: 'add_ip_to_api_requests',
+    up: async (conn: Connection) => {
+      try {
+        await conn.query(`ALTER TABLE api_requests ADD COLUMN ip VARCHAR(45) DEFAULT NULL AFTER compression_saved_tokens`);
+        console.log('[迁移] 已添加 api_requests 表的 ip 字段');
+      } catch (e: any) {
+        if (e.code === 'ER_DUP_FIELDNAME') {
+          console.log('[迁移] api_requests 表已存在 ip 字段，跳过');
+        } else {
+          throw e;
+        }
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(`ALTER TABLE api_requests DROP COLUMN IF EXISTS ip`);
+        console.log('[迁移] 已删除 api_requests 表的 ip 字��');
+      } catch (e: any) {
+        console.warn('[迁移] 删除 ip 字段失败:', e.message);
+      }
+    }
   }
 ];
 

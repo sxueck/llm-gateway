@@ -121,6 +121,18 @@ export const configApi = {
       maxTriggerCount: number;
     };
     costStats: CostStats | null;
+    requestSourceStats?: {
+      lastRequest: {
+        ip: string;
+        geo: any;
+        timestamp: number;
+      };
+      lastBlocked: {
+        ip: string;
+        geo: any;
+        timestamp: number;
+      };
+    };
   }> {
     return request.get('/admin/config/stats', { params: { period } });
   },
@@ -164,16 +176,17 @@ export const configApi = {
     litellmCompatEnabled: boolean;
     healthMonitoringEnabled: boolean;
     persistentMonitoringEnabled: boolean;
-    developerDebugEnabled: boolean;
-    developerDebugExpiresAt: number | null;
-    antiBot: {
-      enabled: boolean;
-      blockBots: boolean;
-      blockSuspicious: boolean;
-      logOnly: boolean;
-      logHeaders: boolean;
-      allowedUserAgents: string[];
-      blockedUserAgents: string[];
+      developerDebugEnabled: boolean;
+      developerDebugExpiresAt: number | null;
+      antiBot: {
+        enabled: boolean;
+        blockBots: boolean;
+        blockSuspicious: boolean;
+        blockThreatIPs: boolean;
+        logOnly: boolean;
+        logHeaders: boolean;
+        allowedUserAgents: string[];
+        blockedUserAgents: string[];
     };
   }> {
     return request.get('/admin/config/system-settings');
@@ -195,6 +208,7 @@ export const configApi = {
       enabled?: boolean;
       blockBots?: boolean;
       blockSuspicious?: boolean;
+      blockThreatIPs?: boolean;
       logOnly?: boolean;
       logHeaders?: boolean;
       allowedUserAgents?: string[];
@@ -230,4 +244,3 @@ export const configApi = {
     return request.delete(`/admin/config/health-targets/${id}`);
   },
 };
-

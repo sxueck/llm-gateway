@@ -21,6 +21,7 @@ export interface ApiLogParams {
   cacheHit?: 0 | 1;
   cachedTokens?: number;
   compressionStats?: { originalTokens: number; savedTokens: number };
+  ip?: string;
 }
 
 function normalizeErrorMessage(errorMessage: unknown): string | undefined {
@@ -59,5 +60,6 @@ export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
     cache_hit: params.cacheHit ?? 0,
     compression_original_tokens: params.compressionStats?.originalTokens,
     compression_saved_tokens: params.compressionStats?.savedTokens,
+    ip: params.ip,
   });
 }

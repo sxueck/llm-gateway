@@ -49,8 +49,12 @@ export async function flushApiRequestBuffer() {
       let requestBody = request.request_body;
       let responseBody = request.response_body;
       let errorMessage = request.error_message;
+      let ip = request.ip;
 
-      // 最终安全检查：确保不会超过数据库列的最大字节长度
+      if (ip && ip.length > 45) {
+        ip = ip.substring(0, 45);
+      }
+
       if (requestBody && getByteLength(requestBody) > MAX_COLUMN_BYTES) {
         requestBody = truncateToByteLength(requestBody, MAX_COLUMN_BYTES);
       }
@@ -61,7 +65,7 @@ export async function flushApiRequestBuffer() {
         errorMessage = truncateToByteLength(errorMessage, MAX_COLUMN_BYTES);
       }
 
-      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       values.push(
         request.id,
         request.virtual_key_id || null,
@@ -79,6 +83,7 @@ export async function flushApiRequestBuffer() {
         request.request_type || 'chat',
         request.compression_original_tokens || null,
         request.compression_saved_tokens || null,
+        ip || null,
         now
       );
     }
@@ -89,7 +94,7 @@ export async function flushApiRequestBuffer() {
           id, virtual_key_id, provider_id, model,
           prompt_tokens, completion_tokens, cached_tokens,
           status, response_time, error_message, request_body, response_body, cache_hit,
-          request_type, compression_original_tokens, compression_saved_tokens, created_at
+          request_type, compression_original_tokens, compression_saved_tokens, ip, created_at
         ) VALUES ${placeholders.join(', ')}`,
         values
       );

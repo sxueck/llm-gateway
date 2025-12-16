@@ -313,36 +313,78 @@
       </n-grid>
   
     <n-grid cols="1" responsive="screen">
-      <n-gi>
-        <n-card class="trend-card" style="margin-bottom: 24px;">
-          <template #header>
-            <n-space justify="space-between" align="center" class="trend-header">
-              <div>
-                <span>响应时间分布</span>
-                <span style="font-size: 12px; color: #6b7280; font-weight: normal; margin-left: 8px;">(最近 2000 次请求)</span>
-              </div>
-              <n-select
-                v-model:value="selectedLatencyModel"
-                :options="latencyModelOptions"
-                clearable
-                size="small"
-                style="width: 220px;"
-                placeholder="选择模型 (供应商/模型)"
-              />
-            </n-space>
-          </template>
-          <div v-if="loading" class="trend-loading">
-            <n-spin size="large" />
-          </div>
-          <div v-else-if="modelResponseTimeStats.length > 0" class="trend-chart-container">
-            <v-chart :option="responseTimeDistributionOption" :autoresize="true" class="trend-chart" />
-          </div>
-          <n-empty v-else description="暂无数据" :show-icon="false" />
-        </n-card>
-      </n-gi>
-    </n-grid>
+        <n-gi>
+          <n-card class="trend-card" style="margin-bottom: 24px;">
+            <template #header>
+              <n-space justify="space-between" align="center" class="trend-header">
+                <div>
+                  <span>响应时间分布</span>
+                  <span style="font-size: 12px; color: #6b7280; font-weight: normal; margin-left: 8px;">(最近 2000 次请求)</span>
+                </div>
+                <n-select
+                  v-model:value="selectedLatencyModel"
+                  :options="latencyModelOptions"
+                  clearable
+                  size="small"
+                  style="width: 220px;"
+                  placeholder="选择模型 (供应商/模型)"
+                />
+              </n-space>
+            </template>
+            <div v-if="loading" class="trend-loading">
+              <n-spin size="large" />
+            </div>
+            <div v-else-if="modelResponseTimeStats.length > 0" class="trend-chart-container">
+              <v-chart :option="responseTimeDistributionOption" :autoresize="true" class="trend-chart" />
+            </div>
+            <n-empty v-else description="暂无数据" :show-icon="false" />
+          </n-card>
+        </n-gi>
+      </n-grid>
   
-      <n-card class="overview-card" title="系统概览">
+        <n-card class="overview-card" title="请求来源" style="margin-bottom: 24px;">
+          <n-grid cols="1 l:4" :x-gap="24" :y-gap="24" responsive="screen">
+            <n-gi span="3">
+               <div class="map-container" style="height: 350px; width: 100%; border-radius: 8px; overflow: hidden; background-color: #f8fafc; border: 1px solid #e5e7eb;">
+                 <v-chart v-if="mapRegistered" :option="mapOption" :autoresize="true" style="width: 100%; height: 100%;" />
+                 <div v-else style="display: flex; align-items: center; justify-content: center; height: 100%; color: #9ca3af;">
+                   地图加载中...
+                 </div>
+               </div>
+            </n-gi>
+            <n-gi span="1">
+              <n-space vertical :size="24" style="height: 100%; justify-content: center;">
+                 <div class="source-info-item">
+                   <div class="source-label" style="font-size: 13px; color: #6b7280; margin-bottom: 4px;">上一次请求来源</div>
+                   <div class="source-value" style="font-size: 18px; font-weight: 600; color: #1f2937;">
+                     {{ requestSourceStats?.lastRequest?.geo?.country || 'Unknown' }}
+                   </div>
+                   <div class="source-sub" style="font-size: 13px; color: #4b5563;">
+                     {{ requestSourceStats?.lastRequest?.geo?.regionName || requestSourceStats?.lastRequest?.ip }}
+                   </div>
+                   <div class="source-time" style="font-size: 12px; color: #9ca3af; margin-top: 4px;">
+                     {{ formatTimestamp(requestSourceStats?.lastRequest?.timestamp || 0) }}
+                   </div>
+                 </div>
+  
+                 <div class="source-info-item">
+                   <div class="source-label" style="font-size: 13px; color: #6b7280; margin-bottom: 4px;">最近拦截 IP</div>
+                   <div class="source-value" style="font-size: 18px; font-weight: 600; color: #dc2626;">
+                     {{ requestSourceStats?.lastBlocked?.geo?.country || 'N/A' }}
+                   </div>
+                   <div class="source-sub" style="font-size: 13px; color: #4b5563;">
+                     {{ requestSourceStats?.lastBlocked?.ip || '无' }}
+                   </div>
+                   <div class="source-time" style="font-size: 12px; color: #9ca3af; margin-top: 4px;" v-if="requestSourceStats?.lastBlocked?.timestamp">
+                     {{ formatTimestamp(requestSourceStats?.lastBlocked?.timestamp || 0) }}
+                   </div>
+                 </div>
+              </n-space>
+            </n-gi>
+          </n-grid>
+        </n-card>
+  
+        <n-card class="overview-card" title="系统概览">
         <div class="overview-grid">
           <div class="overview-item">
             <span class="overview-label">提供商</span>
@@ -371,15 +413,16 @@ import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
 import { configApi, type ApiStats, type VirtualKeyTrend, type ExpertRoutingStats, type ModelStat, type CostStats, type ModelResponseTimeStat } from '@/api/config';
 import { formatNumber, formatTokenNumber, formatPercentage, formatResponseTime, formatTimestamp, formatUptime } from '@/utils/format';
-import { use } from 'echarts/core';
+import { use, registerMap } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
-import { LineChart, PieChart, ScatterChart } from 'echarts/charts';
+import { LineChart, PieChart, ScatterChart, MapChart, EffectScatterChart } from 'echarts/charts';
 import {
   TitleComponent,
   TooltipComponent,
   LegendComponent,
   GridComponent,
-  DataZoomComponent
+  DataZoomComponent,
+  GeoComponent,
 } from 'echarts/components';
 import VChart from 'vue-echarts';
 
@@ -388,11 +431,14 @@ use([
   LineChart,
   PieChart,
   ScatterChart,
+  MapChart,
+  EffectScatterChart,
   TitleComponent,
   TooltipComponent,
   LegendComponent,
   GridComponent,
-  DataZoomComponent
+  DataZoomComponent,
+  GeoComponent,
 ]);
 
 const { t } = useI18n();
@@ -415,6 +461,11 @@ const circuitBreakerStats = ref<{
   maxTriggerCount: number;
 } | null>(null);
 const costStats = ref<CostStats | null>(null);
+const requestSourceStats = ref<{
+  lastRequest: { ip: string; geo: any; timestamp: number };
+  lastBlocked: { ip: string; geo: any; timestamp: number };
+} | null>(null);
+const mapRegistered = ref(false);
 const selectedPeriod = ref<'24h' | '7d' | '30d'>('24h');
 const chartMetric = ref<'requests' | 'tokens'>('requests');
 const loading = ref(false);
@@ -1012,6 +1063,7 @@ async function loadStats() {
     modelResponseTimeStats.value = result.modelResponseTimeStats || [];
     circuitBreakerStats.value = result.circuitBreakerStats || { totalTriggers: 0, maxTriggeredProvider: '-', maxTriggerCount: 0 };
     costStats.value = result.costStats || null;
+    requestSourceStats.value = result.requestSourceStats || null;
   } catch (error: any) {
     const errorMsg = error.message || '加载数据失败';
     loadError.value = errorMsg;
@@ -1036,11 +1088,102 @@ const formatCost = (cost: number) => {
   return cost.toFixed(2);
 };
 
-onMounted(() => {
+const mapOption = computed(() => {
+  if (!mapRegistered.value) return {};
+  
+  const lastRequest = requestSourceStats.value?.lastRequest;
+  const lastBlocked = requestSourceStats.value?.lastBlocked;
+  
+  const series: any[] = [];
+  
+  if (lastRequest && lastRequest.geo?.lat && lastRequest.geo?.lon) {
+    series.push({
+      name: '请求来源',
+      type: 'effectScatter',
+      coordinateSystem: 'geo',
+      data: [{
+        name: lastRequest.geo.city || lastRequest.geo.regionName,
+        value: [lastRequest.geo.lon, lastRequest.geo.lat]
+      }],
+      symbolSize: 15,
+      itemStyle: {
+        color: '#006241'
+      },
+      rippleEffect: {
+        brushType: 'stroke'
+      }
+    });
+  }
+
+  if (lastBlocked && lastBlocked.geo?.lat && lastBlocked.geo?.lon) {
+    series.push({
+      name: '拦截 IP',
+      type: 'effectScatter',
+      coordinateSystem: 'geo',
+      data: [{
+        name: lastBlocked.geo.city || lastBlocked.geo.regionName,
+        value: [lastBlocked.geo.lon, lastBlocked.geo.lat]
+      }],
+      symbolSize: 15,
+      itemStyle: {
+        color: '#dc2626'
+      },
+      rippleEffect: {
+        brushType: 'stroke'
+      }
+    });
+  }
+
+  return {
+    backgroundColor: 'transparent',
+    geo: {
+      map: 'world',
+      roam: true,
+      label: {
+        emphasis: {
+          show: false
+        }
+      },
+      itemStyle: {
+        normal: {
+          areaColor: '#f3f4f6',
+          borderColor: '#d1d5db'
+        },
+        emphasis: {
+          areaColor: '#e5e7eb'
+        }
+      }
+    },
+    tooltip: {
+      trigger: 'item',
+      formatter: function (params: any) {
+        return params.seriesName + '<br/>' + params.name;
+      }
+    },
+    legend: {
+      data: ['请求来源', '拦�� IP'],
+      bottom: 0
+    },
+    series
+  };
+});
+
+onMounted(async () => {
   loadData();
   window.addEventListener('resize', handleResize);
   // When cost mapping rules change, refresh dashboard stats so cost analysis updates in real time
   window.addEventListener('cost-mapping-updated', loadStats as any);
+  
+  try {
+    const response = await fetch('https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/json/world.json');
+    if (response.ok) {
+      const mapJson = await response.json();
+      registerMap('world', mapJson);
+      mapRegistered.value = true;
+    }
+  } catch (e) {
+    console.error('Failed to load map data', e);
+  }
 });
  
 onUnmounted(() => {
