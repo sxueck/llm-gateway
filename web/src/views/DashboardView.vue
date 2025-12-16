@@ -357,20 +357,20 @@
                  <div class="source-info-item">
                    <div class="source-label" style="font-size: 13px; color: #6b7280; margin-bottom: 4px;">上一次请求来源</div>
                    <div class="source-value" style="font-size: 18px; font-weight: 600; color: #1f2937;">
-                     {{ requestSourceStats?.lastRequest?.geo?.country || 'Unknown' }}
+                     {{ formatGeoLocation(requestSourceStats?.lastRequest?.geo) }}
                    </div>
                    <div class="source-sub" style="font-size: 13px; color: #4b5563;">
-                     {{ requestSourceStats?.lastRequest?.geo?.regionName || requestSourceStats?.lastRequest?.ip }}
+                     {{ requestSourceStats?.lastRequest?.ip }}
                    </div>
                    <div class="source-time" style="font-size: 12px; color: #9ca3af; margin-top: 4px;">
                      {{ formatTimestamp(requestSourceStats?.lastRequest?.timestamp || 0) }}
                    </div>
                  </div>
-  
+
                  <div class="source-info-item">
                    <div class="source-label" style="font-size: 13px; color: #6b7280; margin-bottom: 4px;">最近拦截 IP</div>
                    <div class="source-value" style="font-size: 18px; font-weight: 600; color: #dc2626;">
-                     {{ requestSourceStats?.lastBlocked?.geo?.country || 'N/A' }}
+                     {{ formatGeoLocation(requestSourceStats?.lastBlocked?.geo) }}
                    </div>
                    <div class="source-sub" style="font-size: 13px; color: #4b5563;">
                      {{ requestSourceStats?.lastBlocked?.ip || '无' }}
@@ -464,6 +464,7 @@ const costStats = ref<CostStats | null>(null);
 const requestSourceStats = ref<{
   lastRequest: { ip: string; geo: any; timestamp: number };
   lastBlocked: { ip: string; geo: any; timestamp: number };
+  recentSources?: Array<{ ip: string; geo: any; timestamp: number; count: number }>;
 } | null>(null);
 const mapRegistered = ref(false);
 const selectedPeriod = ref<'24h' | '7d' | '30d'>('24h');
@@ -1088,22 +1089,51 @@ const formatCost = (cost: number) => {
   return cost.toFixed(2);
 };
 
+const formatGeoLocation = (geo: any) => {
+  if (!geo) return 'Unknown';
+  if (geo.regionName && geo.country) {
+    return `${geo.country}, ${geo.regionName}`;
+  }
+  return geo.country || 'Unknown';
+};
+
 const mapOption = computed(() => {
   if (!mapRegistered.value) return {};
   
   const lastRequest = requestSourceStats.value?.lastRequest;
   const lastBlocked = requestSourceStats.value?.lastBlocked;
+  const recentSources = requestSourceStats.value?.recentSources;
   
   const series: any[] = [];
   
-  if (lastRequest && lastRequest.geo?.lat && lastRequest.geo?.lon) {
+  if (recentSources && recentSources.length > 0) {
+    series.push({
+      name: '请求来源',
+      type: 'effectScatter',
+      coordinateSystem: 'geo',
+      data: recentSources.map(item => ({
+        name: formatGeoLocation(item.geo) || item.ip,
+        value: [item.geo.lon, item.geo.lat, item.count]
+      })),
+      symbolSize: (val: any) => {
+        const count = val[2];
+        return Math.min(10 + (count > 1 ? Math.log(count) * 4 : 0), 25);
+      },
+      itemStyle: {
+        color: '#006241'
+      },
+      rippleEffect: {
+        brushType: 'stroke'
+      }
+    });
+  } else if (lastRequest && lastRequest.geo?.lat && lastRequest.geo?.lon) {
     series.push({
       name: '请求来源',
       type: 'effectScatter',
       coordinateSystem: 'geo',
       data: [{
-        name: lastRequest.geo.city || lastRequest.geo.regionName,
-        value: [lastRequest.geo.lon, lastRequest.geo.lat]
+        name: formatGeoLocation(lastRequest.geo) || lastRequest.geo.city || lastRequest.geo.regionName,
+        value: [lastRequest.geo.lon, lastRequest.geo.lat, 1]
       }],
       symbolSize: 15,
       itemStyle: {
@@ -1157,7 +1187,11 @@ const mapOption = computed(() => {
     tooltip: {
       trigger: 'item',
       formatter: function (params: any) {
-        return params.seriesName + '<br/>' + params.name;
+        let res = params.seriesName + '<br/>' + params.name;
+        if (params.value && params.value[2] !== undefined) {
+           res += '<br/>请求数: ' + params.value[2];
+        }
+        return res;
       }
     },
     legend: {

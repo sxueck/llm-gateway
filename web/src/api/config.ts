@@ -132,6 +132,12 @@ export const configApi = {
         geo: any;
         timestamp: number;
       };
+      recentSources?: Array<{
+        ip: string;
+        geo: any;
+        timestamp: number;
+        count: number;
+      }>;
     };
   }> {
     return request.get('/admin/config/stats', { params: { period } });

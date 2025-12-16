@@ -422,6 +422,17 @@ export async function configRoutes(fastify: FastifyInstance) {
     const lastRequestGeo = getGeoInfo(lastRequest?.ip);
     const lastBlockedGeo = getGeoInfo(lastBlocked?.ip);
 
+    const recentIps = await apiRequestDb.getRecentUniqueIps(30);
+    const recentSources = recentIps.map((row: any) => {
+      const geo = getGeoInfo(row.ip);
+      return {
+        ip: row.ip,
+        geo,
+        timestamp: row.last_seen,
+        count: row.count
+      };
+    }).filter((item: any) => item.geo);
+
     const requestSourceStats = {
       lastRequest: {
         ip: lastRequest?.ip || 'N/A',
@@ -432,7 +443,8 @@ export async function configRoutes(fastify: FastifyInstance) {
         ip: lastBlocked?.ip || 'N/A',
         geo: lastBlockedGeo,
         timestamp: lastBlocked?.timestamp || 0
-      }
+      },
+      recentSources
     };
 
     // 计算成本统计

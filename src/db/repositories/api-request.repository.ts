@@ -37,6 +37,32 @@ export const apiRequestRepository = {
     }
   },
 
+  async getRecentUniqueIps(limit: number = 30) {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+      const loggingCondition = getDisableLoggingCondition();
+      
+      const [rows] = await conn.query(
+        `SELECT
+          ar.ip,
+          MAX(ar.created_at) as last_seen,
+          COUNT(*) as count
+         FROM api_requests ar
+         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+         WHERE ar.created_at > ? AND ${loggingCondition}
+         GROUP BY ar.ip
+         ORDER BY last_seen DESC
+         LIMIT ?`,
+        [cutoff, limit]
+      );
+      return rows as any[];
+    } finally {
+      conn.release();
+    }
+  },
+
   async getStats(options?: { startTime?: number; endTime?: number }) {
     const now = Date.now();
     const startTime = options?.startTime ?? (now - 24 * 60 * 60 * 1000);
