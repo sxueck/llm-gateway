@@ -81,8 +81,7 @@
               </n-space>
             </div>
 
-            <!-- Responses API 测试结果 -->
-            <div class="endpoint-result" v-if="!isAnthropicProtocol()">
+            <div class="endpoint-result" v-if="!isAnthropicProtocol() && !isGoogleProtocol()">
               <n-divider style="margin: 8px 0;">
                 <n-space :size="8" align="center">
                   <span style="font-weight: bold;">Responses API</span>
@@ -265,27 +264,37 @@ function isAnthropicProtocol(): boolean {
   return checkIsAnthropicProtocol(props.model);
 }
 
+function isGoogleProtocol(): boolean {
+  return props.model.protocol === 'google';
+}
+
 function getChatEndpointName(): string {
   const protocol = props.model.protocol;
   if (protocol === 'anthropic') {
     return 'Messages API (Anthropic)';
   } else if (protocol === 'google') {
-    return 'Chat Completions API (Google 兼容)';
+    return 'Gemini 原生 API';
   }
   return 'Chat Completions API (OpenAI)';
 }
 
 function getInputTokens(usage: any): number {
-  const base = (usage?.input_tokens ?? usage?.prompt_tokens ?? 0);
+  // Gemini: promptTokenCount, OpenAI: prompt_tokens, Anthropic: input_tokens
+  const base = (usage?.promptTokenCount ?? usage?.input_tokens ?? usage?.prompt_tokens ?? 0);
   const cached = (usage?.input_tokens_details?.cached_tokens ?? usage?.prompt_tokens_details?.cached_tokens ?? 0);
   return base === 0 ? base + cached : base;
 }
 
 function getOutputTokens(usage: any): number {
-  return usage?.output_tokens || usage?.completion_tokens || 0;
+  // Gemini: candidatesTokenCount, OpenAI: completion_tokens, Anthropic: output_tokens
+  return usage?.candidatesTokenCount || usage?.output_tokens || usage?.completion_tokens || 0;
 }
 
 function getTotalTokens(usage: any): number {
+  // Gemini: totalTokenCount, OpenAI/Anthropic: total_tokens
+  if (usage?.totalTokenCount) {
+    return usage.totalTokenCount;
+  }
   if (usage?.total_tokens) {
     return usage.total_tokens;
   }

@@ -120,6 +120,25 @@ function buildAnthropicBody(modelIdentifier: string, prompt: string) {
   };
 }
 
+function buildGeminiNativeBody(prompt: string) {
+  return {
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            text: prompt,
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 200,
+    },
+  };
+}
+
 // ---------- Parsers ----------
 
 function parseChatResponse(json: any): ParsedProbeResponse {
@@ -167,6 +186,25 @@ function parseAnthropicResponse(json: any): ParsedProbeResponse {
   return { content: '无响应内容', usage: json?.usage, ...extractSessionInfo(json) };
 }
 
+function parseGeminiNativeResponse(json: any): ParsedProbeResponse {
+  // Gemini 响应格式: { candidates: [{ content: { parts: [{ text: "..." }] } }], usageMetadata: {...} }
+  const candidates = Array.isArray(json?.candidates) ? json.candidates : [];
+  if (candidates.length > 0) {
+    const firstCandidate = candidates[0];
+    const parts = Array.isArray(firstCandidate?.content?.parts) ? firstCandidate.content.parts : [];
+    if (parts.length > 0) {
+      const firstPart = parts[0];
+      const text = firstPart?.text ?? '';
+      return {
+        content: typeof text === 'string' && text.length > 0 ? text : '无响应内容',
+        usage: json?.usageMetadata,
+        ...extractSessionInfo(json),
+      };
+    }
+  }
+  return { content: '无响应内容', usage: json?.usageMetadata, ...extractSessionInfo(json) };
+}
+
 // ---------- Low-level fetch helper ----------
 
 async function doJsonRequest(url: string, opts: CommonRequestOptions): Promise<{ ok: boolean; status: number; json?: any; text?: string }> {
@@ -204,6 +242,68 @@ export async function probeModelViaProvider(args: {
 
   const base = getBaseUrlForProtocol(provider as any, protocol || null);
   let baseUrl = normalizeBaseUrl(base);
+
+  // Google Gemini 原生协议
+  if (protocol === 'google') {
+    // Gemini 原生 API 端点: /v1beta/models/{model}:generateContent
+    // 从 baseUrl 中提取模型名称（如果存在）或使用默认的 gemini-1.5-pro
+    const url = buildEndpointUrl(baseUrl, `v1beta/models/${modelIdentifier}:generateContent`);
+    const started = Date.now();
+    const { controller, clear } = startAbortTimer(timeoutMs);
+    try {
+      const res = await doJsonRequest(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
+        body: JSON.stringify(buildGeminiNativeBody(prompt)),
+        signal: controller.signal,
+      });
+      const responseTime = Date.now() - started;
+      if (!res.ok) {
+        const chat: EndpointProbeResult = {
+          success: false,
+          status: res.status,
+          message: `Gemini 测试失败: HTTP ${res.status}`,
+          responseTime,
+          error: res.text || '请求失败',
+        };
+        // 对于 Gemini 原生协议，只对原生接口进行一次检查，responses 结果与 chat 保持一致
+        return {
+          chat,
+          responses: chat,
+        };
+      }
+      const parsed = parseGeminiNativeResponse(res.json);
+      const chat: EndpointProbeResult = {
+        success: true,
+        status: res.status,
+        message: 'Gemini 测试成功',
+        responseTime,
+        response: parsed,
+      };
+      // 仅进行一次原生接口检查，前端会对 Google 协议隐藏 Responses API 相关展示
+      return {
+        chat,
+        responses: chat,
+      };
+    } catch (err: any) {
+      const responseTime = Date.now() - started;
+      const chat: EndpointProbeResult = {
+        success: false,
+        message: `Gemini 测试失败: ${err?.message || '请求失败'}`,
+        responseTime,
+        error: err?.stack || String(err),
+      };
+      return {
+        chat,
+        responses: chat,
+      };
+    } finally {
+      clear();
+    }
+  }
 
   if (protocol === 'anthropic') {
     const url = baseUrl.endsWith('/v1')
@@ -390,7 +490,8 @@ export async function probeModelViaGateway(args: {
   const protocol = args.protocol ?? 'openai';
   const prompt = args.prompt ?? 'Say "OK"';
   const timeoutMs = args.timeoutMs ?? 20000;
-  const v1 = normalizeBaseUrl(args.gatewayUrl) + '/v1';
+  const baseGatewayUrl = normalizeBaseUrl(args.gatewayUrl);
+  const v1 = baseGatewayUrl + '/v1';
 
   const started = Date.now();
 
@@ -480,6 +581,44 @@ export async function probeModelViaGateway(args: {
         };
       }
       const parsed = parseAnthropicResponse(res.json);
+      if (!parsed.content || String(parsed.content).trim().length === 0) {
+        return {
+          success: false,
+          latencyMs,
+          errorType: 'empty_content',
+          errorMessage: '响应内容为空',
+        };
+      }
+      return { success: true, latencyMs };
+    } catch (error: any) {
+      const latencyMs = Date.now() - started;
+      return mapTransportError(error, latencyMs, timeoutMs);
+    } finally {
+      timer.clear();
+    }
+  }
+
+  if (protocol === 'google') {
+    const url = buildEndpointUrl(baseGatewayUrl, `v1beta/models/${args.modelName}:generateContent`);
+    const timer = startAbortTimer(timeoutMs);
+    try {
+      const res = await doJsonRequest(url, {
+        method: 'POST',
+        headers: commonHeaders,
+        body: JSON.stringify(buildGeminiNativeBody(prompt)),
+        signal: timer.controller.signal,
+      });
+      const latencyMs = Date.now() - started;
+      if (!res.ok) {
+        const errText = res.text || `HTTP ${res.status}`;
+        return {
+          success: false,
+          latencyMs,
+          errorType: 'http_error',
+          errorMessage: errText.substring(0, 200),
+        };
+      }
+      const parsed = parseGeminiNativeResponse(res.json);
       if (!parsed.content || String(parsed.content).trim().length === 0) {
         return {
           success: false,
