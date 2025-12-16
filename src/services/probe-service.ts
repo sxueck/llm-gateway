@@ -513,6 +513,10 @@ export async function probeModelViaGateway(args: {
     if (args.endpoint.includes('/messages')) {
       body = JSON.stringify(buildAnthropicBody(args.modelName, prompt));
       parser = parseAnthropicResponse;
+    } else if (args.endpoint.includes(':generateContent') || args.endpoint.includes(':streamGenerateContent')) {
+      // Gemini 原生端点：使用 contents 格式
+      body = JSON.stringify(buildGeminiNativeBody(prompt));
+      parser = parseGeminiNativeResponse;
     } else if (args.endpoint.includes('/responses')) {
       body = JSON.stringify(buildResponsesBody(args.modelName, prompt));
       parser = parseResponsesResponse;

@@ -183,8 +183,34 @@ class HealthCheckerService {
         };
       }
 
+      let effectiveProtocol = model.protocol || 'openai';
+
+      if (model.is_virtual === 1 && (model.routing_config_id || model.expert_routing_id)) {
+        try {
+          const { resolveProviderFromModel } = await import('../routes/proxy/routing.js');
+          const resolved = await resolveProviderFromModel(
+            model,
+            { body: { model: model.name }, protocol: 'openai' } as any,
+            undefined
+          );
+
+          if (resolved.resolvedModel) {
+            effectiveProtocol = resolved.resolvedModel.protocol || 'openai';
+            memoryLogger.debug(
+              `健康检查: 虚拟模型 ${model.name} 解析协议 | protocol: ${effectiveProtocol}`,
+              'HealthChecker'
+            );
+          }
+        } catch (e: any) {
+          memoryLogger.warn(
+            `健康检查: 无法解析虚拟模型 ${model.name} 的真实协议，使用默认值: ${e.message}`,
+            'HealthChecker'
+          );
+        }
+      }
+
       const outcome = await probeService.probeModelViaGateway({
-        protocol: (model.protocol || 'openai') as any,
+        protocol: effectiveProtocol as any,
         modelName: model.name,
         gatewayUrl,
         bearerKey: monitoringKeyValue,
