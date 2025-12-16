@@ -33,7 +33,7 @@ export async function resolveModelAndProvider(
   let currentModel;
   let providerId: string | undefined;
 
-  // 放宽监控专用密钥限制：健康检查请求可不依赖虚拟密钥已绑定模型
+  // 监控专用密钥：健康检查请求只在监控虚拟密钥绑定的模型中解析目标模型
   try {
     const isHealthCheck = String((request.headers['x-health-check'] as any) || '').toLowerCase() === 'true';
     if (isHealthCheck) {
@@ -54,18 +54,74 @@ export async function resolveModelAndProvider(
           };
         }
 
-        const allModels = await modelDb.getAll();
-        const model = (allModels as any[]).find(m =>
-          m?.model_identifier === requestedModel || m?.name === requestedModel
+        // 只在监控虚拟密钥绑定的模型中查找目标模型，避免被其他同名模型干扰
+        const candidateModelIds: string[] = [];
+        if (virtualKey.model_id) {
+          candidateModelIds.push(virtualKey.model_id);
+        }
+        if (virtualKey.model_ids) {
+          try {
+            const parsed = JSON.parse(virtualKey.model_ids);
+            if (Array.isArray(parsed)) {
+              for (const id of parsed) {
+                if (typeof id === 'string') {
+                  candidateModelIds.push(id);
+                }
+              }
+            }
+          } catch (e) {
+            memoryLogger.error(`Failed to parse monitoring virtual key model_ids: ${e}`, 'ModelResolver');
+          }
+        }
+
+        const uniqueCandidateIds = [...new Set(candidateModelIds)];
+        if (uniqueCandidateIds.length === 0) {
+          memoryLogger.error(
+            `Monitoring virtual key ${virtualKey.id} has no bound models for health check`,
+            'ModelResolver'
+          );
+          return {
+            code: 500,
+            body: {
+              error: {
+                message: 'Monitoring virtual key has no bound models',
+                type: 'internal_error',
+                param: null,
+                code: 'monitoring_key_no_models'
+              }
+            }
+          };
+        }
+
+        const candidateModels: Array<{ id: string; model: any }> = [];
+        for (const id of uniqueCandidateIds) {
+          try {
+            const m = await modelDb.getById(id);
+            if (m && m.enabled) {
+              candidateModels.push({ id, model: m });
+            }
+          } catch (e) {
+            memoryLogger.warn(
+              `Failed to load model ${id} for monitoring virtual key ${virtualKey.id}: ${e}`,
+              'ModelResolver'
+            );
+          }
+        }
+
+        const matchedModels = candidateModels.filter(({ model }) =>
+          model?.model_identifier === requestedModel || model?.name === requestedModel
         );
 
-        if (!model) {
-          memoryLogger.error(`Health check model not found: ${requestedModel}`, 'ModelResolver');
+        if (matchedModels.length === 0) {
+          memoryLogger.error(
+            `Health check model not found in monitoring virtual key models: ${requestedModel}`,
+            'ModelResolver'
+          );
           return {
             code: 404,
             body: {
               error: {
-                message: `Model not found for health check: ${requestedModel}`,
+                message: `Model not found for health check in monitoring virtual key: ${requestedModel}`,
                 type: 'invalid_request_error',
                 param: null,
                 code: 'model_not_found'
@@ -73,6 +129,30 @@ export async function resolveModelAndProvider(
             }
           };
         }
+
+        if (matchedModels.length > 1) {
+          const options = matchedModels.map(({ model }) => `${model.name} (${model.provider_id || 'no-provider'})`);
+          memoryLogger.error(
+            `Health check model name "${requestedModel}" is ambiguous within monitoring virtual key. ` +
+              `Matched: ${options.join(', ')}`,
+            'ModelResolver'
+          );
+          return {
+            code: 400,
+            body: {
+              error: {
+                message:
+                  `Ambiguous model name for health check: "${requestedModel}". ` +
+                  `Monitoring virtual key has multiple models with the same name: ${options.join(', ')}.`,
+                type: 'invalid_request_error',
+                param: null,
+                code: 'ambiguous_health_check_model'
+              }
+            }
+          };
+        }
+
+        const { model, id: selectedModelId } = matchedModels[0];
 
         currentModel = model;
         try {
@@ -89,10 +169,10 @@ export async function resolveModelAndProvider(
           return {
             provider,
             providerId: providerId!,
-            currentModel,
+           currentModel,
             excludeProviders: result.excludeProviders,
             canRetry,
-            modelId: model.id
+            modelId: selectedModelId
           };
         } catch (e: any) {
           memoryLogger.error(`Health check provider resolution failed: ${e.message}`, 'ModelResolver');
