@@ -156,17 +156,6 @@ export const migrations: Migration[] = [
           throw e;
         }
       }
-
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS blocked_ips (
-          ip VARCHAR(45) PRIMARY KEY,
-          reason VARCHAR(255) DEFAULT NULL,
-          created_at BIGINT NOT NULL,
-          created_by VARCHAR(255) DEFAULT NULL,
-          INDEX idx_blocked_ips_created_at (created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-      console.log('[迁移] 已创建 blocked_ips 表');
     },
     down: async (conn: Connection) => {
       try {
@@ -175,9 +164,6 @@ export const migrations: Migration[] = [
       } catch (e: any) {
         console.warn('[迁移] 删除 user_agent 字段失败:', e.message);
       }
-
-      await conn.query('DROP TABLE IF EXISTS blocked_ips');
-      console.log('[迁移] 已删除 blocked_ips 表');
     }
   }
 ];

@@ -41,7 +41,7 @@ export function createAnthropicProxyHandler() {
       requestIp = extractIp(request);
       requestUserAgent = getRequestUserAgent(request);
 
-      const manualBlock = manualIpBlocklist.isBlocked(requestIp);
+      const manualBlock = await manualIpBlocklist.isBlocked(requestIp);
       if (manualBlock) {
         memoryLogger.warn(
           `拦截手动屏蔽 IP 请求 | IP: ${requestIp} | UA: ${requestUserAgent} | 原因: ${manualBlock.reason || '管理员拦截'}`,

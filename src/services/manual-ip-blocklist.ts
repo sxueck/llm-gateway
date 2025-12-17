@@ -55,7 +55,18 @@ class ManualIpBlocklistService {
     return normalized;
   }
 
-  isBlocked(ipRaw: string | string[] | undefined): BlockedIpEntry | null {
+  private async ensureInitialized() {
+    if (this.initialized) {
+      return;
+    }
+    if (this.loading) {
+      await this.loading;
+      return;
+    }
+    await this.init();
+  }
+
+  async isBlocked(ipRaw: string | string[] | undefined): Promise<BlockedIpEntry | null> {
     if (!ipRaw) {
       return null;
     }
@@ -63,9 +74,7 @@ class ManualIpBlocklistService {
     if (!candidate) {
       return null;
     }
-    if (!this.initialized && !this.loading) {
-      this.init().catch(() => {});
-    }
+    await this.ensureInitialized();
     const normalized = normalizeIp(candidate);
     if (!normalized) {
       return null;

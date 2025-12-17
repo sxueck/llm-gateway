@@ -1,17 +1,7 @@
-import IP2Region from 'ip2region';
 import { FastifyRequest } from 'fastify';
 import { isIP } from 'node:net';
 import { memoryLogger } from '../services/logger.js';
-
-let ipSearcher: any = null;
-
-try {
-  // Fix for IP2Region import in some environments
-  const IP2RegionClass = (IP2Region as any).default || IP2Region;
-  ipSearcher = new IP2RegionClass();
-} catch (error: any) {
-  memoryLogger.error(`初始化 IP2Region 失败: ${error?.message || error}`, 'GeoIP');
-}
+import { appConfig } from '../config/index.js';
 
 const GEO_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 const geoCache = new Map<string, { expiresAt: number; info: GeoInfo }>();
@@ -80,43 +70,23 @@ function isPrivateIp(ip: string): boolean {
 }
 
 function buildLocationLabel(parts: { country?: string; province?: string; city?: string }) {
-  const segments = [parts.country, parts.province, parts.city].filter(Boolean);
-  return segments.length > 0 ? segments.join(' · ') : '未知';
-}
+	// Dashboard 需求：属地展示精确到“国家 · 省份”即可，例如 "China · Guangdong"
+	// 优先使用 国家 + 省份；如果没有省份但有城市，则退化为 国家 + 城市；否则使用单一可用字段
+	const { country, province, city } = parts;
+	const hasCountry = !!country;
+	const hasProvince = !!province;
+	const hasCity = !!city;
 
-async function fetchAsnMetadata(ip: string) {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'llm-gateway-ip-lookup',
-      },
-    });
-    clearTimeout(timeout);
-    if (!res.ok) {
-      return null;
-    }
-    const data: any = await res.json();
-    if (!data || data.error) {
-      return null;
-    }
-    const asn = typeof data.asn === 'string'
-      ? data.asn
-      : (typeof data.asn === 'number' ? `AS${data.asn}` : undefined);
-    return {
-      asn,
-      organization: data.org || data.org_name || data.company || undefined,
-      latitude: typeof data.latitude === 'number' ? data.latitude : undefined,
-      longitude: typeof data.longitude === 'number' ? data.longitude : undefined,
-      country: data.country_name || data.country,
-      region: data.region,
-      city: data.city,
-    };
-  } catch {
-    return null;
-  }
+	if (hasCountry && hasProvince) {
+		return `${country} · ${province}`;
+	}
+
+	if (hasCountry && !hasProvince && hasCity) {
+		return `${country} · ${city}`;
+	}
+
+	const segments = [country, province || city].filter(Boolean) as string[];
+	return segments.length > 0 ? segments.join(' · ') : '未知';
 }
 
 async function fetchGeoFromIpApiCom(ip: string) {
@@ -157,6 +127,11 @@ export async function getGeoInfo(ip: string | null | undefined): Promise<GeoInfo
 
   const normalizedIp = normalizeIp(ip);
   if (!normalizedIp || isPrivateIp(normalizedIp)) {
+    return null;
+  }
+
+  // 如果配置关闭了外部 GeoIP 查询，直接返回 null，避免对第三方服务发起请求
+  if (!appConfig.geoIpEnabled) {
     return null;
   }
 

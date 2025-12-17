@@ -17,7 +17,8 @@ const envSchema = z.object({
   MYSQL_USER: z.string().default('root'),
   MYSQL_PASSWORD: z.string(),
   MYSQL_DATABASE: z.string().default('llm_gateway'),
-});
+  GEO_IP_ENABLED: z.string().optional(),
+  });
 
 const env = envSchema.parse(process.env);
 
@@ -33,6 +34,7 @@ export const appConfig = {
   publicUrl: defaultPublicUrl,
   defaultPublicUrl,
   demoMode: env.DEMO_MODE === 'true' || env.DEMO_MODE === 'enabled',
+  geoIpEnabled: env.GEO_IP_ENABLED !== 'false',
   mysql: {
     host: env.MYSQL_HOST,
     port: parseInt(env.MYSQL_PORT, 10),
@@ -63,4 +65,3 @@ export function validatePublicUrl(url: string): { valid: boolean; error?: string
 export function setPublicUrl(url: string): void {
   appConfig.publicUrl = url;
 }
-

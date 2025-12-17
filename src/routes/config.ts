@@ -119,12 +119,11 @@ export async function configRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const [geo, lastRequestByIp] = await Promise.all([
+    const [geo, lastRequestByIp, blockedInfo] = await Promise.all([
       getGeoInfo(normalizedIp),
       apiRequestDb.getLastRequestByIp(normalizedIp),
+      manualIpBlocklist.isBlocked(normalizedIp),
     ]);
-
-    const blockedInfo = manualIpBlocklist.isBlocked(normalizedIp);
 
     return {
       ip: normalizedIp,
@@ -543,9 +542,11 @@ export async function configRoutes(fastify: FastifyInstance) {
 
     const recentSources = await Promise.all(
       dedupedSources.map(async (entry) => {
-        const geo = await getGeoInfo(entry.ip);
-        const lastRequestForIp = await apiRequestDb.getLastRequestByIp(entry.ip);
-        const manualBlocked = manualIpBlocklist.isBlocked(entry.ip);
+        const [geo, lastRequestForIp, manualBlocked] = await Promise.all([
+          getGeoInfo(entry.ip),
+          apiRequestDb.getLastRequestByIp(entry.ip),
+          manualIpBlocklist.isBlocked(entry.ip),
+        ]);
         return {
           ip: entry.ip,
           timestamp: lastRequestForIp?.created_at || entry.timestamp,
