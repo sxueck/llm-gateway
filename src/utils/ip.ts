@@ -3,10 +3,12 @@ import { FastifyRequest } from 'fastify';
 import { isIP } from 'node:net';
 import { memoryLogger } from '../services/logger.js';
 
-let ipSearcher: IP2Region | null = null;
+let ipSearcher: any = null;
 
 try {
-  ipSearcher = new IP2Region();
+  // Fix for IP2Region import in some environments
+  const IP2RegionClass = (IP2Region as any).default || IP2Region;
+  ipSearcher = new IP2RegionClass();
 } catch (error: any) {
   memoryLogger.error(`初始化 IP2Region 失败: ${error?.message || error}`, 'GeoIP');
 }
@@ -108,6 +110,37 @@ async function fetchAsnMetadata(ip: string) {
       organization: data.org || data.org_name || data.company || undefined,
       latitude: typeof data.latitude === 'number' ? data.latitude : undefined,
       longitude: typeof data.longitude === 'number' ? data.longitude : undefined,
+      country: data.country_name || data.country,
+      region: data.region,
+      city: data.city,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchGeoFromIpApiCom(ip: string) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    // ip-api.com free endpoint is HTTP only
+    const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,message,country,regionName,city,isp,org,as,lat,lon`, {
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    if (data.status !== 'success') return null;
+
+    return {
+      country: data.country,
+      region: data.regionName,
+      city: data.city,
+      isp: data.isp,
+      org: data.org,
+      asn: data.as ? data.as.split(' ')[0] : undefined,
+      latitude: data.lat,
+      longitude: data.lon,
     };
   } catch {
     return null;
@@ -115,7 +148,7 @@ async function fetchAsnMetadata(ip: string) {
 }
 
 /**
- * 获取 IP 的地理位置信息 (使用 ip2region + ipapi ASN)
+ * 获取 IP 的地理位置信息 (仅使用 ip-api.com)
  */
 export async function getGeoInfo(ip: string | null | undefined): Promise<GeoInfo | null> {
   if (!ip) {
@@ -123,7 +156,7 @@ export async function getGeoInfo(ip: string | null | undefined): Promise<GeoInfo
   }
 
   const normalizedIp = normalizeIp(ip);
-  if (!normalizedIp || isPrivateIp(normalizedIp) || !ipSearcher) {
+  if (!normalizedIp || isPrivateIp(normalizedIp)) {
     return null;
   }
 
@@ -133,35 +166,36 @@ export async function getGeoInfo(ip: string | null | undefined): Promise<GeoInfo
   }
 
   try {
-    const result = ipSearcher.search(normalizedIp);
-    if (!result) {
-      return null;
+    // 仅使用 ip-api.com 作为查询源
+    const result = await fetchGeoFromIpApiCom(normalizedIp);
+    
+    if (result) {
+      const info: GeoInfo = {
+        ip: normalizedIp,
+        country: result.country,
+        province: result.region,
+        city: result.city,
+        isp: result.isp,
+        ispZh: result.isp,
+        locationZh: buildLocationLabel({
+          country: result.country,
+          province: result.region,
+          city: result.city
+        }),
+        asn: result.asn,
+        asOrganization: result.org,
+        latitude: result.latitude,
+        longitude: result.longitude,
+      };
+
+      geoCache.set(normalizedIp, {
+        info,
+        expiresAt: Date.now() + GEO_CACHE_TTL,
+      });
+      return info;
     }
 
-    const info: GeoInfo = {
-      ip: normalizedIp,
-      country: result.country || undefined,
-      province: result.province || undefined,
-      city: result.city || undefined,
-      isp: result.isp || undefined,
-      ispZh: result.isp || undefined,
-      locationZh: buildLocationLabel(result),
-    };
-
-    const asnMeta = await fetchAsnMetadata(normalizedIp);
-    if (asnMeta) {
-      info.asn = asnMeta.asn;
-      info.asOrganization = asnMeta.organization;
-      info.latitude = asnMeta.latitude;
-      info.longitude = asnMeta.longitude;
-    }
-
-    geoCache.set(normalizedIp, {
-      info,
-      expiresAt: Date.now() + GEO_CACHE_TTL,
-    });
-
-    return info;
+    return null;
   } catch (error: any) {
     memoryLogger.warn(`获取 IP(${normalizedIp}) 位置信息失败: ${error?.message || error}`, 'GeoIP');
     return null;

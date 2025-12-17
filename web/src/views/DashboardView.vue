@@ -489,12 +489,22 @@ const requestSourceColumns = computed<DataTableColumns<RequestSourceEntry>>(() =
         : `最近请求 ${row.count || 0} 次`;
       return h('div', { style: 'display: flex; flex-direction: column; gap: 4px;' }, [
         h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, [
-          h('span', { style: 'font-weight: 600; color: #111827;' }, row.ip || '-'),
+          h(
+            'span',
+            {
+              style: 'font-weight: 600; color: #111827; cursor: pointer; text-decoration: underline; text-underline-offset: 4px; text-decoration-color: #d1d5db;',
+              onClick: () => handleLookupIp(row.ip),
+              title: '点击查询 IP 详细信息',
+              class: 'ip-clickable'
+            },
+            row.ip || '-'
+          ),
           h(
             NTag,
             { size: 'small', type: tagType, bordered: false },
             { default: () => tagText }
-          )
+          ),
+          lookupLoadingIp.value === row.ip ? h(NSpin, { size: 14 }) : null
         ]),
         h('div', { style: 'font-size: 12px; color: #6b7280;' }, subText)
       ]);
@@ -560,16 +570,6 @@ const requestSourceColumns = computed<DataTableColumns<RequestSourceEntry>>(() =
     minWidth: 180,
     render(row) {
       return h(NSpace, { size: 6 }, [
-        h(
-          NButton,
-          {
-            size: 'tiny',
-            quaternary: true,
-            loading: lookupLoadingIp.value === row.ip,
-            onClick: () => handleLookupIp(row.ip),
-          },
-          { default: () => '查询' }
-        ),
         h(
           NPopconfirm,
           {
