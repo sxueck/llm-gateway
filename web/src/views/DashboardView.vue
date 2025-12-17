@@ -357,6 +357,9 @@
                   <div class="source-time" style="font-size: 12px; color: #9ca3af; margin-top: 4px;">
                     {{ requestSourceStats?.lastRequest?.timestamp ? formatTimestamp(requestSourceStats?.lastRequest?.timestamp || 0) : '---' }}
                   </div>
+                  <div class="source-client" style="font-size: 12px; color: #6b7280; margin-top: 6px; word-break: break-all;">
+                    客户端：{{ requestSourceStats?.lastRequest?.userAgent || '未知' }}
+                  </div>
                 </div>
               </n-gi>
               <n-gi>
@@ -417,7 +420,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, h } from 'vue';
-import { useMessage, NSpace, NGrid, NGi, NCard, NSelect, NEmpty, NButton, NIcon, NSpin, NResult, NDataTable, NTag } from 'naive-ui';
+import { useMessage, NSpace, NGrid, NGi, NCard, NSelect, NEmpty, NButton, NIcon, NSpin, NResult, NDataTable, NTag, NTooltip, NPopconfirm } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
 import { RefreshOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
@@ -471,6 +474,8 @@ const circuitBreakerStats = ref<{
 const costStats = ref<CostStats | null>(null);
 const requestSourceStats = ref<RequestSourceStats | null>(null);
 const requestSourceTableData = computed<RequestSourceEntry[]>(() => requestSourceStats.value?.recentSources || []);
+const lookupLoadingIp = ref<string | null>(null);
+const blockLoadingIp = ref<string | null>(null);
 const requestSourceColumns = computed<DataTableColumns<RequestSourceEntry>>(() => [
   {
     title: 'IP 地址',
@@ -480,7 +485,7 @@ const requestSourceColumns = computed<DataTableColumns<RequestSourceEntry>>(() =
       const tagType = row.type === 'blocked' ? 'error' : 'success';
       const tagText = row.type === 'blocked' ? '被拦截' : '正常访问';
       const subText = row.type === 'blocked'
-        ? '由安全策略拦截'
+        ? (row.blockedReason ? `拦截原因：${row.blockedReason}` : '由安全策略拦截')
         : `最近请求 ${row.count || 0} 次`;
       return h('div', { style: 'display: flex; flex-direction: column; gap: 4px;' }, [
         h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, [
@@ -529,8 +534,152 @@ const requestSourceColumns = computed<DataTableColumns<RequestSourceEntry>>(() =
     render(row) {
       return row.timestamp ? formatTimestamp(row.timestamp) : '-';
     }
+  },
+  {
+    title: '客户端',
+    key: 'client',
+    minWidth: 220,
+    render(row) {
+      if (!row.userAgent) {
+        return '未知';
+      }
+      const text = row.userAgent.length > 60 ? `${row.userAgent.slice(0, 60)}...` : row.userAgent;
+      return h(
+        NTooltip,
+        null,
+        {
+          trigger: () => h('div', { style: 'font-size: 12px; color: #374151; line-height: 1.5; word-break: break-all;' }, text),
+          default: () => row.userAgent,
+        }
+      );
+    }
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    minWidth: 180,
+    render(row) {
+      return h(NSpace, { size: 6 }, [
+        h(
+          NButton,
+          {
+            size: 'tiny',
+            quaternary: true,
+            loading: lookupLoadingIp.value === row.ip,
+            onClick: () => handleLookupIp(row.ip),
+          },
+          { default: () => '查询' }
+        ),
+        h(
+          NPopconfirm,
+          {
+            disabled: row.type === 'blocked',
+            positiveText: '拦截',
+            negativeText: '取消',
+            onPositiveClick: () => handleBlockIp(row.ip),
+          },
+          {
+            default: () => '确定要拦截该 IP 吗？',
+            trigger: () =>
+              h(
+                NButton,
+                {
+                  size: 'tiny',
+                  type: row.type === 'blocked' ? 'default' : 'error',
+                  ghost: true,
+                  loading: blockLoadingIp.value === row.ip,
+                  disabled: row.type === 'blocked',
+                },
+                { default: () => (row.type === 'blocked' ? '已拦截' : '拦截') }
+              ),
+          }
+        ),
+      ]);
+    }
   }
 ]);
+
+function ensureRequestSourceState() {
+  if (!requestSourceStats.value) {
+    requestSourceStats.value = {
+      lastRequest: null,
+      lastBlocked: null,
+      recentSources: [],
+    };
+  } else if (!requestSourceStats.value.recentSources) {
+    requestSourceStats.value = {
+      ...requestSourceStats.value,
+      recentSources: [],
+    };
+  }
+}
+
+function buildUpdatedSources(ip: string, patch: Partial<RequestSourceEntry>) {
+  ensureRequestSourceState();
+  const recentSources = requestSourceStats.value!.recentSources || [];
+  return recentSources.map(entry => {
+    if (entry.ip !== ip) return entry;
+    return { ...entry, ...patch };
+  });
+}
+
+async function handleLookupIp(ip?: string) {
+  if (!ip) return;
+  lookupLoadingIp.value = ip;
+  try {
+    const result = await configApi.lookupRequestSource(ip);
+    const updatedSources = buildUpdatedSources(ip, {
+      geo: result.geo,
+      timestamp: result.lastSeen || Date.now(),
+      userAgent: result.userAgent || null,
+      type: result.blocked ? 'blocked' : 'normal',
+      blockedReason: result.blocked ? result.blockedReason : null,
+    });
+    requestSourceStats.value = {
+      ...requestSourceStats.value!,
+      recentSources: updatedSources,
+    };
+    const locationText = formatGeoLocation(result.geo || undefined);
+    const asnText = result.geo?.asn ? `${result.geo.asn}${result.geo.asOrganization ? ` · ${result.geo.asOrganization}` : ''}` : '';
+    message.success(`查询成功：${locationText}${asnText ? ` | ${asnText}` : ''}`);
+  } catch (error: any) {
+    const errorMsg = error?.response?.data?.error?.message || error?.message || '查询 IP 信息失败';
+    message.error(errorMsg);
+  } finally {
+    lookupLoadingIp.value = null;
+  }
+}
+
+async function handleBlockIp(ip?: string) {
+  if (!ip) return;
+  blockLoadingIp.value = ip;
+  try {
+    const result = await configApi.blockRequestSource({ ip });
+    const reason = result.blocked.reason || '手动拦截';
+    const updatedSources = buildUpdatedSources(ip, {
+      type: 'blocked',
+      blockedReason: reason,
+    });
+    const targetEntry = updatedSources.find(entry => entry.ip === ip);
+    requestSourceStats.value = {
+      ...requestSourceStats.value!,
+      recentSources: updatedSources,
+      lastBlocked: {
+        ip,
+        geo: targetEntry?.geo || null,
+        timestamp: result.blocked.timestamp,
+        reason,
+        source: 'manual',
+      },
+    };
+    message.success(`已拦截 IP ${ip}`);
+  } catch (error: any) {
+    const errorMsg = error?.response?.data?.error?.message || error?.message || '拦截 IP 失败';
+    message.error(errorMsg);
+  } finally {
+    blockLoadingIp.value = null;
+  }
+}
 const selectedPeriod = ref<'24h' | '7d' | '30d'>('24h');
 const chartMetric = ref<'requests' | 'tokens'>('requests');
 const loading = ref(false);

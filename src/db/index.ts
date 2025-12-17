@@ -30,6 +30,7 @@ import { healthTargetRepository } from './repositories/health-target.repository.
 import { healthRunRepository } from './repositories/health-run.repository.js';
 import { costMappingRepository } from './repositories/cost-mapping.repository.js';
 import { circuitBreakerStatsRepository } from './repositories/circuit-breaker-stats.repository.js';
+import { blockedIpRepository } from './repositories/blocked-ip.repository.js';
 
 // Export repositories with backward-compatible names
 export const userDb = userRepository;
@@ -45,6 +46,7 @@ export const healthTargetDb = healthTargetRepository;
 export const healthRunDb = healthRunRepository;
 export const costMappingDb = costMappingRepository;
 export const circuitBreakerStatsDb = circuitBreakerStatsRepository;
+export const blockedIpDb = blockedIpRepository;
 
 // Enhanced initDatabase that also creates tables and runs migrations
 export async function initDatabase() {

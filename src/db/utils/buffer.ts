@@ -50,6 +50,7 @@ export async function flushApiRequestBuffer() {
       let responseBody = request.response_body;
       let errorMessage = request.error_message;
       let ip = request.ip;
+      let userAgent = request.user_agent;
 
       if (ip && ip.length > 45) {
         ip = ip.substring(0, 45);
@@ -65,7 +66,11 @@ export async function flushApiRequestBuffer() {
         errorMessage = truncateToByteLength(errorMessage, MAX_COLUMN_BYTES);
       }
 
-      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      if (userAgent && getByteLength(userAgent) > 500) {
+        userAgent = truncateToByteLength(userAgent, 500);
+      }
+
+      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       values.push(
         request.id,
         request.virtual_key_id || null,
@@ -84,6 +89,7 @@ export async function flushApiRequestBuffer() {
         request.compression_original_tokens || null,
         request.compression_saved_tokens || null,
         ip || null,
+        userAgent || null,
         now
       );
     }
@@ -94,7 +100,7 @@ export async function flushApiRequestBuffer() {
           id, virtual_key_id, provider_id, model,
           prompt_tokens, completion_tokens, cached_tokens,
           status, response_time, error_message, request_body, response_body, cache_hit,
-          request_type, compression_original_tokens, compression_saved_tokens, ip, created_at
+          request_type, compression_original_tokens, compression_saved_tokens, ip, user_agent, created_at
         ) VALUES ${placeholders.join(', ')}`,
         values
       );

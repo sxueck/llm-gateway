@@ -6,6 +6,8 @@ import { calculateTokensIfNeeded } from '../token-calculator.js';
 import { circuitBreaker } from '../../../services/circuit-breaker.js';
 import { shouldLogRequestBody, buildFullRequest, getTruncatedBodies } from './shared.js';
 import { logApiRequestToDb } from '../../../services/api-request-logger.js';
+import { extractIp } from '../../../utils/ip.js';
+import { getRequestUserAgent } from '../../../utils/http.js';
 import type { VirtualKey } from '../../../types/index.js';
 
 export interface ChatStreamParams {
@@ -42,6 +44,9 @@ export async function handleChatStreamRequest(params: ChatStreamParams): Promise
     `流式请求开始 (Chat): ${path} | virtual key: ${vkDisplay}`,
     'Proxy'
   );
+
+  const requestUserAgent = getRequestUserAgent(request);
+  const requestIp = extractIp(request);
 
   // 创建 AbortController 用于取消请求
   const abortController = new AbortController();
@@ -116,6 +121,8 @@ export async function handleChatStreamRequest(params: ChatStreamParams): Promise
       truncatedResponse,
       cacheHit: 0,
       compressionStats,
+      ip: requestIp,
+      userAgent: requestUserAgent,
     });
 
   } catch (streamError: any) {
@@ -155,6 +162,8 @@ export async function handleChatStreamRequest(params: ChatStreamParams): Promise
       truncatedRequest,
       cacheHit: 0,
       compressionStats,
+      ip: requestIp,
+      userAgent: requestUserAgent,
     });
   }
 }

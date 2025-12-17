@@ -5,6 +5,8 @@ import { debugModeService } from '../../services/debug-mode.js';
 import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse, buildFullRequestBody, accumulateResponsesStream, stripFieldRecursively } from '../../utils/request-logger.js';
 import { messageCompressor } from '../../services/message-compressor.js';
 import { extractIp } from '../../utils/ip.js';
+import { manualIpBlocklist } from '../../services/manual-ip-blocklist.js';
+import { getRequestUserAgent } from '../../utils/http.js';
 import { makeHttpRequest, makeStreamHttpRequest } from './http-client.js';
 import { checkCache, setCacheIfNeeded, getCacheStatus } from './cache.js';
 import { authenticateVirtualKey, extractVirtualKeyAuthHeader } from './auth.js';
@@ -245,18 +247,36 @@ export function createProxyHandler() {
     let providerId: string | undefined;
     let compressionStats: { originalTokens: number; savedTokens: number } | undefined;
     let currentModel: any | undefined;
+    let requestIp = 'unknown';
+    let requestUserAgent = '';
 
     try {
+      requestIp = extractIp(request);
+      requestUserAgent = getRequestUserAgent(request);
+      const manualBlock = manualIpBlocklist.isBlocked(requestIp);
+      if (manualBlock) {
+        memoryLogger.warn(
+          `拦截手动屏蔽 IP 请求 | IP: ${requestIp} | UA: ${requestUserAgent} | 原因: ${manualBlock.reason || '管理员拦截'}`,
+          'ManualBlock'
+        );
+        return reply.code(403).send({
+          error: {
+            message: 'Access denied: IP blocked',
+            type: 'access_denied',
+            param: 'ip',
+            code: 'ip_blocked'
+          }
+        });
+      }
+
       // 反爬虫检测
       const { antiBotService } = await import('../../services/anti-bot.js');
-      const userAgent = request.headers['user-agent'] || '';
-      const ip = extractIp(request);
-      const antiBotResult = antiBotService.detect(userAgent, ip);
+      const antiBotResult = antiBotService.detect(requestUserAgent, requestIp);
 
-      antiBotService.logDetection(userAgent, antiBotResult, ip, request.headers);
+      antiBotService.logDetection(requestUserAgent, antiBotResult, requestIp, request.headers);
       
       if (antiBotResult.shouldBlock) {
-        memoryLogger.warn(`拦截爬虫/威胁IP请求 | IP: ${ip} | UA: ${userAgent} | 原因: ${antiBotResult.reason}`, 'AntiBot');
+        memoryLogger.warn(`拦截爬虫/威胁IP请求 | IP: ${requestIp} | UA: ${requestUserAgent} | 原因: ${antiBotResult.reason}`, 'AntiBot');
         return reply.code(403).send({
           error: {
             message: 'Access denied: Bot detected',
@@ -542,7 +562,6 @@ export function createProxyHandler() {
 
           const tokenCount = await calculateTokensIfNeeded(0, request.body);
 
-          const ip = extractIp(request);
           await logApiRequestToDb({
             virtualKey,
             providerId,
@@ -554,7 +573,8 @@ export function createProxyHandler() {
             truncatedRequest,
             cacheHit: 0,
             compressionStats,
-            ip,
+            ip: requestIp,
+            userAgent: requestUserAgent,
           });
         }
       }
@@ -594,6 +614,9 @@ export async function handleStreamRequest(
     `流式请求开始: ${path} | virtual key: ${vkDisplay}`,
     'Proxy'
   );
+
+  const streamRequestUserAgent = getRequestUserAgent(request);
+  const streamRequestIp = extractIp(request);
 
   // 创建 AbortController 用于取消请求
   const abortController = new AbortController();
@@ -716,7 +739,6 @@ export async function handleStreamRequest(
       ? (isResponsesApi ? accumulateResponsesStream(tokenUsage.streamChunks) : accumulateStreamResponse(tokenUsage.streamChunks))
       : undefined;
 
-    const ip = extractIp(request);
     await logApiRequestToDb({
       virtualKey,
       providerId,
@@ -729,7 +751,8 @@ export async function handleStreamRequest(
       cacheHit: 0,
       cachedTokens: tokenUsage.cachedTokens,
       compressionStats,
-      ip,
+      ip: streamRequestIp,
+      userAgent: streamRequestUserAgent,
     });
 
     // Broadcast full, untruncated event to debug WebSocket clients when debug mode is active
@@ -816,7 +839,6 @@ export async function handleStreamRequest(
 
     const tokenCount = await calculateTokensIfNeeded(0, request.body);
 
-    const ip = extractIp(request);
     await logApiRequestToDb({
       virtualKey,
       providerId,
@@ -828,7 +850,8 @@ export async function handleStreamRequest(
       truncatedRequest,
       cacheHit: 0,
       compressionStats,
-      ip,
+      ip: streamRequestIp,
+      userAgent: streamRequestUserAgent,
     });
 
     if (debugModeService.isActive()) {
@@ -892,6 +915,8 @@ export async function handleNonStreamRequest(
 ) {
   let fromCache = false;
   const isEmbeddingsRequest = isEmbeddingsPath(path);
+  const nonStreamRequestUserAgent = getRequestUserAgent(request);
+  const nonStreamRequestIp = extractIp(request);
 
   const vkDisplay = virtualKey.key_value && virtualKey.key_value.length > 10
     ? `${virtualKey.key_value.slice(0, 6)}...${virtualKey.key_value.slice(-4)}`
@@ -947,7 +972,6 @@ export async function handleNonStreamRequest(
       normCached.completionTokens
     );
 
-    const ip = extractIp(request);
     await logApiRequestToDb({
       virtualKey,
       providerId,
@@ -960,7 +984,8 @@ export async function handleNonStreamRequest(
       cacheHit: 1,
       cachedTokens: normCached.cachedTokens,
       compressionStats,
-      ip,
+      ip: nonStreamRequestIp,
+      userAgent: nonStreamRequestUserAgent,
     });
 
     memoryLogger.info(
@@ -1195,7 +1220,6 @@ export async function handleNonStreamRequest(
     norm.completionTokens
   );
 
-  const ip = extractIp(request);
   await logApiRequestToDb({
     virtualKey,
     providerId,
@@ -1209,7 +1233,8 @@ export async function handleNonStreamRequest(
     cacheHit: fromCache ? 1 : 0,
     cachedTokens: norm.cachedTokens,
     compressionStats,
-    ip,
+    ip: nonStreamRequestIp,
+    userAgent: nonStreamRequestUserAgent,
   });
 
   if (isSuccess) {

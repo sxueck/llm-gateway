@@ -7,6 +7,8 @@ import { truncateRequestBody } from '../../../utils/request-logger.js';
 import { GeminiEmptyOutputError } from '../../../errors/gemini-empty-output-error.js';
 import type { ProtocolConfig } from '../../../services/protocol-adapter.js';
 import type { VirtualKey } from '../../../types/index.js';
+import { extractIp } from '../../../utils/ip.js';
+import { getRequestUserAgent } from '../../../utils/http.js';
 
 // 需要排除的请求头（不转发到上游）
 const EXCLUDED_REQUEST_HEADERS = [
@@ -210,6 +212,8 @@ export async function handleGeminiNativeNonStreamRequest(
   vkDisplay: string
 ): Promise<void> {
   const method = request.method;
+  const requestUserAgent = getRequestUserAgent(request);
+  const requestIp = extractIp(request);
 
   memoryLogger.info(
     `Gemini 原生透传 (非流式): ${method} ${path} | virtual key: ${vkDisplay}`,
@@ -295,6 +299,8 @@ export async function handleGeminiNativeNonStreamRequest(
       errorMessage: isSuccess ? undefined : responseText.substring(0, 500),
       truncatedRequest,
       cacheHit: 0,
+      ip: requestIp,
+      userAgent: requestUserAgent,
     });
 
     memoryLogger.info(
@@ -324,6 +330,8 @@ export async function handleGeminiNativeNonStreamRequest(
       errorMessage: error.message,
       truncatedRequest,
       cacheHit: 0,
+      ip: requestIp,
+      userAgent: requestUserAgent,
     });
 
     if (!reply.sent) {
@@ -353,6 +361,8 @@ export async function handleGeminiNativeStreamRequest(
   vkDisplay: string
 ): Promise<void> {
   const method = request.method;
+  const requestUserAgent = getRequestUserAgent(request);
+  const requestIp = extractIp(request);
 
   // 立即劫持 Fastify 的响应控制，直接操作原始 socket
   reply.hijack();
@@ -459,6 +469,8 @@ export async function handleGeminiNativeStreamRequest(
           errorMessage: `HTTP ${upstreamResponse.status}: ${errorText.substring(0, 500)}`,
           truncatedRequest,
           cacheHit: 0,
+          ip: requestIp,
+          userAgent: requestUserAgent,
         });
 
         if (!headersSent) {
@@ -502,6 +514,8 @@ export async function handleGeminiNativeStreamRequest(
           responseTime: duration,
           truncatedRequest,
           cacheHit: 0,
+          ip: requestIp,
+          userAgent: requestUserAgent,
         });
 
         reply.raw.writeHead(200, { 'Content-Type': contentType || 'application/json' });
@@ -603,6 +617,8 @@ export async function handleGeminiNativeStreamRequest(
       responseTime: duration,
       truncatedRequest,
       cacheHit: 0,
+      ip: requestIp,
+      userAgent: requestUserAgent,
     });
 
   } catch (error: any) {
@@ -631,6 +647,8 @@ export async function handleGeminiNativeStreamRequest(
       errorMessage: error.message,
       truncatedRequest,
       cacheHit: 0,
+      ip: requestIp,
+      userAgent: requestUserAgent,
     });
 
     // 如果还没发送响应头，返回错误

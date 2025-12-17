@@ -26,6 +26,7 @@ import { healthCheckerService } from './services/health-checker.js';
 import { getBackupScheduler } from './services/backup-scheduler.js';
 import { healthRunDb, systemConfigDb as systemConfigDbForDebug } from './db/index.js';
 import { debugModeService } from './services/debug-mode.js';
+import { manualIpBlocklist } from './services/manual-ip-blocklist.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -89,6 +90,7 @@ fastify.get('/api/admin/config/debug-stream', (request, reply) => {
 });
 
 await initDatabase();
+await manualIpBlocklist.init();
 
 memoryLogger.info('Database initialized', 'System');
 

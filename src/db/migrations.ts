@@ -138,8 +138,46 @@ export const migrations: Migration[] = [
         await conn.query(`ALTER TABLE api_requests DROP COLUMN IF EXISTS ip`);
         console.log('[迁移] 已删除 api_requests 表的 ip 字��');
       } catch (e: any) {
-        console.warn('[迁移] 删除 ip 字段失败:', e.message);
+      console.warn('[迁移] 删除 ip 字段失败:', e.message);
+    }
+  }
+  },
+  {
+    version: 20,
+    name: 'add_user_agent_and_blocked_ips',
+    up: async (conn: Connection) => {
+      try {
+        await conn.query(`ALTER TABLE api_requests ADD COLUMN user_agent VARCHAR(500) DEFAULT NULL AFTER ip`);
+        console.log('[迁移] 已为 api_requests 表添加 user_agent 字段');
+      } catch (e: any) {
+        if (e.code === 'ER_DUP_FIELDNAME') {
+          console.log('[迁移] api_requests 表已存在 user_agent 字段，跳过');
+        } else {
+          throw e;
+        }
       }
+
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS blocked_ips (
+          ip VARCHAR(45) PRIMARY KEY,
+          reason VARCHAR(255) DEFAULT NULL,
+          created_at BIGINT NOT NULL,
+          created_by VARCHAR(255) DEFAULT NULL,
+          INDEX idx_blocked_ips_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      console.log('[迁移] 已创建 blocked_ips 表');
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(`ALTER TABLE api_requests DROP COLUMN IF EXISTS user_agent`);
+        console.log('[迁移] 已删除 api_requests 表的 user_agent 字段');
+      } catch (e: any) {
+        console.warn('[迁移] 删除 user_agent 字段失败:', e.message);
+      }
+
+      await conn.query('DROP TABLE IF EXISTS blocked_ips');
+      console.log('[迁移] 已删除 blocked_ips 表');
     }
   }
 ];

@@ -122,6 +122,7 @@ export async function createTables() {
         compression_original_tokens INT DEFAULT NULL,
         compression_saved_tokens INT DEFAULT NULL,
         ip VARCHAR(45) DEFAULT NULL,
+        user_agent VARCHAR(500) DEFAULT NULL,
         created_at BIGINT NOT NULL,
         FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
         FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
@@ -129,6 +130,16 @@ export async function createTables() {
         INDEX idx_api_requests_virtual_key (virtual_key_id),
         INDEX idx_api_requests_provider (provider_id),
         INDEX idx_api_requests_status (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS blocked_ips (
+        ip VARCHAR(45) PRIMARY KEY,
+        reason VARCHAR(255) DEFAULT NULL,
+        created_at BIGINT NOT NULL,
+        created_by VARCHAR(255) DEFAULT NULL,
+        INDEX idx_blocked_ips_created_at (created_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 

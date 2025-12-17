@@ -119,6 +119,8 @@ export interface RequestSourceEntry {
   timestamp: number;
   count: number;
   type: 'normal' | 'blocked';
+  userAgent?: string | null;
+  blockedReason?: string | null;
 }
 
 export interface RequestSourceStats {
@@ -126,11 +128,14 @@ export interface RequestSourceStats {
     ip: string;
     geo: RequestSourceGeoInfo | null;
     timestamp: number;
+    userAgent?: string | null;
   } | null;
   lastBlocked: {
     ip: string;
     geo: RequestSourceGeoInfo | null;
     timestamp: number;
+    reason?: string | null;
+    source?: 'manual' | 'threat';
   } | null;
   recentSources?: RequestSourceEntry[];
 }
@@ -160,6 +165,28 @@ export const configApi = {
     requestSourceStats?: RequestSourceStats;
   }> {
     return request.get('/admin/config/stats', { params: { period } });
+  },
+
+  lookupRequestSource(ip: string): Promise<{
+    ip: string;
+    geo: RequestSourceGeoInfo | null;
+    blocked: boolean;
+    blockedReason: string | null;
+    lastSeen: number | null;
+    userAgent: string | null;
+  }> {
+    return request.get('/admin/config/request-sources/lookup', { params: { ip } });
+  },
+
+  blockRequestSource(data: { ip: string; reason?: string }): Promise<{
+    success: boolean;
+    blocked: {
+      ip: string;
+      reason: string | null;
+      timestamp: number;
+    };
+  }> {
+    return request.post('/admin/config/request-sources/block', data);
   },
 
   getRoutingConfigs(): Promise<{ configs: any[] }> {

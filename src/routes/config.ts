@@ -10,7 +10,8 @@ import { debugModeService } from '../services/debug-mode.js';
 import { circuitBreaker } from '../services/circuit-breaker.js';
 import { costMappingService } from '../services/cost-mapping.js';
 import { threatIpBlocker } from '../services/threat-ip-blocker.js';
-import { getGeoInfo } from '../utils/ip.js';
+import { manualIpBlocklist } from '../services/manual-ip-blocklist.js';
+import { getGeoInfo, normalizeIp } from '../utils/ip.js';
 
 export async function configRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
@@ -91,6 +92,84 @@ export async function configRoutes(fastify: FastifyInstance) {
       developerDebugExpiresAt: activeDebug ? rawExpiresAt : null,
       antiBot,
     };
+  });
+
+  fastify.get('/request-sources/lookup', async (request, reply) => {
+    const { ip } = request.query as { ip?: string };
+    if (!ip) {
+      return reply.code(400).send({
+        error: {
+          message: 'IP 地址不能为空',
+          type: 'invalid_request_error',
+          param: 'ip',
+          code: 'invalid_ip',
+        }
+      });
+    }
+
+    const normalizedIp = normalizeIp(ip);
+    if (!normalizedIp) {
+      return reply.code(400).send({
+        error: {
+          message: '无效的 IP 地址',
+          type: 'invalid_request_error',
+          param: 'ip',
+          code: 'invalid_ip_format',
+        }
+      });
+    }
+
+    const [geo, lastRequestByIp] = await Promise.all([
+      getGeoInfo(normalizedIp),
+      apiRequestDb.getLastRequestByIp(normalizedIp),
+    ]);
+
+    const blockedInfo = manualIpBlocklist.isBlocked(normalizedIp);
+
+    return {
+      ip: normalizedIp,
+      geo,
+      blocked: !!blockedInfo,
+      blockedReason: blockedInfo?.reason || null,
+      lastSeen: lastRequestByIp?.created_at || null,
+      userAgent: lastRequestByIp?.user_agent || null,
+    };
+  });
+
+  fastify.post('/request-sources/block', async (request, reply) => {
+    const { ip, reason } = request.body as { ip?: string; reason?: string };
+    if (!ip) {
+      return reply.code(400).send({
+        error: {
+          message: 'IP 地址不能为空',
+          type: 'invalid_request_error',
+          param: 'ip',
+          code: 'invalid_ip',
+        }
+      });
+    }
+
+    try {
+      const entry = await manualIpBlocklist.block(ip, reason);
+      return {
+        success: true,
+        blocked: {
+          ip: entry.ip,
+          reason: entry.reason,
+          timestamp: entry.createdAt,
+        }
+      };
+    } catch (error: any) {
+      memoryLogger.error(`手动拦截 IP 失败: ${error?.message || error}`, 'ManualBlock');
+      return reply.code(400).send({
+        error: {
+          message: error?.message || '拦截 IP 失败',
+          type: 'invalid_request_error',
+          param: 'ip',
+          code: 'block_ip_failed',
+        }
+      });
+    }
   });
 
   fastify.post('/system-settings/refresh-threat-ip', async () => {
@@ -416,11 +495,15 @@ export async function configRoutes(fastify: FastifyInstance) {
     const circuitBreakerStats = await import('../db/repositories/circuit-breaker-stats.repository.js').then(m => m.circuitBreakerStatsRepository.getGlobalStats());
 
     const lastRequest = await apiRequestDb.getLastRequest();
-    const lastBlocked = threatIpBlocker.getLastBlockedInfo();
+    const manualLastBlocked = manualIpBlocklist.getLastBlocked();
+    const threatLastBlocked = threatIpBlocker.getLastBlockedInfo();
+    const lastBlockedInfo = manualLastBlocked
+      ? { ip: manualLastBlocked.ip, timestamp: manualLastBlocked.createdAt, reason: manualLastBlocked.reason, source: 'manual' as const }
+      : (threatLastBlocked?.ip ? { ip: threatLastBlocked.ip, timestamp: threatLastBlocked.timestamp, reason: null, source: 'threat' as const } : null);
 
     const [lastRequestGeo, lastBlockedGeo] = await Promise.all([
       getGeoInfo(lastRequest?.ip),
-      getGeoInfo(lastBlocked?.ip),
+      getGeoInfo(lastBlockedInfo?.ip),
     ]);
 
     const recentIps = await apiRequestDb.getRecentUniqueIps(50);
@@ -438,10 +521,10 @@ export async function configRoutes(fastify: FastifyInstance) {
         type: 'normal' as const,
       }));
 
-    if (lastBlocked?.ip) {
+    if (lastBlockedInfo?.ip) {
       sourceCandidates.unshift({
-        ip: lastBlocked.ip,
-        timestamp: lastBlocked.timestamp || Date.now(),
+        ip: lastBlockedInfo.ip,
+        timestamp: lastBlockedInfo.timestamp || Date.now(),
         count: 0,
         type: 'blocked',
       });
@@ -461,12 +544,16 @@ export async function configRoutes(fastify: FastifyInstance) {
     const recentSources = await Promise.all(
       dedupedSources.map(async (entry) => {
         const geo = await getGeoInfo(entry.ip);
+        const lastRequestForIp = await apiRequestDb.getLastRequestByIp(entry.ip);
+        const manualBlocked = manualIpBlocklist.isBlocked(entry.ip);
         return {
           ip: entry.ip,
-          timestamp: entry.timestamp,
+          timestamp: lastRequestForIp?.created_at || entry.timestamp,
           count: entry.count,
-          type: entry.type,
+          type: manualBlocked ? 'blocked' : entry.type,
           geo,
+          userAgent: lastRequestForIp?.user_agent || null,
+          blockedReason: manualBlocked?.reason || null,
         };
       })
     );
@@ -477,13 +564,16 @@ export async function configRoutes(fastify: FastifyInstance) {
             ip: lastRequest.ip,
             geo: lastRequestGeo,
             timestamp: lastRequest?.created_at || 0,
+            userAgent: lastRequest?.user_agent || null,
           }
         : null,
-      lastBlocked: lastBlocked?.ip
+      lastBlocked: lastBlockedInfo?.ip
         ? {
-            ip: lastBlocked.ip,
+            ip: lastBlockedInfo.ip,
             geo: lastBlockedGeo,
-            timestamp: lastBlocked?.timestamp || 0,
+            timestamp: lastBlockedInfo?.timestamp || 0,
+            reason: lastBlockedInfo.reason || null,
+            source: lastBlockedInfo.source,
           }
         : null,
       recentSources,

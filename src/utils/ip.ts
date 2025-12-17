@@ -45,7 +45,7 @@ export interface GeoInfo {
 
 const INTERNAL_IPV4_PREFIXES = ['127.', '10.', '192.168.', '169.254.'];
 
-function normalizeIp(ip: string): string {
+export function normalizeIp(ip: string): string {
   if (!ip) return '';
   let normalized = ip.trim();
   if (normalized.includes(',')) {

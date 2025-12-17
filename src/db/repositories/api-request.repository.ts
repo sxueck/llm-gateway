@@ -22,12 +22,35 @@ export const apiRequestRepository = {
     }
   },
 
+  async getLastRequestByIp(ip: string) {
+    if (!ip) return null;
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const loggingCondition = getDisableLoggingCondition();
+      const [rows] = await conn.query(
+        `SELECT ar.created_at, ar.user_agent
+         FROM api_requests ar
+         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+         WHERE ar.ip = ? AND ${loggingCondition}
+         ORDER BY ar.created_at DESC
+         LIMIT 1`,
+        [ip]
+      );
+      const result = rows as any[];
+      if (result.length === 0) return null;
+      return result[0];
+    } finally {
+      conn.release();
+    }
+  },
+
   async getLastRequest() {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
       const [rows] = await conn.query(
-        `SELECT ip, created_at FROM api_requests ORDER BY created_at DESC LIMIT 1`
+        `SELECT ip, created_at, user_agent FROM api_requests ORDER BY created_at DESC LIMIT 1`
       );
       const result = rows as any[];
       if (result.length === 0) return null;
