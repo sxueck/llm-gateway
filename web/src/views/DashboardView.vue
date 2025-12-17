@@ -1153,7 +1153,7 @@ const formatCost = (cost: number) => {
   return cost.toFixed(2);
 };
 
-const formatGeoLocation = (geo: RequestSourceEntry['geo']) => {
+const formatGeoLocation = (geo: RequestSourceEntry['geo'] | undefined) => {
   if (!geo) return '未知';
   if (geo.locationZh) return geo.locationZh;
   const parts = [geo.country, geo.province, geo.city].filter(Boolean);
