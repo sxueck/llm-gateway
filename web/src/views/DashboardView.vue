@@ -343,45 +343,56 @@
       </n-grid>
   
         <n-card class="overview-card" title="请求来源" style="margin-bottom: 24px;">
-          <n-grid cols="1 l:4" :x-gap="24" :y-gap="24" responsive="screen">
-            <n-gi span="3">
-               <div class="map-container" style="height: 350px; width: 100%; border-radius: 8px; overflow: hidden; background-color: #f8fafc; border: 1px solid #e5e7eb;">
-                 <v-chart v-if="mapRegistered" :option="mapOption" :autoresize="true" style="width: 100%; height: 100%;" />
-                 <div v-else style="display: flex; align-items: center; justify-content: center; height: 100%; color: #9ca3af;">
-                   地图加载中...
-                 </div>
-               </div>
-            </n-gi>
-            <n-gi span="1">
-              <n-space vertical :size="24" style="height: 100%; justify-content: center;">
-                 <div class="source-info-item">
-                   <div class="source-label" style="font-size: 13px; color: #6b7280; margin-bottom: 4px;">上一次请求来源</div>
-                   <div class="source-value" style="font-size: 18px; font-weight: 600; color: #1f2937;">
-                     {{ formatGeoLocation(requestSourceStats?.lastRequest?.geo) }}
-                   </div>
-                   <div class="source-sub" style="font-size: 13px; color: #4b5563;">
-                     {{ requestSourceStats?.lastRequest?.ip }}
-                   </div>
-                   <div class="source-time" style="font-size: 12px; color: #9ca3af; margin-top: 4px;">
-                     {{ formatTimestamp(requestSourceStats?.lastRequest?.timestamp || 0) }}
-                   </div>
-                 </div>
-
-                 <div class="source-info-item">
-                   <div class="source-label" style="font-size: 13px; color: #6b7280; margin-bottom: 4px;">最近拦截 IP</div>
-                   <div class="source-value" style="font-size: 18px; font-weight: 600; color: #dc2626;">
-                     {{ formatGeoLocation(requestSourceStats?.lastBlocked?.geo) }}
-                   </div>
-                   <div class="source-sub" style="font-size: 13px; color: #4b5563;">
-                     {{ requestSourceStats?.lastBlocked?.ip || '无' }}
-                   </div>
-                   <div class="source-time" style="font-size: 12px; color: #9ca3af; margin-top: 4px;" v-if="requestSourceStats?.lastBlocked?.timestamp">
-                     {{ formatTimestamp(requestSourceStats?.lastBlocked?.timestamp || 0) }}
-                   </div>
-                 </div>
-              </n-space>
-            </n-gi>
-          </n-grid>
+          <n-space vertical :size="20">
+            <n-grid cols="1 s:2" :x-gap="24" :y-gap="16" responsive="screen">
+              <n-gi>
+                <div class="source-info-item">
+                  <div class="source-label" style="font-size: 13px; color: #6b7280; margin-bottom: 4px;">上一次请求来源</div>
+                  <div class="source-value" style="font-size: 18px; font-weight: 600; color: #1f2937;">
+                    {{ formatGeoLocation(requestSourceStats?.lastRequest?.geo) }}
+                  </div>
+                  <div class="source-sub" style="font-size: 13px; color: #4b5563;">
+                    {{ requestSourceStats?.lastRequest?.ip || '暂未记录' }}
+                  </div>
+                  <div class="source-time" style="font-size: 12px; color: #9ca3af; margin-top: 4px;">
+                    {{ requestSourceStats?.lastRequest?.timestamp ? formatTimestamp(requestSourceStats?.lastRequest?.timestamp || 0) : '---' }}
+                  </div>
+                </div>
+              </n-gi>
+              <n-gi>
+                <div class="source-info-item">
+                  <div class="source-label" style="font-size: 13px; color: #6b7280; margin-bottom: 4px;">最近拦截 IP</div>
+                  <div class="source-value" style="font-size: 18px; font-weight: 600; color: #dc2626;">
+                    {{ formatGeoLocation(requestSourceStats?.lastBlocked?.geo) }}
+                  </div>
+                  <div class="source-sub" style="font-size: 13px; color: #4b5563;">
+                    {{ requestSourceStats?.lastBlocked?.ip || '暂无拦截' }}
+                  </div>
+                  <div
+                    class="source-time"
+                    style="font-size: 12px; color: #9ca3af; margin-top: 4px;"
+                  >
+                    {{ requestSourceStats?.lastBlocked?.timestamp ? formatTimestamp(requestSourceStats?.lastBlocked?.timestamp || 0) : '---' }}
+                  </div>
+                </div>
+              </n-gi>
+            </n-grid>
+            <div>
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                <div style="font-size: 15px; font-weight: 600; color: #111827;">最近来源 IP（去重后 10 条）</div>
+                <div style="font-size: 12px; color: #6b7280;">包含被拦截与正常访问的来源</div>
+              </div>
+              <n-data-table
+                v-if="requestSourceTableData.length > 0"
+                :columns="requestSourceColumns"
+                :data="requestSourceTableData"
+                :bordered="false"
+                size="small"
+                :row-key="row => row.ip"
+              />
+              <n-empty v-else description="暂无请求来源数据" :show-icon="false" />
+            </div>
+          </n-space>
         </n-card>
   
         <n-card class="overview-card" title="系统概览">
@@ -405,24 +416,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { useMessage, NSpace, NGrid, NGi, NCard, NSelect, NEmpty, NButton, NIcon, NSpin, NResult } from 'naive-ui';
+import { ref, computed, onMounted, onUnmounted, h } from 'vue';
+import { useMessage, NSpace, NGrid, NGi, NCard, NSelect, NEmpty, NButton, NIcon, NSpin, NResult, NDataTable, NTag } from 'naive-ui';
+import type { DataTableColumns } from 'naive-ui';
 import { RefreshOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
-import { configApi, type ApiStats, type VirtualKeyTrend, type ExpertRoutingStats, type ModelStat, type CostStats, type ModelResponseTimeStat } from '@/api/config';
+import { configApi, type ApiStats, type VirtualKeyTrend, type ExpertRoutingStats, type ModelStat, type CostStats, type ModelResponseTimeStat, type RequestSourceEntry, type RequestSourceStats } from '@/api/config';
 import { formatNumber, formatTokenNumber, formatPercentage, formatResponseTime, formatTimestamp, formatUptime } from '@/utils/format';
-import { use, registerMap } from 'echarts/core';
+import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
-import { LineChart, PieChart, ScatterChart, MapChart, EffectScatterChart } from 'echarts/charts';
+import { LineChart, PieChart, ScatterChart } from 'echarts/charts';
 import {
   TitleComponent,
   TooltipComponent,
   LegendComponent,
   GridComponent,
   DataZoomComponent,
-  GeoComponent,
 } from 'echarts/components';
 import VChart from 'vue-echarts';
 
@@ -431,14 +442,11 @@ use([
   LineChart,
   PieChart,
   ScatterChart,
-  MapChart,
-  EffectScatterChart,
   TitleComponent,
   TooltipComponent,
   LegendComponent,
   GridComponent,
   DataZoomComponent,
-  GeoComponent,
 ]);
 
 const { t } = useI18n();
@@ -461,12 +469,68 @@ const circuitBreakerStats = ref<{
   maxTriggerCount: number;
 } | null>(null);
 const costStats = ref<CostStats | null>(null);
-const requestSourceStats = ref<{
-  lastRequest: { ip: string; geo: any; timestamp: number };
-  lastBlocked: { ip: string; geo: any; timestamp: number };
-  recentSources?: Array<{ ip: string; geo: any; timestamp: number; count: number }>;
-} | null>(null);
-const mapRegistered = ref(false);
+const requestSourceStats = ref<RequestSourceStats | null>(null);
+const requestSourceTableData = computed<RequestSourceEntry[]>(() => requestSourceStats.value?.recentSources || []);
+const requestSourceColumns = computed<DataTableColumns<RequestSourceEntry>>(() => [
+  {
+    title: 'IP 地址',
+    key: 'ip',
+    minWidth: 220,
+    render(row) {
+      const tagType = row.type === 'blocked' ? 'error' : 'success';
+      const tagText = row.type === 'blocked' ? '被拦截' : '正常访问';
+      const subText = row.type === 'blocked'
+        ? '由安全策略拦截'
+        : `最近请求 ${row.count || 0} 次`;
+      return h('div', { style: 'display: flex; flex-direction: column; gap: 4px;' }, [
+        h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, [
+          h('span', { style: 'font-weight: 600; color: #111827;' }, row.ip || '-'),
+          h(
+            NTag,
+            { size: 'small', type: tagType, bordered: false },
+            { default: () => tagText }
+          )
+        ]),
+        h('div', { style: 'font-size: 12px; color: #6b7280;' }, subText)
+      ]);
+    }
+  },
+  {
+    title: '属地',
+    key: 'location',
+    minWidth: 160,
+    render(row) {
+      return row.geo?.locationZh || '未知';
+    }
+  },
+  {
+    title: 'ASN / 机构',
+    key: 'asn',
+    minWidth: 180,
+    render(row) {
+      if (row.geo?.asn && row.geo?.asOrganization) {
+        return `${row.geo.asn} · ${row.geo.asOrganization}`;
+      }
+      return row.geo?.asn || row.geo?.asOrganization || '-';
+    }
+  },
+  {
+    title: '运营商 / ISP',
+    key: 'isp',
+    minWidth: 160,
+    render(row) {
+      return row.geo?.ispZh || row.geo?.isp || '-';
+    }
+  },
+  {
+    title: '最近出现时间',
+    key: 'timestamp',
+    minWidth: 160,
+    render(row) {
+      return row.timestamp ? formatTimestamp(row.timestamp) : '-';
+    }
+  }
+]);
 const selectedPeriod = ref<'24h' | '7d' | '30d'>('24h');
 const chartMetric = ref<'requests' | 'tokens'>('requests');
 const loading = ref(false);
@@ -1089,135 +1153,20 @@ const formatCost = (cost: number) => {
   return cost.toFixed(2);
 };
 
-const formatGeoLocation = (geo: any) => {
-  if (!geo) return 'Unknown';
-  if (geo.regionName && geo.country) {
-    return `${geo.country}, ${geo.regionName}`;
-  }
-  return geo.country || 'Unknown';
+const formatGeoLocation = (geo: RequestSourceEntry['geo']) => {
+  if (!geo) return '未知';
+  if (geo.locationZh) return geo.locationZh;
+  const parts = [geo.country, geo.province, geo.city].filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : '未知';
 };
 
-const mapOption = computed(() => {
-  if (!mapRegistered.value) return {};
-  
-  const lastRequest = requestSourceStats.value?.lastRequest;
-  const lastBlocked = requestSourceStats.value?.lastBlocked;
-  const recentSources = requestSourceStats.value?.recentSources;
-  
-  const series: any[] = [];
-  
-  if (recentSources && recentSources.length > 0) {
-    series.push({
-      name: '请求来源',
-      type: 'effectScatter',
-      coordinateSystem: 'geo',
-      data: recentSources.map(item => ({
-        name: formatGeoLocation(item.geo) || item.ip,
-        value: [item.geo.lon, item.geo.lat, item.count]
-      })),
-      symbolSize: (val: any) => {
-        const count = val[2];
-        return Math.min(10 + (count > 1 ? Math.log(count) * 4 : 0), 25);
-      },
-      itemStyle: {
-        color: '#006241'
-      },
-      rippleEffect: {
-        brushType: 'stroke'
-      }
-    });
-  } else if (lastRequest && lastRequest.geo?.lat && lastRequest.geo?.lon) {
-    series.push({
-      name: '请求来源',
-      type: 'effectScatter',
-      coordinateSystem: 'geo',
-      data: [{
-        name: formatGeoLocation(lastRequest.geo) || lastRequest.geo.city || lastRequest.geo.regionName,
-        value: [lastRequest.geo.lon, lastRequest.geo.lat, 1]
-      }],
-      symbolSize: 15,
-      itemStyle: {
-        color: '#006241'
-      },
-      rippleEffect: {
-        brushType: 'stroke'
-      }
-    });
-  }
 
-  if (lastBlocked && lastBlocked.geo?.lat && lastBlocked.geo?.lon) {
-    series.push({
-      name: '拦截 IP',
-      type: 'effectScatter',
-      coordinateSystem: 'geo',
-      data: [{
-        name: lastBlocked.geo.city || lastBlocked.geo.regionName,
-        value: [lastBlocked.geo.lon, lastBlocked.geo.lat]
-      }],
-      symbolSize: 15,
-      itemStyle: {
-        color: '#dc2626'
-      },
-      rippleEffect: {
-        brushType: 'stroke'
-      }
-    });
-  }
-
-  return {
-    backgroundColor: 'transparent',
-    geo: {
-      map: 'world',
-      roam: true,
-      label: {
-        emphasis: {
-          show: false
-        }
-      },
-      itemStyle: {
-        normal: {
-          areaColor: '#f3f4f6',
-          borderColor: '#d1d5db'
-        },
-        emphasis: {
-          areaColor: '#e5e7eb'
-        }
-      }
-    },
-    tooltip: {
-      trigger: 'item',
-      formatter: function (params: any) {
-        let res = params.seriesName + '<br/>' + params.name;
-        if (params.value && params.value[2] !== undefined) {
-           res += '<br/>请求数: ' + params.value[2];
-        }
-        return res;
-      }
-    },
-    legend: {
-      data: ['请求来源', '拦�� IP'],
-      bottom: 0
-    },
-    series
-  };
-});
 
 onMounted(async () => {
   loadData();
   window.addEventListener('resize', handleResize);
   // When cost mapping rules change, refresh dashboard stats so cost analysis updates in real time
   window.addEventListener('cost-mapping-updated', loadStats as any);
-  
-  try {
-    const response = await fetch('https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/json/world.json');
-    if (response.ok) {
-      const mapJson = await response.json();
-      registerMap('world', mapJson);
-      mapRegistered.value = true;
-    }
-  } catch (e) {
-    console.error('Failed to load map data', e);
-  }
 });
  
 onUnmounted(() => {

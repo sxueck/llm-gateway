@@ -418,33 +418,75 @@ export async function configRoutes(fastify: FastifyInstance) {
     const lastRequest = await apiRequestDb.getLastRequest();
     const lastBlocked = threatIpBlocker.getLastBlockedInfo();
 
-    // 使用本地 GeoIP 库，不再需要 await
-    const lastRequestGeo = getGeoInfo(lastRequest?.ip);
-    const lastBlockedGeo = getGeoInfo(lastBlocked?.ip);
+    const [lastRequestGeo, lastBlockedGeo] = await Promise.all([
+      getGeoInfo(lastRequest?.ip),
+      getGeoInfo(lastBlocked?.ip),
+    ]);
 
-    const recentIps = await apiRequestDb.getRecentUniqueIps(30);
-    const recentSources = recentIps.map((row: any) => {
-      const geo = getGeoInfo(row.ip);
-      return {
+    const recentIps = await apiRequestDb.getRecentUniqueIps(50);
+    const sourceCandidates: Array<{
+      ip: string;
+      timestamp: number;
+      count: number;
+      type: 'normal' | 'blocked';
+    }> = recentIps
+      .filter((row: any) => !!row.ip)
+      .map((row: any) => ({
         ip: row.ip,
-        geo,
         timestamp: row.last_seen,
-        count: row.count
-      };
-    }).filter((item: any) => item.geo);
+        count: row.count,
+        type: 'normal' as const,
+      }));
+
+    if (lastBlocked?.ip) {
+      sourceCandidates.unshift({
+        ip: lastBlocked.ip,
+        timestamp: lastBlocked.timestamp || Date.now(),
+        count: 0,
+        type: 'blocked',
+      });
+    }
+
+    sourceCandidates.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    const dedupedSources: typeof sourceCandidates = [];
+    const seenIps = new Set<string>();
+    for (const candidate of sourceCandidates) {
+      if (!candidate.ip || seenIps.has(candidate.ip)) continue;
+      dedupedSources.push(candidate);
+      seenIps.add(candidate.ip);
+      if (dedupedSources.length >= 10) break;
+    }
+
+    const recentSources = await Promise.all(
+      dedupedSources.map(async (entry) => {
+        const geo = await getGeoInfo(entry.ip);
+        return {
+          ip: entry.ip,
+          timestamp: entry.timestamp,
+          count: entry.count,
+          type: entry.type,
+          geo,
+        };
+      })
+    );
 
     const requestSourceStats = {
-      lastRequest: {
-        ip: lastRequest?.ip || 'N/A',
-        geo: lastRequestGeo,
-        timestamp: lastRequest?.created_at || 0
-      },
-      lastBlocked: {
-        ip: lastBlocked?.ip || 'N/A',
-        geo: lastBlockedGeo,
-        timestamp: lastBlocked?.timestamp || 0
-      },
-      recentSources
+      lastRequest: lastRequest
+        ? {
+            ip: lastRequest.ip,
+            geo: lastRequestGeo,
+            timestamp: lastRequest?.created_at || 0,
+          }
+        : null,
+      lastBlocked: lastBlocked?.ip
+        ? {
+            ip: lastBlocked.ip,
+            geo: lastBlockedGeo,
+            timestamp: lastBlocked?.timestamp || 0,
+          }
+        : null,
+      recentSources,
     };
 
     // 计算成本统计

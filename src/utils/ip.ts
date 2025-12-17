@@ -1,5 +1,18 @@
-import geoip from 'geoip-lite';
+import IP2Region from 'ip2region';
 import { FastifyRequest } from 'fastify';
+import { isIP } from 'node:net';
+import { memoryLogger } from '../services/logger.js';
+
+let ipSearcher: IP2Region | null = null;
+
+try {
+  ipSearcher = new IP2Region();
+} catch (error: any) {
+  memoryLogger.error(`初始化 IP2Region 失败: ${error?.message || error}`, 'GeoIP');
+}
+
+const GEO_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
+const geoCache = new Map<string, { expiresAt: number; info: GeoInfo }>();
 
 /**
  * 从 Fastify 请求中提取客户端 IP
@@ -17,45 +30,140 @@ export function extractIp(request: FastifyRequest): string {
 }
 
 export interface GeoInfo {
-  status: string;
-  country: string;
-  countryCode: string;
-  region: string;
-  regionName: string;
-  city: string;
-  lat: number;
-  lon: number;
-  timezone: string;
-  eu?: string;
+  ip: string;
+  country?: string;
+  province?: string;
+  city?: string;
+  isp?: string;
+  ispZh?: string;
+  locationZh: string;
+  asn?: string;
+  asOrganization?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+const INTERNAL_IPV4_PREFIXES = ['127.', '10.', '192.168.', '169.254.'];
+
+function normalizeIp(ip: string): string {
+  if (!ip) return '';
+  let normalized = ip.trim();
+  if (normalized.includes(',')) {
+    normalized = normalized.split(',')[0].trim();
+  }
+  if (normalized.startsWith('::ffff:')) {
+    normalized = normalized.slice(7);
+  }
+  if (normalized === 'localhost') return '127.0.0.1';
+  return normalized;
+}
+
+function isPrivateIp(ip: string): boolean {
+  if (!ip || ip === 'unknown') return true;
+  if (INTERNAL_IPV4_PREFIXES.some(prefix => ip.startsWith(prefix))) {
+    return true;
+  }
+  if (ip.startsWith('172.')) {
+    const second = Number(ip.split('.')[1]);
+    if (!Number.isNaN(second) && second >= 16 && second <= 31) {
+      return true;
+    }
+  }
+  const ipType = isIP(ip);
+  if (ipType === 6) {
+    const lower = ip.toLowerCase();
+    return lower === '::1' || lower.startsWith('fe80') || lower.startsWith('fc') || lower.startsWith('fd');
+  }
+  return false;
+}
+
+function buildLocationLabel(parts: { country?: string; province?: string; city?: string }) {
+  const segments = [parts.country, parts.province, parts.city].filter(Boolean);
+  return segments.length > 0 ? segments.join(' · ') : '未知';
+}
+
+async function fetchAsnMetadata(ip: string) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'llm-gateway-ip-lookup',
+      },
+    });
+    clearTimeout(timeout);
+    if (!res.ok) {
+      return null;
+    }
+    const data: any = await res.json();
+    if (!data || data.error) {
+      return null;
+    }
+    const asn = typeof data.asn === 'string'
+      ? data.asn
+      : (typeof data.asn === 'number' ? `AS${data.asn}` : undefined);
+    return {
+      asn,
+      organization: data.org || data.org_name || data.company || undefined,
+      latitude: typeof data.latitude === 'number' ? data.latitude : undefined,
+      longitude: typeof data.longitude === 'number' ? data.longitude : undefined,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
- * 获取 IP 的地理位置信息 (使用 geoip-lite 本地库)
+ * 获取 IP 的地理位置信息 (使用 ip2region + ipapi ASN)
  */
-export function getGeoInfo(ip: string | null | undefined): GeoInfo | null {
-  if (!ip || ip === 'unknown' || ip === '127.0.0.1' || ip === 'localhost' || ip === '::1') {
+export async function getGeoInfo(ip: string | null | undefined): Promise<GeoInfo | null> {
+  if (!ip) {
     return null;
   }
 
-  try {
-    const geo = geoip.lookup(ip);
-    if (geo) {
-      return {
-        status: 'success',
-        country: geo.country, // 2位国家代码
-        countryCode: geo.country,
-        region: geo.region,
-        regionName: geo.region, // geoip-lite 不直接提供全名，这里暂用代码
-        city: geo.city || '',
-        lat: geo.ll[0],
-        lon: geo.ll[1],
-        timezone: geo.timezone,
-        eu: (geo as any).eu, // geoip-lite 可能返回 eu 字段 ('1' 或 '0')
-      };
-    }
+  const normalizedIp = normalizeIp(ip);
+  if (!normalizedIp || isPrivateIp(normalizedIp) || !ipSearcher) {
     return null;
-  } catch (e) {
-    // 忽略查找失败的错误，直接返回 null
+  }
+
+  const cached = geoCache.get(normalizedIp);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.info;
+  }
+
+  try {
+    const result = ipSearcher.search(normalizedIp);
+    if (!result) {
+      return null;
+    }
+
+    const info: GeoInfo = {
+      ip: normalizedIp,
+      country: result.country || undefined,
+      province: result.province || undefined,
+      city: result.city || undefined,
+      isp: result.isp || undefined,
+      ispZh: result.isp || undefined,
+      locationZh: buildLocationLabel(result),
+    };
+
+    const asnMeta = await fetchAsnMetadata(normalizedIp);
+    if (asnMeta) {
+      info.asn = asnMeta.asn;
+      info.asOrganization = asnMeta.organization;
+      info.latitude = asnMeta.latitude;
+      info.longitude = asnMeta.longitude;
+    }
+
+    geoCache.set(normalizedIp, {
+      info,
+      expiresAt: Date.now() + GEO_CACHE_TTL,
+    });
+
+    return info;
+  } catch (error: any) {
+    memoryLogger.warn(`获取 IP(${normalizedIp}) 位置信息失败: ${error?.message || error}`, 'GeoIP');
     return null;
   }
 }

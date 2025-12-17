@@ -99,6 +99,42 @@ export interface PortkeyStatus {
   };
 }
 
+export interface RequestSourceGeoInfo {
+  ip: string;
+  country?: string;
+  province?: string;
+  city?: string;
+  isp?: string;
+  ispZh?: string;
+  locationZh: string;
+  asn?: string;
+  asOrganization?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+export interface RequestSourceEntry {
+  ip: string;
+  geo: RequestSourceGeoInfo | null;
+  timestamp: number;
+  count: number;
+  type: 'normal' | 'blocked';
+}
+
+export interface RequestSourceStats {
+  lastRequest: {
+    ip: string;
+    geo: RequestSourceGeoInfo | null;
+    timestamp: number;
+  } | null;
+  lastBlocked: {
+    ip: string;
+    geo: RequestSourceGeoInfo | null;
+    timestamp: number;
+  } | null;
+  recentSources?: RequestSourceEntry[];
+}
+
 export const configApi = {
   getLogs(params?: {
     level?: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
@@ -121,24 +157,7 @@ export const configApi = {
       maxTriggerCount: number;
     };
     costStats: CostStats | null;
-    requestSourceStats?: {
-      lastRequest: {
-        ip: string;
-        geo: any;
-        timestamp: number;
-      };
-      lastBlocked: {
-        ip: string;
-        geo: any;
-        timestamp: number;
-      };
-      recentSources?: Array<{
-        ip: string;
-        geo: any;
-        timestamp: number;
-        count: number;
-      }>;
-    };
+    requestSourceStats?: RequestSourceStats;
   }> {
     return request.get('/admin/config/stats', { params: { period } });
   },
