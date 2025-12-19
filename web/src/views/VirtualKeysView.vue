@@ -213,6 +213,7 @@ const columns = [
   {
     title: '关联模型',
     key: 'modelIds',
+    width: 280,
     render: (row: VirtualKey) => {
       const modelIds: string[] = [];
       if (row.modelId) modelIds.push(row.modelId);
