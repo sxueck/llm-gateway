@@ -211,12 +211,20 @@ async function doJsonRequest(url: string, opts: CommonRequestOptions): Promise<{
   const res = await fetch(url, opts as any);
   const status = res.status;
   const ok = res.ok;
-  if (!ok) {
-    const text = await res.text();
-    return { ok, status, text };
+  
+  try {
+    if (!ok) {
+      const text = await res.text();
+      return { ok, status, text };
+    }
+    const json = await res.json();
+    return { ok, status, json };
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      throw new Error('terminated: 响应读取被中止');
+    }
+    throw new Error(`响应解析失败: ${error.message}`);
   }
-  const json = await res.json();
-  return { ok, status, json };
 }
 
 // ---------- Public API: Probe via Provider (direct) ----------
@@ -574,6 +582,10 @@ export async function probeModelViaGateway(args: {
         body,
         signal: timer.controller.signal,
       });
+      
+      // 请求完成后立即清除超时定时器
+      timer.clear();
+      
       const latencyMs = Date.now() - started;
       if (!res.ok) {
         const errText = res.text || `HTTP ${res.status}`;
@@ -595,10 +607,20 @@ export async function probeModelViaGateway(args: {
       }
       return { success: true, latencyMs };
     } catch (error: any) {
-      const latencyMs = Date.now() - started;
-      return mapTransportError(error, latencyMs, timeoutMs);
-    } finally {
       timer.clear();
+      const latencyMs = Date.now() - started;
+      
+      // 特别处理 terminated 错误
+      if (error.message && error.message.includes('terminated')) {
+        return {
+          success: false,
+          latencyMs,
+          errorType: 'terminated',
+          errorMessage: '请求被提前终止',
+        };
+      }
+      
+      return mapTransportError(error, latencyMs, timeoutMs);
     }
   }
 
@@ -612,6 +634,10 @@ export async function probeModelViaGateway(args: {
         body: JSON.stringify(buildGeminiNativeBody(prompt)),
         signal: timer.controller.signal,
       });
+      
+      // 请求完成后立即清除超时定时器，避免在解析阶段被中止
+      timer.clear();
+      
       const latencyMs = Date.now() - started;
       if (!res.ok) {
         const errText = res.text || `HTTP ${res.status}`;
@@ -622,6 +648,17 @@ export async function probeModelViaGateway(args: {
           errorMessage: errText.substring(0, 200),
         };
       }
+      
+      // 确保 res.json 存在且是对象
+      if (!res.json || typeof res.json !== 'object') {
+        return {
+          success: false,
+          latencyMs,
+          errorType: 'invalid_response',
+          errorMessage: '响应格式无效',
+        };
+      }
+      
       const parsed = parseGeminiNativeResponse(res.json);
       if (!parsed.content || String(parsed.content).trim().length === 0) {
         return {
@@ -633,10 +670,20 @@ export async function probeModelViaGateway(args: {
       }
       return { success: true, latencyMs };
     } catch (error: any) {
-      const latencyMs = Date.now() - started;
-      return mapTransportError(error, latencyMs, timeoutMs);
-    } finally {
       timer.clear();
+      const latencyMs = Date.now() - started;
+      
+      // 特别处理 terminated 错误
+      if (error.message && error.message.includes('terminated')) {
+        return {
+          success: false,
+          latencyMs,
+          errorType: 'terminated',
+          errorMessage: '请求被提前终止，可能是网络不稳定或响应时间过长',
+        };
+      }
+      
+      return mapTransportError(error, latencyMs, timeoutMs);
     }
   }
 
@@ -654,6 +701,10 @@ export async function probeModelViaGateway(args: {
         body: JSON.stringify(buildChatBody(args.modelName, prompt)),
         signal: timer.controller.signal,
       });
+      
+      // 请求完成后立即清除超时定时器
+      timer.clear();
+      
       const latencyMs = Date.now() - started;
       if (!res.ok) {
         lastErrorType = 'http_error';
@@ -667,12 +718,18 @@ export async function probeModelViaGateway(args: {
         lastErrorMessage = '响应内容为空';
       }
     } catch (error: any) {
-      const latencyMs = Date.now() - started;
-      const mapped = mapTransportError(error, latencyMs, timeoutMs);
-      lastErrorType = mapped.errorType || 'unknown';
-      lastErrorMessage = mapped.errorMessage || '请求失败';
-    } finally {
       timer.clear();
+      const latencyMs = Date.now() - started;
+      
+      // 特别处理 terminated 错误
+      if (error.message && error.message.includes('terminated')) {
+        lastErrorType = 'terminated';
+        lastErrorMessage = '请求被提前终止';
+      } else {
+        const mapped = mapTransportError(error, latencyMs, timeoutMs);
+        lastErrorType = mapped.errorType || 'unknown';
+        lastErrorMessage = mapped.errorMessage || '请求失败';
+      }
     }
   }
 
@@ -696,6 +753,9 @@ export async function probeModelViaGateway(args: {
         signal: timer.controller.signal,
       } as any);
 
+      // 请求完成后立即清除超时定时器
+      timer.clear();
+
       const latencyMs = Date.now() - started;
 
       if (!res.ok) {
@@ -713,12 +773,18 @@ export async function probeModelViaGateway(args: {
         }
       }
     } catch (error: any) {
-      const latencyMs = Date.now() - started;
-      const mapped = mapTransportError(error, latencyMs, timeoutMs);
-      lastErrorType = mapped.errorType || 'unknown';
-      lastErrorMessage = mapped.errorMessage || '请求失败';
-    } finally {
       timer.clear();
+      const latencyMs = Date.now() - started;
+      
+      // 特别处理 terminated 错误
+      if (error.message && error.message.includes('terminated')) {
+        lastErrorType = 'terminated';
+        lastErrorMessage = '请求被提前终止';
+      } else {
+        const mapped = mapTransportError(error, latencyMs, timeoutMs);
+        lastErrorType = mapped.errorType || 'unknown';
+        lastErrorMessage = mapped.errorMessage || '请求失败';
+      }
     }
   }
 
