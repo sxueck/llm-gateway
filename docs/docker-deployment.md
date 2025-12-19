@@ -1,6 +1,6 @@
 # Docker 部署指南
 
-本文档介绍如何使用 Docker 和 Docker Compose 部署 LLM Gateway。
+本文档介绍如何使用 Docker 和 Docker Compose 部署 LLM Gateway, 具体可以下载 Compose 目录以一键启动
 
 ## 前置要求
 
@@ -15,7 +15,7 @@
 
 ```bash
 git clone https://github.com/sxueck/llm-gateway.git
-cd llm-gateway
+cd llm-gateway/compose
 ```
 
 ### 2. 配置环境变量
@@ -29,45 +29,35 @@ cp .env.example .env
 编辑 `.env` 文件,至少需要设置以下变量:
 
 ```env
-JWT_SECRET=your-strong-random-secret-key-at-least-32-characters
-PUBLIC_URL=http://your-domain.com
+JWT_SECRET=your-strong-random-secret-key-at-least-32-characters # 注意修改这个值！！！
 ```
 
 **重要**: 生产环境必须修改 `JWT_SECRET` 为一个强随机字符串。
 
-### 3. 创建必要的目录
-
-```bash
-mkdir -p data portkey-config
-touch portkey-config/conf.json # 注意这里如果没有执行会无法保存模型
-```
-
-### 4. 启动服务
+### 3. 启动服务
 
 ```bash
 docker-compose up -d
 ```
 
-### 5. 查看日志
+### 4. 查看日志
 
 ```bash
 docker-compose logs -f
 ```
 
-### 6. 访问应用
+### 5. 访问应用
 
 - Web UI: http://localhost:3000
 - API: http://localhost:3000/api
-- 健康检查: http://localhost:3000/health
 
 ## 服务说明
 
-### Portkey Gateway
+### MySQL
 
-- **镜像**: `portkeyai/gateway:latest`
-- **容器名**: `portkey-gateway`
-- **端口**: 8787 (仅本地访问)
-- **功能**: 核心 LLM 网关服务,处理实际的 API 请求转发
+- **镜像**: `mysql:8.0`
+- **端口**: 3306
+- **功能**: 核心 LLM 存储服务
 
 ### LLM Gateway
 
@@ -84,24 +74,15 @@ docker-compose logs -f
 | `NODE_ENV` | 运行环境 | production |
 | `PORT` | 服务端口 | 3000 |
 | `DB_PATH` | 数据库文件路径 | /app/data/gateway.db |
-| `PORTKEY_CONFIG_PATH` | Portkey 配置文件路径 | /app/portkey-config/conf.json |
 | `LOG_LEVEL` | 日志级别 | info |
-| `PORTKEY_GATEWAY_URL` | Portkey Gateway 地址 | http://portkey-gateway:8787 |
-| `PUBLIC_URL` | 公网访问地址 | http://localhost:3000 |
 | `API_REQUEST_LOG_RETENTION_DAYS` | API 请求日志保留天数 | 3 |
 
-## 数据持久化
-
-以下目录会被挂载到宿主机,确保数据持久化:
-
-- `./data` - 数据库文件
-- `./portkey-config` - Portkey Gateway 配置文件
 
 ## 生产环境部署建议
 
 ### 使用反向代理
 
-建议使用 Nginx 或 Traefik 作为反向代理,配置 HTTPS:
+建议使用 Nginx 作为反向代理,配置 HTTPS:
 
 ```nginx
 server {

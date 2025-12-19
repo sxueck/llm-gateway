@@ -5,7 +5,7 @@ services:
     image: mysql:8.0
     container_name: llm-gateway-mysql
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
       - ./mysql/conf.d:/etc/mysql/conf.d
