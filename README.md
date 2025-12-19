@@ -78,7 +78,7 @@ npm run start:all
 
 ### 使用 Docker Compose 方式启动
 
-请参考 [Docker 部署指南](./docs/DOCKER_DEPLOYMENT.md)
+请参考 [Docker 部署指南](./docs/docker-deployment.md)
 
 
 ### 快速使用
