@@ -171,6 +171,8 @@ MIT License - 详见 [LICENSE](./LICENSE) 文件
 - [Naive UI](https://www.naiveui.com/) - UI 组件库
 - [Fastify](https://www.fastify.io/) - 高性能 Web 框架
 
+## 广告 Banner
+
 ![广告Banner](https://cdn.x-aio.com/X-AIO/Code_Plan/Init_Promotion/Code_Plan_Ad-2.png)
 
-自有算力平台，最低 16元/月，支持 GLM 4.6 / Minimax M2 等旗舰模型切换，欢迎[体验](https://dashboard.x-aio.com/zh/register?ref=849e546e3fda4f919d9b)
+自有算力平台，最低 16元/月订阅套餐，支持 GLM 4.6 / Minimax M2 等旗舰模型切换，欢迎[体验，含 AFF](https://dashboard.x-aio.com/zh/register?ref=849e546e3fda4f919d9b)
