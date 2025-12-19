@@ -1,9 +1,5 @@
 # LLM Gateway
 
-![广告Banner](https://cdn.x-aio.com/X-AIO/Code_Plan/Init_Promotion/Code_Plan_Ad-2.png)
-
-自有算力平台，最低 16元/月，支持 GLM 4.6 / Minimax M2 等旗舰模型切换，欢迎[体验](https://dashboard.x-aio.com/zh/register?ref=849e546e3fda4f919d9b)
-
 一个轻量级 LLM 网关管理系统，提供直观的 Web UI 界面，用于管理多个 LLM 提供商、虚拟密钥、路由配置和模型管理
 
 <img width="2553" height="1857" alt="image" src="https://github.com/user-attachments/assets/a69d7e89-5225-4c2e-bae3-d11faddc9b56" />
@@ -174,3 +170,7 @@ MIT License - 详见 [LICENSE](./LICENSE) 文件
 
 - [Naive UI](https://www.naiveui.com/) - UI 组件库
 - [Fastify](https://www.fastify.io/) - 高性能 Web 框架
+
+![广告Banner](https://cdn.x-aio.com/X-AIO/Code_Plan/Init_Promotion/Code_Plan_Ad-2.png)
+
+自有算力平台，最低 16元/月，支持 GLM 4.6 / Minimax M2 等旗舰模型切换，欢迎[体验](https://dashboard.x-aio.com/zh/register?ref=849e546e3fda4f919d9b)
