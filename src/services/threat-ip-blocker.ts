@@ -50,11 +50,10 @@ export class ThreatIpBlocker {
       let count = 0;
 
       for (const line of text.split(/\r?\n/)) {
-        const trimmed = line.trim();
+        const trimmed = line.replace(/^\uFEFF/, '').trim();
         if (!trimmed || trimmed.startsWith('#')) continue;
 
-        // ipsum.txt 典型格式: "1.2.3.4,123,info..." 或直接是 IP
-        const ip = trimmed.split(/[ ,]/)[0];
+        const ip = trimmed.split(/[\s,]+/)[0];
         if (ip && this.isValidIp(ip)) {
           nextSet.add(ip);
           count++;
@@ -63,7 +62,7 @@ export class ThreatIpBlocker {
 
       this.threatIps = nextSet;
       this.lastUpdated = Date.now();
-      memoryLogger.info(`威胁 IP 列表更新完成: 共 ${count} 个 IP`, 'ThreatIP');
+      memoryLogger.info(`威胁 IP 列表更新完成: 共 ${this.threatIps.size} 个 IP`, 'ThreatIP');
     } catch (err: any) {
       memoryLogger.error(`刷新威胁 IP 列表失败: ${err?.message || err}`, 'ThreatIP');
     } finally {
