@@ -490,8 +490,8 @@ export async function configRoutes(fastify: FastifyInstance) {
     const expertRoutingStats = await expertRoutingLogDb.getGlobalStatistics(startTime);
     const modelStats = await apiRequestDb.getModelStats({ startTime, endTime: now });
     const modelResponseTimeStats = await apiRequestDb.getModelResponseTimeStats({ startTime, endTime: now });
-    // 熔断器统计改为从数据库获取持久化结果
-    const circuitBreakerStats = await import('../db/repositories/circuit-breaker-stats.repository.js').then(m => m.circuitBreakerStatsRepository.getGlobalStats());
+    // 熔断器统计改为从数据库获取持久化结果，并传递时间范围参数
+    const circuitBreakerStats = await import('../db/repositories/circuit-breaker-stats.repository.js').then(m => m.circuitBreakerStatsRepository.getGlobalStats(startTime));
 
     const lastRequest = await apiRequestDb.getLastRequest();
     const manualLastBlocked = manualIpBlocklist.getLastBlocked();

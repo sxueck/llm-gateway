@@ -283,6 +283,17 @@ export async function createTables() {
         INDEX idx_circuit_breaker_trigger_count (trigger_count)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+
+    // 熔断器触发事件表（记录每次触发的详细事件，用于时间范围统计）
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS circuit_breaker_events (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        provider_id VARCHAR(255) NOT NULL,
+        triggered_at BIGINT NOT NULL,
+        INDEX idx_circuit_breaker_events_provider (provider_id),
+        INDEX idx_circuit_breaker_events_time (triggered_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
   } finally {
     conn.release();
   }

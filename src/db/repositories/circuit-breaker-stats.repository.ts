@@ -13,7 +13,7 @@ class CircuitBreakerStatsRepository {
     const pool = getDatabase();
     const now = Date.now();
 
-    // Insert-or-update trigger_count for provider
+    // Insert-or-update trigger_count for provider (累计统计)
     await pool.query(
       `INSERT INTO circuit_breaker_stats (provider_id, trigger_count, last_trigger_at, created_at, updated_at)
        VALUES (?, 1, ?, ?, ?)
@@ -23,20 +23,40 @@ class CircuitBreakerStatsRepository {
          updated_at = VALUES(updated_at)`,
       [providerId, now, now, now]
     );
+
+    await pool.query(
+      `INSERT INTO circuit_breaker_events (provider_id, triggered_at) VALUES (?, ?)`,
+      [providerId, now]
+    );
   }
 
-  async getGlobalStats(): Promise<{
+  async getGlobalStats(startTime?: number): Promise<{
     totalTriggers: number;
     maxTriggeredProvider: string;
     maxTriggerCount: number;
   }> {
     const pool = getDatabase();
 
-    const [rows] = await pool.query<any[]>(
-      `SELECT provider_id, trigger_count FROM circuit_breaker_stats`
-    );
+    let query: string;
+    let params: any[] = [];
 
-    const stats = rows as CircuitBreakerStatsRow[];
+    if (startTime !== undefined) {
+      // 从事件表按时间范围统计
+      query = `
+        SELECT provider_id, COUNT(*) as trigger_count
+        FROM circuit_breaker_events
+        WHERE triggered_at >= ?
+        GROUP BY provider_id
+      `;
+      params = [startTime];
+    } else {
+      // 不限时间，从累计统计表读取
+      query = `SELECT provider_id, trigger_count FROM circuit_breaker_stats`;
+    }
+
+    const [rows] = await pool.query<any[]>(query, params);
+
+    const stats = rows as Array<{ provider_id: string; trigger_count: number }>;
     if (!stats || stats.length === 0) {
       return {
         totalTriggers: 0,
