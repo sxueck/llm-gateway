@@ -136,7 +136,7 @@ export const migrations: Migration[] = [
     down: async (conn: Connection) => {
       try {
         await conn.query(`ALTER TABLE api_requests DROP COLUMN IF EXISTS ip`);
-        console.log('[迁移] 已删除 api_requests 表的 ip 字��');
+        console.log('[迁移] 已删除 api_requests 表的 ip 字段');
       } catch (e: any) {
       console.warn('[迁移] 删除 ip 字段失败:', e.message);
     }
@@ -164,6 +164,41 @@ export const migrations: Migration[] = [
       } catch (e: any) {
         console.warn('[迁移] 删除 user_agent 字段失败:', e.message);
       }
+    },
+  },
+  {
+    version: 21,
+    name: 'add_circuit_breaker_stats_tables',
+    up: async (conn: Connection) => {
+      // 熔断器触发统计表
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS circuit_breaker_stats (
+          provider_id VARCHAR(255) PRIMARY KEY,
+          trigger_count INT NOT NULL DEFAULT 0,
+          last_trigger_at BIGINT NOT NULL,
+          created_at BIGINT NOT NULL,
+          updated_at BIGINT NOT NULL,
+          INDEX idx_circuit_breaker_trigger_count (trigger_count)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+
+      // 熔断器触发事件表
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS circuit_breaker_events (
+          id BIGINT AUTO_INCREMENT PRIMARY KEY,
+          provider_id VARCHAR(255) NOT NULL,
+          triggered_at BIGINT NOT NULL,
+          INDEX idx_circuit_breaker_events_provider (provider_id),
+          INDEX idx_circuit_breaker_events_time (triggered_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      
+      console.log('[迁移] 已创建熔断器统计相关表 (circuit_breaker_stats, circuit_breaker_events)');
+    },
+    down: async (conn: Connection) => {
+      await conn.query('DROP TABLE IF EXISTS circuit_breaker_events');
+      await conn.query('DROP TABLE IF EXISTS circuit_breaker_stats');
+      console.log('[迁移] 已删除熔断器统计相关表');
     }
   }
 ];

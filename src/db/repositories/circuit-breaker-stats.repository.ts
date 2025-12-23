@@ -40,7 +40,7 @@ class CircuitBreakerStatsRepository {
     let query: string;
     let params: any[] = [];
 
-    if (startTime !== undefined) {
+    if (startTime !== undefined && startTime > 0) {
       // 从事件表按时间范围统计
       query = `
         SELECT provider_id, COUNT(*) as trigger_count
@@ -50,7 +50,6 @@ class CircuitBreakerStatsRepository {
       `;
       params = [startTime];
     } else {
-      // 不限时间，从累计统计表读取
       query = `SELECT provider_id, trigger_count FROM circuit_breaker_stats`;
     }
 
