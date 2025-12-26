@@ -495,10 +495,13 @@ export async function configRoutes(fastify: FastifyInstance) {
 
     const lastRequest = await apiRequestDb.getLastRequest();
     const manualLastBlocked = manualIpBlocklist.getLastBlocked();
-    const threatLastBlocked = threatIpBlocker.getLastBlockedInfo();
+    const threatIpStats = threatIpBlocker.getStats();
+    const threatLastBlocked = threatIpStats.lastBlockedIp
+      ? { ip: threatIpStats.lastBlockedIp, timestamp: threatIpStats.lastBlockedAt || 0, reason: null, source: 'threat' as const }
+      : null;
     const lastBlockedInfo = manualLastBlocked
       ? { ip: manualLastBlocked.ip, timestamp: manualLastBlocked.createdAt, reason: manualLastBlocked.reason, source: 'manual' as const }
-      : (threatLastBlocked?.ip ? { ip: threatLastBlocked.ip, timestamp: threatLastBlocked.timestamp, reason: null, source: 'threat' as const } : null);
+      : threatLastBlocked;
 
     const [lastRequestGeo, lastBlockedGeo] = await Promise.all([
       getGeoInfo(lastRequest?.ip),
@@ -598,6 +601,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       circuitBreakerStats,
       costStats,
       requestSourceStats,
+      threatIpStats,
     };
   });
 

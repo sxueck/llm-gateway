@@ -6,6 +6,7 @@ export class ThreatIpBlocker {
   private updating: boolean = false;
   private lastBlockedIp: string | null = null;
   private lastBlockedAt: number = 0;
+  private blockedCount: number = 0;
 
   // 默认 6 小时刷新一次
   private readonly refreshIntervalMs = 6 * 60 * 60 * 1000;
@@ -104,6 +105,7 @@ export class ThreatIpBlocker {
     if (isThreat) {
       this.lastBlockedIp = ip;
       this.lastBlockedAt = Date.now();
+      this.blockedCount += 1;
     }
     return isThreat;
   }
@@ -112,6 +114,16 @@ export class ThreatIpBlocker {
     return {
       ip: this.lastBlockedIp,
       timestamp: this.lastBlockedAt
+    };
+  }
+
+  getStats() {
+    return {
+      blockedCount: this.blockedCount,
+      totalThreatIps: this.threatIps.size,
+      lastBlockedIp: this.lastBlockedIp,
+      lastBlockedAt: this.lastBlockedAt,
+      lastUpdated: this.lastUpdated,
     };
   }
 }

@@ -92,6 +92,12 @@
               <div class="stat-progress">
                 <div class="stat-progress-bar" :style="{ width: successRate + '%' }"></div>
               </div>
+              <div class="stat-details">
+                <span class="stat-detail-item stat-detail-error">
+                  <span class="stat-detail-label">错误数:</span>
+                  <span class="stat-detail-value">{{ formatNumber(stats?.failedRequests || 0) }}</span>
+                </span>
+              </div>
             </div>
           </n-card>
         </n-gi>
@@ -124,12 +130,16 @@
         <n-gi>
           <n-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-header">错误率</div>
-              <div class="stat-main-value" :class="{ 'stat-value-error': errorRate > 5 }">{{ formatPercentage(errorRate) }}<span class="stat-unit">%</span></div>
+              <div class="stat-header">平均效率</div>
+              <div class="stat-main-value">{{ formatNumber(avgTokensPerRequest) }}<span class="stat-unit">Tk/Req</span></div>
               <div class="stat-details">
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">错误数:</span>
-                  <span class="stat-detail-value">{{ formatNumber(stats?.failedRequests || 0) }}</span>
+                  <span class="stat-detail-label">输入:</span>
+                  <span class="stat-detail-value">{{ formatNumber(avgInputTokens) }}</span>
+                </span>
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">输出:</span>
+                  <span class="stat-detail-value">{{ formatNumber(avgOutputTokens) }}</span>
                 </span>
               </div>
             </div>
@@ -171,16 +181,24 @@
         <n-gi>
           <n-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-header">平均效率</div>
-              <div class="stat-main-value">{{ formatNumber(avgTokensPerRequest) }}<span class="stat-unit">Tk/Req</span></div>
+              <div class="stat-header">Ipsum 拦截 IP</div>
+              <div class="stat-main-value">{{ formatNumber(ipsumBlockedCount) }}</div>
               <div class="stat-details">
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">输入:</span>
-                  <span class="stat-detail-value">{{ formatNumber(avgInputTokens) }}</span>
+                  <span class="stat-detail-label">威胁列表:</span>
+                  <span class="stat-detail-value">{{ formatNumber(threatIpListSize) }} IP</span>
                 </span>
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">输出:</span>
-                  <span class="stat-detail-value">{{ formatNumber(avgOutputTokens) }}</span>
+                  <span class="stat-detail-label">最近命中:</span>
+                  <span class="stat-detail-value">
+                    {{ threatIpStats?.lastBlockedIp || '暂无记录' }}
+                    <span
+                      v-if="threatIpStats?.lastBlockedAt"
+                      style="display: block; font-size: 12px; color: #6b7280; margin-top: 2px;"
+                    >
+                      {{ formatTimestamp(threatIpStats?.lastBlockedAt || 0, selectedPeriod) }}
+                    </span>
+                  </span>
                 </span>
               </div>
             </div>
@@ -426,7 +444,7 @@ import { RefreshOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
-import { configApi, type ApiStats, type VirtualKeyTrend, type ExpertRoutingStats, type ModelStat, type CostStats, type ModelResponseTimeStat, type RequestSourceEntry, type RequestSourceStats } from '@/api/config';
+import { configApi, type ApiStats, type VirtualKeyTrend, type ExpertRoutingStats, type ModelStat, type CostStats, type ModelResponseTimeStat, type RequestSourceEntry, type RequestSourceStats, type ThreatIpStats } from '@/api/config';
 import { formatNumber, formatTokenNumber, formatPercentage, formatResponseTime, formatTimestamp, formatUptime } from '@/utils/format';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
@@ -473,6 +491,7 @@ const circuitBreakerStats = ref<{
 } | null>(null);
 const costStats = ref<CostStats | null>(null);
 const requestSourceStats = ref<RequestSourceStats | null>(null);
+const threatIpStats = ref<ThreatIpStats | null>(null);
 const requestSourceTableData = computed<RequestSourceEntry[]>(() => requestSourceStats.value?.recentSources || []);
 const lookupLoadingIp = ref<string | null>(null);
 const blockLoadingIp = ref<string | null>(null);
@@ -516,17 +535,6 @@ const requestSourceColumns = computed<DataTableColumns<RequestSourceEntry>>(() =
     minWidth: 160,
     render(row) {
       return row.geo?.locationZh || '未知';
-    }
-  },
-  {
-    title: 'ASN / 机构',
-    key: 'asn',
-    minWidth: 180,
-    render(row) {
-      if (row.geo?.asn && row.geo?.asOrganization) {
-        return `${row.geo.asn} · ${row.geo.asOrganization}`;
-      }
-      return row.geo?.asn || row.geo?.asOrganization || '-';
     }
   },
   {
@@ -729,13 +737,6 @@ const successRate = computed(() => {
   return (Number(stats.value.successfulRequests || 0) / total) * 100;
 });
 
-const errorRate = computed(() => {
-  if (!stats.value) return 0;
-  const total = Number(stats.value.totalRequests || 0);
-  if (total === 0) return 0;
-  return (Number(stats.value.failedRequests || 0) / total) * 100;
-});
-
 const avgResponseTime = computed(() => {
   return Number(stats.value?.avgResponseTime || 0);
 });
@@ -802,6 +803,16 @@ const promptTokens = computed(() => {
 const completionTokens = computed(() => {
   if (!stats.value) return 0;
   return Number(stats.value.completionTokens || 0);
+});
+
+const ipsumBlockedCount = computed(() => {
+  if (!threatIpStats.value) return 0;
+  return Number(threatIpStats.value.blockedCount || 0);
+});
+
+const threatIpListSize = computed(() => {
+  if (!threatIpStats.value) return 0;
+  return Number(threatIpStats.value.totalThreatIps || 0);
 });
 
 // 响应时间散点图可选模型列表（按 供应商/模型 显示）
@@ -1278,6 +1289,7 @@ async function loadStats() {
     circuitBreakerStats.value = result.circuitBreakerStats || { totalTriggers: 0, maxTriggeredProvider: '-', maxTriggerCount: 0 };
     costStats.value = result.costStats || null;
     requestSourceStats.value = result.requestSourceStats || null;
+    threatIpStats.value = result.threatIpStats || null;
   } catch (error: any) {
     const errorMsg = error.message || '加载数据失败';
     loadError.value = errorMsg;
