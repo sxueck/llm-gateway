@@ -41,8 +41,8 @@
       />
     </n-layout-sider>
 
-    <n-layout style="background-color: #f5f5f5; height: 100vh; display: flex; flex-direction: column;">
-      <n-layout-header style="height: 72px; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; border-bottom: none; background-color: transparent; flex-shrink: 0;">
+    <n-layout style="background-color: #f5f5f5; height: 100vh;" :native-scrollbar="false">
+      <n-layout-header style="height: 72px; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; border-bottom: none; background-color: transparent;">
         <div class="header-left">
           <n-button circle quaternary @click="toggleSidebar">
             <template #icon>
@@ -74,7 +74,7 @@
         </div>
       </n-layout-header>
 
-      <n-layout-content style="flex: 1; min-height: 0; overflow-y: auto;" content-style="padding: 8px 32px 32px 32px; background-color: transparent;">
+      <n-layout-content content-style="padding: 8px 32px 32px 32px; background-color: transparent;">
         <router-view />
       </n-layout-content>
     </n-layout>

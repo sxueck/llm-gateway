@@ -242,21 +242,6 @@
   color: #d03050;
 }
 
-.stat-progress {
-  width: 100%;
-  height: 8px;
-  background: #f0f0f0;
-  border-radius: 4px;
-  overflow: hidden;
-  margin-top: auto;
-}
-
-.stat-progress-bar {
-  height: 100%;
-  background: #006241;
-  border-radius: 4px;
-  transition: width 0.3s ease;
-}
 
 .trend-card {
   background: #ffffff;

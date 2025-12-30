@@ -89,9 +89,6 @@
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.successRate') }}</div>
               <div class="stat-main-value">{{ formatPercentage(successRate) }}<span class="stat-unit">%</span></div>
-              <div class="stat-progress">
-                <div class="stat-progress-bar" :style="{ width: successRate + '%' }"></div>
-              </div>
             </div>
           </n-card>
         </n-gi>
