@@ -140,6 +140,14 @@ export interface RequestSourceStats {
   recentSources?: RequestSourceEntry[];
 }
 
+export interface ThreatIpStats {
+  blockedCount: number;
+  totalThreatIps: number;
+  lastBlockedIp: string | null;
+  lastBlockedAt: number | null;
+  lastUpdated: number | null;
+}
+
 export const configApi = {
   getLogs(params?: {
     level?: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
@@ -163,6 +171,7 @@ export const configApi = {
     };
     costStats: CostStats | null;
     requestSourceStats?: RequestSourceStats;
+    threatIpStats?: ThreatIpStats;
   }> {
     return request.get('/admin/config/stats', { params: { period } });
   },
