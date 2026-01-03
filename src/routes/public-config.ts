@@ -8,12 +8,14 @@ export async function publicConfigRoutes(fastify: FastifyInstance) {
     try {
       const allowRegCfg = await systemConfigDb.get('allow_registration');
       const corsEnabledCfg = await systemConfigDb.get('cors_enabled');
+      const dashboardHideRequestSourceCardCfg = await systemConfigDb.get('dashboard_hide_request_source_card');
 
       return {
         allowRegistration: !(allowRegCfg && allowRegCfg.value === 'false'),
         corsEnabled: corsEnabledCfg ? corsEnabledCfg.value === 'true' : true,
         demoMode: demoModeService.isEnabled(),
         nextCleanupTime: demoModeService.isEnabled() ? demoModeService.getNextCleanupTime() : null,
+        dashboardHideRequestSourceCard: dashboardHideRequestSourceCardCfg ? dashboardHideRequestSourceCardCfg.value === 'true' : false,
       };
     } catch (error: any) {
       memoryLogger.error(`获取系统配置失败: ${error.message}`, 'System');
@@ -27,4 +29,3 @@ export async function publicConfigRoutes(fastify: FastifyInstance) {
     }
   });
 }
-

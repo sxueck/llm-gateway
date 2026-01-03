@@ -302,6 +302,8 @@ export default {
     developerDebugRequestHeaders: 'Request headers',
     allowRegistration: 'Allow New User Registration',
     allowRegistrationDesc: 'Control whether new users can create accounts through the registration page',
+    dashboardHideRequestSourceCard: 'Hide dashboard “Request Source” card',
+    dashboardHideRequestSourceCardDesc: 'When enabled, the dashboard will not show the “Request Source” monitoring card',
     enableCors: 'Enable CORS Cross-Origin Support',
     enableCorsDesc: 'Allow browser-side applications to access the API cross-origin',
     corsWarning: {

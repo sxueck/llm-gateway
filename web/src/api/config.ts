@@ -237,23 +237,24 @@ export const configApi = {
     litellmCompatEnabled: boolean;
     healthMonitoringEnabled: boolean;
     persistentMonitoringEnabled: boolean;
-      developerDebugEnabled: boolean;
-      developerDebugExpiresAt: number | null;
-      antiBot: {
-        enabled: boolean;
-        blockBots: boolean;
-        blockSuspicious: boolean;
-        blockThreatIPs: boolean;
-        logOnly: boolean;
-        logHeaders: boolean;
-        allowedUserAgents: string[];
-        blockedUserAgents: string[];
+    developerDebugEnabled: boolean;
+    developerDebugExpiresAt: number | null;
+    dashboardHideRequestSourceCard: boolean;
+    antiBot: {
+      enabled: boolean;
+      blockBots: boolean;
+      blockSuspicious: boolean;
+      blockThreatIPs: boolean;
+      logOnly: boolean;
+      logHeaders: boolean;
+      allowedUserAgents: string[];
+      blockedUserAgents: string[];
     };
   }> {
     return request.get('/admin/config/system-settings');
   },
 
-  getPublicSystemSettings(): Promise<{ allowRegistration: boolean; corsEnabled: boolean; demoMode: boolean; nextCleanupTime: number | null }> {
+  getPublicSystemSettings(): Promise<{ allowRegistration: boolean; corsEnabled: boolean; demoMode: boolean; nextCleanupTime: number | null; dashboardHideRequestSourceCard: boolean }> {
     return request.get('/public/system-settings');
   },
 
@@ -265,6 +266,7 @@ export const configApi = {
     healthMonitoringEnabled?: boolean;
     persistentMonitoringEnabled?: boolean;
     developerDebugEnabled?: boolean;
+    dashboardHideRequestSourceCard?: boolean;
     antiBot?: {
       enabled?: boolean;
       blockBots?: boolean;

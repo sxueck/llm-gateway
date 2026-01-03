@@ -15,6 +15,16 @@
 
           <n-space align="center" justify="space-between">
             <div>
+              <div>{{ $t('settings.dashboardHideRequestSourceCard') }}</div>
+              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.dashboardHideRequestSourceCardDesc') }}</n-text>
+            </div>
+            <n-switch :value="dashboardHideRequestSourceCard" @update:value="onToggleDashboardHideRequestSourceCard" />
+          </n-space>
+
+          <n-divider style="margin: 8px 0;" />
+
+          <n-space align="center" justify="space-between">
+            <div>
               <div>{{ $t('settings.enableCors') }}</div>
               <n-text depth="3" style="font-size: 12px;">{{ $t('settings.enableCorsDesc') }}</n-text>
             </div>
@@ -307,6 +317,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
 import type { User } from '@/types';
+import { useSystemConfig } from '@/composables/useSystemConfig';
  
 import { configApi } from '@/api/config';
 import { authApi } from '@/api/auth';
@@ -315,6 +326,7 @@ const { t } = useI18n();
 const authStore = useAuthStore();
 const providerStore = useProviderStore();
 const virtualKeyStore = useVirtualKeyStore();
+const { dashboardHideRequestSourceCard } = useSystemConfig();
  
 const message = useMessage();
 const dialog = useDialog();
@@ -512,6 +524,16 @@ async function onToggleLitellmCompat(val: boolean) {
   }
 }
 
+async function onToggleDashboardHideRequestSourceCard(val: boolean) {
+  try {
+    await configApi.updateSystemSettings({ dashboardHideRequestSourceCard: val });
+    dashboardHideRequestSourceCard.value = val;
+    message.success(t('messages.operationSuccess'));
+  } catch (e: any) {
+    message.error(t('messages.operationFailed'));
+  }
+}
+
 async function onSavePublicUrl() {
   const url = publicUrlInput.value.trim();
 
@@ -701,6 +723,7 @@ onMounted(async () => {
     litellmCompatEnabled.value = s.litellmCompatEnabled;
     publicUrl.value = s.publicUrl;
     publicUrlInput.value = s.publicUrl;
+    dashboardHideRequestSourceCard.value = s.dashboardHideRequestSourceCard || false;
     healthMonitoringEnabled.value = s.healthMonitoringEnabled || false;
     persistentMonitoringEnabled.value = s.persistentMonitoringEnabled || false;
 
@@ -730,5 +753,3 @@ onMounted(async () => {
   color: #1e3932;
 }
 </style>
-
-

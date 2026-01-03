@@ -75,6 +75,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     const persistentMonitoringCfg = await systemConfigDb.get('persistent_monitoring_enabled');
     const debugEnabledCfg = await systemConfigDb.get('developer_debug_enabled');
     const debugExpiresCfg = await systemConfigDb.get('developer_debug_expires_at');
+    const dashboardHideRequestSourceCardCfg = await systemConfigDb.get('dashboard_hide_request_source_card');
     const antiBot = await loadAntiBotConfig();
 
     const now = Date.now();
@@ -90,6 +91,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       persistentMonitoringEnabled: persistentMonitoringCfg ? persistentMonitoringCfg.value === 'true' : false,
       developerDebugEnabled: activeDebug,
       developerDebugExpiresAt: activeDebug ? rawExpiresAt : null,
+      dashboardHideRequestSourceCard: dashboardHideRequestSourceCardCfg ? dashboardHideRequestSourceCardCfg.value === 'true' : false,
       antiBot,
     };
   });
@@ -182,7 +184,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/system-settings', async (request) => {
-    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, antiBot } = request.body as {
+    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, dashboardHideRequestSourceCard, antiBot } = request.body as {
       allowRegistration?: boolean;
       corsEnabled?: boolean;
       publicUrl?: string;
@@ -190,6 +192,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       healthMonitoringEnabled?: boolean;
       persistentMonitoringEnabled?: boolean;
       developerDebugEnabled?: boolean;
+      dashboardHideRequestSourceCard?: boolean;
       antiBot?: {
         enabled?: boolean;
         blockBots?: boolean;
@@ -288,6 +291,14 @@ export async function configRoutes(fastify: FastifyInstance) {
           debugModeService.setState(false, Date.now());
           memoryLogger.info('开发者调试模式已关闭', 'Config');
         }
+      }
+
+      if (dashboardHideRequestSourceCard !== undefined) {
+        await systemConfigDb.set(
+          'dashboard_hide_request_source_card',
+          dashboardHideRequestSourceCard ? 'true' : 'false',
+          '是否在首页隐藏「请求来源」'
+        );
       }
 
       if (publicUrl !== undefined) {

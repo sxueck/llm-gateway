@@ -303,6 +303,8 @@ export default {
     developerDebugRequestHeaders: '请求头信息',
     allowRegistration: '允许新用户注册',
     allowRegistrationDesc: '控制是否允许新用户通过注册页面创建账号',
+    dashboardHideRequestSourceCard: '隐藏首页「请求来源」',
+    dashboardHideRequestSourceCardDesc: '开启后，仪表盘首页将不再显示“请求来源”监控卡片',
     enableCors: '启用 CORS 跨域支持',
     enableCorsDesc: '允许浏览器端应用跨域访问 API',
     corsWarning: {

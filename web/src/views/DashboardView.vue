@@ -354,7 +354,7 @@
         </n-gi>
       </n-grid>
   
-        <n-card class="overview-card" title="请求来源" style="margin-bottom: 24px;">
+        <n-card v-if="showRequestSourceCard" class="overview-card" title="请求来源" style="margin-bottom: 24px;">
           <n-space vertical :size="20">
             <n-grid cols="1 s:2" :x-gap="24" :y-gap="16" responsive="screen">
               <n-gi>
@@ -440,6 +440,7 @@ import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
 import { configApi, type ApiStats, type VirtualKeyTrend, type ExpertRoutingStats, type ModelStat, type CostStats, type ModelResponseTimeStat, type RequestSourceEntry, type RequestSourceStats, type ThreatIpStats } from '@/api/config';
 import { formatNumber, formatTokenNumber, formatPercentage, formatResponseTime, formatTimestamp, formatUptime } from '@/utils/format';
+import { useSystemConfig } from '@/composables/useSystemConfig';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { LineChart, PieChart, ScatterChart } from 'echarts/charts';
@@ -468,6 +469,9 @@ const { t } = useI18n();
 const message = useMessage();
 const providerStore = useProviderStore();
 const virtualKeyStore = useVirtualKeyStore();
+const { dashboardHideRequestSourceCard } = useSystemConfig();
+
+const showRequestSourceCard = computed(() => !dashboardHideRequestSourceCard.value);
 
 const stats = ref<ApiStats | null>(null);
 const statsAllTime = ref<ApiStats | null>(null);
