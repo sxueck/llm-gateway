@@ -1,16 +1,24 @@
 {
   "name": "llm-gateway",
-  "version": "1.0.0",
+  "version": "0.2.4",
+  "private": true,
   "description": "轻量级 LLM 网关管理系统",
-  "main": "dist/index.js",
-  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "start:all": "node start.js",
-    "typecheck": "tsc --noEmit",
-    "fix:db": "node scripts/fix-database.js"
+    "dev": "bun run --filter \"@llm-gateway/*\" dev",
+    "dev:backend": "bun run --filter @llm-gateway/backend dev",
+    "dev:web": "bun run --filter @llm-gateway/web dev",
+    "dev:all": "bun run dev:backend & bun run dev:web",
+    "build": "bun run --filter \"@llm-gateway/*\" build",
+    "build:backend": "bun run --filter @llm-gateway/backend build",
+    "build:web": "bun run --filter @llm-gateway/web build",
+    "typecheck": "bun run --filter \"@llm-gateway/*\" typecheck",
+    "clean": "bun run --filter \"@llm-gateway/*\" clean",
+    "lint": "bun run --filter \"@llm-gateway/*\" lint",
+    "start": "bun run --filter @llm-gateway/backend start",
+    "fix:db": "bun run scripts/fix-database.js"
   },
   "keywords": [
     "llm",
@@ -19,7 +27,8 @@
     "openai",
     "api-gateway",
     "load-balancing",
-    "failover"
+    "failover",
+    "monorepo"
   ],
   "author": "SXueckShen <sxueck@outlook.com>",
   "license": "MIT",
@@ -31,34 +40,12 @@
     "url": "https://github.com/sxueck/llm-gateway/issues"
   },
   "homepage": "https://github.com/sxueck/llm-gateway#readme",
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.71.0",
-    "@aws-sdk/client-s3": "^3.940.0",
-    "@fastify/cors": "^11.1.0",
-    "@fastify/jwt": "^10.0.0",
-    "@fastify/static": "^8.0.2",
-    "@google/generative-ai": "^0.24.1",
-    "dotenv": "^17.2.3",
-    "fastify": "^5.2.0",
-    "ip2region": "^2.3.0",
-    "mysql2": "^3.15.3",
-    "nanoid": "^5.0.9",
-    "node-cron": "^4.2.1",
-    "openai": "^6.9.0",
-    "pino": "^9.6.0",
-    "pino-pretty": "^13.0.0",
-    "sql.js": "^1.12.0",
-    "tar": "^7.5.2",
-    "tiktoken": "^1.0.22",
-    "uuid": "^13.0.0",
-    "zod": "^3.24.1"
-  },
   "devDependencies": {
-    "@types/node": "^22.10.2",
-    "@types/node-cron": "^3.0.11",
-    "@types/sql.js": "^1.4.9",
-    "@types/tar": "^6.1.13",
-    "tsx": "^4.19.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.2"
+  },
+  "engines": {
+    "bun": ">=1.0.0",
+    "node": ">=20.0.0"
   }
 }

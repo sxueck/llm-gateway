@@ -635,7 +635,7 @@ async function handleAddTarget() {
   try {
     if (!addTargetForm.value.target_id) {
       message.error('请选择目标模型');
-      return false;
+      return;
     }
     await configApi.createHealthTarget({
       type: addTargetForm.value.type,
@@ -655,7 +655,6 @@ async function handleAddTarget() {
     };
   } catch (error: any) {
     message.error(error.message || t('messages.operationFailed'));
-    return false;
   }
 }
 
@@ -677,7 +676,6 @@ async function handleEditTarget() {
     await loadHealthTargets();
   } catch (error: any) {
     message.error(error.message || t('messages.operationFailed'));
-    return false;
   }
 }
 
