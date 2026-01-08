@@ -4,6 +4,7 @@ import { memoryLogger } from '../services/logger.js';
 import { apiRequestDb, routingConfigDb, modelDb, systemConfigDb, expertRoutingLogDb, healthTargetDb, virtualKeyDb } from '../db/index.js';
 import { nanoid } from 'nanoid';
 import { loadAntiBotConfig, validateUserAgentList } from '../utils/anti-bot-config.js';
+import { DEFAULT_AIFW_MASK_CONFIG, loadAifwConfig } from '../utils/aifw-config.js';
 import { hashKey } from '../utils/crypto.js';
 import { healthCheckerService } from '../services/health-checker.js';
 import { debugModeService } from '../services/debug-mode.js';
@@ -77,6 +78,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     const debugExpiresCfg = await systemConfigDb.get('developer_debug_expires_at');
     const dashboardHideRequestSourceCardCfg = await systemConfigDb.get('dashboard_hide_request_source_card');
     const antiBot = await loadAntiBotConfig();
+    const aifw = await loadAifwConfig();
 
     const now = Date.now();
     const rawExpiresAt = debugExpiresCfg ? Number(debugExpiresCfg.value) : 0;
@@ -93,6 +95,15 @@ export async function configRoutes(fastify: FastifyInstance) {
       developerDebugExpiresAt: activeDebug ? rawExpiresAt : null,
       dashboardHideRequestSourceCard: dashboardHideRequestSourceCardCfg ? dashboardHideRequestSourceCardCfg.value === 'true' : false,
       antiBot,
+      aifw: {
+        enabled: aifw.enabled,
+        baseUrl: aifw.baseUrl,
+        failOpen: aifw.failOpen,
+        timeoutMs: aifw.timeoutMs,
+        // Provide UI-friendly defaults even when config is empty.
+        maskConfig: aifw.maskConfig || DEFAULT_AIFW_MASK_CONFIG,
+        httpApiKeySet: !!aifw.httpApiKey,
+      },
     };
   });
 
@@ -184,7 +195,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/system-settings', async (request) => {
-    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, dashboardHideRequestSourceCard, antiBot } = request.body as {
+    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, dashboardHideRequestSourceCard, antiBot, aifw } = request.body as {
       allowRegistration?: boolean;
       corsEnabled?: boolean;
       publicUrl?: string;
@@ -202,6 +213,14 @@ export async function configRoutes(fastify: FastifyInstance) {
         logHeaders?: boolean;
         allowedUserAgents?: string[];
         blockedUserAgents?: string[];
+      };
+      aifw?: {
+        enabled?: boolean;
+        baseUrl?: string;
+        httpApiKey?: string;
+        failOpen?: boolean;
+        timeoutMs?: number;
+        maskConfigJson?: string;
       };
     };
 
@@ -366,6 +385,72 @@ export async function configRoutes(fastify: FastifyInstance) {
         throw new Error('反爬虫配置保存验证失败');
       }
     }
+
+      if (aifw !== undefined) {
+        if (aifw.enabled !== undefined) {
+          await systemConfigDb.set('aifw_enabled', aifw.enabled ? 'true' : 'false', '是否启用 OneAIFW 预处理');
+          memoryLogger.info(`OneAIFW 预处理已更新: ${aifw.enabled ? '启用' : '禁用'}`, 'Config');
+        }
+
+        if (aifw.baseUrl !== undefined) {
+          const trimmed = String(aifw.baseUrl || '').trim();
+          try {
+            const url = new URL(trimmed);
+            if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+              throw new Error('unsupported protocol');
+            }
+          } catch {
+            throw new Error('OneAIFW Base URL 无效，请使用 http(s)://...');
+          }
+          await systemConfigDb.set('aifw_base_url', trimmed.replace(/\/+$/, ''), 'OneAIFW 服务地址');
+        }
+
+        if (aifw.httpApiKey !== undefined) {
+          const key = String(aifw.httpApiKey || '').trim();
+          await systemConfigDb.set('aifw_http_api_key', key, 'OneAIFW HTTP API Key（可选）');
+        }
+
+        if (aifw.failOpen !== undefined) {
+          await systemConfigDb.set('aifw_fail_open', aifw.failOpen ? 'true' : 'false', 'OneAIFW 失败时是否放行（fail-open）');
+        }
+
+        if (aifw.timeoutMs !== undefined) {
+          const n = Number(aifw.timeoutMs);
+          if (!Number.isFinite(n) || n < 500 || n > 60000) {
+            throw new Error('OneAIFW 超时应在 500~60000ms 之间');
+          }
+          await systemConfigDb.set('aifw_timeout_ms', String(Math.floor(n)), 'OneAIFW 请求超时（ms）');
+        }
+
+        if (aifw.maskConfigJson !== undefined) {
+          const raw = String(aifw.maskConfigJson || '').trim();
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                throw new Error('maskConfigJson must be an object');
+              }
+
+              const allowedKeys = new Set<string>([
+                ...Object.keys(DEFAULT_AIFW_MASK_CONFIG),
+                'maskAll',
+              ]);
+              for (const [key, value] of Object.entries(parsed)) {
+                if (!allowedKeys.has(key)) {
+                  throw new Error(`unknown key: ${key}`);
+                }
+                if (typeof value !== 'boolean') {
+                  throw new Error(`invalid value type for ${key}`);
+                }
+              }
+            } catch (error: any) {
+              const detail = error?.message ? `: ${error.message}` : '';
+              throw new Error(`OneAIFW maskConfigJson 校验失败${detail}`);
+            }
+          }
+          await systemConfigDb.set('aifw_mask_config_json', raw, 'OneAIFW maskConfig 配置（JSON）');
+        }
+      }
 
       return { success: true };
     } catch (error: any) {

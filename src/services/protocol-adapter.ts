@@ -11,6 +11,7 @@ import { StreamRetryManager, StreamBuffer, getRetryLimit, type StreamProcessor }
 import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-client.js';
 import { ResponsesEmptyOutputError } from '../errors/responses-empty-output-error.js';
 import { sanitizeCustomHeaders, getSanitizedHeadersCacheKey } from '../utils/header-sanitizer.js';
+import { AifwStreamRestorer, restorePlaceholdersInObjectInPlace } from '../utils/aifw-placeholders.js';
 
 // Responses API 空输出重试默认次数（可通过环境变量或模型属性配置）
 const DEFAULT_RESPONSES_EMPTY_OUTPUT_MAX_RETRIES = Math.max(
@@ -279,6 +280,13 @@ export class ProtocolAdapter {
     abortSignal?: AbortSignal
   ): Promise<StreamTokenUsage> {
     const client = this.getOpenAIClient(config);
+    const aifwCtx = (options as any)?.__aifw;
+    const placeholdersMap = aifwCtx?.placeholdersMap;
+    const streamRestorer = placeholdersMap ? new AifwStreamRestorer(placeholdersMap) : null;
+    const bufferedKeys = new Set<string>();
+    const finishedByChoiceIndex = new Set<number>();
+    let lastChunkId: string | undefined;
+    let lastChunkModel: string | undefined;
 
     const cleanedMessages = this.validateAndCleanMessages(messages);
 
@@ -353,6 +361,30 @@ export class ProtocolAdapter {
           delete (chunk as any).instructions;
         }
 
+        if (placeholdersMap) {
+          try {
+            restorePlaceholdersInObjectInPlace(chunk, placeholdersMap);
+          } catch {}
+
+          if (Array.isArray(chunk.choices)) {
+            for (const choice of chunk.choices) {
+              const idx = typeof choice?.index === 'number' ? choice.index : 0;
+              if (choice?.finish_reason) {
+                finishedByChoiceIndex.add(idx);
+              }
+              const content = choice?.delta?.content;
+              if (typeof content === 'string' && streamRestorer) {
+                const key = `chat:${idx}:content`;
+                bufferedKeys.add(key);
+                choice.delta.content = streamRestorer.process(key, content);
+              }
+            }
+          }
+        }
+
+        if (chunk?.id) lastChunkId = String(chunk.id);
+        if (chunk?.model) lastChunkModel = String(chunk.model);
+
         const chunkData = JSON.stringify(chunk);
         const sseData = `data: ${chunkData}\n\n`;
 
@@ -403,6 +435,44 @@ export class ProtocolAdapter {
         memoryLogger.info('流式请求被用户取消', 'Protocol');
       }
       throw error;
+    }
+
+     if (placeholdersMap && streamRestorer && bufferedKeys.size > 0 && !reply.raw.destroyed && !reply.raw.writableEnded) {
+       for (const key of bufferedKeys) {
+         const flushText = streamRestorer.flush(key);
+         if (!flushText) continue;
+
+         const match = key.match(/^chat:(\d+):content$/);
+         const choiceIndex = match ? Number(match[1]) : 0;
+
+         // If upstream already finalized this choice (finish_reason != null),
+         // don't emit extra content after completion.
+         if (finishedByChoiceIndex.has(choiceIndex)) {
+           continue;
+         }
+
+         const flushChunk: any = {
+           id: lastChunkId || `aifw_flush_${Date.now()}`,
+           object: 'chat.completion.chunk',
+           created: Math.floor(Date.now() / 1000),
+           model: lastChunkModel || config.model,
+          choices: [
+            {
+              index: choiceIndex,
+              delta: { content: flushText },
+              finish_reason: null,
+            },
+          ],
+        };
+
+        const flushData = `data: ${JSON.stringify(flushChunk)}\n\n`;
+        streamChunks.push(flushData);
+        if (!reply.raw.write(flushData)) {
+          await new Promise<void>((resolve) => {
+            reply.raw.once('drain', resolve);
+          });
+        }
+      }
     }
 
     if (!reply.raw.destroyed && !reply.raw.writableEnded) {
@@ -571,6 +641,9 @@ export class ProtocolAdapter {
     abortSignal?: AbortSignal
   ): Promise<StreamTokenUsage> {
     const client = this.getOpenAIClient(config);
+    const aifwCtx = (options as any)?.__aifw;
+    const placeholdersMap = aifwCtx?.placeholdersMap;
+    const streamRestorer = placeholdersMap ? new AifwStreamRestorer(placeholdersMap) : null;
 
     const requestParams: any = {
       model: config.model,
@@ -648,6 +721,7 @@ export class ProtocolAdapter {
       let hasAssistantOutput = false;
       let bypassEmptyGuard = false;
       let responsesAggregate = createInitialAggregate();
+      let bufferedOutputKeyUsed = false;
 
       let promptTokens = 0;
       let completionTokens = 0;
@@ -696,13 +770,6 @@ export class ProtocolAdapter {
             delete (chunk as any).instructions;
           }
 
-          const chunkData = JSON.stringify(chunk);
-          const eventName = typeof (chunk as any)?.type === 'string' ? (chunk as any).type : undefined;
-          const eventPrefix = eventName ? `event: ${eventName}\n` : '';
-          const sseData = `${eventPrefix}data: ${chunkData}\n\n`;
-
-          await enqueueChunk(sseData);
-
           const previousLength = responsesAggregate.outputText.length;
           const updatedAggregate = processResponsesEvent(responsesAggregate, chunk as any);
           const producedText = updatedAggregate.outputText.length > previousLength;
@@ -717,6 +784,24 @@ export class ProtocolAdapter {
              bypassEmptyGuard = true;
              await flushPendingChunks();
           }
+
+          if (placeholdersMap) {
+            try {
+              restorePlaceholdersInObjectInPlace(chunk, placeholdersMap);
+            } catch {}
+
+            if (streamRestorer && typeof (chunk as any)?.delta?.text === 'string' && String((chunk as any)?.type || '').includes('output_text.delta')) {
+              bufferedOutputKeyUsed = true;
+              (chunk as any).delta.text = streamRestorer.process('responses:output_text', (chunk as any).delta.text);
+            }
+          }
+
+          const chunkData = JSON.stringify(chunk);
+          const eventName = typeof (chunk as any)?.type === 'string' ? (chunk as any).type : undefined;
+          const eventPrefix = eventName ? `event: ${eventName}\n` : '';
+          const sseData = `${eventPrefix}data: ${chunkData}\n\n`;
+
+          await enqueueChunk(sseData);
 
           const usageInChunk: any = (chunk?.usage ?? (chunk?.response && (chunk.response as any).usage) ?? null);
           if (usageInChunk) {
@@ -735,6 +820,18 @@ export class ProtocolAdapter {
             if (typeof norm.cachedTokens === 'number' && norm.cachedTokens > 0) {
               cachedTokens = norm.cachedTokens;
             }
+          }
+        }
+
+        if (placeholdersMap && streamRestorer && bufferedOutputKeyUsed && !reply.raw.destroyed && !reply.raw.writableEnded) {
+          const flushText = streamRestorer.flush('responses:output_text');
+          if (flushText) {
+            const flushEvent: any = {
+              type: 'response.output_text.delta',
+              delta: { text: flushText },
+            };
+            const flushData = `event: response.output_text.delta\n` + `data: ${JSON.stringify(flushEvent)}\n\n`;
+            await enqueueChunk(flushData);
           }
         }
 

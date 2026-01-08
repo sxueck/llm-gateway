@@ -250,6 +250,14 @@ export const configApi = {
       allowedUserAgents: string[];
       blockedUserAgents: string[];
     };
+    aifw: {
+      enabled: boolean;
+      baseUrl: string;
+      failOpen: boolean;
+      timeoutMs: number;
+      maskConfig: Record<string, any>;
+      httpApiKeySet: boolean;
+    };
   }> {
     return request.get('/admin/config/system-settings');
   },
@@ -276,6 +284,14 @@ export const configApi = {
       logHeaders?: boolean;
       allowedUserAgents?: string[];
       blockedUserAgents?: string[];
+    };
+    aifw?: {
+      enabled?: boolean;
+      baseUrl?: string;
+      httpApiKey?: string;
+      failOpen?: boolean;
+      timeoutMs?: number;
+      maskConfigJson?: string;
     };
   }): Promise<{ success: boolean }> {
     return request.post('/admin/config/system-settings', data);

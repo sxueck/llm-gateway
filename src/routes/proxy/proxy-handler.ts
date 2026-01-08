@@ -22,6 +22,8 @@ import type { VirtualKey } from '../../types/index.js';
 import { normalizeUsageCounts } from '../../utils/usage-normalizer.js';
 import { isChatCompletionsPath, isResponsesApiPath, isEmbeddingsPath, hasV1BetaPrefix } from '../../utils/path-detector.js';
 import { handleGeminiNativeNonStreamRequest, handleGeminiNativeStreamRequest } from './handlers/gemini-native.js';
+import { aifwService } from '../../services/aifw-service.js';
+import { restorePlaceholdersInObjectInPlace } from '../../utils/aifw-placeholders.js';
 
 const MESSAGE_COMPRESSION_MIN_TOKENS = parseInt(process.env.MESSAGE_COMPRESSION_MIN_TOKENS || '2048', 10);
 
@@ -632,11 +634,20 @@ export async function handleStreamRequest(
   try {
     let tokenUsage: any;
 
+    // OneAIFW preprocessing: mask sensitive text before sending to upstream.
+    // For streams, ProtocolAdapter will restore placeholders in the stream using options.__aifw.
+    const aifwCtx = await aifwService.maskRequestBodyInPlace(request.body);
+
     if (isResponsesApi) {
       // Responses API 请求
       const input = (request.body as any)?.input;
       // 传递提取的系统提示到 buildResponsesOptions
       const options = buildResponsesOptions((request.body as any), false, extractedSystemPrompt);
+
+      if (aifwCtx) {
+        (options as any).__aifw = aifwCtx;
+        memoryLogger.debug('OneAIFW preprocessing enabled for this stream request', 'AIFW');
+      }
 
       // 记录最终的 instructions 和 tools（用于调试）
       if (options.instructions) {
@@ -681,6 +692,11 @@ export async function handleStreamRequest(
         tool_choice: (request.body as any)?.tool_choice,
         parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
       };
+
+      if (aifwCtx) {
+        options.__aifw = aifwCtx;
+        memoryLogger.debug('OneAIFW preprocessing enabled for this stream request', 'AIFW');
+      }
 
       // 支持 Gemini 原生格式：如果请求体包含 contents 字段，传递给 options
       if ((request.body as any)?.contents) {
@@ -998,6 +1014,9 @@ export async function handleNonStreamRequest(
 
   let response: any;
 
+  // OneAIFW preprocessing: only apply after cache miss so cache key is derived from the original request.
+  const aifwCtx = await aifwService.maskRequestBodyInPlace(request.body);
+
   if (isEmbeddingsRequest) {
     // Embeddings API 请求
     const messages = (request.body as any)?.messages || [];
@@ -1006,6 +1025,11 @@ export async function handleNonStreamRequest(
       dimensions: (request.body as any)?.dimensions,
       user: (request.body as any)?.user,
     };
+
+    if (aifwCtx) {
+      (options as any).__aifw = aifwCtx;
+      memoryLogger.debug('OneAIFW preprocessing enabled for this non-stream request', 'AIFW');
+    }
     const input = (request.body as any)?.input;
 
     response = await makeHttpRequest(
@@ -1031,6 +1055,11 @@ export async function handleNonStreamRequest(
       tool_choice: (request.body as any)?.tool_choice,
       parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
     };
+
+    if (aifwCtx) {
+      options.__aifw = aifwCtx;
+      memoryLogger.debug('OneAIFW preprocessing enabled for this non-stream request', 'AIFW');
+    }
 
     // 支持 Gemini 原生格式：如果请求体包含 contents 字段，传递给 options
     if ((request.body as any)?.contents) {
@@ -1096,6 +1125,26 @@ export async function handleNonStreamRequest(
     try {
       stripFieldRecursively(responseData, 'instructions');
     } catch (_e) {}
+
+    // Restore placeholders (masked by OneAIFW) back to original values for client.
+    if (aifwCtx?.maskMeta) {
+      try {
+        await aifwService.restoreResponseBodyInPlace(responseData, aifwCtx.maskMeta);
+      } catch (e: any) {
+        memoryLogger.error(`OneAIFW restore failed: ${e.message}`, 'Proxy');
+        // Fallback to local regex restoration if remote fails (best effort)
+        if (aifwCtx.placeholdersMap) {
+          try {
+            restorePlaceholdersInObjectInPlace(responseData, aifwCtx.placeholdersMap);
+          } catch {}
+        }
+      }
+    } else if (aifwCtx?.placeholdersMap) {
+      // Legacy fallback (shouldn't be reached if maskMeta is always present)
+      try {
+        restorePlaceholdersInObjectInPlace(responseData, aifwCtx.placeholdersMap);
+      } catch {}
+    }
 
     const responseDataStr = JSON.stringify(responseData);
     let logMessage = '';
