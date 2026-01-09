@@ -1,10 +1,17 @@
 # Dependencies
 node_modules/
+packages/*/node_modules/
 web/node_modules/
+
+# Bun
+bun.lockb
+.bun-cache/
 
 # Build output
 dist/
+packages/*/dist/
 web/dist/
+**/tsconfig.tsbuildinfo
 
 # Database
 data/
@@ -39,15 +46,20 @@ Thumbs.db
 # Temporary files
 *.tmp
 .cache/
-
 todo
-
 local-test
+
+# AI
+## MCP server files
+.serena
+
+## AI Guidline
 AGENTS.md
+CLAUDE.md
+
 .roo
 .claude
 
-CLAUDE.md
 .opencode/oh-my-opencode.json
 .prettierrc
 NUL

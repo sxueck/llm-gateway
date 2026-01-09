@@ -1,16 +1,18 @@
 {
-  "name": "llm-gateway-web",
-  "version": "1.0.0",
+  "name": "@llm-gateway/web",
+  "version": "0.2.4",
+  "private": true,
   "description": "LLM Gateway Web UI",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit",
+    "clean": "rm -rf dist"
   },
-  "author": "SXueckShen <sxueck@outlook.com>",
-  "license": "MIT",
   "dependencies": {
+    "@llm-gateway/shared": "workspace:*",
     "@vicons/ionicons5": "^0.13.0",
     "@vicons/material": "^0.13.0",
     "axios": "^1.7.9",

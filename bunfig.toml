@@ -1,0 +1,34 @@
+# Bun 配置文件
+
+# 包管理器配置
+[install]
+# 启用 workspace
+auto = "auto"
+# 冻结 lockfile（生产环境）
+frozen = false
+# 安装时生成 package-lock.json 兼容文件
+production = false
+
+# 对等依赖处理
+[install.peer]
+# 自动安装对等依赖
+auto = true
+
+# 缓存配置
+[install.cache]
+# 缓存目录（默认 ~/.bun/install/cache）
+dir = ".bun-cache"
+# 禁用缓存设置为 false
+disable = false
+
+# 运行时配置
+[run]
+# 启用 bun shell
+shell = "bun"
+
+# 测试配置
+[test]
+# 测试超时时间（毫秒）
+timeout = 5000
+# 预加载文件
+preload = []
