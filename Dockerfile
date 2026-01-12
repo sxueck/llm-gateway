@@ -98,7 +98,6 @@ COPY --from=backend-builder /app/packages/backend/package.json ./packages/backen
 COPY --from=web-builder /app/packages/web/dist ./packages/backend/public
 
 # 复制其他必要文件
-COPY packages/backend/src/database ./packages/backend/src/database
 COPY scripts ./scripts
 
 # 创建数据目录
