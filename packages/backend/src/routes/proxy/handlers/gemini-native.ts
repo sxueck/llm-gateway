@@ -528,8 +528,6 @@ export async function handleGeminiNativeStreamRequest(
         reply.raw.writeHead(upstreamResponse.status, {
           'Content-Type': 'text/event-stream; charset=utf-8',
           'Cache-Control': 'no-cache, no-transform',
-          'Connection': 'keep-alive',
-          'Transfer-Encoding': 'chunked',
           'X-Accel-Buffering': 'no',
         });
         headersSent = true;

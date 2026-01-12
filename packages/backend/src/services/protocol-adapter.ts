@@ -336,8 +336,6 @@ export class ProtocolAdapter {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
       'X-Accel-Buffering': 'no',
-      'Connection': 'keep-alive',
-      'Transfer-Encoding': 'chunked',
     });
 
     let promptTokens = 0;
@@ -682,8 +680,6 @@ export class ProtocolAdapter {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
       'X-Accel-Buffering': 'no',
-      'Connection': 'keep-alive',
-      'Transfer-Encoding': 'chunked',
     };
     if ((options as any).conversationId) {
       responseHeaders['X-Conversation-Id'] = String((options as any).conversationId);
