@@ -1,29 +1,38 @@
 import request from '@/utils/request';
-import type { VirtualKey, CreateVirtualKeyRequest, UpdateVirtualKeyRequest } from '@/types';
+import type { CreateVirtualKeyRequest, UpdateVirtualKeyRequest, VirtualKey } from '@/types';
+
+type VirtualKeyListResponse = { virtualKeys: VirtualKey[] };
+type VirtualKeyCreateResponse = { virtualKey: VirtualKey; keyValue: string };
+type VirtualKeyDeleteResponse = { success: boolean };
+type VirtualKeyValidateResponse = { valid: boolean; message?: string };
+
+const ADMIN_VIRTUAL_KEYS_PATH = '/admin/virtual-keys';
+const ADMIN_VIRTUAL_KEYS_VALIDATE_PATH = `${ADMIN_VIRTUAL_KEYS_PATH}/validate`;
+
+const virtualKeyPath = (id: string) => `${ADMIN_VIRTUAL_KEYS_PATH}/${id}`;
 
 export const virtualKeyApi = {
-  getAll(): Promise<{ virtualKeys: VirtualKey[] }> {
-    return request.get('/admin/virtual-keys');
+  getAll(): Promise<VirtualKeyListResponse> {
+    return request.get(ADMIN_VIRTUAL_KEYS_PATH);
   },
 
   getById(id: string): Promise<VirtualKey> {
-    return request.get(`/admin/virtual-keys/${id}`);
+    return request.get(virtualKeyPath(id));
   },
 
-  create(data: CreateVirtualKeyRequest): Promise<{ virtualKey: VirtualKey; keyValue: string }> {
-    return request.post('/admin/virtual-keys', data);
+  create(data: CreateVirtualKeyRequest): Promise<VirtualKeyCreateResponse> {
+    return request.post(ADMIN_VIRTUAL_KEYS_PATH, data);
   },
 
   update(id: string, data: UpdateVirtualKeyRequest): Promise<VirtualKey> {
-    return request.put(`/admin/virtual-keys/${id}`, data);
+    return request.put(virtualKeyPath(id), data);
   },
 
-  delete(id: string): Promise<{ success: boolean }> {
-    return request.delete(`/admin/virtual-keys/${id}`);
+  delete(id: string): Promise<VirtualKeyDeleteResponse> {
+    return request.delete(virtualKeyPath(id));
   },
 
-  validate(customKey: string): Promise<{ valid: boolean; message?: string }> {
-    return request.post('/admin/virtual-keys/validate', { customKey });
+  validate(customKey: string): Promise<VirtualKeyValidateResponse> {
+    return request.post(ADMIN_VIRTUAL_KEYS_VALIDATE_PATH, { customKey });
   },
 };
-
