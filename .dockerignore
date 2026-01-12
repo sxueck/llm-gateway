@@ -8,6 +8,6 @@ data
 .DS_Store
 *.md
 docs
-web/node_modules
-web/dist
 
+packages/*/node_modules
+packages/*/dist
