@@ -8,7 +8,7 @@ FROM oven/bun:1-alpine AS deps
 WORKDIR /app
 
 # 复制 workspace 配置
-COPY package.json bunfig.toml ./
+COPY package.json bunfig.toml bun.lock* ./
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/backend/package.json ./packages/backend/
 COPY packages/web/package.json ./packages/web/
@@ -127,4 +127,3 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # 启动应用
 WORKDIR /app/packages/backend
 CMD ["bun", "run", "dist/index.js"]
-

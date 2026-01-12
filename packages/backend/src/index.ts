@@ -58,7 +58,7 @@ await fastify.register(jwt, {
 });
 
 await fastify.register(fastifyStatic, {
-  root: resolve(__dirname, '..', '..', 'web', 'dist'),
+  root: resolve(__dirname, '..', 'public'),
   prefix: '/',
 });
 
