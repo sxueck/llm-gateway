@@ -4,7 +4,7 @@ import { accumulateStreamResponse } from '../../../utils/request-logger.js';
 import { makeHttpRequest, makeStreamHttpRequest } from '../http-client.js';
 import { calculateTokensIfNeeded } from '../token-calculator.js';
 import { circuitBreaker } from '../../../services/circuit-breaker.js';
-import { shouldLogRequestBody, buildFullRequest, getTruncatedBodies } from './shared.js';
+import { shouldLogRequestBody, getTruncatedBodies, getModelForLogging } from './shared.js';
 import { logApiRequestToDb } from '../../../services/api-request-logger.js';
 import { extractIp } from '../../../utils/ip.js';
 import { getRequestUserAgent } from '../../../utils/http.js';
@@ -113,7 +113,7 @@ export async function handleChatStreamRequest(params: ChatStreamParams): Promise
     await logApiRequestToDb({
       virtualKey,
       providerId,
-      model: (request.body as any)?.model || 'unknown',
+      model: getModelForLogging(request.body, currentModel),
       tokenCount,
       status: 'success',
       responseTime: duration,
@@ -154,7 +154,7 @@ export async function handleChatStreamRequest(params: ChatStreamParams): Promise
     await logApiRequestToDb({
       virtualKey,
       providerId,
-      model: (request.body as any)?.model || 'unknown',
+      model: getModelForLogging(request.body, currentModel),
       tokenCount,
       status: 'error',
       responseTime: duration,
@@ -172,7 +172,7 @@ export async function handleChatStreamRequest(params: ChatStreamParams): Promise
  * 处理Chat Completions非流式请求
  */
 export async function handleChatNonStreamRequest(params: ChatNonStreamParams): Promise<any> {
-  const { request, protocolConfig, virtualKey, providerId, startTime, compressionStats, currentModel, responseData } = params;
+  const { request, protocolConfig } = params;
 
   const messages = (request.body as any)?.messages || [];
   const options = {

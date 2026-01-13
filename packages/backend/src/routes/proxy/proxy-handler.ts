@@ -14,11 +14,8 @@ import { resolveModelAndProvider } from './model-resolver.js';
 import { buildProviderConfig } from './provider-config-builder.js';
 import { calculateTokensIfNeeded } from './token-calculator.js';
 import { circuitBreaker } from '../../services/circuit-breaker.js';
-import { handleChatStreamRequest } from './handlers/openai-chat.js';
-import { handleResponsesStreamRequest } from './handlers/openai-responses.js';
-import { shouldLogRequestBody, buildFullRequest, getTruncatedBodies } from './handlers/shared.js';
+import { shouldLogRequestBody, getModelForLogging } from './handlers/shared.js';
 import { logApiRequestToDb } from '../../services/api-request-logger.js';
-import type { VirtualKey } from '../../types/index.js';
 import { normalizeUsageCounts } from '../../utils/usage-normalizer.js';
 import { isChatCompletionsPath, isResponsesApiPath, isEmbeddingsPath, hasV1BetaPrefix } from '../../utils/path-detector.js';
 import { handleGeminiNativeNonStreamRequest, handleGeminiNativeStreamRequest } from './handlers/gemini-native.js';
@@ -367,7 +364,8 @@ export function createProxyHandler() {
             virtualKey,
             providerId,
             startTime,
-            vkDisplay
+            vkDisplay,
+            currentModel
           );
         } else {
           return await handleGeminiNativeNonStreamRequest(
@@ -378,7 +376,8 @@ export function createProxyHandler() {
             virtualKey,
             providerId,
             startTime,
-            vkDisplay
+            vkDisplay,
+            currentModel
           );
         }
       }
@@ -458,16 +457,14 @@ export function createProxyHandler() {
         }
       }
 
-      let requestBody: string | undefined;
-
       if (request.method !== 'GET' && request.method !== 'HEAD') {
-        requestBody = JSON.stringify(request.body);
         const truncatedBody = truncateRequestBody(request.body);
         memoryLogger.debug(
           `Request body: ${truncatedBody}`,
           'Proxy'
         );
       }
+
 
       memoryLogger.debug(
         `转发请求: ${request.method} ${path} | stream: ${isStreamRequest}`,
@@ -567,7 +564,7 @@ export function createProxyHandler() {
           await logApiRequestToDb({
             virtualKey,
             providerId,
-            model: (request.body as any)?.model || 'unknown',
+            model: getModelForLogging(request.body, currentModel),
             tokenCount,
             status: 'error',
             responseTime: duration,
@@ -758,7 +755,7 @@ export async function handleStreamRequest(
     await logApiRequestToDb({
       virtualKey,
       providerId,
-      model: (request.body as any)?.model || 'unknown',
+      model: getModelForLogging(request.body, currentModel),
       tokenCount,
       status: 'success',
       responseTime: duration,
@@ -788,7 +785,7 @@ export async function handleStreamRequest(
           virtualKeyId: virtualKey.id,
           virtualKeyName: (virtualKey as any).name,
           providerId,
-          model: (request.body as any)?.model || 'unknown',
+          model: getModelForLogging(request.body, currentModel),
           durationMs: duration,
           requestBody: fullRequestBody,
           // For stream we forward raw chunks to keep all content
@@ -858,7 +855,7 @@ export async function handleStreamRequest(
     await logApiRequestToDb({
       virtualKey,
       providerId,
-      model: (request.body as any)?.model || 'unknown',
+      model: getModelForLogging(request.body, currentModel),
       tokenCount,
       status: 'error',
       responseTime: duration,
@@ -886,7 +883,7 @@ export async function handleStreamRequest(
           virtualKeyId: virtualKey.id,
           virtualKeyName: (virtualKey as any).name,
           providerId,
-          model: (request.body as any)?.model || 'unknown',
+          model: getModelForLogging(request.body, currentModel),
           durationMs: duration,
           requestBody: fullRequestBody,
           error: streamError.message,
@@ -991,7 +988,7 @@ export async function handleNonStreamRequest(
     await logApiRequestToDb({
       virtualKey,
       providerId,
-      model: (request.body as any)?.model || 'unknown',
+      model: getModelForLogging(request.body, currentModel),
       tokenCount,
       status: 'success',
       responseTime: duration,
@@ -1248,7 +1245,7 @@ export async function handleNonStreamRequest(
         virtualKeyId: virtualKey.id,
         virtualKeyName: (virtualKey as any).name,
         providerId,
-        model: (request.body as any)?.model || 'unknown',
+        model: getModelForLogging(request.body, currentModel),
         durationMs: duration,
         requestBody: fullRequestBody,
         responseBody: responseData,
@@ -1272,7 +1269,7 @@ export async function handleNonStreamRequest(
   await logApiRequestToDb({
     virtualKey,
     providerId,
-    model: (request.body as any)?.model || 'unknown',
+    model: getModelForLogging(request.body, currentModel),
     tokenCount,
     status: isSuccess ? 'success' : 'error',
     responseTime: duration,

@@ -24,6 +24,18 @@ export function buildFullRequest(requestBody: any, currentModel?: any): any {
 }
 
 /**
+ * 统一获取用于日志的模型名称
+ *
+ * - 对于虚拟模型/智能路由：优先记录最终解析到的真实模型（currentModel）
+ * - 否则回退到请求体中的 model 字段
+ */
+export function getModelForLogging(requestBody: any, currentModel?: any): string {
+  const resolvedModel = currentModel?.model_identifier || currentModel?.name;
+  const requestedModel = requestBody && typeof requestBody === 'object' ? (requestBody as any).model : undefined;
+  return resolvedModel || requestedModel || 'unknown';
+}
+
+/**
  * 获取截断后的请求和响应体
  */
 export function getTruncatedBodies(

@@ -4,7 +4,7 @@ import { accumulateResponsesStream } from '../../../utils/request-logger.js';
 import { makeStreamHttpRequest } from '../http-client.js';
 import { calculateTokensIfNeeded } from '../token-calculator.js';
 import { circuitBreaker } from '../../../services/circuit-breaker.js';
-import { shouldLogRequestBody, buildFullRequest, getTruncatedBodies } from './shared.js';
+import { shouldLogRequestBody, getTruncatedBodies, getModelForLogging } from './shared.js';
 import { logApiRequestToDb } from '../../../services/api-request-logger.js';
 import { extractIp } from '../../../utils/ip.js';
 import { getRequestUserAgent } from '../../../utils/http.js';
@@ -107,7 +107,7 @@ export async function handleResponsesStreamRequest(params: ResponsesStreamParams
     await logApiRequestToDb({
       virtualKey,
       providerId,
-      model: (request.body as any)?.model || 'unknown',
+      model: getModelForLogging(request.body, currentModel),
       tokenCount,
       status: 'success',
       responseTime: duration,
@@ -148,7 +148,7 @@ export async function handleResponsesStreamRequest(params: ResponsesStreamParams
     await logApiRequestToDb({
       virtualKey,
       providerId,
-      model: (request.body as any)?.model || 'unknown',
+      model: getModelForLogging(request.body, currentModel),
       tokenCount,
       status: 'error',
       responseTime: duration,

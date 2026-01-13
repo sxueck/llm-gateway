@@ -2,7 +2,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { memoryLogger } from '../../../services/logger.js';
 import { calculateTokensIfNeeded } from '../token-calculator.js';
 import { logApiRequestToDb } from '../../../services/api-request-logger.js';
-import { shouldLogRequestBody } from './shared.js';
+import { shouldLogRequestBody, getModelForLogging } from './shared.js';
 import { truncateRequestBody } from '../../../utils/request-logger.js';
 import { GeminiEmptyOutputError } from '../../../errors/gemini-empty-output-error.js';
 import type { ProtocolConfig } from '../../../services/protocol-adapter.js';
@@ -209,7 +209,8 @@ export async function handleGeminiNativeNonStreamRequest(
   virtualKey: VirtualKey,
   providerId: string,
   startTime: number,
-  vkDisplay: string
+  vkDisplay: string,
+  currentModel?: any
 ): Promise<void> {
   const method = request.method;
   const requestUserAgent = getRequestUserAgent(request);
@@ -292,7 +293,7 @@ export async function handleGeminiNativeNonStreamRequest(
     await logApiRequestToDb({
       virtualKey,
       providerId,
-      model: (request.body as any)?.model || 'unknown',
+      model: getModelForLogging(request.body, currentModel),
       tokenCount,
       status: isSuccess ? 'success' : 'error',
       responseTime: duration,
@@ -323,7 +324,7 @@ export async function handleGeminiNativeNonStreamRequest(
     await logApiRequestToDb({
       virtualKey,
       providerId,
-      model: (request.body as any)?.model || 'unknown',
+      model: getModelForLogging(request.body, currentModel),
       tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
       status: 'error',
       responseTime: duration,
@@ -358,7 +359,8 @@ export async function handleGeminiNativeStreamRequest(
   virtualKey: VirtualKey,
   providerId: string,
   startTime: number,
-  vkDisplay: string
+  vkDisplay: string,
+  currentModel?: any
 ): Promise<void> {
   const method = request.method;
   const requestUserAgent = getRequestUserAgent(request);
@@ -462,7 +464,7 @@ export async function handleGeminiNativeStreamRequest(
         await logApiRequestToDb({
           virtualKey,
           providerId,
-          model: (request.body as any)?.model || 'unknown',
+          model: getModelForLogging(request.body, currentModel),
           tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           status: 'error',
           responseTime: duration,
@@ -508,7 +510,7 @@ export async function handleGeminiNativeStreamRequest(
         await logApiRequestToDb({
           virtualKey,
           providerId,
-          model: (request.body as any)?.model || 'unknown',
+          model: getModelForLogging(request.body, currentModel),
           tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           status: 'success',
           responseTime: duration,
@@ -609,7 +611,7 @@ export async function handleGeminiNativeStreamRequest(
     await logApiRequestToDb({
       virtualKey,
       providerId,
-      model: (request.body as any)?.model || 'unknown',
+      model: getModelForLogging(request.body, currentModel),
       tokenCount,
       status: 'success',
       responseTime: duration,
@@ -638,7 +640,7 @@ export async function handleGeminiNativeStreamRequest(
     await logApiRequestToDb({
       virtualKey,
       providerId,
-      model: (request.body as any)?.model || 'unknown',
+      model: getModelForLogging(request.body, currentModel),
       tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
       status: 'error',
       responseTime: duration,

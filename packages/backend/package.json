@@ -12,6 +12,7 @@
     "build": "bun build src/index.ts --outdir dist --target node --minify",
     "start": "bun run dist/index.js",
     "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit --noUnusedLocals false --noUnusedParameters false --noImplicitReturns false",
     "clean": "rm -rf dist",
     "fix:db": "bun run scripts/fix-database.js"
   },
