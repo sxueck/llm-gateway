@@ -652,11 +652,12 @@ export class ProtocolAdapter {
 
     // 构建请求选项
     const requestOptions: any = {};
-    if (options.requestTimeout !== undefined) {
-      requestOptions.timeout = options.requestTimeout;
-    }
-    if (abortSignal) {
-      requestOptions.signal = abortSignal;
+    const requestTimeoutMs =
+      options.requestTimeout !== undefined
+        ? options.requestTimeout
+        : config.modelAttributes?.requestTimeout;
+    if (requestTimeoutMs !== undefined) {
+      requestOptions.timeout = requestTimeoutMs;
     }
 
     // 为 Responses API 附加会话相关头，便于上游识别会话
@@ -696,7 +697,14 @@ export class ProtocolAdapter {
       ? Math.max(0, Math.floor(config.modelAttributes.responses_empty_retry_limit))
       : DEFAULT_RESPONSES_EMPTY_OUTPUT_MAX_RETRIES;
     const totalAttempts = Math.max(1, modelRetryLimit + 1);
-    const upstreamRequestOptions = Object.keys(requestOptions).length > 0 ? requestOptions : undefined;
+    const baseUpstreamRequestOptions = Object.keys(requestOptions).length > 0 ? requestOptions : undefined;
+
+    const initTimeoutMs = Math.min(
+      8_000,
+      typeof requestTimeoutMs === 'number' && Number.isFinite(requestTimeoutMs)
+        ? requestTimeoutMs
+        : 8_000
+    );
 
     let finalPromptTokens = 0;
     let finalCompletionTokens = 0;
@@ -754,10 +762,34 @@ export class ProtocolAdapter {
       };
 
       try {
-        const stream = await client.responses.create(
-          requestParams,
-          upstreamRequestOptions
-        ) as unknown as AsyncIterable<any>;
+        const attemptAbortController = new AbortController();
+        let initTimeoutId: ReturnType<typeof setTimeout> | undefined;
+        if (initTimeoutMs > 0) {
+          initTimeoutId = setTimeout(() => attemptAbortController.abort(), initTimeoutMs);
+        }
+        if (abortSignal) {
+          if (abortSignal.aborted) {
+            attemptAbortController.abort();
+          } else {
+            abortSignal.addEventListener('abort', () => attemptAbortController.abort(), { once: true });
+          }
+        }
+
+        const attemptUpstreamRequestOptions = baseUpstreamRequestOptions
+          ? { ...baseUpstreamRequestOptions, signal: attemptAbortController.signal }
+          : { signal: attemptAbortController.signal };
+
+        let stream: AsyncIterable<any>;
+        try {
+          stream = await client.responses.create(
+            requestParams,
+            attemptUpstreamRequestOptions
+          ) as unknown as AsyncIterable<any>;
+        } finally {
+          if (initTimeoutId) {
+            clearTimeout(initTimeoutId);
+          }
+        }
 
         ensureHeadersSent();
 

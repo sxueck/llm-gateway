@@ -895,19 +895,25 @@ export async function handleStreamRequest(
       } catch (_e) {}
     }
  
+    const errorPayload = streamError?.errorResponse || {
+      error: {
+        message: streamError?.message || 'Stream request failed',
+        type: 'api_error',
+        param: null,
+        code: 'stream_error'
+      }
+    };
+
     // 若仍未发送任何响应，则返回规范化错误
     if (!reply.raw.headersSent && !reply.sent) {
-      const errorPayload = streamError?.errorResponse || {
-        error: {
-          message: streamError?.message || 'Stream request failed',
-          type: 'api_error',
-          param: null,
-          code: 'stream_error'
-        }
-      };
       const finalStatus = statusForRetry || 500;
       reply.raw.writeHead(finalStatus, { 'Content-Type': 'application/json' });
       reply.raw.write(JSON.stringify(errorPayload));
+      reply.raw.end();
+    } else if (!reply.raw.writableEnded) {
+      try {
+        reply.raw.write(`event: error\ndata: ${JSON.stringify(errorPayload)}\n\n`);
+      } catch (_e) {}
       reply.raw.end();
     }
 
