@@ -823,10 +823,13 @@ export async function handleStreamRequest(
         const retried = await handleStreamRetry(request, reply, statusForRetry, {
           virtualKey,
           virtualKeyValue: virtualKeyValueParam,
+          vkDisplay,
           modelResult,
           currentModel,
           compressionStats,
-          startTime
+          startTime,
+          isResponsesApi,
+          extractedSystemPrompt
         });
         if (retried) {
           return;
@@ -1195,6 +1198,7 @@ export async function handleNonStreamRequest(
       const retried = await handleNonStreamRetry(request, reply, response.statusCode, {
         virtualKey,
         virtualKeyValue,
+        vkDisplay,
         modelResult,
         currentModel,
         compressionStats,

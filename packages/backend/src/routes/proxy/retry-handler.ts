@@ -7,10 +7,13 @@ import { buildProviderConfig } from './provider-config-builder.js';
 export interface RetryContext {
   virtualKey: any;
   virtualKeyValue: string;
+  vkDisplay: string;
   modelResult: ModelResolutionResult;
   currentModel?: any;
   compressionStats?: { originalTokens: number; savedTokens: number };
   startTime: number;
+  isResponsesApi?: boolean;
+  extractedSystemPrompt?: string;
 }
 
 const SMART_ROUTING_RETRY_WINDOW_MS = 10_000; // 10 秒
@@ -140,7 +143,7 @@ export async function handleStreamRetry(
   }
 
   // 流式请求如果已经开始发送，则不能重试
-  if (reply.sent) {
+  if (reply.sent || reply.raw.headersSent) {
     memoryLogger.debug('流式请求已发送响应，无法重试', 'Proxy');
     return false;
   }
@@ -202,15 +205,16 @@ export async function handleStreamRetry(
     reply,
     configResult.protocolConfig,
     configResult.path,
-    context.virtualKeyValue,
+    context.vkDisplay,
     context.virtualKey,
     retryResult.providerId,
     context.startTime,
     context.compressionStats,
     retryResult.currentModel,
-    false,
+    !!context.isResponsesApi,
     context.modelResult,
-    context.virtualKeyValue
+    context.virtualKeyValue,
+    context.extractedSystemPrompt
   );
 
   return true;

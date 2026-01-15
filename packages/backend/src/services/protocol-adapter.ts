@@ -5,9 +5,7 @@ import { Agent as HttpsAgent } from 'node:https';
 import { memoryLogger } from './logger.js';
 import { extractReasoningFromChoice } from '../utils/request-logger.js';
 import { normalizeUsageCounts } from '../utils/usage-normalizer.js';
-import { createInitialAggregate, processResponsesEvent, type ResponsesAggregate } from '../utils/responses-parser.js';
-import { EmptyOutputError } from '../errors/empty-output-error.js';
-import { StreamRetryManager, StreamBuffer, getRetryLimit, type StreamProcessor } from '../utils/stream-retry-manager.js';
+import { createInitialAggregate, processResponsesEvent } from '../utils/responses-parser.js';
 import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-client.js';
 import { ResponsesEmptyOutputError } from '../errors/responses-empty-output-error.js';
 import { sanitizeCustomHeaders, getSanitizedHeadersCacheKey } from '../utils/header-sanitizer.js';
@@ -688,7 +686,11 @@ export class ProtocolAdapter {
       responseHeaders['X-Session-Id'] = String((options as any).sessionId);
     }
 
-    reply.raw.writeHead(200, responseHeaders);
+    const ensureHeadersSent = () => {
+      if (!reply.raw.headersSent) {
+        reply.raw.writeHead(200, responseHeaders);
+      }
+    };
 
     const modelRetryLimit = typeof config.modelAttributes?.responses_empty_retry_limit === 'number'
       ? Math.max(0, Math.floor(config.modelAttributes.responses_empty_retry_limit))
@@ -726,6 +728,7 @@ export class ProtocolAdapter {
 
       const writeChunk = async (data: string) => {
         attemptStreamChunks.push(data);
+        ensureHeadersSent();
         if (!reply.raw.write(data)) {
           await new Promise<void>((resolve) => {
             reply.raw.once('drain', resolve);
@@ -755,6 +758,8 @@ export class ProtocolAdapter {
           requestParams,
           upstreamRequestOptions
         ) as unknown as AsyncIterable<any>;
+
+        ensureHeadersSent();
 
         for await (const chunk of stream) {
           if (reply.raw.destroyed || reply.raw.writableEnded) {
@@ -881,6 +886,7 @@ export class ProtocolAdapter {
     }
 
     if (!reply.raw.destroyed && !reply.raw.writableEnded) {
+      ensureHeadersSent();
       reply.raw.write('data: [DONE]\n\n');
       reply.raw.end();
     }
