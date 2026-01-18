@@ -563,6 +563,7 @@ export class ProtocolAdapter {
     if (options.truncation !== undefined) params.truncation = options.truncation;
     if (options.user !== undefined) params.user = options.user;
     if (options.include !== undefined) params.include = options.include;
+    if ((options as any).prompt_cache_key !== undefined) (params as any).prompt_cache_key = (options as any).prompt_cache_key;
     return params;
   }
 
