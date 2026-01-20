@@ -66,6 +66,7 @@ export async function handleResponsesStreamRequest(params: ResponsesStreamParams
       truncation: (request.body as any)?.truncation,
       user: (request.body as any)?.user,
       include: (request.body as any)?.include,
+      prompt_cache_key: (request.body as any)?.prompt_cache_key,
     };
 
     const tokenUsage = await makeStreamHttpRequest(
