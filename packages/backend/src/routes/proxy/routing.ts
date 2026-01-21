@@ -37,8 +37,6 @@ export interface ProxyRequest {
   protocol?: 'openai' | 'anthropic';
 }
 
-const routingTargetIndexMap = new Map<string, number>();
-
 // Affinity模式：存储每个config的当前选中provider和时间戳
 interface AffinityState {
   providerId: string;
@@ -82,8 +80,17 @@ function simpleHash(str: string): number {
 
 // 判断是否应该对智能路由进行重试
 export function shouldRetrySmartRouting(statusCode: number): boolean {
-  // 对于 400, 404, 429 (rate limit), 472 (upstream custom), 500, 502, 503, 504 错误进行重试
+  // 对于认证/权限错误、客户端错误、限流、自定义错误、服务器错误进行重试
+  // 401: Unauthorized (认证失败，可能是 API Key 过期或无效)
+  // 403: Forbidden (权限不足，可能是配额耗尽或 IP 限制)
+  // 400: Bad Request (请求格式错误)
+  // 404: Not Found (模型不存在)
+  // 429: Rate Limit (限流)
+  // 472: Upstream Custom (自定义上游错误)
+  // 500/502/503/504: Server Errors (服务器错误)
   return (
+    statusCode === 401 ||
+    statusCode === 403 ||
     statusCode === 400 ||
     statusCode === 404 ||
     statusCode === 429 ||
@@ -140,22 +147,16 @@ export function selectRoutingTarget(
   }
 
   if (type === 'fallback' || config.strategy?.mode === 'fallback') {
-    if (!configId) {
-      return availableTargets[0];
-    }
-
-    for (let i = 0; i < config.targets.length; i++) {
-      const currentIndex = routingTargetIndexMap.get(configId) || 0;
-      const target = config.targets[currentIndex];
-
-      const nextIndex = (currentIndex + 1) % config.targets.length;
-      routingTargetIndexMap.set(configId, nextIndex);
-
-      if (circuitBreaker.isAvailable(target.provider)) {
+    // Fallback 策略：按优先级顺序选择第一个可用的 target
+    // 不像 loadbalance 那样轮询，而是始终优先使用第一个可用的
+    for (const target of config.targets) {
+      if (circuitBreaker.isAvailable(target.provider) &&
+          (!excludeProviders || !excludeProviders.has(target.provider))) {
         return target;
       }
     }
 
+    // 所有目标都不可用
     return null;
   }
 
