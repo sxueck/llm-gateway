@@ -182,7 +182,7 @@
                 <n-input
                   v-model:value="aifwMaskConfigJson"
                   type="textarea"
-                  :placeholder="$t('settings.aifw.maskConfigJsonPlaceholder')"
+                  :placeholder="aifwMaskConfigJsonPlaceholder"
                   :rows="6"
                 />
               </n-space>
@@ -235,20 +235,32 @@ const aifwHttpApiKey = ref('');
 const aifwHttpApiKeyTouched = ref(false);
 const aifwHttpApiKeySet = ref(false);
 
-const DEFAULT_AIFW_MASK_CONFIG_PRESET = {
-  maskAddress: false,
-  maskEmail: true,
-  maskOrganization: true,
-  maskUserName: true,
-  maskPhoneNumber: true,
-  maskBankNumber: true,
-  maskPayment: true,
-  maskVerificationCode: true,
-  maskPassword: true,
-  maskRandomSeed: true,
-  maskPrivateKey: true,
-  maskUrl: true,
-};
+ const DEFAULT_AIFW_MASK_CONFIG_PRESET = {
+   maskAddress: false,
+   maskEmail: true,
+   maskOrganization: true,
+   maskUserName: true,
+   maskPhoneNumber: true,
+   maskBankNumber: true,
+   maskPayment: true,
+   maskVerificationCode: true,
+   maskPassword: true,
+   maskRandomSeed: true,
+   maskPrivateKey: true,
+   maskUrl: true,
+ };
+
+ // Keep JSON examples out of i18n messages to avoid vue-i18n message compiler
+ // interpreting `{ ... }` as placeholders.
+ const aifwMaskConfigJsonPlaceholder = JSON.stringify(
+   {
+     maskEmail: true,
+     maskPhoneNumber: true,
+     maskUserName: true,
+   },
+   null,
+   2
+ );
 
 const isAntiBotAllowedUaChanged = computed(() => {
   return antiBotAllowedUa.value !== antiBotAllowedUaOriginal.value;

@@ -375,7 +375,8 @@ export default {
       httpApiKeyPlaceholder: 'Leave blank to keep unchanged; type and save to update (clear and save to remove)',
       maskConfigJson: 'maskConfig (JSON)',
       maskConfigJsonDesc: 'Will be synced to OneAIFW /api/config as maskConfig; leave blank to skip',
-      maskConfigJsonPlaceholder: '{\n  \"maskEmail\": true,\n  \"maskPhoneNumber\": true,\n  \"maskUserName\": true\n}',
+      // Escape `{` / `}` for vue-i18n message compiler (otherwise treated as placeholders)
+      maskConfigJsonPlaceholder: '\'{\n  \"maskEmail\": true,\n  \"maskPhoneNumber\": true,\n  \"maskUserName\": true\n}\'',
     },
   },
   modelPresets: {
