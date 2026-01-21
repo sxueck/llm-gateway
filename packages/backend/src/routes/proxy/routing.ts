@@ -80,8 +80,17 @@ function simpleHash(str: string): number {
 
 // 判断是否应该对智能路由进行重试
 export function shouldRetrySmartRouting(statusCode: number): boolean {
-  // 对于 400, 404, 429 (rate limit), 472 (upstream custom), 500, 502, 503, 504 错误进行重试
+  // 对于认证/权限错误、客户端错误、限流、自定义错误、服务器错误进行重试
+  // 401: Unauthorized (认证失败，可能是 API Key 过期或无效)
+  // 403: Forbidden (权限不足，可能是配额耗尽或 IP 限制)
+  // 400: Bad Request (请求格式错误)
+  // 404: Not Found (模型不存在)
+  // 429: Rate Limit (限流)
+  // 472: Upstream Custom (自定义上游错误)
+  // 500/502/503/504: Server Errors (服务器错误)
   return (
+    statusCode === 401 ||
+    statusCode === 403 ||
     statusCode === 400 ||
     statusCode === 404 ||
     statusCode === 429 ||

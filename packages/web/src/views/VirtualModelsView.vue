@@ -136,6 +136,8 @@ const editingId = ref<string | null>(null);
 const formValue = ref<VirtualModelFormValue>(createDefaultVirtualModelForm());
 
 const statusCodeOptions = [
+  { label: '401 - 未授权', value: 401 },
+  { label: '403 - 禁止访问', value: 403 },
   { label: '429 - 请求过多', value: 429 },
   { label: '500 - 服务器错误', value: 500 },
   { label: '502 - 网关错误', value: 502 },
