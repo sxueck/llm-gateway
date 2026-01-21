@@ -37,8 +37,6 @@ export interface ProxyRequest {
   protocol?: 'openai' | 'anthropic';
 }
 
-const routingTargetIndexMap = new Map<string, number>();
-
 // Affinity模式：存储每个config的当前选中provider和时间戳
 interface AffinityState {
   providerId: string;
@@ -140,22 +138,16 @@ export function selectRoutingTarget(
   }
 
   if (type === 'fallback' || config.strategy?.mode === 'fallback') {
-    if (!configId) {
-      return availableTargets[0];
-    }
-
-    for (let i = 0; i < config.targets.length; i++) {
-      const currentIndex = routingTargetIndexMap.get(configId) || 0;
-      const target = config.targets[currentIndex];
-
-      const nextIndex = (currentIndex + 1) % config.targets.length;
-      routingTargetIndexMap.set(configId, nextIndex);
-
-      if (circuitBreaker.isAvailable(target.provider)) {
+    // Fallback 策略：按优先级顺序选择第一个可用的 target
+    // 不像 loadbalance 那样轮询，而是始终优先使用第一个可用的
+    for (const target of config.targets) {
+      if (circuitBreaker.isAvailable(target.provider) &&
+          (!excludeProviders || !excludeProviders.has(target.provider))) {
         return target;
       }
     }
 
+    // 所有目标都不可用
     return null;
   }
 
