@@ -23,7 +23,8 @@ For more screenshots, see [Service Screenshots](./docs/screenshot.md)
 ### Prerequisites
 
 - Node.js v20 or higher
-- npm / cnpm
+- Bun v1.0 or higher (monorepo scripts use Bun workspaces)
+- MySQL 8.x (or any MySQL-compatible database)
 - Docker (optional)
 
 ### Installation
@@ -33,13 +34,8 @@ For more screenshots, see [Service Screenshots](./docs/screenshot.md)
 git clone https://github.com/sxueck/llm-gateway.git
 cd llm-gateway
 
-# Install backend dependencies
-pnpm install
-
-# Install frontend dependencies
-cd web
-pnpm install
-cd ..
+# Install dependencies (includes packages/backend and packages/web)
+bun install
 ```
 
 ### Configuration
@@ -55,9 +51,15 @@ Edit the `.env` file:
 ```env
 PORT=3000
 NODE_ENV=development
-DB_PATH=./data/gateway.db
 LOG_LEVEL=info
 JWT_SECRET=your-secret-key-change-this-in-production
+
+# MySQL configuration
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=your-mysql-password
+MYSQL_DATABASE=llm_gateway
 ```
 
 **Important**: In production, be sure to change `JWT_SECRET` to a strong random string (at least 32 characters).
@@ -65,16 +67,39 @@ JWT_SECRET=your-secret-key-change-this-in-production
 ### Starting the Service
 
 ```bash
-npm run start:all
+# Start backend (3000) and web (5173)
+bun run dev:all
 ```
 
-This command will automatically:
-1. Start both frontend and backend services
-2. Initialize the database
+Access URLs:
+- **Web UI**: http://localhost:5173
+- **Backend API**: http://localhost:3000
+
+You can also start them separately:
+
+```bash
+# Backend only
+bun run dev:backend
+
+# Web only
+bun run dev:web
+```
+
+Production build & run (frontend/backend deployed separately):
+
+```bash
+# Build both backend and web
+bun run build
+
+# Start backend (production)
+bun run start
+```
+
+Frontend artifacts are generated at `packages/web/dist` and should be served by Nginx or any static file server.
 
 ### Docker Compose Deployment
 
-Please refer to [Docker Deployment Guide](./docs/DOCKER_DEPLOYMENT.md)
+Please refer to [Docker Deployment Guide](./docs/docker-deployment.md)
 
 ### Accessing the Application
 

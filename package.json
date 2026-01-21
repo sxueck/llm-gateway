@@ -10,7 +10,7 @@
     "dev": "bun run --filter \"@llm-gateway/*\" dev",
     "dev:backend": "bun run --filter @llm-gateway/backend dev",
     "dev:web": "bun run --filter @llm-gateway/web dev",
-    "dev:all": "bun run dev:backend & bun run dev:web",
+    "dev:all": "bun run scripts/dev-all.js",
     "build": "bun run --filter \"@llm-gateway/*\" build",
     "build:backend": "bun run --filter @llm-gateway/backend build",
     "build:web": "bun run --filter @llm-gateway/web build",

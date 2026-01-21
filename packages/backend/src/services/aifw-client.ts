@@ -43,7 +43,7 @@ export class AifwClient {
           ...buildAuthHeaders(this.config.httpApiKey),
         },
         signal: controller.signal,
-      } as any);
+      });
       clearTimeout(timeout);
       return res.ok;
     } catch {
@@ -63,7 +63,7 @@ export class AifwClient {
         },
         body: JSON.stringify({ maskConfig }),
         signal: controller.signal,
-      } as any);
+      });
       clearTimeout(timeout);
       if (!res.ok) {
         const text = await res.text().catch(() => '');
@@ -92,7 +92,7 @@ export class AifwClient {
           language: options?.language,
         }),
         signal: controller.signal,
-      } as any);
+      });
       const raw = await res.text();
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${raw}`);
@@ -125,18 +125,33 @@ export class AifwClient {
         },
         body: JSON.stringify(items),
         signal: controller.signal,
-      } as any);
+      });
 
       if (!res.ok) {
         const raw = await res.text();
         throw new Error(`HTTP ${res.status}: ${raw}`);
       }
 
-      const parsed: any = await res.json();
-      const outputs = parsed?.output;
+      const raw = await res.text();
+      let parsed: any = null;
+      try {
+        parsed = raw ? JSON.parse(raw) : null;
+      } catch {
+        throw new Error(`Invalid OneAIFW batch response (invalid JSON): ${raw.slice(0, 500)}`);
+      }
+
+      if (parsed?.error) {
+        throw new Error(`OneAIFW batch returned error: ${JSON.stringify(parsed.error)}`);
+      }
+
+      let outputs = parsed?.output;
+      // Some deployments may return a single object for a batch of size 1.
+      if (outputs && !Array.isArray(outputs) && typeof outputs === 'object') {
+        outputs = [outputs];
+      }
 
       if (!Array.isArray(outputs)) {
-        throw new Error('Invalid OneAIFW batch response (missing output array)');
+        throw new Error(`Invalid OneAIFW batch response (missing output array): ${raw.slice(0, 500)}`);
       }
 
       const results: AifwMaskTextResult[] = [];
@@ -172,7 +187,7 @@ export class AifwClient {
           maskMeta,
         }),
         signal: controller.signal,
-      } as any);
+      });
 
       if (!res.ok) {
         const raw = await res.text();
@@ -204,18 +219,32 @@ export class AifwClient {
         },
         body: JSON.stringify(items),
         signal: controller.signal,
-      } as any);
+      });
 
       if (!res.ok) {
         const raw = await res.text();
         throw new Error(`HTTP ${res.status}: ${raw}`);
       }
 
-      const parsed: any = await res.json();
-      const outputs = parsed?.output;
+      const raw = await res.text();
+      let parsed: any = null;
+      try {
+        parsed = raw ? JSON.parse(raw) : null;
+      } catch {
+        throw new Error(`Invalid OneAIFW batch response (invalid JSON): ${raw.slice(0, 500)}`);
+      }
+
+      if (parsed?.error) {
+        throw new Error(`OneAIFW batch returned error: ${JSON.stringify(parsed.error)}`);
+      }
+
+      let outputs = parsed?.output;
+      if (outputs && !Array.isArray(outputs) && typeof outputs === 'object') {
+        outputs = [outputs];
+      }
 
       if (!Array.isArray(outputs)) {
-        throw new Error('Invalid OneAIFW batch response (missing output array)');
+        throw new Error(`Invalid OneAIFW batch response (missing output array): ${raw.slice(0, 500)}`);
       }
 
       const results: string[] = [];

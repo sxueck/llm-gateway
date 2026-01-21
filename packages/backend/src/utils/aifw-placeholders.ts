@@ -112,6 +112,91 @@ export function decodeAifwMaskMeta(maskMeta: string): AifwPlaceholdersMap | null
   }
 }
 
+function tryDecodeJsonMaskMeta(maskMeta: string): AifwPlaceholdersMap | null {
+  if (!maskMeta || typeof maskMeta !== 'string') return null;
+  try {
+    const decoded = Buffer.from(maskMeta, 'base64');
+    const json = decoded.toString('utf8');
+    if (!json.trim().startsWith('{')) return null;
+    const parsed = JSON.parse(json);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+
+    const map: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof key === 'string' && typeof value === 'string') {
+        map[key] = value;
+      }
+    }
+
+    return Object.keys(map).length > 0 ? map : {};
+  } catch {
+    return null;
+  }
+}
+
+function looksLikeBinaryMaskMeta(buf: Buffer): boolean {
+  // Observed format (from uvicorn OneAIFW):
+  //   [totalLen:int32LE][records...]
+  // where totalLen equals the buffer length.
+  if (!buf || buf.length < 4) return false;
+  try {
+    return buf.readInt32LE(0) === buf.length;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Merge multiple OneAIFW `maskMeta` values into a single `maskMeta`.
+ *
+ * Why: our gateway masks multiple string fields in a request, but restores
+ * the upstream response with a single `maskMeta`.
+ *
+ * Supports:
+ * - JSON format: base64(utf8(JSON(placeholdersMap)))
+ * - Binary format: base64(binary_records) with a 4-byte total length header.
+ *
+ * If formats are mixed/unknown, falls back to the first non-empty meta.
+ */
+export function mergeAifwMaskMetas(maskMetas: string[]): string {
+  const metas = (maskMetas || []).filter((m) => typeof m === 'string' && m.trim());
+  if (metas.length === 0) return '';
+  if (metas.length === 1) return metas[0];
+
+  // 1) Prefer JSON merge when all metas are JSON maps.
+  const merged: Record<string, string> = {};
+  let allJson = true;
+  for (const meta of metas) {
+    const map = tryDecodeJsonMaskMeta(meta);
+    if (map == null) {
+      allJson = false;
+      break;
+    }
+    Object.assign(merged, map);
+  }
+  if (allJson) {
+    return Buffer.from(JSON.stringify(merged)).toString('base64');
+  }
+
+  // 2) Binary merge: concatenate record bodies and rewrite the total length.
+  try {
+    const bufs = metas.map((m) => Buffer.from(m, 'base64'));
+    if (bufs.every((b) => looksLikeBinaryMaskMeta(b))) {
+      const bodies = bufs.map((b) => b.subarray(4));
+      const bodyLen = bodies.reduce((sum, b) => sum + b.length, 0);
+      const totalLen = 4 + bodyLen;
+      const header = Buffer.allocUnsafe(4);
+      header.writeInt32LE(totalLen, 0);
+      return Buffer.concat([header, ...bodies], totalLen).toString('base64');
+    }
+  } catch {
+    // fall through
+  }
+
+  // Unknown/opaque: best effort.
+  return metas[0];
+}
+
 // IMPORTANT: Keep the regex limits and streaming buffer limits consistent.
 // Placeholder format: "__PII_" + BODY + "__"
 const PLACEHOLDER_BODY_MIN_LEN = 3;

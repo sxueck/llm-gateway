@@ -1,7 +1,7 @@
 import { loadAifwConfig, type AifwConfig } from '../utils/aifw-config.js';
 import { AifwClient } from './aifw-client.js';
 import { memoryLogger } from './logger.js';
-import { decodeAifwMaskMeta, type AifwPlaceholdersMap } from '../utils/aifw-placeholders.js';
+import { decodeAifwMaskMeta, mergeAifwMaskMetas, type AifwPlaceholdersMap } from '../utils/aifw-placeholders.js';
 
 export interface AifwContext {
   enabled: true;
@@ -53,10 +53,45 @@ function collectTextRefs(body: any): TextRef[] {
     }
   };
 
+  const walkContentBlocks = (content: any) => {
+    if (!content) return;
+    if (typeof content === 'string') {
+      pushStringRef(() => content, (_v) => {
+        // no-op: cannot set captured primitive
+      });
+      return;
+    }
+    if (Array.isArray(content)) {
+      for (const block of content) {
+        if (block && typeof block === 'object' && typeof block.text === 'string') {
+          pushStringRef(() => block.text, (v) => { block.text = v; });
+        }
+      }
+    }
+  };
+
   // OpenAI-ish: messages
   if (Array.isArray(body?.messages)) {
     for (const msg of body.messages) {
       walkMessageContent(msg);
+    }
+  }
+
+  // OpenAI chat completion response: choices[].message.content
+  if (Array.isArray(body?.choices)) {
+    for (const choice of body.choices) {
+      if (!choice || typeof choice !== 'object') continue;
+      if (choice.message && typeof choice.message === 'object') {
+        walkMessageContent(choice.message);
+      }
+      if (typeof choice.text === 'string') {
+        // Legacy completions response: choices[].text
+        pushStringRef(() => choice.text, (v) => { choice.text = v; });
+      }
+      // Some providers may return tool outputs/extra text fields
+      if (typeof choice.reasoning_content === 'string') {
+        pushStringRef(() => choice.reasoning_content, (v) => { choice.reasoning_content = v; });
+      }
     }
   }
 
@@ -111,6 +146,30 @@ function collectTextRefs(body: any): TextRef[] {
     pushStringRef(() => body.instructions, (v) => { body.instructions = v; });
   }
 
+  // Responses API response: output[].content[].text
+  if (Array.isArray(body?.output)) {
+    for (const item of body.output) {
+      if (!item || typeof item !== 'object') continue;
+      if (typeof item.text === 'string') {
+        pushStringRef(() => item.text, (v) => { item.text = v; });
+      }
+      if (typeof item.content === 'string') {
+        pushStringRef(() => item.content, (v) => { item.content = v; });
+      } else if (Array.isArray(item.content)) {
+        for (const block of item.content) {
+          if (block && typeof block === 'object' && typeof block.text === 'string') {
+            pushStringRef(() => block.text, (v) => { block.text = v; });
+          }
+        }
+      }
+    }
+  }
+
+  // Anthropic response: content[] blocks at top-level
+  if (Array.isArray(body?.content)) {
+    walkContentBlocks(body.content);
+  }
+
   // Gemini native/OpenAI-compat: contents + systemInstruction
   if (Array.isArray(body?.contents)) {
     for (const content of body.contents) {
@@ -121,8 +180,8 @@ function collectTextRefs(body: any): TextRef[] {
     walkGeminiParts(body.systemInstruction);
   }
 
-    return refs;
-  }
+  return refs;
+}
 
   export class AifwService {
     private cachedConfig: { value: AifwConfig; loadedAt: number } | null = null;
@@ -177,51 +236,49 @@ function collectTextRefs(body: any): TextRef[] {
       }
 
       const mergedPlaceholders: AifwPlaceholdersMap = {};
-      let firstValidMaskMeta: string | null = null;
+      const allMaskMetas: string[] = [];
+      let sawOpaqueMaskMeta = false;
+      let sawPlaceholderInMaskedText = false;
 
       for (let i = 0; i < results.length; i++) {
         const { maskedText, maskMeta } = results[i];
         refs[i].set(maskedText);
 
-        if (maskMeta && !firstValidMaskMeta) {
-          firstValidMaskMeta = maskMeta;
+        if (typeof maskMeta === 'string' && maskMeta) {
+          allMaskMetas.push(maskMeta);
         }
 
+        if (typeof maskedText === 'string' && maskedText.includes('__PII_')) {
+          sawPlaceholderInMaskedText = true;
+        }
+
+        // Best-effort local decode for fallback restoration.
+        // Many OneAIFW deployments return an opaque/binary maskMeta; in that
+        // case, decoding will fail and we rely on server-side restore.
         const placeholders = decodeAifwMaskMeta(maskMeta);
         if (placeholders) {
           Object.assign(mergedPlaceholders, placeholders);
         } else {
-             memoryLogger.debug(`OneAIFW decode maskMeta failed for item ${i} (opaque token?)`, 'AIFW');
+          sawOpaqueMaskMeta = true;
         }
       }
 
-      const maskedItems = Object.keys(mergedPlaceholders).length;
-
-      if (maskedItems > 0) {
-        memoryLogger.debug(`OneAIFW masking applied: ${maskedItems} items`, 'AIFW');
+      const decodedItems = Object.keys(mergedPlaceholders).length;
+      if (decodedItems > 0) {
+        memoryLogger.debug(`OneAIFW masking applied (decoded placeholders): ${decodedItems}`, 'AIFW');
+      } else if (sawPlaceholderInMaskedText) {
+        memoryLogger.debug('OneAIFW masking applied (opaque/binary maskMeta; local decode skipped)', 'AIFW');
       } else {
         memoryLogger.debug('OneAIFW masking applied: 0 items (check maskConfig)', 'AIFW');
       }
 
-      let finalMaskMeta = '';
-      if (results.length === 1) {
-         finalMaskMeta = results[0].maskMeta;
+      const finalMaskMeta = mergeAifwMaskMetas(allMaskMetas);
+
+      if (sawOpaqueMaskMeta && decodedItems === 0 && finalMaskMeta) {
+        memoryLogger.debug(`OneAIFW maskMeta merged as opaque blob (len=${finalMaskMeta.length})`, 'AIFW');
       } else {
-         // Fallback: try to merge if we managed to decode them.
-         // If we couldn't decode (0 items), but we have results, what do we do?
-         // If we have multiple results with opaque tokens, we are stuck unless we assume they are compatible/mergeable (unlikely for opaque).
-         // But if we managed to decode some, we re-encode.
-         
-         if (Object.keys(mergedPlaceholders).length > 0) {
-            finalMaskMeta = Buffer.from(JSON.stringify(mergedPlaceholders)).toString('base64');
-         } else if (firstValidMaskMeta) {
-             // If we failed to decode anything, but we have results...
-             // Maybe just take the first one? Better than nothing.
-             finalMaskMeta = firstValidMaskMeta;
-         }
+        memoryLogger.debug(`OneAIFW Context: maskMeta length=${finalMaskMeta.length}`, 'AIFW');
       }
-      
-      memoryLogger.debug(`OneAIFW Context: maskMeta length=${finalMaskMeta.length}`, 'AIFW');
 
       return { enabled: true, maskMeta: finalMaskMeta, placeholdersMap: mergedPlaceholders };
     } catch (e: any) {

@@ -29,7 +29,8 @@
 ### 前置要求
 
 - Node.js v20 或更高版本
-- npm / cnpm
+- Bun v1.0 或更高版本（Monorepo 脚本基于 Bun workspaces）
+- MySQL 8.x（或兼容 MySQL 协议的数据库）
 - Docker (可选,用于容器化部署)
 
 ### 安装
@@ -39,13 +40,8 @@
 git clone https://github.com/sxueck/llm-gateway.git
 cd llm-gateway
 
-# 安装后端依赖
-pnpm install
-
-# 安装前端依赖
-cd web
-pnpm install
-cd ..
+# 安装依赖（包含 packages/backend 与 packages/web）
+bun install
 ```
 
 ### 配置
@@ -56,14 +52,20 @@ cd ..
 cp .env.example .env
 ```
 
-编辑 `.env` 文件:
+编辑 `.env` 文件（至少需要配置 MySQL 与 JWT_SECRET）:
 
 ```env
 PORT=3000
 NODE_ENV=development
-DB_PATH=./data/gateway.db
 LOG_LEVEL=info
 JWT_SECRET=your-secret-key-change-this-in-production
+
+# MySQL 数据库配置
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=your-mysql-password
+MYSQL_DATABASE=llm_gateway
 ```
 
 **重要**: 生产环境请务必修改 `JWT_SECRET` 为一个强随机字符串(至少 32 字符)。
@@ -71,12 +73,35 @@ JWT_SECRET=your-secret-key-change-this-in-production
 ### 启动服务
 
 ```bash
-npm run start:all
+# 同时启动后端(3000)与前端(5173)
+bun run dev:all
 ```
 
-此命令将自动:
-1. 分别启动前后端服务
-2. 初始化数据库
+访问地址：
+- Web UI: http://localhost:5173
+- Backend API: http://localhost:3000
+
+也可以单独启动：
+
+```bash
+# 仅后端
+bun run dev:backend
+
+# 仅前端
+bun run dev:web
+```
+
+生产构建与启动（前后端分离部署）：
+
+```bash
+# 构建前后端
+bun run build
+
+# 启动后端（生产模式）
+bun run start
+```
+
+前端产物位于 `packages/web/dist`，请使用 Nginx/静态文件服务单独部署。
 
 ### 使用 Docker Compose 方式启动
 
@@ -150,14 +175,11 @@ VALUES ('target-1', 'DeepSeek Chat', 'model', 'model-id-here', 1, 300, 'Say "OK"
 ### 开发环境设置
 
 ```bash
-# 安装后端依赖
-pnpm install
+# 安装依赖
+bun install
 
-# 安装前端依赖
-cd web && pnpm install && cd ..
-
-# 直接启动前后端
-npm run start:all
+# 直接启动前后端（开发模式）
+bun run dev:all
 ```
 
 ## 贡献
