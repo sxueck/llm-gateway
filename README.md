@@ -26,6 +26,8 @@
 
 ## 快速开始
 
+如果想使用 AI 隐私保护能力，请参考项目 https://github.com/sxueck/aifw
+
 ### 前置要求
 
 - Node.js v20 或更高版本
