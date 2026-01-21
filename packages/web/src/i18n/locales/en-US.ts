@@ -362,6 +362,10 @@ export default {
         title: 'OneAIFW Enabled',
         content: 'The gateway masks sensitive text at the first layer so upstream models only see placeholders, then restores the original values in responses.',
       },
+      bypass_info: {
+        title: 'When the firewall is bypassed',
+        content: 'Privacy protection is currently only applied to OpenAI Chat Completions: /v1/chat/completions\nRequests will be forwarded upstream without OneAIFW in the following cases:\n- OpenAI Responses API: /v1/responses\n- Embeddings: /v1/embeddings\n- Any non-Chat-Completions endpoint\n- Non-OpenAI upstream protocols (e.g. Anthropic / Gemini native)',
+      },
       baseUrl: 'OneAIFW Base URL',
       baseUrlDesc: 'Local/intranet OneAIFW HTTP service URL (default 127.0.0.1:8844)',
       baseUrlPlaceholder: 'http://127.0.0.1:8844',

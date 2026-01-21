@@ -165,6 +165,12 @@ export interface ThreatIpStats {
   lastUpdated: number | null;
 }
 
+export interface AifwStats {
+  maskedCount: number;
+  lastMaskedAt: number;
+  enabled: boolean;
+}
+
 type GetLogsParams = {
   level?: LogLevel;
   limit?: number;
@@ -188,6 +194,7 @@ type GetStatsResponse = {
   costStats: CostStats | null;
   requestSourceStats?: RequestSourceStats;
   threatIpStats?: ThreatIpStats;
+  aifwStats?: AifwStats;
 };
 
 type LookupRequestSourceResponse = {

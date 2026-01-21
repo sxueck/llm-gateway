@@ -12,6 +12,7 @@ import { circuitBreaker } from '../services/circuit-breaker.js';
 import { costMappingService } from '../services/cost-mapping.js';
 import { threatIpBlocker } from '../services/threat-ip-blocker.js';
 import { manualIpBlocklist } from '../services/manual-ip-blocklist.js';
+import { aifwService } from '../services/aifw-service.js';
 import { getGeoInfo, normalizeIp } from '../utils/ip.js';
 
 export async function configRoutes(fastify: FastifyInstance) {
@@ -592,6 +593,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     const lastRequest = await apiRequestDb.getLastRequest();
     const manualLastBlocked = manualIpBlocklist.getLastBlocked();
     const threatIpStats = threatIpBlocker.getStats();
+    const aifwStats = await aifwService.getStats();
     const threatLastBlocked = threatIpStats.lastBlockedIp
       ? { ip: threatIpStats.lastBlockedIp, timestamp: threatIpStats.lastBlockedAt || 0, reason: null, source: 'threat' as const }
       : null;
@@ -698,6 +700,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       costStats,
       requestSourceStats,
       threatIpStats,
+      aifwStats,
     };
   });
 

@@ -2,6 +2,7 @@ import { loadAifwConfig, type AifwConfig } from '../utils/aifw-config.js';
 import { AifwClient } from './aifw-client.js';
 import { memoryLogger } from './logger.js';
 import { decodeAifwMaskMeta, mergeAifwMaskMetas, type AifwPlaceholdersMap } from '../utils/aifw-placeholders.js';
+import { systemConfigDb } from '../db/index.js';
 
 export interface AifwContext {
   enabled: true;
@@ -184,9 +185,101 @@ function collectTextRefs(body: any): TextRef[] {
 }
 
   export class AifwService {
-    private cachedConfig: { value: AifwConfig; loadedAt: number } | null = null;
-    private readonly configTtlMs = 3000;
+  private cachedConfig: { value: AifwConfig; loadedAt: number } | null = null;
+  private readonly configTtlMs = 3000;
   private lastAppliedMaskConfigJson: string | null = null;
+  private maskedCount: number = 0;
+  private lastMaskedAt: number = 0;
+  private initialized = false;
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private persistInFlight: Promise<void> | null = null;
+  private pendingPersist = false;
+  private lastPersistAt = 0;
+  private readonly persistDebounceMs = 5000;
+  private persistDisabled = false;
+  // Guardrail: some OneAIFW NER ONNX models crash on very long inputs.
+  // Skip overlong fields to keep masking fail-open and avoid breaking requests.
+  private readonly maxMaskTextChars = 8000;
+
+  async getStats() {
+    await this.ensureInitialized();
+    const cfg = await this.getConfig();
+    return {
+      maskedCount: this.maskedCount,
+      lastMaskedAt: this.lastMaskedAt,
+      enabled: cfg.enabled,
+    };
+  }
+
+  private async ensureInitialized() {
+    if (this.initialized) return;
+    try {
+      const savedCount = await systemConfigDb.get('aifw_masked_count');
+      const savedLastAt = await systemConfigDb.get('aifw_last_masked_at');
+      
+      if (savedCount) {
+        this.maskedCount = Number(savedCount.value) || 0;
+      }
+      if (savedLastAt) {
+        this.lastMaskedAt = Number(savedLastAt.value) || 0;
+      }
+    } catch (e) {
+      memoryLogger.warn(`Failed to initialize AIFW stats: ${e}`, 'AIFW');
+    } finally {
+      // Stats are best-effort. If DB read fails once, don't keep retrying per-request.
+      this.initialized = true;
+    }
+  }
+
+  private async persistStats() {
+    try {
+      await Promise.all([
+        systemConfigDb.set('aifw_masked_count', String(this.maskedCount), 'OneAIFW 隐私保护累计次数'),
+        systemConfigDb.set('aifw_last_masked_at', String(this.lastMaskedAt), 'OneAIFW 最后隐私保护时间')
+      ]);
+    } catch (e) {
+      // Stats persistence is best-effort. If it fails once, stop trying to avoid
+      // repeatedly hitting a broken DB and spamming logs.
+      this.persistDisabled = true;
+      memoryLogger.warn(`Failed to persist AIFW stats: ${e}`, 'AIFW');
+    }
+  }
+
+  private schedulePersistStats() {
+    if (this.persistDisabled) return;
+    this.pendingPersist = true;
+    if (this.persistTimer) return;
+
+    const now = Date.now();
+    const delay = Math.max(0, this.persistDebounceMs - (now - this.lastPersistAt));
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.flushPersistStats().catch(() => {});
+    }, delay);
+  }
+
+  private async flushPersistStats(): Promise<void> {
+    if (!this.pendingPersist) return;
+    this.pendingPersist = false;
+    this.lastPersistAt = Date.now();
+
+    // Serialize writes so we don't overlap DB updates.
+    if (this.persistInFlight) {
+      try {
+        await this.persistInFlight;
+      } catch {
+        // Ignore and attempt the latest write.
+      }
+    }
+
+    const p = this.persistStats().finally(() => {
+      if (this.persistInFlight === p) {
+        this.persistInFlight = null;
+      }
+    });
+    this.persistInFlight = p;
+    await p;
+  }
 
   private async getConfig(): Promise<AifwConfig> {
     const now = Date.now();
@@ -216,8 +309,33 @@ function collectTextRefs(body: any): TextRef[] {
     const cfg = await this.getConfig();
     if (!cfg.enabled) return null;
 
+    await this.ensureInitialized();
+
     const refs = collectTextRefs(body);
     if (refs.length === 0) return null;
+
+    const pairs = refs
+      .map((ref) => ({ ref, text: ref.get() }))
+      .filter((x) => typeof x.text === 'string' && x.text.trim().length > 0);
+
+    const maskPairs = pairs.filter((x) => x.text.length <= this.maxMaskTextChars);
+    const skipped = pairs.length - maskPairs.length;
+    if (maskPairs.length === 0) {
+      if (skipped > 0) {
+        memoryLogger.warn(
+          `OneAIFW masking skipped: all text fields exceed max length (${this.maxMaskTextChars} chars)`,
+          'AIFW'
+        );
+      }
+      return null;
+    }
+
+    if (skipped > 0) {
+      memoryLogger.warn(
+        `OneAIFW masking: skipped ${skipped}/${pairs.length} fields (> ${this.maxMaskTextChars} chars) to avoid NER crashes`,
+        'AIFW'
+      );
+    }
 
     const client = new AifwClient({
       baseUrl: cfg.baseUrl,
@@ -228,11 +346,11 @@ function collectTextRefs(body: any): TextRef[] {
     await this.ensureRemoteMaskConfig(client, cfg);
 
     try {
-      const items = refs.map((ref) => ({ text: ref.get() }));
+      const items = maskPairs.map((p) => ({ text: p.text }));
       const results = await client.maskTextBatch(items);
 
-      if (results.length !== refs.length) {
-        throw new Error(`Batch mask failed: expected ${refs.length} results, got ${results.length}`);
+      if (results.length !== maskPairs.length) {
+        throw new Error(`Batch mask failed: expected ${maskPairs.length} results, got ${results.length}`);
       }
 
       const mergedPlaceholders: AifwPlaceholdersMap = {};
@@ -242,7 +360,7 @@ function collectTextRefs(body: any): TextRef[] {
 
       for (let i = 0; i < results.length; i++) {
         const { maskedText, maskMeta } = results[i];
-        refs[i].set(maskedText);
+        maskPairs[i].ref.set(maskedText);
 
         if (typeof maskMeta === 'string' && maskMeta) {
           allMaskMetas.push(maskMeta);
@@ -266,8 +384,14 @@ function collectTextRefs(body: any): TextRef[] {
       const decodedItems = Object.keys(mergedPlaceholders).length;
       if (decodedItems > 0) {
         memoryLogger.debug(`OneAIFW masking applied (decoded placeholders): ${decodedItems}`, 'AIFW');
+        this.maskedCount++;
+        this.lastMaskedAt = Date.now();
+        this.schedulePersistStats();
       } else if (sawPlaceholderInMaskedText) {
         memoryLogger.debug('OneAIFW masking applied (opaque/binary maskMeta; local decode skipped)', 'AIFW');
+        this.maskedCount++;
+        this.lastMaskedAt = Date.now();
+        this.schedulePersistStats();
       } else {
         memoryLogger.debug('OneAIFW masking applied: 0 items (check maskConfig)', 'AIFW');
       }

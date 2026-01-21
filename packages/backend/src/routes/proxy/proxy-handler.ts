@@ -24,6 +24,16 @@ import { restorePlaceholdersInObjectInPlace } from '../../utils/aifw-placeholder
 
 const MESSAGE_COMPRESSION_MIN_TOKENS = parseInt(process.env.MESSAGE_COMPRESSION_MIN_TOKENS || '2048', 10);
 
+function shouldApplyAifwForRequest(path: string, protocolConfig: any, isResponsesApi: boolean, isEmbeddingsRequest: boolean): boolean {
+  // User requirement: privacy protection only for OpenAI Chat Completions.
+  // - Disable for Responses API, Embeddings, and any non-OpenAI protocol.
+  if (isResponsesApi) return false;
+  if (isEmbeddingsRequest) return false;
+  if (!isChatCompletionsPath(path)) return false;
+  // Be strict: don't guess "openai" when protocol is missing.
+  return protocolConfig?.protocol === 'openai';
+}
+
 function responsesInputNeedsNormalization(items: any[]): boolean {
   return items.some(item => {
     if (!item || typeof item !== 'object') {
@@ -631,20 +641,11 @@ export async function handleStreamRequest(
   try {
     let tokenUsage: any;
 
-    // OneAIFW preprocessing: mask sensitive text before sending to upstream.
-    // For streams, ProtocolAdapter will restore placeholders in the stream using options.__aifw.
-    const aifwCtx = await aifwService.maskRequestBodyInPlace(request.body);
-
     if (isResponsesApi) {
       // Responses API 请求
       const input = (request.body as any)?.input;
       // 传递提取的系统提示到 buildResponsesOptions
       const options = buildResponsesOptions((request.body as any), false, extractedSystemPrompt);
-
-      if (aifwCtx) {
-        (options as any).__aifw = aifwCtx;
-        memoryLogger.debug('OneAIFW preprocessing enabled for this stream request', 'AIFW');
-      }
 
       // 记录最终的 instructions 和 tools（用于调试）
       if (options.instructions) {
@@ -677,6 +678,11 @@ export async function handleStreamRequest(
     } else {
       // Chat Completions API 请求
       const messages = (request.body as any)?.messages || [];
+
+      const aifwCtx = shouldApplyAifwForRequest(path, protocolConfig, false, false)
+        ? await aifwService.maskRequestBodyInPlace(request.body)
+        : null;
+
       const options: any = {
         temperature: (request.body as any)?.temperature,
         max_tokens: (request.body as any)?.max_tokens,
@@ -1019,9 +1025,7 @@ export async function handleNonStreamRequest(
   }
 
   let response: any;
-
-  // OneAIFW preprocessing: only apply after cache miss so cache key is derived from the original request.
-  const aifwCtx = await aifwService.maskRequestBodyInPlace(request.body);
+  let aifwCtx: any = null;
 
   if (isEmbeddingsRequest) {
     // Embeddings API 请求
@@ -1031,11 +1035,6 @@ export async function handleNonStreamRequest(
       dimensions: (request.body as any)?.dimensions,
       user: (request.body as any)?.user,
     };
-
-    if (aifwCtx) {
-      (options as any).__aifw = aifwCtx;
-      memoryLogger.debug('OneAIFW preprocessing enabled for this non-stream request', 'AIFW');
-    }
     const input = (request.body as any)?.input;
 
     response = await makeHttpRequest(
@@ -1048,6 +1047,13 @@ export async function handleNonStreamRequest(
   } else {
     // Chat Completions API 请求
     const messages = (request.body as any)?.messages || [];
+
+    // OneAIFW preprocessing: only apply after cache miss so cache key is derived from the original request.
+    // User requirement: only apply for OpenAI Chat Completions.
+    aifwCtx = shouldApplyAifwForRequest(path, protocolConfig, false, false)
+      ? await aifwService.maskRequestBodyInPlace(request.body)
+      : null;
+
     const options: any = {
       temperature: (request.body as any)?.temperature,
       max_tokens: (request.body as any)?.max_tokens,

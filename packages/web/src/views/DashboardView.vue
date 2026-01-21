@@ -175,24 +175,16 @@
         <n-gi>
           <n-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-header">Ipsum 拦截 IP</div>
+              <div class="stat-header">{{ aifwStats?.enabled ? '安全拦截 & 隐私保护' : 'Ipsum 拦截 IP' }}</div>
               <div class="stat-main-value">{{ formatNumber(ipsumBlockedCount) }}</div>
               <div class="stat-details">
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">威胁列表:</span>
-                  <span class="stat-detail-value">{{ formatNumber(threatIpListSize) }} IP</span>
+                <span class="stat-detail-item" v-if="aifwStats?.enabled">
+                  <span class="stat-detail-label">隐私保护:</span>
+                  <span class="stat-detail-value">{{ formatNumber(aifwStats.maskedCount) }} 次</span>
                 </span>
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">最近命中:</span>
-                  <span class="stat-detail-value">
-                    {{ threatIpStats?.lastBlockedIp || '暂无记录' }}
-                    <span
-                      v-if="threatIpStats?.lastBlockedAt"
-                      style="display: block; font-size: 12px; color: #6b7280; margin-top: 2px;"
-                    >
-                      {{ formatTimestamp(threatIpStats?.lastBlockedAt || 0, selectedPeriod) }}
-                    </span>
-                  </span>
+                  <span class="stat-detail-label">威胁库:</span>
+                  <span class="stat-detail-value">{{ formatNumber(threatIpListSize) }}</span>
                 </span>
               </div>
             </div>
@@ -438,7 +430,7 @@ import { RefreshOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
-import { configApi, type ApiStats, type VirtualKeyTrend, type ExpertRoutingStats, type ModelStat, type CostStats, type ModelResponseTimeStat, type RequestSourceEntry, type RequestSourceStats, type ThreatIpStats } from '@/api/config';
+import { configApi, type ApiStats, type VirtualKeyTrend, type ExpertRoutingStats, type ModelStat, type CostStats, type ModelResponseTimeStat, type RequestSourceEntry, type RequestSourceStats, type ThreatIpStats, type AifwStats } from '@/api/config';
 import { formatNumber, formatTokenNumber, formatPercentage, formatResponseTime, formatTimestamp, formatUptime } from '@/utils/format';
 import { useSystemConfig } from '@/composables/useSystemConfig';
 import { use } from 'echarts/core';
@@ -490,6 +482,7 @@ const circuitBreakerStats = ref<{
 const costStats = ref<CostStats | null>(null);
 const requestSourceStats = ref<RequestSourceStats | null>(null);
 const threatIpStats = ref<ThreatIpStats | null>(null);
+const aifwStats = ref<AifwStats | null>(null);
 const requestSourceTableData = computed<RequestSourceEntry[]>(() => requestSourceStats.value?.recentSources || []);
 const lookupLoadingIp = ref<string | null>(null);
 const blockLoadingIp = ref<string | null>(null);
@@ -1288,6 +1281,7 @@ async function loadStats() {
     costStats.value = result.costStats || null;
     requestSourceStats.value = result.requestSourceStats || null;
     threatIpStats.value = result.threatIpStats || null;
+    aifwStats.value = result.aifwStats || null;
   } catch (error: any) {
     const errorMsg = error.message || '加载数据失败';
     loadError.value = errorMsg;

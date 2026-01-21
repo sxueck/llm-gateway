@@ -365,6 +365,10 @@ export default {
         title: 'OneAIFW 已启用',
         content: '网关会在请求进入第一层时对文本进行脱敏处理，上游模型只会看到占位符；响应返回后会自动还原为原始敏感信息。',
       },
+      bypass_info: {
+        title: '哪些情况下不走防火墙',
+        content: '当前仅 OpenAI Chat Completions 接口会启用隐私保护：/v1/chat/completions\n以下情况将直接转发到上游，不经过 OneAIFW：\n- OpenAI Responses API：/v1/responses\n- Embeddings：/v1/embeddings\n- 其他非 Chat Completions 的端点\n- 非 OpenAI 协议的上游（例如 Anthropic / Gemini 原生等）',
+      },
       baseUrl: 'OneAIFW 服务地址',
       baseUrlDesc: 'OneAIFW 本地/内网 HTTP 服务地址（默认 127.0.0.1:8844）',
       baseUrlPlaceholder: 'http://127.0.0.1:8844',

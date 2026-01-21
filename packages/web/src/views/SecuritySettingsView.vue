@@ -126,13 +126,20 @@
               <n-switch :value="aifwEnabled" @update:value="onToggleAifwEnabled" />
             </n-space>
 
-            <template v-if="aifwEnabled">
-              <n-alert type="info">
-                <template #header>
-                  <div style="font-size: 14px; font-weight: 500;">{{ $t('settings.aifw.enabled_info.title') }}</div>
-                </template>
-                <n-text style="font-size: 13px;">{{ $t('settings.aifw.enabled_info.content') }}</n-text>
-              </n-alert>
+	          <template v-if="aifwEnabled">
+	            <n-alert v-if="showAifwEnabledInfo" type="info" closable @close="handleCloseAifwEnabledInfo">
+	              <template #header>
+	                <div style="font-size: 14px; font-weight: 500;">{{ $t('settings.aifw.enabled_info.title') }}</div>
+	              </template>
+	              <n-text style="font-size: 13px;">{{ $t('settings.aifw.enabled_info.content') }}</n-text>
+	            </n-alert>
+
+	            <n-alert v-if="showAifwBypassInfo" type="warning" closable @close="handleCloseAifwBypassInfo">
+	              <template #header>
+	                <div style="font-size: 14px; font-weight: 500;">{{ $t('settings.aifw.bypass_info.title') }}</div>
+	              </template>
+	              <n-text style="font-size: 13px; white-space: pre-line;">{{ $t('settings.aifw.bypass_info.content') }}</n-text>
+	            </n-alert>
 
               <n-space vertical :size="8" style="width: 100%;">
                 <div>
@@ -235,32 +242,66 @@ const aifwHttpApiKey = ref('');
 const aifwHttpApiKeyTouched = ref(false);
 const aifwHttpApiKeySet = ref(false);
 
- const DEFAULT_AIFW_MASK_CONFIG_PRESET = {
-   maskAddress: false,
-   maskEmail: true,
-   maskOrganization: true,
-   maskUserName: true,
-   maskPhoneNumber: true,
-   maskBankNumber: true,
-   maskPayment: true,
-   maskVerificationCode: true,
-   maskPassword: true,
-   maskRandomSeed: true,
-   maskPrivateKey: true,
-   maskUrl: true,
- };
+const AIFW_ENABLED_INFO_CLOSED_KEY = 'security-settings-aifw-enabled-info-closed';
+const AIFW_BYPASS_INFO_CLOSED_KEY = 'security-settings-aifw-bypass-info-closed';
 
- // Keep JSON examples out of i18n messages to avoid vue-i18n message compiler
- // interpreting `{ ... }` as placeholders.
- const aifwMaskConfigJsonPlaceholder = JSON.stringify(
-   {
-     maskEmail: true,
-     maskPhoneNumber: true,
-     maskUserName: true,
-   },
-   null,
-   2
- );
+function safeLocalStorageGet(key: string): string | null {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return null;
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeLocalStorageSet(key: string, value: string): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    window.localStorage.setItem(key, value);
+  } catch {
+    // ignore (private mode, storage disabled, etc.)
+  }
+}
+
+const showAifwEnabledInfo = ref(safeLocalStorageGet(AIFW_ENABLED_INFO_CLOSED_KEY) !== 'true');
+const showAifwBypassInfo = ref(safeLocalStorageGet(AIFW_BYPASS_INFO_CLOSED_KEY) !== 'true');
+
+function handleCloseAifwEnabledInfo() {
+  showAifwEnabledInfo.value = false;
+  safeLocalStorageSet(AIFW_ENABLED_INFO_CLOSED_KEY, 'true');
+}
+
+function handleCloseAifwBypassInfo() {
+  showAifwBypassInfo.value = false;
+  safeLocalStorageSet(AIFW_BYPASS_INFO_CLOSED_KEY, 'true');
+}
+
+const DEFAULT_AIFW_MASK_CONFIG_PRESET = {
+  maskAddress: false,
+  maskEmail: true,
+  maskOrganization: true,
+  maskUserName: true,
+  maskPhoneNumber: true,
+  maskBankNumber: true,
+  maskPayment: true,
+  maskVerificationCode: true,
+  maskPassword: true,
+  maskRandomSeed: true,
+  maskPrivateKey: true,
+  maskUrl: true,
+};
+
+// Keep JSON examples out of i18n messages to avoid vue-i18n message compiler
+// interpreting `{ ... }` as placeholders.
+const aifwMaskConfigJsonPlaceholder = JSON.stringify(
+  {
+    maskEmail: true,
+    maskPhoneNumber: true,
+    maskUserName: true,
+  },
+  null,
+  2
+);
 
 const isAntiBotAllowedUaChanged = computed(() => {
   return antiBotAllowedUa.value !== antiBotAllowedUaOriginal.value;
