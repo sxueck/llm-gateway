@@ -1,5 +1,71 @@
 export type AifwPlaceholdersMap = Record<string, string>;
 
+function tryParseJsonObject(text: string): AifwPlaceholdersMap | null {
+  if (!text || typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('{')) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const map: AifwPlaceholdersMap = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (typeof k === 'string' && typeof v === 'string') {
+        map[k] = v;
+      }
+    }
+    return map;
+  } catch {
+    return null;
+  }
+}
+
+function padIndex(index: string, width = 8): string {
+  if (!index) return index;
+  // Keep purely numeric indices only.
+  if (!/^[0-9]+$/.test(index)) return index;
+  if (index.length >= width) return index;
+  return index.padStart(width, '0');
+}
+
+function stripLeadingZeros(index: string): string {
+  if (!index) return index;
+  if (!/^[0-9]+$/.test(index)) return index;
+  // Preserve a single 0 if the index is all zeros.
+  const stripped = index.replace(/^0+/, '');
+  return stripped.length === 0 ? '0' : stripped;
+}
+
+function expandPlaceholderKeyVariants(key: string): string[] {
+  // Accept both OneAIFW documented format:
+  //   __PII_EMAIL_ADDRESS_00000001__
+  // And common model-corrupted variants:
+  //   __PII_EMAIL_ADDRESS_1__
+  const m = /^__PII_([A-Z0-9_]+)_([0-9]+)__$/.exec(key);
+  if (!m) return [key];
+
+  const type = m[1];
+  const rawIndex = m[2];
+  const stripped = stripLeadingZeros(rawIndex);
+  const padded8 = padIndex(stripped, 8);
+
+  const out = new Set<string>();
+  out.add(key);
+  out.add(`__PII_${type}_${stripped}__`);
+  out.add(`__PII_${type}_${padded8}__`);
+  return Array.from(out);
+}
+
+function normalizePlaceholdersMap(map: AifwPlaceholdersMap): AifwPlaceholdersMap {
+  const out: AifwPlaceholdersMap = { ...map };
+  for (const [k, v] of Object.entries(map || {})) {
+    for (const variant of expandPlaceholderKeyVariants(k)) {
+      // Do not overwrite an existing mapping; keep the first seen value.
+      if (out[variant] === undefined) out[variant] = v;
+    }
+  }
+  return out;
+}
+
 /**
  * Heuristic mapping from Type ID to PII Type String.
  * Inferred from typical PII handling and user reports.
@@ -51,15 +117,23 @@ function decodeBinaryMaskMeta(buf: Buffer): AifwPlaceholdersMap | null {
       
       // Generate potential keys
       for (const typeName of typeNames) {
-        // Try both 1-based (from user example) and raw index
-        map[`__PII_${typeName}_${index}__`] = value;
+        // Generate both padded and non-padded indices.
+        const idx = String(index);
+        const stripped = stripLeadingZeros(idx);
+        const padded8 = padIndex(stripped, 8);
+        map[`__PII_${typeName}_${stripped}__`] = value;
+        map[`__PII_${typeName}_${padded8}__`] = value;
       }
       
       // Add a generic fallback key just in case we can't guess the type name
-      map[`__PII_${typeId}_${index}__`] = value;
+      const idx = String(index);
+      const stripped = stripLeadingZeros(idx);
+      const padded8 = padIndex(stripped, 8);
+      map[`__PII_${typeId}_${stripped}__`] = value;
+      map[`__PII_${typeId}_${padded8}__`] = value;
     }
     
-    return Object.keys(map).length > 0 ? map : null;
+    return Object.keys(map).length > 0 ? normalizePlaceholdersMap(map) : null;
   } catch (e) {
     return null;
   }
@@ -68,27 +142,16 @@ function decodeBinaryMaskMeta(buf: Buffer): AifwPlaceholdersMap | null {
 export function decodeAifwMaskMeta(maskMeta: string): AifwPlaceholdersMap | null {
   if (!maskMeta || typeof maskMeta !== 'string') return null;
   try {
+    // Some OneAIFW deployments return JSON directly (not base64).
+    // Prefer that because it's unambiguous and enables streaming restoration.
+    const directJsonMap = tryParseJsonObject(maskMeta);
+    if (directJsonMap) return normalizePlaceholdersMap(directJsonMap);
+
     const decoded = Buffer.from(maskMeta, 'base64');
-    
-    // 1. Try JSON first (Standard)
-    try {
-      const json = decoded.toString('utf8');
-      // Quick check if it looks like JSON before full parse to avoid false positives on binary text
-      if (json.trim().startsWith('{')) {
-        const parsed = JSON.parse(json);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          const map: Record<string, string> = {};
-          for (const [key, value] of Object.entries(parsed)) {
-            if (typeof key === 'string' && typeof value === 'string') {
-              map[key] = value;
-            }
-          }
-          return map;
-        }
-      }
-    } catch {
-      // Not JSON, fall through
-    }
+
+    // 1. Try JSON first (Standard): base64(utf8(JSON(placeholdersMap)))
+    const jsonMap = tryParseJsonObject(decoded.toString('utf8'));
+    if (jsonMap) return normalizePlaceholdersMap(jsonMap);
 
     // 2. Try Binary Format (Fallback)
     // Heuristic: Check if starts with length? Or just try parse.

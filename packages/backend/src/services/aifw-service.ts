@@ -4,10 +4,60 @@ import { memoryLogger } from './logger.js';
 import { decodeAifwMaskMeta, mergeAifwMaskMetas, type AifwPlaceholdersMap } from '../utils/aifw-placeholders.js';
 import { systemConfigDb } from '../db/index.js';
 
+const AIFW_PRESERVE_PLACEHOLDERS_HINT =
+  'Important: The text may contain OneAIFW placeholders like __PII_EMAIL_ADDRESS_00000001__ (or __PII_EMAIL_ADDRESS_1__). ' +
+  'These placeholders MUST be copied verbatim: do not translate, reformat, pad/strip zeros, add spaces, or delete them. ' +
+  'If you remove/alter placeholders, the gateway cannot restore the original values.';
+
+function injectPreservePlaceholdersHintInPlace(body: any): void {
+  if (!body || typeof body !== 'object') return;
+
+  // OpenAI-ish chat: messages[].role/content
+  if (Array.isArray(body.messages)) {
+    const sysIdx = body.messages.findIndex((m: any) => m && m.role === 'system');
+    if (sysIdx >= 0) {
+      const msg = body.messages[sysIdx];
+      if (typeof msg?.content === 'string') {
+        msg.content = `${msg.content}\n\n${AIFW_PRESERVE_PLACEHOLDERS_HINT}`;
+        return;
+      }
+      if (Array.isArray(msg?.content)) {
+        msg.content.push({ type: 'text', text: AIFW_PRESERVE_PLACEHOLDERS_HINT });
+        return;
+      }
+    }
+
+    // No system message: prepend one.
+    body.messages.unshift({ role: 'system', content: AIFW_PRESERVE_PLACEHOLDERS_HINT });
+    return;
+  }
+
+  // OpenAI Responses API: instructions
+  if (typeof body.instructions === 'string') {
+    body.instructions = `${body.instructions}\n\n${AIFW_PRESERVE_PLACEHOLDERS_HINT}`;
+    return;
+  }
+  if (body.instructions === undefined) {
+    // Only set if missing; avoid overwriting non-string formats.
+    body.instructions = AIFW_PRESERVE_PLACEHOLDERS_HINT;
+    return;
+  }
+
+  // Gemini native: systemInstruction.parts[].text
+  if (body.systemInstruction && typeof body.systemInstruction === 'object' && Array.isArray(body.systemInstruction.parts)) {
+    body.systemInstruction.parts.push({ text: AIFW_PRESERVE_PLACEHOLDERS_HINT });
+  }
+}
+
 export interface AifwContext {
   enabled: true;
   maskMeta: string;
   placeholdersMap: AifwPlaceholdersMap;
+  clientConfig: {
+    baseUrl: string;
+    httpApiKey?: string;
+    timeoutMs: number;
+  };
 }
 
 interface TextRef {
@@ -404,7 +454,22 @@ function collectTextRefs(body: any): TextRef[] {
         memoryLogger.debug(`OneAIFW Context: maskMeta length=${finalMaskMeta.length}`, 'AIFW');
       }
 
-      return { enabled: true, maskMeta: finalMaskMeta, placeholdersMap: mergedPlaceholders };
+      // After masking, add a small instruction for the upstream model to preserve placeholders.
+      // Only add it when masking actually introduced placeholders.
+      if (decodedItems > 0 || sawPlaceholderInMaskedText) {
+        injectPreservePlaceholdersHintInPlace(body);
+      }
+
+      return {
+        enabled: true,
+        maskMeta: finalMaskMeta,
+        placeholdersMap: mergedPlaceholders,
+        clientConfig: {
+          baseUrl: cfg.baseUrl,
+          httpApiKey: cfg.httpApiKey,
+          timeoutMs: cfg.timeoutMs,
+        },
+      };
     } catch (e: any) {
       const msg = e?.message || String(e);
       memoryLogger.error(`OneAIFW mask failed: ${msg}`, 'AIFW');

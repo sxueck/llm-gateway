@@ -10,6 +10,8 @@ import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-clien
 import { ResponsesEmptyOutputError } from '../errors/responses-empty-output-error.js';
 import { sanitizeCustomHeaders, getSanitizedHeadersCacheKey } from '../utils/header-sanitizer.js';
 import { AifwStreamRestorer, restorePlaceholdersInObjectInPlace } from '../utils/aifw-placeholders.js';
+import { AifwClient } from './aifw-client.js';
+import { AifwRemoteStreamRestorer } from './aifw-remote-stream-restorer.js';
 
 // Responses API 空输出重试默认次数（可通过环境变量或模型属性配置）
 const DEFAULT_RESPONSES_EMPTY_OUTPUT_MAX_RETRIES = Math.max(
@@ -281,6 +283,20 @@ export class ProtocolAdapter {
     const aifwCtx = (options as any)?.__aifw;
     const placeholdersMap = aifwCtx?.placeholdersMap;
     const streamRestorer = placeholdersMap ? new AifwStreamRestorer(placeholdersMap) : null;
+    const canUseRemoteAifwRestore =
+      !!aifwCtx?.maskMeta &&
+      (!placeholdersMap || Object.keys(placeholdersMap).length === 0) &&
+      !!aifwCtx?.clientConfig?.baseUrl;
+    const remoteAifwClient = canUseRemoteAifwRestore
+      ? new AifwClient({
+          baseUrl: aifwCtx.clientConfig.baseUrl,
+          httpApiKey: aifwCtx.clientConfig.httpApiKey,
+          timeoutMs: aifwCtx.clientConfig.timeoutMs,
+        })
+      : null;
+    const remoteStreamRestorer = remoteAifwClient
+      ? new AifwRemoteStreamRestorer(remoteAifwClient, aifwCtx.maskMeta)
+      : null;
     const bufferedKeys = new Set<string>();
     const finishedByChoiceIndex = new Set<number>();
     let lastChunkId: string | undefined;
@@ -365,14 +381,35 @@ export class ProtocolAdapter {
           if (Array.isArray(chunk.choices)) {
             for (const choice of chunk.choices) {
               const idx = typeof choice?.index === 'number' ? choice.index : 0;
-              if (choice?.finish_reason) {
-                finishedByChoiceIndex.add(idx);
-              }
+              const key = `chat:${idx}:content`;
               const content = choice?.delta?.content;
-              if (typeof content === 'string' && streamRestorer) {
-                const key = `chat:${idx}:content`;
+
+              if (streamRestorer && typeof content === 'string') {
                 bufferedKeys.add(key);
                 choice.delta.content = streamRestorer.process(key, content);
+              } else if (remoteStreamRestorer && typeof content === 'string') {
+                bufferedKeys.add(key);
+                choice.delta.content = await remoteStreamRestorer.process(key, content, { flush: false });
+              }
+
+              // If the upstream signals completion, flush any pending placeholder fragments
+              // into THIS chunk. Otherwise we may drop the tail (common when a placeholder
+              // is split across chunks).
+              if ((streamRestorer || remoteStreamRestorer) && choice?.finish_reason) {
+                bufferedKeys.add(key);
+                const flushText = streamRestorer
+                  ? streamRestorer.flush(key)
+                  : await remoteStreamRestorer!.flush(key);
+                if (flushText) {
+                  if (!choice.delta || typeof choice.delta !== 'object') {
+                    choice.delta = { content: flushText };
+                  } else if (typeof choice.delta.content === 'string') {
+                    choice.delta.content += flushText;
+                  } else {
+                    choice.delta.content = flushText;
+                  }
+                }
+                finishedByChoiceIndex.add(idx);
               }
             }
           }
@@ -433,9 +470,9 @@ export class ProtocolAdapter {
       throw error;
     }
 
-     if (placeholdersMap && streamRestorer && bufferedKeys.size > 0 && !reply.raw.destroyed && !reply.raw.writableEnded) {
+     if ((streamRestorer || remoteStreamRestorer) && bufferedKeys.size > 0 && !reply.raw.destroyed && !reply.raw.writableEnded) {
        for (const key of bufferedKeys) {
-         const flushText = streamRestorer.flush(key);
+         const flushText = streamRestorer ? streamRestorer.flush(key) : await remoteStreamRestorer!.flush(key);
          if (!flushText) continue;
 
          const match = key.match(/^chat:(\d+):content$/);
@@ -448,18 +485,18 @@ export class ProtocolAdapter {
          }
 
          const flushChunk: any = {
-           id: lastChunkId || `aifw_flush_${Date.now()}`,
-           object: 'chat.completion.chunk',
-           created: Math.floor(Date.now() / 1000),
-           model: lastChunkModel || config.model,
-          choices: [
-            {
-              index: choiceIndex,
-              delta: { content: flushText },
-              finish_reason: null,
-            },
-          ],
-        };
+            id: lastChunkId || `aifw_flush_${Date.now()}`,
+            object: 'chat.completion.chunk',
+            created: Math.floor(Date.now() / 1000),
+            model: lastChunkModel || config.model,
+           choices: [
+             {
+               index: choiceIndex,
+               delta: { content: flushText },
+               finish_reason: null,
+             },
+           ],
+         };
 
         const flushData = `data: ${JSON.stringify(flushChunk)}\n\n`;
         streamChunks.push(flushData);
@@ -641,6 +678,20 @@ export class ProtocolAdapter {
     const aifwCtx = (options as any)?.__aifw;
     const placeholdersMap = aifwCtx?.placeholdersMap;
     const streamRestorer = placeholdersMap ? new AifwStreamRestorer(placeholdersMap) : null;
+    const canUseRemoteAifwRestore =
+      !!aifwCtx?.maskMeta &&
+      (!placeholdersMap || Object.keys(placeholdersMap).length === 0) &&
+      !!aifwCtx?.clientConfig?.baseUrl;
+    const remoteAifwClient = canUseRemoteAifwRestore
+      ? new AifwClient({
+          baseUrl: aifwCtx.clientConfig.baseUrl,
+          httpApiKey: aifwCtx.clientConfig.httpApiKey,
+          timeoutMs: aifwCtx.clientConfig.timeoutMs,
+        })
+      : null;
+    const remoteStreamRestorer = remoteAifwClient
+      ? new AifwRemoteStreamRestorer(remoteAifwClient, aifwCtx.maskMeta)
+      : null;
 
     const requestParams: any = {
       model: config.model,
@@ -828,6 +879,11 @@ export class ProtocolAdapter {
               bufferedOutputKeyUsed = true;
               (chunk as any).delta.text = streamRestorer.process('responses:output_text', (chunk as any).delta.text);
             }
+          } else if (remoteStreamRestorer) {
+            if (typeof (chunk as any)?.delta?.text === 'string' && String((chunk as any)?.type || '').includes('output_text.delta')) {
+              bufferedOutputKeyUsed = true;
+              (chunk as any).delta.text = await remoteStreamRestorer.process('responses:output_text', (chunk as any).delta.text, { flush: false });
+            }
           }
 
           const chunkData = JSON.stringify(chunk);
@@ -857,8 +913,10 @@ export class ProtocolAdapter {
           }
         }
 
-        if (placeholdersMap && streamRestorer && bufferedOutputKeyUsed && !reply.raw.destroyed && !reply.raw.writableEnded) {
-          const flushText = streamRestorer.flush('responses:output_text');
+        if ((streamRestorer || remoteStreamRestorer) && bufferedOutputKeyUsed && !reply.raw.destroyed && !reply.raw.writableEnded) {
+          const flushText = streamRestorer
+            ? streamRestorer.flush('responses:output_text')
+            : await remoteStreamRestorer!.flush('responses:output_text');
           if (flushText) {
             const flushEvent: any = {
               type: 'response.output_text.delta',
