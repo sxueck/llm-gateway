@@ -43,7 +43,7 @@ export class AifwClient {
           ...buildAuthHeaders(this.config.httpApiKey),
         },
         signal: controller.signal,
-      });
+      } as any);
       clearTimeout(timeout);
       return res.ok;
     } catch {
@@ -63,7 +63,7 @@ export class AifwClient {
         },
         body: JSON.stringify({ maskConfig }),
         signal: controller.signal,
-      });
+      } as any);
       clearTimeout(timeout);
       if (!res.ok) {
         const text = await res.text().catch(() => '');
@@ -92,7 +92,7 @@ export class AifwClient {
           language: options?.language,
         }),
         signal: controller.signal,
-      });
+      } as any);
       const raw = await res.text();
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${raw}`);
@@ -125,7 +125,7 @@ export class AifwClient {
         },
         body: JSON.stringify(items),
         signal: controller.signal,
-      });
+      } as any);
 
       if (!res.ok) {
         const raw = await res.text();
@@ -187,7 +187,7 @@ export class AifwClient {
           maskMeta,
         }),
         signal: controller.signal,
-      });
+      } as any);
 
       if (!res.ok) {
         const raw = await res.text();
@@ -219,7 +219,7 @@ export class AifwClient {
         },
         body: JSON.stringify(items),
         signal: controller.signal,
-      });
+      } as any);
 
       if (!res.ok) {
         const raw = await res.text();
