@@ -238,6 +238,14 @@ export class ProtocolAdapter {
     if (options.parallel_tool_calls !== undefined) requestParams.parallel_tool_calls = options.parallel_tool_calls;
     if (options.response_format !== undefined) requestParams.response_format = options.response_format;
     if (options.seed !== undefined) requestParams.seed = options.seed;
+    if (options.store !== undefined) requestParams.store = options.store;
+    // stream_options is only valid for stream=true requests
+    if ((options as any).service_tier !== undefined) (requestParams as any).service_tier = (options as any).service_tier;
+    if ((options as any).prompt_cache_key !== undefined) (requestParams as any).prompt_cache_key = (options as any).prompt_cache_key;
+    if ((options as any).safety_identifier !== undefined) (requestParams as any).safety_identifier = (options as any).safety_identifier;
+    if ((options as any).reasoning_effort !== undefined) (requestParams as any).reasoning_effort = (options as any).reasoning_effort;
+    if ((options as any).verbosity !== undefined) (requestParams as any).verbosity = (options as any).verbosity;
+    if ((options as any).thinking !== undefined) (requestParams as any).thinking = (options as any).thinking;
 
     // 构建请求选项，支持超时和取消
     const requestOptions: any = {};
@@ -331,6 +339,17 @@ export class ProtocolAdapter {
     if (options.n !== undefined) requestParams.n = options.n;
     if (options.response_format !== undefined) requestParams.response_format = options.response_format;
     if (options.seed !== undefined) requestParams.seed = options.seed;
+    if (options.store !== undefined) requestParams.store = options.store;
+    if ((options as any).stream_options !== undefined) {
+      // Always include usage for internal accounting.
+      requestParams.stream_options = { ...(options as any).stream_options, include_usage: true };
+    }
+    if ((options as any).service_tier !== undefined) (requestParams as any).service_tier = (options as any).service_tier;
+    if ((options as any).prompt_cache_key !== undefined) (requestParams as any).prompt_cache_key = (options as any).prompt_cache_key;
+    if ((options as any).safety_identifier !== undefined) (requestParams as any).safety_identifier = (options as any).safety_identifier;
+    if ((options as any).reasoning_effort !== undefined) (requestParams as any).reasoning_effort = (options as any).reasoning_effort;
+    if ((options as any).verbosity !== undefined) (requestParams as any).verbosity = (options as any).verbosity;
+    if ((options as any).thinking !== undefined) (requestParams as any).thinking = (options as any).thinking;
 
     // 构建请求选项，支持超时和取消
     const requestOptions: any = {};
@@ -584,6 +603,8 @@ export class ProtocolAdapter {
   private buildResponsesRequestParams(options: any, includePreviousResponseId: boolean): any {
     const params: any = {};
     if (options.instructions !== undefined) params.instructions = options.instructions;
+    if ((options as any).background !== undefined) (params as any).background = (options as any).background;
+    if ((options as any).conversation !== undefined) (params as any).conversation = (options as any).conversation;
     // 核心调参字段
     if (options.temperature !== undefined) params.temperature = options.temperature;
     if (options.top_p !== undefined) params.top_p = options.top_p;
@@ -592,15 +613,20 @@ export class ProtocolAdapter {
     if (options.tools !== undefined) params.tools = options.tools;
     if (options.tool_choice !== undefined) params.tool_choice = options.tool_choice;
     if (options.parallel_tool_calls !== undefined) params.parallel_tool_calls = options.parallel_tool_calls;
+    if ((options as any).stream_options !== undefined) (params as any).stream_options = (options as any).stream_options;
+    if ((options as any).service_tier !== undefined) (params as any).service_tier = (options as any).service_tier;
     // 透传 MCP 配置（用于远程 MCP servers），与工具定义中的 type: 'mcp' 一起生效
     if ((options as any).mcp !== undefined) (params as any).mcp = (options as any).mcp;
     if (options.reasoning !== undefined) params.reasoning = options.reasoning;
+    if ((options as any).thinking !== undefined) (params as any).thinking = (options as any).thinking;
     if (options.text !== undefined) params.text = options.text;
     if (includePreviousResponseId && options.previous_response_id !== undefined) params.previous_response_id = options.previous_response_id;
+    if ((options as any).max_tool_calls !== undefined) (params as any).max_tool_calls = (options as any).max_tool_calls;
     if (options.truncation !== undefined) params.truncation = options.truncation;
     if (options.user !== undefined) params.user = options.user;
     if (options.include !== undefined) params.include = options.include;
     if ((options as any).prompt_cache_key !== undefined) (params as any).prompt_cache_key = (options as any).prompt_cache_key;
+    if ((options as any).safety_identifier !== undefined) (params as any).safety_identifier = (options as any).safety_identifier;
     return params;
   }
 
@@ -699,8 +725,8 @@ export class ProtocolAdapter {
       stream: true,
     };
 
-    // 添加 Responses API 支持的参数
-    Object.assign(requestParams, this.buildResponsesRequestParams(options, false));
+    // 添加 Responses API 支持的参数（允许 previous_response_id 以支持多轮衔接）
+    Object.assign(requestParams, this.buildResponsesRequestParams(options, true));
 
     // 构建请求选项
     const requestOptions: any = {};

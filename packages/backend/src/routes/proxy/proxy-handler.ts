@@ -236,12 +236,20 @@ function buildResponsesOptions(body: any, includePrevId: boolean, extractedSyste
     tools: body?.tools,
     tool_choice: body?.tool_choice,
     parallel_tool_calls: body?.parallel_tool_calls,
+    stream_options: body?.stream_options,
+    service_tier: body?.service_tier,
+    prompt_cache_key: body?.prompt_cache_key,
+    safety_identifier: body?.safety_identifier,
     mcp: body?.mcp,
     reasoning: body?.reasoning,
+    thinking: body?.thinking,
     text: body?.text,
     truncation: body?.truncation,
     user: body?.user,
     include: body?.include,
+    max_tool_calls: body?.max_tool_calls,
+    background: body?.background,
+    conversation: body?.conversation,
   };
   if (includePrevId && body?.previous_response_id) {
     options.previous_response_id = body.previous_response_id;
@@ -645,7 +653,7 @@ export async function handleStreamRequest(
       // Responses API 请求
       const input = (request.body as any)?.input;
       // 传递提取的系统提示到 buildResponsesOptions
-      const options = buildResponsesOptions((request.body as any), false, extractedSystemPrompt);
+      const options = buildResponsesOptions((request.body as any), true, extractedSystemPrompt);
 
       // 记录最终的 instructions 和 tools（用于调试）
       if (options.instructions) {
@@ -691,6 +699,15 @@ export async function handleStreamRequest(
         frequency_penalty: (request.body as any)?.frequency_penalty,
         presence_penalty: (request.body as any)?.presence_penalty,
         stop: (request.body as any)?.stop,
+        response_format: (request.body as any)?.response_format,
+        store: (request.body as any)?.store,
+        stream_options: (request.body as any)?.stream_options,
+        service_tier: (request.body as any)?.service_tier,
+        prompt_cache_key: (request.body as any)?.prompt_cache_key,
+        safety_identifier: (request.body as any)?.safety_identifier,
+        reasoning_effort: (request.body as any)?.reasoning_effort,
+        verbosity: (request.body as any)?.verbosity,
+        thinking: (request.body as any)?.thinking,
         tools: (request.body as any)?.tools,
         tool_choice: (request.body as any)?.tool_choice,
         parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
@@ -1063,6 +1080,14 @@ export async function handleNonStreamRequest(
       presence_penalty: (request.body as any)?.presence_penalty,
       stop: (request.body as any)?.stop,
       user: (request.body as any)?.user,
+      response_format: (request.body as any)?.response_format,
+      store: (request.body as any)?.store,
+      service_tier: (request.body as any)?.service_tier,
+      prompt_cache_key: (request.body as any)?.prompt_cache_key,
+      safety_identifier: (request.body as any)?.safety_identifier,
+      reasoning_effort: (request.body as any)?.reasoning_effort,
+      verbosity: (request.body as any)?.verbosity,
+      thinking: (request.body as any)?.thinking,
       tools: (request.body as any)?.tools,
       tool_choice: (request.body as any)?.tool_choice,
       parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
