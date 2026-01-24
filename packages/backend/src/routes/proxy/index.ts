@@ -2,7 +2,6 @@ import { FastifyInstance } from 'fastify';
 import { memoryLogger } from '../../services/logger.js';
 import { getModelsHandler, getModelInfoHandler } from './model-handlers.js';
 import { startCacheStatsLogger } from './cache.js';
-import { createProxyHandler } from './proxy-handler.js';
 
 interface RouteConfig {
   path: string;
@@ -22,26 +21,6 @@ const API_GROUPS: Record<string, ApiGroup> = {
       { path: '/model/info', method: 'GET', handler: 'getModelInfo' },
     ],
     withV1Prefix: true,
-  },
-  proxy: {
-    routes: [
-      { path: '/chat/completions', method: 'ALL', handler: 'proxy' },
-      { path: '/responses', method: 'ALL', handler: 'proxy' },
-      { path: '/completions', method: 'ALL', handler: 'proxy' },
-      { path: '/embeddings', method: 'ALL', handler: 'proxy' },
-      { path: '/audio/*', method: 'ALL', handler: 'proxy' },
-      { path: '/images/*', method: 'ALL', handler: 'proxy' },
-      { path: '/moderations', method: 'ALL', handler: 'proxy' },
-    ],
-    withV1Prefix: true,
-  },
-  gemini: {
-    routes: [
-      // Gemini API v1beta endpoints
-      { path: '/v1beta/models/*', method: 'ALL', handler: 'proxy' },
-      { path: '/v1beta/*', method: 'ALL', handler: 'proxy' },
-    ],
-    withV1Prefix: false,
   },
 };
 
@@ -72,13 +51,9 @@ export async function proxyRoutes(fastify: FastifyInstance) {
   const handlers: Record<string, any> = {
     getModels: getModelsHandler,
     getModelInfo: getModelInfoHandler,
-    proxy: createProxyHandler(),
   };
 
   registerApiGroup(fastify, API_GROUPS.models, handlers);
-  registerApiGroup(fastify, API_GROUPS.proxy, handlers);
-  registerApiGroup(fastify, API_GROUPS.gemini, handlers);
 
   startCacheStatsLogger();
 }
-

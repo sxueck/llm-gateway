@@ -169,7 +169,7 @@
       preset="card"
       :title="editingId ? t('expertRouting.editExpertRouting') : t('expertRouting.createExpertRouting')"
       class="expert-routing-modal"
-      :style="{ width: '90%', maxWidth: '1200px', maxHeight: '85vh' }"
+      :style="{ width: '95%', maxWidth: '1600px', maxHeight: '90vh' }"
       :segmented="{
         content: 'soft',
         footer: 'soft'
@@ -177,7 +177,7 @@
     >
       <div class="modal-content-wrapper">
         <ExpertRoutingEditor
-          v-if="showEditorModal"
+          v-if="renderEditor"
           :config="editingConfig"
           :editing-id="editingId"
           @save="handleSave"
@@ -213,7 +213,7 @@
 
 .modal-content-wrapper {
   /* 估算扣除卡片头部/内边距的高度，确保内容内部滚动而非撑破模态 */
-  max-height: calc(85vh - 160px);
+  max-height: calc(90vh - 160px);
   overflow-y: auto;
   overflow-x: hidden;
   padding: 16px 20px;
@@ -339,7 +339,7 @@
   }
 
   .modal-content-wrapper {
-    max-height: calc(85vh - 180px);
+    max-height: calc(90vh - 180px);
     overflow-y: auto;
     overflow-x: hidden;
     padding: 16px 20px;
@@ -384,7 +384,7 @@
 </style>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   useMessage,
@@ -416,11 +416,13 @@ import { expertRoutingApi, type ExpertRouting, type CreateExpertRoutingRequest }
 import ExpertRoutingEditor from '@/components/ExpertRoutingEditor.vue';
 import ExpertRoutingVisualization from '@/components/ExpertRoutingVisualization.vue';
 import ExpertRoutingStatistics from '@/components/ExpertRoutingStatistics.vue';
+import { useProviderStore } from '@/stores/provider';
 import { useModelStore } from '@/stores/model';
 import { createDefaultExpertRoutingConfig } from '@/utils/expert-routing';
 
 const { t } = useI18n();
 const message = useMessage();
+const providerStore = useProviderStore();
 const modelStore = useModelStore();
 
 const virtualModels = computed(() => {
@@ -439,6 +441,8 @@ const EXPERIMENTAL_ALERT_KEY = 'expert-routing-experimental-alert-closed';
 const configs = ref<ExpertRouting[]>([]);
 const loading = ref(false);
 const showEditorModal = ref(false);
+// Delay mounting the editor until after modal is visible to avoid jank during transition.
+const renderEditor = ref(false);
 const showStatisticsModal = ref(false);
 const editingId = ref<string | null>(null);
 const editingConfig = ref<CreateExpertRoutingRequest>(createDefaultExpertRoutingConfig());
@@ -540,6 +544,7 @@ function handleEdit(config: ExpertRouting) {
     description: config.description,
     enabled: config.enabled,
     classifier: config.config.classifier,
+    routing: config.config.routing,
     experts: config.config.experts,
     fallback: config.config.fallback,
   };
@@ -612,10 +617,28 @@ async function loadPreviewWidth() {
 }
 
 onMounted(async () => {
-  await modelStore.fetchModels(); // 获取所有模型数据
+  await Promise.all([
+    providerStore.fetchProviders(),
+    modelStore.fetchModels(),
+  ]);
   loadConfigs();
   loadPreviewWidth();
 });
-</script>
 
+watch(showEditorModal, async (show) => {
+  if (show) {
+    // Keep initial frame cheap so the modal animation stays smooth.
+    renderEditor.value = false;
+    await nextTick();
+    requestAnimationFrame(() => {
+      renderEditor.value = true;
+    });
+  } else {
+    // Unmount after the leave transition to avoid doing work during close.
+    window.setTimeout(() => {
+      renderEditor.value = false;
+    }, 250);
+  }
+});
+</script>
 

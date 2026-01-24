@@ -1,33 +1,16 @@
+
 import { nanoid } from 'nanoid';
-import { providerDb, modelDb, expertRoutingConfigDb, expertRoutingLogDb, routingConfigDb } from '../db/index.js';
+import { expertRoutingConfigDb, expertRoutingLogDb } from '../db/index.js';
 import { memoryLogger } from './logger.js';
-import { decryptApiKey } from '../utils/crypto.js';
 import { ExpertRoutingConfig } from '../types/index.js';
 import { ExpertTarget } from '../types/expert-routing.js';
-import { buildChatCompletionsEndpoint } from '../utils/api-endpoint-builder.js';
 import crypto from 'crypto';
 
-// 常量定义
-const DEFAULT_CLASSIFICATION_TIMEOUT = 10000;
-const DEFAULT_MAX_TOKENS = 100;
-
-interface ChatMessage {
-  role: string;
-  content: string | any;
-}
-
-interface ProxyRequest {
-  body?: {
-    messages?: ChatMessage[];
-    input?: string | any[]; // Responses API
-    instructions?: string; // Responses API
-    model?: string;
-    system?: string | any[];
-    [key: string]: any;
-  };
-  protocol?: 'openai' | 'anthropic';
-  [key: string]: any;
-}
+import { SignalBuilder } from './expert-router/preprocess/index.js';
+import { SemanticRouter } from './expert-router/decision/semantic.js';
+import { LLMJudge } from './expert-router/decision/llm-judge.js';
+import { resolveModelConfig, matchExpert } from './expert-router/resolve.js';
+import { RouteDecision, ProxyRequest } from './expert-router/types.js';
 
 interface RoutingContext {
   modelId?: string;
@@ -46,141 +29,10 @@ interface ExpertRoutingResult {
   expertModelId?: string;
 }
 
-interface ResolvedModel {
-  provider?: any;
-  providerId?: string;
-  modelOverride?: string;
-  expertType: 'virtual' | 'real';
-  expertName: string;
-  expertModelId?: string;
-}
-
-interface ClassifierModelResult {
-  provider: any;
-  model: string;
-}
-
-/**
- * 解析分类器模型配置，获取 provider 和 model
- */
-async function resolveClassifierModel(
-  classifierConfig: ExpertRoutingConfig['classifier']
-): Promise<ClassifierModelResult> {
-  let provider;
-  let model: string;
-
-  if (classifierConfig.type === 'virtual') {
-    const virtualModel = await modelDb.getById(classifierConfig.model_id!);
-    if (!virtualModel) {
-      throw new Error(
-        `Classifier virtual model not found: ${classifierConfig.model_id}`
-      );
-    }
-
-    if (virtualModel.routing_config_id) {
-      const routingConfig = await routingConfigDb.getById(virtualModel.routing_config_id);
-      if (!routingConfig) {
-        throw new Error(
-          `Routing config not found for classifier virtual model: ${virtualModel.routing_config_id}`
-        );
-      }
-
-      try {
-        const config = JSON.parse(routingConfig.config);
-        const { selectRoutingTarget } = await import('../routes/proxy/routing.js');
-
-        const selectedTarget = selectRoutingTarget(config, routingConfig.type, virtualModel.routing_config_id);
-
-        if (!selectedTarget) {
-          throw new Error(
-            `No available target in routing config for classifier virtual model "${virtualModel.name}"`
-          );
-        }
-
-        provider = await providerDb.getById(selectedTarget.provider);
-        if (!provider) {
-          throw new Error(
-            `Provider not found for routing target: ${selectedTarget.provider}`
-          );
-        }
-
-        model = selectedTarget.override_params?.model || virtualModel.model_identifier;
-      } catch (e: any) {
-        throw new Error(
-          `Failed to resolve routing config for classifier virtual model "${virtualModel.name}": ${e.message}`
-        );
-      }
-    } else if (virtualModel.expert_routing_id) {
-      throw new Error(
-        `Classifier virtual model "${virtualModel.name}" uses expert routing. ` +
-        `Expert routing models cannot be directly resolved as classifiers - they need to be resolved through the routing chain.`
-      );
-    } else if (virtualModel.provider_id) {
-      provider = await providerDb.getById(virtualModel.provider_id);
-      if (!provider) {
-        throw new Error(`Classifier provider not found for virtual model: ${virtualModel.provider_id}`);
-      }
-      model = virtualModel.model_identifier;
-    } else {
-      throw new Error(
-        `Classifier virtual model "${virtualModel.name}" (${classifierConfig.model_id}) has no provider or routing configured. ` +
-        `Please configure a provider, smart routing, or expert routing for this model.`
-      );
-    }
-  } else {
-    provider = await providerDb.getById(classifierConfig.provider_id!);
-    if (!provider) {
-      throw new Error('Classifier provider not found');
-    }
-    if (!classifierConfig.model) {
-      throw new Error('Classifier model not specified');
-    }
-    model = classifierConfig.model;
-  }
-
-  return { provider, model };
-}
-
-/**
- * 解析专家/降级模型配置
- */
-async function resolveModelConfig(
-  config: { type: 'virtual' | 'real'; model_id?: string; provider_id?: string; model?: string },
-  configType: string
-): Promise<ResolvedModel> {
-  let provider;
-  let modelOverride;
-  let expertType: 'virtual' | 'real' = config.type;
-  let expertName: string;
-  let expertModelId: string | undefined;
-
-  if (config.type === 'virtual') {
-    const virtualModel = await modelDb.getById(config.model_id!);
-    if (!virtualModel) {
-      throw new Error(`${configType} virtual model not found: ${config.model_id}`);
-    }
-    expertModelId = config.model_id;
-    expertName = virtualModel.name;
-  } else {
-    provider = await providerDb.getById(config.provider_id!);
-    if (!provider) {
-      throw new Error(`${configType} provider not found: ${config.provider_id}`);
-    }
-    modelOverride = config.model;
-    expertName = `${provider.name}/${config.model}`;
-  }
-
-  return {
-    provider,
-    providerId: config.provider_id,
-    modelOverride,
-    expertType,
-    expertName,
-    expertModelId,
-  };
-}
-
 export class ExpertRouter {
+  // Cache semantic routers per expertRoutingId to avoid re-initializing pipeline or index
+  private semanticRouters = new Map<string, SemanticRouter>();
+
   async route(
     request: ProxyRequest,
     expertRoutingId: string,
@@ -194,332 +46,147 @@ export class ExpertRouter {
     }
 
     const config: ExpertRoutingConfig = JSON.parse(expertRoutingConfig.config);
+    const routingMode = config.routing?.mode || 'hybrid'; // Default to hybrid if not set (or llm if strict backward compat needed? Plan says hybrid)
 
-    // 支持 Chat Completions API 和 Responses API（含 text 字段）
-    const bodyAny: any = request.body || {};
-    const hasMessages = Array.isArray(bodyAny.messages) && bodyAny.messages.length > 0;
-
-    let hasInput = false;
-    if ('input' in bodyAny) {
-      const v = bodyAny.input;
-      if (typeof v === 'string') {
-        hasInput = v.trim().length > 0;
-      } else if (Array.isArray(v)) {
-        hasInput = v.length > 0;
-      } else if (v && typeof v === 'object') {
-        hasInput = Object.keys(v).length > 0;
-      }
-    }
-
-    const hasText = typeof bodyAny.text === 'string' && bodyAny.text.trim().length > 0;
-
-    if (!hasMessages && !hasInput && !hasText) {
-      throw new Error('No messages or input/text in request');
-    }
-
-    let classificationResult;
+    // 1. Build Routing Signal
+    let signal;
     try {
-      classificationResult = await this.classify(request, config.classifier);
-    } catch (classifyError: any) {
-      memoryLogger.error(
-        `分类失败: ${classifyError.message}`,
-        'ExpertRouter'
-      );
-
-      if (config.fallback) {
-        memoryLogger.info('分类失败，触发降级策略', 'ExpertRouter');
-        return await this.resolveFallback(config.fallback, 'classification_failed', startTime, expertRoutingId, context);
-      }
-
-      throw classifyError;
+        signal = await SignalBuilder.buildRoutingSignal(request);
+    } catch (e: any) {
+        throw new Error(`Failed to build routing signal: ${e.message}`);
     }
 
-    const expert = this.selectExpert(classificationResult.category, config.experts);
+    if (!signal.intentText && signal.toolSignals.length === 0) {
+        throw new Error('No valid intent text or signals found in request');
+    }
+
+    let decision: RouteDecision | null = null;
+
+    // 2. L1 Semantic Router
+    if (!decision && (routingMode === 'semantic' || routingMode === 'hybrid')) {
+        try {
+            const l1Router = await this.getSemanticRouter(expertRoutingId, config);
+            if (l1Router) {
+                decision = await l1Router.decide(signal);
+                if (decision) {
+                    memoryLogger.debug(`L1 Semantic matched: ${decision.category} (score=${decision.confidence.toFixed(3)})`, 'ExpertRouter');
+                }
+            }
+        } catch (e: any) {
+            memoryLogger.warn(`L1 Semantic failed: ${e.message}`, 'ExpertRouter');
+        }
+    }
+
+    // 3. L2 LLM Judge (Fallback or Primary if mode=llm)
+    if (!decision) {
+        // If mode is strictly semantic, we might fail here?
+        // Plan says: "L1 uncertain -> L3". Even if mode is semantic?
+        // Usually 'semantic' mode implies ONLY semantic. But let's assume 'hybrid' is default and we want L3 fallback.
+        // If mode is 'semantic' and L1 failed, do we fall back to L3?
+        // Plan: "L1 返回不确定，交给 L3 兜底" (L1 returns uncertain, pass to L3).
+        // This implies L3 is the ultimate fallback unless explicitly disabled.
+        
+        if (routingMode !== 'semantic') { // If mode is 'semantic', we should probably NOT call LLM?
+                                        // But typically we want high availability.
+                                        // I'll assume if mode is 'semantic' we skip LLM. 
+                                        // But if mode is 'hybrid' or 'llm', we use LLM.
+             try {
+                 decision = await LLMJudge.decide(signal, config.classifier);
+                 memoryLogger.debug(`L2 LLM matched: ${decision.category}`, 'ExpertRouter');
+             } catch (e: any) {
+                 memoryLogger.error(`L3 LLM Judge failed: ${e.message}`, 'ExpertRouter');
+                 // If L3 fails, we go to global fallback below
+             }
+        }
+    }
+
+    if (!decision) {
+        memoryLogger.warn('All routing layers failed to determine category', 'ExpertRouter');
+        if (config.fallback) {
+            return await this.resolveFallback(config.fallback, 'routing_failed', startTime, expertRoutingId, context);
+        }
+        throw new Error('Routing failed and no fallback configured');
+    }
+
+    // 4. Select Expert
+    const expert = matchExpert(decision.category, config.experts);
+    
     if (!expert) {
       memoryLogger.warn(
-        `未找到匹配的专家: 分类结果="${classificationResult.category}"`,
+        `No expert found for category: "${decision.category}"`,
         'ExpertRouter'
       );
 
       if (config.fallback) {
-        return await this.resolveFallback(config.fallback, classificationResult.category, startTime, expertRoutingId, context);
+        return await this.resolveFallback(config.fallback, decision.category, startTime, expertRoutingId, context);
       }
 
-      throw new Error(`No expert found for category: ${classificationResult.category}`);
+      throw new Error(`No expert found for category: ${decision.category}`);
     }
 
     const classificationTime = Date.now() - startTime;
 
-    const result = await this.resolveExpert(
+    // 5. Resolve Expert
+    return await this.resolveExpert(
       expert,
-      classificationResult.category,
+      decision,
       classificationTime,
       expertRoutingId,
       context,
       request,
-      config.classifier,
-      classificationResult
+      config.classifier
     );
-
-    return result;
   }
 
-  private async classify(
-    request: ProxyRequest,
-    classifierConfig: ExpertRoutingConfig['classifier']
-  ): Promise<{
-    category: string;
-    classifierRequest: any;
-    classifierResponse: any;
-  }> {
-    const protocol = request.protocol || 'openai';
-    let lastUserMessage: string;
-    let conversationHistory: string = '';
-
-    // 检测是否为 Responses API 请求
-    if (request.body?.input !== undefined || typeof (request.body as any)?.text === 'string') {
-      // Responses API 格式
-      const input = (request.body as any).input ?? (request.body as any).text;
-      const instructions = (request.body as any).instructions;
-
-      // 提取输入内容
-      if (typeof input === 'string') {
-        lastUserMessage = input;
-      } else if (Array.isArray(input)) {
-        // 如果 input 是数组（Responses Items 形态），尽可能提取文本
-        const texts: string[] = [];
-        for (const item of input) {
-          if (!item || typeof item !== 'object') continue;
-
-          // 典型: { type: 'message', role: 'user', content: [ { type: 'input_text', text: '...' }, ... ] }
-          if (item.type === 'message' && Array.isArray(item.content)) {
-            for (const part of item.content) {
-              if (part && typeof part === 'object') {
-                if (part.type === 'input_text' && typeof part.text === 'string') {
-                  texts.push(part.text);
-                } else if (typeof part.text === 'string') {
-                  texts.push(part.text);
-                } else if (typeof part.content === 'string') {
-                  texts.push(part.content);
-                }
-              }
-            }
-          } else if (typeof item.text === 'string') {
-            texts.push(item.text);
+  private async getSemanticRouter(expertRoutingId: string, config: ExpertRoutingConfig): Promise<SemanticRouter | null> {
+      // Check if configured
+      if (!config.routing?.semantic?.routes || config.routing.semantic.routes.length === 0) {
+          // If no routes configured, we can't use semantic router
+          // Maybe we should check if we should clear existing router?
+          if (this.semanticRouters.has(expertRoutingId)) {
+              this.semanticRouters.delete(expertRoutingId);
           }
-        }
-        lastUserMessage = texts.join('\n').trim();
-        if (!lastUserMessage) {
-          lastUserMessage = JSON.stringify(input);
-        }
-      } else {
-        lastUserMessage = JSON.stringify(input);
+          return null;
       }
 
-    } else {
-      // Chat Completions API 格式
-      const messages = request.body?.messages || [];
-      const system = request.body?.system; // Anthropic 格式
-
-      let messagesToClassify = messages;
-
-      if (classifierConfig.max_messages_to_classify && classifierConfig.max_messages_to_classify > 0) {
-        messagesToClassify = messagesToClassify.slice(-classifierConfig.max_messages_to_classify);
-      }
-
-      if (classifierConfig.ignore_system_messages) {
-        messagesToClassify = messagesToClassify.filter(m => m.role !== 'system');
-      }
-
-      const { extractUserMessagesForClassification } = await import('../utils/message-extractor.js');
-      const extracted = extractUserMessagesForClassification(
-        messagesToClassify,
-        system
-      );
-      lastUserMessage = extracted.lastUserMessage;
-      conversationHistory = extracted.conversationHistory;
-    }
-
-    // 应用忽略标签过滤
-    let userPrompt = lastUserMessage;
-    if (classifierConfig.ignored_tags && classifierConfig.ignored_tags.length > 0) {
-      userPrompt = this.filterIgnoredTags(userPrompt, classifierConfig.ignored_tags);
-    }
-
-    // 验证模板格式并处理用户提示符
-    const { systemMessage, userMessageContent } = this.processPromptTemplate(
-      classifierConfig.prompt_template,
-      userPrompt
-    );
-
-    // 组装完整的用户消息（包含历史和最新输入）
-    const userMessageWithHistory = conversationHistory
-      ? `${conversationHistory}\n\n---\nLatest User Prompt:\n${userMessageContent}`
-      : userMessageContent;
-
-    const classificationRequest: any = {
-      messages: [
-        { role: 'system', content: systemMessage },
-        { role: 'user', content: userMessageWithHistory }
-      ],
-      temperature: classifierConfig.temperature ?? 0.0
-    };
-
-    if (classifierConfig.max_tokens !== 0) {
-      classificationRequest.max_tokens = classifierConfig.max_tokens || DEFAULT_MAX_TOKENS;
-    }
-
-    // 添加结构化输出支持
-    if (classifierConfig.enable_structured_output) {
-      classificationRequest.response_format = { type: 'json_object' };
+      let router = this.semanticRouters.get(expertRoutingId);
       
-      // 确保系统提示词包含 JSON 输出指引
-      if (!systemMessage.toLowerCase().includes('json')) {
-        memoryLogger.warn(
-          '启用结构化输出但系统提示词中未包含 "json" 关键词，可能导致 API 错误',
-          'ExpertRouter'
-        );
+      // TODO: Check if config hash changed to trigger rebuild.
+      // For now, we assume if it exists we use it. 
+      // Ideally we need a way to detect config updates.
+      // A simple way is to store the routes hash/length with the router?
+      
+      if (!router) {
+          router = new SemanticRouter({
+              model: config.routing.semantic.model || 'bge-small-zh-v1.5',
+              routes: config.routing.semantic.routes,
+              threshold: config.routing.semantic.threshold,
+              margin: config.routing.semantic.margin
+          });
+          this.semanticRouters.set(expertRoutingId, router);
+          // Async init (don't await if we want to not block? But first request needs it?)
+          // Plan says "Warmup async... L1 returns uncertain if not ready".
+          // So we call init and return the router. Router.decide will check isReady.
+          router.init().catch(e => {
+              memoryLogger.error(`Async init of SemanticRouter failed: ${e.message}`, 'ExpertRouter');
+          });
       }
-    }
-
-    // 使用提取的函数解析分类器模型
-    const resolvedModel = await resolveClassifierModel(classifierConfig);
-    const { provider, model } = resolvedModel;
-
-    const apiKey = decryptApiKey(provider.api_key);
-    const endpoint = buildChatCompletionsEndpoint(provider.base_url);
-
-    const fullClassifierRequest = {
-      ...classificationRequest,
-      model: model
-    };
-
-    let response;
-    try {
-      response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(fullClassifierRequest),
-        signal: AbortSignal.timeout(classifierConfig.timeout || DEFAULT_CLASSIFICATION_TIMEOUT)
-      });
-    } catch (fetchError: any) {
-      throw new Error(`Classification request failed: ${fetchError.message}`);
-    }
-
-    if (!response.ok) {
-      let errorDetail = '';
-      try {
-        const errorBody = await response.text();
-        errorDetail = errorBody.length > 200
-          ? errorBody.substring(0, 200)
-          : errorBody;
-      } catch (e) {
-        errorDetail = response.statusText;
-      }
-
-      throw new Error(`Classification failed: HTTP ${response.status} - ${errorDetail}`);
-    }
-
-    const result = await response.json() as any;
-
-    const rawContent = result.choices?.[0]?.message?.content?.trim();
-    if (!rawContent) {
-      throw new Error('Empty classification result from classifier');
-    }
-
-    let category: string;
-    try {
-      const cleanedContent = this.cleanMarkdownCodeBlock(rawContent);
-      const normalizedContent = this.normalizeJsonQuotes(cleanedContent);
-      const parsedJson = JSON.parse(normalizedContent);
-      category = parsedJson.type;
-
-      if (!category) {
-        throw new Error('Missing "type" field in JSON response');
-      }
-    } catch (parseError: any) {
-      memoryLogger.error(
-        `分类器返回的内容不是有效的 JSON 格式: ${rawContent}`,
-        'ExpertRouter'
-      );
-      throw new Error(
-        `Classifier must return valid JSON format with "type" field. ` +
-        `Expected: {"type": "category_name"}. ` +
-        `Received: ${rawContent.substring(0, 100)}${rawContent.length > 100 ? '...' : ''}`
-      );
-    }
-
-    return {
-      category,
-      classifierRequest: fullClassifierRequest,
-      classifierResponse: result
-    };
-  }
-
-  private selectExpert(
-    category: string,
-    experts: ExpertTarget[]
-  ): ExpertTarget | null {
-    const normalizedCategory = category.trim().toLowerCase();
-
-    const exactMatch = experts.find(
-      e => e.category.trim().toLowerCase() === normalizedCategory
-    );
-
-    if (exactMatch) {
-      memoryLogger.debug(
-        `专家匹配成功: 分类="${category}" → 专家="${exactMatch.category}"`,
-        'ExpertRouter'
-      );
-      return exactMatch;
-    }
-
-    const partialMatch = experts.find(
-      e => {
-        const expertCategory = e.category.trim().toLowerCase();
-        return normalizedCategory.includes(expertCategory) || expertCategory.includes(normalizedCategory);
-      }
-    );
-
-    if (partialMatch) {
-      memoryLogger.debug(
-        `专家部分匹配成功: 分类="${category}" → 专家="${partialMatch.category}"`,
-        'ExpertRouter'
-      );
-      return partialMatch;
-    }
-
-    memoryLogger.warn(
-      `未找到匹配的专家: 分类="${category}" | 可用专家: ${experts.map(e => e.category).join(', ')}`,
-      'ExpertRouter'
-    );
-
-    return null;
+      
+      return router;
   }
 
   private async resolveExpert(
     expert: ExpertTarget,
-    category: string,
+    decision: RouteDecision,
     classificationTime: number,
     expertRoutingId: string,
     context: RoutingContext,
     request: ProxyRequest,
-    classifierConfig: ExpertRoutingConfig['classifier'],
-    classificationResult: {
-      category: string;
-      classifierRequest: any;
-      classifierResponse: any;
-    }
+    classifierConfig: ExpertRoutingConfig['classifier']
   ): Promise<ExpertRoutingResult> {
     const resolved = await resolveModelConfig(expert, 'Expert');
-
     const requestHash = this.generateRequestHash(request);
-
-    // 使用统一的分类器模型名称生成逻辑
-    const classifierModelName = this.generateClassifierModelName(classifierConfig);
+    const classifierModelName = this.generateClassifierModelName(classifierConfig, decision);
 
     await expertRoutingLogDb.create({
       id: nanoid(),
@@ -527,7 +194,7 @@ export class ExpertRouter {
       expert_routing_id: expertRoutingId,
       request_hash: requestHash,
       classifier_model: classifierModelName,
-      classification_result: category,
+      classification_result: decision.category,
       selected_expert_id: expert.id,
       selected_expert_type: expert.type,
       selected_expert_name: resolved.expertName,
@@ -538,15 +205,15 @@ export class ExpertRouter {
         (request.body as any)?.text ??
         []
       ),
-      classifier_request: JSON.stringify(classificationResult.classifierRequest),
-      classifier_response: JSON.stringify(classificationResult.classifierResponse),
+      classifier_request: decision.source === 'l3_llm' ? JSON.stringify(decision.metadata?.classifierRequest) : decision.source,
+      classifier_response: JSON.stringify(decision.metadata || {}),
     });
 
     return {
       provider: resolved.provider!,
       providerId: expert.provider_id!,
       modelOverride: resolved.modelOverride,
-      category,
+      category: decision.category,
       expert,
       classificationTime,
       expertType: resolved.expertType,
@@ -591,121 +258,37 @@ export class ExpertRouter {
   }
 
   private generateRequestHash(request: ProxyRequest): string {
-    // 支持 Chat Completions API 和 Responses API
     const body: any = request.body || {};
     let content: string;
     if (body.input !== undefined || typeof body.text === 'string') {
-      // Responses API: 使用 input/text 作为哈希源
       content = JSON.stringify({
         input: body.input ?? body.text,
         instructions: body.instructions
       });
     } else {
-      // Chat Completions API: 使用 messages
       const messages = body.messages || [];
       content = JSON.stringify(messages);
     }
     return crypto.createHash('md5').update(content).digest('hex');
   }
 
-  private cleanMarkdownCodeBlock(content: string): string {
-    let cleaned = content.trim();
-
-    const jsonBlockPattern = /^```(?:json)?\s*\n?([\s\S]*?)\n?```$/;
-    const match = cleaned.match(jsonBlockPattern);
-
-    if (match) {
-      cleaned = match[1].trim();
+  private generateClassifierModelName(
+      classifierConfig: ExpertRoutingConfig['classifier'],
+      decision: RouteDecision
+  ): string {
+    if (decision.source === 'l1_semantic') {
+        return `semantic/${decision.metadata?.model || 'default'}`;
     }
-
-    return cleaned;
-  }
-
-  private normalizeJsonQuotes(content: string): string {
-    return content.replace(/'/g, '"');
-  }
-
-  private filterIgnoredTags(text: string, ignoredTags: string[]): string {
-    let filteredText = text;
-
-    for (const tag of ignoredTags) {
-      const tagName = tag.trim();
-      if (!tagName) continue;
-
-      const openTag = `<${tagName}>`;
-      const closeTag = `</${tagName}>`;
-      const regex = new RegExp(`${this.escapeRegex(openTag)}[\\s\\S]*?${this.escapeRegex(closeTag)}`, 'g');
-
-      filteredText = filteredText.replace(regex, '').trim();
+    if (decision.source === 'l2_heuristic') {
+        return 'heuristic';
     }
-
-    return filteredText.trim();
-  }
-
-  private escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-  /**
-   * 生成分类器模型名称（用于日志记录）
-   */
-  private generateClassifierModelName(classifierConfig: ExpertRoutingConfig['classifier']): string {
+    // L3
     if (classifierConfig.type === 'virtual') {
       return classifierConfig.model_id!;
     } else {
       return `${classifierConfig.provider_id}/${classifierConfig.model}`;
     }
   }
-
-  /**
-   * 处理提示词模板，分离系统消息和用户消息
-   */
-  private processPromptTemplate(promptTemplate: string, userPrompt: string): {
-    systemMessage: string;
-    userMessageContent: string;
-  } {
-    // 检查是否包含用户提示符标记
-    const userPromptMarkers = [
-      '---\nUser Prompt:\n{{USER_PROMPT}}\n---',
-      '---\nUser Prompt:\n{{user_prompt}}\n---',
-      '{{USER_PROMPT}}',
-      '{{user_prompt}}'
-    ];
-
-    for (const marker of userPromptMarkers) {
-      if (promptTemplate.includes(marker)) {
-        const parts = promptTemplate.split(marker);
-
-        if (parts.length !== 2) {
-          throw new Error(`Invalid prompt template format: marker "${marker}" appears ${parts.length - 1} times, expected exactly once`);
-        }
-
-        const systemMessage = parts[0].trim();
-
-        if (!systemMessage) {
-          throw new Error(`Invalid prompt template format: marker "${marker}" is at the beginning, no system message found`);
-        }
-
-        return {
-          systemMessage: systemMessage,
-          userMessageContent: userPrompt
-        };
-      }
-    }
-
-    // 如果没有找到标记，假设整个模板都是系统消息
-    memoryLogger.warn(
-      'No user prompt marker found in template, treating entire template as system message',
-      'ExpertRouter'
-    );
-    
-    return {
-      systemMessage: promptTemplate.trim(),
-      userMessageContent: userPrompt
-    };
-  }
-
 }
 
 export const expertRouter = new ExpertRouter();
-

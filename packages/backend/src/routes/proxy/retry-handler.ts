@@ -99,7 +99,7 @@ export async function handleNonStreamRetry(
   }
 
   // 重新发起非流式请求
-  const { handleNonStreamRequest } = await import('./proxy-handler.js');
+  const { handleNonStreamRequest } = await import('../openai/proxy-handler.js');
   await handleNonStreamRequest(
     request,
     reply,
@@ -199,7 +199,7 @@ export async function handleStreamRetry(
   }
 
   // 重新发起流式请求
-  const { handleStreamRequest } = await import('./proxy-handler.js');
+  const { handleStreamRequest } = await import('../openai/proxy-handler.js');
   await handleStreamRequest(
     request,
     reply,

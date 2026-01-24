@@ -14,7 +14,7 @@ web/dist/
 **/tsconfig.tsbuildinfo
 
 # Database
-data/
+./data/
 *.db
 *.db-shm
 *.db-wal
@@ -63,3 +63,8 @@ CLAUDE.md
 .opencode/oh-my-opencode.json
 .prettierrc
 NUL
+packages/backend/tsconfig.tsbuildinfo
+data/gateway.db.backup.1763646961893
+data/litellm-presets.json
+data/model-presets.json
+data/backup/gateway.db.backup.2025-10-28T11-57-10-012Z

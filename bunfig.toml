@@ -16,4 +16,4 @@ shell = "bun"
 # 测试超时时间（毫秒）
 timeout = 5000
 # 预加载文件
-preload = []
+# preload = []

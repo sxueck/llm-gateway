@@ -36,7 +36,16 @@ export interface FallbackConfig {
 }
 
 export interface ExpertRoutingConfig {
-  classifier: ClassifierConfig;
+  classifier: ClassifierConfig; // L3: LLM Judge
+  routing?: {
+    mode?: 'pipeline'; // 强制为流水线模式
+    semantic?: { // L1: Semantic
+      model?: 'bge-small-zh-v1.5' | 'all-MiniLM-L6-v2';
+      threshold?: number;
+      margin?: number;
+      routes?: { category: string; utterances: string[] }[];
+    };
+  };
   experts: ExpertTarget[];
   fallback?: FallbackConfig;
 }
@@ -64,6 +73,7 @@ export interface CreateExpertRoutingRequest {
   description?: string;
   enabled?: boolean;
   classifier: ClassifierConfig;
+  routing?: ExpertRoutingConfig['routing'];
   experts: ExpertTarget[];
   fallback?: FallbackConfig;
   createVirtualModel?: boolean;
@@ -76,6 +86,7 @@ export interface UpdateExpertRoutingRequest {
   description?: string;
   enabled?: boolean;
   classifier?: ClassifierConfig;
+  routing?: ExpertRoutingConfig['routing'];
   experts?: ExpertTarget[];
   fallback?: FallbackConfig;
 }
@@ -172,4 +183,3 @@ export const expertRoutingApi = {
     return request.get('/admin/expert-routing/preferences/preview-width');
   },
 };
-

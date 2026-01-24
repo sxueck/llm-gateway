@@ -95,6 +95,15 @@ export interface ExpertRoutingConfig {
     ignored_tags?: string[];
     enable_structured_output?: boolean;
   };
+  routing?: {
+    mode?: 'llm' | 'semantic' | 'hybrid';
+    semantic?: {
+      model?: 'bge-small-zh-v1.5' | 'all-MiniLM-L6-v2';
+      threshold?: number;
+      margin?: number;
+      routes?: { category: string; utterances: string[] }[];
+    };
+  };
   experts: import('./expert-routing.js').ExpertTarget[];
   fallback?: {
     type: 'virtual' | 'real';

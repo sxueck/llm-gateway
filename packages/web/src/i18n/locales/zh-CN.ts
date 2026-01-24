@@ -434,6 +434,59 @@ export default {
     modelIdRequired: '请输入模型标识符',
   },
   expertRouting: {
+    // New Steps
+    stepDefineExperts: '定义专家',
+    stepDefineExpertsDesc: '配置有哪些专家以及他们的典型意图',
+    stepConfigurePipeline: '配置流水线',
+    stepConfigurePipelineDesc: '调整语义路由和 AI 判决策略',
+    stepReview: '回顾与完成',
+    stepReviewDesc: '确认配置并设置兜底策略',
+    
+    expertsConfigHint: '在这里定义所有可用的专家模型。点击“添加专家”并为每个专家提供“典型问题示例”，这将自动训练语义路由层。',
+    pipelineConfig: '路由流水线配置',
+    pipelineConfigHint: '请求将依次通过以下两层过滤，直到匹配成功。',
+
+    // Pipeline Layer 1
+    layer1Title: 'L1: 语义路由 (Semantic)',
+    layer1Tooltip: '最快。根据用户的自然语言与专家的“典型示例”进行向量相似度匹配。',
+    layer1Desc: '如果用户的问题与某个专家的示例非常相似（超过阈值），将直接路由，无需调用大模型。',
+    
+    // Pipeline Layer 2
+    layer2Title: 'L2: 大模型判决 (LLM Judge)',
+    layer2Tooltip: '最准。调用 LLM 进行最终的意图分析和分发。',
+    layer2Desc: '如果语义层未命中，将调用此 LLM 进行最终的意图分析和分发。',
+    ifNoMatch: '未匹配，进入下一层',
+
+    // Pipeline Layer 3 (legacy)
+    layer3Title: 'L3: 大模型判决 (LLM Judge)',
+    layer3Desc: '如果前两层都未命中，将调用此 LLM 进行最终的意图分析和分发。',
+    advancedLLMConfig: '高级 LLM 配置',
+    
+    // Review
+    reviewConfig: '配置回顾',
+    semanticExamplesCount: '语义示例总数',
+
+    decisionStrategy: '决策策略',
+    routingMode: '路由模式',
+    modeLLM: 'LLM 判决 (默认)',
+    modeSemantic: '语义路由 (L1)',
+    modeHybrid: '混合模式 (L1 + L3)',
+    semanticConfig: '语义路由配置',
+    semanticModel: 'Embedding 模型',
+    threshold: '相似度阈值',
+    thresholdHint: '余弦相似度阈值 (0-1)，越高越严格',
+    margin: '置信区间 (Margin)',
+    marginHint: 'Top1与Top2的最小分差，低于此值视为模棱两可',
+    llmClassifierConfig: 'LLM 分类器配置',
+    semanticUtterances: '语义示例 (Utterances)',
+    semanticUtterancesPlaceholder: '输入该类别的典型用户指令，每行一条...',
+    semanticUtterancesHint: '这些示例将被转换为向量，用于与用户输入进行相似度匹配',
+    selectExpertTemplate: '选择专家模板',
+    selectTemplateTitle: '选择预设模板',
+    selectTemplateDesc: '从预设的意图类型中选择，快速创建专家；或从空白开始自定义配置。',
+    customTemplate: '自定义专家',
+    customTemplateDesc: '从头开始创建一个新的专家配置',
+    examples: '示例',
     title: '专家路由',
     subtitle: '通过分类模型智能识别请求类型,将请求路由到专门的专家模型',
     createExpertRouting: '创建专家路由',
@@ -444,6 +497,7 @@ export default {
     classifierConfig: '分类器配置',
     expertsConfig: '专家配置',
     fallbackStrategy: '降级策略',
+    fallbackDesc: '当专家路由中的所有步骤（语义匹配、LLM判决）都未能命中或执行失败时，将使用此兜底模型进行处理。',
     createSmartRouting: '创建智能路由',
     configName: '配置名称',
     configNamePlaceholder: '例如: 客服专家路由',

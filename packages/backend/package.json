@@ -17,13 +17,14 @@
     "fix:db": "bun run scripts/fix-database.js"
   },
   "dependencies": {
-    "@llm-gateway/shared": "workspace:*",
     "@anthropic-ai/sdk": "^0.71.0",
     "@aws-sdk/client-s3": "^3.940.0",
     "@fastify/cors": "^11.1.0",
     "@fastify/jwt": "^10.0.0",
     "@fastify/static": "^8.0.2",
     "@google/generative-ai": "^0.24.1",
+    "@llm-gateway/shared": "workspace:*",
+    "@xenova/transformers": "^2.17.2",
     "dotenv": "^17.2.3",
     "fastify": "^5.2.0",
     "ip2region": "^2.3.0",

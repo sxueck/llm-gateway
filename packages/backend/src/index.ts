@@ -14,6 +14,8 @@ import { configRoutes } from './routes/config.js';
 import { publicConfigRoutes } from './routes/public-config.js';
 import { proxyRoutes } from './routes/proxy.js';
 import { anthropicRoutes } from './routes/anthropic.js';
+import { openaiRoutes } from './routes/openai.js';
+import { geminiRoutes } from './routes/gemini.js';
 import { modelPresetsRoutes } from './routes/model-presets.js';
 import { expertRoutingRoutes } from './routes/expert-routing.js';
 import { healthRoutes } from './routes/health.js';
@@ -142,6 +144,8 @@ fastify.get('/health', async () => {
 
 await fastify.register(proxyRoutes);
 await fastify.register(anthropicRoutes);
+await fastify.register(openaiRoutes);
+await fastify.register(geminiRoutes);
 await fastify.register(authRoutes, { prefix: '/api/auth' });
 await fastify.register(publicConfigRoutes, { prefix: '/api/public' });
 await fastify.register(providerRoutes, { prefix: '/api/admin/providers' });

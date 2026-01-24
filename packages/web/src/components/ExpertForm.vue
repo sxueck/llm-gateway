@@ -61,6 +61,20 @@
       <n-form-item :label="t('expertRouting.expertColor')">
         <n-color-picker v-model:value="formValue.color" :modes="['hex']" />
       </n-form-item>
+
+      <n-form-item v-if="showUtterances" :label="t('expertRouting.semanticUtterances')">
+        <n-input
+          v-model:value="utterancesText"
+          type="textarea"
+          :rows="5"
+          :placeholder="t('expertRouting.semanticUtterancesPlaceholder')"
+        />
+        <template #feedback>
+          <n-text depth="3" style="font-size: 12px">
+            {{ t('expertRouting.semanticUtterancesHint') }}
+          </n-text>
+        </template>
+      </n-form-item>
     </n-form>
 
     <n-space justify="end" style="margin-top: 16px">
@@ -83,6 +97,7 @@ import {
   NColorPicker,
   NSpace,
   NButton,
+  NText,
 } from 'naive-ui';
 import { useModelStore } from '@/stores/model';
 import type { ExpertTarget } from '@/api/expert-routing';
@@ -92,17 +107,20 @@ const modelStore = useModelStore();
 
 interface Props {
   expert: ExpertTarget;
+  utterances?: string[];
+  showUtterances?: boolean;
   providerOptions?: Array<{ label: string; value: string }>;
   virtualModelOptions?: Array<{ label: string; value: string }>;
 }
 
 const props = defineProps<Props>();
 const emit = defineEmits<{
-  save: [expert: ExpertTarget];
+  save: [expert: ExpertTarget, utterances: string[]];
   cancel: [];
 }>();
 
 const formValue = ref<ExpertTarget>({ ...props.expert });
+const utterancesText = ref(props.utterances?.join('\n') || '');
 
 const providerModelOptions = computed(() => {
   if (!formValue.value.provider_id) {
@@ -121,12 +139,20 @@ function handleProviderChange() {
 }
 
 function handleSave() {
-  emit('save', formValue.value);
+  const utterances = utterancesText.value
+    .split('\n')
+    .map(u => u.trim())
+    .filter(u => u.length > 0);
+  emit('save', formValue.value, utterances);
 }
 
 watch(() => props.expert, (newExpert) => {
   formValue.value = { ...newExpert };
 }, { deep: true });
+
+watch(() => props.utterances, (newUtterances) => {
+  utterancesText.value = newUtterances?.join('\n') || '';
+});
 </script>
 
 <style scoped>
