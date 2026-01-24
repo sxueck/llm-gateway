@@ -7,6 +7,7 @@ export interface ExpertTarget {
   model?: string;
   description?: string;
   color?: string;
+  system_prompt?: string;
 }
 
 export interface ClassifierConfig {
@@ -47,4 +48,3 @@ export interface ResolvedModelInfo {
   expertName: string;
   expertModelId?: string;
 }
-

@@ -441,6 +441,8 @@ export async function resolveExpertRouting(
       request.body.model = result.modelOverride;
     }
 
+
+
     // 对于 real 类型的专家，尝试获取模型信息
     let resolvedModel;
     if (result.expertType === 'real' && result.providerId && result.modelOverride) {

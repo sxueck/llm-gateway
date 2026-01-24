@@ -1,80 +1,106 @@
 <template>
-  <div>
+  <div class="expert-form">
     <n-form :model="formValue" label-placement="left" :label-width="120">
-      <n-form-item :label="t('expertRouting.expertCategory')" required>
-        <n-input
-          v-model:value="formValue.category"
-          :placeholder="t('expertRouting.expertCategoryPlaceholder')"
-        />
-      </n-form-item>
+      <n-tabs type="line" animated>
+        <!-- Tab 1: Basic Information -->
+        <n-tab-pane name="basic" :tab="t('expertRouting.basicInfo')">
+          <n-form-item :label="t('expertRouting.expertCategory')" required>
+            <n-input
+              v-model:value="formValue.category"
+              :placeholder="t('expertRouting.expertCategoryPlaceholder')"
+            />
+          </n-form-item>
 
-      <n-form-item :label="t('expertRouting.modelType')" required>
-        <n-radio-group v-model:value="formValue.type" class="model-type-radio">
-          <n-space :size="16">
-            <n-radio value="virtual">{{ t('expertRouting.virtualModel') }}</n-radio>
-            <n-radio value="real">{{ t('expertRouting.realModel') }}</n-radio>
-          </n-space>
-        </n-radio-group>
-      </n-form-item>
+          <n-form-item :label="t('expertRouting.expertCriteria')">
+            <n-input
+              v-model:value="formValue.system_prompt"
+              type="textarea"
+              :rows="4"
+              :placeholder="t('expertRouting.expertCriteriaPlaceholder')"
+            />
+            <template #feedback>
+              <n-text depth="3" style="font-size: 12px">
+                {{ t('expertRouting.expertCriteriaHint') }}
+              </n-text>
+            </template>
+          </n-form-item>
 
-      <n-form-item
-        v-if="formValue.type === 'virtual'"
-        :label="t('expertRouting.virtualModel')"
-        required
-      >
-        <n-select
-          v-model:value="formValue.model_id"
-          :options="virtualModelOptions"
-          :placeholder="t('expertRouting.selectVirtualModel')"
-        />
-      </n-form-item>
+          <n-form-item :label="t('expertRouting.modelType')" required>
+            <n-radio-group v-model:value="formValue.type" class="model-type-radio">
+              <n-space :size="16">
+                <n-radio value="virtual">{{ t('expertRouting.virtualModel') }}</n-radio>
+                <n-radio value="real">{{ t('expertRouting.realModel') }}</n-radio>
+              </n-space>
+            </n-radio-group>
+          </n-form-item>
 
-      <template v-else>
-        <n-form-item :label="t('expertRouting.selectProvider')" required>
-          <n-select
-            v-model:value="formValue.provider_id"
-            :options="providerOptions"
-            :placeholder="t('expertRouting.selectProvider')"
-            @update:value="handleProviderChange"
-          />
-        </n-form-item>
-        <n-form-item :label="t('expertRouting.modelName')" required>
-          <n-select
-            v-model:value="formValue.model"
-            :options="providerModelOptions"
-            :placeholder="t('expertRouting.selectModel')"
-            :disabled="!formValue.provider_id"
-            filterable
-          />
-        </n-form-item>
-      </template>
+          <n-form-item
+            v-if="formValue.type === 'virtual'"
+            :label="t('expertRouting.virtualModel')"
+            required
+          >
+            <n-select
+              v-model:value="formValue.model_id"
+              :options="virtualModelOptions"
+              :placeholder="t('expertRouting.selectVirtualModel')"
+            />
+          </n-form-item>
 
-      <n-form-item :label="t('expertRouting.expertDescription')">
-        <n-input
-          v-model:value="formValue.description"
-          type="textarea"
-          :rows="3"
-          :placeholder="t('expertRouting.expertDescriptionPlaceholder')"
-        />
-      </n-form-item>
+          <template v-else>
+            <n-form-item :label="t('expertRouting.selectProvider')" required>
+              <n-select
+                v-model:value="formValue.provider_id"
+                :options="providerOptions"
+                :placeholder="t('expertRouting.selectProvider')"
+                @update:value="handleProviderChange"
+              />
+            </n-form-item>
+            <n-form-item :label="t('expertRouting.modelName')" required>
+              <n-select
+                v-model:value="formValue.model"
+                :options="providerModelOptions"
+                :placeholder="t('expertRouting.selectModel')"
+                :disabled="!formValue.provider_id"
+                filterable
+              />
+            </n-form-item>
+          </template>
 
-      <n-form-item :label="t('expertRouting.expertColor')">
-        <n-color-picker v-model:value="formValue.color" :modes="['hex']" />
-      </n-form-item>
+          <n-form-item :label="t('expertRouting.expertDescription')">
+            <n-input
+              v-model:value="formValue.description"
+              type="textarea"
+              :rows="3"
+              :placeholder="t('expertRouting.expertDescriptionPlaceholder')"
+            />
+          </n-form-item>
 
-      <n-form-item v-if="showUtterances" :label="t('expertRouting.semanticUtterances')">
-        <n-input
-          v-model:value="utterancesText"
-          type="textarea"
-          :rows="5"
-          :placeholder="t('expertRouting.semanticUtterancesPlaceholder')"
-        />
-        <template #feedback>
-          <n-text depth="3" style="font-size: 12px">
-            {{ t('expertRouting.semanticUtterancesHint') }}
-          </n-text>
-        </template>
-      </n-form-item>
+          <n-form-item :label="t('expertRouting.expertColor')">
+            <n-color-picker v-model:value="formValue.color" :modes="['hex']" />
+          </n-form-item>
+        </n-tab-pane>
+
+        <!-- Tab 2: Semantics (Utterances) -->
+        <n-tab-pane
+          v-if="showUtterances"
+          name="semantics"
+          :tab="t('expertRouting.semanticUtterances')"
+        >
+          <n-form-item :show-label="false">
+            <n-input
+              v-model:value="utterancesText"
+              type="textarea"
+              :rows="15"
+              :placeholder="t('expertRouting.semanticUtterancesPlaceholder')"
+            />
+            <template #feedback>
+              <n-text depth="3" style="font-size: 12px">
+                {{ t('expertRouting.semanticUtterancesHint') }}
+              </n-text>
+            </template>
+          </n-form-item>
+        </n-tab-pane>
+      </n-tabs>
     </n-form>
 
     <n-space justify="end" style="margin-top: 16px">
@@ -98,6 +124,8 @@ import {
   NSpace,
   NButton,
   NText,
+  NTabs,
+  NTabPane,
 } from 'naive-ui';
 import { useModelStore } from '@/stores/model';
 import type { ExpertTarget } from '@/api/expert-routing';
@@ -156,6 +184,10 @@ watch(() => props.utterances, (newUtterances) => {
 </script>
 
 <style scoped>
+.expert-form {
+  padding-bottom: 24px;
+}
+
 :deep(.model-type-radio .n-radio) {
   padding: 8px 16px;
   border: 1px solid #e0e0e0;
@@ -183,4 +215,3 @@ watch(() => props.utterances, (newUtterances) => {
   height: 18px;
 }
 </style>
-

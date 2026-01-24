@@ -46,12 +46,13 @@ export class ExpertRouter {
     }
 
     const config: ExpertRoutingConfig = JSON.parse(expertRoutingConfig.config);
-    const routingMode = config.routing?.mode || 'hybrid'; // Default to hybrid if not set (or llm if strict backward compat needed? Plan says hybrid)
+    // UI uses 'pipeline' to represent the multi-layer flow; treat it as 'hybrid' at runtime.
+    const routingMode = (config.routing?.mode === 'pipeline' ? 'hybrid' : config.routing?.mode) || 'hybrid';
 
     // 1. Build Routing Signal
     let signal;
     try {
-        signal = await SignalBuilder.buildRoutingSignal(request);
+        signal = await SignalBuilder.buildRoutingSignal(request, config.preprocessing);
     } catch (e: any) {
         throw new Error(`Failed to build routing signal: ${e.message}`);
     }
@@ -90,20 +91,20 @@ export class ExpertRouter {
                                         // But typically we want high availability.
                                         // I'll assume if mode is 'semantic' we skip LLM. 
                                         // But if mode is 'hybrid' or 'llm', we use LLM.
-             try {
-                 decision = await LLMJudge.decide(signal, config.classifier);
-                 memoryLogger.debug(`L2 LLM matched: ${decision.category}`, 'ExpertRouter');
-             } catch (e: any) {
-                 memoryLogger.error(`L3 LLM Judge failed: ${e.message}`, 'ExpertRouter');
-                 // If L3 fails, we go to global fallback below
-             }
+              try {
+                  decision = await LLMJudge.decide(signal, config.classifier, config.experts);
+                  memoryLogger.debug(`L2 LLM matched: ${decision.category}`, 'ExpertRouter');
+              } catch (e: any) {
+                  memoryLogger.error(`L3 LLM Judge failed: ${e.message}`, 'ExpertRouter');
+                  // If L3 fails, we go to global fallback below
+              }
         }
     }
 
     if (!decision) {
         memoryLogger.warn('All routing layers failed to determine category', 'ExpertRouter');
         if (config.fallback) {
-            return await this.resolveFallback(config.fallback, 'routing_failed', startTime, expertRoutingId, context);
+            return await this.resolveFallback(config.fallback, 'routing_failed', startTime, expertRoutingId, context, request, signal.stats);
         }
         throw new Error('Routing failed and no fallback configured');
     }
@@ -118,7 +119,7 @@ export class ExpertRouter {
       );
 
       if (config.fallback) {
-        return await this.resolveFallback(config.fallback, decision.category, startTime, expertRoutingId, context);
+        return await this.resolveFallback(config.fallback, decision.category, startTime, expertRoutingId, context, request, signal.stats);
       }
 
       throw new Error(`No expert found for category: ${decision.category}`);
@@ -134,7 +135,8 @@ export class ExpertRouter {
       expertRoutingId,
       context,
       request,
-      config.classifier
+      config.classifier,
+      signal.stats
     );
   }
 
@@ -182,7 +184,8 @@ export class ExpertRouter {
     expertRoutingId: string,
     context: RoutingContext,
     request: ProxyRequest,
-    classifierConfig: ExpertRoutingConfig['classifier']
+    classifierConfig: ExpertRoutingConfig['classifier'],
+    stats?: { promptTokens: number; cleanedLength: number }
   ): Promise<ExpertRoutingResult> {
     const resolved = await resolveModelConfig(expert, 'Expert');
     const requestHash = this.generateRequestHash(request);
@@ -207,6 +210,10 @@ export class ExpertRouter {
       ),
       classifier_request: decision.source === 'l3_llm' ? JSON.stringify(decision.metadata?.classifierRequest) : decision.source,
       classifier_response: JSON.stringify(decision.metadata || {}),
+      route_source: decision.source,
+      prompt_tokens: stats?.promptTokens ?? 0,
+      cleaned_content_length: stats?.cleanedLength ?? 0,
+      semantic_score: decision.source === 'l1_semantic' ? decision.confidence : null
     });
 
     return {
@@ -226,8 +233,10 @@ export class ExpertRouter {
     fallback: ExpertRoutingConfig['fallback'],
     category: string,
     startTime: number,
-    _expertRoutingId: string,
-    _context: RoutingContext
+    expertRoutingId: string,
+    context: RoutingContext,
+    request: ProxyRequest,
+    stats?: { promptTokens: number; cleanedLength: number }
   ): Promise<ExpertRoutingResult> {
     if (!fallback) {
       throw new Error('No fallback configured');
@@ -235,6 +244,37 @@ export class ExpertRouter {
 
     const resolved = await resolveModelConfig(fallback, 'Fallback');
     const classificationTime = Date.now() - startTime;
+    const requestHash = this.generateRequestHash(request);
+
+    // Log fallback execution (best-effort; fallback must not fail due to logging issues)
+    try {
+      await expertRoutingLogDb.create({
+        id: nanoid(),
+        virtual_key_id: context.virtualKeyId || null,
+        expert_routing_id: expertRoutingId,
+        request_hash: requestHash,
+        classifier_model: 'fallback',
+        classification_result: category, // 'routing_failed' or category that had no expert
+        selected_expert_id: 'fallback',
+        selected_expert_type: fallback.type,
+        selected_expert_name: resolved.expertName,
+        classification_time: classificationTime,
+        original_request: JSON.stringify(
+          (request.body as any)?.messages ??
+          (request.body as any)?.input ??
+          (request.body as any)?.text ??
+          []
+        ),
+        classifier_request: 'fallback',
+        classifier_response: 'fallback_triggered',
+        route_source: 'fallback',
+        prompt_tokens: stats?.promptTokens ?? 0,
+        cleaned_content_length: stats?.cleanedLength ?? 0,
+        semantic_score: null
+      });
+    } catch (e: any) {
+      memoryLogger.warn(`Failed to write fallback routing log: ${e?.message || e}`, 'ExpertRouter');
+    }
 
     return {
       provider: resolved.provider!,

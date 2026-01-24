@@ -61,6 +61,7 @@
         <RoutingPipelineConfig
           v-model:config="routingConfig"
           v-model:classifier="formValue.classifier"
+          v-model:preprocessing="preprocessingConfig"
           :experts="formValue.experts"
           :provider-options="providerOptions"
           :virtual-model-options="virtualModelOptions"
@@ -196,8 +197,8 @@ function normalizeRoutingConfig(target: CreateExpertRoutingRequest) {
         margin: 0.1,
         routes: [],
       },
+      heuristics: { rules: [] },
     };
-    return;
   }
 
   target.routing.mode = 'pipeline';
@@ -210,6 +211,19 @@ function normalizeRoutingConfig(target: CreateExpertRoutingRequest) {
       routes: [],
     };
   }
+
+  if (!target.routing.heuristics) {
+    target.routing.heuristics = { rules: [] };
+  }
+
+  if (!target.preprocessing) {
+    target.preprocessing = {
+      strip_tools: false,
+      strip_files: false,
+      strip_code_blocks: false,
+      strip_system_prompt: false,
+    };
+  }
 }
 
 normalizeRoutingConfig(formValue.value);
@@ -218,11 +232,20 @@ type StrictRoutingConfig = NonNullable<ExpertRoutingConfig['routing']> & {
   semantic: NonNullable<NonNullable<ExpertRoutingConfig['routing']>['semantic']>;
 };
 
+type StrictPreprocessingConfig = NonNullable<ExpertRoutingConfig['preprocessing']>;
+
 // Strongly-typed v-model target for child components.
 const routingConfig = computed<StrictRoutingConfig>({
   get: () => formValue.value.routing as StrictRoutingConfig,
   set: (v) => {
     formValue.value.routing = v;
+  },
+});
+
+const preprocessingConfig = computed<StrictPreprocessingConfig>({
+  get: () => formValue.value.preprocessing as StrictPreprocessingConfig,
+  set: (v) => {
+    formValue.value.preprocessing = v;
   },
 });
 

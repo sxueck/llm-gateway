@@ -200,6 +200,41 @@ export const migrations: Migration[] = [
       await conn.query('DROP TABLE IF EXISTS circuit_breaker_stats');
       console.log('[迁移] 已删除熔断器统计相关表');
     }
+  },
+  {
+    version: 22,
+    name: 'add_expert_routing_stats_fields',
+    up: async (conn: Connection) => {
+      try {
+        await conn.query(`
+          ALTER TABLE expert_routing_logs
+          ADD COLUMN route_source VARCHAR(50) DEFAULT NULL COMMENT 'l1_semantic, l2_heuristic, l3_llm, fallback',
+          ADD COLUMN prompt_tokens INT DEFAULT 0 COMMENT '原始请求预估Token',
+          ADD COLUMN cleaned_content_length INT DEFAULT 0 COMMENT '清洗后用于分类的文本长度',
+          ADD COLUMN semantic_score DECIMAL(5, 4) DEFAULT NULL COMMENT 'L1语义匹配分数'
+        `);
+        console.log('[迁移] 已为 expert_routing_logs 添加统计字段');
+      } catch (e: any) {
+        if (e.code === 'ER_DUP_FIELDNAME') {
+          console.log('[迁移] expert_routing_logs 字段已存在，跳过');
+        } else {
+          throw e;
+        }
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(`
+          ALTER TABLE expert_routing_logs
+          DROP COLUMN route_source,
+          DROP COLUMN prompt_tokens,
+          DROP COLUMN cleaned_content_length,
+          DROP COLUMN semantic_score
+        `);
+      } catch (e: any) {
+        console.warn('[迁移] 回滚 expert_routing_logs 字段失败:', e.message);
+      }
+    }
   }
 ];
 

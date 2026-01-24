@@ -38,6 +38,11 @@ export interface RoutingSignal {
   toolSignals: ToolSignal[];   // 标准化的工具调用信号
   hardHints: HardHint[];       // Slash命令、特定关键词等
   originalRequest: ProxyRequest;
+  stats?: {
+    originalLength: number;
+    cleanedLength: number;
+    promptTokens: number;
+  };
 }
 
 export interface ToolPolicy {

@@ -3,29 +3,55 @@ import { ProxyRequest, RoutingSignal, HardHint } from '../types.js';
 import { ToolAdapter } from './tool-adapter.js';
 import { extractUserMessagesForClassification } from '../../../utils/message-extractor.js';
 
+export interface PreprocessOptions {
+  strip_tools?: boolean;
+  strip_files?: boolean;
+  strip_code_blocks?: boolean;
+  strip_system_prompt?: boolean;
+}
+
 export class SignalBuilder {
-  static async buildRoutingSignal(request: ProxyRequest): Promise<RoutingSignal> {
-    const { lastUserMessage, conversationHistory } = await SignalBuilder.extractText(request);
+  static async buildRoutingSignal(request: ProxyRequest, options?: PreprocessOptions): Promise<RoutingSignal> {
+    const { lastUserMessage, conversationHistory } = await SignalBuilder.extractText(request, options);
     
     // 1. Hard Hints (Slash commands)
     const hardHints: HardHint[] = SignalBuilder.extractHardHints(lastUserMessage);
     
     // 2. Tool Signals
-    const toolSignals = ToolAdapter.extractToolSignals(request);
+    let toolSignals: any[] = [];
+    if (!options?.strip_tools) {
+      toolSignals = ToolAdapter.extractToolSignals(request);
+    }
     
     // 3. Denoise Intent Text
-    const intentText = SignalBuilder.denoiseText(lastUserMessage);
+    const originalIntentText = lastUserMessage;
+    const intentText = SignalBuilder.denoiseText(lastUserMessage, options);
+
+    // Calculate stats
+    const requestBodyStr = JSON.stringify(request.body || {});
+    const promptTokens = Math.ceil(requestBodyStr.length / 4); // Approximate
+    const stats = {
+      originalLength: originalIntentText.length,
+      cleanedLength: intentText.length,
+      promptTokens
+    };
 
     return {
       intentText,
       historyHint: conversationHistory,
       toolSignals,
       hardHints,
-      originalRequest: request
+      originalRequest: request,
+      stats
     };
   }
 
-  private static async extractText(request: ProxyRequest): Promise<{ lastUserMessage: string; conversationHistory: string }> {
+  // ... (extractText stays same)
+
+  private static async extractText(
+    request: ProxyRequest,
+    options?: PreprocessOptions
+  ): Promise<{ lastUserMessage: string; conversationHistory: string }> {
     const body: any = request.body || {};
 
     // Responses API
@@ -39,6 +65,10 @@ export class SignalBuilder {
         const texts: string[] = [];
         for (const item of input) {
           if (!item || typeof item !== 'object') continue;
+
+          // Respect preprocessing options for Responses API message roles.
+          if (options?.strip_tools && item.role === 'tool') continue;
+          if (options?.strip_system_prompt && item.role === 'system') continue;
 
           // { type: 'message', role: 'user', content: [ { type: 'input_text', text: '...' } ] }
           if (item.type === 'message' && Array.isArray(item.content)) {
@@ -75,7 +105,7 @@ export class SignalBuilder {
     const messages = body.messages || [];
     const system = body.system;
 
-    return extractUserMessagesForClassification(messages, system);
+    return extractUserMessagesForClassification(messages, system, options);
   }
 
   private static extractHardHints(text: string): HardHint[] {
@@ -99,7 +129,7 @@ export class SignalBuilder {
     return hints;
   }
 
-  private static denoiseText(text: string): string {
+  private static denoiseText(text: string, options?: PreprocessOptions): string {
     if (!text) return '';
     let processed = text;
     
@@ -108,7 +138,13 @@ export class SignalBuilder {
     
     processed = processed.replace(codeBlockRegex, (match, lang, code) => {
         const lines = code.split('\n');
-        // Keep short code blocks (< 10 lines) as they might be critical for context
+        
+        // If strip_code_blocks is enabled, strip ALL code blocks
+        if (options?.strip_code_blocks) {
+             return `\`\`\`${lang}\n[CODE_BLOCK_REMOVED]\n\`\`\``;
+        }
+
+        // Default behavior: Keep short code blocks (< 10 lines)
         if (lines.length < 10) return match;
         
         return `\`\`\`${lang}\n[CODE_BLOCK_OMITTED_FOR_ROUTING: ${lines.length} lines]\n\`\`\``;

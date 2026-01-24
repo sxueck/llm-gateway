@@ -56,6 +56,7 @@ export class LocalEmbeddingEngine implements Embedder {
     private mapModelName(model: EmbedModel): string {
         if (model === 'bge-small-zh-v1.5') return 'Xenova/bge-small-zh-v1.5';
         if (model === 'all-MiniLM-L6-v2') return 'Xenova/all-MiniLM-L6-v2';
+        if (model === 'bge-m3') return 'Xenova/bge-m3';
         return model;
     }
 }

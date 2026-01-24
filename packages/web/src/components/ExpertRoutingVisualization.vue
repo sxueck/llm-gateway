@@ -97,7 +97,7 @@
       </div>
     </div>
 
-    <n-drawer v-model:show="showExpertDrawer" :width="400">
+    <n-drawer v-model:show="showExpertDrawer" :width="640">
       <n-drawer-content :title="t('expertRouting.editExpert')">
         <ExpertForm
           v-if="showExpertDrawer"
@@ -119,7 +119,7 @@
       class="template-selector-modal"
       :style="{ width: '1200px', maxWidth: '95vw', maxHeight: '80vh' }"
     >
-      <ExpertTemplateSelector @select="handleTemplateSelect" />
+      <ExpertTemplateSelector v-if="showTemplateSelector" @select="handleTemplateSelect" />
     </n-modal>
   </div>
 </template>
@@ -147,10 +147,9 @@ import {
   FilterOutline,
   CubeOutline,
 } from '@vicons/ionicons5';
-import type { ExpertTarget, ClassifierConfig } from '@/api/expert-routing';
+import type { ExpertTarget, ClassifierConfig, ExpertTemplate } from '@/api/expert-routing';
 import ExpertForm from './ExpertForm.vue';
 import ExpertTemplateSelector from './ExpertTemplateSelector.vue';
-import type { ExpertTemplate } from '@/data/expert-templates';
 
 function generateId(): string {
   return `expert_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -238,6 +237,7 @@ function handleTemplateSelect(template: ExpertTemplate | null) {
     type: 'real',
     description: template ? template.description : '',
     color: defaultColor,
+    system_prompt: template?.system_prompt,
   };
   
   editingUtterances.value = template ? [...template.utterances] : [];

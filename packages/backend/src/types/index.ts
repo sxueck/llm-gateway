@@ -81,12 +81,19 @@ export interface ExpertRoutingConfig {
   name: string;
   description?: string;
   enabled: boolean;
+  preprocessing?: {
+    strip_tools?: boolean;
+    strip_files?: boolean;
+    strip_code_blocks?: boolean;
+    strip_system_prompt?: boolean;
+  };
   classifier: {
     type: 'virtual' | 'real';
     model_id?: string;
     provider_id?: string;
     model?: string;
     prompt_template: string;
+    system_prompt?: string;
     max_tokens?: number;
     temperature?: number;
     timeout?: number;
@@ -96,12 +103,20 @@ export interface ExpertRoutingConfig {
     enable_structured_output?: boolean;
   };
   routing?: {
-    mode?: 'llm' | 'semantic' | 'hybrid';
+    mode?: 'llm' | 'semantic' | 'hybrid' | 'pipeline';
     semantic?: {
-      model?: 'bge-small-zh-v1.5' | 'all-MiniLM-L6-v2';
+      model?: 'bge-small-zh-v1.5' | 'all-MiniLM-L6-v2' | 'bge-m3';
       threshold?: number;
       margin?: number;
       routes?: { category: string; utterances: string[] }[];
+    };
+    heuristics?: {
+      rules: {
+        id: string;
+        type: 'keyword' | 'regex' | 'header';
+        pattern: string;
+        target_expert: string;
+      }[];
     };
   };
   experts: import('./expert-routing.js').ExpertTarget[];
@@ -128,6 +143,10 @@ export interface ExpertRoutingLog {
   original_request?: string | null;
   classifier_request?: string | null;
   classifier_response?: string | null;
+  route_source?: string | null;
+  prompt_tokens?: number;
+  cleaned_content_length?: number;
+  semantic_score?: number | null;
 }
 
 export interface BackupRecord {
@@ -173,4 +192,3 @@ export interface RestoreOptions {
   verify_data?: boolean;
   tables_to_restore?: string[];
 }
-

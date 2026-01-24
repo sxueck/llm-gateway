@@ -1,5 +1,6 @@
 
 import { ExpertRoutingConfig } from '../../../types/index.js';
+import type { ExpertTarget } from '../../../types/expert-routing.js';
 import { RoutingSignal, RouteDecision } from '../types.js';
 import { resolveClassifierModel } from '../resolve.js';
 import { memoryLogger } from '../../logger.js';
@@ -7,12 +8,13 @@ import { decryptApiKey } from '../../../utils/crypto.js';
 import { buildChatCompletionsEndpoint } from '../../../utils/api-endpoint-builder.js';
 
 const DEFAULT_CLASSIFICATION_TIMEOUT = 10000;
-const DEFAULT_MAX_TOKENS = 100;
+const DEFAULT_MAX_TOKENS = 512;
 
 export class LLMJudge {
   static async decide(
     signal: RoutingSignal,
-    classifierConfig: ExpertRoutingConfig['classifier']
+    classifierConfig: ExpertRoutingConfig['classifier'],
+    experts?: ExpertTarget[]
   ): Promise<RouteDecision> {
     const startTime = Date.now();
 
@@ -25,18 +27,36 @@ export class LLMJudge {
     }
 
     // Process template
-    const { systemMessage, userMessageContent } = this.processPromptTemplate(
-      classifierConfig.prompt_template,
-      userPrompt
-    );
+    let systemMessage = '';
+    let userMessageContent = userPrompt;
+
+    if (classifierConfig.system_prompt) {
+        systemMessage = classifierConfig.system_prompt;
+        // If system_prompt is provided explicitly, we assume prompt_template is just for user message or empty
+        // We still check prompt_template for user_prompt markers just in case, but system message comes from system_prompt
+        const processed = this.processPromptTemplate(
+            classifierConfig.prompt_template || '{{USER_PROMPT}}',
+            userPrompt
+        );
+        userMessageContent = processed.userMessageContent;
+    } else {
+        const processed = this.processPromptTemplate(
+            classifierConfig.prompt_template,
+            userPrompt
+        );
+        systemMessage = processed.systemMessage;
+        userMessageContent = processed.userMessageContent;
+    }
 
     // Combine with history
     const finalUserMessage = signal.historyHint
       ? `${signal.historyHint}\n\n---\nLatest User Prompt:\n${userMessageContent}`
       : userMessageContent;
 
+    const systemMessageWithCriteria = this.buildSystemPrompt(systemMessage, experts);
+
     const messages = [
-        { role: 'system', content: systemMessage },
+        { role: 'system', content: systemMessageWithCriteria },
         { role: 'user', content: finalUserMessage }
     ];
 
@@ -57,9 +77,7 @@ export class LLMJudge {
 
     if (classifierConfig.enable_structured_output) {
         requestBody.response_format = { type: 'json_object' };
-        if (!systemMessage.toLowerCase().includes('json')) {
-            memoryLogger.warn('Enabled structured output but system prompt missing "json" keyword', 'ExpertRouter');
-        }
+        // We ensure JSON keyword is in the prompt in buildSystemPrompt
     }
 
     // 4. Call API
@@ -88,6 +106,7 @@ export class LLMJudge {
 
         // 5. Parse Result
         let category: string;
+
         try {
              // Try to parse JSON if structured or if it looks like JSON
              const cleaned = this.cleanMarkdownCodeBlock(content);
@@ -102,10 +121,24 @@ export class LLMJudge {
             // The existing prompt templates usually ask for JSON. 
             // We'll assume the prompt asks for JSON or simple text.
             // If parse fails:
-            if (!classifierConfig.enable_structured_output && content.length < 50 && !content.includes('{')) {
+             if (!classifierConfig.enable_structured_output && content.length < 50 && !content.includes('{')) {
                 category = content;
             } else {
-                throw new Error(`Failed to parse classification result: ${content.substring(0, 100)}...`);
+                // Try relaxed parsing for common mistakes (like unquoted keys)
+                try {
+                    // Try parsing with Function constructor (like eval but slightly safer scope)
+                    // This can handle { category: "foo" } which JSON.parse fails on
+                    // eslint-disable-next-line no-new-func
+                    const cleanedContent = this.cleanMarkdownCodeBlock(content);
+                    const looseJson = new Function(`return ${cleanedContent}`)();
+                    if (looseJson && (looseJson.category || looseJson.type)) {
+                         category = looseJson.type || looseJson.category;
+                    } else {
+                        throw new Error('Invalid structure');
+                    }
+                } catch {
+                     throw new Error(`Failed to parse classification result: ${content.substring(0, 100)}...`);
+                }
             }
         }
 
@@ -116,7 +149,7 @@ export class LLMJudge {
             metadata: {
                 latencyMs: Date.now() - startTime,
                 classifierModel: `${provider.name}/${model}`,
-                rawResponse: result
+                rawResponse: result,
             }
         };
 
@@ -124,6 +157,60 @@ export class LLMJudge {
         memoryLogger.error(`LLM Judge execution failed: ${e.message}`, 'ExpertRouter');
         throw e;
     }
+  }
+
+  private static buildSystemPrompt(baseSystemMessage: string, experts?: ExpertTarget[]): string {
+    if (!experts || experts.length === 0) return baseSystemMessage;
+
+    const sections: string[] = [];
+    
+    // 1. Base Identity (if not already provided in base message)
+    if (!baseSystemMessage) {
+        sections.push("You are an intelligent router for an LLM gateway system. Your task is to analyze the user's request and route it to the most suitable expert model based on their specific capabilities and boundaries.");
+    } else {
+        sections.push(baseSystemMessage.trim());
+    }
+
+    // 2. Task Definition
+    sections.push(`
+### Task
+Analyze the user request and classify it into ONE of the available expert categories.
+Select the expert whose capabilities and boundaries best match the intent and complexity of the request.
+`);
+
+    // 3. Expert Definitions (Dynamic Injection)
+    sections.push('### Available Experts & Boundaries');
+    
+    experts.forEach((expert, index) => {
+        const category = (expert.category || '').trim();
+        if (!category) return;
+
+        // Use system_prompt as primary boundary definition, fallback to description
+        const boundary = (expert.system_prompt || expert.description || '').trim();
+        const boundaryText = boundary ? boundary : "General purpose handling for this category.";
+        
+        sections.push(`
+${index + 1}. Category: "${category}"
+   Boundary/Capabilities: ${boundaryText}
+`);
+    });
+
+    // 4. Output Format (Strict JSON)
+    sections.push(`
+### Output Format
+You must return a strictly valid JSON object. Do not add any markdown formatting or explanation outside the JSON.
+Format:
+{
+  "category": "The exact category name from the list above"
+}
+
+### Fallback Rules
+- If the request exactly matches an expert's boundary, choose that expert.
+- If the request is ambiguous but leans towards a specific domain, choose the relevant expert.
+- If the request is completely outside all expert boundaries, use "fallback" (if available) or the most general expert.
+`);
+
+    return sections.join('\n').trim();
   }
 
   private static cleanMarkdownCodeBlock(content: string): string {

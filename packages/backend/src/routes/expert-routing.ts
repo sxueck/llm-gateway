@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { expertRoutingConfigDb, expertRoutingLogDb, modelDb, systemConfigDb } from '../db/index.js';
 import { memoryLogger } from '../services/logger.js';
+import { expertTemplates } from '../data/expert-templates.js';
 
 const expertTargetSchema = z.object({
   id: z.string(),
@@ -13,6 +14,7 @@ const expertTargetSchema = z.object({
   model: z.string().optional(),
   description: z.string().optional(),
   color: z.string().optional(),
+  system_prompt: z.string().optional(),
 });
 
 const classifierConfigSchema = z.object({
@@ -39,11 +41,57 @@ const fallbackConfigSchema = z.object({
   model: z.string().optional(),
 }).optional();
 
+const preprocessingSchema = z
+  .object({
+    strip_tools: z.boolean().optional(),
+    strip_files: z.boolean().optional(),
+    strip_code_blocks: z.boolean().optional(),
+    strip_system_prompt: z.boolean().optional(),
+  })
+  .optional();
+
+const routingSchema = z
+  .object({
+    // Backend runtime currently supports 'llm' | 'semantic' | 'hybrid'.
+    // The UI may use 'pipeline' to represent the same hybrid flow.
+    mode: z.enum(['llm', 'semantic', 'hybrid', 'pipeline']).optional(),
+    semantic: z
+        .object({
+        model: z.enum(['bge-small-zh-v1.5', 'all-MiniLM-L6-v2', 'bge-m3']).optional(),
+        threshold: z.number().optional(),
+        margin: z.number().optional(),
+        routes: z
+          .array(
+            z.object({
+              category: z.string(),
+              utterances: z.array(z.string()),
+            })
+          )
+          .optional(),
+      })
+      .optional(),
+    heuristics: z
+      .object({
+        rules: z.array(
+          z.object({
+            id: z.string(),
+            type: z.enum(['keyword', 'regex', 'header']),
+            pattern: z.string(),
+            target_expert: z.string(),
+          })
+        ),
+      })
+      .optional(),
+  })
+  .optional();
+
 const createExpertRoutingSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   enabled: z.boolean().optional(),
   classifier: classifierConfigSchema,
+  preprocessing: preprocessingSchema,
+  routing: routingSchema,
   experts: z.array(expertTargetSchema),
   fallback: fallbackConfigSchema,
   createVirtualModel: z.boolean().optional(),
@@ -56,6 +104,8 @@ const updateExpertRoutingSchema = z.object({
   description: z.string().nullable().optional(),
   enabled: z.boolean().optional(),
   classifier: classifierConfigSchema.optional(),
+  preprocessing: preprocessingSchema,
+  routing: routingSchema,
   experts: z.array(expertTargetSchema).optional(),
   fallback: fallbackConfigSchema,
 });
@@ -155,6 +205,16 @@ async function validateExpertRoutingConfig(config: any, currentExpertRoutingId?:
 export async function expertRoutingRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
 
+  function safeJsonParse(value?: string | null): any {
+    if (!value) return null;
+    try {
+      return JSON.parse(value);
+    } catch {
+      // Some fields are stored as plain strings (e.g. fallback markers, non-L3 sources).
+      return value;
+    }
+  }
+
   fastify.get('/', async () => {
     try {
       const configs = await expertRoutingConfigDb.getAll();
@@ -173,6 +233,11 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       memoryLogger.error(`获取专家路由配置失败: ${error.message}`, 'ExpertRouting');
       throw error;
     }
+  });
+
+  // Expert templates are served from backend so the frontend doesn't hardcode them.
+  fastify.get('/templates', async () => {
+    return { templates: expertTemplates };
   });
 
   fastify.get('/:id', async (request) => {
@@ -205,6 +270,8 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
 
       const configData = {
         classifier: body.classifier,
+        preprocessing: body.preprocessing,
+        routing: body.routing,
         experts: body.experts,
         fallback: body.fallback,
       };
@@ -277,11 +344,19 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       }
 
       let configData;
-      if (body.classifier || body.experts || body.fallback !== undefined) {
+      if (
+        body.classifier ||
+        body.experts ||
+        body.fallback !== undefined ||
+        body.routing !== undefined ||
+        body.preprocessing !== undefined
+      ) {
         const currentConfig = JSON.parse(existingConfig.config);
 
         configData = {
           classifier: body.classifier || currentConfig.classifier,
+          preprocessing: body.preprocessing !== undefined ? body.preprocessing : currentConfig.preprocessing,
+          routing: body.routing !== undefined ? body.routing : currentConfig.routing,
           experts: body.experts || currentConfig.experts,
           fallback: body.fallback !== undefined ? body.fallback : currentConfig.fallback,
         };
@@ -370,6 +445,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
 
       const timeRangeMs = timeRange ? Number.parseInt(timeRange) : undefined;
       const stats = await expertRoutingLogDb.getStatistics(id, timeRangeMs);
+      const routeStats = await expertRoutingLogDb.getRouteStats(id, timeRangeMs);
 
       const categoryDistribution: Record<string, number> = {};
       let totalRequests = 0;
@@ -381,6 +457,34 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         totalClassificationTime += Number(row.avg_time) * Number(row.count);
       }
 
+      const routeSourceDistribution: Record<string, number> = {};
+      let totalCleanedLength = 0;
+      let totalPromptTokens = 0;
+      let cleaningCount = 0;
+
+      for (const row of routeStats as any[]) {
+        if (row.route_source) {
+          routeSourceDistribution[row.route_source] = Number(row.count);
+        }
+        // Only count cleaning stats for valid records (though avg is already returned, we can use it)
+        // Actually getRouteStats returns avg_cleaned_length.
+        // Let's just use the aggregates from SQL if possible, but routeStats is grouped by source.
+        // We want global avg cleaning stats.
+        // Let's assume we want to show "Average Cleaning Efficiency".
+        // We can aggregate from the grouped result or do another query.
+        // Grouped result is fine.
+        const count = Number(row.count);
+        totalCleanedLength += Number(row.avg_cleaned_length || 0) * count;
+        totalPromptTokens += Number(row.avg_prompt_tokens || 0) * count;
+        cleaningCount += count;
+      }
+
+      const cleaningStats = {
+        avgPromptTokens: cleaningCount > 0 ? Math.round(totalPromptTokens / cleaningCount) : 0,
+        avgCleanedLength: cleaningCount > 0 ? Math.round(totalCleanedLength / cleaningCount) : 0,
+        totalRequests: cleaningCount
+      };
+
       const avgClassificationTime = totalRequests > 0
         ? Math.round(totalClassificationTime / totalRequests)
         : 0;
@@ -389,6 +493,8 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         totalRequests,
         avgClassificationTime,
         categoryDistribution,
+        routeSourceDistribution,
+        cleaningStats
       };
     } catch (error: any) {
       memoryLogger.error(`获取专家路由统计失败: ${error.message}`, 'ExpertRouting');
@@ -466,9 +572,9 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         selected_expert_name: log.selected_expert_name,
         classification_time: log.classification_time,
         created_at: log.created_at,
-        original_request: log.original_request ? JSON.parse(log.original_request) : null,
-        classifier_request: log.classifier_request ? JSON.parse(log.classifier_request) : null,
-        classifier_response: log.classifier_response ? JSON.parse(log.classifier_response) : null,
+        original_request: safeJsonParse(log.original_request),
+        classifier_request: safeJsonParse(log.classifier_request),
+        classifier_response: safeJsonParse(log.classifier_response),
       };
     } catch (error: any) {
       memoryLogger.error(`获取日志详情失败: ${error.message}`, 'ExpertRouting');

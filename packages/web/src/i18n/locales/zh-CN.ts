@@ -447,19 +447,18 @@ export default {
     pipelineConfigHint: '请求将依次通过以下两层过滤，直到匹配成功。',
 
     // Pipeline Layer 1
+    layer1PreprocessingTitle: '请求清洗 (Cleaning)',
+    layer1PreprocessingTooltip: '清洗请求中的干扰信息，提高后续分类准确度',
     layer1Title: 'L1: 语义路由 (Semantic)',
     layer1Tooltip: '最快。根据用户的自然语言与专家的“典型示例”进行向量相似度匹配。',
     layer1Desc: '如果用户的问题与某个专家的示例非常相似（超过阈值），将直接路由，无需调用大模型。',
     
     // Pipeline Layer 2
-    layer2Title: 'L2: 大模型判决 (LLM Judge)',
+    layer2Title: '大模型判决 (LLM Judge)',
     layer2Tooltip: '最准。调用 LLM 进行最终的意图分析和分发。',
     layer2Desc: '如果语义层未命中，将调用此 LLM 进行最终的意图分析和分发。',
     ifNoMatch: '未匹配，进入下一层',
 
-    // Pipeline Layer 3 (legacy)
-    layer3Title: 'L3: 大模型判决 (LLM Judge)',
-    layer3Desc: '如果前两层都未命中，将调用此 LLM 进行最终的意图分析和分发。',
     advancedLLMConfig: '高级 LLM 配置',
     
     // Review
@@ -513,6 +512,9 @@ export default {
     systemPrompt: '系统提示词',
     systemPromptPlaceholder: '输入分类器的系统提示词，例如：你是一个专业的请求分类器，需要将用户请求分类为不同的类别...',
     systemPromptHint: '系统提示词将作为 system message 发送给分类器模型，用于指导模型如何进行分类',
+    expertCriteria: '分类依据/边界',
+    expertCriteriaPlaceholder: '描述该专家“应该处理什么/不应该处理什么”，用于分类器区分专家边界（不会下发给上游模型）...',
+    expertCriteriaHint: '仅作为分类依据（给 LLM Judge 用来区分专家），不会作为上游模型的 system prompt 发送。',
     userPromptMarker: '用户输入标记',
     userPromptMarkerPlaceholder: '输入用户输入的标记位置，例如：{USER_PROMPT}',
     userPromptMarkerHint: '此标记将在运行时被替换为实际的用户输入内容，并作为 user message 发送',
@@ -521,6 +523,7 @@ export default {
     maxTokensHint: '分类任务通常只需返回类别名称，建议设置为 50-100',
     temperature: 'Temperature',
     temperatureHint: '分类任务建议使用 0 以获得确定性结果',
+    parameters: '高级参数',
     timeout: '超时时间(ms)',
     timeoutHint: '分类请求的超时时间，默认 10000ms（10秒）',
     ignoreSystemMessages: '忽略系统消息',
@@ -556,6 +559,11 @@ export default {
     expertCount: '专家数量',
     totalRequests: '总请求数',
     avgClassificationTime: '平均分类耗时',
+    cleaningEfficiency: 'L1 清洗效率',
+    semanticHitRate: 'L1 命中率',
+    heuristicHitRate: 'L2 命中率',
+    routingDistribution: '路由分布',
+    source: '来源',
     categoryDistribution: '分类分布',
     classificationResult: '分类结果',
     selectedExpert: '选中专家',

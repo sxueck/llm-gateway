@@ -5,7 +5,8 @@
       <p class="section-desc">{{ t('expertRouting.selectTemplateDesc') }}</p>
     </div>
 
-    <div class="templates-grid">
+    <n-spin :show="loading">
+      <div class="templates-grid">
       <!-- Custom / Empty Option -->
       <div 
         class="template-card custom-card"
@@ -51,24 +52,42 @@
           </div>
         </div>
       </div>
-    </div>
+      </div>
+
+      <n-empty v-if="!loading && templates.length === 0" :show-icon="false" style="padding: 20px 0" />
+    </n-spin>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { NIcon, NTag } from 'naive-ui';
+import { NIcon, NTag, NSpin, NEmpty, useMessage } from 'naive-ui';
 import { AddOutline } from '@vicons/ionicons5';
-import { expertTemplates, type ExpertTemplate } from '@/data/expert-templates';
+import { expertRoutingApi, type ExpertTemplate } from '@/api/expert-routing';
 
 const { t } = useI18n();
+const message = useMessage();
 
 const emit = defineEmits<{
   select: [template: ExpertTemplate | null];
 }>();
 
-const templates = computed(() => expertTemplates);
+const templates = ref<ExpertTemplate[]>([]);
+const loading = ref(false);
+
+onMounted(async () => {
+  loading.value = true;
+  try {
+    const result = await expertRoutingApi.getTemplates();
+    templates.value = result.templates || [];
+  } catch (err: any) {
+    templates.value = [];
+    message.error(err?.message || t('messages.operationFailed'));
+  } finally {
+    loading.value = false;
+  }
+});
 
 function getTemplateColor(type: string) {
   switch (type) {
@@ -197,6 +216,11 @@ function handleSelect(type: string) {
   font-size: 1rem;
   color: var(--n-text-color);
   margin-right: 8px;
+}
+
+/* Preset titles are intentionally de-emphasized */
+.preset-card .card-title {
+  color: var(--n-text-color-3);
 }
 
 .template-tag {

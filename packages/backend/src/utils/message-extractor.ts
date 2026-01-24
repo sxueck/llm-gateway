@@ -11,19 +11,32 @@ interface ContentBlock {
 
 interface ChatMessage {
   role: string;
-  content: string | ContentBlock[];
+  content: string | ContentBlock[] | any;
+}
+
+export interface MessageExtractOptions {
+  strip_tools?: boolean;
+  strip_files?: boolean;
+  strip_system_prompt?: boolean;
 }
 
 /**
  * 从 Anthropic ContentBlock 或字符串中提取纯文本
  */
-export function extractTextFromContent(content: string | ContentBlock[]): string {
+export function extractTextFromContent(
+  content: string | ContentBlock[] | any,
+  options?: MessageExtractOptions
+): string {
+  if (content === null || content === undefined) {
+    return '';
+  }
+
   if (typeof content === 'string') {
     return content;
   }
   
   if (!Array.isArray(content)) {
-    return JSON.stringify(content);
+    return options?.strip_files ? '' : JSON.stringify(content);
   }
   
   // ContentBlock[] → 提取 type='text' 的文本
@@ -39,7 +52,8 @@ export function extractTextFromContent(content: string | ContentBlock[]): string
  */
 export function extractUserMessagesForClassification(
   messages: ChatMessage[],
-  system?: string | ContentBlock[]
+  system?: any,
+  options?: MessageExtractOptions
 ): {
   lastUserMessage: string;
   conversationHistory: string;
@@ -49,15 +63,21 @@ export function extractUserMessagesForClassification(
   let processedMessages = messages;
   
   // 处理独立的 system 参数（Anthropic 格式）
-  if (system) {
-    systemPrompt = extractTextFromContent(system);
+  if (system && !options?.strip_system_prompt) {
+    systemPrompt = extractTextFromContent(system, options);
   }
   
   // 从 messages 中提取 system（OpenAI 格式）
   const systemMsg = messages.find(m => m.role === 'system');
   if (systemMsg && !systemPrompt) {
-    systemPrompt = extractTextFromContent(systemMsg.content);
+    if (!options?.strip_system_prompt) {
+      systemPrompt = extractTextFromContent(systemMsg.content, options);
+    }
     processedMessages = messages.filter(m => m.role !== 'system');
+  }
+
+  if (options?.strip_tools) {
+    processedMessages = processedMessages.filter(m => m.role !== 'tool');
   }
   
   // 提取用户消息
@@ -67,13 +87,10 @@ export function extractUserMessagesForClassification(
   }
   
   const lastUserMsg = userMessages[userMessages.length - 1];
-  const lastUserMessage = extractTextFromContent(lastUserMsg.content);
+  const lastUserMessage = extractTextFromContent(lastUserMsg.content, options);
   
   // 构建对话历史
-  const conversationHistory = buildConversationHistory(
-    processedMessages,
-    lastUserMsg
-  );
+  const conversationHistory = buildConversationHistory(processedMessages, lastUserMsg, options);
   
   return { lastUserMessage, conversationHistory, systemPrompt };
 }
@@ -83,7 +100,8 @@ export function extractUserMessagesForClassification(
  */
 function buildConversationHistory(
   messages: ChatMessage[],
-  lastUserMessage: ChatMessage
+  lastUserMessage: ChatMessage,
+  options?: MessageExtractOptions
 ): string {
   const lastUserIndex = messages.lastIndexOf(lastUserMessage);
   
@@ -103,10 +121,10 @@ function buildConversationHistory(
   
   // 格式化历史消息
   const formattedMessages = contextMessages.map((msg, index) => {
-    const content = extractTextFromContent(msg.content);
+    const content = extractTextFromContent(msg.content, options);
     const roleLabel = getRoleLabel(msg.role);
     const messageNumber = index + 1;
-    
+
     return `[${messageNumber}] ${roleLabel}: ${content}`;
   });
   

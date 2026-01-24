@@ -544,6 +544,7 @@ function handleEdit(config: ExpertRouting) {
     description: config.description,
     enabled: config.enabled,
     classifier: config.config.classifier,
+    preprocessing: config.config.preprocessing,
     routing: config.config.routing,
     experts: config.config.experts,
     fallback: config.config.fallback,

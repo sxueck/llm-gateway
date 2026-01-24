@@ -1,5 +1,5 @@
 
-export type EmbedModel = 'bge-small-zh-v1.5' | 'all-MiniLM-L6-v2';
+export type EmbedModel = 'bge-small-zh-v1.5' | 'all-MiniLM-L6-v2' | 'bge-m3';
 
 export interface Embedder {
   /**

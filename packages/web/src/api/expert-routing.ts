@@ -9,6 +9,15 @@ export interface ExpertTarget {
   model?: string;
   description?: string;
   color?: string;
+  system_prompt?: string;
+}
+
+export interface ExpertTemplate {
+  label: string;
+  value: string;
+  description: string;
+  utterances: string[];
+  system_prompt?: string;
 }
 
 export interface ClassifierConfig {
@@ -36,14 +45,28 @@ export interface FallbackConfig {
 }
 
 export interface ExpertRoutingConfig {
+  preprocessing?: {
+    strip_tools?: boolean;
+    strip_files?: boolean;
+    strip_code_blocks?: boolean;
+    strip_system_prompt?: boolean;
+  };
   classifier: ClassifierConfig; // L3: LLM Judge
   routing?: {
     mode?: 'pipeline'; // 强制为流水线模式
     semantic?: { // L1: Semantic
-      model?: 'bge-small-zh-v1.5' | 'all-MiniLM-L6-v2';
+      model?: 'bge-small-zh-v1.5' | 'all-MiniLM-L6-v2' | 'bge-m3';
       threshold?: number;
       margin?: number;
       routes?: { category: string; utterances: string[] }[];
+    };
+    heuristics?: { // L2: Rules
+      rules: {
+        id: string;
+        type: 'keyword' | 'regex' | 'header';
+        pattern: string;
+        target_expert: string;
+      }[];
     };
   };
   experts: ExpertTarget[];
@@ -73,6 +96,7 @@ export interface CreateExpertRoutingRequest {
   description?: string;
   enabled?: boolean;
   classifier: ClassifierConfig;
+  preprocessing?: ExpertRoutingConfig['preprocessing'];
   routing?: ExpertRoutingConfig['routing'];
   experts: ExpertTarget[];
   fallback?: FallbackConfig;
@@ -86,6 +110,7 @@ export interface UpdateExpertRoutingRequest {
   description?: string;
   enabled?: boolean;
   classifier?: ClassifierConfig;
+  preprocessing?: ExpertRoutingConfig['preprocessing'];
   routing?: ExpertRoutingConfig['routing'];
   experts?: ExpertTarget[];
   fallback?: FallbackConfig;
@@ -93,7 +118,14 @@ export interface UpdateExpertRoutingRequest {
 
 export interface ExpertRoutingStatistics {
   totalRequests: number;
+  avgClassificationTime: number;
   categoryDistribution: Record<string, number>;
+  routeSourceDistribution?: Record<string, number>;
+  cleaningStats?: {
+    avgPromptTokens: number;
+    avgCleanedLength: number;
+    totalRequests: number;
+  };
 }
 
 export interface ExpertRoutingLog {
@@ -108,6 +140,10 @@ export interface ExpertRoutingLog {
   selected_expert_name: string;
   classification_time: number;
   created_at: number;
+  route_source?: string;
+  prompt_tokens?: number;
+  cleaned_content_length?: number;
+  semantic_score?: number;
 }
 
 export interface ExpertRoutingLogDetail {
@@ -125,6 +161,10 @@ export interface ExpertRoutingLogDetail {
   original_request: any[] | null;
   classifier_request: any | null;
   classifier_response: any | null;
+  route_source?: string;
+  prompt_tokens?: number;
+  cleaned_content_length?: number;
+  semantic_score?: number;
 }
 
 export const expertRoutingApi = {
@@ -181,5 +221,9 @@ export const expertRoutingApi = {
 
   getPreviewWidth(): Promise<{ width: number }> {
     return request.get('/admin/expert-routing/preferences/preview-width');
+  },
+
+  getTemplates(): Promise<{ templates: ExpertTemplate[] }> {
+    return request.get('/admin/expert-routing/templates');
   },
 };
