@@ -42,6 +42,11 @@ export interface RoutingSignal {
     originalLength: number;
     cleanedLength: number;
     promptTokens: number;
+    originalTokens?: number;
+    cleanedTokens?: number;
+    removedTokens?: number;
+    removedTokensPct?: number;
+    tokenizer?: string;
   };
 }
 

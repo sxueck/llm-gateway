@@ -436,6 +436,7 @@ import { useSystemConfig } from '@/composables/useSystemConfig';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { LineChart, PieChart, ScatterChart } from 'echarts/charts';
+import { LegacyGridContainLabel } from 'echarts/features';
 import {
   TitleComponent,
   TooltipComponent,
@@ -455,6 +456,8 @@ use([
   LegendComponent,
   GridComponent,
   DataZoomComponent,
+  // ECharts v6: grid.containLabel is a legacy feature.
+  LegacyGridContainLabel,
 ]);
 
 const { t } = useI18n();

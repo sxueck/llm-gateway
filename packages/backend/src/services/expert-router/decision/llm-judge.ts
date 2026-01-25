@@ -149,6 +149,10 @@ export class LLMJudge {
             metadata: {
                 latencyMs: Date.now() - startTime,
                 classifierModel: `${provider.name}/${model}`,
+                // Persist the exact payload we sent (no secrets) for audit/debug.
+                classifierRequest: requestBody,
+                endpoint,
+                rawContent: content,
                 rawResponse: result,
             }
         };

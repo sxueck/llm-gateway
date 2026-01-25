@@ -17,15 +17,15 @@
       
       <div class="stage-content">
         <n-text depth="3" class="stage-desc">
-          配置需要从请求中移除的内容，以获得更纯净的意图文本。
+          配置需要清理/缩减的内容，以获得更纯净的意图文本。
         </n-text>
         <n-divider style="margin: 12px 0" />
         <n-grid :cols="2" :y-gap="12" :x-gap="24">
-          <n-gi>
-             <n-checkbox v-model:checked="preprocessing.strip_tools">
-               移除工具定义/调用 (Tools)
-             </n-checkbox>
-          </n-gi>
+           <n-gi>
+              <n-checkbox v-model:checked="preprocessing.strip_tools">
+                缩减工具上下文 (Tools)
+              </n-checkbox>
+            </n-gi>
           <n-gi>
              <n-checkbox v-model:checked="preprocessing.strip_code_blocks">
                移除代码块 (Code Blocks)

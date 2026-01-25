@@ -235,6 +235,55 @@ export const migrations: Migration[] = [
         console.warn('[迁移] 回滚 expert_routing_logs 字段失败:', e.message);
       }
     }
+  },
+  {
+    version: 23,
+    name: 'repair_expert_routing_stats_fields',
+    up: async (conn: Connection) => {
+      // v22 used a single ALTER TABLE with multiple ADD COLUMN.
+      // If ANY one column already existed, MySQL throws ER_DUP_FIELDNAME and the rest are not applied.
+      // Some deployments can end up with schema_migrations=v22 but missing prompt_tokens/cleaned_content_length/semantic_score.
+      const hasColumn = async (col: string) => {
+        const [rows] = await conn.query(
+          `SELECT COUNT(*) AS cnt
+           FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = 'expert_routing_logs'
+             AND COLUMN_NAME = ?`,
+          [col]
+        );
+        const result = rows as any[];
+        return Number(result?.[0]?.cnt || 0) > 0;
+      };
+
+      const addColumnIfMissing = async (col: string, sql: string) => {
+        if (await hasColumn(col)) return;
+        try {
+          await conn.query(sql);
+          console.log(`[迁移] 已补齐 expert_routing_logs.${col}`);
+        } catch (e: any) {
+          if (e.code === 'ER_DUP_FIELDNAME') return;
+          throw e;
+        }
+      };
+
+      await addColumnIfMissing(
+        'route_source',
+        `ALTER TABLE expert_routing_logs ADD COLUMN route_source VARCHAR(50) DEFAULT NULL COMMENT 'l1_semantic, l2_heuristic, l3_llm, fallback'`
+      );
+      await addColumnIfMissing(
+        'prompt_tokens',
+        `ALTER TABLE expert_routing_logs ADD COLUMN prompt_tokens INT DEFAULT 0 COMMENT '原始请求预估Token'`
+      );
+      await addColumnIfMissing(
+        'cleaned_content_length',
+        `ALTER TABLE expert_routing_logs ADD COLUMN cleaned_content_length INT DEFAULT 0 COMMENT '清洗后用于分类的文本长度'`
+      );
+      await addColumnIfMissing(
+        'semantic_score',
+        `ALTER TABLE expert_routing_logs ADD COLUMN semantic_score DECIMAL(5, 4) DEFAULT NULL COMMENT 'L1语义匹配分数'`
+      );
+    },
   }
 ];
 

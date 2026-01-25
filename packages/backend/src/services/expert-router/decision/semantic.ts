@@ -11,13 +11,16 @@ export interface SemanticRouteConfig {
 
 export class SemanticRouter {
     private engine: LocalEmbeddingEngine;
+    private model: EmbedModel;
     private routes: SemanticRouteConfig[] = [];
     private routeEmbeddings: Map<string, Float32Array[]> = new Map();
     private threshold: number = 0.4;
     private margin: number = 0.05;
     private isReady = false;
+    private notReadyLogged = false;
 
     constructor(config: { model: EmbedModel; threshold?: number; margin?: number; routes?: SemanticRouteConfig[] }) {
+        this.model = config.model;
         this.engine = new LocalEmbeddingEngine({ model: config.model });
         this.threshold = config.threshold ?? 0.4;
         this.margin = config.margin ?? 0.05;
@@ -28,14 +31,26 @@ export class SemanticRouter {
 
     async init() {
         if (this.isReady) return;
-        memoryLogger.info('Initializing L1 Semantic Router...', 'ExpertRouter');
+        const start = Date.now();
+        const routeCount = this.routes.length;
+        const utteranceCount = this.routes.reduce((sum, r) => sum + (Array.isArray(r.utterances) ? r.utterances.length : 0), 0);
+        memoryLogger.info(
+            `Initializing L1 Semantic Router... model=${this.model} routes=${routeCount} utterances=${utteranceCount} threshold=${this.threshold} margin=${this.margin}`,
+            'ExpertRouter'
+        );
         try {
             await this.engine.init();
             await this.warmup();
             this.isReady = true;
-            memoryLogger.info('L1 Semantic Router initialized', 'ExpertRouter');
+            memoryLogger.info(
+                `L1 Semantic Router initialized model=${this.model} cost=${Date.now() - start}ms`,
+                'ExpertRouter'
+            );
         } catch (e: any) {
-            memoryLogger.error(`Failed to initialize L1 Semantic Router: ${e.message}`, 'ExpertRouter');
+            memoryLogger.error(
+                `Failed to initialize L1 Semantic Router model=${this.model} cost=${Date.now() - start}ms: ${e.message}`,
+                'ExpertRouter'
+            );
         }
     }
 
@@ -54,7 +69,16 @@ export class SemanticRouter {
     }
 
     async decide(signal: RoutingSignal): Promise<RouteDecision | null> {
-        if (!this.isReady || this.routeEmbeddings.size === 0) return null;
+        if (!this.isReady || this.routeEmbeddings.size === 0) {
+            if (!this.notReadyLogged) {
+                this.notReadyLogged = true;
+                memoryLogger.debug(
+                    `L1 Semantic not ready yet; skipping scoring (model=${this.model} ready=${this.isReady} routes=${this.routeEmbeddings.size})`,
+                    'ExpertRouter'
+                );
+            }
+            return null;
+        }
         
         try {
             const text = signal.intentText;
@@ -81,9 +105,13 @@ export class SemanticRouter {
             const top1 = scores[0];
             const top2 = scores[1];
 
+            const topList = scores.slice(0, 5)
+                .map(s => `${s.category}(${s.score.toFixed(3)})`)
+                .join(' ');
+
             // Logging for debug/tuning
             memoryLogger.debug(
-                `L1 Scoring: Top1=${top1.category}(${top1.score.toFixed(3)}) Top2=${top2?.category}(${top2?.score.toFixed(3)}) Time=${Date.now()-start}ms`, 
+                `L1 Scoring: ${topList} time=${Date.now() - start}ms`,
                 'ExpertRouter'
             );
 
@@ -100,9 +128,12 @@ export class SemanticRouter {
                 confidence: top1.score,
                 source: 'l1_semantic',
                 metadata: {
+                    model: this.model,
                     top1: top1,
                     top2: top2 || null,
-                    threshold: this.threshold
+                    threshold: this.threshold,
+                    margin: this.margin,
+                    top5: scores.slice(0, 5)
                 }
             };
 

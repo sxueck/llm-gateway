@@ -99,6 +99,7 @@ function getTemplateColor(type: string) {
     case 'review': return '#f5222d'; // Red
     case 'setup': return '#707070'; // Grey
     case 'test': return '#10b981'; // Emerald
+    case 'utility': return '#0ea5e9'; // Sky
     default: return '#888888';
   }
 }

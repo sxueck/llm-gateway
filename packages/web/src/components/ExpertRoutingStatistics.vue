@@ -2,7 +2,7 @@
   <div>
     <n-space vertical :size="16">
       <!-- Top Overview -->
-      <n-grid :cols="4" :x-gap="12">
+      <n-grid :cols="3" :x-gap="12">
         <n-gi>
           <n-card size="small">
             <n-statistic :label="t('expertRouting.totalRequests')" :value="statistics.totalRequests" />
@@ -22,64 +22,25 @@
             </n-statistic>
           </n-card>
         </n-gi>
-        <n-gi>
-          <n-card size="small">
-            <n-statistic :label="t('expertRouting.heuristicHitRate')" :value="heuristicHitRate">
-              <template #suffix>%</template>
-            </n-statistic>
-          </n-card>
-        </n-gi>
       </n-grid>
 
       <!-- Routing Flow / Distribution -->
       <n-card :title="t('expertRouting.routingDistribution')" size="small">
         <n-space vertical :size="12">
-          <div class="distribution-bar">
-            <div class="dist-label">L1 Semantic</div>
+          <div
+            v-for="bar in distributionBars"
+            :key="bar.source"
+            class="distribution-bar"
+          >
+            <div class="dist-label">{{ bar.label }}</div>
             <n-progress
               type="line"
-              :percentage="getSourcePercentage('l1_semantic')"
-              :color="'#18a058'"
+              :percentage="getSourcePercentage(bar.source)"
+              :color="bar.color"
               :height="20"
               :show-indicator="true"
             >
-              {{ statistics.routeSourceDistribution?.['l1_semantic'] || 0 }}
-            </n-progress>
-          </div>
-          <div class="distribution-bar">
-            <div class="dist-label">L2 Heuristic</div>
-            <n-progress
-              type="line"
-              :percentage="getSourcePercentage('l2_heuristic')"
-              :color="'#2080f0'"
-              :height="20"
-              :show-indicator="true"
-            >
-              {{ statistics.routeSourceDistribution?.['l2_heuristic'] || 0 }}
-            </n-progress>
-          </div>
-          <div class="distribution-bar">
-            <div class="dist-label">L3 LLM Judge</div>
-            <n-progress
-              type="line"
-              :percentage="getSourcePercentage('l3_llm')"
-              :color="'#f0a020'"
-              :height="20"
-              :show-indicator="true"
-            >
-              {{ statistics.routeSourceDistribution?.['l3_llm'] || 0 }}
-            </n-progress>
-          </div>
-          <div class="distribution-bar">
-            <div class="dist-label">Fallback</div>
-            <n-progress
-              type="line"
-              :percentage="getSourcePercentage('fallback')"
-              :color="'#d03050'"
-              :height="20"
-              :show-indicator="true"
-            >
-              {{ statistics.routeSourceDistribution?.['fallback'] || 0 }}
+              {{ statistics.routeSourceDistribution?.[bar.source] || 0 }}
             </n-progress>
           </div>
         </n-space>
@@ -167,15 +128,15 @@
                   </div>
                   <div>
                     <n-text strong>Semantic Score:</n-text>
-                    {{ selectedLogDetail.semantic_score?.toFixed(4) || '-' }}
+                    {{ typeof selectedLogDetail.semantic_score === 'number' ? selectedLogDetail.semantic_score.toFixed(4) : '-' }}
                   </div>
                   <div>
                     <n-text strong>Prompt Tokens (Est):</n-text>
-                    {{ selectedLogDetail.prompt_tokens || '-' }}
+                    {{ selectedLogDetail.prompt_tokens ?? '-' }}
                   </div>
                   <div>
                     <n-text strong>Cleaned Length:</n-text>
-                    {{ selectedLogDetail.cleaned_content_length || '-' }} chars
+                    {{ selectedLogDetail.cleaned_content_length ?? '-' }} chars
                   </div>
                 </n-space>
               </n-gi>
@@ -320,8 +281,26 @@ const cleaningEfficiency = computed(() => {
   return Math.max(0, Math.round((reduction / estimatedOriginalChars) * 100));
 });
 
-const heuristicHitRate = computed(() => {
-  return getSourcePercentage('l2_heuristic');
+type RouteSource = 'l1_semantic' | 'l2_heuristic' | 'l3_llm' | 'fallback';
+
+const distributionBars = computed(() => {
+  const dist = statistics.value.routeSourceDistribution || {};
+  const count = (source: RouteSource) => dist[source] || 0;
+
+  // We only show L3/Fallback when they actually occur.
+  // L1 is always shown.
+  const bars: Array<{ source: RouteSource; label: string; color: string }> = [
+    { source: 'l1_semantic', label: 'L1 Semantic', color: '#18a058' },
+  ];
+
+  if (count('l3_llm') > 0) {
+    bars.push({ source: 'l3_llm', label: 'L3 LLM Judge', color: '#f0a020' });
+  }
+  if (count('fallback') > 0) {
+    bars.push({ source: 'fallback', label: 'Fallback', color: '#d03050' });
+  }
+
+  return bars;
 });
 
 function getSourcePercentage(source: string): number {
@@ -338,6 +317,16 @@ function getSourceTagType(source?: string) {
     case 'fallback': return 'error';
     default: return 'default';
   }
+}
+
+function formatRouteSource(source?: string) {
+  if (!source) return '-';
+  if (source === 'fallback') return 'Fallback';
+  return source
+    .replace('l1_', 'L1 ')
+    .replace('l2_', 'L2 ')
+    .replace('l3_', 'L3 ')
+    .replace(/_/g, ' ');
 }
 
 const logColumns = computed<DataTableColumns<ExpertRoutingLog>>(() => [
@@ -358,7 +347,7 @@ const logColumns = computed<DataTableColumns<ExpertRoutingLog>>(() => [
           type: getSourceTagType(row.route_source),
           bordered: false
         },
-        () => row.route_source ? row.route_source.replace('l1_', 'L1 ').replace('l3_', 'L3 ').replace('_', ' ') : '-'
+        () => formatRouteSource(row.route_source)
       );
     }
   },
@@ -581,4 +570,3 @@ onMounted(() => {
   }
 }
 </style>
-

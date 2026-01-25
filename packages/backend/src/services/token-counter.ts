@@ -11,7 +11,7 @@ function acquireEncoding(): EncodingInstance {
   return sharedEncoding;
 }
 
-function countTokensForText(text: string): number {
+export function countTokensForText(text: string): number {
   if (!text || typeof text !== 'string') {
     return 0;
   }

@@ -226,7 +226,8 @@ function handleTemplateSelect(template: ExpertTemplate | null) {
     'refactor': '#8a2be2',
     'review': '#f5222d',
     'setup': '#707070',
-    'test': '#10b981'
+    'test': '#10b981',
+    'utility': '#0ea5e9'
   };
 
   const defaultColor = template && colorMap[template.value] ? colorMap[template.value] : '#1890ff';

@@ -31,5 +31,3 @@ export interface PaginatedResponse<T> {
   pageSize: number;
   totalPages: number;
 }
-
-// 更多共享类型...

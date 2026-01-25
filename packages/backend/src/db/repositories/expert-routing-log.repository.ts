@@ -141,6 +141,36 @@ export const expertRoutingLogRepository = {
     }
   },
 
+  // Fallback for deployments without v22 stats columns.
+  // Uses classifier_model to infer layer/source distribution.
+  async getClassifierModelStats(configId: string, timeRange?: number) {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      let query = `
+        SELECT
+          classifier_model,
+          COUNT(*) as count
+        FROM expert_routing_logs
+        WHERE expert_routing_id = ?
+      `;
+
+      const params: any[] = [configId];
+      if (timeRange) {
+        const cutoffTime = Date.now() - timeRange;
+        query += ' AND created_at >= ?';
+        params.push(cutoffTime);
+      }
+
+      query += ' GROUP BY classifier_model';
+
+      const [rows] = await conn.query(query, params);
+      return rows;
+    } finally {
+      conn.release();
+    }
+  },
+
   async getByConfigId(configId: string, limit: number = 100) {
     const pool = getDatabase();
     const conn = await pool.getConnection();

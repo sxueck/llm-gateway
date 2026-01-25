@@ -30,6 +30,8 @@ export const expertTemplates: ExpertTemplate[] = [
       '这个函数在输入为 0 时输出不对，应该返回 1。',
       "I'm seeing a memory leak in production. Here is the heap dump analysis. Help me find the root cause.",
       'The frontend is not rendering the updated state despite the Redux action being fired.',
+      '工具调用: execute_command/npm test 报错了，帮我定位并修复。',
+      '请求调用了bash（执行命令），结果 error，请分析失败原因。',
     ],
   },
   {
@@ -53,6 +55,8 @@ export const expertTemplates: ExpertTemplate[] = [
       'Clarify the concept of "closure" in JavaScript with an example.',
       '这个正则表达式每一部分是什么意思？',
       'Document this class and its methods, explaining the design pattern used.',
+      '工具调用: read_file 已读取代码，请解释它的作用与关键逻辑。',
+      '请求调用了search（检索资料），请用通俗方式解释这个概念。',
     ],
   },
   {
@@ -76,6 +80,8 @@ export const expertTemplates: ExpertTemplate[] = [
       'Add a "Forgot Password" feature that sends an email with a reset link.',
       'Generate a Dockerfile for this Node.js application.',
       '新增 4 个导出 CSV 的功能，并支持按日期过滤。',
+      '工具定义: write_file/apply_patch；请新增一个 API/功能并给出实现代码。',
+      '请求调用了write_file（写文件）和apply_patch（改代码），目标是新增功能。',
     ],
   },
   {
@@ -99,6 +105,8 @@ export const expertTemplates: ExpertTemplate[] = [
       'Create a roadmap for implementing the new search functionality.',
       'Draft a technical specification for the user authentication system.',
       '帮我规划一下把单体拆成服务的迁移路线。',
+      '工具调用: list_files/grep 获取了项目结构；请给出实施方案与里程碑。',
+      '请求调用了search（调研资料），请做选型对比并给方案。',
     ],
   },
   {
@@ -123,6 +131,8 @@ export const expertTemplates: ExpertTemplate[] = [
       'Modernize this legacy Java 7 code to use Java 8 streams and lambdas.',
       'Simplify this complex if-else chain using a lookup table or polymorphism.',
       'Restructure this component to separate view logic from business logic.',
+      '工具调用: apply_patch 修改了多个文件；请重构保持行为不变。',
+      '请求调用了read_file（读代码）后准备重构，请优化结构与命名。',
     ],
   },
   {
@@ -146,6 +156,8 @@ export const expertTemplates: ExpertTemplate[] = [
       'Critique this API design for RESTfulness and consistency.',
       'Look for potential race conditions in this concurrent code.',
       '这是我 PR 的 diff，给我一些改进建议。',
+      '工具调用: read_file 读取了 diff/PR；请做 code review 并指出风险。',
+      '请求调用了search（查资料），请从安全角度审查这段实现。',
     ],
   },
   {
@@ -169,6 +181,8 @@ export const expertTemplates: ExpertTemplate[] = [
       'Initialize a new TypeScript project with strict mode enabled.',
       'Help me configure VS Code for Python development with linting.',
       'docker compose 起服务报端口冲突，怎么改？',
+      '工具调用: execute_command (docker compose up) 报错；请帮我排查环境/配置。',
+      '请求调用了bash（安装依赖），遇到 permission denied，怎么解决？',
     ],
   },
   {
@@ -192,6 +206,29 @@ export const expertTemplates: ExpertTemplate[] = [
       'Improve test coverage for this module to 90%.',
       'Write a performance test script using k6.',
       'Generate test data for boundary conditions.',
+      '工具调用: execute_command (pytest/jest) 失败；请补充/修复测试用例。',
+      '请求调用了bash（运行测试），出现 flaky test，请定位并稳定它。',
+    ],
+  },
+  {
+    label: 'Utility (摘要/翻译/抽取)',
+    value: 'utility',
+    description: '轻量文本处理/总结/翻译/抽取/格式化；也适合“基于工具输出生成结论”的任务。',
+    system_prompt: `用于轻量文本处理与工具输出整理。
+
+应归类到 utility：
+- 摘要、要点提取、翻译、改写、格式化、从日志/工具输出中整理结论与行动项。
+
+不应归类到 utility：
+- 明确的软件工程任务（debug/feature/plan/refactor/review/test/setup）。`,
+    utterances: [
+      'Summarize this text into 5 bullet points.',
+      '把这段内容压缩成一段 200 字摘要。',
+      '提取这段日志里的错误原因、影响范围和行动项。',
+      'Translate this paragraph to Chinese and keep formatting.',
+      '工具结果很长，请输出 TL;DR + Key Points + Next Steps。',
+      '请求调用了read_file（读取文件内容），请总结重点并生成行动项。',
+      '工具调用: search 得到资料，请用中文做结论摘要。',
     ],
   },
   {
@@ -215,6 +252,8 @@ export const expertTemplates: ExpertTemplate[] = [
       'Just checking in.',
       'Weather in Tokyo?',
       'Summary this text.',
+      '工具调用: read_file 得到一段日志/文本；请帮我总结要点。',
+      '请求调用了read_file（读取文本），请生成 TL;DR 和行动项。',
     ],
   },
 ];

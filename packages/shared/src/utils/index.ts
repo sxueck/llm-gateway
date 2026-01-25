@@ -16,5 +16,3 @@ export const formatDate = (date: Date | string | number): string => {
   const d = new Date(date);
   return d.toISOString();
 };
-
-// 更多工具函数...

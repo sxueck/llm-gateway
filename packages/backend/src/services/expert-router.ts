@@ -57,6 +57,17 @@ export class ExpertRouter {
         throw new Error(`Failed to build routing signal: ${e.message}`);
     }
 
+    if (signal.stats) {
+        const s = signal.stats;
+        if (typeof s.originalTokens === 'number' && typeof s.cleanedTokens === 'number') {
+            const pct = typeof s.removedTokensPct === 'number' ? (s.removedTokensPct * 100).toFixed(1) : '0.0';
+            memoryLogger.debug(
+                `Preprocess: intentTokens=${s.originalTokens}->${s.cleanedTokens} (removed=${s.removedTokens ?? 0}, ${pct}%) promptTokens=${s.promptTokens} tokenizer=${s.tokenizer || 'unknown'}`,
+                'ExpertRouter'
+            );
+        }
+    }
+
     if (!signal.intentText && signal.toolSignals.length === 0) {
         throw new Error('No valid intent text or signals found in request');
     }

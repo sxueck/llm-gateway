@@ -215,6 +215,40 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     }
   }
 
+  function inferRouteSource(log: any): string | null {
+    if (log?.route_source) return String(log.route_source);
+
+    // Some deployments might not have v22 columns; fall back to existing fields.
+    const req = log?.classifier_request;
+    if (typeof req === 'string') {
+      if (req === 'l1_semantic' || req === 'l2_heuristic' || req === 'l3_llm' || req === 'fallback') return req;
+      if (req.startsWith('l1_') || req.startsWith('l2_') || req.startsWith('l3_')) return req;
+    }
+
+    const model = String(log?.classifier_model || '');
+    if (model === 'fallback') return 'fallback';
+    if (model === 'heuristic') return 'l2_heuristic';
+    if (model.startsWith('semantic/')) return 'l1_semantic';
+    return 'l3_llm';
+  }
+
+  function inferSemanticScore(log: any): number | undefined {
+    if (log?.semantic_score !== undefined && log?.semantic_score !== null) {
+      const n = Number(log.semantic_score);
+      return Number.isFinite(n) ? n : undefined;
+    }
+    const source = inferRouteSource(log);
+    if (source !== 'l1_semantic') return undefined;
+    try {
+      const parsed = safeJsonParse(log?.classifier_response);
+      const score = parsed?.top1?.score;
+      const n = Number(score);
+      return Number.isFinite(n) ? n : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   fastify.get('/', async () => {
     try {
       const configs = await expertRoutingConfigDb.getAll();
@@ -462,21 +496,32 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       let totalPromptTokens = 0;
       let cleaningCount = 0;
 
-      for (const row of routeStats as any[]) {
-        if (row.route_source) {
-          routeSourceDistribution[row.route_source] = Number(row.count);
+      if ((routeStats as any[]).length > 0) {
+        for (const row of routeStats as any[]) {
+          if (row.route_source) {
+            routeSourceDistribution[row.route_source] = Number(row.count);
+          }
+          const count = Number(row.count);
+          totalCleanedLength += Number(row.avg_cleaned_length || 0) * count;
+          totalPromptTokens += Number(row.avg_prompt_tokens || 0) * count;
+          cleaningCount += count;
         }
-        // Only count cleaning stats for valid records (though avg is already returned, we can use it)
-        // Actually getRouteStats returns avg_cleaned_length.
-        // Let's just use the aggregates from SQL if possible, but routeStats is grouped by source.
-        // We want global avg cleaning stats.
-        // Let's assume we want to show "Average Cleaning Efficiency".
-        // We can aggregate from the grouped result or do another query.
-        // Grouped result is fine.
-        const count = Number(row.count);
-        totalCleanedLength += Number(row.avg_cleaned_length || 0) * count;
-        totalPromptTokens += Number(row.avg_prompt_tokens || 0) * count;
-        cleaningCount += count;
+      } else {
+        // Fallback when stats columns (route_source/prompt_tokens/cleaned_content_length) are missing.
+        const modelStats = await expertRoutingLogDb.getClassifierModelStats(id, timeRangeMs);
+        for (const row of modelStats as any[]) {
+          const model = String(row.classifier_model || '');
+          const count = Number(row.count);
+          const source =
+            model === 'fallback'
+              ? 'fallback'
+              : model === 'heuristic'
+                ? 'l2_heuristic'
+                : model.startsWith('semantic/')
+                  ? 'l1_semantic'
+                  : 'l3_llm';
+          routeSourceDistribution[source] = (routeSourceDistribution[source] || 0) + count;
+        }
       }
 
       const cleaningStats = {
@@ -513,7 +558,11 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       }
 
       const limitNum = limit ? Number.parseInt(limit) : 100;
-      const logs = await expertRoutingLogDb.getByConfigId(id, limitNum);
+      const logs = (await expertRoutingLogDb.getByConfigId(id, limitNum) as any[]).map((log) => ({
+        ...log,
+        route_source: inferRouteSource(log),
+        semantic_score: inferSemanticScore(log),
+      }));
 
       return { logs };
     } catch (error: any) {
@@ -533,7 +582,11 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       }
 
       const limitNum = limit ? Number.parseInt(limit) : 100;
-      const logs = await expertRoutingLogDb.getByCategory(id, category, limitNum);
+      const logs = (await expertRoutingLogDb.getByCategory(id, category, limitNum) as any[]).map((log) => ({
+        ...log,
+        route_source: inferRouteSource(log),
+        semantic_score: inferSemanticScore(log),
+      }));
 
       return { logs };
     } catch (error: any) {
@@ -560,6 +613,8 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         throw new Error('日志不属于该专家路由配置');
       }
 
+      const inferredSource = inferRouteSource(log);
+
       return {
         id: log.id,
         virtual_key_id: log.virtual_key_id,
@@ -575,6 +630,10 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         original_request: safeJsonParse(log.original_request),
         classifier_request: safeJsonParse(log.classifier_request),
         classifier_response: safeJsonParse(log.classifier_response),
+        route_source: inferredSource,
+        prompt_tokens: log.prompt_tokens ?? undefined,
+        cleaned_content_length: log.cleaned_content_length ?? undefined,
+        semantic_score: inferSemanticScore(log),
       };
     } catch (error: any) {
       memoryLogger.error(`获取日志详情失败: ${error.message}`, 'ExpertRouting');

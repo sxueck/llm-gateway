@@ -460,6 +460,12 @@ const isResizing = ref(false);
 const resizeStartX = ref(0);
 const resizeStartWidth = ref(0);
 
+function blurActiveElement() {
+  // Avoid Chrome blocking aria-hidden when opening naive-ui modal (focus must move off background).
+  const el = document.activeElement;
+  if (el && el instanceof HTMLElement) el.blur();
+}
+
 const cardWidth = computed(() => {
   const CARD_PADDING = 48;
   return previewWidth.value + CARD_PADDING;
@@ -532,12 +538,14 @@ async function loadConfigs() {
 }
 
 function handleCreate() {
+  blurActiveElement();
   editingId.value = null;
   editingConfig.value = createDefaultExpertRoutingConfig();
   showEditorModal.value = true;
 }
 
 function handleEdit(config: ExpertRouting) {
+  blurActiveElement();
   editingId.value = config.id;
   editingConfig.value = {
     name: config.name,
@@ -553,6 +561,7 @@ function handleEdit(config: ExpertRouting) {
 }
 
 function handleShowStatistics(configId: string) {
+  blurActiveElement();
   selectedConfigId.value = configId;
   showStatisticsModal.value = true;
 }
@@ -642,4 +651,3 @@ watch(showEditorModal, async (show) => {
   }
 });
 </script>
-
