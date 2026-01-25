@@ -9,7 +9,7 @@
     "dev": "bun --watch src/index.ts",
     "dev:node": "tsx watch src/index.ts",
     "dev:node-simple": "node --loader tsx src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target node --minify",
+    "build": "bun build src/index.ts --outdir dist --target node --minify --external @xenova/transformers --external onnxruntime-node --external onnxruntime-web --external onnxruntime-common --external sharp",
     "start": "bun run dist/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit --noUnusedLocals false --noUnusedParameters false --noImplicitReturns false",

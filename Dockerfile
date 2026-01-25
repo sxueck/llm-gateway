@@ -1,129 +1,113 @@
-# 多阶段构建 - 基于 Bun
+FROM ubuntu:24.04 AS bun-base
 
-# ========================
-# Stage 1: 依赖安装
-# ========================
-FROM oven/bun:1.3.5-alpine AS deps
+ARG DEBIAN_FRONTEND=noninteractive
+ARG BUN_VERSION=1.3.5
+ARG TARGETARCH
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  ca-certificates \
+  curl \
+  unzip \
+  tzdata \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV BUN_INSTALL=/opt/bun
+
+RUN set -eux; \
+  arch="${TARGETARCH:-}"; \
+  if [ -z "$arch" ]; then arch="$(dpkg --print-architecture)"; fi; \
+  case "$arch" in \
+    amd64) bun_zip="bun-linux-x64-baseline.zip" ;; \
+    arm64) bun_zip="bun-linux-aarch64.zip" ;; \
+    *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+  esac; \
+  curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/${bun_zip}" -o /tmp/bun.zip; \
+  unzip -q /tmp/bun.zip -d /tmp; \
+  bun_dir="$(ls -d /tmp/bun-* | head -n 1)"; \
+  test -n "$bun_dir"; \
+  mkdir -p "$BUN_INSTALL"; \
+  cp -a "$bun_dir"/* "$BUN_INSTALL"/; \
+  ln -sf "$BUN_INSTALL/bun" /usr/local/bin/bun; \
+  if [ -f "$BUN_INSTALL/bunx" ]; then ln -sf "$BUN_INSTALL/bunx" /usr/local/bin/bunx; else ln -sf "$BUN_INSTALL/bun" /usr/local/bin/bunx; fi; \
+  rm -rf /tmp/bun.zip "$bun_dir"
+
+FROM bun-base AS deps
 
 WORKDIR /app
 
-# 复制 workspace 配置
 COPY package.json bunfig.toml bun.lock* ./
 COPY packages ./packages
 
-# 安装所有依赖
 RUN bun ci --frozen-lockfile
 
-# ========================
-# Stage 2: 前端构建
-# ========================
-FROM oven/bun:1.3.5-alpine AS web-builder
+FROM bun-base AS web-builder
 
 WORKDIR /app
 
-# 复制依赖
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
 COPY --from=deps /app/packages/web/node_modules ./packages/web/node_modules
 
-# 复制 workspace 配置
 COPY package.json bunfig.toml ./
-
-# 复制 tsconfig 配置（web 需要 vue.json，shared 需要 node.json）
 COPY packages/tsconfig ./packages/tsconfig
-
-# 复制 shared 包
 COPY packages/shared ./packages/shared
-
-# 复制前端源码
 COPY packages/web ./packages/web
 
-# 构建前端
 WORKDIR /app/packages/web
 RUN bun run build
 
-# ========================
-# Stage 3: 后端构建
-# ========================
-FROM oven/bun:1.3.5-alpine AS backend-builder
+FROM bun-base AS backend-builder
 
 WORKDIR /app
 
-# 复制依赖
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
 COPY --from=deps /app/packages/backend/node_modules ./packages/backend/node_modules
 
-# 复制 workspace 配置
 COPY package.json bunfig.toml ./
-
-# 复制 tsconfig 配置（backend 需要 node.json，shared 也需要 node.json）
 COPY packages/tsconfig ./packages/tsconfig
-
-# 复制 shared 包
 COPY packages/shared ./packages/shared
-
-# 复制后端源码
 COPY packages/backend ./packages/backend
 
-# 构建后端
 WORKDIR /app/packages/backend
 RUN bun run build
 
-# ========================
-# Stage 4: 生产运行环境
-# ========================
-FROM oven/bun:1.3.5-alpine
+FROM bun-base
 
 WORKDIR /app
 
-# 安装必要的运行时依赖
-RUN apk add --no-cache \
-  ca-certificates \
-  tzdata \
-  docker-cli
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  docker.io \
+  && rm -rf /var/lib/apt/lists/*
 
-# 创建非 root 用户
-RUN addgroup -g 1001 -S nodejs && \
-  adduser -S nodejs -u 1001
+RUN groupadd --gid 1001 --system nodejs && \
+  useradd --uid 1001 --gid 1001 --system --create-home --home-dir /home/nodejs --shell /usr/sbin/nologin nodejs
 
-# 复制依赖（仅生产依赖）
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/backend/node_modules ./packages/backend/node_modules
 
-# 复制后端构建产物
 COPY --from=backend-builder /app/packages/backend/dist ./packages/backend/dist
 COPY --from=backend-builder /app/packages/backend/package.json ./packages/backend/
-
-# 复制前端构建产物到后端静态目录
 COPY --from=web-builder /app/packages/web/dist ./packages/backend/public
 
-# 复制其他必要文件
 COPY scripts ./scripts
 
-# 创建数据目录
 RUN mkdir -p /app/data /app/portkey-config
 
-# 环境变量
-ENV NODE_ENV=production
-ENV PORT=3000
-ENV DB_PATH=/app/data/gateway.db
-ENV PORTKEY_CONFIG_PATH=/app/portkey-config/conf.json
-ENV LOG_LEVEL=info
+ENV NODE_ENV=production \
+  PORT=3000 \
+  DB_PATH=/app/data/gateway.db \
+  PORTKEY_CONFIG_PATH=/app/portkey-config/conf.json \
+  LOG_LEVEL=info
 
-# 设置权限
 RUN chown -R nodejs:nodejs /app
 
-# 切换到非 root 用户
 USER nodejs
 
-# 暴露端口
 EXPOSE 3000
 
-# 健康检查
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD bun --version || exit 1
 
-# 启动应用
 WORKDIR /app/packages/backend
 CMD ["bun", "run", "dist/index.js"]

@@ -1,11 +1,4 @@
-
-import { pipeline, env } from '@xenova/transformers';
 import { EmbedModel, Embedder, EmbeddingEngineConfig } from './types.js';
-
-// Set cache directory if provided
-if (process.env.EMBED_CACHE_DIR) {
-    env.cacheDir = process.env.EMBED_CACHE_DIR;
-}
 
 export class LocalEmbeddingEngine implements Embedder {
     private pipe: any;
@@ -23,16 +16,25 @@ export class LocalEmbeddingEngine implements Embedder {
         
         this.isInitializing = true;
         this.readyPromise = (async () => {
-             try {
-                 const modelName = this.mapModelName(this.config.model);
-                 this.pipe = await pipeline('feature-extraction', modelName, {
-                    quantized: this.config.quantized ?? true,
-                 });
-             } catch (error) {
-                 this.isInitializing = false;
-                 this.readyPromise = null;
-                 throw error;
-             }
+              try {
+                  // Lazy-load transformers to avoid hard-crashing the whole server when
+                  // optional native deps (onnxruntime-node) are unavailable/misconfigured.
+                  const { pipeline, env } = await import('@xenova/transformers');
+
+                  // Set cache directory if provided
+                  if (process.env.EMBED_CACHE_DIR) {
+                      env.cacheDir = process.env.EMBED_CACHE_DIR;
+                  }
+
+                  const modelName = this.mapModelName(this.config.model);
+                  this.pipe = await pipeline('feature-extraction', modelName, {
+                     quantized: this.config.quantized ?? true,
+                  });
+              } catch (error) {
+                  this.isInitializing = false;
+                  this.readyPromise = null;
+                  throw error;
+              }
         })();
         return this.readyPromise;
     }
