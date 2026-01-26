@@ -90,6 +90,7 @@ export class ExpertRouter {
     }
 
     // 3. L2 LLM Judge (Fallback or Primary if mode=llm)
+    let llmJudgeFailedRequest: any = null;
     if (!decision) {
         // If mode is strictly semantic, we might fail here?
         // Plan says: "L1 uncertain -> L3". Even if mode is semantic?
@@ -97,10 +98,10 @@ export class ExpertRouter {
         // If mode is 'semantic' and L1 failed, do we fall back to L3?
         // Plan: "L1 返回不确定，交给 L3 兜底" (L1 returns uncertain, pass to L3).
         // This implies L3 is the ultimate fallback unless explicitly disabled.
-        
+
         if (routingMode !== 'semantic') { // If mode is 'semantic', we should probably NOT call LLM?
                                         // But typically we want high availability.
-                                        // I'll assume if mode is 'semantic' we skip LLM. 
+                                        // I'll assume if mode is 'semantic' we skip LLM.
                                         // But if mode is 'hybrid' or 'llm', we use LLM.
               try {
                   decision = await LLMJudge.decide(signal, config.classifier, config.experts);
@@ -108,6 +109,8 @@ export class ExpertRouter {
               } catch (e: any) {
                   memoryLogger.error(`L3 LLM Judge failed: ${e.message}`, 'ExpertRouter');
                   // If L3 fails, we go to global fallback below
+                  // Capture the failed classifier request if available in error context
+                  llmJudgeFailedRequest = (e as any).classifierRequest || null;
               }
         }
     }
@@ -115,14 +118,14 @@ export class ExpertRouter {
     if (!decision) {
         memoryLogger.warn('All routing layers failed to determine category', 'ExpertRouter');
         if (config.fallback) {
-            return await this.resolveFallback(config.fallback, 'routing_failed', startTime, expertRoutingId, context, request, signal.stats);
+            return await this.resolveFallback(config.fallback, 'routing_failed', startTime, expertRoutingId, context, request, signal.stats, llmJudgeFailedRequest);
         }
         throw new Error('Routing failed and no fallback configured');
     }
 
     // 4. Select Expert
     const expert = matchExpert(decision.category, config.experts);
-    
+
     if (!expert) {
       memoryLogger.warn(
         `No expert found for category: "${decision.category}"`,
@@ -251,7 +254,8 @@ export class ExpertRouter {
     expertRoutingId: string,
     context: RoutingContext,
     request: ProxyRequest,
-    stats?: { promptTokens: number; cleanedLength: number }
+    stats?: { promptTokens: number; cleanedLength: number },
+    llmJudgeFailedRequest?: any
   ): Promise<ExpertRoutingResult> {
     if (!fallback) {
       throw new Error('No fallback configured');
@@ -260,6 +264,9 @@ export class ExpertRouter {
     const resolved = await resolveModelConfig(fallback, 'Fallback');
     const classificationTime = Date.now() - startTime;
     const requestHash = this.generateRequestHash(request);
+
+    // Determine classifier request: use actual failed request if available, otherwise 'fallback'
+    const classifierRequest = llmJudgeFailedRequest ? JSON.stringify(llmJudgeFailedRequest) : 'fallback';
 
     // Log fallback execution (best-effort; fallback must not fail due to logging issues)
     try {
@@ -280,8 +287,8 @@ export class ExpertRouter {
           (request.body as any)?.text ??
           []
         ),
-        classifier_request: 'fallback',
-        classifier_response: 'fallback_triggered',
+        classifier_request: classifierRequest,
+        classifier_response: llmJudgeFailedRequest ? 'llm_judge_failed' : 'fallback_triggered',
         route_source: 'fallback',
         prompt_tokens: stats?.promptTokens ?? 0,
         cleaned_content_length: stats?.cleanedLength ?? 0,

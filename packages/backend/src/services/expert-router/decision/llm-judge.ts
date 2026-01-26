@@ -128,6 +128,10 @@ export class LLMJudge {
 
      } catch (e: any) {
        memoryLogger.error(`LLM Judge execution failed: ${e.message}`, 'ExpertRouter');
+       // Attach classifier request to error for fallback logging
+       if (requestBody) {
+         e.classifierRequest = requestBody;
+       }
        throw e;
      }
   }
