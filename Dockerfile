@@ -45,8 +45,6 @@ FROM bun-base AS web-builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
-COPY --from=deps /app/packages/web/node_modules ./packages/web/node_modules
 
 COPY package.json bunfig.toml ./
 COPY packages/tsconfig ./packages/tsconfig
@@ -61,8 +59,6 @@ FROM bun-base AS backend-builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
-COPY --from=deps /app/packages/backend/node_modules ./packages/backend/node_modules
 
 COPY package.json bunfig.toml ./
 COPY packages/tsconfig ./packages/tsconfig
@@ -84,7 +80,6 @@ RUN groupadd --gid 1001 --system nodejs && \
   useradd --uid 1001 --gid 1001 --system --create-home --home-dir /home/nodejs --shell /usr/sbin/nologin nodejs
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/backend/node_modules ./packages/backend/node_modules
 
 COPY --from=backend-builder /app/packages/backend/dist ./packages/backend/dist
 COPY --from=backend-builder /app/packages/backend/package.json ./packages/backend/
