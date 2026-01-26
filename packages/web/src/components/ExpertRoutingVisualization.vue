@@ -29,7 +29,7 @@
 
       <div class="arrow">→</div>
 
-      <div class="node classifier-node" @click="editable ? handleEditClassifier() : undefined">
+      <div class="node classifier-node non-editable">
         <div class="node-header">
           <n-icon size="20"><FilterOutline /></n-icon>
           <span>{{ t('expertRouting.classifier') }}</span>
@@ -254,10 +254,6 @@ function handleEditExpert(expert: ExpertTarget) {
   showExpertDrawer.value = true;
 }
 
-function handleEditClassifier() {
-  // TODO: 实现分类器编辑功能
-}
-
 function handleDeleteExpert(expertId: string) {
   dialog.warning({
     title: t('common.warning'),
@@ -445,6 +441,16 @@ watch(
 
 .preview-mode .classifier-node:hover {
   border-color: #1890ff;
+}
+
+.classifier-node.non-editable {
+  cursor: default;
+}
+
+.classifier-node.non-editable:hover {
+  border-color: #1890ff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transform: none;
 }
 
 .arrow {

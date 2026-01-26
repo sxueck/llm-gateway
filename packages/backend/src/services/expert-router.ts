@@ -92,17 +92,8 @@ export class ExpertRouter {
     // 3. L2 LLM Judge (Fallback or Primary if mode=llm)
     let llmJudgeFailedRequest: any = null;
     if (!decision) {
-        // If mode is strictly semantic, we might fail here?
-        // Plan says: "L1 uncertain -> L3". Even if mode is semantic?
-        // Usually 'semantic' mode implies ONLY semantic. But let's assume 'hybrid' is default and we want L3 fallback.
-        // If mode is 'semantic' and L1 failed, do we fall back to L3?
-        // Plan: "L1 返回不确定，交给 L3 兜底" (L1 returns uncertain, pass to L3).
-        // This implies L3 is the ultimate fallback unless explicitly disabled.
 
-        if (routingMode !== 'semantic') { // If mode is 'semantic', we should probably NOT call LLM?
-                                        // But typically we want high availability.
-                                        // I'll assume if mode is 'semantic' we skip LLM.
-                                        // But if mode is 'hybrid' or 'llm', we use LLM.
+        if (routingMode !== 'semantic') {
               try {
                   decision = await LLMJudge.decide(signal, config.classifier, config.experts);
                   memoryLogger.debug(`L2 LLM matched: ${decision.category}`, 'ExpertRouter');
