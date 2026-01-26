@@ -226,6 +226,10 @@ export const expertTemplates: ExpertTemplate[] = [
       '把这段内容压缩成一段 200 字摘要。',
       '提取这段日志里的错误原因、影响范围和行动项。',
       'Translate this paragraph to Chinese and keep formatting.',
+      // System-component style meta tasks (long, fixed templates)
+      'Task: Generate a concise title summarizing the chat history / Task: 根据对话历史生成一个简短标题',
+      'Task: Suggest 3-5 relevant follow-up questions based on the chat history / Task: 根据对话历史给出 3-5 个用户可能会问的后续问题',
+      'Task: Summarize the chat history into key points and next steps / Task: 请根据对话历史生成摘要/要点/行动项',
       '工具结果很长，请输出 TL;DR + Key Points + Next Steps。',
       '请求调用了read_file（读取文件内容），请总结重点并生成行动项。',
       '工具调用: search 得到资料，请用中文做结论摘要。',

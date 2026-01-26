@@ -166,6 +166,11 @@ export class SignalBuilder {
     if (!text) return '';
     let processed = text;
 
+    // Some system components generate a long, rigid template (Task/Guidelines/Output/Chat History).
+    // For routing, keep the *task intent* and compact chat history, and drop the rest.
+    const extracted = SignalBuilder.extractTaskTemplate(processed);
+    if (extracted) processed = extracted;
+
     const hadEnvDetails = /<environment_details>/i.test(processed);
 
     // Some exports wrap the full payload as a JSON-ish `"content": "..."` field.
@@ -240,6 +245,29 @@ export class SignalBuilder {
     });
 
     return processed.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  private static extractTaskTemplate(text: string): string | null {
+    const t = (text || '').toString();
+    if (!t.includes('### Task') && !t.includes('<chat_history>')) return null;
+
+    // Extract task body between "### Task:" and next "###" header (if present).
+    const taskMatch = t.match(/###\s*Task\s*:\s*\n([\s\S]*?)(?=\n###\s*[A-Za-z]|\n<chat_history>|$)/i);
+    const task = taskMatch?.[1]?.trim();
+
+    // Extract chat history in tags (if present), and keep it bounded.
+    const historyMatch = t.match(/<chat_history>\s*([\s\S]*?)\s*<\/chat_history>/i);
+    const historyRaw = historyMatch?.[1]?.trim();
+    const history = historyRaw
+      ? historyRaw.replace(/\s+$/g, '').slice(0, 800)
+      : '';
+
+    if (!task && !history) return null;
+
+    const parts: string[] = [];
+    if (task) parts.push(`Task: ${task}`);
+    if (history) parts.push(`ChatHistory: ${history}`);
+    return parts.join('\n\n').trim();
   }
 
   private static summarizeToolCalls(request: ProxyRequest, toolSignals: any[]): string {

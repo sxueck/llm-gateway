@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 1,
   "workspaces": {
     "": {
       "name": "llm-gateway",
@@ -24,6 +23,7 @@
         "dotenv": "^17.2.3",
         "fastify": "^5.2.0",
         "ip2region": "^2.3.0",
+        "jsonrepair": "^3.13.2",
         "mysql2": "^3.15.3",
         "nanoid": "^5.0.9",
         "node-cron": "^4.2.1",
@@ -770,6 +770,8 @@
     "json-schema-to-ts": ["json-schema-to-ts@3.1.1", "https://registry.npmmirror.com/json-schema-to-ts/-/json-schema-to-ts-3.1.1.tgz", { "dependencies": { "@babel/runtime": "^7.18.3", "ts-algebra": "^2.0.0" } }, "sha512-+DWg8jCJG2TEnpy7kOm/7/AxaYoaRbjVB4LFZLySZlWn8exGs3A4OLJR966cVvU26N7X9TWxl+Jsw7dzAqKT6g=="],
 
     "json-schema-traverse": ["json-schema-traverse@1.0.0", "https://registry.npmmirror.com/json-schema-traverse/-/json-schema-traverse-1.0.0.tgz", {}, "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug=="],
+
+    "jsonrepair": ["jsonrepair@3.13.2", "https://registry.npmmirror.com/jsonrepair/-/jsonrepair-3.13.2.tgz", { "bin": { "jsonrepair": "bin/cli.js" } }, "sha512-Leuly0nbM4R+S5SVJk3VHfw1oxnlEK9KygdZvfUtEtTawNDyzB4qa1xWTmFt1aeoA7sXZkVTRuIixJ8bAvqVUg=="],
 
     "light-my-request": ["light-my-request@6.6.0", "https://registry.npmmirror.com/light-my-request/-/light-my-request-6.6.0.tgz", { "dependencies": { "cookie": "^1.0.1", "process-warning": "^4.0.0", "set-cookie-parser": "^2.6.0" } }, "sha512-CHYbu8RtboSIoVsHZ6Ye4cj4Aw/yg2oAFimlF7mNvfDV192LR7nDiKtSIfCuLT7KokPSTn/9kfVLm5OGN0A28A=="],
 

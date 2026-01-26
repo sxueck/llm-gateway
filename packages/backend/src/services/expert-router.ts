@@ -169,24 +169,28 @@ export class ExpertRouter {
       // Ideally we need a way to detect config updates.
       // A simple way is to store the routes hash/length with the router?
       
-      if (!router) {
-          router = new SemanticRouter({
-              model: config.routing.semantic.model || 'bge-small-zh-v1.5',
-              routes: config.routing.semantic.routes,
-              threshold: config.routing.semantic.threshold,
-              margin: config.routing.semantic.margin
-          });
-          this.semanticRouters.set(expertRoutingId, router);
-          // Async init (don't await if we want to not block? But first request needs it?)
-          // Plan says "Warmup async... L1 returns uncertain if not ready".
-          // So we call init and return the router. Router.decide will check isReady.
-          router.init().catch(e => {
-              memoryLogger.error(`Async init of SemanticRouter failed: ${e.message}`, 'ExpertRouter');
-          });
-      }
-      
-      return router;
-  }
+       if (!router) {
+           router = new SemanticRouter({
+               model: config.routing.semantic.model || 'bge-small-zh-v1.5',
+               routes: config.routing.semantic.routes,
+               threshold: config.routing.semantic.threshold,
+               margin: config.routing.semantic.margin
+           });
+           this.semanticRouters.set(expertRoutingId, router);
+
+           // NOTE: If we don't await init, early requests can miss L1 entirely and fall through.
+           // For reliability (avoid unexpected fallback), initialize on first use.
+           try {
+             await router.init();
+           } catch (e: any) {
+             memoryLogger.error(`Init of SemanticRouter failed: ${e.message}`, 'ExpertRouter');
+             this.semanticRouters.delete(expertRoutingId);
+             return null;
+           }
+       }
+       
+       return router;
+   }
 
   private async resolveExpert(
     expert: ExpertTarget,
@@ -329,9 +333,6 @@ export class ExpertRouter {
   ): string {
     if (decision.source === 'l1_semantic') {
         return `semantic/${decision.metadata?.model || 'default'}`;
-    }
-    if (decision.source === 'l2_heuristic') {
-        return 'heuristic';
     }
     // L3
     if (classifierConfig.type === 'virtual') {
