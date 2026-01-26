@@ -103,10 +103,11 @@
       v-model:show="showLogDetailModal"
       preset="card"
       :title="t('expertRouting.logDetails')"
-      style="width: 1000px; max-height: 80vh"
+      style="width: 1000px; max-height: 90vh"
     >
-      <n-spin :show="logDetailLoading">
-        <n-space v-if="selectedLogDetail" vertical :size="16">
+      <div class="log-detail-scroll-container">
+        <n-spin :show="logDetailLoading">
+          <n-space v-if="selectedLogDetail" vertical :size="16">
           <n-card :title="t('expertRouting.basicInfo')" size="small">
             <n-grid :cols="2" :x-gap="24">
               <n-gi>
@@ -212,8 +213,9 @@
               <n-empty v-else :description="t('common.noData')" :show-icon="false" />
             </div>
           </n-card>
-        </n-space>
-      </n-spin>
+          </n-space>
+        </n-spin>
+      </div>
     </n-modal>
   </div>
 </template>
@@ -568,5 +570,11 @@ onMounted(() => {
   .log-detail-code {
     max-height: 150px;
   }
+}
+
+.log-detail-scroll-container {
+  max-height: calc(90vh - 100px);
+  overflow-y: auto;
+  padding-right: 8px;
 }
 </style>

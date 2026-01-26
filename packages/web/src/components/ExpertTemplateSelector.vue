@@ -117,6 +117,7 @@ function handleSelect(type: string) {
 <style scoped>
 .template-selector {
   padding: 14px 16px;
+  padding-bottom: 32px;
 }
 
 .section-header {

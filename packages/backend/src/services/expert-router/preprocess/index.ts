@@ -1,7 +1,8 @@
 
 import { ProxyRequest, RoutingSignal, HardHint } from '../types.js';
 import { ToolAdapter } from './tool-adapter.js';
-import { extractUserMessagesForClassification } from '../../../utils/message-extractor.js';
+import { extractResponsesInputForClassification, extractUserMessagesForClassification } from '../../../utils/message-extractor.js';
+import { extractUserIntentFromMixedText } from '../../../utils/mixed-intent-extractor.js';
 import { countRequestTokens, countTokensForText } from '../../token-counter.js';
 
 export interface PreprocessOptions {
@@ -90,48 +91,19 @@ export class SignalBuilder {
     // Responses API
     if (body.input !== undefined || typeof body.text === 'string') {
       const input = body.input ?? body.text;
-      let lastUserMessage = '';
-
       if (typeof input === 'string') {
-        lastUserMessage = input;
-      } else if (Array.isArray(input)) {
-        const texts: string[] = [];
-        for (const item of input) {
-          if (!item || typeof item !== 'object') continue;
-
-          // Respect preprocessing options for Responses API message roles.
-          if (options?.strip_tools && item.role === 'tool') continue;
-          if (options?.strip_system_prompt && item.role === 'system') continue;
-
-          // { type: 'message', role: 'user', content: [ { type: 'input_text', text: '...' } ] }
-          if (item.type === 'message' && Array.isArray(item.content)) {
-            for (const part of item.content) {
-              if (part && typeof part === 'object') {
-                if (part.type === 'input_text' && typeof part.text === 'string') {
-                  texts.push(part.text);
-                } else if (typeof part.text === 'string') {
-                  texts.push(part.text);
-                } else if (typeof part.content === 'string') {
-                  texts.push(part.content);
-                }
-              }
-            }
-          } else if (typeof item.text === 'string') {
-            texts.push(item.text);
-          }
-        }
-        lastUserMessage = texts.join('\n').trim();
-        if (!lastUserMessage) {
-          lastUserMessage = JSON.stringify(input);
-        }
-      } else {
-        lastUserMessage = JSON.stringify(input);
+        return { lastUserMessage: input, conversationHistory: '' };
       }
 
-      // Responses API typically doesn't send full history in 'input' the same way 'messages' does
-      // unless provided in conversation context, which we might not have full access to here easily.
-      // So we assume history is empty or implicit.
-      return { lastUserMessage, conversationHistory: '' };
+      if (Array.isArray(input)) {
+        const extracted = extractResponsesInputForClassification(input, options);
+        return {
+          lastUserMessage: extracted.lastUserMessage,
+          conversationHistory: extracted.conversationHistory
+        };
+      }
+
+      return { lastUserMessage: JSON.stringify(input), conversationHistory: '' };
     }
 
     // Chat Completions API
@@ -164,7 +136,7 @@ export class SignalBuilder {
 
   private static denoiseText(text: string, options?: PreprocessOptions): string {
     if (!text) return '';
-    let processed = text;
+    let processed = extractUserIntentFromMixedText(text);
 
     // Some system components generate a long, rigid template (Task/Guidelines/Output/Chat History).
     // For routing, keep the *task intent* and compact chat history, and drop the rest.
@@ -172,23 +144,6 @@ export class SignalBuilder {
     if (extracted) processed = extracted;
 
     const hadEnvDetails = /<environment_details>/i.test(processed);
-
-    // Some exports wrap the full payload as a JSON-ish `"content": "..."` field.
-    // Unwrap it before further denoise so downstream regexes work on the real text.
-    const contentWrapper = processed.match(/^\s*"?content"?\s*:\s*([\s\S]+)$/i);
-    if (contentWrapper && contentWrapper[1]) {
-      processed = contentWrapper[1].trim();
-      // Strip a single pair of surrounding quotes if present.
-      if (processed.length >= 2 && processed.startsWith('"') && processed.endsWith('"')) {
-        processed = processed.slice(1, -1);
-        // Minimal unescape for common log/export formats.
-        processed = processed
-          .replace(/\\n/g, '\n')
-          .replace(/\\t/g, '\t')
-          .replace(/\\r/g, '\r')
-          .replace(/\\"/g, '"');
-      }
-    }
 
     // Some clients (e.g. IDE agents) wrap the real user question and environment noise in XML-ish tags.
     // For routing, keep the user question and drop environment details.

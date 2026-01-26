@@ -117,7 +117,9 @@
       preset="card"
       :title="t('expertRouting.selectExpertTemplate')"
       class="template-selector-modal"
-      :style="{ width: '1200px', maxWidth: '95vw', maxHeight: '80vh' }"
+      :style="{ width: '1200px', maxWidth: '95vw', height: '85vh' }"
+      :bordered="false"
+      size="huge"
     >
       <ExpertTemplateSelector v-if="showTemplateSelector" @select="handleTemplateSelect" />
     </n-modal>
@@ -475,9 +477,17 @@ watch(
   width: 100%;
 }
 
-.template-selector-modal :deep(.n-card__content) {
-  padding: 0;
-  max-height: 75vh;
-  overflow: auto;
+</style>
+
+<style>
+.template-selector-modal {
+  display: flex !important;
+  flex-direction: column;
+}
+
+.template-selector-modal .n-card__content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 !important;
 }
 </style>
