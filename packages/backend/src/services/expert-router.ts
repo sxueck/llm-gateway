@@ -89,7 +89,7 @@ export class ExpertRouter {
         }
     }
 
-    // 3. L2 LLM Judge (Fallback or Primary if mode=llm)
+    // 2. L2 LLM Judge (Fallback or Primary if mode=llm)
     let llmJudgeFailedRequest: any = null;
     if (!decision) {
 
@@ -98,8 +98,8 @@ export class ExpertRouter {
                   decision = await LLMJudge.decide(signal, config.classifier, config.experts);
                   memoryLogger.debug(`L2 LLM matched: ${decision.category}`, 'ExpertRouter');
               } catch (e: any) {
-                  memoryLogger.error(`L3 LLM Judge failed: ${e.message}`, 'ExpertRouter');
-                  // If L3 fails, we go to global fallback below
+                  memoryLogger.error(`L2 LLM Judge failed: ${e.message}`, 'ExpertRouter');
+                  // If L2 fails, we go to global fallback below
                   // Capture the failed classifier request if available in error context
                   llmJudgeFailedRequest = (e as any).classifierRequest || null;
               }
@@ -233,7 +233,7 @@ export class ExpertRouter {
         (request.body as any)?.text ??
         []
       ),
-      classifier_request: decision.source === 'l3_llm' ? JSON.stringify(decision.metadata?.classifierRequest) : decision.source,
+      classifier_request: decision.source === 'l2_llm' ? JSON.stringify(decision.metadata?.classifierRequest) : decision.source,
       classifier_response: JSON.stringify(decision.metadata || {}),
       route_source: decision.source,
       prompt_tokens: stats?.promptTokens ?? 0,
@@ -348,7 +348,7 @@ export class ExpertRouter {
     if (decision.source === 'l1_semantic') {
         return `semantic/${decision.metadata?.model || 'default'}`;
     }
-    // L3
+    // L2
     if (classifierConfig.type === 'virtual') {
       return classifierConfig.model_id!;
     } else {

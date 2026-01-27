@@ -152,6 +152,7 @@ export class SignalBuilder {
       processed = userMsgMatch[1].trim();
     } else {
       processed = processed.replace(/<environment_details>[\s\S]*?<\/environment_details>/gi, '');
+      processed = processed.replace(/<file_content[^>]*>[\s\S]*?<\/file_content>/gi, '');
 
       // Defensive: if closing tag is missing, avoid wiping out the whole prompt.
       const lower = processed.toLowerCase();

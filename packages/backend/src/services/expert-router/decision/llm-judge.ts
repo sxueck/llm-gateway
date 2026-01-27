@@ -113,7 +113,7 @@ export class LLMJudge {
          return {
            category: parsed.category,
            confidence: parsed.confidence,
-           source: 'l3_llm',
+           source: 'l2_llm',
            metadata: {
              latencyMs: Date.now() - startTime,
              classifierModel: `${provider.name}/${model}`,

@@ -64,3 +64,4 @@ CLAUDE.md
 NUL
 packages/backend/tsconfig.tsbuildinfo
 data/*
+packages/backend/data/model-presets.json

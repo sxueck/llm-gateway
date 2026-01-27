@@ -283,18 +283,21 @@ const cleaningEfficiency = computed(() => {
   return Math.max(0, Math.round((reduction / estimatedOriginalChars) * 100));
 });
 
-type RouteSource = 'l1_semantic' | 'l2_heuristic' | 'l3_llm' | 'fallback';
+type RouteSource = 'l1_semantic' | 'l2_heuristic' | 'l3_llm' | 'l2_llm' | 'fallback';
 
 const distributionBars = computed(() => {
   const dist = statistics.value.routeSourceDistribution || {};
   const count = (source: RouteSource) => dist[source] || 0;
 
-  // We only show L3/Fallback when they actually occur.
+  // We only show L2/L3/Fallback when they actually occur.
   // L1 is always shown.
   const bars: Array<{ source: RouteSource; label: string; color: string }> = [
     { source: 'l1_semantic', label: 'L1 Semantic', color: '#18a058' },
   ];
 
+  if (count('l2_llm') > 0) {
+    bars.push({ source: 'l2_llm', label: 'L2 LLM Judge', color: '#f0a020' });
+  }
   if (count('l3_llm') > 0) {
     bars.push({ source: 'l3_llm', label: 'L3 LLM Judge', color: '#f0a020' });
   }
@@ -315,6 +318,7 @@ function getSourceTagType(source?: string) {
   switch (source) {
     case 'l1_semantic': return 'success';
     case 'l2_heuristic': return 'info';
+    case 'l2_llm': return 'warning';
     case 'l3_llm': return 'warning';
     case 'fallback': return 'error';
     default: return 'default';
@@ -324,6 +328,7 @@ function getSourceTagType(source?: string) {
 function formatRouteSource(source?: string) {
   if (!source) return '-';
   if (source === 'fallback') return 'Fallback';
+  if (source === 'l2_llm') return 'L2 LLM Judge';
   return source
     .replace('l1_', 'L1 ')
     .replace('l2_', 'L2 ')

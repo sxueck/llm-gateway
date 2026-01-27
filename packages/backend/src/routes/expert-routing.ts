@@ -221,7 +221,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     // Some deployments might not have v22 columns; fall back to existing fields.
     const req = log?.classifier_request;
     if (typeof req === 'string') {
-      if (req === 'l1_semantic' || req === 'l2_heuristic' || req === 'l3_llm' || req === 'fallback') return req;
+      if (req === 'l1_semantic' || req === 'l2_llm' || req === 'l3_llm' || req === 'fallback') return req;
       if (req.startsWith('l1_') || req.startsWith('l2_') || req.startsWith('l3_')) return req;
     }
 
@@ -229,7 +229,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     if (model === 'fallback') return 'fallback';
     if (model === 'heuristic') return 'l2_heuristic';
     if (model.startsWith('semantic/')) return 'l1_semantic';
-    return 'l3_llm';
+    return 'l2_llm';
   }
 
   function inferSemanticScore(log: any): number | undefined {
@@ -519,7 +519,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
                 ? 'l2_heuristic'
                 : model.startsWith('semantic/')
                   ? 'l1_semantic'
-                  : 'l3_llm';
+                  : 'l2_llm';
           routeSourceDistribution[source] = (routeSourceDistribution[source] || 0) + count;
         }
       }
