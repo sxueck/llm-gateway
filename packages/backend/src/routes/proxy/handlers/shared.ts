@@ -1,23 +1,63 @@
 import { truncateRequestBody, truncateResponseBody, buildFullRequestBody } from '../../../utils/request-logger.js';
 import type { VirtualKey } from '../../../types/index.js';
 
-/**
- * 判断是否应该记录请求体
- */
+const SHARED_OPTIONS = [
+  'temperature', 'top_p', 'store', 'stream_options', 'service_tier',
+  'safety_identifier', 'prompt_cache_key', 'tools', 'tool_choice',
+  'parallel_tool_calls', 'thinking',
+] as const;
+
+function extractSharedRequestOptions(body: any): Record<string, any> {
+  const options: Record<string, any> = {};
+  for (const key of SHARED_OPTIONS) {
+    if (body?.[key] !== undefined) options[key] = body[key];
+  }
+  return options;
+}
+
+export function extractChatCompletionOptions(body: any): Record<string, any> {
+  return {
+    ...extractSharedRequestOptions(body),
+    max_tokens: body?.max_tokens,
+    max_completion_tokens: body?.max_completion_tokens,
+    frequency_penalty: body?.frequency_penalty,
+    presence_penalty: body?.presence_penalty,
+    stop: body?.stop,
+    response_format: body?.response_format,
+    reasoning_effort: body?.reasoning_effort,
+    verbosity: body?.verbosity,
+    user: body?.user,
+  };
+}
+
+export function extractResponsesApiOptions(body: any): Record<string, any> {
+  return {
+    ...extractSharedRequestOptions(body),
+    instructions: body?.instructions,
+    metadata: body?.metadata,
+    mcp: body?.mcp,
+    reasoning: body?.reasoning,
+    text: body?.text,
+    truncation: body?.truncation,
+    user: body?.user,
+    include: body?.include,
+    previous_response_id: body?.previous_response_id,
+    max_tool_calls: body?.max_tool_calls,
+    background: body?.background,
+    conversation: body?.conversation,
+  };
+}
+
 export function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
   return !virtualKey.disable_logging;
 }
 
-/**
- * 构建完整请求体参数（包含模型属性）
- */
 export function buildFullRequest(requestBody: any, currentModel?: any): any {
   let modelAttributes: any = undefined;
   if (currentModel?.model_attributes) {
     try {
       modelAttributes = JSON.parse(currentModel.model_attributes);
     } catch (e) {
-      // 忽略解析错误
     }
   }
   return buildFullRequestBody(requestBody, modelAttributes);
@@ -35,9 +75,6 @@ export function getModelForLogging(requestBody: any, currentModel?: any): string
   return resolvedModel || requestedModel || 'unknown';
 }
 
-/**
- * 获取截断后的请求和响应体
- */
 export function getTruncatedBodies(
   requestBody: any,
   responseBody: any,

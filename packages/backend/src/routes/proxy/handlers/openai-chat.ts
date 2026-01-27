@@ -4,7 +4,7 @@ import { accumulateStreamResponse } from '../../../utils/request-logger.js';
 import { makeHttpRequest, makeStreamHttpRequest } from '../http-client.js';
 import { calculateTokensIfNeeded } from '../token-calculator.js';
 import { circuitBreaker } from '../../../services/circuit-breaker.js';
-import { shouldLogRequestBody, getTruncatedBodies, getModelForLogging } from './shared.js';
+import { shouldLogRequestBody, getTruncatedBodies, getModelForLogging, extractChatCompletionOptions } from './shared.js';
 import { logApiRequestToDb } from '../../../services/api-request-logger.js';
 import { extractIp } from '../../../utils/ip.js';
 import { getRequestUserAgent } from '../../../utils/http.js';
@@ -61,27 +61,7 @@ export async function handleChatStreamRequest(params: ChatStreamParams): Promise
 
   try {
     const messages = (request.body as any)?.messages || [];
-    const options = {
-      temperature: (request.body as any)?.temperature,
-      max_tokens: (request.body as any)?.max_tokens,
-      max_completion_tokens: (request.body as any)?.max_completion_tokens,
-      top_p: (request.body as any)?.top_p,
-      frequency_penalty: (request.body as any)?.frequency_penalty,
-      presence_penalty: (request.body as any)?.presence_penalty,
-      stop: (request.body as any)?.stop,
-      response_format: (request.body as any)?.response_format,
-      store: (request.body as any)?.store,
-      stream_options: (request.body as any)?.stream_options,
-      service_tier: (request.body as any)?.service_tier,
-      prompt_cache_key: (request.body as any)?.prompt_cache_key,
-      safety_identifier: (request.body as any)?.safety_identifier,
-      reasoning_effort: (request.body as any)?.reasoning_effort,
-      verbosity: (request.body as any)?.verbosity,
-      thinking: (request.body as any)?.thinking,
-      tools: (request.body as any)?.tools,
-      tool_choice: (request.body as any)?.tool_choice,
-      parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
-    };
+    const options = extractChatCompletionOptions(request.body);
 
     const tokenUsage = await makeStreamHttpRequest(
       protocolConfig,
@@ -184,28 +164,7 @@ export async function handleChatNonStreamRequest(params: ChatNonStreamParams): P
   const { request, protocolConfig } = params;
 
   const messages = (request.body as any)?.messages || [];
-  const options = {
-    temperature: (request.body as any)?.temperature,
-    max_tokens: (request.body as any)?.max_tokens,
-    max_completion_tokens: (request.body as any)?.max_completion_tokens,
-    top_p: (request.body as any)?.top_p,
-    frequency_penalty: (request.body as any)?.frequency_penalty,
-    presence_penalty: (request.body as any)?.presence_penalty,
-    stop: (request.body as any)?.stop,
-    user: (request.body as any)?.user,
-    response_format: (request.body as any)?.response_format,
-    store: (request.body as any)?.store,
-    stream_options: (request.body as any)?.stream_options,
-    service_tier: (request.body as any)?.service_tier,
-    prompt_cache_key: (request.body as any)?.prompt_cache_key,
-    safety_identifier: (request.body as any)?.safety_identifier,
-    reasoning_effort: (request.body as any)?.reasoning_effort,
-    verbosity: (request.body as any)?.verbosity,
-    thinking: (request.body as any)?.thinking,
-    tools: (request.body as any)?.tools,
-    tool_choice: (request.body as any)?.tool_choice,
-    parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
-  };
+  const options = extractChatCompletionOptions(request.body);
 
   const response = await makeHttpRequest(
     protocolConfig,

@@ -16,48 +16,57 @@ export interface RetryContext {
   extractedSystemPrompt?: string;
 }
 
-const SMART_ROUTING_RETRY_WINDOW_MS = 10_000; // 10 秒
+const SMART_ROUTING_RETRY_WINDOW_MS = 10_000;
 
-/**
- * 处理智能路由的非流式请求重试
- */
-export async function handleNonStreamRetry(
+async function handleSmartRoutingRetry(
   request: FastifyRequest,
   reply: FastifyReply,
   statusCode: number,
-  context: RetryContext
+  context: RetryContext,
+  isStream: boolean
 ): Promise<boolean> {
-  // 检查是否满足重试条件
   if (!context.modelResult.canRetry) {
-    memoryLogger.debug('不支持重试：不是智能路由模式', 'Proxy');
+    if (!isStream) {
+      memoryLogger.debug('不支持重试：不是智能路由模式', 'Proxy');
+    }
     return false;
   }
 
-  // 超出单次请求的最大重试时间窗口，避免无限轮转
   if (Date.now() - context.startTime > SMART_ROUTING_RETRY_WINDOW_MS) {
     memoryLogger.warn(
-      `智能路由重试终止：超过最大重试窗口 ${SMART_ROUTING_RETRY_WINDOW_MS}ms` ,
+      isStream
+        ? `智能路由重试(流式)终止：超过最大重试窗口 ${SMART_ROUTING_RETRY_WINDOW_MS}ms`
+        : `智能路由重试终止：超过最大重试窗口 ${SMART_ROUTING_RETRY_WINDOW_MS}ms`,
       'Proxy'
     );
     return false;
   }
- 
+
   if (!shouldRetrySmartRouting(statusCode)) {
-    memoryLogger.debug(`状态码 ${statusCode} 不满足重试条件`, 'Proxy');
+    if (!isStream) {
+      memoryLogger.debug(`状态码 ${statusCode} 不满足重试条件`, 'Proxy');
+    }
+    return false;
+  }
+
+  if (isStream && (reply.sent || reply.raw.headersSent)) {
+    memoryLogger.debug('流式请求已发送响应，无法重试', 'Proxy');
     return false;
   }
 
   if (!context.modelResult.excludeProviders || !context.modelResult.modelId) {
-    memoryLogger.warn('缺少重试所需信息', 'Proxy');
+    if (!isStream) {
+      memoryLogger.warn('缺少重试所需信息', 'Proxy');
+    }
     return false;
   }
 
+  const logPrefix = isStream ? '智能路由重试(流式)' : '智能路由重试';
   memoryLogger.info(
-    `智能路由重试: 检测到失败 (${statusCode})，尝试下一个目标 | 已尝试: ${context.modelResult.excludeProviders.size}`,
+    `${logPrefix}: 检测到失败 (${statusCode})，尝试下一个目标 | 已尝试: ${context.modelResult.excludeProviders.size}`,
     'Proxy'
   );
 
-  // 重新解析 provider（排除已失败的）
   const retryResult = await retrySmartRouting(
     context.virtualKey,
     request,
@@ -67,23 +76,23 @@ export async function handleNonStreamRetry(
 
   if ('code' in retryResult) {
     memoryLogger.warn(
-      `智能路由重试失败: 没有更多可用目标 | 已尝试: ${context.modelResult.excludeProviders.size}`,
+      isStream
+        ? `${logPrefix}失败: 没有更多可用目标`
+        : `${logPrefix}失败: 没有更多可用目标 | 已尝试: ${context.modelResult.excludeProviders.size}`,
       'Proxy'
     );
     return false;
   }
 
   memoryLogger.info(
-    `智能路由重试: 切换到新目标 provider=${retryResult.provider.name}`,
+    `${logPrefix}: 切换到新目标 provider=${retryResult.provider.name}`,
     'Proxy'
   );
 
-  // 更新 request.body.model 如果有 override
   if (retryResult.currentModel?.model_identifier) {
     (request.body as any).model = retryResult.currentModel.model_identifier;
   }
 
-  // 重新构建 provider config
   const configResult = await buildProviderConfig(
     retryResult.provider,
     context.virtualKey,
@@ -94,11 +103,31 @@ export async function handleNonStreamRetry(
   );
 
   if ('code' in configResult) {
-    memoryLogger.error('智能路由重试: 构建配置失败', 'Proxy');
+    memoryLogger.error(`${logPrefix}: 构建配置失败`, 'Proxy');
     return false;
   }
 
-  // 重新发起非流式请求
+  if (isStream) {
+    const { handleStreamRequest } = await import('../openai/proxy-handler.js');
+    await handleStreamRequest(
+      request,
+      reply,
+      configResult.protocolConfig,
+      configResult.path,
+      context.vkDisplay,
+      context.virtualKey,
+      retryResult.providerId,
+      context.startTime,
+      context.compressionStats,
+      retryResult.currentModel,
+      !!context.isResponsesApi,
+      context.modelResult,
+      context.virtualKeyValue,
+      context.extractedSystemPrompt
+    );
+    return true;
+  }
+
   const { handleNonStreamRequest } = await import('../openai/proxy-handler.js');
   await handleNonStreamRequest(
     request,
@@ -112,110 +141,23 @@ export async function handleNonStreamRetry(
     context.compressionStats,
     retryResult.currentModel
   );
-
   return true;
 }
 
-/**
- * 处理智能路由的流式请求重试
- */
+export async function handleNonStreamRetry(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  statusCode: number,
+  context: RetryContext
+): Promise<boolean> {
+  return handleSmartRoutingRetry(request, reply, statusCode, context, false);
+}
+
 export async function handleStreamRetry(
   request: FastifyRequest,
   reply: FastifyReply,
   statusCode: number,
   context: RetryContext
 ): Promise<boolean> {
-  // 检查是否满足重试条件
-  if (!context.modelResult.canRetry) {
-    return false;
-  }
-
-  if (Date.now() - context.startTime > SMART_ROUTING_RETRY_WINDOW_MS) {
-    memoryLogger.warn(
-      `智能路由重试(流式)终止：超过最大重试窗口 ${SMART_ROUTING_RETRY_WINDOW_MS}ms`,
-      'Proxy'
-    );
-    return false;
-  }
- 
-  if (!shouldRetrySmartRouting(statusCode)) {
-    return false;
-  }
-
-  // 流式请求如果已经开始发送，则不能重试
-  if (reply.sent || reply.raw.headersSent) {
-    memoryLogger.debug('流式请求已发送响应，无法重试', 'Proxy');
-    return false;
-  }
-
-  if (!context.modelResult.excludeProviders || !context.modelResult.modelId) {
-    return false;
-  }
-
-  memoryLogger.info(
-    `智能路由重试(流式): 检测到失败 (${statusCode})，尝试下一个目标 | 已尝试: ${context.modelResult.excludeProviders.size}`,
-    'Proxy'
-  );
-
-  // 重新解析 provider
-  const retryResult = await retrySmartRouting(
-    context.virtualKey,
-    request,
-    context.modelResult.modelId,
-    context.modelResult.excludeProviders
-  );
-
-  if ('code' in retryResult) {
-    memoryLogger.warn(
-      `智能路由重试(流式)失败: 没有更多可用目标`,
-      'Proxy'
-    );
-    return false;
-  }
-
-  memoryLogger.info(
-    `智能路由重试(流式): 切换到新目标 provider=${retryResult.provider.name}`,
-    'Proxy'
-  );
-
-  // 更新 request.body.model
-  if (retryResult.currentModel?.model_identifier) {
-    (request.body as any).model = retryResult.currentModel.model_identifier;
-  }
-
-  // 重新构建 provider config
-  const configResult = await buildProviderConfig(
-    retryResult.provider,
-    context.virtualKey,
-    context.virtualKeyValue,
-    retryResult.providerId,
-    request,
-    retryResult.currentModel
-  );
-
-  if ('code' in configResult) {
-    memoryLogger.error('智能路由重试(流式): 构建配置失败', 'Proxy');
-    return false;
-  }
-
-  // 重新发起流式请求
-  const { handleStreamRequest } = await import('../openai/proxy-handler.js');
-  await handleStreamRequest(
-    request,
-    reply,
-    configResult.protocolConfig,
-    configResult.path,
-    context.vkDisplay,
-    context.virtualKey,
-    retryResult.providerId,
-    context.startTime,
-    context.compressionStats,
-    retryResult.currentModel,
-    !!context.isResponsesApi,
-    context.modelResult,
-    context.virtualKeyValue,
-    context.extractedSystemPrompt
-  );
-
-  return true;
+  return handleSmartRoutingRetry(request, reply, statusCode, context, true);
 }

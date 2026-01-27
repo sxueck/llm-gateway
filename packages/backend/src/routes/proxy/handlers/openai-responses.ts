@@ -4,7 +4,7 @@ import { accumulateResponsesStream } from '../../../utils/request-logger.js';
 import { makeStreamHttpRequest } from '../http-client.js';
 import { calculateTokensIfNeeded } from '../token-calculator.js';
 import { circuitBreaker } from '../../../services/circuit-breaker.js';
-import { shouldLogRequestBody, getTruncatedBodies, getModelForLogging } from './shared.js';
+import { shouldLogRequestBody, getTruncatedBodies, getModelForLogging, extractResponsesApiOptions } from './shared.js';
 import { logApiRequestToDb } from '../../../services/api-request-logger.js';
 import { extractIp } from '../../../utils/ip.js';
 import { getRequestUserAgent } from '../../../utils/http.js';
@@ -51,31 +51,7 @@ export async function handleResponsesStreamRequest(params: ResponsesStreamParams
 
   try {
     const input = (request.body as any)?.input;
-    const options = {
-      instructions: (request.body as any)?.instructions,
-      temperature: (request.body as any)?.temperature,
-      top_p: (request.body as any)?.top_p,
-      store: (request.body as any)?.store,
-      metadata: (request.body as any)?.metadata,
-      tools: (request.body as any)?.tools,
-      tool_choice: (request.body as any)?.tool_choice,
-      parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
-      stream_options: (request.body as any)?.stream_options,
-      service_tier: (request.body as any)?.service_tier,
-      mcp: (request.body as any)?.mcp,
-      reasoning: (request.body as any)?.reasoning,
-      thinking: (request.body as any)?.thinking,
-      text: (request.body as any)?.text,
-      truncation: (request.body as any)?.truncation,
-      user: (request.body as any)?.user,
-      safety_identifier: (request.body as any)?.safety_identifier,
-      include: (request.body as any)?.include,
-      prompt_cache_key: (request.body as any)?.prompt_cache_key,
-      previous_response_id: (request.body as any)?.previous_response_id,
-      max_tool_calls: (request.body as any)?.max_tool_calls,
-      background: (request.body as any)?.background,
-      conversation: (request.body as any)?.conversation,
-    };
+    const options = extractResponsesApiOptions(request.body);
 
     const tokenUsage = await makeStreamHttpRequest(
       protocolConfig,
