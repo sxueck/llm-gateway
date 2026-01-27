@@ -51,6 +51,11 @@ export class SemanticRouter {
                 `Failed to initialize L1 Semantic Router model=${this.model} cost=${Date.now() - start}ms: ${e.message}`,
                 'ExpertRouter'
             );
+            // Important: propagate init failures so the caller can evict this router from cache.
+            // Otherwise, we may keep a permanently-not-ready router and L1 will be skipped forever.
+            this.isReady = false;
+            this.routeEmbeddings.clear();
+            throw e;
         }
     }
 
@@ -58,10 +63,14 @@ export class SemanticRouter {
         const totalStart = Date.now();
         let totalCount = 0;
         for (const route of this.routes) {
-            if (route.utterances.length > 0) {
-                const vecs = await this.engine.embed(route.utterances);
+            const utterances = Array.isArray(route.utterances)
+              ? route.utterances.map(u => (typeof u === 'string' ? u.trim() : '')).filter(Boolean)
+              : [];
+
+            if (utterances.length > 0) {
+                const vecs = await this.engine.embed(utterances);
                 this.routeEmbeddings.set(route.category, vecs);
-                totalCount += route.utterances.length;
+                totalCount += utterances.length;
             }
         }
         const cost = Date.now() - totalStart;

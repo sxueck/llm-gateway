@@ -31,7 +31,7 @@ interface ExpertRoutingResult {
 
 export class ExpertRouter {
   // Cache semantic routers per expertRoutingId to avoid re-initializing pipeline or index
-  private semanticRouters = new Map<string, SemanticRouter>();
+  private semanticRouters = new Map<string, { router: SemanticRouter; hash: string }>();
 
   async route(
     request: ProxyRequest,
@@ -156,34 +156,50 @@ export class ExpertRouter {
           return null;
       }
 
-      let router = this.semanticRouters.get(expertRoutingId);
-      
-      // TODO: Check if config hash changed to trigger rebuild.
-      // For now, we assume if it exists we use it. 
-      // Ideally we need a way to detect config updates.
-      // A simple way is to store the routes hash/length with the router?
-      
-       if (!router) {
-           router = new SemanticRouter({
-               model: config.routing.semantic.model || 'bge-small-zh-v1.5',
-               routes: config.routing.semantic.routes,
-               threshold: config.routing.semantic.threshold,
-               margin: config.routing.semantic.margin
-           });
-           this.semanticRouters.set(expertRoutingId, router);
+      const semanticCfg = config.routing.semantic;
+      const cfgHash = crypto
+        .createHash('sha1')
+        .update(
+          JSON.stringify({
+            model: semanticCfg.model || 'bge-small-zh-v1.5',
+            threshold: semanticCfg.threshold,
+            margin: semanticCfg.margin,
+            routes: semanticCfg.routes,
+          })
+        )
+        .digest('hex');
 
-           // NOTE: If we don't await init, early requests can miss L1 entirely and fall through.
-           // For reliability (avoid unexpected fallback), initialize on first use.
-           try {
-             await router.init();
-           } catch (e: any) {
-             memoryLogger.error(`Init of SemanticRouter failed: ${e.message}`, 'ExpertRouter');
-             this.semanticRouters.delete(expertRoutingId);
-             return null;
-           }
-       }
-       
-       return router;
+      const cached = this.semanticRouters.get(expertRoutingId);
+      if (cached && cached.hash !== cfgHash) {
+        // Config changed at runtime; rebuild to avoid stale embeddings.
+        this.semanticRouters.delete(expertRoutingId);
+      }
+
+      let entry = this.semanticRouters.get(expertRoutingId);
+
+      if (!entry) {
+        const router = new SemanticRouter({
+          model: semanticCfg.model || 'bge-small-zh-v1.5',
+          routes: semanticCfg.routes,
+          threshold: semanticCfg.threshold,
+          margin: semanticCfg.margin,
+        });
+
+        entry = { router, hash: cfgHash };
+        this.semanticRouters.set(expertRoutingId, entry);
+
+        // NOTE: If we don't await init, early requests can miss L1 entirely and fall through.
+        // For reliability (avoid unexpected fallback), initialize on first use.
+        try {
+          await router.init();
+        } catch (e: any) {
+          memoryLogger.error(`Init of SemanticRouter failed: ${e.message}`, 'ExpertRouter');
+          this.semanticRouters.delete(expertRoutingId);
+          return null;
+        }
+      }
+
+      return entry.router;
    }
 
   private async resolveExpert(
