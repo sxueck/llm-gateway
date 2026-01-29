@@ -61,6 +61,7 @@ function buildRequestParams(config: any, requestBody: AnthropicRequest, stream: 
     'top_p',
     'top_k',
     'stop_sequences',
+    'service_tier',
     'metadata',
     'tool_choice',
     'thinking',
@@ -122,6 +123,9 @@ function hasAnthropicContent(event: AnthropicStreamEvent): boolean {
   if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
     return true;
   }
+  if (event.type === 'content_block_start' && event.content_block?.type === 'server_tool_use') {
+    return true;
+  }
   if (event.type === 'content_block_start' && event.content_block?.type === 'thinking') {
     return true;
   }
@@ -129,6 +133,12 @@ function hasAnthropicContent(event: AnthropicStreamEvent): boolean {
     return true;
   }
   return false;
+}
+
+function getAnthropicBetaHeaders(requestBody: AnthropicRequest): Record<string, string> | undefined {
+  const betas = (requestBody as any)?.betas;
+  if (!Array.isArray(betas) || betas.length === 0) return undefined;
+  return { 'anthropic-beta': betas.join(',') };
 }
 
 export async function makeAnthropicRequest(
@@ -139,7 +149,21 @@ export async function makeAnthropicRequest(
     const headers = config.modelAttributes?.headers;
     const client = getAnthropicClient(config.baseUrl, config.apiKey, headers);
     const requestParams = buildRequestParams(config, requestBody);
-    const response = await client.messages.create(requestParams);
+
+    const betaHeaders = getAnthropicBetaHeaders(requestBody);
+
+    // Prefer Anthropic beta endpoint semantics when betas are present.
+    // Fallback to header-only for Anthropic-compatible providers that don't accept ?beta=true.
+    let response: any;
+    if (betaHeaders) {
+      try {
+        response = await (client as any).beta?.messages?.create({ ...requestParams, betas: (requestBody as any).betas });
+      } catch (e: any) {
+        response = await client.messages.create(requestParams, { headers: betaHeaders } as any);
+      }
+    } else {
+      response = await client.messages.create(requestParams);
+    }
 
     return {
       statusCode: 200,
@@ -172,7 +196,17 @@ export async function makeAnthropicStreamRequest(
     const requestParams = buildRequestParams(config, requestBody, true);
 
     try {
-      const stream = client.messages.stream(requestParams);
+      const betaHeaders = getAnthropicBetaHeaders(requestBody);
+      let stream: any;
+      if (betaHeaders) {
+        try {
+          stream = (client as any).beta?.messages?.stream({ ...requestParams, betas: (requestBody as any).betas });
+        } catch (e: any) {
+          stream = client.messages.stream(requestParams, { headers: betaHeaders } as any);
+        }
+      } else {
+        stream = client.messages.stream(requestParams);
+      }
 
       // 每次尝试都需要独立的变量，避免重试时状态混乱
       let inputTokens = 0;

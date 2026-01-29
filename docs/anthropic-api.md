@@ -63,7 +63,9 @@ curl -X POST http://localhost:3000/v1/messages \
 - `top_k` (integer): Top-k 采样参数
 - `stop_sequences` (array): 停止序列
 - `stream` (boolean): 是否启用流式响应
+- `service_tier` (string): 服务档位（如 `auto` / `standard_only`，不同上游可能扩展）
 - `metadata` (object): 元数据
+- `betas` (array): Beta 功能标识列表（会转为 `anthropic-beta`，兼容上游差异）
 - `thinking` (object): 扩展思考配置（例如 `{ "type": "enabled", "budget_tokens": 2048 }`）
 - `tools` (array): 工具定义
 - `tool_choice` (object): 工具选择策略
