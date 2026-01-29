@@ -63,6 +63,7 @@ function buildRequestParams(config: any, requestBody: AnthropicRequest, stream: 
     'stop_sequences',
     'metadata',
     'tool_choice',
+    'thinking',
   ];
 
   // 批量处理可选参数
@@ -112,7 +113,16 @@ function hasAnthropicContent(event: AnthropicStreamEvent): boolean {
   if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
     return (event.delta.text || '').trim().length > 0;
   }
+  if (event.type === 'content_block_delta' && event.delta?.type === 'thinking_delta') {
+    return (event.delta.thinking || '').trim().length > 0;
+  }
+  if (event.type === 'content_block_delta' && event.delta?.type === 'signature_delta') {
+    return (event.delta.signature || '').trim().length > 0;
+  }
   if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+    return true;
+  }
+  if (event.type === 'content_block_start' && event.content_block?.type === 'thinking') {
     return true;
   }
   if (event.type === 'content_block_delta' && event.delta?.type === 'input_json_delta') {

@@ -3,9 +3,17 @@ export interface AnthropicMessage {
   content: string | AnthropicContentBlock[];
 }
 
+export type AnthropicThinkingConfig =
+  | { type: 'enabled'; budget_tokens: number }
+  | { type: 'disabled' };
+
 export interface AnthropicContentBlock {
-  type: 'text' | 'image' | 'tool_use' | 'tool_result';
+  type: 'text' | 'image' | 'tool_use' | 'tool_result' | 'thinking' | 'redacted_thinking';
   text?: string;
+  thinking?: string;
+  signature?: string;
+  // For redacted thinking blocks
+  data?: string;
   source?: {
     type: 'base64';
     media_type: string;
@@ -39,6 +47,7 @@ export interface AnthropicRequest {
     type: 'auto' | 'any' | 'tool';
     name?: string;
   };
+  thinking?: AnthropicThinkingConfig;
 }
 
 export interface AnthropicTool {
@@ -83,9 +92,11 @@ export interface AnthropicStreamEvent {
   index?: number;
   content_block?: AnthropicContentBlock;
   delta?: {
-    type: 'text_delta' | 'input_json_delta';
+    type: 'text_delta' | 'input_json_delta' | 'thinking_delta' | 'signature_delta';
     text?: string;
     partial_json?: string;
+    thinking?: string;
+    signature?: string;
     stop_reason?: string;
     stop_sequence?: string;
   };
@@ -103,4 +114,3 @@ export interface AnthropicError {
     message: string;
   };
 }
-

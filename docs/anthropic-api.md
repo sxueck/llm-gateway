@@ -64,6 +64,7 @@ curl -X POST http://localhost:3000/v1/messages \
 - `stop_sequences` (array): 停止序列
 - `stream` (boolean): 是否启用流式响应
 - `metadata` (object): 元数据
+- `thinking` (object): 扩展思考配置（例如 `{ "type": "enabled", "budget_tokens": 2048 }`）
 - `tools` (array): 工具定义
 - `tool_choice` (object): 工具选择策略
 
@@ -160,4 +161,3 @@ data: {"type":"message_stop"}
 
 - 仅支持 Anthropic 协议的上游提供商
 - 不支持 OpenAI 到 Anthropic 的协议转换（请使用 `/v1/chat/completions` 端点）
-
