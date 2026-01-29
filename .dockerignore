@@ -9,5 +9,8 @@ data
 *.md
 docs
 
+.github
+compose
+
 packages/*/node_modules
 packages/*/dist

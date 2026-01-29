@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   curl \
   unzip \
-  tzdata \
   && rm -rf /var/lib/apt/lists/*
 
 ENV BUN_INSTALL=/opt/bun
@@ -27,18 +26,43 @@ RUN set -eux; \
   test -n "$bun_dir"; \
   mkdir -p "$BUN_INSTALL"; \
   cp -a "$bun_dir"/* "$BUN_INSTALL"/; \
-  ln -sf "$BUN_INSTALL/bun" /usr/local/bin/bun; \
-  if [ -f "$BUN_INSTALL/bunx" ]; then ln -sf "$BUN_INSTALL/bunx" /usr/local/bin/bunx; else ln -sf "$BUN_INSTALL/bun" /usr/local/bin/bunx; fi; \
   rm -rf /tmp/bun.zip "$bun_dir"
+
+FROM ubuntu:24.04 AS bun-runtime
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY --from=bun-base /opt/bun /opt/bun
+RUN ln -sf /opt/bun/bun /usr/local/bin/bun && \
+  if [ -f /opt/bun/bunx ]; then ln -sf /opt/bun/bunx /usr/local/bin/bunx; else ln -sf /opt/bun/bun /usr/local/bin/bunx; fi
 
 FROM bun-base AS deps
 
 WORKDIR /app
 
 COPY package.json bunfig.toml bun.lock* ./
-COPY packages ./packages
+COPY packages/backend/package.json ./packages/backend/package.json
+COPY packages/shared/package.json ./packages/shared/package.json
+COPY packages/web/package.json ./packages/web/package.json
+COPY packages/tsconfig ./packages/tsconfig
 
-RUN bun ci --frozen-lockfile
+RUN bun install --frozen-lockfile
+
+FROM bun-base AS backend-prod-deps
+
+WORKDIR /app
+
+COPY package.json bunfig.toml bun.lock* ./
+COPY packages/backend/package.json ./packages/backend/package.json
+COPY packages/shared/package.json ./packages/shared/package.json
+COPY packages/web/package.json ./packages/web/package.json
+COPY packages/tsconfig ./packages/tsconfig
+
+RUN bun install --frozen-lockfile --production --filter @llm-gateway/backend
 
 FROM bun-base AS web-builder
 
@@ -68,21 +92,16 @@ COPY packages/backend ./packages/backend
 WORKDIR /app/packages/backend
 RUN bun run build
 
-FROM bun-base
+FROM bun-runtime
 
 WORKDIR /app
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-  docker.io \
-  && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid 1001 --system nodejs && \
   useradd --uid 1001 --gid 1001 --system --create-home --home-dir /home/nodejs --shell /usr/sbin/nologin nodejs
 
-COPY --from=deps /app/node_modules ./node_modules
+COPY --from=backend-prod-deps /app/node_modules ./node_modules
 
 COPY --from=backend-builder /app/packages/backend/dist ./packages/backend/dist
-COPY --from=backend-builder /app/packages/backend/package.json ./packages/backend/
 COPY --from=web-builder /app/packages/web/dist ./packages/backend/public
 
 COPY scripts ./scripts
@@ -105,4 +124,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD bun --version || exit 1
 
 WORKDIR /app/packages/backend
-CMD ["bun", "run", "dist/index.js"]
+CMD ["bun", "dist/index.js"]

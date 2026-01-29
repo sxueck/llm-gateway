@@ -4,13 +4,13 @@
     <n-card class="pipeline-stage" :bordered="false">
       <template #header>
         <div class="stage-header">
-          <n-tag type="warning" round size="small">Layer 1</n-tag>
-          <span class="stage-title">{{ tr('expertRouting.layer1PreprocessingTitle', '请求清洗 (Cleaning)') }}</span>
+          <n-tag type="warning" round size="small">Step 1</n-tag>
+          <span class="stage-title">{{ tr('expertRouting.preprocessingTitle', '请求清洗 (Cleaning)') }}</span>
           <n-tooltip trigger="hover">
             <template #trigger>
               <n-icon size="16" class="info-icon"><InformationCircleOutline /></n-icon>
             </template>
-            {{ tr('expertRouting.layer1PreprocessingTooltip', '清洗请求中的干扰信息，提高后续分类准确度') }}
+            {{ tr('expertRouting.preprocessingTooltip', '清洗请求中的干扰信息，提高分类准确度') }}
           </n-tooltip>
         </div>
       </template>
@@ -49,75 +49,24 @@
       <n-icon size="24"><ArrowDownOutline /></n-icon>
     </div>
 
-    <!-- Layer 2: Semantic Search -->
+    <!-- Step 2: LLM Judge -->
     <n-card class="pipeline-stage" :bordered="false">
       <template #header>
         <div class="stage-header">
-          <n-tag type="success" round size="small">Layer 2</n-tag>
-          <span class="stage-title">{{ t('expertRouting.layer1Title') }}</span>
+          <n-tag type="info" round size="small">Step 2</n-tag>
+          <span class="stage-title">{{ tr('expertRouting.classificationTitle', '智能分类 (LLM)') }}</span>
           <n-tooltip trigger="hover">
             <template #trigger>
               <n-icon size="16" class="info-icon"><InformationCircleOutline /></n-icon>
             </template>
-            {{ t('expertRouting.layer1Tooltip') }}
+            {{ tr('expertRouting.classificationTooltip', '使用大模型智能识别用户意图并分类') }}
           </n-tooltip>
         </div>
       </template>
       
       <div class="stage-content">
         <n-text depth="3" class="stage-desc">
-          {{ t('expertRouting.layer1Desc') }}
-        </n-text>
-        
-        <n-divider style="margin: 12px 0" />
-        
-        <n-grid :cols="2" :x-gap="24">
-          <n-gi>
-            <n-form-item :label="t('expertRouting.threshold')" label-placement="left">
-              <n-slider
-                v-model:value="config.semantic.threshold"
-                :min="0"
-                :max="1"
-                :step="0.05"
-                style="width: 100%"
-              />
-              <span style="margin-left: 12px; width: 40px">{{ config.semantic.threshold }}</span>
-            </n-form-item>
-          </n-gi>
-          <n-gi>
-            <n-form-item :label="t('expertRouting.semanticModel')" label-placement="left">
-              <n-select
-                v-model:value="config.semantic.model"
-                size="small"
-                :options="[
-                  { label: 'BGE Small ZH (推荐)', value: 'bge-small-zh-v1.5' },
-                  { label: 'BGE M3 (中文更强)', value: 'bge-m3' },
-                  { label: 'MiniLM L6 (英文)', value: 'all-MiniLM-L6-v2' }
-                ]"
-              />
-            </n-form-item>
-          </n-gi>
-        </n-grid>
-      </div>
-    </n-card>
-
-    <div class="pipeline-arrow">
-      <n-icon size="24"><ArrowDownOutline /></n-icon>
-      <span class="arrow-label">{{ t('expertRouting.ifNoMatch') }}</span>
-    </div>
-
-    <!-- Layer 3: LLM Judge -->
-    <n-card class="pipeline-stage" :bordered="false">
-      <template #header>
-        <div class="stage-header">
-          <n-tag type="info" round size="small">Layer 3</n-tag>
-          <span class="stage-title">{{ t('expertRouting.layer2Title') }}</span>
-        </div>
-      </template>
-      
-      <div class="stage-content">
-        <n-text depth="3" class="stage-desc">
-          {{ t('expertRouting.layer2Desc') }}
+          {{ tr('expertRouting.classificationDesc', '配置分类器模型和提示词，以实现精准分类。') }}
         </n-text>
         
         <n-divider style="margin: 12px 0" />
@@ -152,7 +101,7 @@
 import { useI18n } from 'vue-i18n';
 import {
   NCard, NTag, NIcon, NText, NDivider, NGrid, NGi, NFormItem, 
-  NSlider, NSelect, NTooltip, NCollapse, NCollapseItem, NInput,
+  NTooltip, NCollapse, NCollapseItem, NInput,
   NCheckbox
 } from 'naive-ui';
 import { InformationCircleOutline, ArrowDownOutline } from '@vicons/ionicons5';
@@ -166,10 +115,6 @@ function tr(key: string, fallback: string) {
 }
 
 interface Props {
-  // Editor guarantees these are present; keep types strict for template usage.
-  config: NonNullable<ExpertRoutingConfig['routing']> & {
-    semantic: NonNullable<NonNullable<ExpertRoutingConfig['routing']>['semantic']>;
-  };
   classifier: ExpertRoutingConfig['classifier'];
   preprocessing: NonNullable<ExpertRoutingConfig['preprocessing']>;
   experts: ExpertTarget[];
@@ -178,18 +123,17 @@ interface Props {
 }
 
 const props = defineProps<Props>();
-defineEmits(['update:config', 'update:classifier', 'update:preprocessing']);
+defineEmits(['update:classifier', 'update:preprocessing']);
 
-// Normalize nested objects for safety (and to satisfy template bindings).
-if (!props.config.semantic) {
-  props.config.semantic = {
-    model: 'bge-small-zh-v1.5',
-    threshold: 0.6,
-    margin: 0.1,
-    routes: [],
+// Ensure preprocessing config exists
+if (!props.preprocessing) {
+  props.preprocessing = {
+    strip_tools: false,
+    strip_code_blocks: false,
+    strip_files: false,
+    strip_system_prompt: false,
   };
 }
-
 </script>
 
 <style scoped>

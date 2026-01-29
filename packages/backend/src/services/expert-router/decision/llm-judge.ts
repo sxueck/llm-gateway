@@ -113,7 +113,7 @@ export class LLMJudge {
          return {
            category: parsed.category,
            confidence: parsed.confidence,
-           source: 'l2_llm',
+           source: 'llm',
            metadata: {
              latencyMs: Date.now() - startTime,
              classifierModel: `${provider.name}/${model}`,
@@ -126,15 +126,15 @@ export class LLMJudge {
            }
          };
 
-     } catch (e: any) {
-       memoryLogger.error(`LLM Judge execution failed: ${e.message}`, 'ExpertRouter');
-       // Attach classifier request to error for fallback logging
-       if (requestBody) {
-         e.classifierRequest = requestBody;
-       }
-       throw e;
-     }
-  }
+      } catch (e: any) {
+        memoryLogger.error(`LLM Judge execution failed: ${e.message}`, 'ExpertRouter');
+        // Attach classifier request to error for fallback logging
+        if (requestBody) {
+          e.classifierRequest = requestBody;
+        }
+        throw e;
+      }
+   }
 
   private static buildSystemPrompt(baseSystemMessage: string, experts?: ExpertTarget[]): string {
     if (!experts || experts.length === 0) return baseSystemMessage;

@@ -58,8 +58,9 @@ export interface ToolPolicy {
 export interface RouteDecision {
   category: string;
   confidence: number;
-  source: 'l1_semantic' | 'l2_llm';
+  source: 'llm';
   expertId?: string;
   toolPolicy?: ToolPolicy;
+  isToolCall?: boolean;
   metadata?: Record<string, any>;
 }

@@ -38,16 +38,13 @@
           <p class="step-sub-text">{{ t('expertRouting.expertsConfigHint') }}</p>
         </div>
         
-        <!-- Use existing visualization component but in editable mode with utterances enabled -->
+        <!-- Use existing visualization component but in editable mode -->
         <ExpertRoutingVisualization
           v-model:experts="formValue.experts"
-          :routes="formValue.routing?.semantic?.routes"
-          :show-utterances="true"
           :classifier-config="formValue.classifier"
           :provider-options="providerOptions"
           :virtual-model-options="virtualModelOptions"
           editable
-          @update:routes="(routes) => { if(formValue.routing?.semantic) formValue.routing.semantic.routes = routes }"
         />
       </div>
 
@@ -59,9 +56,8 @@
         </div>
 
         <RoutingPipelineConfig
-          v-model:config="routingConfig"
           v-model:classifier="formValue.classifier"
-          v-model:preprocessing="preprocessingConfig"
+          v-model:preprocessing="formValue.preprocessing"
           :experts="formValue.experts"
           :provider-options="providerOptions"
           :virtual-model-options="virtualModelOptions"
@@ -103,9 +99,6 @@
             </n-descriptions-item>
             <n-descriptions-item :label="t('expertRouting.expertCount')">
               {{ formValue.experts.length }}
-            </n-descriptions-item>
-             <n-descriptions-item :label="t('expertRouting.semanticExamplesCount')">
-              {{ formValue.routing?.semantic?.routes?.reduce((acc, r) => acc + r.utterances.length, 0) || 0 }}
             </n-descriptions-item>
             <n-descriptions-item :label="t('expertRouting.classifierModel')">
               {{ getModelLabel(formValue.classifier) }}
@@ -160,7 +153,7 @@ import {
 } from 'naive-ui';
 import { useProviderStore } from '@/stores/provider';
 import { useModelStore } from '@/stores/model';
-import type { CreateExpertRoutingRequest, ClassifierConfig, ExpertRoutingConfig } from '@/api/expert-routing';
+import type { CreateExpertRoutingRequest, ClassifierConfig } from '@/api/expert-routing';
 import ExpertRoutingVisualization from './ExpertRoutingVisualization.vue';
 import RoutingPipelineConfig from './RoutingPipelineConfig.vue';
 import ModelSelector from './ModelSelector.vue';
@@ -186,36 +179,8 @@ const currentStep = ref(1);
 const currentStatus = ref<'process' | 'finish' | 'error' | 'wait'>('process');
 const formValue = ref<CreateExpertRoutingRequest>({ ...props.config });
 
-function normalizeRoutingConfig(target: CreateExpertRoutingRequest) {
-  // Keep routing config always present and in pipeline mode.
-  if (!target.routing) {
-    target.routing = {
-      mode: 'pipeline',
-      semantic: {
-        model: 'bge-small-zh-v1.5',
-        threshold: 0.6,
-        margin: 0.1,
-        routes: [],
-      },
-      heuristics: { rules: [] },
-    };
-  }
-
-  target.routing.mode = 'pipeline';
-
-  if (!target.routing.semantic) {
-    target.routing.semantic = {
-      model: 'bge-small-zh-v1.5',
-      threshold: 0.6,
-      margin: 0.1,
-      routes: [],
-    };
-  }
-
-  if (!target.routing.heuristics) {
-    target.routing.heuristics = { rules: [] };
-  }
-
+function normalizeForm(target: CreateExpertRoutingRequest) {
+  // Ensure preprocessing config exists
   if (!target.preprocessing) {
     target.preprocessing = {
       strip_tools: false,
@@ -226,29 +191,7 @@ function normalizeRoutingConfig(target: CreateExpertRoutingRequest) {
   }
 }
 
-normalizeRoutingConfig(formValue.value);
-
-type StrictRoutingConfig = NonNullable<ExpertRoutingConfig['routing']> & {
-  semantic: NonNullable<NonNullable<ExpertRoutingConfig['routing']>['semantic']>;
-};
-
-type StrictPreprocessingConfig = NonNullable<ExpertRoutingConfig['preprocessing']>;
-
-// Strongly-typed v-model target for child components.
-const routingConfig = computed<StrictRoutingConfig>({
-  get: () => formValue.value.routing as StrictRoutingConfig,
-  set: (v) => {
-    formValue.value.routing = v;
-  },
-});
-
-const preprocessingConfig = computed<StrictPreprocessingConfig>({
-  get: () => formValue.value.preprocessing as StrictPreprocessingConfig,
-  set: (v) => {
-    formValue.value.preprocessing = v;
-  },
-});
-
+normalizeForm(formValue.value);
 
 const enableFallback = ref(!!props.config.fallback);
 const fallbackType = ref<'virtual' | 'real'>(props.config.fallback?.type || 'real');
@@ -321,7 +264,7 @@ watch(
   (cfg) => {
     // Shallow clone is enough; normalize will create missing nested objects.
     formValue.value = { ...cfg };
-    normalizeRoutingConfig(formValue.value);
+    normalizeForm(formValue.value);
     currentStep.value = 1;
     currentStatus.value = 'process';
   }
@@ -375,8 +318,6 @@ watch(
   padding-top: 12px;
   border-top: 1px solid var(--divider-color, rgba(0,0,0,0.06));
   background-color: var(--modal-color, rgba(255,255,255,0.9));
-  /* backdrop-filter is visually nice but can cause noticeable FPS drops in modals */
-  /* backdrop-filter: saturate(140%) blur(3px); */
   margin-top: auto; /* Push to bottom */
 }
 </style>
@@ -411,6 +352,5 @@ watch(
   padding-top: 12px;
   border-top: 1px solid var(--divider-color, rgba(0,0,0,0.06));
   background-color: var(--modal-color, rgba(255,255,255,0.9));
-  /* backdrop-filter: saturate(140%) blur(3px); */
 }
 </style>

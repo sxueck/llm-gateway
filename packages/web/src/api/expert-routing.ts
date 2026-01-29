@@ -51,24 +51,7 @@ export interface ExpertRoutingConfig {
     strip_code_blocks?: boolean;
     strip_system_prompt?: boolean;
   };
-  classifier: ClassifierConfig; // L3: LLM Judge
-  routing?: {
-    mode?: 'pipeline'; // 强制为流水线模式
-    semantic?: { // L1: Semantic
-      model?: 'bge-small-zh-v1.5' | 'all-MiniLM-L6-v2' | 'bge-m3';
-      threshold?: number;
-      margin?: number;
-      routes?: { category: string; utterances: string[] }[];
-    };
-    heuristics?: { // L2: Rules
-      rules: {
-        id: string;
-        type: 'keyword' | 'regex' | 'header';
-        pattern: string;
-        target_expert: string;
-      }[];
-    };
-  };
+  classifier: ClassifierConfig;
   experts: ExpertTarget[];
   fallback?: FallbackConfig;
 }
@@ -97,7 +80,6 @@ export interface CreateExpertRoutingRequest {
   enabled?: boolean;
   classifier: ClassifierConfig;
   preprocessing?: ExpertRoutingConfig['preprocessing'];
-  routing?: ExpertRoutingConfig['routing'];
   experts: ExpertTarget[];
   fallback?: FallbackConfig;
   createVirtualModel?: boolean;
@@ -111,7 +93,6 @@ export interface UpdateExpertRoutingRequest {
   enabled?: boolean;
   classifier?: ClassifierConfig;
   preprocessing?: ExpertRoutingConfig['preprocessing'];
-  routing?: ExpertRoutingConfig['routing'];
   experts?: ExpertTarget[];
   fallback?: FallbackConfig;
 }

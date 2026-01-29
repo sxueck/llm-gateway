@@ -533,8 +533,6 @@ export default {
     totalRequests: 'Total Requests',
     avgClassificationTime: 'Avg Classification Time',
     cleaningEfficiency: 'Cleaning Efficiency',
-    semanticHitRate: 'Semantic Hit Rate',
-    heuristicHitRate: 'L2 Hit Rate',
     routingDistribution: 'Routing Distribution',
     source: 'Source',
     categoryDistribution: 'Category Distribution',

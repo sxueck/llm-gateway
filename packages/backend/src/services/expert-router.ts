@@ -7,7 +7,6 @@ import { ExpertTarget } from '../types/expert-routing.js';
 import crypto from 'crypto';
 
 import { SignalBuilder } from './expert-router/preprocess/index.js';
-import { SemanticRouter } from './expert-router/decision/semantic.js';
 import { LLMJudge } from './expert-router/decision/llm-judge.js';
 import { resolveModelConfig, matchExpert } from './expert-router/resolve.js';
 import { RouteDecision, ProxyRequest } from './expert-router/types.js';
@@ -30,9 +29,6 @@ interface ExpertRoutingResult {
 }
 
 export class ExpertRouter {
-  // Cache semantic routers per expertRoutingId to avoid re-initializing pipeline or index
-  private semanticRouters = new Map<string, { router: SemanticRouter; hash: string }>();
-
   async route(
     request: ProxyRequest,
     expertRoutingId: string,
@@ -46,10 +42,8 @@ export class ExpertRouter {
     }
 
     const config: ExpertRoutingConfig = JSON.parse(expertRoutingConfig.config);
-    // UI uses 'pipeline' to represent the multi-layer flow; treat it as 'hybrid' at runtime.
-    const routingMode = (config.routing?.mode === 'pipeline' ? 'hybrid' : config.routing?.mode) || 'hybrid';
 
-    // 1. Build Routing Signal
+    // 1. Build Routing Signal (preprocessing)
     let signal;
     try {
         signal = await SignalBuilder.buildRoutingSignal(request, config.preprocessing);
@@ -73,48 +67,26 @@ export class ExpertRouter {
     }
 
     let decision: RouteDecision | null = null;
-
-    // 2. L1 Semantic Router
-    if (!decision && (routingMode === 'semantic' || routingMode === 'hybrid')) {
-        try {
-            const l1Router = await this.getSemanticRouter(expertRoutingId, config);
-            if (l1Router) {
-                decision = await l1Router.decide(signal);
-                if (decision) {
-                    memoryLogger.debug(`L1 Semantic matched: ${decision.category} (score=${decision.confidence.toFixed(3)})`, 'ExpertRouter');
-                }
-            }
-        } catch (e: any) {
-            memoryLogger.warn(`L1 Semantic failed: ${e.message}`, 'ExpertRouter');
-        }
-    }
-
-    // 2. L2 LLM Judge (Fallback or Primary if mode=llm)
     let llmJudgeFailedRequest: any = null;
-    if (!decision) {
 
-        if (routingMode !== 'semantic') {
-              try {
-                  decision = await LLMJudge.decide(signal, config.classifier, config.experts);
-                  memoryLogger.debug(`L2 LLM matched: ${decision.category}`, 'ExpertRouter');
-              } catch (e: any) {
-                  memoryLogger.error(`L2 LLM Judge failed: ${e.message}`, 'ExpertRouter');
-                  // If L2 fails, we go to global fallback below
-                  // Capture the failed classifier request if available in error context
-                  llmJudgeFailedRequest = (e as any).classifierRequest || null;
-              }
-        }
+    // 2. LLM Judge Classification
+    try {
+        decision = await LLMJudge.decide(signal, config.classifier, config.experts);
+        memoryLogger.debug(`LLM classified: ${decision.category}`, 'ExpertRouter');
+    } catch (e: any) {
+        memoryLogger.error(`LLM Judge failed: ${e.message}`, 'ExpertRouter');
+        llmJudgeFailedRequest = (e as any).classifierRequest || null;
     }
 
     if (!decision) {
-        memoryLogger.warn('All routing layers failed to determine category', 'ExpertRouter');
+        memoryLogger.warn('Classification failed', 'ExpertRouter');
         if (config.fallback) {
             return await this.resolveFallback(config.fallback, 'routing_failed', startTime, expertRoutingId, context, request, signal.stats, llmJudgeFailedRequest);
         }
         throw new Error('Routing failed and no fallback configured');
     }
 
-    // 4. Select Expert
+    // 3. Select Expert
     const expert = matchExpert(decision.category, config.experts);
 
     if (!expert) {
@@ -132,7 +104,7 @@ export class ExpertRouter {
 
     const classificationTime = Date.now() - startTime;
 
-    // 5. Resolve Expert
+    // 4. Resolve Expert
     return await this.resolveExpert(
       expert,
       decision,
@@ -144,63 +116,6 @@ export class ExpertRouter {
       signal.stats
     );
   }
-
-  private async getSemanticRouter(expertRoutingId: string, config: ExpertRoutingConfig): Promise<SemanticRouter | null> {
-      // Check if configured
-      if (!config.routing?.semantic?.routes || config.routing.semantic.routes.length === 0) {
-          // If no routes configured, we can't use semantic router
-          // Maybe we should check if we should clear existing router?
-          if (this.semanticRouters.has(expertRoutingId)) {
-              this.semanticRouters.delete(expertRoutingId);
-          }
-          return null;
-      }
-
-      const semanticCfg = config.routing.semantic;
-      const cfgHash = crypto
-        .createHash('sha1')
-        .update(
-          JSON.stringify({
-            model: semanticCfg.model || 'bge-small-zh-v1.5',
-            threshold: semanticCfg.threshold,
-            margin: semanticCfg.margin,
-            routes: semanticCfg.routes,
-          })
-        )
-        .digest('hex');
-
-      const cached = this.semanticRouters.get(expertRoutingId);
-      if (cached && cached.hash !== cfgHash) {
-        // Config changed at runtime; rebuild to avoid stale embeddings.
-        this.semanticRouters.delete(expertRoutingId);
-      }
-
-      let entry = this.semanticRouters.get(expertRoutingId);
-
-      if (!entry) {
-        const router = new SemanticRouter({
-          model: semanticCfg.model || 'bge-small-zh-v1.5',
-          routes: semanticCfg.routes,
-          threshold: semanticCfg.threshold,
-          margin: semanticCfg.margin,
-        });
-
-        entry = { router, hash: cfgHash };
-        this.semanticRouters.set(expertRoutingId, entry);
-
-        // NOTE: If we don't await init, early requests can miss L1 entirely and fall through.
-        // For reliability (avoid unexpected fallback), initialize on first use.
-        try {
-          await router.init();
-        } catch (e: any) {
-          memoryLogger.error(`Init of SemanticRouter failed: ${e.message}`, 'ExpertRouter');
-          this.semanticRouters.delete(expertRoutingId);
-          return null;
-        }
-      }
-
-      return entry.router;
-   }
 
   private async resolveExpert(
     expert: ExpertTarget,
@@ -214,7 +129,7 @@ export class ExpertRouter {
   ): Promise<ExpertRoutingResult> {
     const resolved = await resolveModelConfig(expert, 'Expert');
     const requestHash = this.generateRequestHash(request);
-    const classifierModelName = this.generateClassifierModelName(classifierConfig, decision);
+    const classifierModelName = this.generateClassifierModelName(classifierConfig);
 
     await expertRoutingLogDb.create({
       id: nanoid(),
@@ -233,12 +148,12 @@ export class ExpertRouter {
         (request.body as any)?.text ??
         []
       ),
-      classifier_request: decision.source === 'l2_llm' ? JSON.stringify(decision.metadata?.classifierRequest) : decision.source,
+      classifier_request: JSON.stringify(decision.metadata?.classifierRequest || {}),
       classifier_response: JSON.stringify(decision.metadata || {}),
       route_source: decision.source,
       prompt_tokens: stats?.promptTokens ?? 0,
       cleaned_content_length: stats?.cleanedLength ?? 0,
-      semantic_score: decision.source === 'l1_semantic' ? decision.confidence : null
+      semantic_score: null
     });
 
     return {
@@ -272,10 +187,8 @@ export class ExpertRouter {
     const classificationTime = Date.now() - startTime;
     const requestHash = this.generateRequestHash(request);
 
-    // Determine classifier request: use actual failed request if available, otherwise 'fallback'
     const classifierRequest = llmJudgeFailedRequest ? JSON.stringify(llmJudgeFailedRequest) : 'fallback';
 
-    // Log fallback execution (best-effort; fallback must not fail due to logging issues)
     try {
       await expertRoutingLogDb.create({
         id: nanoid(),
@@ -283,7 +196,7 @@ export class ExpertRouter {
         expert_routing_id: expertRoutingId,
         request_hash: requestHash,
         classifier_model: 'fallback',
-        classification_result: category, // 'routing_failed' or category that had no expert
+        classification_result: category,
         selected_expert_id: 'fallback',
         selected_expert_type: fallback.type,
         selected_expert_name: resolved.expertName,
@@ -342,13 +255,8 @@ export class ExpertRouter {
   }
 
   private generateClassifierModelName(
-      classifierConfig: ExpertRoutingConfig['classifier'],
-      decision: RouteDecision
+      classifierConfig: ExpertRoutingConfig['classifier']
   ): string {
-    if (decision.source === 'l1_semantic') {
-        return `semantic/${decision.metadata?.model || 'default'}`;
-    }
-    // L2
     if (classifierConfig.type === 'virtual') {
       return classifierConfig.model_id!;
     } else {

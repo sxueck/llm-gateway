@@ -284,6 +284,55 @@ export const migrations: Migration[] = [
         `ALTER TABLE expert_routing_logs ADD COLUMN semantic_score DECIMAL(5, 4) DEFAULT NULL COMMENT 'L1语义匹配分数'`
       );
     },
+  },
+  {
+    version: 24,
+    name: 'cleanup_l1_semantic_fields',
+    up: async (conn: Connection) => {
+      // 清理 L1 语义路由相关字段
+      // 1. 删除 semantic_score 字段（L1 语义匹配分数，已废弃）
+      try {
+        await conn.query(`ALTER TABLE expert_routing_logs DROP COLUMN IF EXISTS semantic_score`);
+        console.log('[迁移] 已删除 expert_routing_logs.semantic_score 字段');
+      } catch (e: any) {
+        console.warn('[迁移] 删除 semantic_score 字段失败或不存在:', e.message);
+      }
+
+      // 2. 更新 route_source 字段注释，移除 L1/L2/L3 层级概念
+      try {
+        await conn.query(`
+          ALTER TABLE expert_routing_logs
+          MODIFY COLUMN route_source VARCHAR(50) DEFAULT NULL
+          COMMENT '分类来源: llm, fallback'
+        `);
+        console.log('[迁移] 已更新 route_source 字段注释');
+      } catch (e: any) {
+        console.warn('[迁移] 更新 route_source 字段注释失败:', e.message);
+      }
+    },
+    down: async (conn: Connection) => {
+      // 回滚时恢复 L1 字段
+      try {
+        await conn.query(`
+          ALTER TABLE expert_routing_logs
+          ADD COLUMN semantic_score DECIMAL(5, 4) DEFAULT NULL COMMENT 'L1语义匹配分数'
+        `);
+        console.log('[迁移] 已恢复 expert_routing_logs.semantic_score 字段');
+      } catch (e: any) {
+        console.warn('[迁移] 恢复 semantic_score 字段失败:', e.message);
+      }
+
+      try {
+        await conn.query(`
+          ALTER TABLE expert_routing_logs
+          MODIFY COLUMN route_source VARCHAR(50) DEFAULT NULL
+          COMMENT 'l1_semantic, l2_heuristic, l3_llm, fallback'
+        `);
+        console.log('[迁移] 已恢复 route_source 字段注释');
+      } catch (e: any) {
+        console.warn('[迁移] 恢复 route_source 字段注释失败:', e.message);
+      }
+    }
   }
 ];
 
