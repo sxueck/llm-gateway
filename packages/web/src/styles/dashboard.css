@@ -63,20 +63,42 @@
 .switchable-card {
   height: 100%;
   cursor: pointer;
+  perspective: 1000px; /* 增加 3D 效果 */
 }
 
 .flip-icon {
   float: right;
   opacity: 0.7;
+  transition: transform 0.3s ease;
+}
+
+.switchable-card:hover .flip-icon {
+  transform: rotate(180deg);
 }
 
 .stat-card {
   background: #ffffff;
   border-radius: 12px;
   border: 1px solid #f3f4f6;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
   height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 装饰性水印 */
+.stat-card::after {
+  content: '';
+  position: absolute;
+  right: -30px;
+  bottom: -30px;
+  width: 120px;
+  height: 120px;
+  background: radial-gradient(circle, rgba(0,0,0,0.02) 0%, rgba(0,0,0,0) 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
 }
 
 @media (max-width: 639px) {
@@ -88,23 +110,31 @@
 .stat-card :deep(.n-card__content) {
   padding: 0;
   height: 100%;
+  position: relative;
+  z-index: 1;
 }
 
 .stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 24px -8px rgba(0, 98, 65, 0.08);
-  border-color: #e5e7eb;
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px -8px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+  border-color: #d1d5db;
 }
 
 .stat-card-primary {
-  background: #006241; /* Starbucks Green */
+  background: linear-gradient(135deg, #006241 0%, #00754a 100%);
+  background-size: 200% 200%;
   color: #ffffff;
   border: none;
 }
 
+.stat-card-primary::after {
+  background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 70%);
+}
+
 .stat-card-primary:hover {
-  box-shadow: 0 12px 24px -6px rgba(0, 98, 65, 0.25);
-  background: #00754a;
+  background-position: 100% 100%;
+  box-shadow: 0 16px 32px -8px rgba(0, 98, 65, 0.3);
+  transform: translateY(-4px);
 }
 
 .stat-card-primary .stat-header {
@@ -140,6 +170,9 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .stat-main-value {
@@ -149,6 +182,8 @@
   line-height: 1;
   font-variant-numeric: tabular-nums;
   margin-bottom: 8px;
+  display: flex;
+  align-items: baseline;
 }
 
 @media (max-width: 639px) {
@@ -162,6 +197,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: block;
 }
 
 @media (max-width: 639px) {
@@ -192,6 +228,7 @@
   font-size: 18px;
   font-weight: 400;
   margin-left: 4px;
+  opacity: 0.8;
 }
 
 .stat-details {
@@ -240,6 +277,21 @@
 
 .stat-detail-error .stat-detail-value {
   color: #d03050;
+}
+
+.stat-progress {
+  height: 4px;
+  background-color: #f3f4f6;
+  border-radius: 2px;
+  margin-top: 12px;
+  overflow: hidden;
+}
+
+.stat-progress-bar {
+  height: 100%;
+  background-color: #006241;
+  border-radius: 2px;
+  transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 
@@ -415,4 +467,21 @@
   .overview-label {
     font-size: 12px;
   }
+}
+
+/* 动画定义 */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.stagger-item {
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: var(--delay, 0ms);
 }

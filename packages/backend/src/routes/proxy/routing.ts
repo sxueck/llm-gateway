@@ -37,12 +37,56 @@ export interface ProxyRequest {
   protocol?: 'openai' | 'anthropic';
 }
 
-// Affinity模式：存储每个config的当前选中provider和时间戳
 interface AffinityState {
+  targetKey: string;
   providerId: string;
   timestamp: number;
 }
 const affinityStateMap = new Map<string, AffinityState>();
+
+function getTargetKey(target: RoutingTarget): string {
+  const overrideModel = target.override_params?.model || '';
+  return `${target.provider}::${overrideModel}`;
+}
+
+function normalizeAffinityScopeKey(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const v = raw.trim();
+  if (!v) return undefined;
+  return v.length > 256 ? v.slice(0, 256) : v;
+}
+
+function buildAffinityCacheKey(configId: string, affinityScopeKey?: string): string {
+  return affinityScopeKey ? `${configId}:${affinityScopeKey}` : configId;
+}
+
+function extractAffinityScopeKey(request?: any, virtualKeyId?: string): string | undefined {
+  const headers: Record<string, any> = (request?.headers as any) || {};
+  const body: any = request?.body || {};
+
+  const header = (name: string): unknown => headers[name] ?? headers[name.toLowerCase()];
+
+  const candidates: unknown[] = [
+    header('x-session-id'),
+    header('x-conversation-id'),
+    body?.session_id,
+    body?.sessionId,
+    body?.conversation_id,
+    body?.conversationId,
+    body?.metadata?.session_id,
+    body?.metadata?.sessionId,
+    body?.metadata?.conversation_id,
+    body?.metadata?.conversationId,
+    body?.user,
+    virtualKeyId,
+  ];
+
+  for (const c of candidates) {
+    const normalized = normalizeAffinityScopeKey(c);
+    if (normalized) return normalized;
+  }
+  return undefined;
+}
 
 // 定期清理过期的affinity状态（每小时执行一次）
 const AFFINITY_CLEANUP_INTERVAL = 60 * 60 * 1000; // 1小时
@@ -201,22 +245,23 @@ export function selectRoutingTarget(
 
     const ttl = config.strategy?.affinityTTL || 5 * 60 * 1000; // 默认5分钟
     const now = Date.now();
-    const state = affinityStateMap.get(configId);
+    const affinityScopeKey = normalizeAffinityScopeKey(hashKey);
+    const affinityCacheKey = buildAffinityCacheKey(String(configId), affinityScopeKey);
+    const state = affinityStateMap.get(affinityCacheKey);
 
     // 检查是否有有效的affinity状态
     if (state && (now - state.timestamp) < ttl) {
-      // 检查当前选中的provider是否仍然可用
-      const currentTarget = availableTargets.find(t => t.provider === state.providerId);
+      const currentTarget = availableTargets.find(t => getTargetKey(t) === state.targetKey);
       if (currentTarget) {
         memoryLogger.debug(
-          `Affinity路由: 使用缓存的provider=${state.providerId} (剩余${Math.floor((ttl - (now - state.timestamp)) / 1000)}秒)`,
+          `Affinity路由: 使用缓存的 target=${state.targetKey} (剩余${Math.floor((ttl - (now - state.timestamp)) / 1000)}秒)`,
           'Routing'
         );
         return currentTarget;
       }
 
       memoryLogger.info(
-        `Affinity路由: 缓存的provider=${state.providerId}不可用，重新选择`,
+        `Affinity路由: 缓存的 target=${state.targetKey}不可用，重新选择`,
         'Routing'
       );
     }
@@ -242,13 +287,14 @@ export function selectRoutingTarget(
     }
 
     // 更新affinity状态
-    affinityStateMap.set(configId, {
+    affinityStateMap.set(affinityCacheKey, {
+      targetKey: getTargetKey(selectedTarget),
       providerId: selectedTarget.provider,
       timestamp: now
     });
 
     memoryLogger.info(
-      `Affinity路由: 选择新provider=${selectedTarget.provider} (TTL=${ttl / 1000}秒)`,
+      `Affinity路由: 选择新 target=${getTargetKey(selectedTarget)} (TTL=${ttl / 1000}秒)`,
       'Routing'
     );
 
@@ -276,29 +322,32 @@ export async function resolveSmartRouting(
 
   try {
     const config = JSON.parse(routingConfig.config);
- 
-     // 根据配置决定使用什么作为hash key
-     let hashKey: string | undefined;
-     if (config.strategy?.mode === 'hash') {
+
+     const mode: RoutingConfig['strategy']['mode'] = (config.strategy?.mode || routingConfig.type) as any;
+
+     let routingKey: string | undefined;
+     if (mode === 'hash') {
        const hashSource = config.strategy?.hashSource || 'virtualKey';
        if (hashSource === 'virtualKey' && virtualKeyId) {
-         hashKey = virtualKeyId;
+         routingKey = virtualKeyId;
        } else if (hashSource === 'request' && request?.body) {
          // 使用请求体的哈希作为key
-         hashKey = JSON.stringify(request.body);
+         routingKey = JSON.stringify(request.body);
        }
+     } else if (mode === 'affinity') {
+       routingKey = extractAffinityScopeKey(request as any, virtualKeyId);
      }
  
      // 记录当前路由配置是否存在 targets，用于后续区分配置问题 vs. 熔断/负载问题
      const hasTargets = Array.isArray(config.targets) && config.targets.length > 0;
  
-     const selectedTarget = selectRoutingTarget(
-       config,
-       routingConfig.type,
-       model.routing_config_id,
-       hashKey,
-       excludeProviders
-     );
+      const selectedTarget = selectRoutingTarget(
+        config,
+        routingConfig.type,
+        model.routing_config_id,
+        routingKey,
+        excludeProviders
+      );
  
      if (!selectedTarget) {
        if (!hasTargets) {

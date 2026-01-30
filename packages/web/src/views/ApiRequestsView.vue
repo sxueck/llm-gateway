@@ -1,7 +1,10 @@
 <template>
   <div>
     <n-space vertical :size="24">
-      <n-card title="API 请求日志">
+      <n-card>
+        <template #header>
+          <span class="card-title">API 请求日志</span>
+        </template>
         <template #header-extra>
           <n-space>
             <n-date-picker
@@ -410,6 +413,14 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.card-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1e3932;
+  white-space: nowrap;
+  display: inline-block;
+}
+
 .clean-dialog-modal .modal-content-wrapper {
   max-height: calc(85vh - 200px);
   overflow-y: auto;

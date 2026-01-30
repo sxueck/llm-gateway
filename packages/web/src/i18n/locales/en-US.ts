@@ -35,6 +35,7 @@ export default {
     total: 'Total',
     category: 'Category',
     copy: 'Copy',
+    searchPlaceholder: 'Search...',
     send: 'Send',
     clear: 'Clear',
     test: 'Test',

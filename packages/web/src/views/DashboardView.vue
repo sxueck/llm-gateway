@@ -24,7 +24,7 @@
       </div>
 
       <n-grid :cols="gridCols" :x-gap="gridGap" :y-gap="gridGap">
-        <n-gi>
+        <n-gi class="stagger-item" style="--delay: 0ms">
           <div class="switchable-card" @click="toggleTokenCard">
             <n-card v-if="!isTokenCardFlipped" class="stat-card stat-card-primary">
               <div class="stat-content">
@@ -32,15 +32,24 @@
                   {{ t('dashboard.tokenConsumption') }}
                   <n-icon size="14" class="flip-icon"><RefreshOutline /></n-icon>
                 </div>
-                <div class="stat-main-value">{{ formatTokenNumber(stats?.totalTokens || 0) }}</div>
+                <div class="stat-main-value">
+                  <n-skeleton v-if="loading" text style="width: 60%; height: 42px" :sharp="false" />
+                  <span v-else>{{ formatTokenNumber(stats?.totalTokens || 0) }}</span>
+                </div>
                 <div class="stat-details">
                   <span class="stat-detail-item">
                     <span class="stat-detail-label">输入:</span>
-                    <span class="stat-detail-value">{{ formatTokenNumber(promptTokens) }}</span>
+                    <span class="stat-detail-value">
+                      <n-skeleton v-if="loading" text style="width: 40px" />
+                      <span v-else>{{ formatTokenNumber(promptTokens) }}</span>
+                    </span>
                   </span>
                   <span class="stat-detail-item">
                     <span class="stat-detail-label">输出:</span>
-                    <span class="stat-detail-value">{{ formatTokenNumber(completionTokens) }}</span>
+                    <span class="stat-detail-value">
+                      <n-skeleton v-if="loading" text style="width: 40px" />
+                      <span v-else>{{ formatTokenNumber(completionTokens) }}</span>
+                    </span>
                   </span>
                 </div>
               </div>
@@ -66,149 +75,228 @@
             </n-card>
           </div>
         </n-gi>
-        <n-gi>
+        <n-gi class="stagger-item" style="--delay: 50ms">
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.totalRequests') }}</div>
-              <div class="stat-main-value">{{ formatNumber(stats?.totalRequests || 0) }}</div>
+              <div class="stat-main-value">
+                <n-skeleton v-if="loading" text style="width: 50%; height: 42px" :sharp="false" />
+                <span v-else>{{ formatNumber(stats?.totalRequests || 0) }}</span>
+              </div>
               <div class="stat-details">
                 <span class="stat-detail-item stat-detail-success">
                   <span class="stat-detail-label">成功:</span>
-                  <span class="stat-detail-value">{{ formatNumber(stats?.successfulRequests || 0) }}</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 30px" />
+                    <span v-else>{{ formatNumber(stats?.successfulRequests || 0) }}</span>
+                  </span>
                 </span>
                 <span class="stat-detail-item stat-detail-error">
                   <span class="stat-detail-label">失败:</span>
-                  <span class="stat-detail-value">{{ formatNumber(stats?.failedRequests || 0) }}</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 30px" />
+                    <span v-else>{{ formatNumber(stats?.failedRequests || 0) }}</span>
+                  </span>
                 </span>
               </div>
             </div>
           </n-card>
         </n-gi>
-        <n-gi>
+        <n-gi class="stagger-item" style="--delay: 100ms">
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.successRate') }}</div>
-              <div class="stat-main-value">{{ formatPercentage(successRate) }}<span class="stat-unit">%</span></div>
+              <div class="stat-main-value">
+                <n-skeleton v-if="loading" text style="width: 50%; height: 42px" :sharp="false" />
+                <span v-else>
+                  {{ formatPercentage(successRate) }}<span class="stat-unit">%</span>
+                </span>
+              </div>
               <div class="stat-progress">
-                <div class="stat-progress-bar" :style="{ width: successRate + '%' }"></div>
+                <div class="stat-progress-bar" :style="{ width: (loading ? 0 : successRate) + '%' }"></div>
               </div>
             </div>
           </n-card>
         </n-gi>
-        <n-gi>
+        <n-gi class="stagger-item" style="--delay: 150ms">
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.avgResponseTime') }}</div>
-              <div class="stat-main-value">{{ formatResponseTime(avgResponseTime) }}<span class="stat-unit">ms</span></div>
+              <div class="stat-main-value">
+                <n-skeleton v-if="loading" text style="width: 50%; height: 42px" :sharp="false" />
+                <span v-else>
+                  {{ formatResponseTime(avgResponseTime) }}<span class="stat-unit">ms</span>
+                </span>
+              </div>
             </div>
           </n-card>
         </n-gi>
-        <n-gi>
+        <n-gi class="stagger-item" style="--delay: 200ms">
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">缓存 Tokens</div>
-              <div class="stat-main-value">{{ formatTokenNumber(stats?.cachedTokens || 0) }}</div>
+              <div class="stat-main-value">
+                <n-skeleton v-if="loading" text style="width: 60%; height: 42px" :sharp="false" />
+                <span v-else>{{ formatTokenNumber(stats?.cachedTokens || 0) }}</span>
+              </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">缓存命中:</span>
-                  <span class="stat-detail-value">{{ formatNumber(stats?.promptCacheHits || 0) }}</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 40px" />
+                    <span v-else>{{ formatNumber(stats?.promptCacheHits || 0) }}</span>
+                  </span>
                 </span>
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">命中率:</span>
-                  <span class="stat-detail-value">{{ formatPercentage(cacheHitRate) }}%</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 30px" />
+                    <span v-else>{{ formatPercentage(cacheHitRate) }}%</span>
+                  </span>
                 </span>
               </div>
             </div>
           </n-card>
         </n-gi>
-        <n-gi>
+        <n-gi class="stagger-item" style="--delay: 250ms">
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">平均效率</div>
-              <div class="stat-main-value">{{ formatNumber(avgTokensPerRequest) }}<span class="stat-unit">Tk/Req</span></div>
+              <div class="stat-main-value">
+                <n-skeleton v-if="loading" text style="width: 50%; height: 42px" :sharp="false" />
+                <span v-else>{{ formatNumber(avgTokensPerRequest) }}<span class="stat-unit">Tk/Req</span></span>
+              </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">输入:</span>
-                  <span class="stat-detail-value">{{ formatNumber(avgInputTokens) }}</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 30px" />
+                    <span v-else>{{ formatNumber(avgInputTokens) }}</span>
+                  </span>
                 </span>
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">输出:</span>
-                  <span class="stat-detail-value">{{ formatNumber(avgOutputTokens) }}</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 30px" />
+                    <span v-else>{{ formatNumber(avgOutputTokens) }}</span>
+                  </span>
                 </span>
               </div>
             </div>
           </n-card>
         </n-gi>
-        <n-gi>
+        <n-gi class="stagger-item" style="--delay: 300ms">
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">路由分类速度</div>
-              <div class="stat-main-value">{{ formatResponseTime(expertRoutingSpeed) }}<span class="stat-unit">{{ expertRoutingSpeed >= 1000 ? 's' : 'ms' }}</span></div>
+              <div class="stat-main-value">
+                <n-skeleton v-if="loading" text style="width: 50%; height: 42px" :sharp="false" />
+                <span v-else>
+                  {{ formatResponseTime(expertRoutingSpeed) }}<span class="stat-unit">{{ expertRoutingSpeed >= 1000 ? 's' : 'ms' }}</span>
+                </span>
+              </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">分类次数:</span>
-                  <span class="stat-detail-value">{{ formatNumber(expertRoutingCount) }}</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 40px" />
+                    <span v-else>{{ formatNumber(expertRoutingCount) }}</span>
+                  </span>
                 </span>
               </div>
             </div>
           </n-card>
         </n-gi>
-        <n-gi>
+        <n-gi class="stagger-item" style="--delay: 350ms">
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">热门模型</div>
-              <div class="stat-main-value top-model-name">{{ topModel }}</div>
-              <div class="stat-provider">{{ topModelProvider }}</div>
+              <div class="stat-main-value top-model-name">
+                <n-skeleton v-if="loading" text style="width: 70%; height: 24px" :sharp="false" />
+                <span v-else>{{ topModel }}</span>
+              </div>
+              <div class="stat-provider">
+                <n-skeleton v-if="loading" text style="width: 40%" />
+                <span v-else>{{ topModelProvider }}</span>
+              </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">请求:</span>
-                  <span class="stat-detail-value">{{ formatNumber(topModelRequests) }}</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 30px" />
+                    <span v-else>{{ formatNumber(topModelRequests) }}</span>
+                  </span>
                 </span>
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">Token:</span>
-                  <span class="stat-detail-value">{{ formatTokenNumber(topModelTokens) }}</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 40px" />
+                    <span v-else>{{ formatTokenNumber(topModelTokens) }}</span>
+                  </span>
                 </span>
               </div>
             </div>
           </n-card>
         </n-gi>
-        <n-gi>
+        <n-gi class="stagger-item" style="--delay: 400ms">
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">{{ aifwStats?.enabled ? '安全拦截 & 隐私保护' : 'Ipsum 拦截 IP' }}</div>
-              <div class="stat-main-value">{{ formatNumber(ipsumBlockedCount) }}</div>
+              <div class="stat-main-value">
+                <n-skeleton v-if="loading" text style="width: 40%; height: 42px" :sharp="false" />
+                <span v-else>
+                  {{ formatNumber(ipsumBlockedCount) }}
+                </span>
+              </div>
               <div class="stat-details">
                 <span class="stat-detail-item" v-if="aifwStats?.enabled">
                   <span class="stat-detail-label">隐私保护:</span>
-                  <span class="stat-detail-value">{{ formatNumber(aifwStats.maskedCount) }} 次</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 30px" />
+                    <span v-else>{{ formatNumber(aifwStats.maskedCount) }} 次</span>
+                  </span>
                 </span>
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">威胁库:</span>
-                  <span class="stat-detail-value">{{ formatNumber(threatIpListSize) }}</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 40px" />
+                    <span v-else>{{ formatNumber(threatIpListSize) }}</span>
+                  </span>
                 </span>
               </div>
             </div>
           </n-card>
         </n-gi>
-        <n-gi>
+        <n-gi class="stagger-item" style="--delay: 450ms">
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">成本分析</div>
-              <div class="stat-main-value">{{ formatCost(costStats?.totalCost || 0) }}<span class="stat-unit">USD</span></div>
+              <div class="stat-main-value">
+                <n-skeleton v-if="loading" text style="width: 60%; height: 42px" :sharp="false" />
+                <span v-else>{{ formatCost(costStats?.totalCost || 0) }}<span class="stat-unit">USD</span></span>
+              </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">计费模型:</span>
-                  <span class="stat-detail-value">{{ costStats?.modelCosts?.length || 0 }} 个</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 30px" />
+                    <span v-else>{{ costStats?.modelCosts?.length || 0 }} 个</span>
+                  </span>
                 </span>
               </div>
             </div>
           </n-card>
         </n-gi>
-        <n-gi>
+        <n-gi class="stagger-item" style="--delay: 500ms">
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">数据库状态</div>
-              <div class="stat-main-value">{{ stats?.dbSize || 0 }}<span class="stat-unit">MB</span></div>
+              <div class="stat-main-value">
+                <n-skeleton v-if="loading" text style="width: 50%; height: 42px" :sharp="false" />
+                <span v-else>
+                  {{ stats?.dbSize || 0 }}<span class="stat-unit">MB</span>
+                </span>
+              </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">状态:</span>
@@ -216,24 +304,29 @@
                 </span>
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">运行时长:</span>
-                  <span class="stat-detail-value">{{ formatUptime(stats?.dbUptime || 0) }}</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 60px" />
+                    <span v-else>{{ formatUptime(stats?.dbUptime || 0) }}</span>
+                  </span>
                 </span>
               </div>
             </div>
           </n-card>
         </n-gi>
-        <n-gi>
+        <n-gi class="stagger-item" style="--delay: 550ms">
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">熔断器触发次数</div>
               <div class="stat-main-value" :class="{ 'stat-value-error': (circuitBreakerStats?.totalTriggers || 0) > 0 }">
-                {{ formatNumber(circuitBreakerStats?.totalTriggers || 0) }}
+                <n-skeleton v-if="loading" text style="width: 40%; height: 42px" :sharp="false" />
+                <span v-else>{{ formatNumber(circuitBreakerStats?.totalTriggers || 0) }}</span>
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">触发最多:</span>
                   <span class="stat-detail-value" :title="circuitBreakerStats?.maxTriggeredProvider">
-                    {{ formatProviderName(circuitBreakerStats?.maxTriggeredProvider) }}
+                    <n-skeleton v-if="loading" text style="width: 60px" />
+                    <span v-else>{{ formatProviderName(circuitBreakerStats?.maxTriggeredProvider) }}</span>
                   </span>
                 </span>
               </div>
@@ -424,7 +517,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, h } from 'vue';
-import { useMessage, NSpace, NGrid, NGi, NCard, NSelect, NEmpty, NButton, NIcon, NSpin, NResult, NDataTable, NTag, NTooltip, NPopconfirm } from 'naive-ui';
+import { useMessage, NSpace, NGrid, NGi, NCard, NSelect, NEmpty, NButton, NIcon, NSpin, NResult, NDataTable, NTag, NTooltip, NPopconfirm, NSkeleton } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
 import { RefreshOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
@@ -925,6 +1018,7 @@ const chartOption = computed(() => {
       backgroundColor: 'rgba(255, 255, 255, 0.95)',
       borderColor: '#e5e7eb',
       borderWidth: 1,
+      extraCssText: 'backdrop-filter: blur(8px);',
       textStyle: {
         color: '#1f2937',
         fontSize: isMobile ? 11 : 13,
@@ -1068,6 +1162,7 @@ const responseTimeDistributionOption = computed(() => {
       backgroundColor: 'rgba(255, 255, 255, 0.95)',
       borderColor: '#e5e7eb',
       borderWidth: 1,
+      extraCssText: 'backdrop-filter: blur(8px);',
       textStyle: {
         color: '#1f2937',
         fontSize: isMobile ? 11 : 13,
@@ -1194,6 +1289,7 @@ const modelDistributionOption = computed(() => {
       backgroundColor: 'rgba(255, 255, 255, 0.95)',
       borderColor: '#e5e7eb',
       borderWidth: 1,
+      extraCssText: 'backdrop-filter: blur(8px);',
       textStyle: {
         color: '#1f2937',
         fontSize: isMobile ? 11 : 13,

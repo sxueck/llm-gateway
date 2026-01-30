@@ -35,6 +35,7 @@ export default {
     total: '总数',
     category: '分类',
     copy: '复制',
+    searchPlaceholder: '搜索...',
     send: '发送',
     clear: '清空',
     test: '测试',

@@ -135,7 +135,7 @@ export class SemanticRouter {
             return {
                 category: top1.category,
                 confidence: top1.score,
-                source: 'l1_semantic',
+                source: 'llm',
                 metadata: {
                     model: this.model,
                     top1: top1,

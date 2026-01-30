@@ -1,10 +1,10 @@
 <template>
-  <div>
-    <n-space vertical :size="12">
+  <div class="virtual-models-view">
+    <n-space vertical :size="24">
       <n-space justify="space-between" align="center">
         <div>
           <h2 class="page-title">智能路由</h2>
-          <p class="page-subtitle">智能路由通过负载均衡或故障转移配置,将请求智能分发到多个实际模型,提高可用性和性能</p>
+          <p class="page-subtitle">通过负载均衡或故障转移配置，将请求智能分发到多个实际模型，提高可用性和性能</p>
         </div>
         <n-space :size="8">
           <n-button type="primary" size="small" @click="handleCreateModalOpen">
@@ -22,18 +22,32 @@
         </n-space>
       </n-space>
 
+      <div v-if="loading" class="loading-state">
+        <n-spin size="large" />
+      </div>
 
-      <n-card class="table-card">
-        <n-data-table
-          :columns="columns"
-          :data="configs"
-          :loading="loading"
-          :pagination="{ pageSize: 10 }"
-          :bordered="false"
-          size="small"
-          :single-line="false"
-        />
-      </n-card>
+      <div v-else-if="configs.length === 0" class="empty-state">
+        <n-empty description="暂无智能路由配置">
+          <template #extra>
+            <n-button size="small" @click="handleCreateModalOpen">
+              创建第一个路由
+            </n-button>
+          </template>
+        </n-empty>
+      </div>
+
+      <n-grid v-else x-gap="16" y-gap="16" cols="1 640:2 960:3 1280:4" responsive="screen">
+        <n-grid-item v-for="config in configs" :key="config.id">
+          <RoutingConfigCard
+            :config="config"
+            :providers="providerStore.providers"
+            :models="modelStore.models"
+            @edit="handleEdit"
+            @preview="handlePreview"
+            @delete="handleDelete"
+          />
+        </n-grid-item>
+      </n-grid>
     </n-space>
 
     <n-modal
@@ -41,26 +55,26 @@
       preset="card"
       :title="editingId ? '编辑智能路由' : '创建智能路由'"
       class="virtual-model-modal"
-      :style="{ width: '700px', maxHeight: '85vh' }"
+      :style="{ width: '1000px', maxHeight: '90vh' }"
       :segmented="{
         content: 'soft',
         footer: 'soft'
       }"
     >
-      <div class="modal-content-wrapper">
-        <VirtualModelWizard
-          v-model:config-type="configType"
-          v-model:form-value="formValue"
-          :provider-options="providerOptions"
-          :get-model-options-by-provider="getModelOptionsByProvider"
-          :status-code-options="statusCodeOptions"
-          @save="handleSave"
-          @cancel="handleCancel"
-          :saving="saving"
-          :is-editing="!!editingId"
-        />
-      </div>
-    </n-modal>
+        <div class="modal-content-wrapper-no-padding">
+          <RoutingConfigEditor
+            v-model:config-type="configType"
+            v-model:form-value="formValue"
+            :provider-options="providerOptions"
+            :get-model-options-by-provider="getModelOptionsByProvider"
+            :status-code-options="statusCodeOptions"
+            @save="handleSave"
+            @cancel="handleCancel"
+            :saving="saving"
+            :is-editing="!!editingId"
+          />
+        </div>
+      </n-modal>
 
     <n-modal
       v-model:show="showPreviewModal"
@@ -94,29 +108,29 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, h, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import {
   useMessage,
   NSpace,
-  NCard,
   NButton,
   NIcon,
-  NDataTable,
   NModal,
   NCode,
-  NTag,
-  NPopconfirm,
+  NGrid,
+  NGridItem,
+  NSpin,
+  NEmpty,
 } from 'naive-ui';
 import {
   AddOutline,
   RefreshOutline,
   CopyOutline,
 } from '@vicons/ionicons5';
-import { EditOutlined, DeleteOutlined, VisibilityOutlined } from '@vicons/material';
 import { useProviderStore } from '@/stores/provider';
 import { useModelStore } from '@/stores/model';
 import { configApi } from '@/api/config';
-import VirtualModelWizard from '@/components/VirtualModelWizard.vue';
+import RoutingConfigEditor from '@/components/RoutingConfigEditor.vue';
+import RoutingConfigCard from '@/components/RoutingConfigCard.vue';
 import { copyToClipboard } from '@/utils/common';
 import { createDefaultVirtualModelForm, type VirtualModelFormValue, type RoutingConfigType } from '@/types/virtual-model';
 
@@ -163,65 +177,6 @@ function getModelOptionsByProvider(providerId: string) {
       value: m.modelIdentifier,
     }));
 }
-
-const columns = [
-  { title: '智能路由名称', key: 'name' },
-  {
-    title: '类型',
-    key: 'type',
-    render: (row: any) => {
-      const typeMap: Record<string, { label: string; type: 'info' | 'warning' | 'success' | 'error' }> = {
-        'loadbalance': { label: '负载均衡', type: 'info' },
-        'fallback': { label: '故障转移', type: 'warning' },
-        'hash': { label: '一致性哈希', type: 'success' },
-        'affinity': { label: '时间窗口亲和', type: 'error' }
-      };
-      const config = typeMap[row.type] || { label: row.type, type: 'info' };
-      return h(NTag, { type: config.type }, { default: () => config.label });
-    }
-  },
-  { title: '目标数量', key: 'targetCount' },
-  { title: '描述', key: 'description', ellipsis: { tooltip: true } },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 150,
-    render: (row: any) => h(NSpace, { size: 6 }, {
-      default: () => [
-        h(NButton, {
-          size: 'small',
-          quaternary: true,
-          circle: true,
-          onClick: () => handlePreview(row),
-        }, {
-          icon: () => h(NIcon, null, { default: () => h(VisibilityOutlined) }),
-        }),
-        h(NButton, {
-          size: 'small',
-          quaternary: true,
-          circle: true,
-          onClick: () => handleEdit(row),
-        }, {
-          icon: () => h(NIcon, null, { default: () => h(EditOutlined) }),
-        }),
-        h(NPopconfirm, {
-          onPositiveClick: () => handleDelete(row.id),
-        }, {
-          trigger: () => h(NButton, {
-            size: 'small',
-            quaternary: true,
-            circle: true,
-          }, {
-            icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) }),
-          }),
-          default: () => '确定删除此智能路由？',
-        }),
-      ],
-    }),
-  },
-];
-
-
 
 function generatePortkeyConfig() {
   const strategy: any = {
@@ -406,7 +361,11 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-@import '@/styles/table.css';
+.virtual-models-view {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
 .page-title {
   margin: 0;
   font-size: 24px;
@@ -422,57 +381,12 @@ onMounted(async () => {
   font-weight: 400;
 }
 
-.table-card {
-  background: #ffffff;
-  border-radius: 16px;
-  border: none;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
-.table-card :deep(.n-data-table) {
-  background: transparent;
-}
-
-.table-card :deep(.n-data-table-th) {
-  background: #fafafa;
-  font-weight: 600;
-  font-size: 12px;
-  color: #666;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  border-bottom: 1px solid #e8e8e8;
-  padding: 10px 12px;
-}
-
-
-.table-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
-  border-bottom: none;
-}
-
-.table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape) {
-  width: 28px;
-  height: 28px;
-  transition: all 0.2s ease;
-}
-
-.table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:hover) {
-  background: rgba(15, 107, 74, 0.08);
-  color: #0f6b4a;
-}
-
-.table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:hover .n-icon) {
-  color: #0f6b4a;
-}
-
-.table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape .n-icon) {
-  color: #666;
-  font-size: 16px;
-}
-
-.table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:disabled) {
-  opacity: 0.4;
-  cursor: not-allowed;
+.loading-state,
+.empty-state {
+  padding: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .code-preview {
@@ -482,6 +396,12 @@ onMounted(async () => {
 .virtual-model-modal :deep(.n-card__content),
 .preview-modal :deep(.n-card__content) {
   padding: 0;
+  overflow: hidden;
+}
+
+    .modal-content-wrapper-no-padding {
+  height: auto;
+  max-height: calc(90vh - 140px);
   overflow: hidden;
 }
 

@@ -7,6 +7,17 @@
           <p class="page-subtitle">{{ t('models.subtitle') }}</p>
         </div>
         <n-space :size="8">
+          <n-input
+            v-model:value="searchQuery"
+            :placeholder="t('common.searchPlaceholder')"
+            size="small"
+            clearable
+            style="width: 200px"
+          >
+            <template #prefix>
+              <n-icon><SearchOutlined /></n-icon>
+            </template>
+          </n-input>
           <n-button type="primary" size="small" @click="showModal = true">
             {{ t('models.addModel') }}
           </n-button>
@@ -37,18 +48,27 @@
 
         <div v-if="groupByProvider">
           <div v-for="group in groupedModels" :key="group.providerId" class="provider-group">
-            <div class="provider-group-header">
-              <span class="provider-name">{{ group.providerName }}</span>
-              <span class="model-count">{{ t('models.modelCount', { count: group.models.length }) }}</span>
+            <div 
+              class="provider-group-header" 
+              @click="toggleGroup(group.providerId)"
+              style="cursor: pointer; user-select: none;"
+            >
+              <n-space align="center">
+                <n-icon :component="collapsedGroups.has(group.providerId) ? KeyboardArrowRightOutlined : KeyboardArrowDownOutlined" />
+                <span class="provider-name">{{ group.providerName }}</span>
+                <span class="model-count">{{ t('models.modelCount', { count: group.models.length }) }}</span>
+              </n-space>
             </div>
-            <n-data-table
-              :columns="columns"
-              :data="group.models"
-              :loading="modelStore.loading"
-              :pagination="false"
-              :bordered="false"
-              size="small"
-            />
+            <n-collapse-transition :show="!collapsedGroups.has(group.providerId)">
+              <n-data-table
+                :columns="columns"
+                :data="group.models"
+                :loading="modelStore.loading"
+                :pagination="false"
+                :bordered="false"
+                size="small"
+              />
+            </n-collapse-transition>
           </div>
         </div>
 
@@ -185,8 +205,8 @@
 
 <script setup lang="ts">
 import { ref, h, computed, onMounted, watch } from 'vue';
-import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NPopconfirm, NDivider, NIcon } from 'naive-ui';
-import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined } from '@vicons/material';
+import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NPopconfirm, NDivider, NIcon, NTooltip, NText, NCollapseTransition } from 'naive-ui';
+import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined, ContentCopyOutlined, SearchOutlined, KeyboardArrowDownOutlined, KeyboardArrowRightOutlined } from '@vicons/material';
 import { useI18n } from 'vue-i18n';
 import { useModelStore } from '@/stores/model';
 import { useProviderStore } from '@/stores/provider';
@@ -199,6 +219,7 @@ import ModelTester from '@/components/ModelTester.vue';
 import type { Model, ModelAttributes } from '@/types';
 import type { ModelPresetSearchResult } from '@/api/model-presets';
 import { PROTOCOL_OPTIONS, getProtocolInfo } from '@/utils/protocol-utils';
+import { copyToClipboard } from '@/utils/common';
 
 const { t } = useI18n();
 const message = useMessage();
@@ -218,6 +239,9 @@ const batchProviderId = ref<string>('');
 const testingModel = ref<Model | null>(null);
 const pageSize = ref(20);
 const groupByProvider = ref(localStorage.getItem('groupByProvider') === 'true');
+const searchQuery = ref('');
+const collapsedGroups = ref<Set<string>>(new Set());
+const statusLoadingMap = ref<Record<string, boolean>>({});
 
 watch(groupByProvider, (newValue) => {
   localStorage.setItem('groupByProvider', newValue.toString());
@@ -239,7 +263,16 @@ const visibleModels = computed(() => {
   const enabledProviderIds = new Set(
     providerStore.providers.filter(p => p.enabled).map(p => p.id)
   );
+  const query = searchQuery.value.toLowerCase().trim();
+  
   return modelStore.models.filter((m) => {
+    // 搜索过滤
+    if (query) {
+      const matchName = m.name.toLowerCase().includes(query);
+      const matchId = m.modelIdentifier.toLowerCase().includes(query);
+      if (!matchName && !matchId) return false;
+    }
+
     // 虚拟模型不受供应商状态影响
     if ((m as any).isVirtual) return true;
     // 无 providerId 的模型（理论上不存在）保留显示
@@ -334,7 +367,22 @@ const columns = computed(() => [
     },
   },
   { title: t('models.provider'), key: 'providerName' },
-  { title: t('models.modelId'), key: 'modelIdentifier' },
+  { 
+    title: t('models.modelId'), 
+    key: 'modelIdentifier',
+    render: (row: Model) => h(NTooltip, { trigger: 'hover', placement: 'top' }, {
+      trigger: () => h(NText, {
+        style: { cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' },
+        onClick: () => copyToClipboard(row.modelIdentifier)
+      }, {
+        default: () => [
+          row.modelIdentifier,
+          h(NIcon, { size: 12, style: { opacity: 0.5 } }, { default: () => h(ContentCopyOutlined) })
+        ]
+      }),
+      default: () => t('common.copy') || '复制'
+    })
+  },
   {
     title: t('models.protocol'),
     key: 'protocol',
@@ -346,7 +394,12 @@ const columns = computed(() => [
   {
     title: t('common.status'),
     key: 'enabled',
-    render: (row: Model) => h(NTag, { type: row.enabled ? 'success' : 'default' }, { default: () => row.enabled ? t('common.enabled') : t('common.disabled') }),
+    render: (row: Model) => h(NSwitch, {
+      value: row.enabled,
+      size: 'small',
+      loading: statusLoadingMap.value[row.id],
+      onUpdateValue: (value) => handleStatusChange(row, value)
+    }),
   },
   {
     title: t('models.virtualKeyCount'),
@@ -359,33 +412,42 @@ const columns = computed(() => [
     width: 150,
     render: (row: Model) => h(NSpace, { size: 6 }, {
       default: () => [
-        h(NButton, {
-          size: 'small',
-          quaternary: true,
-          circle: true,
-          onClick: () => handleTest(row),
-          disabled: row.isVirtual,
-        }, {
-          icon: () => h(NIcon, null, { default: () => h(KeyboardCommandKeyOutlined) }),
-        }),
-        h(NButton, {
-          size: 'small',
-          quaternary: true,
-          circle: true,
-          onClick: () => handleEdit(row),
-          disabled: row.isVirtual,
-        }, {
-          icon: () => h(NIcon, null, { default: () => h(EditOutlined) }),
-        }),
-        h(NPopconfirm, {
-          onPositiveClick: () => handleDelete(row.id),
-        }, {
+        h(NTooltip, { trigger: 'hover' }, {
           trigger: () => h(NButton, {
             size: 'small',
             quaternary: true,
             circle: true,
+            onClick: () => handleTest(row),
+            disabled: row.isVirtual,
           }, {
-            icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) }),
+            icon: () => h(NIcon, null, { default: () => h(KeyboardCommandKeyOutlined) }),
+          }),
+          default: () => t('models.testModel')
+        }),
+        h(NTooltip, { trigger: 'hover' }, {
+            trigger: () => h(NButton, {
+            size: 'small',
+            quaternary: true,
+            circle: true,
+            onClick: () => handleEdit(row),
+            disabled: row.isVirtual,
+          }, {
+            icon: () => h(NIcon, null, { default: () => h(EditOutlined) }),
+          }),
+          default: () => t('common.edit')
+        }),
+        h(NPopconfirm, {
+          onPositiveClick: () => handleDelete(row.id),
+        }, {
+          trigger: () => h(NTooltip, { trigger: 'hover' }, {
+             trigger: () => h(NButton, {
+                size: 'small',
+                quaternary: true,
+                circle: true,
+              }, {
+                icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) }),
+              }),
+             default: () => t('common.delete')
           }),
           default: () => row.isVirtual ? t('models.deleteVirtualModelConfirm') : t('models.deleteConfirm'),
         }),
@@ -393,6 +455,31 @@ const columns = computed(() => [
     }),
   },
 ]);
+
+function toggleGroup(providerId: string) {
+  if (collapsedGroups.value.has(providerId)) {
+    collapsedGroups.value.delete(providerId);
+  } else {
+    collapsedGroups.value.add(providerId);
+  }
+}
+
+async function handleStatusChange(row: Model, value: boolean) {
+  try {
+    statusLoadingMap.value[row.id] = true;
+    await modelApi.update(row.id, { enabled: value });
+    message.success(t('models.updateSuccess'));
+    // 更新本地状态
+    const model = modelStore.models.find(m => m.id === row.id);
+    if (model) {
+      model.enabled = value;
+    }
+  } catch (error: any) {
+    message.error(error.message);
+  } finally {
+    statusLoadingMap.value[row.id] = false;
+  }
+}
 
 function handleEdit(model: Model) {
   editingId.value = model.id;
