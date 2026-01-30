@@ -221,6 +221,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     // Some deployments might not have v22 columns; fall back to existing fields.
     const req = log?.classifier_request;
     if (typeof req === 'string') {
+      if (req === 'llm') return 'llm';
       if (req === 'l1_semantic' || req === 'l2_llm' || req === 'l3_llm' || req === 'fallback') return req;
       if (req.startsWith('l1_') || req.startsWith('l2_') || req.startsWith('l3_')) return req;
     }
@@ -229,7 +230,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     if (model === 'fallback') return 'fallback';
     if (model === 'heuristic') return 'l2_heuristic';
     if (model.startsWith('semantic/')) return 'l1_semantic';
-    return 'l2_llm';
+    return 'llm';
   }
 
   function inferSemanticScore(log: any): number | undefined {
@@ -498,8 +499,11 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
 
       if ((routeStats as any[]).length > 0) {
         for (const row of routeStats as any[]) {
-          if (row.route_source) {
-            routeSourceDistribution[row.route_source] = Number(row.count);
+          const raw = row.route_source ? String(row.route_source) : null;
+          // UI/metrics are now simplified to llm vs fallback; keep legacy sources collapsible.
+          const normalized = raw ? (raw === 'fallback' ? 'fallback' : 'llm') : null;
+          if (normalized) {
+            routeSourceDistribution[normalized] = (routeSourceDistribution[normalized] || 0) + Number(row.count);
           }
           const count = Number(row.count);
           totalCleanedLength += Number(row.avg_cleaned_length || 0) * count;
@@ -512,14 +516,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         for (const row of modelStats as any[]) {
           const model = String(row.classifier_model || '');
           const count = Number(row.count);
-          const source =
-            model === 'fallback'
-              ? 'fallback'
-              : model === 'heuristic'
-                ? 'l2_heuristic'
-                : model.startsWith('semantic/')
-                  ? 'l1_semantic'
-                  : 'l2_llm';
+          const source = model === 'fallback' ? 'fallback' : 'llm';
           routeSourceDistribution[source] = (routeSourceDistribution[source] || 0) + count;
         }
       }

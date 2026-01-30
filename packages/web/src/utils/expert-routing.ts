@@ -37,7 +37,12 @@ export function createDefaultExpertRoutingConfig(): CreateExpertRoutingRequest {
     description: '',
     enabled: true,
     classifier: createDefaultClassifierConfig(),
+    preprocessing: {
+      strip_tools: false,
+      strip_files: false,
+      strip_code_blocks: false,
+      strip_system_prompt: false,
+    },
     experts: [],
   };
 }
-

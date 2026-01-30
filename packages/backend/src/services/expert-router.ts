@@ -152,8 +152,7 @@ export class ExpertRouter {
       classifier_response: JSON.stringify(decision.metadata || {}),
       route_source: decision.source,
       prompt_tokens: stats?.promptTokens ?? 0,
-      cleaned_content_length: stats?.cleanedLength ?? 0,
-      semantic_score: null
+      cleaned_content_length: stats?.cleanedLength ?? 0
     });
 
     return {
@@ -211,8 +210,7 @@ export class ExpertRouter {
         classifier_response: llmJudgeFailedRequest ? 'llm_judge_failed' : 'fallback_triggered',
         route_source: 'fallback',
         prompt_tokens: stats?.promptTokens ?? 0,
-        cleaned_content_length: stats?.cleanedLength ?? 0,
-        semantic_score: null
+        cleaned_content_length: stats?.cleanedLength ?? 0
       });
     } catch (e: any) {
       memoryLogger.warn(`Failed to write fallback routing log: ${e?.message || e}`, 'ExpertRouter');

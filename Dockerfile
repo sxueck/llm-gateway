@@ -28,6 +28,9 @@ RUN set -eux; \
   cp -a "$bun_dir"/* "$BUN_INSTALL"/; \
   rm -rf /tmp/bun.zip "$bun_dir"
 
+RUN ln -sf /opt/bun/bun /usr/local/bin/bun && \
+  if [ -f /opt/bun/bunx ]; then ln -sf /opt/bun/bunx /usr/local/bin/bunx; else ln -sf /opt/bun/bun /usr/local/bin/bunx; fi
+
 FROM ubuntu:24.04 AS bun-runtime
 
 ARG DEBIAN_FRONTEND=noninteractive

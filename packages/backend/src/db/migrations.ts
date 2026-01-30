@@ -289,11 +289,26 @@ export const migrations: Migration[] = [
     version: 24,
     name: 'cleanup_l1_semantic_fields',
     up: async (conn: Connection) => {
+      const hasColumn = async (col: string) => {
+        const [rows] = await conn.query(
+          `SELECT COUNT(*) AS cnt
+           FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = 'expert_routing_logs'
+             AND COLUMN_NAME = ?`,
+          [col]
+        );
+        const result = rows as any[];
+        return Number(result?.[0]?.cnt || 0) > 0;
+      };
+
       // 清理 L1 语义路由相关字段
       // 1. 删除 semantic_score 字段（L1 语义匹配分数，已废弃）
       try {
-        await conn.query(`ALTER TABLE expert_routing_logs DROP COLUMN IF EXISTS semantic_score`);
-        console.log('[迁移] 已删除 expert_routing_logs.semantic_score 字段');
+        if (await hasColumn('semantic_score')) {
+          await conn.query(`ALTER TABLE expert_routing_logs DROP COLUMN semantic_score`);
+          console.log('[迁移] 已删除 expert_routing_logs.semantic_score 字段');
+        }
       } catch (e: any) {
         console.warn('[迁移] 删除 semantic_score 字段失败或不存在:', e.message);
       }

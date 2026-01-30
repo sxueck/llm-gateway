@@ -56,6 +56,8 @@ export interface ExpertRoutingConfig {
   fallback?: FallbackConfig;
 }
 
+export type PreprocessingConfig = NonNullable<ExpertRoutingConfig['preprocessing']>;
+
 export interface ExpertRouting {
   id: string;
   name: string;
@@ -79,7 +81,8 @@ export interface CreateExpertRoutingRequest {
   description?: string;
   enabled?: boolean;
   classifier: ClassifierConfig;
-  preprocessing?: ExpertRoutingConfig['preprocessing'];
+  // Editor always normalizes this; make it required to simplify v-model usage.
+  preprocessing: PreprocessingConfig;
   experts: ExpertTarget[];
   fallback?: FallbackConfig;
   createVirtualModel?: boolean;

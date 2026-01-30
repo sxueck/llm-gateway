@@ -122,18 +122,8 @@ interface Props {
   virtualModelOptions: any[];
 }
 
-const props = defineProps<Props>();
+defineProps<Props>();
 defineEmits(['update:classifier', 'update:preprocessing']);
-
-// Ensure preprocessing config exists
-if (!props.preprocessing) {
-  props.preprocessing = {
-    strip_tools: false,
-    strip_code_blocks: false,
-    strip_files: false,
-    strip_system_prompt: false,
-  };
-}
 </script>
 
 <style scoped>

@@ -18,6 +18,7 @@ export const expertRoutingLogRepository = {
     route_source?: string;
     prompt_tokens?: number;
     cleaned_content_length?: number;
+    // Deprecated (v24 removed column). Kept for compatibility with older callers.
     semantic_score?: number | null;
   }) {
     const now = Date.now();
@@ -25,7 +26,10 @@ export const expertRoutingLogRepository = {
     const conn = await pool.getConnection();
     try {
       // Backward compatible insert:
-      // some deployments may not have v22 migration applied yet.
+      // - v22 introduced route_source/prompt_tokens/cleaned_content_length
+      // - v24 removed semantic_score
+      // Prefer inserting the new stats columns (without semantic_score) so
+      // v24+ schemas don't fall back and accidentally drop stats values.
       try {
         await conn.query(
           `INSERT INTO expert_routing_logs (
@@ -33,8 +37,8 @@ export const expertRoutingLogRepository = {
             classifier_model, classification_result, selected_expert_id,
             selected_expert_type, selected_expert_name, classification_time,
             original_request, classifier_request, classifier_response, created_at,
-            route_source, prompt_tokens, cleaned_content_length, semantic_score
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            route_source, prompt_tokens, cleaned_content_length
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             log.id,
             log.virtual_key_id || null,
@@ -52,10 +56,10 @@ export const expertRoutingLogRepository = {
             now,
             log.route_source || null,
             log.prompt_tokens || 0,
-            log.cleaned_content_length || 0,
-            log.semantic_score || null,
+            log.cleaned_content_length || 0
           ]
         );
+        return;
       } catch (e: any) {
         // MySQL: ER_BAD_FIELD_ERROR; SQLite: SQLITE_ERROR (when using sqlite driver)
         // We only fallback on schema mismatch errors.
@@ -63,36 +67,36 @@ export const expertRoutingLogRepository = {
         const code = String(e?.code || '');
         const isMissingColumn =
           code === 'ER_BAD_FIELD_ERROR' ||
-          /Unknown column\s+'(route_source|prompt_tokens|cleaned_content_length|semantic_score)'/i.test(message) ||
-          /no such column:\s*(route_source|prompt_tokens|cleaned_content_length|semantic_score)/i.test(message);
-
+          /Unknown column\s+'(route_source|prompt_tokens|cleaned_content_length)'/i.test(message) ||
+          /no such column:\s*(route_source|prompt_tokens|cleaned_content_length)/i.test(message);
         if (!isMissingColumn) throw e;
-
-        await conn.query(
-          `INSERT INTO expert_routing_logs (
-            id, virtual_key_id, expert_routing_id, request_hash,
-            classifier_model, classification_result, selected_expert_id,
-            selected_expert_type, selected_expert_name, classification_time,
-            original_request, classifier_request, classifier_response, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            log.id,
-            log.virtual_key_id || null,
-            log.expert_routing_id,
-            log.request_hash,
-            log.classifier_model,
-            log.classification_result,
-            log.selected_expert_id,
-            log.selected_expert_type,
-            log.selected_expert_name,
-            log.classification_time,
-            log.original_request || null,
-            log.classifier_request || null,
-            log.classifier_response || null,
-            now,
-          ]
-        );
       }
+
+      // Deployments without v22 stats columns.
+      await conn.query(
+        `INSERT INTO expert_routing_logs (
+          id, virtual_key_id, expert_routing_id, request_hash,
+          classifier_model, classification_result, selected_expert_id,
+          selected_expert_type, selected_expert_name, classification_time,
+          original_request, classifier_request, classifier_response, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          log.id,
+          log.virtual_key_id || null,
+          log.expert_routing_id,
+          log.request_hash,
+          log.classifier_model,
+          log.classification_result,
+          log.selected_expert_id,
+          log.selected_expert_type,
+          log.selected_expert_name,
+          log.classification_time,
+          log.original_request || null,
+          log.classifier_request || null,
+          log.classifier_response || null,
+          now
+        ]
+      );
     } finally {
       conn.release();
     }
