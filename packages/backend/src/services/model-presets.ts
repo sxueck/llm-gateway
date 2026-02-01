@@ -37,9 +37,143 @@ interface ModelPresetData {
   [modelName: string]: ModelPresetInfo;
 }
 
-const MODEL_PRESET_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json';
+const MODEL_PRESET_URL = 'https://models.dev/api.json';
 const CACHE_FILE_PATH = './data/model-presets.json';
 const CACHE_DURATION = 24 * 60 * 60 * 1000;
+
+function toPerTokenFromPer1M(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  return value / 1_000_000;
+}
+
+function toNumber(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  return value;
+}
+
+function providerPriority(providerId: string | undefined): number {
+  const id = (providerId || '').toLowerCase();
+  const table: Record<string, number> = {
+    openai: 1000,
+    anthropic: 950,
+    google: 900,
+    'google-ai-studio': 890,
+    'vertex-ai': 880,
+    mistral: 850,
+    cohere: 800,
+    xai: 780,
+    deepseek: 760,
+    alibaba: 720,
+    qwen: 710,
+    'amazon-bedrock': 700,
+    bedrock: 700,
+    azure: 690,
+    groq: 650,
+    together: 620,
+    fireworks: 610,
+    huggingface: 550,
+    hf: 550,
+    openrouter: 500,
+  };
+  return table[id] ?? 0;
+}
+
+function shouldReplaceExisting(existing: ModelPresetInfo, incoming: ModelPresetInfo): boolean {
+  const existingP = providerPriority(existing.litellm_provider || existing.provider);
+  const incomingP = providerPriority(incoming.litellm_provider || incoming.provider);
+  if (incomingP !== existingP) return incomingP > existingP;
+
+  // Prefer entries that contain token pricing.
+  const existingHasCost =
+    typeof existing.input_cost_per_token === 'number' || typeof existing.output_cost_per_token === 'number';
+  const incomingHasCost =
+    typeof incoming.input_cost_per_token === 'number' || typeof incoming.output_cost_per_token === 'number';
+  if (existingHasCost !== incomingHasCost) return incomingHasCost;
+
+  // Prefer entries that contain token limits.
+  const existingHasLimits =
+    typeof existing.max_tokens === 'number' ||
+    typeof existing.max_input_tokens === 'number' ||
+    typeof existing.max_output_tokens === 'number';
+  const incomingHasLimits =
+    typeof incoming.max_tokens === 'number' ||
+    typeof incoming.max_input_tokens === 'number' ||
+    typeof incoming.max_output_tokens === 'number';
+  if (existingHasLimits !== incomingHasLimits) return incomingHasLimits;
+
+  return false;
+}
+
+function parseModelsDevApiJson(apiJson: unknown): ModelPresetData {
+  if (!apiJson || typeof apiJson !== 'object' || Array.isArray(apiJson)) {
+    throw new Error('无效的 models.dev 数据格式');
+  }
+
+  const providers = apiJson as Record<string, any>;
+  const data: ModelPresetData = {};
+
+  for (const [providerId, provider] of Object.entries(providers)) {
+    if (!provider || typeof provider !== 'object') continue;
+
+    const providerName = typeof provider.name === 'string' ? provider.name : undefined;
+    const models = provider.models;
+    if (!models || typeof models !== 'object' || Array.isArray(models)) continue;
+
+    for (const [modelKey, model] of Object.entries(models as Record<string, any>)) {
+      if (!model || typeof model !== 'object') continue;
+
+      const modelId = typeof model.id === 'string' && model.id ? model.id : modelKey;
+      if (typeof modelId !== 'string' || !modelId.trim()) continue;
+
+      const cost = model.cost || {};
+      const limit = model.limit || {};
+      const modalities = model.modalities || {};
+      const inputModalities = Array.isArray(modalities.input) ? modalities.input : [];
+      const outputModalities = Array.isArray(modalities.output) ? modalities.output : [];
+
+      const supportsVision =
+        inputModalities.includes('image') || outputModalities.includes('image') || undefined;
+      const supportsAudioInput = inputModalities.includes('audio') || undefined;
+      const supportsAudioOutput = outputModalities.includes('audio') || undefined;
+      const supportsPdfInput = inputModalities.includes('pdf') || undefined;
+
+      const supportsPromptCaching =
+        typeof cost.cache_read === 'number' || typeof cost.cache_write === 'number' || undefined;
+
+      const preset: ModelPresetInfo = {
+        litellm_provider: providerId || providerName || undefined,
+        provider: providerId || providerName || undefined,
+        mode: typeof model.family === 'string' ? model.family : undefined,
+
+        max_tokens: toNumber(limit.context),
+        max_input_tokens: toNumber(limit.input),
+        max_output_tokens: toNumber(limit.output),
+
+        input_cost_per_token: toPerTokenFromPer1M(cost.input),
+        output_cost_per_token: toPerTokenFromPer1M(cost.output),
+
+        supports_function_calling: typeof model.tool_call === 'boolean' ? model.tool_call : undefined,
+        supports_response_schema:
+          typeof model.structured_output === 'boolean' ? model.structured_output : undefined,
+        supports_vision: supportsVision,
+        supports_audio_input: supportsAudioInput,
+        supports_audio_output: supportsAudioOutput,
+        supports_pdf_input: supportsPdfInput,
+        supports_prompt_caching: supportsPromptCaching,
+      };
+
+      const existing = data[modelId];
+      if (!existing || shouldReplaceExisting(existing, preset)) {
+        data[modelId] = preset;
+      }
+    }
+  }
+
+  if (Object.keys(data).length === 0) {
+    throw new Error('解析 models.dev 数据失败：未提取到任何模型');
+  }
+  return data;
+}
 
 export class ModelPresetsService {
   private cachedData: ModelPresetData | null = null;
@@ -90,16 +224,18 @@ export class ModelPresetsService {
     try {
       memoryLogger.info('开始从远程更新模型预设...', 'ModelPresets');
       
-      const response = await fetch(MODEL_PRESET_URL);
+      const response = await fetch(MODEL_PRESET_URL, {
+        headers: {
+          accept: 'application/json',
+          'user-agent': 'llm-gateway/0.2 (model-presets)'
+        }
+      } as any);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const data = await response.json() as ModelPresetData;
-      
-      if (!data || typeof data !== 'object') {
-        throw new Error('无效的数据格式');
-      }
+      const apiJson = await response.json();
+      const data = parseModelsDevApiJson(apiJson);
 
       this.saveToCache(data);
       
@@ -246,4 +382,3 @@ export class ModelPresetsService {
 }
 
 export const modelPresetsService = new ModelPresetsService();
-

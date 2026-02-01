@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "llm-gateway",
@@ -67,9 +68,11 @@
         "@vicons/ionicons5": "^0.13.0",
         "@vicons/material": "^0.13.0",
         "axios": "^1.7.9",
+        "dayjs": "^1.11.19",
         "echarts": "^6.0.0",
         "highlight.js": "^11.11.1",
         "naive-ui": "^2.40.1",
+        "numeral": "^2.0.6",
         "pinia": "^2.3.0",
         "vue": "^3.5.13",
         "vue-echarts": "^8.0.1",
@@ -77,6 +80,7 @@
         "vue-router": "^4.5.0",
       },
       "devDependencies": {
+        "@types/numeral": "^2.0.5",
         "@vitejs/plugin-vue": "^5.2.1",
         "typescript": "^5.7.2",
         "vite": "^6.0.5",
@@ -481,6 +485,8 @@
 
     "@types/node-cron": ["@types/node-cron@3.0.11", "https://registry.npmmirror.com/@types/node-cron/-/node-cron-3.0.11.tgz", {}, "sha512-0ikrnug3/IyneSHqCBeslAhlK2aBfYek1fGo4bP4QnZPmiqSGRK+Oy7ZMisLWkesffJvQ1cqAcBnJC+8+nxIAg=="],
 
+    "@types/numeral": ["@types/numeral@2.0.5", "https://registry.npmmirror.com/@types/numeral/-/numeral-2.0.5.tgz", {}, "sha512-kH8I7OSSwQu9DS9JYdFWbuvhVzvFRoCPCkGxNwoGgaPeDfEPJlcxNvEOypZhQ3XXHsGbfIuYcxcJxKUfJHnRfw=="],
+
     "@types/sql.js": ["@types/sql.js@1.4.9", "https://registry.npmmirror.com/@types/sql.js/-/sql.js-1.4.9.tgz", { "dependencies": { "@types/emscripten": "*", "@types/node": "*" } }, "sha512-ep8b36RKHlgWPqjNG9ToUrPiwkhwh0AEzy883mO5Xnd+cL6VBH1EvSjBAAuxLUFF2Vn/moE3Me6v9E1Lo+48GQ=="],
 
     "@types/tar": ["@types/tar@6.1.13", "https://registry.npmmirror.com/@types/tar/-/tar-6.1.13.tgz", { "dependencies": { "@types/node": "*", "minipass": "^4.0.0" } }, "sha512-IznnlmU5f4WcGTh2ltRu/Ijpmk8wiWXfF0VA4s+HPjHZgvFggk1YaIkbo5krX/zUCzWF8N/l4+W/LNxnvAJ8nw=="],
@@ -608,6 +614,8 @@
     "date-fns-tz": ["date-fns-tz@3.2.0", "https://registry.npmmirror.com/date-fns-tz/-/date-fns-tz-3.2.0.tgz", { "peerDependencies": { "date-fns": "^3.0.0 || ^4.0.0" } }, "sha512-sg8HqoTEulcbbbVXeg84u5UnlsQa8GS5QXMqjjYIhS4abEVVKIUwe0/l/UhrZdKaL/W5eWZNlbTeEIiOXTcsBQ=="],
 
     "dateformat": ["dateformat@4.6.3", "https://registry.npmmirror.com/dateformat/-/dateformat-4.6.3.tgz", {}, "sha512-2P0p0pFGzHS5EMnhdxQi7aJN+iMheud0UhG4dlE1DLAlvL8JHjJJTX/CSm4JXwV0Ka5nGk3zC5mcb5bUQUxxMA=="],
+
+    "dayjs": ["dayjs@1.11.19", "https://registry.npmmirror.com/dayjs/-/dayjs-1.11.19.tgz", {}, "sha512-t5EcLVS6QPBNqM2z8fakk/NKel+Xzshgt8FFKAn+qwlD1pzZWxh0nVCrvFK7ZDb6XucZeF9z8C7CBWTRIVApAw=="],
 
     "de-indent": ["de-indent@1.0.2", "https://registry.npmmirror.com/de-indent/-/de-indent-1.0.2.tgz", {}, "sha512-e/1zu3xH5MQryN2zdVaF0OrdNLUbvWxzMbi+iNA6Bky7l1RoP8a2fIbRocyHclXt/arDrrR6lL3TqFD9pMQTsg=="],
 
@@ -828,6 +836,8 @@
     "node-addon-api": ["node-addon-api@6.1.0", "https://registry.npmmirror.com/node-addon-api/-/node-addon-api-6.1.0.tgz", {}, "sha512-+eawOlIgy680F0kBzPUNFhMZGtJ1YmqM6l4+Crf4IkImjYrO/mqPwRMh352g23uIaQKFItcQ64I7KMaJxHgAVA=="],
 
     "node-cron": ["node-cron@4.2.1", "https://registry.npmmirror.com/node-cron/-/node-cron-4.2.1.tgz", {}, "sha512-lgimEHPE/QDgFlywTd8yTR61ptugX3Qer29efeyWw2rv259HtGBNn1vZVmp8lB9uo9wC0t/AT4iGqXxia+CJFg=="],
+
+    "numeral": ["numeral@2.0.6", "https://registry.npmmirror.com/numeral/-/numeral-2.0.6.tgz", {}, "sha512-qaKRmtYPZ5qdw4jWJD6bxEf1FJEqllJrwxCLIm0sQU/A7v2/czigzOb+C2uSiFsa9lBUzeH7M1oK+Q+OLxL3kA=="],
 
     "obliterator": ["obliterator@2.0.5", "https://registry.npmmirror.com/obliterator/-/obliterator-2.0.5.tgz", {}, "sha512-42CPE9AhahZRsMNslczq0ctAEtqk8Eka26QofnqC346BZdHDySk3LWka23LI7ULIw11NmltpiLagIq8gBozxTw=="],
 

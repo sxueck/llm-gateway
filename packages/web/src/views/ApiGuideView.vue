@@ -287,7 +287,7 @@
           <div>
             <n-text strong>4. 请求流程</n-text>
             <n-text depth="3" style="display: block; margin-top: 8px;">
-              客户端 → LLM Gateway (虚拟密钥验证) → Portkey Gateway (提供商路由) → AI 提供商
+              客户端 → LLM Gateway (虚拟密钥验证) → 提供商路由 → AI 提供商
             </n-text>
           </div>
         </n-space>

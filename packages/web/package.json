@@ -17,9 +17,11 @@
     "@vicons/ionicons5": "^0.13.0",
     "@vicons/material": "^0.13.0",
     "axios": "^1.7.9",
+    "dayjs": "^1.11.19",
     "echarts": "^6.0.0",
     "highlight.js": "^11.11.1",
     "naive-ui": "^2.40.1",
+    "numeral": "^2.0.6",
     "pinia": "^2.3.0",
     "vue": "^3.5.13",
     "vue-echarts": "^8.0.1",
@@ -27,6 +29,7 @@
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "@types/numeral": "^2.0.5",
     "@vitejs/plugin-vue": "^5.2.1",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",

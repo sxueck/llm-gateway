@@ -101,21 +101,6 @@ export interface VirtualKeyTrend {
   data: TrendDataPoint[];
 }
 
-export interface PortkeyStatus {
-  running: boolean;
-  containerId?: string;
-  containerName?: string;
-  status?: string;
-  ports?: string;
-  image?: string;
-  error?: string;
-  docker?: {
-    available: boolean;
-    version?: string;
-    error?: string;
-  };
-}
-
 export interface RequestSourceGeoInfo {
   ip: string;
   country?: string;

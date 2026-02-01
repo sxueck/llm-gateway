@@ -10,9 +10,7 @@ export interface ProviderExportData {
     description?: string;
     baseUrl: string;
     enabled: boolean;
-    isPortkeySupported: boolean;
     category?: string;
-    // 注意：不导出 API Key 以保护安全
   }>;
 }
 
@@ -31,7 +29,6 @@ export function exportProviders(providers: Provider[]): ProviderExportData {
         description: provider.description || undefined,
         baseUrl: provider.baseUrl,
         enabled: provider.enabled,
-        isPortkeySupported: !!preset,
         category: preset?.category,
       };
     }),
@@ -44,20 +41,17 @@ export function exportProviders(providers: Provider[]): ProviderExportData {
  * 下载提供商配置文件
  */
 export function downloadProvidersConfig(providers: Provider[], filename?: string) {
-  const exportData = exportProviders(providers);
-  const jsonString = JSON.stringify(exportData, null, 2);
-  const blob = new Blob([jsonString], { type: 'application/json' });
-  
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename || `providers-config-${new Date().toISOString().split('T')[0]}.json`;
-  
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  
-  URL.revokeObjectURL(url);
+  const exportData = exportProviders(providers)
+  const jsonString = JSON.stringify(exportData, null, 2)
+  const blob = new Blob([jsonString], { type: 'application/json' })
+
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename || `providers-config-${new Date().toISOString().split('T')[0]}.json`
+  a.click()
+
+  URL.revokeObjectURL(url)
 }
 
 /**
@@ -110,12 +104,6 @@ export function validateImportData(data: any): {
 
     if (typeof provider.enabled !== 'boolean') {
       warnings.push(`${prefix}: 启用状态不是布尔值，将使用默认值`);
-    }
-
-    // 检查是否为 Portkey 支持的提供商
-    const preset = getProviderById(provider.id);
-    if (!preset && !provider.isPortkeySupported) {
-      warnings.push(`${prefix}: "${provider.id}" 不是 Portkey 官方支持的提供商`);
     }
   });
 
@@ -183,7 +171,6 @@ export function convertImportDataToProviders(data: ProviderExportData): Array<{
   baseUrl: string;
   enabled: boolean;
   needsApiKey: boolean;
-  isPortkeySupported: boolean;
   category?: string;
 }> {
   return data.providers.map(provider => ({
@@ -193,7 +180,6 @@ export function convertImportDataToProviders(data: ProviderExportData): Array<{
     baseUrl: provider.baseUrl,
     enabled: provider.enabled ?? true,
     needsApiKey: true, // 导入的提供商都需要重新设置 API Key
-    isPortkeySupported: provider.isPortkeySupported ?? false,
     category: provider.category,
   }));
 }
@@ -204,13 +190,11 @@ export function convertImportDataToProviders(data: ProviderExportData): Array<{
 export function generateConfigSummary(data: ProviderExportData): {
   totalProviders: number;
   enabledProviders: number;
-  portkeySupported: number;
   categories: Record<string, number>;
 } {
   const summary = {
     totalProviders: data.providers.length,
     enabledProviders: data.providers.filter(p => p.enabled).length,
-    portkeySupported: data.providers.filter(p => p.isPortkeySupported).length,
     categories: {} as Record<string, number>,
   };
 

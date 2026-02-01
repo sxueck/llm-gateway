@@ -1,29 +1,16 @@
+import dayjs from 'dayjs'
+import 'dayjs/locale/zh-cn'
+
+dayjs.locale('zh-cn')
+
 export function formatDateTime(timestamp: number): string {
-  const date = new Date(timestamp);
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return dayjs(timestamp).format('YYYY/MM/DD HH:mm')
 }
 
 export function formatDate(timestamp: number): string {
-  const date = new Date(timestamp);
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
+  return dayjs(timestamp).format('YYYY/MM/DD')
 }
 
 export function formatTime(timestamp: number): string {
-  const date = new Date(timestamp);
-  return date.toLocaleString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  return dayjs(timestamp).format('HH:mm:ss')
 }
-

@@ -59,7 +59,7 @@
       preset="card"
       :title="editingId ? '编辑提供商' : '添加提供商'"
       class="provider-modal"
-      :style="{ width: '950px', maxHeight: '85vh' }"
+      :style="{ width: '800px', maxHeight: '90vh' }"
       :segmented="{
         content: 'soft',
         footer: 'soft'
@@ -67,42 +67,19 @@
     >
       <div class="modal-content-wrapper">
         <div class="modal-content">
-          <n-tabs v-if="!editingId" v-model:value="activeTab" type="line" size="small">
-            <n-tab-pane name="preset" tab="选择预设">
-              <ProviderPresetSelector v-model="selectedPreset" />
-              <n-space justify="end" style="margin-top: 12px">
-                <n-button @click="usePreset" :disabled="!selectedPreset" type="primary" size="small">
-                  使用此预设
-                </n-button>
-              </n-space>
-            </n-tab-pane>
-            <n-tab-pane name="custom" tab="自定义配置">
-              <ProviderForm ref="formRef" v-model="formValue" :editing-id="editingId" />
-            </n-tab-pane>
-          </n-tabs>
-          <ProviderForm v-else ref="formRef" v-model="formValue" :editing-id="editingId" />
+          <ProviderForm ref="formRef" v-model="formValue" :editing-id="editingId" />
         </div>
       </div>
       <template #footer>
         <n-space justify="end" :size="8">
           <n-button @click="showModal = false" size="small">取消</n-button>
           <n-button
-            v-if="!editingId && activeTab === 'custom'"
             type="primary"
             size="small"
             :loading="submitting"
             @click="handleSubmit"
           >
-            创建
-          </n-button>
-          <n-button
-            v-if="editingId"
-            type="primary"
-            size="small"
-            :loading="submitting"
-            @click="handleSubmit"
-          >
-            更新
+            {{ editingId ? '更新' : '创建' }}
           </n-button>
         </n-space>
       </template>
@@ -112,7 +89,7 @@
 
 <script setup lang="ts">
 import { ref, h, onMounted, watch } from 'vue';
-import { useMessage, useDialog, NSpace, NButton, NDataTable, NCard, NModal, NTag, NPopconfirm, NTabs, NTabPane, NDropdown, NUpload, NIcon, type UploadFileInfo } from 'naive-ui';
+import { useMessage, useDialog, NSpace, NButton, NDataTable, NCard, NModal, NTag, NPopconfirm, NDropdown, NUpload, NIcon, type UploadFileInfo } from 'naive-ui';
 import { Download as DownloadIcon, CloudUpload as UploadIcon, FlashOutline as SpeedTestIcon } from '@vicons/ionicons5';
 import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined } from '@vicons/material';
 import { useProviderStore } from '@/stores/provider';
@@ -122,10 +99,8 @@ import { modelApi } from '@/api/model';
 import type { Provider } from '@/types';
 import type { ProviderFormValue } from '@/types/provider';
 import { createDefaultProviderForm } from '@/types/provider';
-import ProviderPresetSelector from '@/components/ProviderPresetSelector.vue';
 import ProviderForm from '@/components/ProviderForm.vue';
 import ProviderOverview from '@/components/ProviderOverview.vue';
-import type { ProviderPreset } from '@/constants/providers';
 import { downloadProvidersConfig, parseImportFile } from '@/utils/provider-export';
 
 const message = useMessage();
@@ -137,8 +112,6 @@ const showModal = ref(false);
 const formRef = ref();
 const submitting = ref(false);
 const editingId = ref<string | null>(null);
-const activeTab = ref('preset');
-const selectedPreset = ref<ProviderPreset | null>(null);
 
 const exportOptions = [
   {
@@ -248,6 +221,7 @@ const columns = [
             size: 'small',
             quaternary: true,
             circle: true,
+            onClick: () => {},
           }, {
             icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) }),
           }),
@@ -342,7 +316,6 @@ async function handleDelete(id: string) {
 
 async function handleSubmit() {
   try {
-    // 在提交前同步 protocolMappings
     formRef.value?.syncProtocolMappings?.();
 
     await formRef.value?.validate();
@@ -431,7 +404,6 @@ async function handleSubmit() {
 
         try {
           await modelApi.batchCreate(modelsToCreate);
-          // 刷新模型列表以确保新创建的模型能被其他页面看到
           await modelStore.fetchModels();
           message.success(`创建成功，已添加 ${selectedModelsInfo.length} 个模型`);
         } catch (error: any) {
@@ -456,26 +428,9 @@ async function handleSubmit() {
 
 function resetForm() {
   editingId.value = null;
-  activeTab.value = 'preset';
-  selectedPreset.value = null;
   originalApiKey.value = '';
   apiKeyChanged.value = false;
   formValue.value = createDefaultProviderForm();
-}
-
-function usePreset() {
-  if (!selectedPreset.value) return;
-
-  formValue.value = {
-    id: selectedPreset.value.id,
-    name: selectedPreset.value.name,
-    description: '',
-    baseUrl: selectedPreset.value.baseUrl,
-    protocolMappings: null,
-    apiKey: '',
-    enabled: true,
-  };
-  activeTab.value = 'custom';
 }
 
 function handleExportSelect(key: string) {
@@ -571,7 +526,6 @@ async function executeImport(providers: Array<{ id: string; name: string; descri
   }
 }
 
-// 当弹窗关闭时重置表单和编辑状态，避免下次“添加提供商”残留上一次的编辑数据
 watch(showModal, (visible) => {
   if (!visible) {
     resetForm();
@@ -704,7 +658,7 @@ onMounted(() => {
 }
 
 .modal-content-wrapper {
-  max-height: calc(85vh - 180px);
+  max-height: calc(90vh - 120px);
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -736,14 +690,5 @@ onMounted(() => {
 .modal-content {
   min-height: 200px;
   padding: 16px 20px;
-}
-
-.provider-modal :deep(.n-tabs-nav) {
-  padding: 0;
-}
-
-.provider-modal :deep(.n-tabs-tab) {
-  padding: 8px 16px;
-  font-size: 13px;
 }
 </style>

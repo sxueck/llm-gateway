@@ -178,7 +178,7 @@ function getModelOptionsByProvider(providerId: string) {
     }));
 }
 
-function generatePortkeyConfig() {
+function generateRoutingConfig() {
   const strategy: any = {
     mode: configType.value,
   };
@@ -226,7 +226,7 @@ function generatePortkeyConfig() {
 async function handleSave() {
   try {
     saving.value = true;
-    const config = generatePortkeyConfig();
+    const config = generateRoutingConfig();
 
     if (editingId.value) {
       await configApi.updateRoutingConfig(editingId.value, {
