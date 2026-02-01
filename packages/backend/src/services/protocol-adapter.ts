@@ -82,6 +82,28 @@ export class ProtocolAdapter {
   private keepAliveAgents: Map<string, { httpAgent: HttpAgent; httpsAgent: HttpsAgent }> = new Map();
   private readonly keepAliveMaxSockets = parseInt(process.env.HTTP_KEEP_ALIVE_MAX_SOCKETS || '64', 10);
 
+  private isThinkingEnabled(options: any): boolean {
+    const thinking = options?.thinking;
+    if (thinking === true) return true;
+    if (!thinking || typeof thinking !== 'object') return false;
+    if ((thinking as any).enabled === true) return true;
+    if ((thinking as any).type === 'enabled') return true;
+    return false;
+  }
+
+  private ensureReasoningContentForToolCalls(messages: any[], options: any): any[] {
+    if (!this.isThinkingEnabled(options)) return messages;
+    for (const msg of messages) {
+      if (!msg || typeof msg !== 'object') continue;
+      if (msg.role !== 'assistant') continue;
+      if (!Array.isArray((msg as any).tool_calls) || (msg as any).tool_calls.length === 0) continue;
+      if ((msg as any).reasoning_content === undefined || (msg as any).reasoning_content === null) {
+        (msg as any).reasoning_content = '';
+      }
+    }
+    return messages;
+  }
+
   private getKeepAliveAgents(cacheKey: string): { httpAgent: HttpAgent; httpsAgent: HttpsAgent } {
     if (!this.keepAliveAgents.has(cacheKey)) {
       const httpAgent = new HttpAgent({
@@ -142,7 +164,7 @@ export class ProtocolAdapter {
     return this.openaiClients.get(cacheKey)!;
   }
 
-  private validateAndCleanMessages(messages: any[]): any[] {
+  private validateAndCleanMessages(messages: any[], options?: any): any[] {
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new Error('messages 数组不能为空');
     }
@@ -182,7 +204,7 @@ export class ProtocolAdapter {
       throw new Error('过滤后的 messages 数组为空，所有消息内容均为空白');
     }
 
-    return cleanedMessages;
+    return this.ensureReasoningContentForToolCalls(cleanedMessages, options);
   }
 
   async chatCompletion(
@@ -208,7 +230,7 @@ export class ProtocolAdapter {
   ): Promise<ProtocolResponse> {
     const client = this.getOpenAIClient(config);
 
-    const cleanedMessages = this.validateAndCleanMessages(messages);
+    const cleanedMessages = this.validateAndCleanMessages(messages, options);
 
     const requestParams: any = {
       model: config.model,
@@ -310,7 +332,7 @@ export class ProtocolAdapter {
     let lastChunkId: string | undefined;
     let lastChunkModel: string | undefined;
 
-    const cleanedMessages = this.validateAndCleanMessages(messages);
+    const cleanedMessages = this.validateAndCleanMessages(messages, options);
 
     const requestParams: any = {
       model: config.model,
