@@ -35,6 +35,7 @@ export interface ResolveProviderResult {
 export interface ProxyRequest {
   body: any;
   protocol?: 'openai' | 'anthropic';
+  headers?: Record<string, any>;
 }
 
 interface AffinityState {
@@ -77,6 +78,7 @@ function extractAffinityScopeKey(request?: any, virtualKeyId?: string): string |
     body?.metadata?.sessionId,
     body?.metadata?.conversation_id,
     body?.metadata?.conversationId,
+    body?.metadata?.user_id,
     body?.user,
     virtualKeyId,
   ];

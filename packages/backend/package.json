@@ -17,7 +17,7 @@
     "fix:db": "bun run scripts/fix-database.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.71.0",
+    "@anthropic-ai/sdk": "^0.71.2",
     "@aws-sdk/client-s3": "^3.940.0",
     "@fastify/cors": "^11.1.0",
     "@fastify/jwt": "^10.0.0",

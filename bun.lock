@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "llm-gateway",
@@ -12,7 +13,7 @@
       "name": "@llm-gateway/backend",
       "version": "0.2.4",
       "dependencies": {
-        "@anthropic-ai/sdk": "^0.71.0",
+        "@anthropic-ai/sdk": "^0.71.2",
         "@aws-sdk/client-s3": "^3.940.0",
         "@fastify/cors": "^11.1.0",
         "@fastify/jwt": "^10.0.0",

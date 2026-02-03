@@ -99,10 +99,10 @@ export function createAnthropicProxyHandler() {
         return reply.code(400).send(error);
       }
 
-      // 标记协议类型为 Anthropic
       const proxyRequest: any = {
         body: requestBody,
-        protocol: 'anthropic' as const
+        protocol: 'anthropic' as const,
+        headers: request.headers,
       };
 
       if (!requestBody.messages || !Array.isArray(requestBody.messages)) {
@@ -169,8 +169,7 @@ export function createAnthropicProxyHandler() {
           protocolConfig,
           virtualKey,
           providerId,
-          startTime,
-          currentModel
+          startTime
         );
       }
 
@@ -180,8 +179,7 @@ export function createAnthropicProxyHandler() {
         protocolConfig,
         virtualKey,
         providerId,
-        startTime,
-        currentModel
+        startTime
       );
     } catch (error: any) {
       const duration = Date.now() - startTime;
@@ -234,15 +232,11 @@ async function handleAnthropicNonStreamRequest(
   protocolConfig: any,
   virtualKey: any,
   providerId: string,
-  startTime: number,
-  currentModel?: any
+  startTime: number
 ) {
   const requestBody = request.body as AnthropicRequest;
   const requestUserAgent = getRequestUserAgent(request);
   const requestIp = extractIp(request);
-  const vkDisplay = virtualKey.key_value && virtualKey.key_value.length > 10
-    ? `${virtualKey.key_value.slice(0, 6)}...${virtualKey.key_value.slice(-4)}`
-    : virtualKey.key_value;
 
   try {
     const response = await makeAnthropicRequest(protocolConfig, requestBody);
@@ -341,8 +335,7 @@ async function handleAnthropicStreamRequest(
   protocolConfig: any,
   virtualKey: any,
   providerId: string,
-  startTime: number,
-  currentModel?: any
+  startTime: number
 ) {
   const requestBody = request.body as AnthropicRequest;
   const vkDisplay = virtualKey.key_value && virtualKey.key_value.length > 10
