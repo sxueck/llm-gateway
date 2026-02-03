@@ -70,18 +70,18 @@
         <n-form-item label="禁用日志">
           <n-switch v-model:value="formValue.disableLogging" size="small" />
         </n-form-item>
-			  <n-form-item label="动态压缩">
-			  <n-space vertical :size="4">
-				  <n-switch v-model:value="formValue.dynamicCompressionEnabled" size="small" />
-				  <span style="font-size: 12px; color: #999;">自动压缩历史消息中的重复内容,节省 Token</span>
-			  </n-space>
-			</n-form-item>
-			<n-form-item label="图像压缩">
-			  <n-space vertical :size="4">
-				  <n-switch v-model:value="formValue.imageCompressionEnabled" size="small" />
-				  <span style="font-size: 12px; color: #999;">仅处理 base64 图片,自动缩放最长边到 768px（png/jpeg/webp）</span>
-			  </n-space>
-			</n-form-item>
+        <n-form-item label="动态压缩">
+          <n-space vertical :size="4">
+            <n-switch v-model:value="formValue.dynamicCompressionEnabled" size="small" />
+            <span style="font-size: 12px; color: #999;">自动压缩历史消息中的重复内容,节省 Token</span>
+          </n-space>
+        </n-form-item>
+        <n-form-item label="图像压缩">
+          <n-space vertical :size="4">
+            <n-switch v-model:value="formValue.imageCompressionEnabled" size="small" />
+            <span style="font-size: 12px; color: #999;">仅处理 base64 图片,自动缩放最长边到 768px（png/jpeg/webp）</span>
+          </n-space>
+        </n-form-item>
 			<n-form-item label="拦截空温度">
 			  <n-space vertical :size="4">
 				  <n-space :size="12" align="center">

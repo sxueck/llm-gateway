@@ -53,18 +53,22 @@ function buildRequestParams(config: any, requestBody: AnthropicRequest, stream: 
   // Some Anthropic-compatible providers implement /v1/messages by internally bridging to
   // OpenAI-style chat/tooling. When `thinking` is enabled, they may require
   // `reasoning_content` to exist on assistant tool-call messages.
-  try {
-    if (Array.isArray(requestParams.messages)) {
-      for (const msg of requestParams.messages) {
-        if (!msg || typeof msg !== 'object') continue;
-        if ((msg as any).role !== 'assistant') continue;
-        if (!Array.isArray((msg as any).tool_calls) || (msg as any).tool_calls.length === 0) continue;
-        const rc = (msg as any).reasoning_content;
-        if (rc === undefined || rc === null || typeof rc !== 'string') (msg as any).reasoning_content = '';
+  const thinking = requestBody.thinking;
+  const thinkingEnabled = thinking && thinking.type === 'enabled';
+  if (thinkingEnabled) {
+    try {
+      if (Array.isArray(requestParams.messages)) {
+        for (const msg of requestParams.messages) {
+          if (!msg || typeof msg !== 'object') continue;
+          if ((msg as any).role !== 'assistant') continue;
+          if (!Array.isArray((msg as any).tool_calls) || (msg as any).tool_calls.length === 0) continue;
+          const rc = (msg as any).reasoning_content;
+          if (rc === undefined || rc === null || typeof rc !== 'string') (msg as any).reasoning_content = '';
+        }
       }
+    } catch {
+      // Best-effort compatibility; ignore.
     }
-  } catch {
-    // Best-effort compatibility; ignore.
   }
 
   if (stream) {
