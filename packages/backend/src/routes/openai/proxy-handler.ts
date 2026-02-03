@@ -5,13 +5,10 @@ import { debugModeService } from '../../services/debug-mode.js';
 import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse, buildFullRequestBody, accumulateResponsesStream, stripFieldRecursively } from '../../utils/request-logger.js';
 import { messageCompressor } from '../../services/message-compressor.js';
 import { extractIp } from '../../utils/ip.js';
-import { manualIpBlocklist } from '../../services/manual-ip-blocklist.js';
 import { getRequestUserAgent } from '../../utils/http.js';
 import { makeHttpRequest, makeStreamHttpRequest } from '../proxy/http-client.js';
 import { checkCache, setCacheIfNeeded, getCacheStatus } from '../proxy/cache.js';
-import { authenticateVirtualKey, extractVirtualKeyAuthHeader } from '../proxy/auth.js';
-import { resolveModelAndProvider } from '../proxy/model-resolver.js';
-import { buildProviderConfig } from '../proxy/provider-config-builder.js';
+import { runProxyPipeline } from '../proxy/pipeline.js';
 import { calculateTokensIfNeeded } from '../proxy/token-calculator.js';
 import { circuitBreaker } from '../../services/circuit-breaker.js';
 import { shouldLogRequestBody, getModelForLogging } from '../proxy/handlers/shared.js';
@@ -269,82 +266,76 @@ export function createOpenAIProxyHandler() {
     let requestUserAgent = '';
 
     try {
-      requestIp = extractIp(request);
-      requestUserAgent = getRequestUserAgent(request);
-      const manualBlock = await manualIpBlocklist.isBlocked(requestIp);
-      if (manualBlock) {
-        memoryLogger.warn(
-          `拦截手动屏蔽 IP 请求 | IP: ${requestIp} | UA: ${requestUserAgent} | 原因: ${manualBlock.reason || '管理员拦截'}`,
-          'ManualBlock'
-        );
-        return reply.code(403).send({
-          error: {
-            message: 'Access denied: IP blocked',
-            type: 'access_denied',
-            param: 'ip',
-            code: 'ip_blocked'
+      const pipelineResult = await runProxyPipeline(request, reply, {
+        protocol: 'openai',
+        handlers: {
+          onManualBlock: ({ reply }) => {
+            reply.code(403).send({
+              error: {
+                message: 'Access denied: IP blocked',
+                type: 'access_denied',
+                param: 'ip',
+                code: 'ip_blocked'
+              }
+            });
+          },
+          onAntiBotBlock: ({ reply }) => {
+            reply.code(403).send({
+              error: {
+                message: 'Access denied: Bot detected',
+                type: 'access_denied',
+                param: 'user-agent',
+                code: 'bot_detected'
+              }
+            });
+          },
+          onAuthError: ({ reply, authError }) => {
+            reply.code(authError.code).send(authError.body);
+          },
+          onModelError: ({ reply, modelError }) => {
+            reply.code(modelError.code).send(modelError.body);
+          },
+          onProviderConfigError: ({ reply, providerConfigError }) => {
+            reply.code(providerConfigError.code).send(providerConfigError.body);
+          },
+        },
+        afterAuth: async ({ virtualKey, virtualKeyValue: vkValue }) => {
+          virtualKeyValue = vkValue;
+
+          // Best-effort: shrink base64 images early so cache key + payload are smaller.
+          try {
+            const vkDisplayPre = virtualKey.key_value && virtualKey.key_value.length > 10
+              ? `${virtualKey.key_value.slice(0, 6)}...${virtualKey.key_value.slice(-4)}`
+              : virtualKey.key_value;
+            const imageStats = await maybeCompressImagesInOpenAIRequestBodyInPlace(request.body, virtualKey as any);
+            if (imageStats) {
+              logImageCompressionStats(imageStats, { vkDisplay: vkDisplayPre, protocol: 'openai' });
+            }
+          } catch (e: any) {
+            memoryLogger.warn(`图像压缩预处理失败(已跳过): ${e?.message || e}`, 'Proxy');
           }
-        });
-      }
-
-      // 反爬虫检测
-      const { antiBotService } = await import('../../services/anti-bot.js');
-      const antiBotResult = antiBotService.detect(requestUserAgent, requestIp);
-
-      antiBotService.logDetection(requestUserAgent, antiBotResult, requestIp, request.headers);
-      
-      if (antiBotResult.shouldBlock) {
-        memoryLogger.warn(`拦截爬虫/威胁IP请求 | IP: ${requestIp} | UA: ${requestUserAgent} | 原因: ${antiBotResult.reason}`, 'AntiBot');
-        return reply.code(403).send({
-          error: {
-            message: 'Access denied: Bot detected',
-            type: 'access_denied',
-            param: 'user-agent',
-            code: 'bot_detected'
-          }
-        });
-      }
-
-      // 支持从多种 header 读取虚拟密钥（兼容 Gemini / Claude 等 SDK 的 API Key 头）
-      const resolvedAuthHeader = extractVirtualKeyAuthHeader(request.headers as any);
-
-      const authResult = await authenticateVirtualKey(resolvedAuthHeader);
-      if ('error' in authResult) {
-        return reply.code((authResult.error as any).code).send((authResult.error as any).body);
-      }
-
-      const { virtualKey, virtualKeyValue: vkValue } = authResult;
-      virtualKeyValue = vkValue;
-
-      // Best-effort: shrink base64 images early so cache key + payload are smaller.
-      try {
-        const vkDisplayPre = virtualKey.key_value && virtualKey.key_value.length > 10
-          ? `${virtualKey.key_value.slice(0, 6)}...${virtualKey.key_value.slice(-4)}`
-          : virtualKey.key_value;
-        const imageStats = await maybeCompressImagesInOpenAIRequestBodyInPlace(request.body, virtualKey as any);
-        if (imageStats) {
-          logImageCompressionStats(imageStats, { vkDisplay: vkDisplayPre, protocol: 'openai' });
         }
-      } catch (e: any) {
-        memoryLogger.warn(`图像压缩预处理失败(已跳过): ${e?.message || e}`, 'Proxy');
+      });
+      if (!pipelineResult.ok) {
+        return;
       }
 
-      // Gemini URL logic removed
-      // const [rawPath] = request.url.split('?'); ...
+      const {
+        requestIp: pipelineIp,
+        requestUserAgent: pipelineUa,
+        virtualKey,
+        virtualKeyValue: vkValue,
+        providerId: resolvedProviderId,
+        currentModel: resolvedModel,
+        modelResult,
+        configResult,
+      } = pipelineResult.context;
 
-      const modelResult = await resolveModelAndProvider(virtualKey, request, virtualKeyValue!);
-      if ('code' in modelResult) {
-        return reply.code(modelResult.code).send(modelResult.body);
-      }
-
-      const { provider, providerId: resolvedProviderId, currentModel: resolvedModel } = modelResult;
+      requestIp = pipelineIp;
+      requestUserAgent = pipelineUa;
+      virtualKeyValue = vkValue;
       providerId = resolvedProviderId;
       currentModel = resolvedModel;
-
-      const configResult = await buildProviderConfig(provider, virtualKey, virtualKeyValue!, providerId, request, currentModel);
-      if ('code' in configResult) {
-        return reply.code(configResult.code).send(configResult.body);
-      }
 
       const { protocolConfig, path, vkDisplay, isStreamRequest } = configResult;
 
@@ -477,7 +468,7 @@ export function createOpenAIProxyHandler() {
           path,
           vkDisplay,
           virtualKey,
-          providerId,
+          resolvedProviderId,
           startTime,
           compressionStats,
           currentModel,
@@ -493,7 +484,7 @@ export function createOpenAIProxyHandler() {
         reply,
         protocolConfig,
         virtualKey,
-        providerId,
+        resolvedProviderId,
         isStreamRequest,
         path,
         startTime,

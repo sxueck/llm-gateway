@@ -11,8 +11,8 @@
     "dev:node-simple": "node --loader tsx src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target node --minify --external @xenova/transformers --external onnxruntime-node --external onnxruntime-web --external onnxruntime-common --external sharp",
     "start": "bun run dist/index.js",
-    "typecheck": "tsc --noEmit",
-    "lint": "tsc --noEmit --noUnusedLocals false --noUnusedParameters false --noImplicitReturns false",
+    "typecheck": "tsc -p ../shared/tsconfig.json --emitDeclarationOnly && tsc --noEmit",
+    "lint": "tsc -p ../shared/tsconfig.json --emitDeclarationOnly && tsc --noEmit --noUnusedLocals false --noUnusedParameters false --noImplicitReturns false",
     "clean": "rm -rf dist",
     "fix:db": "bun run scripts/fix-database.js"
   },

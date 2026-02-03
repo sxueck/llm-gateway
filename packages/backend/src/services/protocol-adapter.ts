@@ -1,48 +1,16 @@
 import OpenAI from 'openai';
 import { FastifyReply } from 'fastify';
-import { Agent as HttpAgent } from 'node:http';
-import { Agent as HttpsAgent } from 'node:https';
 import { memoryLogger } from './logger.js';
-import { extractReasoningFromChoice } from '../utils/request-logger.js';
-import { normalizeUsageCounts } from '../utils/usage-normalizer.js';
-import { createInitialAggregate, processResponsesEvent } from '../utils/responses-parser.js';
 import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-client.js';
-import { ResponsesEmptyOutputError } from '../errors/responses-empty-output-error.js';
-import { sanitizeCustomHeaders, getSanitizedHeadersCacheKey } from '../utils/header-sanitizer.js';
 import { AifwStreamRestorer, restorePlaceholdersInObjectInPlace } from '../utils/aifw-placeholders.js';
 import { AifwClient } from './aifw-client.js';
 import { AifwRemoteStreamRestorer } from './aifw-remote-stream-restorer.js';
-
-// Responses API 空输出重试默认次数（可通过环境变量或模型属性配置）
-const DEFAULT_RESPONSES_EMPTY_OUTPUT_MAX_RETRIES = Math.max(
-  parseInt(process.env.RESPONSES_STREAM_EMPTY_RETRY_LIMIT || '1', 10),
-  0
-);
-
-function responsesEventHasAssistantContent(event: any): boolean {
-  if (!event || typeof event !== 'object') {
-    return false;
-  }
-
-  if (typeof event.type === 'string' && event.type.startsWith('response.output_')) {
-    return true;
-  }
-
-  if (Array.isArray((event as any).output) && (event as any).output.length > 0) {
-    return true;
-  }
-
-  const responseOutput = (event as any).response?.output;
-  if (Array.isArray(responseOutput) && responseOutput.length > 0) {
-    return true;
-  }
-
-  if (event.delta && typeof event.delta === 'object' && Object.keys(event.delta).length > 0) {
-    return true;
-  }
-
-  return false;
-}
+import { HttpClientFactory } from './http-client-factory.js';
+import { processOpenAIChatCompletionStreamToSse } from '../utils/stream-processor.js';
+import {
+  DEFAULT_RESPONSES_EMPTY_OUTPUT_MAX_RETRIES,
+  processOpenAIResponsesStreamToSseWithRetry,
+} from '../utils/responses-stream-processor.js';
 
 export interface ProtocolConfig {
   provider: string;
@@ -78,9 +46,10 @@ export interface ProtocolResponse {
 
 
 export class ProtocolAdapter {
-  private openaiClients: Map<string, OpenAI> = new Map();
-  private keepAliveAgents: Map<string, { httpAgent: HttpAgent; httpsAgent: HttpsAgent }> = new Map();
-  private readonly keepAliveMaxSockets = parseInt(process.env.HTTP_KEEP_ALIVE_MAX_SOCKETS || '64', 10);
+  private readonly httpClientFactory = new HttpClientFactory({
+    keepAliveMaxSockets: parseInt(process.env.HTTP_KEEP_ALIVE_MAX_SOCKETS || '64', 10),
+    logger: memoryLogger as any,
+  });
 
   private isThinkingEnabled(options: any): boolean {
     const thinking = options?.thinking;
@@ -104,64 +73,10 @@ export class ProtocolAdapter {
     return messages;
   }
 
-  private getKeepAliveAgents(cacheKey: string): { httpAgent: HttpAgent; httpsAgent: HttpsAgent } {
-    if (!this.keepAliveAgents.has(cacheKey)) {
-      const httpAgent = new HttpAgent({
-        keepAlive: true,
-        keepAliveMsecs: 1000,
-        maxSockets: this.keepAliveMaxSockets,
-      });
-      const httpsAgent = new HttpsAgent({
-        keepAlive: true,
-        keepAliveMsecs: 1000,
-        maxSockets: this.keepAliveMaxSockets,
-      });
-      this.keepAliveAgents.set(cacheKey, { httpAgent, httpsAgent });
-    }
-
-    return this.keepAliveAgents.get(cacheKey)!;
-  }
-
   private getOpenAIClient(config: ProtocolConfig): OpenAI {
-    const sanitizedHeaders = sanitizeCustomHeaders(config.modelAttributes?.headers);
-    // 使用优化的 headers key 生成方式，避免 JSON.stringify 导致的缓存失效
-    const headersKey = getSanitizedHeadersCacheKey(sanitizedHeaders);
-    const cacheKey = headersKey
-      ? `${config.provider}-${config.baseUrl || 'default'}-${headersKey}`
-      : `${config.provider}-${config.baseUrl || 'default'}`;
-
-    if (!this.openaiClients.has(cacheKey)) {
-      const clientConfig: any = {
-        apiKey: config.apiKey,
-        maxRetries: config.modelAttributes?.maxRetries ?? 2, // 恢复默认重试
-        timeout: config.modelAttributes?.timeout ?? 60000,
-      };
-
-      if (config.baseUrl) {
-        clientConfig.baseURL = config.baseUrl;
-      }
-
-      const keepAliveAgents = this.getKeepAliveAgents(cacheKey);
-      clientConfig.httpAgent = keepAliveAgents.httpAgent;
-      clientConfig.httpsAgent = keepAliveAgents.httpsAgent;
-
-      // 添加自定义请求头支持
-      if (sanitizedHeaders && Object.keys(sanitizedHeaders).length > 0) {
-        clientConfig.defaultHeaders = sanitizedHeaders;
-        memoryLogger.debug(
-          `添加自定义请求头 | provider: ${config.provider} | headers: ${JSON.stringify(sanitizedHeaders)}`,
-          'Protocol'
-        );
-      }
-
-      this.openaiClients.set(cacheKey, new OpenAI(clientConfig));
-      memoryLogger.debug(
-        `创建 OpenAI 客户端 | provider: ${config.provider} | baseUrl: ${config.baseUrl || 'default'} | maxRetries: ${clientConfig.maxRetries}`,
-        'Protocol'
-      );
-    }
-
-    return this.openaiClients.get(cacheKey)!;
+    // Kept as a private method so tests can monkey-patch it.
+    // The actual client/agent caching now lives in HttpClientFactory.
+    return this.httpClientFactory.getOpenAIClient(config);
   }
 
   private validateAndCleanMessages(messages: any[], options?: any): any[] {
@@ -327,11 +242,6 @@ export class ProtocolAdapter {
     const remoteStreamRestorer = remoteAifwClient
       ? new AifwRemoteStreamRestorer(remoteAifwClient, aifwCtx.maskMeta)
       : null;
-    const bufferedKeys = new Set<string>();
-    const finishedByChoiceIndex = new Set<number>();
-    let lastChunkId: string | undefined;
-    let lastChunkModel: string | undefined;
-
     const cleanedMessages = this.validateAndCleanMessages(messages, options);
 
     const requestParams: any = {
@@ -386,183 +296,17 @@ export class ProtocolAdapter {
       requestParams,
       Object.keys(requestOptions).length > 0 ? requestOptions : undefined
     ) as unknown as AsyncIterable<any>;
-
-    reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-      'X-Accel-Buffering': 'no',
+    return await processOpenAIChatCompletionStreamToSse({
+      reply,
+      stream,
+      model: config.model,
+      abortSignal,
+      placeholdersMap,
+      restorePlaceholdersInObjectInPlace,
+      streamRestorer,
+      remoteStreamRestorer,
+      logger: memoryLogger,
     });
-
-    let promptTokens = 0;
-    let completionTokens = 0;
-    let totalTokens = 0;
-    let cachedTokens = 0;
-    const streamChunks: string[] = [];
-    let reasoningContent = '';
-    let thinkingBlocks: ThinkingBlock[] = [];
-    let toolCalls: any[] = [];
-
-    try {
-      for await (const chunk of stream) {
-        // 检查客户端是否断开连接
-        if (reply.raw.destroyed || reply.raw.writableEnded) {
-          memoryLogger.info('客户端已断开连接，停止流式传输', 'Protocol');
-          break;
-        }
-
-        if (chunk && typeof chunk === 'object' && 'instructions' in chunk) {
-          delete (chunk as any).instructions;
-        }
-
-        if (placeholdersMap) {
-          try {
-            restorePlaceholdersInObjectInPlace(chunk, placeholdersMap);
-          } catch {}
-
-          if (Array.isArray(chunk.choices)) {
-            for (const choice of chunk.choices) {
-              const idx = typeof choice?.index === 'number' ? choice.index : 0;
-              const key = `chat:${idx}:content`;
-              const content = choice?.delta?.content;
-
-              if (streamRestorer && typeof content === 'string') {
-                bufferedKeys.add(key);
-                choice.delta.content = streamRestorer.process(key, content);
-              } else if (remoteStreamRestorer && typeof content === 'string') {
-                bufferedKeys.add(key);
-                choice.delta.content = await remoteStreamRestorer.process(key, content, { flush: false });
-              }
-
-              // If the upstream signals completion, flush any pending placeholder fragments
-              // into THIS chunk. Otherwise we may drop the tail (common when a placeholder
-              // is split across chunks).
-              if ((streamRestorer || remoteStreamRestorer) && choice?.finish_reason) {
-                bufferedKeys.add(key);
-                const flushText = streamRestorer
-                  ? streamRestorer.flush(key)
-                  : await remoteStreamRestorer!.flush(key);
-                if (flushText) {
-                  if (!choice.delta || typeof choice.delta !== 'object') {
-                    choice.delta = { content: flushText };
-                  } else if (typeof choice.delta.content === 'string') {
-                    choice.delta.content += flushText;
-                  } else {
-                    choice.delta.content = flushText;
-                  }
-                }
-                finishedByChoiceIndex.add(idx);
-              }
-            }
-          }
-        }
-
-        if (chunk?.id) lastChunkId = String(chunk.id);
-        if (chunk?.model) lastChunkModel = String(chunk.model);
-
-        const chunkData = JSON.stringify(chunk);
-        const sseData = `data: ${chunkData}\n\n`;
-
-        streamChunks.push(sseData);
-
-        // 使用背压控制优化内存
-        if (!reply.raw.write(sseData)) {
-          // 如果写入缓冲区已满，等待 drain 事件
-          await new Promise<void>((resolve) => {
-            reply.raw.once('drain', resolve);
-          });
-        }
-
-        if (chunk.usage) {
-          const norm = normalizeUsageCounts(chunk.usage);
-          // 只有当新值大于当前值时才更新，避免0值被||运算符忽略
-          if (typeof norm.promptTokens === 'number' && norm.promptTokens > 0) {
-            promptTokens = norm.promptTokens;
-          }
-          if (typeof norm.completionTokens === 'number' && norm.completionTokens > 0) {
-            completionTokens = norm.completionTokens;
-          }
-          if (typeof norm.totalTokens === 'number' && norm.totalTokens > 0) {
-            totalTokens = norm.totalTokens;
-          } else if (promptTokens > 0 || completionTokens > 0) {
-            totalTokens = promptTokens + completionTokens;
-          }
-          if (typeof norm.cachedTokens === 'number' && norm.cachedTokens > 0) {
-            cachedTokens = norm.cachedTokens;
-          }
-        }
-
-        if (chunk.choices && chunk.choices[0]) {
-          const extraction = extractReasoningFromChoice(
-            chunk.choices[0],
-            reasoningContent,
-            thinkingBlocks,
-            toolCalls
-          );
-          reasoningContent = extraction.reasoningContent;
-          thinkingBlocks = extraction.thinkingBlocks as ThinkingBlock[];
-          toolCalls = extraction.toolCalls || [];
-        }
-      }
-    } catch (error: any) {
-      // 检查是否是用户取消
-      if (error.name === 'AbortError' || abortSignal?.aborted) {
-        memoryLogger.info('流式请求被用户取消', 'Protocol');
-      }
-      throw error;
-    }
-
-     if ((streamRestorer || remoteStreamRestorer) && bufferedKeys.size > 0 && !reply.raw.destroyed && !reply.raw.writableEnded) {
-       for (const key of bufferedKeys) {
-         const flushText = streamRestorer ? streamRestorer.flush(key) : await remoteStreamRestorer!.flush(key);
-         if (!flushText) continue;
-
-         const match = key.match(/^chat:(\d+):content$/);
-         const choiceIndex = match ? Number(match[1]) : 0;
-
-         // If upstream already finalized this choice (finish_reason != null),
-         // don't emit extra content after completion.
-         if (finishedByChoiceIndex.has(choiceIndex)) {
-           continue;
-         }
-
-         const flushChunk: any = {
-            id: lastChunkId || `aifw_flush_${Date.now()}`,
-            object: 'chat.completion.chunk',
-            created: Math.floor(Date.now() / 1000),
-            model: lastChunkModel || config.model,
-           choices: [
-             {
-               index: choiceIndex,
-               delta: { content: flushText },
-               finish_reason: null,
-             },
-           ],
-         };
-
-        const flushData = `data: ${JSON.stringify(flushChunk)}\n\n`;
-        streamChunks.push(flushData);
-        if (!reply.raw.write(flushData)) {
-          await new Promise<void>((resolve) => {
-            reply.raw.once('drain', resolve);
-          });
-        }
-      }
-    }
-
-    if (!reply.raw.destroyed && !reply.raw.writableEnded) {
-      reply.raw.write('data: [DONE]\n\n');
-      reply.raw.end();
-    }
-
-    return {
-      promptTokens,
-      completionTokens,
-      totalTokens,
-      cachedTokens,
-      streamChunks,
-      reasoningContent: reasoningContent || undefined,
-      thinkingBlocks: thinkingBlocks.length > 0 ? thinkingBlocks : undefined
-    };
   }
 
   async createEmbedding(
@@ -787,12 +531,6 @@ export class ProtocolAdapter {
       responseHeaders['X-Session-Id'] = String((options as any).sessionId);
     }
 
-    const ensureHeadersSent = () => {
-      if (!reply.raw.headersSent) {
-        reply.raw.writeHead(200, responseHeaders);
-      }
-    };
-
     const modelRetryLimit = typeof config.modelAttributes?.responses_empty_retry_limit === 'number'
       ? Math.max(0, Math.floor(config.modelAttributes.responses_empty_retry_limit))
       : DEFAULT_RESPONSES_EMPTY_OUTPUT_MAX_RETRIES;
@@ -806,236 +544,20 @@ export class ProtocolAdapter {
         : 8_000
     );
 
-    let finalPromptTokens = 0;
-    let finalCompletionTokens = 0;
-    let finalTotalTokens = 0;
-    let finalCachedTokens = 0;
-    let finalStreamChunks: string[] = [];
-    let success = false;
-    let lastEmptyError: ResponsesEmptyOutputError | null = null;
-
-    attemptLoop: for (let attempt = 1; attempt <= totalAttempts; attempt++) {
-      if (abortSignal?.aborted) {
-        const abortError = new Error('Request aborted');
-        (abortError as any).name = 'AbortError';
-        throw abortError;
-      }
-
-      const attemptStreamChunks: string[] = [];
-      const pendingChunks: string[] = [];
-      let buffering = true;
-      let hasAssistantOutput = false;
-      let bypassEmptyGuard = false;
-      let responsesAggregate = createInitialAggregate();
-      let bufferedOutputKeyUsed = false;
-
-      let promptTokens = 0;
-      let completionTokens = 0;
-      let totalTokens = 0;
-      let cachedTokens = 0;
-
-      const writeChunk = async (data: string) => {
-        attemptStreamChunks.push(data);
-        ensureHeadersSent();
-        if (!reply.raw.write(data)) {
-          await new Promise<void>((resolve) => {
-            reply.raw.once('drain', resolve);
-          });
-        }
-      };
-
-      const flushPendingChunks = async () => {
-        if (!buffering) return;
-        buffering = false;
-        while (pendingChunks.length > 0) {
-          const buffered = pendingChunks.shift()!;
-          await writeChunk(buffered);
-        }
-      };
-
-      const enqueueChunk = async (data: string) => {
-        if (buffering) {
-          pendingChunks.push(data);
-        } else {
-          await writeChunk(data);
-        }
-      };
-
-      try {
-        const attemptAbortController = new AbortController();
-        let initTimeoutId: ReturnType<typeof setTimeout> | undefined;
-        if (initTimeoutMs > 0) {
-          initTimeoutId = setTimeout(() => attemptAbortController.abort(), initTimeoutMs);
-        }
-        if (abortSignal) {
-          if (abortSignal.aborted) {
-            attemptAbortController.abort();
-          } else {
-            abortSignal.addEventListener('abort', () => attemptAbortController.abort(), { once: true });
-          }
-        }
-
-        const attemptUpstreamRequestOptions = baseUpstreamRequestOptions
-          ? { ...baseUpstreamRequestOptions, signal: attemptAbortController.signal }
-          : { signal: attemptAbortController.signal };
-
-        let stream: AsyncIterable<any>;
-        try {
-          stream = await client.responses.create(
-            requestParams,
-            attemptUpstreamRequestOptions
-          ) as unknown as AsyncIterable<any>;
-        } finally {
-          if (initTimeoutId) {
-            clearTimeout(initTimeoutId);
-          }
-        }
-
-        ensureHeadersSent();
-
-        for await (const chunk of stream) {
-          if (reply.raw.destroyed || reply.raw.writableEnded) {
-            memoryLogger.info('客户端已断开连接，停止流式传输', 'Protocol');
-            break;
-          }
-
-          if (chunk && typeof chunk === 'object' && 'instructions' in chunk) {
-            delete (chunk as any).instructions;
-          }
-
-          const previousLength = responsesAggregate.outputText.length;
-          const updatedAggregate = processResponsesEvent(responsesAggregate, chunk as any);
-          const producedText = updatedAggregate.outputText.length > previousLength;
-          responsesAggregate = updatedAggregate;
-
-          if (!hasAssistantOutput && (producedText || responsesEventHasAssistantContent(chunk))) {
-            hasAssistantOutput = true;
-             await flushPendingChunks();
-          }
-
-          if ((chunk as any)?.type === 'response.error' || (chunk as any)?.error) {
-             bypassEmptyGuard = true;
-             await flushPendingChunks();
-          }
-
-          if (placeholdersMap) {
-            try {
-              restorePlaceholdersInObjectInPlace(chunk, placeholdersMap);
-            } catch {}
-
-            if (streamRestorer && typeof (chunk as any)?.delta?.text === 'string' && String((chunk as any)?.type || '').includes('output_text.delta')) {
-              bufferedOutputKeyUsed = true;
-              (chunk as any).delta.text = streamRestorer.process('responses:output_text', (chunk as any).delta.text);
-            }
-          } else if (remoteStreamRestorer) {
-            if (typeof (chunk as any)?.delta?.text === 'string' && String((chunk as any)?.type || '').includes('output_text.delta')) {
-              bufferedOutputKeyUsed = true;
-              (chunk as any).delta.text = await remoteStreamRestorer.process('responses:output_text', (chunk as any).delta.text, { flush: false });
-            }
-          }
-
-          const chunkData = JSON.stringify(chunk);
-          const eventName = typeof (chunk as any)?.type === 'string' ? (chunk as any).type : undefined;
-          const eventPrefix = eventName ? `event: ${eventName}\n` : '';
-          const sseData = `${eventPrefix}data: ${chunkData}\n\n`;
-
-          await enqueueChunk(sseData);
-
-          const usageInChunk: any = (chunk?.usage ?? (chunk?.response && (chunk.response as any).usage) ?? null);
-          if (usageInChunk) {
-            const norm = normalizeUsageCounts(usageInChunk);
-            if (typeof norm.promptTokens === 'number' && norm.promptTokens > 0) {
-              promptTokens = norm.promptTokens;
-            }
-            if (typeof norm.completionTokens === 'number' && norm.completionTokens > 0) {
-              completionTokens = norm.completionTokens;
-            }
-            if (typeof norm.totalTokens === 'number' && norm.totalTokens > 0) {
-              totalTokens = norm.totalTokens;
-            } else if (promptTokens > 0 || completionTokens > 0) {
-              totalTokens = promptTokens + completionTokens;
-            }
-            if (typeof norm.cachedTokens === 'number' && norm.cachedTokens > 0) {
-              cachedTokens = norm.cachedTokens;
-            }
-          }
-        }
-
-        if ((streamRestorer || remoteStreamRestorer) && bufferedOutputKeyUsed && !reply.raw.destroyed && !reply.raw.writableEnded) {
-          const flushText = streamRestorer
-            ? streamRestorer.flush('responses:output_text')
-            : await remoteStreamRestorer!.flush('responses:output_text');
-          if (flushText) {
-            const flushEvent: any = {
-              type: 'response.output_text.delta',
-              delta: { text: flushText },
-            };
-            const flushData = `event: response.output_text.delta\n` + `data: ${JSON.stringify(flushEvent)}\n\n`;
-            await enqueueChunk(flushData);
-          }
-        }
-
-        if (!hasAssistantOutput && !bypassEmptyGuard) {
-          lastEmptyError = new ResponsesEmptyOutputError(
-            'Responses API stream completed without assistant output',
-            {
-              attempt,
-              totalAttempts,
-              status: responsesAggregate.status,
-              lastEventType: responsesAggregate.lastEventType,
-              responseId: responsesAggregate.id,
-            }
-          );
-
-          memoryLogger.warn(
-            `[Responses API] 未检测到 assistant 输出，准备重试 | attempt ${attempt}/${totalAttempts} | ` +
-            `status=${responsesAggregate.status} | last_event=${responsesAggregate.lastEventType || 'unknown'}`,
-            'Protocol'
-          );
-
-          continue attemptLoop;
-        }
-
-        finalPromptTokens = promptTokens;
-        finalCompletionTokens = completionTokens;
-        finalTotalTokens = totalTokens;
-        finalCachedTokens = cachedTokens;
-        finalStreamChunks = attemptStreamChunks;
-        success = true;
-        break;
-      } catch (error: any) {
-        if (error.name === 'AbortError' || abortSignal?.aborted) {
-          memoryLogger.info('流式请求被用户取消', 'Protocol');
-        }
-        throw error;
-      }
-    }
-
-    if (!success) {
-      const errorToThrow =
-        lastEmptyError ||
-        new ResponsesEmptyOutputError('Responses API stream ended without assistant output', {
-          totalAttempts,
-        });
-      memoryLogger.error(
-        `[Responses API] 多次尝试仍为空返回，终止请求 | attempts=${totalAttempts}`,
-        'Protocol'
-      );
-      throw errorToThrow;
-    }
-
-    if (!reply.raw.destroyed && !reply.raw.writableEnded) {
-      ensureHeadersSent();
-      reply.raw.write('data: [DONE]\n\n');
-      reply.raw.end();
-    }
-
-    return {
-      promptTokens: finalPromptTokens,
-      completionTokens: finalCompletionTokens,
-      totalTokens: finalTotalTokens,
-      cachedTokens: finalCachedTokens,
-      streamChunks: finalStreamChunks,
-    };
+    return await processOpenAIResponsesStreamToSseWithRetry({
+      client,
+      requestParams,
+      reply,
+      responseHeaders,
+      baseUpstreamRequestOptions,
+      abortSignal,
+      totalAttempts,
+      initTimeoutMs,
+      placeholdersMap,
+      restorePlaceholdersInObjectInPlace,
+      streamRestorer,
+      remoteStreamRestorer,
+      logger: memoryLogger,
+    });
   }
 }

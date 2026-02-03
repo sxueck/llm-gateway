@@ -1,15 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { memoryLogger } from '../../services/logger.js';
-import { extractIp } from '../../utils/ip.js';
-import { manualIpBlocklist } from '../../services/manual-ip-blocklist.js';
-import { getRequestUserAgent } from '../../utils/http.js';
-import { authenticateVirtualKey, extractVirtualKeyAuthHeader } from '../proxy/auth.js';
-import { resolveModelAndProvider } from '../proxy/model-resolver.js';
-import { buildProviderConfig } from '../proxy/provider-config-builder.js';
-import { circuitBreaker } from '../../services/circuit-breaker.js';
-import type { VirtualKey } from '../../types/index.js';
+import { runProxyPipeline } from '../proxy/pipeline.js';
 import { logApiRequestToDb } from '../../services/api-request-logger.js';
-import { calculateTokensIfNeeded } from '../proxy/token-calculator.js';
 import { handleGeminiNativeNonStreamRequest, handleGeminiNativeStreamRequest } from './gemini-native.js';
 import { shouldLogRequestBody } from '../proxy/handlers/shared.js';
 
@@ -21,93 +13,85 @@ export function createGeminiProxyHandler() {
     let currentModel: any | undefined;
     let requestIp = 'unknown';
     let requestUserAgent = '';
+    let modelFromUrl = '';
 
     try {
-      requestIp = extractIp(request);
-      requestUserAgent = getRequestUserAgent(request);
+      const pipelineResult = await runProxyPipeline(request, reply, {
+        protocol: 'gemini',
+        handlers: {
+          onManualBlock: ({ reply }) => {
+            reply.code(403).send({ error: { message: 'Access denied: IP blocked', code: 403, status: 'PERMISSION_DENIED' } });
+          },
+          onAntiBotBlock: ({ reply }) => {
+            reply.code(403).send({ error: { message: 'Access denied: Bot detected', code: 403, status: 'PERMISSION_DENIED' } });
+          },
+          onAuthError: ({ reply, authError }) => {
+            reply.code(authError.code).send(authError.body);
+          },
+          onModelError: ({ reply, modelError }) => {
+            reply.code(modelError.code).send(modelError.body);
+          },
+          onProviderConfigError: ({ reply, providerConfigError }) => {
+            reply.code(providerConfigError.code).send(providerConfigError.body);
+          },
+        },
+        afterAuth: ({ virtualKeyValue: vkValue }) => {
+          virtualKeyValue = vkValue;
 
-      const manualBlock = await manualIpBlocklist.isBlocked(requestIp);
-      if (manualBlock) {
-        memoryLogger.warn(
-          `拦截手动屏蔽 IP 请求 | IP: ${requestIp} | UA: ${requestUserAgent} | 原因: ${manualBlock.reason || '管理员拦截'}`,
-          'ManualBlock'
-        );
-        return reply.code(403).send({ error: { message: 'Access denied: IP blocked', code: 403, status: 'PERMISSION_DENIED' } });
+          // Extract model from URL for Gemini Native (e.g. /v1beta/models/gemini-pro:generateContent)
+          const pathParts = request.url.split('/');
+          const modelsIndex = pathParts.indexOf('models');
+          if (modelsIndex !== -1 && pathParts[modelsIndex + 1]) {
+            modelFromUrl = pathParts[modelsIndex + 1].split(':')[0];
+          }
+
+          // Ensure model is available for model resolver.
+          if (!request.body || typeof request.body !== 'object') {
+            request.body = {} as any;
+          }
+          if (modelFromUrl && !(request.body as any).model) {
+            (request.body as any).model = modelFromUrl;
+          }
+
+          return true;
+        },
+      });
+
+      if (!pipelineResult.ok) {
+        return;
       }
 
-      // Anti-bot
-      const { antiBotService } = await import('../../services/anti-bot.js');
-      const antiBotResult = antiBotService.detect(requestUserAgent, requestIp);
-      antiBotService.logDetection(requestUserAgent, antiBotResult, requestIp, request.headers);
+      const {
+        requestIp: pipelineIp,
+        requestUserAgent: pipelineUa,
+        virtualKey,
+        virtualKeyValue: vkValue,
+        providerId: resolvedProviderId,
+        currentModel: resolvedModel,
+        configResult,
+      } = pipelineResult.context;
 
-      if (antiBotResult.shouldBlock) {
-        memoryLogger.warn(`拦截爬虫/威胁IP请求 | IP: ${requestIp} | UA: ${requestUserAgent} | 原因: ${antiBotResult.reason}`, 'AntiBot');
-        return reply.code(403).send({ error: { message: 'Access denied: Bot detected', code: 403, status: 'PERMISSION_DENIED' } });
-      }
-
-      // Auth
-      const resolvedAuthHeader = extractVirtualKeyAuthHeader(request.headers as any);
-      const authResult = await authenticateVirtualKey(resolvedAuthHeader);
-      
-      if ('error' in authResult) {
-        return reply.code(authResult.error.code).send(authResult.error.body);
-      }
-
-      const { virtualKey, virtualKeyValue: vkValue } = authResult;
+      requestIp = pipelineIp;
+      requestUserAgent = pipelineUa;
       virtualKeyValue = vkValue;
-
-      // Extract model from URL for Gemini Native (e.g. /v1beta/models/gemini-pro:generateContent)
-      let modelFromUrl = '';
-      const pathParts = request.url.split('/');
-      const modelsIndex = pathParts.indexOf('models');
-      if (modelsIndex !== -1 && pathParts[modelsIndex + 1]) {
-        modelFromUrl = pathParts[modelsIndex + 1].split(':')[0];
-      }
-
-      const proxyRequest: any = {
-        body: { ...request.body as any, model: modelFromUrl || (request.body as any)?.model },
-        protocol: 'gemini' as const
-      };
-
-      const modelResult = await resolveModelAndProvider(virtualKey, proxyRequest, virtualKeyValue!);
-      if ('code' in modelResult) {
-        return reply.code(modelResult.code).send(modelResult.body);
-      }
-
-      const { provider, providerId: resolvedProviderId, currentModel: resolvedModel } = modelResult;
       providerId = resolvedProviderId;
       currentModel = resolvedModel;
 
-      const configResult = await buildProviderConfig(
-        provider,
-        virtualKey,
-        virtualKeyValue!,
-        providerId,
-        request,
-        currentModel
-      );
-      
-      if ('code' in configResult) {
-        return reply.code(configResult.code).send(configResult.body);
-      }
-
-      const { protocolConfig, vkDisplay } = configResult;
-      
-      const isStream = request.url.includes('streamGenerateContent') || (request.query as any)?.alt === 'sse';
+      const { protocolConfig, vkDisplay, isStreamRequest } = configResult;
 
        memoryLogger.info(
-        `Gemini 请求: ${currentModel?.model_identifier || modelFromUrl} | stream: ${isStream} | virtual key: ${vkDisplay}`,
+        `Gemini 请求: ${currentModel?.model_identifier || modelFromUrl} | stream: ${isStreamRequest} | virtual key: ${vkDisplay}`,
         'Gemini'
       );
 
-      if (isStream) {
+      if (isStreamRequest) {
         return await handleGeminiNativeStreamRequest(
           request,
           reply,
           protocolConfig,
           request.url,
           virtualKey,
-          providerId,
+          resolvedProviderId,
           startTime,
           vkDisplay,
           currentModel
@@ -119,7 +103,7 @@ export function createGeminiProxyHandler() {
           protocolConfig,
           request.url,
           virtualKey,
-          providerId,
+          resolvedProviderId,
           startTime,
           vkDisplay,
           currentModel
@@ -141,7 +125,7 @@ export function createGeminiProxyHandler() {
             const shouldLogBody = shouldLogRequestBody(virtualKey);
             await logApiRequestToDb({
               virtualKey,
-              providerId: providerId!,
+              providerId,
               model: currentModel?.name || 'unknown',
               tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
               status: 'error',

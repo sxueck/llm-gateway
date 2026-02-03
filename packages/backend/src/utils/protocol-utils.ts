@@ -1,8 +1,9 @@
 /**
  * 后端协议工具函数
- * 导入共享的协议类型和基础函数，并提供后端特定的扩展功能
+ *
+ * Re-export shared protocol types/helpers, then add backend-only helpers.
  */
-export * from './protocol-types.js';
+export * from '@llm-gateway/shared/utils';
 
 /**
  * 判断协议配置是否为 Anthropic
