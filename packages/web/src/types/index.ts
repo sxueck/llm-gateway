@@ -67,6 +67,7 @@ export interface VirtualKey {
   cacheEnabled: boolean;
   disableLogging: boolean;
   dynamicCompressionEnabled: boolean;
+  imageCompressionEnabled: boolean;
   interceptZeroTemperature: boolean;
   zeroTemperatureReplacement?: number | null;
   createdAt: number;
@@ -148,6 +149,7 @@ export interface CreateVirtualKeyRequest {
   cacheEnabled?: boolean;
   disableLogging?: boolean;
   dynamicCompressionEnabled?: boolean;
+  imageCompressionEnabled?: boolean;
   interceptZeroTemperature?: boolean;
   zeroTemperatureReplacement?: number;
 }
@@ -164,6 +166,7 @@ export interface UpdateVirtualKeyRequest {
   cacheEnabled?: boolean;
   disableLogging?: boolean;
   dynamicCompressionEnabled?: boolean;
+  imageCompressionEnabled?: boolean;
   interceptZeroTemperature?: boolean;
   zeroTemperatureReplacement?: number;
 }

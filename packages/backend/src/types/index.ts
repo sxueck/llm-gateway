@@ -40,6 +40,7 @@ export interface VirtualKey {
   cache_enabled: number;
   disable_logging: number;
   dynamic_compression_enabled: number;
+  image_compression_enabled: number;
   intercept_zero_temperature: number;
   zero_temperature_replacement: number | null;
   created_at: number;

@@ -61,35 +61,36 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-    // 虚拟密钥表
-    await conn.query(`
-      CREATE TABLE IF NOT EXISTS virtual_keys (
-        id VARCHAR(255) PRIMARY KEY,
-        key_value VARCHAR(255) NOT NULL UNIQUE,
-        key_hash VARCHAR(255) NOT NULL UNIQUE,
-        name VARCHAR(255) NOT NULL,
-        provider_id VARCHAR(255),
-        model_id VARCHAR(255),
-        routing_strategy VARCHAR(50) DEFAULT 'single',
-        model_ids TEXT,
-        routing_config TEXT,
-        enabled TINYINT DEFAULT 1,
-        rate_limit INT,
-        cache_enabled TINYINT DEFAULT 0,
-        disable_logging TINYINT DEFAULT 0,
-        dynamic_compression_enabled TINYINT DEFAULT 0,
-        intercept_zero_temperature TINYINT DEFAULT 0,
-        zero_temperature_replacement DECIMAL(3,2) DEFAULT NULL,
-        created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
-        updated_at BIGINT NOT NULL,
-        FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
-        FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE SET NULL,
-        INDEX idx_virtual_keys_hash (key_hash),
-        INDEX idx_virtual_keys_value (key_value),
-        INDEX idx_virtual_keys_provider (provider_id),
-        INDEX idx_virtual_keys_model (model_id)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    `);
+	    // 虚拟密钥表
+	    await conn.query(`
+	      CREATE TABLE IF NOT EXISTS virtual_keys (
+	        id VARCHAR(255) PRIMARY KEY,
+	        key_value VARCHAR(255) NOT NULL UNIQUE,
+	        key_hash VARCHAR(255) NOT NULL UNIQUE,
+	        name VARCHAR(255) NOT NULL,
+	        provider_id VARCHAR(255),
+	        model_id VARCHAR(255),
+	        routing_strategy VARCHAR(50) DEFAULT 'single',
+	        model_ids TEXT,
+	        routing_config TEXT,
+	        enabled TINYINT DEFAULT 1,
+	        rate_limit INT,
+	        cache_enabled TINYINT DEFAULT 0,
+	        disable_logging TINYINT DEFAULT 0,
+	        dynamic_compression_enabled TINYINT DEFAULT 0,
+	        image_compression_enabled TINYINT DEFAULT 0,
+	        intercept_zero_temperature TINYINT DEFAULT 0,
+	        zero_temperature_replacement DECIMAL(3,2) DEFAULT NULL,
+	        created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+	        updated_at BIGINT NOT NULL,
+	        FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
+	        FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE SET NULL,
+	        INDEX idx_virtual_keys_hash (key_hash),
+	        INDEX idx_virtual_keys_value (key_value),
+	        INDEX idx_virtual_keys_provider (provider_id),
+	        INDEX idx_virtual_keys_model (model_id)
+	      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+	    `);
 
     // 系统配置表
     await conn.query(`

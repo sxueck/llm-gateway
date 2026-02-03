@@ -54,19 +54,13 @@ function buildRequestParams(config: any, requestBody: AnthropicRequest, stream: 
   // OpenAI-style chat/tooling. When `thinking` is enabled, they may require
   // `reasoning_content` to exist on assistant tool-call messages.
   try {
-    const thinking = (requestBody as any)?.thinking;
-    const thinkingEnabled =
-      thinking === true ||
-      (thinking && typeof thinking === 'object' && ((thinking as any).enabled === true || (thinking as any).type === 'enabled'));
-
-    if (thinkingEnabled && Array.isArray(requestParams.messages)) {
+    if (Array.isArray(requestParams.messages)) {
       for (const msg of requestParams.messages) {
         if (!msg || typeof msg !== 'object') continue;
         if ((msg as any).role !== 'assistant') continue;
         if (!Array.isArray((msg as any).tool_calls) || (msg as any).tool_calls.length === 0) continue;
-        if ((msg as any).reasoning_content === undefined || (msg as any).reasoning_content === null) {
-          (msg as any).reasoning_content = '';
-        }
+        const rc = (msg as any).reasoning_content;
+        if (rc === undefined || rc === null || typeof rc !== 'string') (msg as any).reasoning_content = '';
       }
     }
   } catch {

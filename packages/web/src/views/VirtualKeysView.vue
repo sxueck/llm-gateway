@@ -70,18 +70,24 @@
         <n-form-item label="禁用日志">
           <n-switch v-model:value="formValue.disableLogging" size="small" />
         </n-form-item>
-        <n-form-item label="动态压缩">
-          <n-space vertical :size="4">
-            <n-switch v-model:value="formValue.dynamicCompressionEnabled" size="small" />
-            <span style="font-size: 12px; color: #999;">自动压缩历史消息中的重复内容,节省 Token</span>
-          </n-space>
-        </n-form-item>
-        <n-form-item label="拦截空温度">
-          <n-space vertical :size="4">
-            <n-space :size="12" align="center">
-              <n-switch v-model:value="formValue.interceptZeroTemperature" size="small" />
-              <n-input-number
-                v-model:value="formValue.zeroTemperatureReplacement"
+			  <n-form-item label="动态压缩">
+			  <n-space vertical :size="4">
+				  <n-switch v-model:value="formValue.dynamicCompressionEnabled" size="small" />
+				  <span style="font-size: 12px; color: #999;">自动压缩历史消息中的重复内容,节省 Token</span>
+			  </n-space>
+			</n-form-item>
+			<n-form-item label="图像压缩">
+			  <n-space vertical :size="4">
+				  <n-switch v-model:value="formValue.imageCompressionEnabled" size="small" />
+				  <span style="font-size: 12px; color: #999;">仅处理 base64 图片,自动缩放最长边到 768px（png/jpeg/webp）</span>
+			  </n-space>
+			</n-form-item>
+			<n-form-item label="拦截空温度">
+			  <n-space vertical :size="4">
+				  <n-space :size="12" align="center">
+					  <n-switch v-model:value="formValue.interceptZeroTemperature" size="small" />
+					  <n-input-number
+						v-model:value="formValue.zeroTemperatureReplacement"
                 :disabled="!formValue.interceptZeroTemperature"
                 :min="0"
                 :max="2"
@@ -322,20 +328,21 @@ function handleEdit(vk: VirtualKey) {
     modelIds.push(...vk.modelIds);
   }
 
-  formValue.value = {
-    name: vk.name,
-    modelIds: [...new Set(modelIds)],
-    keyType: 'auto',
-    customKey: '',
-    rateLimit: vk.rateLimit || undefined,
-    enabled: vk.enabled,
-    cacheEnabled: vk.cacheEnabled,
-    disableLogging: vk.disableLogging,
-    dynamicCompressionEnabled: vk.dynamicCompressionEnabled,
-    interceptZeroTemperature: vk.interceptZeroTemperature,
-    zeroTemperatureReplacement: vk.zeroTemperatureReplacement || 0.7,
-  };
-  showModal.value = true;
+	  formValue.value = {
+		name: vk.name,
+		modelIds: [...new Set(modelIds)],
+		keyType: 'auto',
+		customKey: '',
+		rateLimit: vk.rateLimit || undefined,
+		enabled: vk.enabled,
+		cacheEnabled: vk.cacheEnabled,
+		disableLogging: vk.disableLogging,
+		dynamicCompressionEnabled: vk.dynamicCompressionEnabled,
+		imageCompressionEnabled: vk.imageCompressionEnabled,
+		interceptZeroTemperature: vk.interceptZeroTemperature,
+		zeroTemperatureReplacement: vk.zeroTemperatureReplacement || 0.7,
+	  };
+	  showModal.value = true;
 }
 
 async function handleDelete(id: string) {
@@ -354,19 +361,20 @@ async function handleSubmit() {
     submitting.value = true;
 
     if (editingId.value) {
-      await virtualKeyApi.update(editingId.value, {
-        name: formValue.value.name,
-        modelIds: formValue.value.modelIds,
-        enabled: formValue.value.enabled,
-        rateLimit: formValue.value.rateLimit,
-        cacheEnabled: formValue.value.cacheEnabled,
-        disableLogging: formValue.value.disableLogging,
-        interceptZeroTemperature: formValue.value.interceptZeroTemperature,
-        zeroTemperatureReplacement: formValue.value.zeroTemperatureReplacement !== undefined
-          ? Number(formValue.value.zeroTemperatureReplacement)
-          : undefined,
-        dynamicCompressionEnabled: formValue.value.dynamicCompressionEnabled,
-      });
+	  await virtualKeyApi.update(editingId.value, {
+		name: formValue.value.name,
+		modelIds: formValue.value.modelIds,
+		enabled: formValue.value.enabled,
+		rateLimit: formValue.value.rateLimit,
+		cacheEnabled: formValue.value.cacheEnabled,
+		disableLogging: formValue.value.disableLogging,
+		interceptZeroTemperature: formValue.value.interceptZeroTemperature,
+		zeroTemperatureReplacement: formValue.value.zeroTemperatureReplacement !== undefined
+		  ? Number(formValue.value.zeroTemperatureReplacement)
+		  : undefined,
+		dynamicCompressionEnabled: formValue.value.dynamicCompressionEnabled,
+		imageCompressionEnabled: formValue.value.imageCompressionEnabled,
+	  });
       message.success('更新成功');
       showModal.value = false;
     } else {
@@ -552,4 +560,3 @@ watch(showModal, async (val) => {
   background: #ffffff;
 }
 </style>
-

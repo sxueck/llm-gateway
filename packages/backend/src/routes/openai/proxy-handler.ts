@@ -21,6 +21,7 @@ import { isChatCompletionsPath, isResponsesApiPath, isEmbeddingsPath } from '../
 // removed gemini import
 import { aifwService } from '../../services/aifw-service.js';
 import { restorePlaceholdersInObjectInPlace } from '../../utils/aifw-placeholders.js';
+import { maybeCompressImagesInOpenAIRequestBodyInPlace, logImageCompressionStats } from '../../services/image-compression.js';
 
 const MESSAGE_COMPRESSION_MIN_TOKENS = parseInt(process.env.MESSAGE_COMPRESSION_MIN_TOKENS || '2048', 10);
 
@@ -314,6 +315,19 @@ export function createOpenAIProxyHandler() {
 
       const { virtualKey, virtualKeyValue: vkValue } = authResult;
       virtualKeyValue = vkValue;
+
+      // Best-effort: shrink base64 images early so cache key + payload are smaller.
+      try {
+        const vkDisplayPre = virtualKey.key_value && virtualKey.key_value.length > 10
+          ? `${virtualKey.key_value.slice(0, 6)}...${virtualKey.key_value.slice(-4)}`
+          : virtualKey.key_value;
+        const imageStats = await maybeCompressImagesInOpenAIRequestBodyInPlace(request.body, virtualKey as any);
+        if (imageStats) {
+          logImageCompressionStats(imageStats, { vkDisplay: vkDisplayPre, protocol: 'openai' });
+        }
+      } catch (e: any) {
+        memoryLogger.warn(`图像压缩预处理失败(已跳过): ${e?.message || e}`, 'Proxy');
+      }
 
       // Gemini URL logic removed
       // const [rawPath] = request.url.split('?'); ...

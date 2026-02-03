@@ -348,6 +348,49 @@ export const migrations: Migration[] = [
         console.warn('[迁移] 恢复 route_source 字段注释失败:', e.message);
       }
     }
+  },
+  {
+    version: 25,
+    name: 'add_image_compression_enabled_to_virtual_keys',
+    up: async (conn: Connection) => {
+      const hasColumn = async (col: string) => {
+        const [rows] = await conn.query(
+          `SELECT COUNT(*) AS cnt
+           FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = 'virtual_keys'
+             AND COLUMN_NAME = ?`,
+          [col]
+        );
+        const result = rows as any[];
+        return Number(result?.[0]?.cnt || 0) > 0;
+      };
+
+      if (await hasColumn('image_compression_enabled')) return;
+
+      try {
+        await conn.query(
+          `ALTER TABLE virtual_keys
+           ADD COLUMN image_compression_enabled TINYINT DEFAULT 0
+           AFTER dynamic_compression_enabled`
+        );
+        console.log('[迁移] 已添加 virtual_keys.image_compression_enabled 字段');
+      } catch (e: any) {
+        if (e.code === 'ER_DUP_FIELDNAME') {
+          console.log('[迁移] virtual_keys 已存在 image_compression_enabled 字段，跳过');
+          return;
+        }
+        throw e;
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(`ALTER TABLE virtual_keys DROP COLUMN IF EXISTS image_compression_enabled`);
+        console.log('[迁移] 已删除 virtual_keys.image_compression_enabled 字段');
+      } catch (e: any) {
+        console.warn('[迁移] 删除 image_compression_enabled 字段失败:', e.message);
+      }
+    }
   }
 ];
 

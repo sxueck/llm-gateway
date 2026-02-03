@@ -13,6 +13,7 @@ import type { AnthropicRequest, AnthropicError } from '../../types/anthropic.js'
 import { makeAnthropicRequest, makeAnthropicStreamRequest } from './http-client.js';
 import { logApiRequestToDb } from '../../services/api-request-logger.js';
 import { calculateTokensIfNeeded } from '../proxy/token-calculator.js';
+import { maybeCompressImagesInAnthropicRequestBodyInPlace, logImageCompressionStats } from '../../services/image-compression.js';
 
 function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
   return !virtualKey.disable_logging;
@@ -79,6 +80,19 @@ export function createAnthropicProxyHandler() {
       virtualKeyValue = vkValue;
 
       const requestBody = request.body as AnthropicRequest;
+
+      // Best-effort: shrink base64 images early (payload + downstream prompt caching stability).
+      try {
+        const vkDisplayPre = virtualKey.key_value && virtualKey.key_value.length > 10
+          ? `${virtualKey.key_value.slice(0, 6)}...${virtualKey.key_value.slice(-4)}`
+          : virtualKey.key_value;
+        const imageStats = await maybeCompressImagesInAnthropicRequestBodyInPlace(requestBody as any, virtualKey as any);
+        if (imageStats) {
+          logImageCompressionStats(imageStats, { vkDisplay: vkDisplayPre, protocol: 'anthropic' });
+        }
+      } catch (e: any) {
+        memoryLogger.warn(`图像压缩预处理失败(已跳过): ${e?.message || e}`, 'Anthropic');
+      }
       
       if (!requestBody.model) {
         const error = createAnthropicError('Missing required field: model', 'invalid_request_error');

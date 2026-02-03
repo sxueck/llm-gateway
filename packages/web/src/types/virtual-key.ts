@@ -10,6 +10,7 @@ export interface VirtualKeyFormValue {
   cacheEnabled: boolean;
   disableLogging: boolean;
   dynamicCompressionEnabled: boolean;
+  imageCompressionEnabled: boolean;
   interceptZeroTemperature: boolean;
   zeroTemperatureReplacement: number | undefined;
 }
@@ -25,6 +26,7 @@ export function createDefaultVirtualKeyForm(): VirtualKeyFormValue {
     cacheEnabled: false,
     disableLogging: false,
     dynamicCompressionEnabled: false,
+    imageCompressionEnabled: false,
     interceptZeroTemperature: false,
     zeroTemperatureReplacement: 0.7,
   };

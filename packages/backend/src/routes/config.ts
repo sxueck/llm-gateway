@@ -40,6 +40,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         cache_enabled: 0,
         disable_logging: 1,
         dynamic_compression_enabled: 0,
+        image_compression_enabled: 0,
         intercept_zero_temperature: 0,
         zero_temperature_replacement: null,
       });
