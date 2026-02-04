@@ -11,6 +11,7 @@ import {
   DEFAULT_RESPONSES_EMPTY_OUTPUT_MAX_RETRIES,
   processOpenAIResponsesStreamToSseWithRetry,
 } from '../utils/responses-stream-processor.js';
+import { filterForwardedHeaders } from '../utils/header-sanitizer.js';
 
 export interface ProtocolConfig {
   provider: string;
@@ -50,6 +51,24 @@ export class ProtocolAdapter {
     keepAliveMaxSockets: parseInt(process.env.HTTP_KEEP_ALIVE_MAX_SOCKETS || '64', 10),
     logger: memoryLogger as any,
   });
+
+  /**
+   * Build per-request forwarded headers for upstream calls.
+   * Important: do NOT allow client-forwarded headers to override modelAttributes.headers.
+   */
+  private getForwardedHeaders(config: ProtocolConfig, options: any): Record<string, string> | undefined {
+    return filterForwardedHeaders(config.modelAttributes?.headers, (options as any)?.__forwardedHeaders);
+  }
+
+  private applyForwardedHeadersToRequestOptions(requestOptions: any, config: ProtocolConfig, options: any): void {
+    const forwardedHeaders = this.getForwardedHeaders(config, options);
+    if (!forwardedHeaders) return;
+
+    requestOptions.headers = {
+      ...forwardedHeaders,
+      ...(requestOptions.headers || {}),
+    };
+  }
 
   private isThinkingEnabled(options: any): boolean {
     const thinking = options?.thinking;
@@ -193,6 +212,8 @@ export class ProtocolAdapter {
       requestOptions.signal = abortSignal;
     }
 
+    this.applyForwardedHeadersToRequestOptions(requestOptions, config, options);
+
     const response = await client.chat.completions.create(
       requestParams,
       Object.keys(requestOptions).length > 0 ? requestOptions : undefined
@@ -292,6 +313,8 @@ export class ProtocolAdapter {
       requestOptions.signal = abortSignal;
     }
 
+    this.applyForwardedHeadersToRequestOptions(requestOptions, config, options);
+
     const stream = await client.chat.completions.create(
       requestParams,
       Object.keys(requestOptions).length > 0 ? requestOptions : undefined
@@ -357,6 +380,8 @@ export class ProtocolAdapter {
     if (abortSignal) {
       requestOptions.signal = abortSignal;
     }
+
+    this.applyForwardedHeadersToRequestOptions(requestOptions, config, options);
 
     const response = await client.embeddings.create(
       requestParams,
@@ -435,6 +460,8 @@ export class ProtocolAdapter {
     if (abortSignal) {
       requestOptions.signal = abortSignal;
     }
+
+    this.applyForwardedHeadersToRequestOptions(requestOptions, config, options);
 
     const response = await client.responses.create(
       requestParams,
@@ -518,6 +545,8 @@ export class ProtocolAdapter {
         ...extraHeaders,
       };
     }
+
+    this.applyForwardedHeadersToRequestOptions(requestOptions, config, options);
 
     const responseHeaders: Record<string, string> = {
       'Content-Type': 'text/event-stream; charset=utf-8',

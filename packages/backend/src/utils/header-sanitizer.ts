@@ -49,3 +49,33 @@ export function getSanitizedHeadersCacheKey(headers?: SanitizedHeaders): string 
     .map(key => `${key}:${headers[key]}`)
     .join('|');
 }
+
+/**
+ * Filter client-forwarded headers so they cannot override configured default headers.
+ *
+ * - Both inputs are sanitized via sanitizeCustomHeaders
+ * - Comparison is case-insensitive
+ * - Returns undefined when nothing should be forwarded
+ */
+export function filterForwardedHeaders(
+  defaultHeaders: unknown,
+  forwardedHeaders: unknown
+): Record<string, string> | undefined {
+  const forwarded = sanitizeCustomHeaders(forwardedHeaders as any);
+  if (!forwarded || Object.keys(forwarded).length === 0) {
+    return undefined;
+  }
+
+  const defaults = sanitizeCustomHeaders(defaultHeaders as any);
+  if (!defaults || Object.keys(defaults).length === 0) {
+    return forwarded;
+  }
+
+  const defaultKeys = new Set(Object.keys(defaults).map(k => k.toLowerCase()));
+  const filtered: Record<string, string> = {};
+  for (const [k, v] of Object.entries(forwarded)) {
+    if (defaultKeys.has(k.toLowerCase())) continue;
+    filtered[k] = v;
+  }
+  return Object.keys(filtered).length > 0 ? filtered : undefined;
+}

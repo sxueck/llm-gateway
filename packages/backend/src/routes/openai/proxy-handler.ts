@@ -7,6 +7,7 @@ import { messageCompressor } from '../../services/message-compressor.js';
 import { extractIp } from '../../utils/ip.js';
 import { getRequestUserAgent } from '../../utils/http.js';
 import { makeHttpRequest, makeStreamHttpRequest } from '../proxy/http-client.js';
+import { requestHeaderForwardingService } from '../../services/request-header-forwarding.js';
 import { checkCache, setCacheIfNeeded, getCacheStatus } from '../proxy/cache.js';
 import { runProxyPipeline } from '../proxy/pipeline.js';
 import { calculateTokensIfNeeded } from '../proxy/token-calculator.js';
@@ -576,6 +577,9 @@ export async function handleStreamRequest(
 
   const streamRequestUserAgent = getRequestUserAgent(request);
   const streamRequestIp = extractIp(request);
+  const forwardedHeaders = requestHeaderForwardingService.buildForwardedHeaders(
+    request.headers as any
+  );
 
   // 创建 AbortController 用于取消请求
   const abortController = new AbortController();
@@ -596,6 +600,7 @@ export async function handleStreamRequest(
       const input = (request.body as any)?.input;
       // 传递提取的系统提示到 buildResponsesOptions
       const options = buildResponsesOptions((request.body as any), true, extractedSystemPrompt);
+      (options as any).__forwardedHeaders = forwardedHeaders;
 
       // 记录最终的 instructions 和 tools（用于调试）
       if (options.instructions) {
@@ -654,6 +659,8 @@ export async function handleStreamRequest(
         tool_choice: (request.body as any)?.tool_choice,
         parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
       };
+
+      options.__forwardedHeaders = forwardedHeaders;
 
       if (aifwCtx) {
         options.__aifw = aifwCtx;
@@ -904,6 +911,9 @@ export async function handleNonStreamRequest(
   const isEmbeddingsRequest = isEmbeddingsPath(path);
   const nonStreamRequestUserAgent = getRequestUserAgent(request);
   const nonStreamRequestIp = extractIp(request);
+  const forwardedHeaders = requestHeaderForwardingService.buildForwardedHeaders(
+    request.headers as any
+  );
 
   const vkDisplay = virtualKey.key_value && virtualKey.key_value.length > 10
     ? `${virtualKey.key_value.slice(0, 6)}...${virtualKey.key_value.slice(-4)}`
@@ -994,6 +1004,7 @@ export async function handleNonStreamRequest(
       dimensions: (request.body as any)?.dimensions,
       user: (request.body as any)?.user,
     };
+    (options as any).__forwardedHeaders = forwardedHeaders;
     const input = (request.body as any)?.input;
 
     response = await makeHttpRequest(
@@ -1034,6 +1045,8 @@ export async function handleNonStreamRequest(
       tool_choice: (request.body as any)?.tool_choice,
       parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
     };
+
+    options.__forwardedHeaders = forwardedHeaders;
 
     if (aifwCtx) {
       options.__aifw = aifwCtx;

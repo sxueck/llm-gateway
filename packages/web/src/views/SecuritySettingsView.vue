@@ -3,6 +3,19 @@
     <n-space vertical :size="24">
       <n-card :title="$t('settings.security')">
         <n-space vertical :size="16">
+          <!-- 上游请求头透传 -->
+          <n-space vertical :size="16">
+            <div style="font-size: 16px; font-weight: 500;">{{ $t('settings.headerForwarding.title') }}</div>
+
+            <n-space align="center" justify="space-between">
+              <div>
+                <div>{{ $t('settings.headerForwarding.forwardClientUserAgent') }}</div>
+                <n-text depth="3" style="font-size: 12px;">{{ $t('settings.headerForwarding.forwardClientUserAgentDesc') }}</n-text>
+              </div>
+              <n-switch :value="forwardClientUserAgent" @update:value="onToggleForwardClientUserAgent" />
+            </n-space>
+          </n-space>
+
           <!-- 反爬虫设置 -->
           <n-space vertical :size="16">
             <div style="font-size: 16px; font-weight: 500;">{{ $t('settings.antiBot.title') }}</div>
@@ -216,6 +229,9 @@ import { handleAsyncOperation } from '@/utils/error-handler';
 const { t } = useI18n();
 
 const message = useMessage();
+
+// 上游请求头透传
+const forwardClientUserAgent = ref(false);
 // 反爬虫设置
 const antiBotEnabled = ref(false);
 const antiBotBlockBots = ref(true);
@@ -330,6 +346,18 @@ async function onToggleAntiBotEnabled(val: boolean) {
   );
   if (result) {
     antiBotEnabled.value = val;
+  }
+}
+
+async function onToggleForwardClientUserAgent(val: boolean) {
+  const result = await handleAsyncOperation(
+    () => configApi.updateSystemSettings({ forwardClientUserAgent: val }),
+    message,
+    t('messages.operationSuccess'),
+    t('messages.operationFailed')
+  );
+  if (result) {
+    forwardClientUserAgent.value = val;
   }
 }
 
@@ -470,6 +498,8 @@ async function onSaveAifwSettings() {
 
 onMounted(async () => {
   const s = await configApi.getSystemSettings();
+
+  forwardClientUserAgent.value = !!s.forwardClientUserAgent;
   
   // 加载反爬虫配置
   if (s.antiBot) {

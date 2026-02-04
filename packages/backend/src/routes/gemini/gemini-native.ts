@@ -9,19 +9,7 @@ import type { ProtocolConfig } from '../../services/protocol-adapter.js';
 import type { VirtualKey } from '../../types/index.js';
 import { extractIp } from '../../utils/ip.js';
 import { getRequestUserAgent } from '../../utils/http.js';
-
-// 需要排除的请求头（不转发到上游）
-const EXCLUDED_REQUEST_HEADERS = [
-  'authorization',
-  'host',
-  'connection',
-  'keep-alive',
-  'x-api-key',
-  'x-goog-api-key',
-  'api-key',
-  'content-length',
-  'transfer-encoding',
-];
+import { requestHeaderForwardingService } from '../../services/request-header-forwarding.js';
 
 const DEFAULT_GEMINI_EMPTY_RETRY_LIMIT = Math.max(
   parseInt(process.env.GEMINI_STREAM_EMPTY_RETRY_LIMIT || '1', 10),
@@ -183,12 +171,8 @@ function buildUpstreamHeaders(
     headers['accept'] = 'text/event-stream';
   }
 
-  // 转发部分请求头
-  Object.entries(requestHeaders).forEach(([key, value]) => {
-    if (!EXCLUDED_REQUEST_HEADERS.includes(key.toLowerCase()) && value) {
-      headers[key] = Array.isArray(value) ? value.join(',') : String(value);
-    }
-  });
+  // Only forward a minimal, explicit set of client headers.
+  Object.assign(headers, requestHeaderForwardingService.buildForwardedHeaders(requestHeaders as any));
 
   // 添加 API Key 认证头
   headers['x-goog-api-key'] = apiKey;

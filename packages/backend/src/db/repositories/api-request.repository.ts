@@ -255,6 +255,8 @@ export const apiRequestRepository = {
     limit?: number;
     offset?: number;
     virtualKeyId?: string;
+    providerId?: string;
+    model?: string;
     startTime?: number;
     endTime?: number;
     status?: string;
@@ -284,6 +286,18 @@ export const apiRequestRepository = {
         countQuery += ' AND ar.virtual_key_id = ?';
         dataQuery += ' AND ar.virtual_key_id = ?';
         params.push(options.virtualKeyId);
+      }
+
+      if (options?.providerId) {
+        countQuery += ' AND ar.provider_id = ?';
+        dataQuery += ' AND ar.provider_id = ?';
+        params.push(options.providerId);
+      }
+
+      if (options?.model) {
+        countQuery += ' AND ar.model = ?';
+        dataQuery += ' AND ar.model = ?';
+        params.push(options.model);
       }
 
       if (options?.startTime) {

@@ -256,6 +256,7 @@ type SystemSettingsResponse = {
   developerDebugEnabled: boolean;
   developerDebugExpiresAt: number | null;
   dashboardHideRequestSourceCard: boolean;
+  forwardClientUserAgent: boolean;
   antiBot: AntiBotSettings;
   aifw: AifwSettings;
 };
@@ -277,6 +278,7 @@ type UpdateSystemSettingsRequest = {
   persistentMonitoringEnabled?: boolean;
   developerDebugEnabled?: boolean;
   dashboardHideRequestSourceCard?: boolean;
+  forwardClientUserAgent?: boolean;
   antiBot?: {
     enabled?: boolean;
     blockBots?: boolean;

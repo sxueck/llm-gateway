@@ -8,11 +8,11 @@ import { DEFAULT_AIFW_MASK_CONFIG, loadAifwConfig } from '../utils/aifw-config.j
 import { hashKey } from '../utils/crypto.js';
 import { healthCheckerService } from '../services/health-checker.js';
 import { debugModeService } from '../services/debug-mode.js';
-import { circuitBreaker } from '../services/circuit-breaker.js';
 import { costMappingService } from '../services/cost-mapping.js';
 import { threatIpBlocker } from '../services/threat-ip-blocker.js';
 import { manualIpBlocklist } from '../services/manual-ip-blocklist.js';
 import { aifwService } from '../services/aifw-service.js';
+import { requestHeaderForwardingService } from '../services/request-header-forwarding.js';
 import { getGeoInfo, normalizeIp } from '../utils/ip.js';
 
 export async function configRoutes(fastify: FastifyInstance) {
@@ -79,6 +79,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     const debugEnabledCfg = await systemConfigDb.get('developer_debug_enabled');
     const debugExpiresCfg = await systemConfigDb.get('developer_debug_expires_at');
     const dashboardHideRequestSourceCardCfg = await systemConfigDb.get('dashboard_hide_request_source_card');
+    const forwardClientUserAgentCfg = await systemConfigDb.get('forward_client_user_agent');
     const antiBot = await loadAntiBotConfig();
     const aifw = await loadAifwConfig();
 
@@ -96,6 +97,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       developerDebugEnabled: activeDebug,
       developerDebugExpiresAt: activeDebug ? rawExpiresAt : null,
       dashboardHideRequestSourceCard: dashboardHideRequestSourceCardCfg ? dashboardHideRequestSourceCardCfg.value === 'true' : false,
+      forwardClientUserAgent: forwardClientUserAgentCfg ? forwardClientUserAgentCfg.value === 'true' : false,
       antiBot,
       aifw: {
         enabled: aifw.enabled,
@@ -197,7 +199,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/system-settings', async (request) => {
-    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, dashboardHideRequestSourceCard, antiBot, aifw } = request.body as {
+    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, dashboardHideRequestSourceCard, forwardClientUserAgent, antiBot, aifw } = request.body as {
       allowRegistration?: boolean;
       corsEnabled?: boolean;
       publicUrl?: string;
@@ -206,6 +208,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       persistentMonitoringEnabled?: boolean;
       developerDebugEnabled?: boolean;
       dashboardHideRequestSourceCard?: boolean;
+      forwardClientUserAgent?: boolean;
       antiBot?: {
         enabled?: boolean;
         blockBots?: boolean;
@@ -319,6 +322,19 @@ export async function configRoutes(fastify: FastifyInstance) {
           'dashboard_hide_request_source_card',
           dashboardHideRequestSourceCard ? 'true' : 'false',
           '是否在首页隐藏「请求来源」'
+        );
+      }
+
+      if (forwardClientUserAgent !== undefined) {
+        await systemConfigDb.set(
+          'forward_client_user_agent',
+          forwardClientUserAgent ? 'true' : 'false',
+          '是否向上游透传客户端 User-Agent'
+        );
+        await requestHeaderForwardingService.reloadConfig();
+        memoryLogger.info(
+          `客户端 User-Agent 透传已更新: ${forwardClientUserAgent ? '启用' : '禁用'}`,
+          'Config'
         );
       }
 
@@ -733,6 +749,8 @@ export async function configRoutes(fastify: FastifyInstance) {
       endTime: endTime ? Number(endTime) : undefined,
       status,
       virtualKeyId,
+      providerId,
+      model,
     });
 
     return result;

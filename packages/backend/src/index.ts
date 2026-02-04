@@ -29,6 +29,7 @@ import { getBackupScheduler } from './services/backup-scheduler.js';
 import { healthRunDb, systemConfigDb as systemConfigDbForDebug } from './db/index.js';
 import { debugModeService } from './services/debug-mode.js';
 import { manualIpBlocklist } from './services/manual-ip-blocklist.js';
+import { requestHeaderForwardingService } from './services/request-header-forwarding.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -48,7 +49,7 @@ const fastify = Fastify({
 });
 
 await fastify.register(cors, {
-  origin: (origin, callback) => {
+  origin: (_origin, callback) => {
     callback(null, true);
   },
   credentials: true,
@@ -82,7 +83,7 @@ fastify.decorate('authenticate', async function(request: any, reply: any) {
 });
 
 // Developer debug HTTP stream endpoint (SSE)
-fastify.get('/api/admin/config/debug-stream', (request, reply) => {
+fastify.get('/api/admin/config/debug-stream', (_request, reply) => {
   reply.raw.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   reply.raw.setHeader('Cache-Control', 'no-cache, no-transform');
   reply.raw.setHeader('Connection', 'keep-alive');
@@ -94,6 +95,9 @@ fastify.get('/api/admin/config/debug-stream', (request, reply) => {
 
 await initDatabase();
 await manualIpBlocklist.init();
+
+// Load request header forwarding config before serving traffic.
+await requestHeaderForwardingService.reloadConfig();
 
 memoryLogger.info('Database initialized', 'System');
 
@@ -176,7 +180,7 @@ fastify.setNotFoundHandler((request, reply) => {
   }
 });
 
-fastify.setErrorHandler((error: any, request, reply) => {
+fastify.setErrorHandler((error: any, _request, reply) => {
   fastify.log.error(error);
 
   if (error.validation) {
@@ -190,7 +194,7 @@ fastify.setErrorHandler((error: any, request, reply) => {
     });
   }
 
-  reply.code(error.statusCode || 500).send({
+  return reply.code(error.statusCode || 500).send({
     error: {
       message: error.message || '服务器内部错误',
       type: 'internal_error',
@@ -327,7 +331,7 @@ process.on('uncaughtException', async (err) => {
   await gracefulShutdown('uncaughtException');
 });
 
-process.on('unhandledRejection', async (reason, promise) => {
+process.on('unhandledRejection', async (reason, _promise) => {
   memoryLogger.error(`未处理的 Promise 拒绝: ${reason}`, 'System');
   await gracefulShutdown('unhandledRejection');
 });

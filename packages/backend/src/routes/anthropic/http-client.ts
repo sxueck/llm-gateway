@@ -4,7 +4,7 @@ import { memoryLogger } from '../../services/logger.js';
 import type { AnthropicRequest, AnthropicStreamEvent } from '../../types/anthropic.js';
 import { normalizeAnthropicError } from '../../utils/http-error-normalizer.js';
 import { EmptyOutputError } from '../../errors/empty-output-error.js';
-import { sanitizeCustomHeaders } from '../../utils/header-sanitizer.js';
+import { filterForwardedHeaders, sanitizeCustomHeaders } from '../../utils/header-sanitizer.js';
 
 export interface HttpResponse {
   statusCode: number;
@@ -164,7 +164,8 @@ function getAnthropicBetaHeaders(requestBody: AnthropicRequest): Record<string, 
 
 export async function makeAnthropicRequest(
   config: any,
-  requestBody: AnthropicRequest
+  requestBody: AnthropicRequest,
+  forwardedHeaders?: Record<string, string>
 ): Promise<HttpResponse> {
   try {
     const headers = config.modelAttributes?.headers;
@@ -172,18 +173,25 @@ export async function makeAnthropicRequest(
     const requestParams = buildRequestParams(config, requestBody);
 
     const betaHeaders = getAnthropicBetaHeaders(requestBody);
+    const clientForwarded = filterForwardedHeaders(config?.modelAttributes?.headers, forwardedHeaders);
+    const requestOpts = (betaHeaders || clientForwarded)
+      ? ({ headers: { ...(clientForwarded || {}), ...(betaHeaders || {}) } } as any)
+      : undefined;
 
     // Prefer Anthropic beta endpoint semantics when betas are present.
     // Fallback to header-only for Anthropic-compatible providers that don't accept ?beta=true.
     let response: any;
     if (betaHeaders) {
       try {
-        response = await (client as any).beta?.messages?.create({ ...requestParams, betas: (requestBody as any).betas });
+        response = await (client as any).beta?.messages?.create(
+          { ...requestParams, betas: (requestBody as any).betas },
+          requestOpts
+        );
       } catch (e: any) {
-        response = await client.messages.create(requestParams, { headers: betaHeaders } as any);
+        response = await client.messages.create(requestParams, requestOpts);
       }
     } else {
-      response = await client.messages.create(requestParams);
+      response = await client.messages.create(requestParams, requestOpts);
     }
 
     return {
@@ -205,7 +213,8 @@ export async function makeAnthropicRequest(
 export async function makeAnthropicStreamRequest(
   config: any,
   requestBody: AnthropicRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
+  forwardedHeaders?: Record<string, string>
 ): Promise<StreamTokenUsage> {
   const headers = config.modelAttributes?.headers;
 
@@ -218,15 +227,22 @@ export async function makeAnthropicStreamRequest(
 
     try {
       const betaHeaders = getAnthropicBetaHeaders(requestBody);
+      const clientForwarded = filterForwardedHeaders(config?.modelAttributes?.headers, forwardedHeaders);
+      const requestOpts = (betaHeaders || clientForwarded)
+        ? ({ headers: { ...(clientForwarded || {}), ...(betaHeaders || {}) } } as any)
+        : undefined;
       let stream: any;
       if (betaHeaders) {
         try {
-          stream = (client as any).beta?.messages?.stream({ ...requestParams, betas: (requestBody as any).betas });
+          stream = (client as any).beta?.messages?.stream(
+            { ...requestParams, betas: (requestBody as any).betas },
+            requestOpts
+          );
         } catch (e: any) {
-          stream = client.messages.stream(requestParams, { headers: betaHeaders } as any);
+          stream = client.messages.stream(requestParams, requestOpts);
         }
       } else {
-        stream = client.messages.stream(requestParams);
+        stream = client.messages.stream(requestParams, requestOpts);
       }
 
       // 每次尝试都需要独立的变量，避免重试时状态混乱

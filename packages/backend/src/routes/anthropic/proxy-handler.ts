@@ -11,6 +11,7 @@ import { makeAnthropicRequest, makeAnthropicStreamRequest } from './http-client.
 import { logApiRequestToDb } from '../../services/api-request-logger.js';
 import { calculateTokensIfNeeded } from '../proxy/token-calculator.js';
 import { maybeCompressImagesInAnthropicRequestBodyInPlace, logImageCompressionStats } from '../../services/image-compression.js';
+import { requestHeaderForwardingService } from '../../services/request-header-forwarding.js';
 
 function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
   return !virtualKey.disable_logging;
@@ -227,9 +228,10 @@ async function handleAnthropicNonStreamRequest(
   const modelForLogging = currentModel?.model_identifier || currentModel?.name || requestBody.model;
   const requestUserAgent = getRequestUserAgent(request);
   const requestIp = extractIp(request);
+  const forwardedHeaders = requestHeaderForwardingService.buildForwardedHeaders(request.headers as any);
 
   try {
-    const response = await makeAnthropicRequest(protocolConfig, requestBody);
+    const response = await makeAnthropicRequest(protocolConfig, requestBody, forwardedHeaders);
 
     const duration = Date.now() - startTime;
     const isSuccess = response.statusCode >= 200 && response.statusCode < 300;
@@ -341,9 +343,10 @@ async function handleAnthropicStreamRequest(
 
   const streamUserAgent = getRequestUserAgent(request);
   const streamIp = extractIp(request);
+  const forwardedHeaders = requestHeaderForwardingService.buildForwardedHeaders(request.headers as any);
 
   try {
-    const tokenUsage = await makeAnthropicStreamRequest(protocolConfig, requestBody, reply);
+    const tokenUsage = await makeAnthropicStreamRequest(protocolConfig, requestBody, reply, forwardedHeaders);
 
     const duration = Date.now() - startTime;
     circuitBreaker.recordSuccess(providerId);

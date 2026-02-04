@@ -328,6 +328,11 @@ export default {
       title: 'Configuration Instructions',
       content: 'This address will be used when generating Agent installation scripts. Agents will communicate with LLM Gateway through this address. Changes take effect immediately, but installed Agents need to manually update configuration files and restart services.',
     },
+    headerForwarding: {
+      title: 'Upstream Header Forwarding',
+      forwardClientUserAgent: 'Forward Client User-Agent',
+      forwardClientUserAgentDesc: 'When enabled, the client User-Agent will be forwarded to upstream providers. Referer/Origin are always forwarded. If the same header is set in model attributes, model attributes take precedence.',
+    },
     antiBot: {
       title: 'Anti-Bot Settings',
       enabled: 'Enable Anti-Bot Protection',
