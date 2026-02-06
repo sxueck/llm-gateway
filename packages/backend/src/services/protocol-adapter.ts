@@ -109,7 +109,7 @@ export class ProtocolAdapter {
       }
 
       if (msg.role === 'tool') {
-        return msg.tool_call_id && msg.content;
+        return msg.tool_call_id && typeof msg.content === 'string';
       }
 
       if (msg.tool_calls && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
