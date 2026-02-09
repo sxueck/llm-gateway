@@ -264,8 +264,6 @@ type SystemSettingsResponse = {
 type PublicSystemSettingsResponse = {
   allowRegistration: boolean;
   corsEnabled: boolean;
-  demoMode: boolean;
-  nextCleanupTime: number | null;
   dashboardHideRequestSourceCard: boolean;
 };
 

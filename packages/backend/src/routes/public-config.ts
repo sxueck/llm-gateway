@@ -1,6 +1,5 @@
 import { FastifyInstance } from 'fastify';
 import { systemConfigDb } from '../db/index.js';
-import { demoModeService } from '../services/demo-mode.js';
 import { memoryLogger } from '../services/logger.js';
 
 export async function publicConfigRoutes(fastify: FastifyInstance) {
@@ -13,8 +12,6 @@ export async function publicConfigRoutes(fastify: FastifyInstance) {
       return {
         allowRegistration: !(allowRegCfg && allowRegCfg.value === 'false'),
         corsEnabled: corsEnabledCfg ? corsEnabledCfg.value === 'true' : true,
-        demoMode: demoModeService.isEnabled(),
-        nextCleanupTime: demoModeService.isEnabled() ? demoModeService.getNextCleanupTime() : null,
         dashboardHideRequestSourceCard: dashboardHideRequestSourceCardCfg ? dashboardHideRequestSourceCardCfg.value === 'true' : false,
       };
     } catch (error: any) {

@@ -5,8 +5,6 @@
         当前已关闭注册，仅允许已有用户登录
       </n-alert>
 
-      <demo-mode-alert />
-
       <n-form ref="formRef" :model="formValue" :rules="rules" size="large">
         <n-form-item path="username" label="用户名">
           <n-input
@@ -60,7 +58,6 @@ import { useRouter } from 'vue-router';
 import { useMessage, NCard, NForm, NFormItem, NInput, NButton, NSpace, NAlert } from 'naive-ui';
 import { useAuthStore } from '@/stores/auth';
 import { useSystemConfig } from '@/composables/useSystemConfig';
-import DemoModeAlert from '@/components/DemoModeAlert.vue';
 
 const router = useRouter();
 const message = useMessage();

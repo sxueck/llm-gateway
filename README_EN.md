@@ -126,15 +126,6 @@ See the `.env.example` file for details. Main configuration items:
 | LOG_LEVEL | Log level | info |
 | JWT_SECRET | JWT secret (at least 32 characters) | Required |
 | PUBLIC_URL | Public access URL | http://localhost:3000 |
-| DEMO_MODE | Demo mode | false |
-
-## Demo
-
-[Demo](http://demo-api.sxueck.com:3000/)
-
-Account: demo / demo1234
-
-Note: The demo site automatically clears data every 3 days. Please do not enter real API keys.
 
 ## Contributing
 

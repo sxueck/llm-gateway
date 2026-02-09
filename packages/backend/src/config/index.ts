@@ -11,7 +11,6 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32),
   API_REQUEST_LOG_RETENTION_DAYS: z.string().default('3'),
   PUBLIC_URL: z.string().optional(),
-  DEMO_MODE: z.string().optional(),
   MYSQL_HOST: z.string().default('localhost'),
   MYSQL_PORT: z.string().default('3306'),
   MYSQL_USER: z.string().default('root'),
@@ -33,7 +32,6 @@ export const appConfig = {
   apiRequestLogRetentionDays: parseInt(env.API_REQUEST_LOG_RETENTION_DAYS, 10),
   publicUrl: defaultPublicUrl,
   defaultPublicUrl,
-  demoMode: env.DEMO_MODE === 'true' || env.DEMO_MODE === 'enabled',
   geoIpEnabled: env.GEO_IP_ENABLED !== 'false',
   mysql: {
     host: env.MYSQL_HOST,

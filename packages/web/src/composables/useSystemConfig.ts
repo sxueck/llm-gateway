@@ -2,8 +2,6 @@ import { ref, onMounted } from 'vue';
 import { configApi } from '@/api/config';
 
 const allowRegistration = ref(true);
-const demoMode = ref(false);
-const nextCleanupTime = ref<number | null>(null);
 const dashboardHideRequestSourceCard = ref(false);
 const isLoaded = ref(false);
 
@@ -18,8 +16,6 @@ export function useSystemConfig() {
     try {
       const settings = await configApi.getPublicSystemSettings();
       allowRegistration.value = settings.allowRegistration;
-      demoMode.value = settings.demoMode;
-      nextCleanupTime.value = settings.nextCleanupTime;
       dashboardHideRequestSourceCard.value = settings.dashboardHideRequestSourceCard;
       isLoaded.value = true;
     } catch (error) {
@@ -29,8 +25,6 @@ export function useSystemConfig() {
 
   return {
     allowRegistration,
-    demoMode,
-    nextCleanupTime,
     dashboardHideRequestSourceCard,
     isLoaded,
     loadSystemConfig,

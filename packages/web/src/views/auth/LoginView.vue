@@ -1,7 +1,6 @@
 <template>
   <div class="auth-container">
     <n-card class="auth-card" title="登录">
-      <demo-mode-alert />
       <n-form ref="formRef" :model="formValue" :rules="rules" size="large">
         <n-form-item path="username" label="用户名">
           <n-input
@@ -44,7 +43,6 @@ import { useRouter } from 'vue-router';
 import { useMessage, NCard, NForm, NFormItem, NInput, NButton, NSpace } from 'naive-ui';
 import { useAuthStore } from '@/stores/auth';
 import { useSystemConfig } from '@/composables/useSystemConfig';
-import DemoModeAlert from '@/components/DemoModeAlert.vue';
 
 const router = useRouter();
 const message = useMessage();

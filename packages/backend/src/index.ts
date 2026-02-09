@@ -23,7 +23,6 @@ import { costMappingRoutes } from './routes/cost-mapping.js';
 import backupRoutes from './routes/backup.js';
 import { memoryLogger } from './services/logger.js';
 import { modelPresetsService } from './services/model-presets.js';
-import { demoModeService } from './services/demo-mode.js';
 import { healthCheckerService } from './services/health-checker.js';
 import { getBackupScheduler } from './services/backup-scheduler.js';
 import { healthRunDb, systemConfigDb as systemConfigDbForDebug } from './db/index.js';
@@ -274,8 +273,6 @@ try {
     }
   }, 24 * 60 * 60 * 1000);
 
-  await demoModeService.start();
-
   // Start backup scheduler if S3 is configured
   try {
     const backupScheduler = getBackupScheduler();
@@ -306,9 +303,6 @@ const gracefulShutdown = async (signal: string) => {
 
     await healthCheckerService.stop();
     memoryLogger.info('健康检查服务已停止', 'System');
-
-    demoModeService.stop();
-    memoryLogger.info('演示模式服务已停止', 'System');
 
     await fastify.close();
     memoryLogger.info('Fastify 服务已关闭', 'System');
