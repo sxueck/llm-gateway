@@ -1,5 +1,30 @@
 import OpenAI from 'openai';
 
+const MAX_ERROR_MESSAGE_LENGTH = 600;
+
+function isLikelyHtmlErrorPage(message: string): boolean {
+  // Match full HTML pages (or common "HTTP 403: <html..." wrappers) only when the payload starts like HTML.
+  return /^(?:http\s*\d{3}\s*:?\s*)?(?:<!doctype html|<html[\s>])/i.test(message);
+}
+
+function sanitizeUpstreamMessage(rawMessage: string, statusCode: number): string {
+  const normalized = String(rawMessage || '').replace(/\s+/g, ' ').trim();
+  const looksLikeHtml = isLikelyHtmlErrorPage(normalized);
+
+  if (looksLikeHtml) {
+    if (statusCode === 403) {
+      return 'Upstream access denied by security policy (possible Cloudflare/WAF block)';
+    }
+    return `Upstream returned an HTML error page (HTTP ${statusCode})`;
+  }
+
+  if (normalized.length > MAX_ERROR_MESSAGE_LENGTH) {
+    return `${normalized.slice(0, MAX_ERROR_MESSAGE_LENGTH - 3)}...`;
+  }
+
+  return normalized || 'LLM 请求失败';
+}
+
 export interface NormalizedLlmError {
   statusCode: number;
   errorType: string;
@@ -40,6 +65,9 @@ export function normalizeOpenAIError(error: any): NormalizedLlmError {
   if (statusCode === 401) {
     errorType = 'authentication_error';
     errorCode = 'invalid_api_key';
+  } else if (statusCode === 403) {
+    errorType = 'permission_error';
+    errorCode = 'access_denied';
   } else if (statusCode === 429) {
     errorType = 'rate_limit_error';
     errorCode = 'rate_limit_exceeded';
@@ -50,6 +78,8 @@ export function normalizeOpenAIError(error: any): NormalizedLlmError {
     errorType = 'api_error';
     errorCode = 'internal_server_error';
   }
+
+  message = sanitizeUpstreamMessage(message, statusCode);
 
   return {
     statusCode,

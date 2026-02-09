@@ -1,7 +1,7 @@
 import { FastifyRequest } from 'fastify';
-import { providerDb, modelDb, routingConfigDb, systemConfigDb } from '../../db/index.js';
+import { providerDb, modelDb, systemConfigDb } from '../../db/index.js';
 import { memoryLogger } from '../../services/logger.js';
-import { resolveProviderFromModel, selectRoutingTarget, type RoutingConfig } from './routing.js';
+import { resolveProviderFromModel } from './routing.js';
 
 export interface ModelResolutionResult {
   provider: any;
@@ -540,10 +540,7 @@ export async function retrySmartRouting(
   }
 
   try {
-    // 调用 resolveProviderFromModel，传入 excludeProviders
-    const result = await resolveProviderFromModel(model, request as any, virtualKey.id);
-
-    // 使用 excludeProviders 重新选择
+    // 直接基于已排除 provider 重新选择，避免再次命中同一目标
     const retryResult = await resolveSmartRoutingWithExclude(
       model,
       request as any,

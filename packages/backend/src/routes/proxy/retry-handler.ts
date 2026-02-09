@@ -121,7 +121,7 @@ async function handleSmartRoutingRetry(
       context.compressionStats,
       retryResult.currentModel,
       !!context.isResponsesApi,
-      context.modelResult,
+      retryResult,
       context.virtualKeyValue,
       context.extractedSystemPrompt
     );
@@ -139,7 +139,9 @@ async function handleSmartRoutingRetry(
     configResult.path,
     context.startTime,
     context.compressionStats,
-    retryResult.currentModel
+    retryResult.currentModel,
+    retryResult,
+    context.virtualKeyValue
   );
   return true;
 }
