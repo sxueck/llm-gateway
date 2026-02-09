@@ -27,6 +27,20 @@ export class CircuitBreaker {
   private stats: Map<string, ProviderStats> = new Map();
   private config: CircuitBreakerConfig;
 
+  private extractProviderId(circuitKey: string): string | undefined {
+    if (typeof circuitKey !== 'string') {
+      return undefined;
+    }
+
+    const normalizedKey = circuitKey.trim();
+    if (!normalizedKey) {
+      return undefined;
+    }
+
+    const [providerId] = normalizedKey.split('::');
+    return providerId || normalizedKey;
+  }
+
   constructor(config?: Partial<CircuitBreakerConfig>) {
     this.config = {
       failureThreshold: config?.failureThreshold || 2,
@@ -36,9 +50,9 @@ export class CircuitBreaker {
     };
   }
 
-  private getStats(providerId: string): ProviderStats {
-    if (!this.stats.has(providerId)) {
-      this.stats.set(providerId, {
+  private getStats(circuitKey: string): ProviderStats {
+    if (!this.stats.has(circuitKey)) {
+      this.stats.set(circuitKey, {
         failures: 0,
         successes: 0,
         lastFailureTime: 0,
@@ -47,11 +61,11 @@ export class CircuitBreaker {
         triggerCount: 0
       });
     }
-    return this.stats.get(providerId)!;
+    return this.stats.get(circuitKey)!;
   }
 
-  isAvailable(providerId: string): boolean {
-    const stats = this.getStats(providerId);
+  isAvailable(circuitKey: string): boolean {
+    const stats = this.getStats(circuitKey);
 
     if (stats.state === CircuitState.CLOSED) {
       return true;
@@ -63,7 +77,7 @@ export class CircuitBreaker {
         stats.state = CircuitState.HALF_OPEN;
         stats.halfOpenAttempts = 0;
         memoryLogger.info(
-          `熔断器进入半开状态 | provider: ${providerId}`,
+          `熔断器进入半开状态 | key: ${circuitKey}`,
           'CircuitBreaker'
         );
         return true;
@@ -78,8 +92,8 @@ export class CircuitBreaker {
     return true;
   }
 
-  recordSuccess(providerId: string): void {
-    const stats = this.getStats(providerId);
+  recordSuccess(circuitKey: string): void {
+    const stats = this.getStats(circuitKey);
 
     if (stats.state === CircuitState.HALF_OPEN) {
       stats.successes++;
@@ -91,7 +105,7 @@ export class CircuitBreaker {
         stats.successes = 0;
         stats.halfOpenAttempts = 0;
         memoryLogger.info(
-          `熔断器恢复正常 | provider: ${providerId}`,
+          `熔断器恢复正常 | key: ${circuitKey}`,
           'CircuitBreaker'
         );
       }
@@ -100,8 +114,25 @@ export class CircuitBreaker {
     }
   }
 
-  recordFailure(providerId: string, error?: any): void {
-    const stats = this.getStats(providerId);
+  recordFailure(circuitKey: string, error?: any): void {
+    const stats = this.getStats(circuitKey);
+    const providerId = this.extractProviderId(circuitKey);
+
+    const persistTriggerStats = () => {
+      if (!providerId) {
+        memoryLogger.warn(
+          `跳过持久化熔断器触发统计: 无效 provider key=${String(circuitKey)}`,
+          'CircuitBreaker'
+        );
+        return;
+      }
+
+      // Persist trigger stats asynchronously (no need to await)
+      circuitBreakerStatsRepository.incrementTrigger(providerId).catch(err => {
+        memoryLogger.error(`持久化熔断器触发统计失败: ${err.message}`, 'CircuitBreaker');
+      });
+    };
+
     stats.failures++;
     stats.lastFailureTime = Date.now();
 
@@ -110,50 +141,44 @@ export class CircuitBreaker {
       stats.successes = 0;
       stats.halfOpenAttempts = 0;
       stats.triggerCount = (stats.triggerCount || 0) + 1;
-      // Persist trigger stats asynchronously (no need to await)
-      circuitBreakerStatsRepository.incrementTrigger(providerId).catch(err => {
-        memoryLogger.error(`持久化熔断器触发统计失败: ${err.message}`, 'CircuitBreaker');
-      });
+      persistTriggerStats();
       memoryLogger.warn(
-        `熔断器重新打开 | provider: ${providerId} | error: ${error?.message || 'unknown'}`,
+        `熔断器重新打开 | key: ${circuitKey} | provider: ${providerId} | error: ${error?.message || 'unknown'}`,
         'CircuitBreaker'
       );
     } else if (stats.state === CircuitState.CLOSED) {
       if (stats.failures >= this.config.failureThreshold) {
         stats.state = CircuitState.OPEN;
         stats.triggerCount = (stats.triggerCount || 0) + 1;
-        // Persist trigger stats asynchronously (no need to await)
-        circuitBreakerStatsRepository.incrementTrigger(providerId).catch(err => {
-          memoryLogger.error(`持久化熔断器触发统计失败: ${err.message}`, 'CircuitBreaker');
-        });
+        persistTriggerStats();
         memoryLogger.warn(
-          `熔断器打开 | provider: ${providerId} | failures: ${stats.failures}`,
+          `熔断器打开 | key: ${circuitKey} | provider: ${providerId} | failures: ${stats.failures}`,
           'CircuitBreaker'
         );
       }
     }
   }
 
-  getState(providerId: string): CircuitState {
-    return this.getStats(providerId).state;
+  getState(circuitKey: string): CircuitState {
+    return this.getStats(circuitKey).state;
   }
 
-  getProviderStats(providerId: string): ProviderStats {
-    return { ...this.getStats(providerId) };
+  getProviderStats(circuitKey: string): ProviderStats {
+    return { ...this.getStats(circuitKey) };
   }
 
   getAllStats(): Map<string, ProviderStats> {
     const result = new Map<string, ProviderStats>();
-    this.stats.forEach((stats, providerId) => {
-      result.set(providerId, { ...stats });
+    this.stats.forEach((stats, key) => {
+      result.set(key, { ...stats });
     });
     return result;
   }
 
-  reset(providerId: string): void {
-    this.stats.delete(providerId);
+  reset(circuitKey: string): void {
+    this.stats.delete(circuitKey);
     memoryLogger.info(
-      `熔断器重置 | provider: ${providerId}`,
+      `熔断器重置 | key: ${circuitKey}`,
       'CircuitBreaker'
     );
   }
@@ -168,12 +193,12 @@ export class CircuitBreaker {
     let maxTriggeredProvider = '-';
     let maxTriggerCount = 0;
 
-    this.stats.forEach((stats, providerId) => {
+    this.stats.forEach((stats, circuitKey) => {
       const count = stats.triggerCount || 0;
       totalTriggers += count;
       if (count > maxTriggerCount) {
         maxTriggerCount = count;
-        maxTriggeredProvider = providerId;
+        maxTriggeredProvider = circuitKey;
       }
     });
 
@@ -186,4 +211,3 @@ export class CircuitBreaker {
 }
 
 export const circuitBreaker = new CircuitBreaker();
-

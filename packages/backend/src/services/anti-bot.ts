@@ -205,7 +205,6 @@ export class AntiBotService {
   }
 
   logDetection(userAgent: string, result: ReturnType<typeof this.detect>, ip?: string, headers?: Record<string, string | string[] | undefined>) {
-    const logLevel = result.shouldBlock ? 'WARN' : 'INFO';
     const message = `反爬虫检测 | IP: ${ip || 'unknown'} | UA: ${userAgent.substring(0, 100)}${userAgent.length > 100 ? '...' : ''} | 结果: ${result.reason}`;
     
     if (result.shouldBlock) {

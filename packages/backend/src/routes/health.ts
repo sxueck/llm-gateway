@@ -110,7 +110,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
    * GET /public/health/summary
    * 获取所有目标的汇总信息
    */
-  fastify.get('/public/health/summary', async (request, reply) => {
+  fastify.get('/public/health/summary', async (_request, reply) => {
     try {
       const [targets, global] = await Promise.all([
         healthAggregatorService.getAllTargetsSummary(),
@@ -124,7 +124,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
         timestamp: Date.now(),
       };
     } catch (error: any) {
-      reply.code(500).send({
+      return reply.code(500).send({
         error: {
           message: error.message || '服务器内部错误',
           type: 'internal_error',
@@ -138,7 +138,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
    * GET /public/health/targets
    * 获取目标清单
    */
-  fastify.get('/public/health/targets', async (request, reply) => {
+  fastify.get('/public/health/targets', async (_request, reply) => {
     try {
       const targets = await healthTargetDb.getEnabled();
 
@@ -155,7 +155,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
         total: targetList.length,
       };
     } catch (error: any) {
-      reply.code(500).send({
+      return reply.code(500).send({
         error: {
           message: error.message || '服务器内部错误',
           type: 'internal_error',
@@ -205,7 +205,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
         return;
       }
 
-      reply.code(500).send({
+      return reply.code(500).send({
         error: {
           message: error.message || '服务器内部错误',
           type: 'internal_error',
@@ -267,7 +267,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
         timestamp: Date.now(),
       };
     } catch (error: any) {
-      reply.code(500).send({
+      return reply.code(500).send({
         error: {
           message: error.message || '服务器内部错误',
           type: 'internal_error',
@@ -279,7 +279,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
 
   // 兼容别名前缀: /api/public/health/*
   // 这样前端可统一通过带 /api 的代理前缀访问公开健康接口
-  fastify.get('/api/public/health/summary', async (request, reply) => {
+  fastify.get('/api/public/health/summary', async (_request, reply) => {
     try {
       const [targets, global] = await Promise.all([
         healthAggregatorService.getAllTargetsSummary(),
@@ -293,7 +293,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
         timestamp: Date.now(),
       };
     } catch (error: any) {
-      reply.code(500).send({
+      return reply.code(500).send({
         error: {
           message: error.message || '服务器内部错误',
           type: 'internal_error',
@@ -303,7 +303,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.get('/api/public/health/targets', async (request, reply) => {
+  fastify.get('/api/public/health/targets', async (_request, reply) => {
     try {
       const targets = await healthTargetDb.getEnabled();
 
@@ -320,7 +320,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
         total: targetList.length,
       };
     } catch (error: any) {
-      reply.code(500).send({
+      return reply.code(500).send({
         error: {
           message: error.message || '服务器内部错误',
           type: 'internal_error',
@@ -366,7 +366,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
         return;
       }
 
-      reply.code(500).send({
+      return reply.code(500).send({
         error: {
           message: error.message || '服务器内部错误',
           type: 'internal_error',
@@ -423,7 +423,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
         timestamp: Date.now(),
       };
     } catch (error: any) {
-      reply.code(500).send({
+      return reply.code(500).send({
         error: {
           message: error.message || '服务器内部错误',
           type: 'internal_error',
@@ -450,7 +450,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
    */
   fastify.get('/admin/health/targets', {
     preHandler: fastify.authenticate,
-  }, async (request, reply) => {
+  }, async (_request, reply) => {
     try {
       const targets = await healthTargetDb.getAll();
       return {
@@ -458,7 +458,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
         total: targets.length,
       };
     } catch (error: any) {
-      reply.code(500).send({
+      return reply.code(500).send({
         error: {
           message: error.message || '服务器内部错误',
           type: 'internal_error',
@@ -521,7 +521,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
         return;
       }
 
-      reply.code(500).send({
+      return reply.code(500).send({
         error: {
           message: error.message || '服务器内部错误',
           type: 'internal_error',
@@ -563,7 +563,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
         success: true,
       };
     } catch (error: any) {
-      reply.code(500).send({
+      return reply.code(500).send({
         error: {
           message: error.message || '服务器内部错误',
           type: 'internal_error',
@@ -581,7 +581,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
   // GET /api/admin/health/targets
   fastify.get('/api/admin/health/targets', {
     preHandler: fastify.authenticate,
-  }, async (request, reply) => {
+  }, async (_request, reply) => {
     try {
       const targets = await healthTargetDb.getAll();
       return {
@@ -589,7 +589,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
         total: targets.length,
       };
     } catch (error: any) {
-      reply.code(500).send({
+      return reply.code(500).send({
         error: {
           message: error.message || '服务器内部错误',
           type: 'internal_error',
@@ -649,7 +649,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
         return;
       }
 
-      reply.code(500).send({
+      return reply.code(500).send({
         error: {
           message: error.message || '服务器内部错误',
           type: 'internal_error',
@@ -688,7 +688,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
         success: true,
       };
     } catch (error: any) {
-      reply.code(500).send({
+      return reply.code(500).send({
         error: {
           message: error.message || '服务器内部错误',
           type: 'internal_error',

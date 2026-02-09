@@ -12,7 +12,7 @@ export function checkCache(
   isStreamRequest: boolean,
   isEmbeddingsRequest: boolean,
   requestBody: any,
-  vkDisplay: string
+  _vkDisplay: string
 ): CacheCheckResult {
   const shouldCache = virtualKey.cache_enabled === 1 && !isStreamRequest && !isEmbeddingsRequest && requestBody;
 

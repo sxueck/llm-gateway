@@ -3,7 +3,7 @@ import { backupDb, restoreDb } from '../db/backup.js';
 import { getS3Service } from './s3-storage.js';
 import { BackupService } from './backup-service.js';
 import { memoryLogger } from './logger.js';
-import type { RestoreOptions, RestoreRecord, BackupRecord } from '../types/index.js';
+import type { RestoreOptions, RestoreRecord } from '../types/index.js';
 import { mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import * as tar from 'tar';
@@ -47,7 +47,7 @@ export class RestoreService {
       }
 
       // Create restore record
-      const restoreRecord = await restoreDb.createRestoreRecord({
+      await restoreDb.createRestoreRecord({
         id: restoreId,
         backup_record_id: backupId,
         restore_type: options.restore_type || 'full',
@@ -92,7 +92,7 @@ export class RestoreService {
       if (options.verify_data) {
         memoryLogger.info('Verifying backup integrity', 'Restore');
         const checksumPath = join(backupDir, 'checksum.md5');
-        const checksumData = JSON.parse(await fs.readFile(checksumPath, 'utf-8'));
+        await fs.readFile(checksumPath, 'utf-8');
         // Note: Full checksum verification would require recalculating
         // For now, we just check that checksum file exists
       }

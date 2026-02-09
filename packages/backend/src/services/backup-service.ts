@@ -3,9 +3,9 @@ import { backupDb } from '../db/backup.js';
 import { getS3Service } from './s3-storage.js';
 import { memoryLogger } from './logger.js';
 import type { BackupOptions, BackupRecord } from '../types/index.js';
-import { createWriteStream, createReadStream, mkdirSync, rmSync } from 'fs';
+import { createReadStream, createWriteStream, mkdirSync, rmSync } from 'fs';
 import { pipeline } from 'stream/promises';
-import { createGzip, createGunzip } from 'zlib';
+
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
 import { join } from 'path';
 import * as tar from 'tar';

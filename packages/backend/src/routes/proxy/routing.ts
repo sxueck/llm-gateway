@@ -27,6 +27,7 @@ export interface RoutingConfig {
 export interface ResolveProviderResult {
   provider: any;
   providerId: string;
+  circuitBreakerKey?: string;
   modelOverride?: string;
   resolvedModel?: any;
   excludeProviders?: Set<string>;
@@ -46,7 +47,11 @@ interface AffinityState {
 const affinityStateMap = new Map<string, AffinityState>();
 
 function getTargetKey(target: RoutingTarget): string {
-  const overrideModel = target.override_params?.model || '';
+  const overrideModel = target.override_params?.model?.trim();
+  if (!overrideModel) {
+    return target.provider;
+  }
+
   return `${target.provider}::${overrideModel}`;
 }
 
@@ -160,7 +165,7 @@ export function selectRoutingTarget(
   }
 
   const availableTargets = config.targets.filter(t =>
-    circuitBreaker.isAvailable(t.provider) &&
+    circuitBreaker.isAvailable(getTargetKey(t)) &&
     (!excludeProviders || !excludeProviders.has(t.provider))
   );
 
@@ -196,7 +201,7 @@ export function selectRoutingTarget(
     // Fallback 策略：按优先级顺序选择第一个可用的 target
     // 不像 loadbalance 那样轮询，而是始终优先使用第一个可用的
     for (const target of config.targets) {
-      if (circuitBreaker.isAvailable(target.provider) &&
+      if (circuitBreaker.isAvailable(getTargetKey(target)) &&
           (!excludeProviders || !excludeProviders.has(target.provider))) {
         return target;
       }
@@ -386,6 +391,7 @@ export async function resolveSmartRouting(
     const result: ResolveProviderResult = {
       provider,
       providerId: selectedTarget.provider,
+      circuitBreakerKey: getTargetKey(selectedTarget),
       excludeProviders: updatedExcludeProviders
     };
 
@@ -524,6 +530,7 @@ export async function resolveExpertRouting(
     return {
       provider: result.provider,
       providerId: result.providerId,
+      circuitBreakerKey: result.providerId,
       modelOverride: result.modelOverride,
       resolvedModel
     };
@@ -565,6 +572,7 @@ export async function resolveProviderFromModel(
     return {
       provider: smartRoutingResult.provider,
       providerId: smartRoutingResult.providerId,
+      circuitBreakerKey: smartRoutingResult.circuitBreakerKey,
       excludeProviders: smartRoutingResult.excludeProviders,
       resolvedModel: smartRoutingResult.resolvedModel
     };
@@ -582,6 +590,7 @@ export async function resolveProviderFromModel(
 
   return {
     provider,
-    providerId: model.provider_id
+    providerId: model.provider_id,
+    circuitBreakerKey: model.provider_id
   };
 }

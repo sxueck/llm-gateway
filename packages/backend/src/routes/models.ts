@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid';
 import { modelDb, providerDb, virtualKeyDb } from '../db/index.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { probeService } from '../services/probe-service.js';
-import type { Model } from '../db/index.js';
+
 
 declare module 'fastify' {
   interface FastifyInstance {

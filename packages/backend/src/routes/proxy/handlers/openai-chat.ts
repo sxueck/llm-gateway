@@ -18,6 +18,7 @@ export interface ChatStreamParams {
   vkDisplay: string;
   virtualKey: VirtualKey;
   providerId: string;
+  circuitBreakerKey?: string;
   startTime: number;
   compressionStats?: { originalTokens: number; savedTokens: number };
   currentModel?: any;
@@ -28,6 +29,7 @@ export interface ChatNonStreamParams {
   protocolConfig: any;
   virtualKey: VirtualKey;
   providerId: string;
+  circuitBreakerKey?: string;
   startTime: number;
   compressionStats?: { originalTokens: number; savedTokens: number };
   currentModel?: any;
@@ -38,7 +40,8 @@ export interface ChatNonStreamParams {
  * 处理Chat Completions流式请求
  */
 export async function handleChatStreamRequest(params: ChatStreamParams): Promise<void> {
-  const { request, reply, protocolConfig, path, vkDisplay, virtualKey, providerId, startTime, compressionStats, currentModel } = params;
+  const { request, reply, protocolConfig, path, vkDisplay, virtualKey, providerId, circuitBreakerKey, startTime, compressionStats, currentModel } = params;
+  const breakerKey = circuitBreakerKey || providerId;
 
   memoryLogger.info(
     `流式请求开始 (Chat): ${path} | virtual key: ${vkDisplay}`,
@@ -84,7 +87,7 @@ export async function handleChatStreamRequest(params: ChatStreamParams): Promise
       tokenUsage.completionTokens
     );
 
-    circuitBreaker.recordSuccess(providerId);
+    circuitBreaker.recordSuccess(breakerKey);
 
     memoryLogger.info(
       `流式请求完成 (Chat): ${duration}ms | tokens: ${tokenCount.totalTokens}`,
@@ -123,7 +126,7 @@ export async function handleChatStreamRequest(params: ChatStreamParams): Promise
       return;
     }
 
-    circuitBreaker.recordFailure(providerId, streamError);
+    circuitBreaker.recordFailure(breakerKey, streamError);
 
     memoryLogger.error(
       `流式请求失败 (Chat): ${streamError.message}`,

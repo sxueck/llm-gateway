@@ -16,7 +16,7 @@ export async function modelPresetsRoutes(fastify: FastifyInstance) {
     return stats;
   });
 
-  fastify.post('/update', async (request, reply) => {
+  fastify.post('/update', async (_request, reply) => {
     const result = await modelPresetsService.updateFromRemote();
     
     if (result.success) {
@@ -26,7 +26,7 @@ export async function modelPresetsRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.post('/search', async (request, reply) => {
+  fastify.post('/search', async (request, _reply) => {
     const body = searchSchema.parse(request.body);
     
     await modelPresetsService.ensureDataAvailable();

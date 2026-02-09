@@ -6,6 +6,7 @@ import { resolveProviderFromModel } from './routing.js';
 export interface ModelResolutionResult {
   provider: any;
   providerId: string;
+  circuitBreakerKey?: string;
   currentModel?: any;
   excludeProviders?: Set<string>;
   canRetry?: boolean; // 是否支持重试（仅智能路由模式）
@@ -169,7 +170,8 @@ export async function resolveModelAndProvider(
           return {
             provider,
             providerId: providerId!,
-           currentModel,
+            circuitBreakerKey: result.circuitBreakerKey || providerId!,
+            currentModel,
             excludeProviders: result.excludeProviders,
             canRetry,
             modelId: selectedModelId
@@ -228,6 +230,7 @@ export async function resolveModelAndProvider(
       return {
         provider,
         providerId: providerId!,
+        circuitBreakerKey: result.circuitBreakerKey || providerId!,
         currentModel,
         excludeProviders: result.excludeProviders,
         canRetry,
@@ -426,6 +429,7 @@ export async function resolveModelAndProvider(
         return {
           provider,
           providerId: providerId!,
+          circuitBreakerKey: result.circuitBreakerKey || providerId!,
           currentModel,
           excludeProviders: result.excludeProviders,
           canRetry,
@@ -510,6 +514,7 @@ export async function resolveModelAndProvider(
   return {
     provider,
     providerId: providerId!,
+    circuitBreakerKey: providerId!,
     currentModel
   };
 }
@@ -563,6 +568,7 @@ export async function retrySmartRouting(
     return {
       provider: retryResult.provider,
       providerId: retryResult.providerId!,
+      circuitBreakerKey: retryResult.circuitBreakerKey || retryResult.providerId!,
       currentModel,
       excludeProviders: retryResult.excludeProviders,
       canRetry,

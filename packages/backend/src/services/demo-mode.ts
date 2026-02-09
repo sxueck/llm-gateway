@@ -3,7 +3,7 @@ import { appConfig } from '../config/index.js';
 import { getPool, userDb, flushApiRequestBufferNow } from '../db/index.js';
 import { hashPassword } from '../utils/crypto.js';
 import { memoryLogger } from './logger.js';
-import { writeFile } from 'fs/promises';
+
 
 const DEMO_USERNAME = 'demo';
 const DEMO_PASSWORD = 'demo1234';

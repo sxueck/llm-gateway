@@ -14,7 +14,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
   // Get S3 configuration
   fastify.get('/api/admin/backup/s3-config', {
     onRequest: [fastify.authenticate],
-    handler: async (request, reply) => {
+    handler: async (_request, reply) => {
       try {
         const endpoint = await systemConfigDb.get('s3_endpoint');
         const bucketName = await systemConfigDb.get('s3_bucket_name');
@@ -118,9 +118,9 @@ export default async function backupRoutes(fastify: FastifyInstance) {
   // Test S3 connection
   fastify.post('/api/admin/backup/test-s3', {
     onRequest: [fastify.authenticate],
-    handler: async (request, reply) => {
+    handler: async (_request, reply) => {
       try {
-        const body = request.body as S3Config | undefined;
+        const body = _request.body as S3Config | undefined;
 
         if (body) {
           // Test with provided config
@@ -230,7 +230,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
   // Sync backups from S3
   fastify.post('/api/admin/backup/sync', {
     onRequest: [fastify.authenticate],
-    handler: async (request, reply) => {
+    handler: async (_request, reply) => {
       try {
         const result = await backupService.syncBackupsFromS3();
 
@@ -477,7 +477,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
   // Get backup configuration
   fastify.get('/api/admin/backup/config', {
     onRequest: [fastify.authenticate],
-    handler: async (request, reply) => {
+    handler: async (_request, reply) => {
       try {
         const scheduler = getBackupScheduler();
         const status = scheduler.getStatus();

@@ -18,6 +18,7 @@ export interface ResponsesStreamParams {
   vkDisplay: string;
   virtualKey: VirtualKey;
   providerId: string;
+  circuitBreakerKey?: string;
   startTime: number;
   compressionStats?: { originalTokens: number; savedTokens: number };
   currentModel?: any;
@@ -28,7 +29,8 @@ export interface ResponsesStreamParams {
  * 处理OpenAI Responses API流式请求
  */
 export async function handleResponsesStreamRequest(params: ResponsesStreamParams): Promise<void> {
-  const { request, reply, protocolConfig, path, vkDisplay, virtualKey, providerId, startTime, compressionStats, currentModel } = params;
+  const { request, reply, protocolConfig, path, vkDisplay, virtualKey, providerId, circuitBreakerKey, startTime, compressionStats, currentModel } = params;
+  const breakerKey = circuitBreakerKey || providerId;
 
   memoryLogger.info(
     `流式请求开始 (Responses): ${path} | virtual key: ${vkDisplay}`,
@@ -74,7 +76,7 @@ export async function handleResponsesStreamRequest(params: ResponsesStreamParams
       tokenUsage.completionTokens
     );
 
-    circuitBreaker.recordSuccess(providerId);
+    circuitBreaker.recordSuccess(breakerKey);
 
     memoryLogger.info(
       `流式请求完成 (Responses): ${duration}ms | tokens: ${tokenCount.totalTokens}`,
@@ -113,7 +115,7 @@ export async function handleResponsesStreamRequest(params: ResponsesStreamParams
       return;
     }
 
-    circuitBreaker.recordFailure(providerId, streamError);
+    circuitBreaker.recordFailure(breakerKey, streamError);
 
     memoryLogger.error(
       `流式请求失败 (Responses): ${streamError.message}`,

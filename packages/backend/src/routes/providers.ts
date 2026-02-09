@@ -285,7 +285,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.post('/batch-import', async (request, reply) => {
+  fastify.post('/batch-import', async (request, _reply) => {
     const body = batchImportSchema.parse(request.body);
     const { providers, skipExisting = true } = body;
 

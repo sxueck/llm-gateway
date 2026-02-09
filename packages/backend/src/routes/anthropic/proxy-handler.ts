@@ -120,6 +120,7 @@ export function createAnthropicProxyHandler() {
         virtualKeyValue: vkValue,
         providerId: resolvedProviderId,
         currentModel: resolvedModel,
+        modelResult,
         configResult,
       } = pipelineResult.context;
 
@@ -155,6 +156,7 @@ export function createAnthropicProxyHandler() {
           protocolConfig,
           virtualKey,
           resolvedProviderId,
+          modelResult?.circuitBreakerKey || resolvedProviderId,
           startTime,
           currentModel
         );
@@ -166,6 +168,7 @@ export function createAnthropicProxyHandler() {
         protocolConfig,
         virtualKey,
         resolvedProviderId,
+        modelResult?.circuitBreakerKey || resolvedProviderId,
         startTime,
         currentModel
       );
@@ -221,6 +224,7 @@ async function handleAnthropicNonStreamRequest(
   protocolConfig: any,
   virtualKey: any,
   providerId: string,
+  circuitBreakerKey: string,
   startTime: number,
   currentModel?: any
 ) {
@@ -237,7 +241,7 @@ async function handleAnthropicNonStreamRequest(
     const isSuccess = response.statusCode >= 200 && response.statusCode < 300;
 
     if (isSuccess) {
-      circuitBreaker.recordSuccess(providerId);
+      circuitBreaker.recordSuccess(circuitBreakerKey);
 
       const responseData = JSON.parse(response.body);
       const shouldLogBody = shouldLogRequestBody(virtualKey);
@@ -266,7 +270,7 @@ async function handleAnthropicNonStreamRequest(
       reply.header('Content-Type', 'application/json');
       return reply.code(response.statusCode).send(responseData);
     } else {
-      circuitBreaker.recordFailure(providerId, new Error(`HTTP ${response.statusCode}`));
+      circuitBreaker.recordFailure(circuitBreakerKey, new Error(`HTTP ${response.statusCode}`));
 
       const errorData = JSON.parse(response.body);
       const shouldLogBody = shouldLogRequestBody(virtualKey);
@@ -297,7 +301,7 @@ async function handleAnthropicNonStreamRequest(
     }
   } catch (error: any) {
     const duration = Date.now() - startTime;
-    circuitBreaker.recordFailure(providerId, error);
+    circuitBreaker.recordFailure(circuitBreakerKey, error);
 
     const shouldLogBody = shouldLogRequestBody(virtualKey);
 
@@ -327,6 +331,7 @@ async function handleAnthropicStreamRequest(
   protocolConfig: any,
   virtualKey: any,
   providerId: string,
+  circuitBreakerKey: string,
   startTime: number,
   currentModel?: any
 ) {
@@ -349,7 +354,7 @@ async function handleAnthropicStreamRequest(
     const tokenUsage = await makeAnthropicStreamRequest(protocolConfig, requestBody, reply, forwardedHeaders);
 
     const duration = Date.now() - startTime;
-    circuitBreaker.recordSuccess(providerId);
+    circuitBreaker.recordSuccess(circuitBreakerKey);
 
     const shouldLogBody = shouldLogRequestBody(virtualKey);
 
@@ -384,7 +389,7 @@ async function handleAnthropicStreamRequest(
     return;
   } catch (streamError: any) {
     const duration = Date.now() - startTime;
-    circuitBreaker.recordFailure(providerId, streamError);
+    circuitBreaker.recordFailure(circuitBreakerKey, streamError);
 
     memoryLogger.error(
       `Anthropic 流式请求失败: ${streamError.message}`,

@@ -1,5 +1,5 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
-import { createReadStream, createWriteStream, promises as fs } from 'fs';
+import { createWriteStream, promises as fs } from 'fs';
 import { pipeline } from 'stream/promises';
 import { memoryLogger } from './logger.js';
 import { systemConfigDb } from '../db/index.js';

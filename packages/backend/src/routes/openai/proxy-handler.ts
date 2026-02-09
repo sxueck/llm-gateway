@@ -570,6 +570,8 @@ export async function handleStreamRequest(
   virtualKeyValueParam?: string,
   extractedSystemPrompt?: string
 ) {
+  const circuitBreakerKey = modelResult?.circuitBreakerKey || providerId;
+
   memoryLogger.info(
     `流式请求开始: ${path} | virtual key: ${vkDisplay}`,
     'Proxy'
@@ -701,7 +703,7 @@ export async function handleStreamRequest(
       tokenUsage.completionTokens
     );
 
-    circuitBreaker.recordSuccess(providerId);
+    circuitBreaker.recordSuccess(circuitBreakerKey);
 
     memoryLogger.info(
       `流式请求完成: ${duration}ms | tokens: ${tokenCount.totalTokens}`,
@@ -778,7 +780,7 @@ export async function handleStreamRequest(
       return;
     }
 
-    circuitBreaker.recordFailure(providerId, streamError);
+    circuitBreaker.recordFailure(circuitBreakerKey, streamError);
 
     memoryLogger.error(
       `流式请求失败: ${streamError.message}`,
@@ -920,6 +922,7 @@ export async function handleNonStreamRequest(
     : virtualKey.key_value;
 
   const virtualKeyValue = virtualKeyValueParam || virtualKey.key_value;
+  const circuitBreakerKey = modelResult?.circuitBreakerKey || providerId;
 
   const cacheResult = checkCache(
     virtualKey,
@@ -1280,7 +1283,7 @@ export async function handleNonStreamRequest(
   });
 
   if (isSuccess) {
-    circuitBreaker.recordSuccess(providerId);
+    circuitBreaker.recordSuccess(circuitBreakerKey);
 
     setCacheIfNeeded(cacheResult.cacheKey, cacheResult.shouldCache, fromCache, responseData, responseHeaders);
 
@@ -1294,7 +1297,7 @@ export async function handleNonStreamRequest(
       'Proxy'
     );
   } else {
-    circuitBreaker.recordFailure(providerId, new Error(`HTTP ${response.statusCode}`));
+    circuitBreaker.recordFailure(circuitBreakerKey, new Error(`HTTP ${response.statusCode}`));
 
     const errorStr = JSON.stringify(responseData);
     const truncatedError = errorStr.length > 500
