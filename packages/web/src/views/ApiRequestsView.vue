@@ -205,6 +205,41 @@ const getTokens = (row: ApiRequest, type: 'input' | 'output') => {
   } catch { return 0 }
 }
 
+const toDisplayDepth = (raw: unknown): string | null => {
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+
+  // 保留模型自定义深度值；仅在全小写时做首字母大写，便于展示
+  if (trimmed === trimmed.toLowerCase()) {
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+  }
+
+  return trimmed
+}
+
+const extractThinkingDepth = (requestBody: string | null): string | null => {
+  if (!requestBody) return null
+
+  try {
+    const parsed = JSON.parse(requestBody)
+
+    const directDepth = toDisplayDepth(parsed.reasoning?.effort)
+
+    return directDepth
+  } catch {
+    return null
+  }
+}
+
+const getModelDisplay = (row: ApiRequest): string => {
+  const modelName = row.model || '-'
+  if (!row.model) return modelName
+
+  const depth = extractThinkingDepth(row.request_body)
+  return depth ? `${row.model} (${depth})` : modelName
+}
+
 const handlePageChange = (page: number) => {
   pagination.page = page;
   loadRequests();
@@ -243,10 +278,11 @@ const columns: DataTableColumns<ApiRequest> = [
   {
     title: '模型',
     key: 'model',
-    width: 140,
+    width: 190,
     ellipsis: {
       tooltip: true,
     },
+    render: (row) => getModelDisplay(row),
   },
   {
     title: '状态',
@@ -479,4 +515,3 @@ onMounted(() => {
   color: #1e3932;
 }
 </style>
-

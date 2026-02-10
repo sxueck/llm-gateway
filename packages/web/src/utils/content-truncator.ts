@@ -62,6 +62,11 @@ export function extractResponsePreview(responseBody: string | null): string {
     if (messageContent) {
       return extractContentPreview(messageContent);
     }
+
+    // Responses API 兼容：当 output 为空时，回退读取 output_text
+    if (parsed.output_text) {
+      return extractContentPreview(parsed.output_text);
+    }
     
     if (parsed.error?.message) {
       return parsed.error.message.substring(0, MAX_TEXT_LENGTH) + 
