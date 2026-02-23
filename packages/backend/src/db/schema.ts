@@ -118,6 +118,8 @@ export async function createTables() {
         error_message TEXT,
         request_body MEDIUMTEXT,
         response_body MEDIUMTEXT,
+        request_params_json JSON DEFAULT NULL,
+        response_meta_json JSON DEFAULT NULL,
         cache_hit TINYINT DEFAULT 0,
         request_type VARCHAR(50) DEFAULT 'chat',
         compression_original_tokens INT DEFAULT NULL,
@@ -130,7 +132,22 @@ export async function createTables() {
         INDEX idx_api_requests_created_at (created_at),
         INDEX idx_api_requests_virtual_key (virtual_key_id),
         INDEX idx_api_requests_provider (provider_id),
-        INDEX idx_api_requests_status (status)
+        INDEX idx_api_requests_status (status),
+        INDEX idx_api_requests_ip_created_at (ip, created_at),
+        INDEX idx_api_requests_vk_created_at (virtual_key_id, created_at),
+        INDEX idx_api_requests_provider_created_at (provider_id, created_at),
+        INDEX idx_api_requests_status_created_at (status, created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS api_request_payloads (
+        request_id VARCHAR(255) PRIMARY KEY,
+        request_body MEDIUMTEXT,
+        response_body MEDIUMTEXT,
+        created_at BIGINT NOT NULL,
+        FOREIGN KEY (request_id) REFERENCES api_requests(id) ON DELETE CASCADE,
+        INDEX idx_api_request_payloads_created_at (created_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 

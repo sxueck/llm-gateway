@@ -275,7 +275,29 @@ export const apiRequestRepository = {
         WHERE ${loggingCondition}
       `;
       let dataQuery = `
-        SELECT ar.*
+        SELECT
+          ar.id,
+          ar.virtual_key_id,
+          ar.provider_id,
+          ar.model,
+          ar.prompt_tokens,
+          ar.completion_tokens,
+          ar.total_tokens,
+          ar.cached_tokens,
+          ar.status,
+          ar.response_time,
+          ar.error_message,
+          ar.request_params_json,
+          ar.response_meta_json,
+          NULL AS request_body,
+          NULL AS response_body,
+          ar.cache_hit,
+          ar.request_type,
+          ar.compression_original_tokens,
+          ar.compression_saved_tokens,
+          ar.ip,
+          ar.user_agent,
+          ar.created_at
         FROM api_requests ar
         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
         WHERE ${loggingCondition}
@@ -343,15 +365,21 @@ export const apiRequestRepository = {
     const conn = await pool.getConnection();
     try {
       const [rows] = await conn.query(
-        `SELECT ar.*
+        `SELECT ar.*, ap.request_body AS payload_request_body, ap.response_body AS payload_response_body
          FROM api_requests ar
          LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+         LEFT JOIN api_request_payloads ap ON ap.request_id = ar.id
          WHERE ar.id = ? AND ${getDisableLoggingCondition()}`,
         [id]
       );
       const result = rows as any[];
       if (result.length === 0) return undefined;
-      return result[0];
+      const row = result[0];
+      row.request_body = row.payload_request_body ?? row.request_body;
+      row.response_body = row.payload_response_body ?? row.response_body;
+      delete row.payload_request_body;
+      delete row.payload_response_body;
+      return row;
     } finally {
       conn.release();
     }
@@ -362,11 +390,62 @@ export const apiRequestRepository = {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
-      const [result] = await conn.query(
-        'UPDATE api_requests SET request_body = NULL, response_body = NULL WHERE created_at < ? AND (request_body IS NOT NULL OR response_body IS NOT NULL)',
+      const [compactResult] = await conn.query(
+        `UPDATE api_requests ar
+         LEFT JOIN api_request_payloads ap ON ap.request_id = ar.id
+         SET ar.request_params_json = COALESCE(
+               ar.request_params_json,
+               CASE
+                 WHEN JSON_VALID(COALESCE(ap.request_body, ar.request_body)) THEN JSON_OBJECT(
+                   'temperature', JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.temperature'),
+                   'top_p', JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.top_p'),
+                   'max_tokens', COALESCE(JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.max_tokens'), JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.max_completion_tokens')),
+                   'stream', JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.stream'),
+                   'tool_choice', JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.tool_choice'),
+                   'tools_count', JSON_LENGTH(JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.tools')),
+                   'reasoning_effort', JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.reasoning.effort'),
+                   'user', JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.user')
+                 )
+                 ELSE ar.request_params_json
+               END
+             ),
+             ar.response_meta_json = COALESCE(
+               ar.response_meta_json,
+               CASE
+                 WHEN JSON_VALID(COALESCE(ap.response_body, ar.response_body)) THEN JSON_OBJECT(
+                   'status', JSON_EXTRACT(COALESCE(ap.response_body, ar.response_body), '$.status'),
+                   'finish_reason', JSON_EXTRACT(COALESCE(ap.response_body, ar.response_body), '$.choices[0].finish_reason'),
+                   'input_tokens', COALESCE(JSON_EXTRACT(COALESCE(ap.response_body, ar.response_body), '$.usage.input_tokens'), JSON_EXTRACT(COALESCE(ap.response_body, ar.response_body), '$.usage.prompt_tokens')),
+                   'output_tokens', COALESCE(JSON_EXTRACT(COALESCE(ap.response_body, ar.response_body), '$.usage.output_tokens'), JSON_EXTRACT(COALESCE(ap.response_body, ar.response_body), '$.usage.completion_tokens')),
+                   'cached_tokens', COALESCE(JSON_EXTRACT(COALESCE(ap.response_body, ar.response_body), '$.usage.input_tokens_details.cached_tokens'), JSON_EXTRACT(COALESCE(ap.response_body, ar.response_body), '$.usage.prompt_tokens_details.cached_tokens'))
+                 )
+                 ELSE ar.response_meta_json
+               END
+             ),
+             ar.request_body = NULL,
+             ar.response_body = NULL
+         WHERE ar.created_at < ?
+           AND (
+             ar.request_body IS NOT NULL
+             OR ar.response_body IS NOT NULL
+             OR ap.request_id IS NOT NULL
+             OR ar.request_params_json IS NULL
+             OR ar.response_meta_json IS NULL
+           )`,
         [cutoffTime]
       );
-      return (result as any).affectedRows || 0;
+
+      const [result] = await conn.query(
+        `DELETE ap
+         FROM api_request_payloads ap
+         INNER JOIN api_requests ar ON ar.id = ap.request_id
+         WHERE ar.created_at < ?`,
+        [cutoffTime]
+      );
+
+      const compactedRows = (compactResult as any).affectedRows || 0;
+      const deletedPayloadRows = (result as any).affectedRows || 0;
+      return Math.max(compactedRows, deletedPayloadRows);
     } finally {
       conn.release();
     }

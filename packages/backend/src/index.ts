@@ -29,6 +29,7 @@ import { healthRunDb, systemConfigDb as systemConfigDbForDebug } from './db/inde
 import { debugModeService } from './services/debug-mode.js';
 import { manualIpBlocklist } from './services/manual-ip-blocklist.js';
 import { requestHeaderForwardingService } from './services/request-header-forwarding.js';
+import { runtimeSystemConfigCache } from './services/runtime-system-config-cache.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -94,6 +95,7 @@ fastify.get('/api/admin/config/debug-stream', (_request, reply) => {
 
 await initDatabase();
 await manualIpBlocklist.init();
+await runtimeSystemConfigCache.initialize();
 
 // Load request header forwarding config before serving traffic.
 await requestHeaderForwardingService.reloadConfig();
@@ -119,8 +121,7 @@ if (publicUrlCfg) {
   memoryLogger.info(`使用默认 LLM Gateway URL: ${appConfig.publicUrl}`, 'System');
 }
 
-const corsEnabledCfg = await systemConfigDb.get('cors_enabled');
-const corsEnabled = corsEnabledCfg ? corsEnabledCfg.value === 'true' : true;
+const corsEnabled = runtimeSystemConfigCache.getCorsEnabled();
 
 if (corsEnabled) {
   memoryLogger.info('CORS 跨域支持已启用', 'System');
@@ -129,16 +130,11 @@ if (corsEnabled) {
 }
 
 fastify.addHook('onRequest', async (request, reply) => {
-  try {
-    const corsEnabledCfg = await systemConfigDb.get('cors_enabled');
-    const corsEnabled = corsEnabledCfg ? corsEnabledCfg.value === 'true' : true;
+  const corsEnabled = runtimeSystemConfigCache.getCorsEnabled();
 
-    if (!corsEnabled && request.headers.origin) {
-      reply.header('Access-Control-Allow-Origin', 'null');
-      reply.header('Access-Control-Allow-Credentials', 'false');
-    }
-  } catch (error: any) {
-    memoryLogger.error(`CORS 检查失败: ${error.message}`, 'System');
+  if (!corsEnabled && request.headers.origin) {
+    reply.header('Access-Control-Allow-Origin', 'null');
+    reply.header('Access-Control-Allow-Credentials', 'false');
   }
 });
 

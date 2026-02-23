@@ -391,6 +391,81 @@ export const migrations: Migration[] = [
         console.warn('[迁移] 删除 image_compression_enabled 字段失败:', e.message);
       }
     }
+  },
+  {
+    version: 26,
+    name: 'split_api_request_payload_and_add_hot_indexes',
+    up: async (conn: Connection) => {
+      const hasColumn = async (table: string, col: string) => {
+        const [rows] = await conn.query(
+          `SELECT COUNT(*) AS cnt
+           FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = ?
+             AND COLUMN_NAME = ?`,
+          [table, col]
+        );
+        const result = rows as any[];
+        return Number(result?.[0]?.cnt || 0) > 0;
+      };
+
+      const hasIndex = async (table: string, indexName: string) => {
+        const [rows] = await conn.query(
+          `SELECT COUNT(*) AS cnt
+           FROM INFORMATION_SCHEMA.STATISTICS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = ?
+             AND INDEX_NAME = ?`,
+          [table, indexName]
+        );
+        const result = rows as any[];
+        return Number(result?.[0]?.cnt || 0) > 0;
+      };
+
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS api_request_payloads (
+          request_id VARCHAR(255) PRIMARY KEY,
+          request_body MEDIUMTEXT,
+          response_body MEDIUMTEXT,
+          created_at BIGINT NOT NULL,
+          FOREIGN KEY (request_id) REFERENCES api_requests(id) ON DELETE CASCADE,
+          INDEX idx_api_request_payloads_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+
+      if (!(await hasColumn('api_requests', 'request_params_json'))) {
+        await conn.query(`ALTER TABLE api_requests ADD COLUMN request_params_json JSON DEFAULT NULL AFTER response_body`);
+      }
+
+      if (!(await hasColumn('api_requests', 'response_meta_json'))) {
+        await conn.query(`ALTER TABLE api_requests ADD COLUMN response_meta_json JSON DEFAULT NULL AFTER request_params_json`);
+      }
+
+      if (!(await hasIndex('api_requests', 'idx_api_requests_ip_created_at'))) {
+        await conn.query(`ALTER TABLE api_requests ADD INDEX idx_api_requests_ip_created_at (ip, created_at)`);
+      }
+
+      if (!(await hasIndex('api_requests', 'idx_api_requests_vk_created_at'))) {
+        await conn.query(`ALTER TABLE api_requests ADD INDEX idx_api_requests_vk_created_at (virtual_key_id, created_at)`);
+      }
+
+      if (!(await hasIndex('api_requests', 'idx_api_requests_provider_created_at'))) {
+        await conn.query(`ALTER TABLE api_requests ADD INDEX idx_api_requests_provider_created_at (provider_id, created_at)`);
+      }
+
+      if (!(await hasIndex('api_requests', 'idx_api_requests_status_created_at'))) {
+        await conn.query(`ALTER TABLE api_requests ADD INDEX idx_api_requests_status_created_at (status, created_at)`);
+      }
+
+      await conn.query(`
+        INSERT INTO api_request_payloads (request_id, request_body, response_body, created_at)
+        SELECT ar.id, ar.request_body, ar.response_body, ar.created_at
+        FROM api_requests ar
+        LEFT JOIN api_request_payloads ap ON ap.request_id = ar.id
+        WHERE ap.request_id IS NULL
+          AND (ar.request_body IS NOT NULL OR ar.response_body IS NOT NULL)
+      `);
+    }
   }
 ];
 

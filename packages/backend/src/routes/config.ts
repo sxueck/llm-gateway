@@ -9,6 +9,7 @@ import { hashKey } from '../utils/crypto.js';
 import { healthCheckerService } from '../services/health-checker.js';
 import { debugModeService } from '../services/debug-mode.js';
 import { costMappingService } from '../services/cost-mapping.js';
+import { runtimeSystemConfigCache } from '../services/runtime-system-config-cache.js';
 import { threatIpBlocker } from '../services/threat-ip-blocker.js';
 import { manualIpBlocklist } from '../services/manual-ip-blocklist.js';
 import { aifwService } from '../services/aifw-service.js';
@@ -244,6 +245,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         if (!verify || verify.value !== (corsEnabled ? 'true' : 'false')) {
           throw new Error('CORS 配置保存失败');
         }
+        runtimeSystemConfigCache.setCorsEnabled(corsEnabled);
         memoryLogger.info(`CORS 配置已更新: ${corsEnabled ? '启用' : '禁用'}`, 'Config');
       }
 

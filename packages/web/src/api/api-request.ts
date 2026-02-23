@@ -15,6 +15,8 @@ export interface ApiRequest {
   created_at: number;
   request_body: string | null;
   response_body: string | null;
+  request_params_json?: Record<string, any> | string | null;
+  response_meta_json?: Record<string, any> | string | null;
   cache_hit: number;
   request_type: string;
   compression_original_tokens: number | null;
@@ -53,4 +55,3 @@ export const apiRequestApi = {
     return request.post('/admin/config/api-requests/clean', { daysToKeep });
   },
 };
-

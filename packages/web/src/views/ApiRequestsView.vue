@@ -188,6 +188,36 @@ const showCleanDialog = ref(false);
 const cleanDays = ref(30);
 const cleanLoading = ref(false);
 
+type JsonLike = Record<string, any> | string | null | undefined;
+
+const parseJsonLike = (value: JsonLike): Record<string, any> | null => {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const getRequestParams = (row: ApiRequest): Record<string, any> | null => {
+  return parseJsonLike(row.request_params_json);
+};
+
+const getResponseMeta = (row: ApiRequest): Record<string, any> | null => {
+  return parseJsonLike(row.response_meta_json);
+};
+
+const previewFromJson = (value: JsonLike): string => {
+  const parsed = parseJsonLike(value);
+  if (!parsed) return '-';
+
+  const text = JSON.stringify(parsed);
+  if (!text) return '-';
+  return text.length > 80 ? `${text.slice(0, 80)}...` : text;
+};
+
 // Token helpers - inline for zero net line change
 const getTokens = (row: ApiRequest, type: 'input' | 'output') => {
   const isInput = type === 'input'
@@ -232,11 +262,31 @@ const extractThinkingDepth = (requestBody: string | null): string | null => {
   }
 }
 
+const extractThinkingDepthFromRow = (row: ApiRequest): string | null => {
+  const depthFromSummary = toDisplayDepth(getRequestParams(row)?.reasoning_effort)
+  if (depthFromSummary) return depthFromSummary
+  return extractThinkingDepth(row.request_body)
+}
+
+const getRequestPreview = (row: ApiRequest): string => {
+  if (row.request_body) {
+    return extractRequestPreview(row.request_body)
+  }
+  return previewFromJson(row.request_params_json)
+}
+
+const getResponsePreview = (row: ApiRequest): string => {
+  if (row.response_body) {
+    return extractResponsePreview(row.response_body)
+  }
+  return previewFromJson(getResponseMeta(row))
+}
+
 const getModelDisplay = (row: ApiRequest): string => {
   const modelName = row.model || '-'
   if (!row.model) return modelName
 
-  const depth = extractThinkingDepth(row.request_body)
+  const depth = extractThinkingDepthFromRow(row)
   return depth ? `${row.model} (${depth})` : modelName
 }
 
@@ -335,7 +385,7 @@ const columns: DataTableColumns<ApiRequest> = [
     ellipsis: {
       tooltip: true,
     },
-    render: (row) => extractRequestPreview(row.request_body),
+    render: (row) => getRequestPreview(row),
   },
   {
     title: '响应预览',
@@ -344,7 +394,7 @@ const columns: DataTableColumns<ApiRequest> = [
     ellipsis: {
       tooltip: true,
     },
-    render: (row) => extractResponsePreview(row.response_body),
+    render: (row) => getResponsePreview(row),
   },
 ];
 
@@ -386,9 +436,16 @@ const handleTimeRangeChange = () => {
   loadRequests();
 };
 
-const handleViewDetail = (request: ApiRequest) => {
-  selectedRequest.value = request;
-  showDetail.value = true;
+const handleViewDetail = async (request: ApiRequest) => {
+  loading.value = true;
+  try {
+    selectedRequest.value = await apiRequestApi.getById(request.id);
+    showDetail.value = true;
+  } catch (error: any) {
+    message.error(error.message || '加载请求详情失败');
+  } finally {
+    loading.value = false;
+  }
 };
 
 const rowProps = (row: ApiRequest) => {

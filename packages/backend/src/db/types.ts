@@ -64,6 +64,8 @@ export type ApiRequestBuffer = {
   error_message?: string;
   request_body?: string;
   response_body?: string;
+  request_params_json?: string;
+  response_meta_json?: string;
   cache_hit?: number;
   request_type?: string;
   compression_original_tokens?: number;
