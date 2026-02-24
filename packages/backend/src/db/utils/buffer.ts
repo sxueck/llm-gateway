@@ -72,7 +72,7 @@ export async function flushApiRequestBuffer() {
         userAgent = truncateToByteLength(userAgent, 500);
       }
 
-      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       values.push(
         request.id,
         request.virtual_key_id || null,

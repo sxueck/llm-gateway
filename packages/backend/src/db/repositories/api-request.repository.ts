@@ -289,8 +289,8 @@ export const apiRequestRepository = {
           ar.error_message,
           ar.request_params_json,
           ar.response_meta_json,
-          NULL AS request_body,
-          NULL AS response_body,
+          LEFT(COALESCE(ap.request_body, ar.request_body), 2000) AS request_body,
+          LEFT(COALESCE(ap.response_body, ar.response_body), 2000) AS response_body,
           ar.cache_hit,
           ar.request_type,
           ar.compression_original_tokens,
@@ -300,6 +300,7 @@ export const apiRequestRepository = {
           ar.created_at
         FROM api_requests ar
         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        LEFT JOIN api_request_payloads ap ON ap.request_id = ar.id
         WHERE ${loggingCondition}
       `;
       const params: any[] = [];
