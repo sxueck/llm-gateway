@@ -166,6 +166,7 @@ export default {
     costParams: 'Cost Parameters',
     featureSupport: 'Feature Support',
     itemsPerPage: 'Items per page:',
+    groupByModelName: 'Group by model name:',
     groupByProvider: 'Group by provider:',
     modelCount: '{count} models',
     virtualModel: 'Virtual Model',

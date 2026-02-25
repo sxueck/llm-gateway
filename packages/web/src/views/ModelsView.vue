@@ -39,27 +39,33 @@
                 style="width: 100px;"
               />
             </n-space>
-            <n-space :size="12" align="center">
-              <span style="font-size: 13px; color: #666;">{{ t('models.groupByProvider') }}</span>
-              <n-switch v-model:value="groupByProvider" size="small" />
+            <n-space :size="24" align="center">
+              <n-space :size="8" align="center">
+                <span style="font-size: 13px; color: #666;">{{ t('models.groupByModelName') }}</span>
+                <n-switch v-model:value="groupByModelName" size="small" />
+              </n-space>
+              <n-space :size="8" align="center">
+                <span style="font-size: 13px; color: #666;">{{ t('models.groupByProvider') }}</span>
+                <n-switch v-model:value="groupByProvider" size="small" />
+              </n-space>
             </n-space>
           </n-space>
         </template>
 
-        <div v-if="groupByProvider">
-          <div v-for="group in groupedModels" :key="group.providerId" class="provider-group">
+        <div v-if="isGroupedView">
+          <div v-for="group in groupedModels" :key="group.groupKey" class="model-group">
             <div 
-              class="provider-group-header" 
-              @click="toggleGroup(group.providerId)"
+              class="group-header" 
+              @click="toggleGroup(group.groupKey)"
               style="cursor: pointer; user-select: none;"
             >
               <n-space align="center">
-                <n-icon :component="collapsedGroups.has(group.providerId) ? KeyboardArrowRightOutlined : KeyboardArrowDownOutlined" />
-                <span class="provider-name">{{ group.providerName }}</span>
+                <n-icon :component="collapsedGroups.has(group.groupKey) ? KeyboardArrowRightOutlined : KeyboardArrowDownOutlined" />
+                <span class="group-name">{{ group.groupLabel }}</span>
                 <span class="model-count">{{ t('models.modelCount', { count: group.models.length }) }}</span>
               </n-space>
             </div>
-            <n-collapse-transition :show="!collapsedGroups.has(group.providerId)">
+            <n-collapse-transition :show="!collapsedGroups.has(group.groupKey)">
               <n-data-table
                 :columns="columns"
                 :data="group.models"
@@ -238,13 +244,24 @@ const editingId = ref<string | null>(null);
 const batchProviderId = ref<string>('');
 const testingModel = ref<Model | null>(null);
 const pageSize = ref(20);
-const groupByProvider = ref(localStorage.getItem('groupByProvider') === 'true');
+const groupByModelName = ref(localStorage.getItem('groupByModelName') === 'true');
+const groupByProvider = ref(localStorage.getItem('groupByProvider') === 'true' && !groupByModelName.value);
 const searchQuery = ref('');
 const collapsedGroups = ref<Set<string>>(new Set());
 const statusLoadingMap = ref<Record<string, boolean>>({});
 
+watch(groupByModelName, (newValue) => {
+  localStorage.setItem('groupByModelName', newValue.toString());
+  if (newValue) {
+    groupByProvider.value = false;
+  }
+});
+
 watch(groupByProvider, (newValue) => {
   localStorage.setItem('groupByProvider', newValue.toString());
+  if (newValue) {
+    groupByModelName.value = false;
+  }
 });
 
 const pageSizeOptions = [
@@ -257,6 +274,8 @@ const pageSizeOptions = [
 const paginationConfig = computed(() => ({
   pageSize: pageSize.value,
 }));
+
+const isGroupedView = computed(() => groupByModelName.value || groupByProvider.value);
 
 // 仅展示可见模型：虚拟模型始终可见；普通模型需供应商已启用
 const visibleModels = computed(() => {
@@ -283,31 +302,54 @@ const visibleModels = computed(() => {
 });
 
 const groupedModels = computed(() => {
-  if (!groupByProvider.value) {
+  if (!isGroupedView.value) {
     return [];
   }
 
-  const groups = new Map<string, { providerId: string; providerName: string; models: Model[] }>();
+  const groups = new Map<string, { groupKey: string; rawKey: string; groupLabel: string; models: Model[] }>();
 
   visibleModels.value.forEach(model => {
-    const providerId = model.providerId || 'virtual';
-    const providerName = model.providerName || t('models.virtualModel');
+    if (groupByProvider.value) {
+      const providerId = model.providerId || 'virtual';
+      const groupKey = `provider:${providerId}`;
+      const providerName = model.providerName || t('models.virtualModel');
 
-    if (!groups.has(providerId)) {
-      groups.set(providerId, {
-        providerId,
-        providerName,
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, {
+          groupKey,
+          rawKey: providerId,
+          groupLabel: providerName,
+          models: [],
+        });
+      }
+
+      groups.get(groupKey)!.models.push(model);
+      return;
+    }
+
+    const normalizedName = (model.name || '').trim();
+    const rawNameKey = normalizedName || '__empty__';
+    const groupKey = `name:${rawNameKey.toLowerCase()}`;
+    const groupLabel = normalizedName || t('models.notConfigured');
+
+    if (!groups.has(groupKey)) {
+      groups.set(groupKey, {
+        groupKey,
+        rawKey: rawNameKey,
+        groupLabel,
         models: [],
       });
     }
 
-    groups.get(providerId)!.models.push(model);
+    groups.get(groupKey)!.models.push(model);
   });
 
   return Array.from(groups.values()).sort((a, b) => {
-    if (a.providerId === 'virtual') return 1;
-    if (b.providerId === 'virtual') return -1;
-    return a.providerName.localeCompare(b.providerName);
+    if (groupByProvider.value) {
+      if (a.rawKey === 'virtual') return 1;
+      if (b.rawKey === 'virtual') return -1;
+    }
+    return a.groupLabel.localeCompare(b.groupLabel);
   });
 });
 
@@ -456,11 +498,11 @@ const columns = computed(() => [
   },
 ]);
 
-function toggleGroup(providerId: string) {
-  if (collapsedGroups.value.has(providerId)) {
-    collapsedGroups.value.delete(providerId);
+function toggleGroup(groupKey: string) {
+  if (collapsedGroups.value.has(groupKey)) {
+    collapsedGroups.value.delete(groupKey);
   } else {
-    collapsedGroups.value.add(providerId);
+    collapsedGroups.value.add(groupKey);
   }
 }
 
@@ -766,15 +808,15 @@ onMounted(async () => {
   border-bottom: 1px solid #e8e8e8;
 }
 
-.provider-group {
+.model-group {
   margin-bottom: 24px;
 }
 
-.provider-group:last-child {
+.model-group:last-child {
   margin-bottom: 0;
 }
 
-.provider-group-header {
+.group-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -784,7 +826,7 @@ onMounted(async () => {
   margin-bottom: 12px;
 }
 
-.provider-name {
+.group-name {
   font-size: 14px;
   font-weight: 600;
   color: #262626;
