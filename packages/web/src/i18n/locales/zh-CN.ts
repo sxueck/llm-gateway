@@ -167,6 +167,7 @@ export default {
     costParams: '成本参数',
     featureSupport: '功能支持',
     itemsPerPage: '每页显示：',
+    groupByModelName: '按模型名称分组：',
     groupByProvider: '按供应商分组：',
     modelCount: '{count} 个模型',
     virtualModel: '虚拟模型',
