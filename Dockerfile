@@ -43,7 +43,7 @@ COPY --from=bun-base /opt/bun /opt/bun
 RUN ln -sf /opt/bun/bun /usr/local/bin/bun && \
   if [ -f /opt/bun/bunx ]; then ln -sf /opt/bun/bunx /usr/local/bin/bunx; else ln -sf /opt/bun/bun /usr/local/bin/bunx; fi
 
-FROM bun-base AS deps
+FROM bun-base AS workspace-manifests
 
 WORKDIR /app
 
@@ -52,18 +52,12 @@ COPY packages/backend/package.json ./packages/backend/package.json
 COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/web/package.json ./packages/web/package.json
 COPY packages/tsconfig ./packages/tsconfig
+
+FROM workspace-manifests AS deps
 
 RUN bun install --frozen-lockfile
 
-FROM bun-base AS backend-prod-deps
-
-WORKDIR /app
-
-COPY package.json bunfig.toml bun.lock* ./
-COPY packages/backend/package.json ./packages/backend/package.json
-COPY packages/shared/package.json ./packages/shared/package.json
-COPY packages/web/package.json ./packages/web/package.json
-COPY packages/tsconfig ./packages/tsconfig
+FROM workspace-manifests AS backend-prod-deps
 
 RUN bun install --frozen-lockfile --production --filter @llm-gateway/backend
 
@@ -100,24 +94,19 @@ FROM bun-runtime
 WORKDIR /app
 
 RUN groupadd --gid 1001 --system nodejs && \
-  useradd --uid 1001 --gid 1001 --system --create-home --home-dir /home/nodejs --shell /usr/sbin/nologin nodejs
+  useradd --uid 1001 --gid 1001 --system --create-home --home-dir /home/nodejs --shell /usr/sbin/nologin nodejs && \
+  install -d -o nodejs -g nodejs /app/data
 
-COPY --from=backend-prod-deps /app/node_modules ./node_modules
+COPY --from=backend-prod-deps --chown=nodejs:nodejs /app/node_modules ./node_modules
 
-COPY --from=backend-builder /app/packages/backend/dist ./packages/backend/dist
-COPY --from=web-builder /app/packages/web/dist ./packages/backend/public
+COPY --from=backend-builder --chown=nodejs:nodejs /app/packages/backend/dist ./packages/backend/dist
+COPY --from=web-builder --chown=nodejs:nodejs /app/packages/web/dist ./packages/backend/public
 
-COPY scripts ./scripts
-
-RUN mkdir -p /app/data /app/portkey-config
+COPY --chown=nodejs:nodejs scripts ./scripts
 
 ENV NODE_ENV=production \
   PORT=3000 \
-  DB_PATH=/app/data/gateway.db \
-  PORTKEY_CONFIG_PATH=/app/portkey-config/conf.json \
   LOG_LEVEL=info
-
-RUN chown -R nodejs:nodejs /app
 
 USER nodejs
 
@@ -127,4 +116,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD bun --version || exit 1
 
 WORKDIR /app/packages/backend
-CMD ["bun", "dist/index.js"]
+CMD ["bun", "dist/index.js"]  
