@@ -4,6 +4,8 @@
   padding: 20px 24px;
   font-family: 'MiSans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: #1f2937;
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
 }
 
 @media (max-width: 639px) {
@@ -34,24 +36,28 @@
 }
 
 .page-title {
-  font-size: 32px;
-  font-weight: 600;
+  font-size: 34px;
+  font-weight: 650;
   color: #1e3932;
   margin: 0;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.025em;
+  line-height: 1.16;
 }
 
 @media (max-width: 639px) {
   .page-title {
-    font-size: 24px;
+    font-size: 26px;
+    line-height: 1.2;
   }
 }
 
 .page-subtitle {
   font-size: 14px;
-  color: #8c8c8c;
-  margin: 4px 0 0 0;
+  color: #6b7280;
+  margin: 6px 0 0;
   font-weight: 400;
+  line-height: 1.6;
+  max-width: 720px;
 }
 
 @media (max-width: 639px) {
@@ -168,8 +174,9 @@
   font-weight: 500;
   color: #8c8c8c;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 16px;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  margin-bottom: 14px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -179,9 +186,10 @@
   font-size: 42px;
   font-weight: 600;
   color: #1a1a1a;
-  line-height: 1;
+  line-height: 1.08;
   font-variant-numeric: tabular-nums;
-  margin-bottom: 8px;
+  letter-spacing: -0.02em;
+  margin-bottom: 10px;
   display: flex;
   align-items: baseline;
 }
@@ -194,6 +202,7 @@
 
 .top-model-name {
   font-size: 16px !important;
+  line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -210,6 +219,8 @@
   font-size: 13px;
   font-weight: 600;
   color: #006241;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
   margin-bottom: auto;
   padding-bottom: 16px;
 }
@@ -225,10 +236,11 @@
 }
 
 .stat-unit {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 400;
   margin-left: 4px;
   opacity: 0.8;
+  line-height: 1.2;
 }
 
 .stat-details {
@@ -236,6 +248,7 @@
   justify-content: space-between;
   gap: 20px;
   font-size: 13px;
+  line-height: 1.45;
   margin-top: auto;
 }
 
@@ -248,13 +261,13 @@
 
 .stat-detail-item {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
 }
 
 .stat-detail-label {
   color: #8c8c8c;
-  font-weight: 400;
+  font-weight: 500;
 }
 
 .stat-detail-value {
@@ -331,11 +344,51 @@
   font-weight: 600;
   color: #1a1a1a;
   letter-spacing: -0.02em;
+  line-height: 1.35;
+}
+
+.trend-buttons :deep(.n-button__content) {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.chart-header-title {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #1a1a1a;
+}
+
+.chart-header-note {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.latency-model-select {
+  width: 220px;
 }
 
 @media (max-width: 639px) {
   .trend-card :deep(.n-card-header__main) {
     font-size: 16px;
+  }
+
+  .chart-header-title {
+    font-size: 16px;
+  }
+
+  .chart-header-note {
+    display: block;
+    margin-left: 0;
+    margin-top: 2px;
+  }
+
+  .latency-model-select {
+    width: 100%;
   }
 
   .trend-header {
@@ -447,14 +500,90 @@
 .overview-label {
   font-size: 13px;
   color: #8c8c8c;
-  font-weight: 400;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
 }
 
 .overview-value {
   font-size: 18px;
-  font-weight: 500;
+  font-weight: 600;
   color: #1a1a1a;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
+}
+
+.source-info-item {
+  padding: 4px 2px;
+}
+
+.source-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #6b7280;
+  margin-bottom: 6px;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
+}
+
+.source-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  word-break: break-word;
+}
+
+.source-value-danger {
+  color: #dc2626;
+}
+
+.source-sub {
+  margin-top: 2px;
+  font-size: 13px;
+  color: #4b5563;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.source-time {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #9ca3af;
+  line-height: 1.5;
+}
+
+.source-client {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.source-table-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.source-table-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.source-table-desc {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
 }
 
 @media (max-width: 639px) {
@@ -466,6 +595,14 @@
 @media (max-width: 639px) {
   .overview-label {
     font-size: 12px;
+  }
+
+  .source-value {
+    font-size: 18px;
+  }
+
+  .source-table-title {
+    font-size: 14px;
   }
 }
 

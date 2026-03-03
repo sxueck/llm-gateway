@@ -1,16 +1,16 @@
 <template>
-  <n-layout has-sider class="app-layout" style="height: 100vh; background-color: #f5f5f5;">
+  <n-layout has-sider class="app-layout">
     <n-layout-sider
       :collapsed="collapsed"
       collapse-mode="width"
       :collapsed-width="80"
       :width="260"
       :show-trigger="false"
-      style="border-right: none; background-color: #f8f8f8; padding: 16px 12px;"
+      class="app-sider"
     >
       <div class="logo" :class="{ 'logo-collapsed': collapsed }">
         <div class="logo-icon">
-          <img src="/assets/logo.png" alt="LLM Gateway" style="width: 38px; height: 38px; object-fit: contain;" />
+          <img src="/assets/logo.png" alt="LLM Gateway" class="logo-image" />
         </div>
         <span v-if="!collapsed" class="logo-text">LLM Gateway</span>
       </div>
@@ -41,8 +41,8 @@
       />
     </n-layout-sider>
 
-    <n-layout style="background-color: #f5f5f5; height: 100vh;" :native-scrollbar="false">
-      <n-layout-header style="height: 72px; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; border-bottom: none; background-color: transparent;">
+    <n-layout class="app-main-layout" :native-scrollbar="false">
+      <n-layout-header class="app-header">
         <div class="header-left">
           <n-button circle quaternary @click="toggleSidebar">
             <template #icon>
@@ -291,6 +291,40 @@ onUnmounted(() => {
   background-color: #f5f5f5;
 }
 
+.app-sider {
+  border-right: none;
+  background-color: rgba(248, 248, 248, 0.85);
+  padding: 16px 12px;
+  margin: 16px;
+  border-radius: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 100;
+  height: calc(100vh - 32px);
+}
+
+.app-main-layout {
+  background-color: #f5f5f5;
+  height: 100vh;
+}
+
+.app-header {
+  height: 72px;
+  padding: 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: none;
+  background-color: transparent;
+}
+
+.logo-image {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+}
+
 .logo {
   height: 72px;
   display: flex;
@@ -321,6 +355,8 @@ onUnmounted(() => {
   font-weight: 600;
   color: #1a1a1a;
   letter-spacing: -0.02em;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .menu-section-label {
@@ -330,11 +366,15 @@ onUnmounted(() => {
   letter-spacing: 0.05em;
   padding: 16px 12px 8px 12px;
   text-transform: uppercase;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .custom-menu {
   padding: 0 8px;
   margin-bottom: 16px;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .custom-menu :deep(.n-menu-item) {

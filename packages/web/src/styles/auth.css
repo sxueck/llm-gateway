@@ -1,0 +1,199 @@
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f7faf8 0%, #edf2ef 100%);
+}
+
+.auth-container {
+  width: 100%;
+  max-width: 440px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+}
+
+.auth-brand {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-name {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1a1a1a;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.brand-tagline {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0;
+  font-weight: 400;
+}
+
+.auth-card {
+  width: 100%;
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 4px 20px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+:deep(.n-card) {
+  border-radius: 20px;
+}
+
+:deep(.n-card__content) {
+  padding: 40px 32px;
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.auth-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0 0 8px;
+  letter-spacing: -0.01em;
+}
+
+.auth-subtitle {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.auth-form :deep(.n-form-item) {
+  margin-bottom: 0;
+}
+
+.auth-form :deep(.n-form-item-label) {
+  font-weight: 500;
+  color: #374151;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.auth-form :deep(.n-input) {
+  border-radius: 12px;
+  background: #f9fafb;
+  transition: all 0.2s ease;
+}
+
+.auth-form :deep(.n-input__input-el),
+.auth-form :deep(.n-input__placeholder) {
+  font-size: 15px;
+}
+
+.auth-form :deep(.n-input__prefix) {
+  margin-right: 10px;
+}
+
+.auth-form :deep(.n-input:hover) {
+  background: #f3f4f6;
+}
+
+.auth-form :deep(.n-input:focus-within) {
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(15, 107, 74, 0.1);
+}
+
+.input-icon {
+  color: #9ca3af;
+  font-size: 18px;
+}
+
+.password-input :deep(input[type='password']) {
+  font-family: caption, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  letter-spacing: 2px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.auth-actions {
+  margin-top: 8px;
+}
+
+.login-button {
+  height: 48px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #0f6b4a, #0d5a3e);
+  box-shadow: 0 2px 8px rgba(15, 107, 74, 0.25);
+  transition: all 0.2s ease;
+}
+
+.login-button:hover {
+  background: linear-gradient(135deg, #0d5a3e, #0a4830);
+  box-shadow: 0 4px 12px rgba(15, 107, 74, 0.35);
+  transform: translateY(-1px);
+}
+
+.login-button:active {
+  transform: translateY(0);
+}
+
+.login-button:disabled {
+  background: #e5e7eb;
+  color: #9ca3af;
+  box-shadow: none;
+  transform: none;
+}
+
+.register-link {
+  color: #6b7280;
+  font-size: 14px;
+  transition: color 0.2s ease;
+}
+
+.register-link:hover {
+  color: #0f6b4a;
+}
+
+.link-text {
+  color: #0f6b4a;
+  font-weight: 500;
+}
+
+.registration-warning {
+  margin-bottom: 24px;
+  border-radius: 12px;
+}
+
+.auth-footer {
+  font-size: 12px;
+  color: #9ca3af;
+  margin: 0;
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .auth-container {
+    padding: 20px;
+    gap: 24px;
+  }
+
+  .brand-name {
+    font-size: 24px;
+  }
+
+  :deep(.n-card__content) {
+    padding: 32px 24px;
+  }
+
+  .auth-title {
+    font-size: 22px;
+  }
+}

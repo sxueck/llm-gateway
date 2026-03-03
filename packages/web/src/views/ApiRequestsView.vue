@@ -1,23 +1,23 @@
 <template>
-  <div>
+  <div class="api-requests-view">
     <n-space vertical :size="24">
       <n-card>
         <template #header>
           <span class="card-title">API 请求日志</span>
         </template>
         <template #header-extra>
-          <n-space>
+          <n-space class="filter-toolbar">
             <n-date-picker
               v-model:value="timeRange"
               type="datetimerange"
               clearable
-              style="width: 360px;"
+              class="filter-control filter-date-picker"
               @update:value="handleTimeRangeChange"
             />
             <n-select
               v-model:value="filterVirtualKeyId"
               :options="virtualKeyOptions"
-              style="width: 200px;"
+              class="filter-control filter-key-select"
               placeholder="虚拟密钥"
               clearable
               filterable
@@ -26,15 +26,15 @@
             <n-select
               v-model:value="filterStatus"
               :options="statusOptions"
-              style="width: 120px;"
+              class="filter-control filter-status-select"
               placeholder="状态"
               clearable
               @update:value="loadRequests"
             />
-            <n-button @click="loadRequests" :loading="loading">
+            <n-button class="filter-action-btn" @click="loadRequests" :loading="loading">
               刷新
             </n-button>
-            <n-button @click="showCleanDialog = true" type="warning">
+            <n-button class="filter-action-btn" @click="showCleanDialog = true" type="warning">
               清理旧日志
             </n-button>
           </n-space>
@@ -56,12 +56,12 @@
     </n-space>
 
     <n-drawer v-model:show="showDetail" :width="'65%'" placement="right">
-      <n-drawer-content title="请求详情" closable>
+      <n-drawer-content title="请求详情" closable class="request-detail-drawer">
         <n-space vertical :size="20" v-if="selectedRequest">
-          <n-card size="small" :bordered="false" style="background: #fafafa;">
+          <n-card size="small" :bordered="false" class="detail-meta-card">
             <n-descriptions :column="2" bordered size="medium" label-placement="left">
               <n-descriptions-item label="请求 ID" :span="2">
-                <n-text code style="word-break: break-all;">{{ selectedRequest.id }}</n-text>
+                <n-text code class="detail-code-id">{{ selectedRequest.id }}</n-text>
               </n-descriptions-item>
               <n-descriptions-item label="请求时间">
                 {{ formatTimestamp(selectedRequest.created_at) }}
@@ -102,10 +102,10 @@
                 <n-tag type="success" size="small">{{ selectedRequest.compression_saved_tokens }}</n-tag>
               </n-descriptions-item>
               <n-descriptions-item label="虚拟密钥 ID" v-if="selectedRequest.virtual_key_id">
-                <n-text code style="word-break: break-all;">{{ selectedRequest.virtual_key_id }}</n-text>
+                <n-text code class="detail-code-id">{{ selectedRequest.virtual_key_id }}</n-text>
               </n-descriptions-item>
               <n-descriptions-item label="提供商 ID" v-if="selectedRequest.provider_id">
-                <n-text code style="word-break: break-all;">{{ selectedRequest.provider_id }}</n-text>
+                <n-text code class="detail-code-id">{{ selectedRequest.provider_id }}</n-text>
               </n-descriptions-item>
             </n-descriptions>
           </n-card>
@@ -115,7 +115,7 @@
               :code="formatJson(selectedRequest.request_body)"
               language="json"
               word-wrap
-              style="max-height: 400px; overflow-y: auto;"
+              class="json-code-block"
             />
           </n-card>
 
@@ -124,12 +124,12 @@
               :code="formatJson(selectedRequest.response_body)"
               language="json"
               word-wrap
-              style="max-height: 400px; overflow-y: auto;"
+              class="json-code-block"
             />
           </n-card>
 
           <n-card v-if="selectedRequest.error_message" title="错误信息" size="small" hoverable>
-            <n-alert type="error" style="word-break: break-word; white-space: pre-wrap;">
+            <n-alert type="error" class="error-message-alert">
               {{ selectedRequest.error_message }}
             </n-alert>
           </n-card>
@@ -153,7 +153,7 @@
               :min="1"
               :max="365"
               placeholder="保留天数"
-              style="width: 100%;"
+              class="clean-days-input"
             >
               <template #suffix>天</template>
             </n-input-number>
@@ -329,7 +329,7 @@ const columns: DataTableColumns<ApiRequest> = [
     title: '请求时间',
     key: 'created_at',
     width: 160,
-    render: (row) => formatTimestamp(row.created_at),
+    render: (row) => h('span', { class: 'table-time' }, formatTimestamp(row.created_at)),
   },
   {
     title: '模型',
@@ -338,7 +338,7 @@ const columns: DataTableColumns<ApiRequest> = [
     ellipsis: {
       tooltip: true,
     },
-    render: (row) => getModelDisplay(row),
+    render: (row) => h('span', { class: 'table-model' }, getModelDisplay(row)),
   },
   {
     title: '状态',
@@ -359,13 +359,13 @@ const columns: DataTableColumns<ApiRequest> = [
     title: '响应时间',
     key: 'response_time',
     width: 90,
-    render: (row) => (row.response_time ? `${row.response_time}ms` : '-'),
+    render: (row) => h('span', { class: row.response_time ? 'table-latency' : 'table-placeholder' }, row.response_time ? `${row.response_time}ms` : '-'),
   },
   {
     title: 'TFFT',
     key: 'tfft_ms',
     width: 90,
-    render: (row) => (row.tfft_ms ? `${row.tfft_ms}ms` : '-'),
+    render: (row) => h('span', { class: row.tfft_ms ? 'table-latency' : 'table-placeholder' }, row.tfft_ms ? `${row.tfft_ms}ms` : '-'),
   },
   {
     title: 'Tokens',
@@ -373,13 +373,13 @@ const columns: DataTableColumns<ApiRequest> = [
     width: 180,
     render: (row) => {
       const items = [
-        h('div', { style: 'font-size: 12px; color: #666;' }, `输入: ${getTokens(row, 'input')}`),
-        h('div', { style: 'font-size: 12px; color: #666;' }, `输出: ${getTokens(row, 'output')}`),
+        h('div', { class: 'token-line' }, `输入: ${getTokens(row, 'input')}`),
+        h('div', { class: 'token-line' }, `输出: ${getTokens(row, 'output')}`),
       ];
 
       if (row.compression_saved_tokens && row.compression_saved_tokens > 0) {
         items.push(
-          h('div', { style: 'font-size: 12px; color: #18a058; font-weight: 500;' }, `节省: ${row.compression_saved_tokens}`)
+          h('div', { class: 'token-line token-line-saving' }, `节省: ${row.compression_saved_tokens}`)
         );
       }
 
@@ -397,7 +397,7 @@ const columns: DataTableColumns<ApiRequest> = [
     ellipsis: {
       tooltip: true,
     },
-    render: (row) => getRequestPreview(row),
+    render: (row) => h('span', { class: 'table-preview' }, getRequestPreview(row)),
   },
   {
     title: '响应预览',
@@ -406,7 +406,7 @@ const columns: DataTableColumns<ApiRequest> = [
     ellipsis: {
       tooltip: true,
     },
-    render: (row) => getResponsePreview(row),
+    render: (row) => h('span', { class: 'table-preview' }, getResponsePreview(row)),
   },
 ];
 
@@ -503,11 +503,108 @@ onMounted(() => {
 
 <style scoped>
 .card-title {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 600;
   color: #1e3932;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
   white-space: nowrap;
   display: inline-block;
+}
+
+.filter-toolbar {
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.filter-control {
+  font-size: 13px;
+}
+
+.filter-date-picker {
+  width: 360px;
+}
+
+.filter-key-select {
+  width: 200px;
+}
+
+.filter-status-select {
+  width: 120px;
+}
+
+.filter-action-btn {
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.clean-days-input {
+  width: 100%;
+}
+
+.detail-meta-card {
+  background: #fafafa;
+  border-radius: 12px;
+}
+
+.detail-code-id {
+  word-break: break-all;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.json-code-block {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.error-message-alert {
+  word-break: break-word;
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+.table-time {
+  color: #374151;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.table-model {
+  color: #111827;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.table-latency {
+  color: #1f2937;
+  font-weight: 600;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.table-placeholder {
+  color: #9ca3af;
+}
+
+.table-preview {
+  color: #475569;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.token-line {
+  font-size: 12px;
+  color: #4b5563;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.token-line-saving {
+  color: #0f6b4a;
+  font-weight: 600;
 }
 
 .clean-dialog-modal .modal-content-wrapper {
@@ -534,53 +631,115 @@ onMounted(() => {
   background: #b0b0b0;
 }
 
-:deep(.n-data-table-th) {
+.api-requests-view :deep(.n-data-table-th) {
   font-size: 13px;
-  padding: 10px 12px;
+  padding: 11px 12px;
   font-weight: 600;
+  color: #334155;
+  letter-spacing: 0.01em;
 }
 
-:deep(.n-data-table-td) {
+.api-requests-view :deep(.n-data-table-td) {
   font-size: 13px;
-  padding: 10px 12px;
+  padding: 11px 12px;
+  line-height: 1.55;
+  color: #1f2937;
 }
 
-:deep(.n-data-table-tr) {
-  height: 40px;
-  transition: background-color 0.2s;
+.api-requests-view :deep(.n-data-table-tr) {
+  min-height: 44px;
+  transition: background-color 0.2s ease;
 }
 
-:deep(.n-data-table-tr:hover) {
-  background-color: rgba(0, 0, 0, 0.02);
+.api-requests-view :deep(.n-data-table-tr:hover) {
+  background-color: rgba(15, 107, 74, 0.035);
 }
 
-:deep(.n-button--small-type) {
+.api-requests-view :deep(.n-button--small-type) {
   font-size: 12px;
   padding: 4px 10px;
   height: 28px;
 }
 
-:deep(.n-tag--small-size) {
+.api-requests-view :deep(.n-tag--small-size) {
   font-size: 12px;
   padding: 2px 8px;
   height: 24px;
   line-height: 20px;
 }
 
-:deep(.n-code) {
+.api-requests-view :deep(.n-code) {
   word-break: break-word;
   white-space: pre-wrap;
+  font-size: 12.5px;
+  line-height: 1.65;
 }
 
-:deep(.n-descriptions-table-content__label) {
+.api-requests-view :deep(.n-descriptions-table-content__label) {
   font-weight: 500;
+  color: #475569;
+  font-size: 13px;
 }
 
-:deep(.n-card.n-card--hoverable:hover) {
+.api-requests-view :deep(.n-descriptions-table-content__content) {
+  color: #1f2937;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.api-requests-view :deep(.n-card.n-card--hoverable:hover) {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
-:deep(.n-card-header__main) {
+.api-requests-view :deep(.n-card-header__main) {
   color: #1e3932;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.request-detail-drawer :deep(.n-drawer-header__main) {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+@media (max-width: 1024px) {
+  .filter-date-picker {
+    width: 320px;
+  }
+
+  .filter-key-select {
+    width: 180px;
+  }
+}
+
+@media (max-width: 768px) {
+  .card-title {
+    font-size: 18px;
+  }
+
+  .filter-toolbar {
+    justify-content: flex-start;
+  }
+
+  .filter-date-picker,
+  .filter-key-select,
+  .filter-status-select {
+    width: 100%;
+  }
+
+  .api-requests-view :deep(.n-data-table-th),
+  .api-requests-view :deep(.n-data-table-td) {
+    font-size: 12px;
+    padding: 9px 10px;
+  }
+
+  .token-line {
+    font-size: 11px;
+  }
+
+  .table-preview {
+    font-size: 12px;
+  }
 }
 </style>

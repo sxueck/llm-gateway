@@ -1,137 +1,184 @@
 <template>
-  <div class="auth-container">
-    <n-card class="auth-card" title="注册">
-      <n-alert v-if="!allowRegistration" type="warning" style="margin-bottom: 12px;">
-        当前已关闭注册，仅允许已有用户登录
-      </n-alert>
+  <div class="auth-page">
+    <div class="auth-container">
+      <div class="auth-brand">
+        <h1 class="brand-name">LLM Gateway</h1>
+        <p class="brand-tagline">统一的大语言模型接入网关</p>
+      </div>
 
-      <n-form ref="formRef" :model="formValue" :rules="rules" size="large">
-        <n-form-item path="username" label="用户名">
-          <n-input
-            v-model:value="formValue.username"
-            placeholder="请输入用户名"
-            :disabled="!allowRegistration"
-          />
-        </n-form-item>
-        <n-form-item path="password" label="密码">
-          <n-input
-            v-model:value="formValue.password"
-            type="password"
-            show-password-on="click"
-            placeholder="请输入密码"
-            :disabled="!allowRegistration"
-          />
-        </n-form-item>
-        <n-form-item path="confirmPassword" label="确认密码">
-          <n-input
-            v-model:value="formValue.confirmPassword"
-            type="password"
-            show-password-on="click"
-            placeholder="请再次输入密码"
-            @keydown.enter="handleRegister"
-            :disabled="!allowRegistration"
-          />
-        </n-form-item>
-        <n-space vertical :size="16">
-          <n-button
-            type="primary"
-            block
-            size="large"
-            :loading="loading"
-            :disabled="!allowRegistration"
-            @click="handleRegister"
-          >
-            注册
-          </n-button>
-          <n-button text block @click="$router.push('/login')">
-            已有账号？立即登录
-          </n-button>
-        </n-space>
-      </n-form>
-    </n-card>
+      <n-card class="auth-card" :bordered="false">
+        <div class="auth-header">
+          <h2 class="auth-title">创建账号</h2>
+          <p class="auth-subtitle">注册以开始使用系统</p>
+        </div>
+
+        <n-alert v-if="!allowRegistration" type="warning" class="registration-warning">
+          当前已关闭注册，仅允许已有用户登录
+        </n-alert>
+
+        <n-form
+          ref="formRef"
+          :model="formValue"
+          :rules="rules"
+          size="large"
+          class="auth-form"
+        >
+          <n-form-item path="username" label="用户名">
+            <n-input
+              v-model:value="formValue.username"
+              placeholder="请输入用户名"
+              :disabled="!allowRegistration"
+            >
+              <template #prefix>
+                <n-icon class="input-icon"><PersonOutline /></n-icon>
+              </template>
+            </n-input>
+          </n-form-item>
+
+          <n-form-item path="password" label="密码">
+            <n-input
+              v-model:value="formValue.password"
+              type="password"
+              show-password-on="click"
+              placeholder="请输入密码"
+              :disabled="!allowRegistration"
+              class="password-input"
+            >
+              <template #prefix>
+                <n-icon class="input-icon"><LockClosedOutline /></n-icon>
+              </template>
+            </n-input>
+          </n-form-item>
+
+          <n-form-item path="confirmPassword" label="确认密码">
+            <n-input
+              v-model:value="formValue.confirmPassword"
+              type="password"
+              show-password-on="click"
+              placeholder="请再次输入密码"
+              @keydown.enter="handleRegister"
+              :disabled="!allowRegistration"
+              class="password-input"
+            >
+              <template #prefix>
+                <n-icon class="input-icon"><ShieldCheckmarkOutline /></n-icon>
+              </template>
+            </n-input>
+          </n-form-item>
+
+          <n-space vertical :size="16" class="auth-actions">
+            <n-button
+              type="primary"
+              block
+              size="large"
+              :loading="loading"
+              :disabled="!allowRegistration"
+              class="login-button"
+              @click="handleRegister"
+            >
+              <template #icon>
+                <n-icon><PersonAddOutline /></n-icon>
+              </template>
+              注册
+            </n-button>
+
+            <n-button
+              text
+              block
+              class="register-link"
+              @click="$router.push('/login')"
+            >
+              已有账号？<span class="link-text">立即登录</span>
+            </n-button>
+          </n-space>
+        </n-form>
+      </n-card>
+
+      <p class="auth-footer">
+        LLM Gateway - 智能模型路由与管理平台
+      </p>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
-import { useMessage, NCard, NForm, NFormItem, NInput, NButton, NSpace, NAlert } from 'naive-ui';
-import { useAuthStore } from '@/stores/auth';
-import { useSystemConfig } from '@/composables/useSystemConfig';
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import {
+  useMessage,
+  NCard,
+  NForm,
+  NFormItem,
+  NInput,
+  NButton,
+  NSpace,
+  NAlert,
+  NIcon
+} from 'naive-ui'
+import {
+  PersonOutline,
+  LockClosedOutline,
+  ShieldCheckmarkOutline,
+  PersonAddOutline
+} from '@vicons/ionicons5'
+import { useAuthStore } from '@/stores/auth'
+import { useSystemConfig } from '@/composables/useSystemConfig'
 
-const router = useRouter();
-const message = useMessage();
-const authStore = useAuthStore();
+const router = useRouter()
+const message = useMessage()
+const authStore = useAuthStore()
 
-const { allowRegistration } = useSystemConfig();
+const { allowRegistration } = useSystemConfig()
 
-
-const formRef = ref();
-const loading = ref(false);
+const formRef = ref()
+const loading = ref(false)
 const formValue = ref({
   username: '',
   password: '',
-  confirmPassword: '',
-});
+  confirmPassword: ''
+})
 
 const rules = {
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 32, message: '用户名长度必须在 3-32 个字符之间', trigger: 'blur' },
+    { min: 3, max: 32, message: '用户名长度必须在 3-32 个字符之间', trigger: 'blur' }
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码长度至少为 6 个字符', trigger: 'blur' },
+    { min: 6, message: '密码长度至少为 6 个字符', trigger: 'blur' }
   ],
   confirmPassword: [
     { required: true, message: '请再次输入密码', trigger: 'blur' },
     {
       validator: (_rule: any, value: string) => {
-        return value === formValue.value.password;
+        return value === formValue.value.password
       },
       message: '两次输入的密码不一致',
-      trigger: 'blur',
-    },
-  ],
-};
+      trigger: 'blur'
+    }
+  ]
+}
 
 async function handleRegister() {
   try {
-    await formRef.value?.validate();
-    loading.value = true;
+    await formRef.value?.validate()
+    loading.value = true
     await authStore.register({
       username: formValue.value.username,
-      password: formValue.value.password,
-    });
-    message.success('注册成功');
-    router.push('/dashboard');
+      password: formValue.value.password
+    })
+    message.success('注册成功')
+    router.push('/dashboard')
   } catch (error: any) {
     if (error.message) {
-      message.error(error.message);
+      message.error(error.message)
     }
   } finally {
-    loading.value = false;
+    loading.value = false
   }
 }
 </script>
 
 <style scoped>
-.auth-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  background: #ffffff;
-}
-
-.auth-card {
-  width: 100%;
-  max-width: 400px;
-  margin: 20px;
-}
-
-:deep(.n-card-header__main) {
-  color: #1e3932;
-}
+@import '@/styles/auth.css';
 </style>
-

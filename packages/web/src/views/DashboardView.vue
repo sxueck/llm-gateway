@@ -415,15 +415,15 @@
             <template #header>
               <n-space justify="space-between" align="center" class="trend-header">
                 <div>
-                  <span>响应时间分布</span>
-                  <span style="font-size: 12px; color: #6b7280; font-weight: normal; margin-left: 8px;">(最近 2000 次请求)</span>
+                  <span class="chart-header-title">响应时间分布</span>
+                  <span class="chart-header-note">(最近 2000 次请求)</span>
                 </div>
                 <n-select
                   v-model:value="selectedLatencyModel"
                   :options="latencyModelOptions"
                   clearable
                   size="small"
-                  style="width: 220px;"
+                  class="latency-model-select"
                   placeholder="选择模型 (供应商/模型)"
                 />
               </n-space>
@@ -444,43 +444,40 @@
             <n-grid cols="1 s:2" :x-gap="24" :y-gap="16" responsive="screen">
               <n-gi>
                 <div class="source-info-item">
-                  <div class="source-label" style="font-size: 13px; color: #6b7280; margin-bottom: 4px;">上一次请求来源</div>
-                  <div class="source-value" style="font-size: 18px; font-weight: 600; color: #1f2937;">
+                  <div class="source-label">上一次请求来源</div>
+                  <div class="source-value">
                     {{ formatGeoLocation(requestSourceStats?.lastRequest?.geo) }}
                   </div>
-                  <div class="source-sub" style="font-size: 13px; color: #4b5563;">
+                  <div class="source-sub">
                     {{ requestSourceStats?.lastRequest?.ip || '暂未记录' }}
                   </div>
-                  <div class="source-time" style="font-size: 12px; color: #9ca3af; margin-top: 4px;">
+                  <div class="source-time">
                     {{ requestSourceStats?.lastRequest?.timestamp ? formatTimestamp(requestSourceStats?.lastRequest?.timestamp || 0) : '---' }}
                   </div>
-                  <div class="source-client" style="font-size: 12px; color: #6b7280; margin-top: 6px; word-break: break-all;">
+                  <div class="source-client">
                     客户端：{{ requestSourceStats?.lastRequest?.userAgent || '未知' }}
                   </div>
                 </div>
               </n-gi>
               <n-gi>
                 <div class="source-info-item">
-                  <div class="source-label" style="font-size: 13px; color: #6b7280; margin-bottom: 4px;">最近拦截 IP</div>
-                  <div class="source-value" style="font-size: 18px; font-weight: 600; color: #dc2626;">
+                  <div class="source-label">最近拦截 IP</div>
+                  <div class="source-value source-value-danger">
                     {{ formatGeoLocation(requestSourceStats?.lastBlocked?.geo) }}
                   </div>
-                  <div class="source-sub" style="font-size: 13px; color: #4b5563;">
+                  <div class="source-sub">
                     {{ requestSourceStats?.lastBlocked?.ip || '暂无拦截' }}
                   </div>
-                  <div
-                    class="source-time"
-                    style="font-size: 12px; color: #9ca3af; margin-top: 4px;"
-                  >
+                  <div class="source-time">
                     {{ requestSourceStats?.lastBlocked?.timestamp ? formatTimestamp(requestSourceStats?.lastBlocked?.timestamp || 0) : '---' }}
                   </div>
                 </div>
               </n-gi>
             </n-grid>
             <div>
-              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                <div style="font-size: 15px; font-weight: 600; color: #111827;">最近来源 IP（去重后 10 条）</div>
-                <div style="font-size: 12px; color: #6b7280;">包含被拦截与正常访问的来源</div>
+              <div class="source-table-header">
+                <div class="source-table-title">最近来源 IP（去重后 10 条）</div>
+                <div class="source-table-desc">包含被拦截与正常访问的来源</div>
               </div>
               <n-data-table
                 v-if="requestSourceTableData.length > 0"
