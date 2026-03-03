@@ -466,6 +466,23 @@ export const migrations: Migration[] = [
           AND (ar.request_body IS NOT NULL OR ar.response_body IS NOT NULL)
       `);
     }
+  },
+  {
+    version: 27,
+    name: 'add_tfft_ms_to_api_requests',
+    up: async (conn: Connection) => {
+      const [rows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'api_requests'
+           AND COLUMN_NAME = 'tfft_ms'`
+      );
+      const exists = Number((rows as any[])[0]?.cnt || 0) > 0;
+      if (exists) return;
+
+      await conn.query(`ALTER TABLE api_requests ADD COLUMN tfft_ms INT DEFAULT NULL AFTER response_time`);
+    }
   }
 ];
 

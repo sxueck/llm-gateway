@@ -61,6 +61,7 @@ export type ApiRequestBuffer = {
   cached_tokens?: number;
   status: string;
   response_time?: number;
+  tfft_ms?: number;
   error_message?: string;
   request_body?: string;
   response_body?: string;

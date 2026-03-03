@@ -286,6 +286,7 @@ export const apiRequestRepository = {
           ar.cached_tokens,
           ar.status,
           ar.response_time,
+          ar.tfft_ms,
           ar.error_message,
           ar.request_params_json,
           ar.response_meta_json,

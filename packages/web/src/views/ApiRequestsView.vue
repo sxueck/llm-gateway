@@ -72,6 +72,12 @@
                 </n-tag>
                 <span v-else>-</span>
               </n-descriptions-item>
+              <n-descriptions-item label="TFFT">
+                <n-tag v-if="selectedRequest.tfft_ms" type="warning" size="small">
+                  {{ selectedRequest.tfft_ms }}ms
+                </n-tag>
+                <span v-else>-</span>
+              </n-descriptions-item>
               <n-descriptions-item label="模型">
                 <n-text strong>{{ selectedRequest.model || '-' }}</n-text>
               </n-descriptions-item>
@@ -354,6 +360,12 @@ const columns: DataTableColumns<ApiRequest> = [
     key: 'response_time',
     width: 90,
     render: (row) => (row.response_time ? `${row.response_time}ms` : '-'),
+  },
+  {
+    title: 'TFFT',
+    key: 'tfft_ms',
+    width: 90,
+    render: (row) => (row.tfft_ms ? `${row.tfft_ms}ms` : '-'),
   },
   {
     title: 'Tokens',

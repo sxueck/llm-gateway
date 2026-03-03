@@ -315,6 +315,7 @@ export class ProtocolAdapter {
 
     this.applyForwardedHeadersToRequestOptions(requestOptions, config, options);
 
+    const upstreamRequestStartedAt = Date.now();
     const stream = await client.chat.completions.create(
       requestParams,
       Object.keys(requestOptions).length > 0 ? requestOptions : undefined
@@ -324,6 +325,7 @@ export class ProtocolAdapter {
       stream,
       model: config.model,
       abortSignal,
+      upstreamRequestStartedAt,
       placeholdersMap,
       restorePlaceholdersInObjectInPlace,
       streamRestorer,
@@ -576,6 +578,7 @@ export class ProtocolAdapter {
     return await processOpenAIResponsesStreamToSseWithRetry({
       client,
       requestParams,
+      upstreamRequestStartedAt: Date.now(),
       reply,
       responseHeaders,
       baseUpstreamRequestOptions,

@@ -98,6 +98,7 @@ export async function handleResponsesStreamRequest(params: ResponsesStreamParams
       tokenCount,
       status: 'success',
       responseTime: duration,
+      tfftMs: tokenUsage.tfftMs,
       truncatedRequest,
       truncatedResponse,
       cacheHit: 0,

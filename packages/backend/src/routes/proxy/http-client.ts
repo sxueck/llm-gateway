@@ -21,6 +21,7 @@ export interface StreamTokenUsage {
   totalTokens: number;
   cachedTokens: number;
   streamChunks: string[];
+  tfftMs?: number;
   reasoningContent?: string;
   thinkingBlocks?: ThinkingBlock[];
 }
@@ -117,4 +118,3 @@ export async function makeStreamHttpRequest(
     throw enriched;
   }
 }
-

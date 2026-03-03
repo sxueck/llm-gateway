@@ -20,6 +20,7 @@ export interface OpenAIChatStreamProcessorOptions {
   stream: AsyncIterable<any>;
   model: string;
   abortSignal?: AbortSignal;
+  upstreamRequestStartedAt?: number;
 
   // Optional placeholder restoration hooks.
   placeholdersMap?: any;
@@ -40,6 +41,7 @@ export async function processOpenAIChatCompletionStreamToSse(
     stream,
     model,
     abortSignal,
+    upstreamRequestStartedAt,
     placeholdersMap,
     restorePlaceholdersInObjectInPlace,
     streamRestorer,
@@ -62,10 +64,30 @@ export async function processOpenAIChatCompletionStreamToSse(
   let completionTokens = 0;
   let totalTokens = 0;
   let cachedTokens = 0;
+  let tfftMs: number | undefined;
   const streamChunks: string[] = [];
   let reasoningContent = '';
   let thinkingBlocks: ThinkingBlock[] = [];
   let toolCalls: any[] = [];
+
+  // 检测 chunk 是否包含首个有效输出 token（文本内容或工具调用均视为有效）
+  const hasFirstToken = (chunk: any): boolean => {
+    if (!chunk || typeof chunk !== 'object') return false;
+    if (!Array.isArray(chunk.choices)) return false;
+
+    for (const choice of chunk.choices) {
+      const delta = choice?.delta;
+      if (typeof delta?.content === 'string' && delta.content.length > 0) {
+        return true;
+      }
+      // tool_calls 同样是模型生成的 token，对纯 function-calling 请求应记录 TFFT
+      if (Array.isArray(delta?.tool_calls) && delta.tool_calls.length > 0) {
+        return true;
+      }
+    }
+
+    return false;
+  };
 
   try {
     for await (const chunk of stream) {
@@ -127,6 +149,10 @@ export async function processOpenAIChatCompletionStreamToSse(
       const chunkData = JSON.stringify(chunk);
       const sseData = `data: ${chunkData}\n\n`;
       streamChunks.push(sseData);
+
+      if (tfftMs === undefined && upstreamRequestStartedAt && hasFirstToken(chunk)) {
+        tfftMs = Date.now() - upstreamRequestStartedAt;
+      }
 
       if (!reply.raw.write(sseData)) {
         await new Promise<void>((resolve) => {
@@ -220,6 +246,7 @@ export async function processOpenAIChatCompletionStreamToSse(
     totalTokens,
     cachedTokens,
     streamChunks,
+    tfftMs,
     reasoningContent: reasoningContent || undefined,
     thinkingBlocks: thinkingBlocks.length > 0 ? thinkingBlocks : undefined,
   };

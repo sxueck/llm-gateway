@@ -72,7 +72,7 @@ export async function flushApiRequestBuffer() {
         userAgent = truncateToByteLength(userAgent, 500);
       }
 
-      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       values.push(
         request.id,
         request.virtual_key_id || null,
@@ -83,6 +83,7 @@ export async function flushApiRequestBuffer() {
         request.cached_tokens || 0,
         request.status,
         request.response_time || null,
+        request.tfft_ms || null,
         errorMessage || null,
         request.request_params_json || null,
         request.response_meta_json || null,
@@ -111,7 +112,7 @@ export async function flushApiRequestBuffer() {
         `INSERT INTO api_requests (
           id, virtual_key_id, provider_id, model,
           prompt_tokens, completion_tokens, cached_tokens,
-          status, response_time, error_message, request_params_json, response_meta_json, cache_hit,
+          status, response_time, tfft_ms, error_message, request_params_json, response_meta_json, cache_hit,
           request_type, compression_original_tokens, compression_saved_tokens, ip, user_agent, created_at
         ) VALUES ${placeholders.join(', ')}`,
         values
