@@ -132,6 +132,7 @@ const apiKeyChanged = ref(false);
 const latencies = ref<Record<string, number | null>>({});
 const testingStates = ref<Record<string, boolean>>({});
 const isTestingAll = ref(false);
+const inFlightTests = new Map<string, Promise<void>>();
 
 const columns = [
   { title: 'ID', key: 'id' },
@@ -202,6 +203,7 @@ const columns = [
           size: 'small',
           quaternary: true,
           circle: true,
+          disabled: !!testingStates.value[row.id],
           onClick: () => handleTest(row.id),
         }, {
           icon: () => h(NIcon, null, { default: () => h(KeyboardCommandKeyOutlined) }),
@@ -258,32 +260,44 @@ async function handleEdit(provider: Provider) {
 }
 
 async function handleTest(id: string, showToast = true) {
+  const inFlight = inFlightTests.get(id);
+  if (inFlight) {
+    return inFlight;
+  }
+
   testingStates.value[id] = true;
-  const start = performance.now();
-  try {
-    const result = await providerApi.test(id);
-    const end = performance.now();
-    const latency = Math.round(end - start);
-    
-    if (result.success) {
-      latencies.value[id] = latency;
-      if (showToast) {
-        message.success(`${result.message} (延迟: ${latency}ms)`);
+  const task = (async () => {
+    try {
+      const result = await providerApi.test(id);
+      const latency = typeof result.latencyMs === 'number'
+        ? Math.round(result.latencyMs)
+        : null;
+
+      if (result.success) {
+        latencies.value[id] = latency;
+        if (showToast) {
+          const latencyText = latency !== null ? ` (延迟: ${latency}ms)` : '';
+          message.success(`${result.message}${latencyText}`);
+        }
+      } else {
+        latencies.value[id] = null;
+        if (showToast) {
+          message.error(result.message);
+        }
       }
-    } else {
+    } catch (error: any) {
       latencies.value[id] = null;
       if (showToast) {
-        message.error(result.message);
+        message.error(error.message);
       }
+    } finally {
+      testingStates.value[id] = false;
+      inFlightTests.delete(id);
     }
-  } catch (error: any) {
-    latencies.value[id] = null;
-    if (showToast) {
-      message.error(error.message);
-    }
-  } finally {
-    testingStates.value[id] = false;
-  }
+  })();
+
+  inFlightTests.set(id, task);
+  return task;
 }
 
 async function testAllProviders() {

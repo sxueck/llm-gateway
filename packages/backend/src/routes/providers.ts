@@ -1,9 +1,86 @@
 import { FastifyInstance } from 'fastify';
+import { lookup } from 'node:dns/promises';
 import { createConnection } from 'node:net';
 import { z } from 'zod';
 import { providerDb } from '../db/index.js';
 import { encryptApiKey, decryptApiKey } from '../utils/crypto.js';
 import { buildModelsEndpoint } from '../utils/api-endpoint-builder.js';
+
+interface ProviderTestResult {
+  success: boolean;
+  status?: number;
+  message: string;
+  latencyMs?: number;
+}
+
+const PROVIDER_TEST_TIMEOUT_MS = 5000;
+const inFlightProviderTests = new Map<string, Promise<ProviderTestResult>>();
+
+function resolvePort(url: URL): number {
+  if (url.port) {
+    return Number(url.port);
+  }
+
+  return url.protocol === 'https:' ? 443 : 80;
+}
+
+async function tcpConnectLatency(hostOrIp: string, port: number, timeoutMs: number): Promise<{ success: boolean; latencyMs: number; error?: string }> {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const socket = createConnection({ host: hostOrIp, port });
+    let settled = false;
+
+    const finish = (success: boolean, error?: Error) => {
+      if (settled) return;
+      settled = true;
+      const latencyMs = Date.now() - started;
+      socket.destroy();
+      resolve({ success, latencyMs, error: error?.message });
+    };
+
+    socket.once('connect', () => finish(true));
+    socket.once('error', (err) => finish(false, err));
+    socket.setTimeout(timeoutMs, () => finish(false, new Error(`连接超时 (${timeoutMs}ms)`)));
+  });
+}
+
+async function testProviderTcpOnly(baseUrl: string): Promise<ProviderTestResult> {
+  try {
+    const url = new URL(baseUrl);
+    const host = url.hostname;
+    const port = resolvePort(url);
+
+    // DNS 解析放在计时外，保证 latencyMs 仅反映 TCP connect 时长。
+    const resolved = await lookup(host);
+    const latency = await tcpConnectLatency(resolved.address, port, PROVIDER_TEST_TIMEOUT_MS);
+
+    return {
+      success: latency.success,
+      status: latency.success ? 200 : undefined,
+      message: latency.success ? '网络连通' : (latency.error || '连接失败'),
+      latencyMs: latency.latencyMs,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error?.message || '连接失败',
+    };
+  }
+}
+
+function getOrCreateProviderTest(providerId: string, baseUrl: string): Promise<ProviderTestResult> {
+  const inFlight = inFlightProviderTests.get(providerId);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const task = testProviderTcpOnly(baseUrl).finally(() => {
+    inFlightProviderTests.delete(providerId);
+  });
+
+  inFlightProviderTests.set(providerId, task);
+  return task;
+}
 
 const protocolMappingSchema = z.object({
   openai: z.string().url().optional(),
@@ -199,43 +276,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: '提供商不存在' });
     }
 
-    // 使用域名级别的 TCP Ping 测试连通性，避免 TLS 握手和上层协议开销
-    try {
-      const url = new URL(provider.base_url);
-      const host = url.hostname;
-      const port = url.port ? Number(url.port) : (url.protocol === 'https:' ? 443 : 80);
-
-      const timeoutMs = 5000;
-      const latency = await new Promise<{ success: boolean; latencyMs: number; error?: string }>((resolve) => {
-        const started = Date.now();
-        const socket = createConnection({ host, port });
-        let settled = false;
-
-        const finish = (success: boolean, error?: Error) => {
-          if (settled) return;
-          settled = true;
-          const latencyMs = Date.now() - started;
-          socket.destroy();
-          resolve({ success, latencyMs, error: error?.message });
-        };
-
-        socket.once('connect', () => finish(true));
-        socket.once('error', (err) => finish(false, err));
-        socket.setTimeout(timeoutMs, () => finish(false, new Error(`连接超时 (${timeoutMs}ms)`)));
-      });
-
-      return {
-        success: latency.success,
-        status: latency.success ? 200 : undefined,
-        message: latency.success ? '网络连通' : (latency.error || '连接失败'),
-        latencyMs: latency.latencyMs,
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        message: error.message || '连接失败',
-      };
-    }
+    return getOrCreateProviderTest(id, provider.base_url);
   });
 
   fastify.post('/fetch-models', async (request, reply) => {
