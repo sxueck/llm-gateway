@@ -398,6 +398,7 @@ export class ProtocolAdapter {
     if (options.instructions !== undefined) params.instructions = options.instructions;
     if ((options as any).background !== undefined) (params as any).background = (options as any).background;
     if ((options as any).conversation !== undefined) (params as any).conversation = (options as any).conversation;
+    if ((options as any).context_management !== undefined) (params as any).context_management = (options as any).context_management;
     // 核心调参字段
     if (options.temperature !== undefined) params.temperature = options.temperature;
     if (options.top_p !== undefined) params.top_p = options.top_p;
@@ -421,6 +422,20 @@ export class ProtocolAdapter {
     if ((options as any).prompt_cache_key !== undefined) (params as any).prompt_cache_key = (options as any).prompt_cache_key;
     if ((options as any).safety_identifier !== undefined) (params as any).safety_identifier = (options as any).safety_identifier;
     return params;
+  }
+
+  async compactResponse(
+    config: ProtocolConfig,
+    input: string | any[],
+    options: any,
+    abortSignal?: AbortSignal
+  ): Promise<any> {
+    memoryLogger.debug(
+      `使用 Responses API compact | model: ${config.model}`,
+      'Protocol'
+    );
+
+    return await this.openaiCompactResponse(config, input, options, abortSignal);
   }
 
   async createResponse(
@@ -471,6 +486,43 @@ export class ProtocolAdapter {
     );
 
     return response;
+  }
+
+  private async openaiCompactResponse(
+    config: ProtocolConfig,
+    input: string | any[],
+    options: any,
+    abortSignal?: AbortSignal
+  ): Promise<any> {
+    const client = this.getOpenAIClient(config);
+
+    const requestParams: any = {
+      model: config.model,
+      input,
+    };
+
+    Object.assign(requestParams, this.buildResponsesRequestParams(options, false));
+
+    const requestOptions: any = {};
+    if (options.requestTimeout !== undefined) {
+      requestOptions.timeout = options.requestTimeout;
+    }
+    if (abortSignal) {
+      requestOptions.signal = abortSignal;
+    }
+
+    this.applyForwardedHeadersToRequestOptions(requestOptions, config, options);
+
+    const compactFn = (client.responses as any)?.compact;
+    if (typeof compactFn !== 'function') {
+      throw new Error('Current OpenAI SDK does not support responses.compact');
+    }
+
+    return await compactFn.call(
+      client.responses,
+      requestParams,
+      Object.keys(requestOptions).length > 0 ? requestOptions : undefined
+    );
   }
 
   async streamResponse(

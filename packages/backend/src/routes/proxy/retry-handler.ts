@@ -13,7 +13,6 @@ export interface RetryContext {
   compressionStats?: { originalTokens: number; savedTokens: number };
   startTime: number;
   isResponsesApi?: boolean;
-  extractedSystemPrompt?: string;
 }
 
 const SMART_ROUTING_RETRY_WINDOW_MS = 10_000;
@@ -122,8 +121,7 @@ async function handleSmartRoutingRetry(
       retryResult.currentModel,
       !!context.isResponsesApi,
       retryResult,
-      context.virtualKeyValue,
-      context.extractedSystemPrompt
+      context.virtualKeyValue
     );
     return true;
   }

@@ -15,7 +15,7 @@ import { circuitBreaker } from '../../services/circuit-breaker.js';
 import { shouldLogRequestBody, getModelForLogging } from '../proxy/handlers/shared.js';
 import { logApiRequestToDb } from '../../services/api-request-logger.js';
 import { normalizeUsageCounts } from '../../utils/usage-normalizer.js';
-import { isChatCompletionsPath, isResponsesApiPath, isEmbeddingsPath } from '../../utils/path-detector.js';
+import { isChatCompletionsPath, isResponsesApiPath, isResponsesCompactPath, isEmbeddingsPath, shouldBypassGatewayCache } from '../../utils/path-detector.js';
 // removed gemini import
 import { aifwService } from '../../services/aifw-service.js';
 import { restorePlaceholdersInObjectInPlace } from '../../utils/aifw-placeholders.js';
@@ -31,32 +31,6 @@ function shouldApplyAifwForRequest(path: string, protocolConfig: any, isResponse
   if (!isChatCompletionsPath(path)) return false;
   // Be strict: don't guess "openai" when protocol is missing.
   return protocolConfig?.protocol === 'openai';
-}
-
-function responsesInputNeedsNormalization(items: any[]): boolean {
-  return items.some(item => {
-    if (!item || typeof item !== 'object') {
-      return false;
-    }
-
-    if ((item.role === 'developer' || item.role === 'system') && item.content) {
-      return true;
-    }
-
-    if (item.type === 'text') {
-      return true;
-    }
-
-    if (item.type === 'message' && Array.isArray(item.content)) {
-      return item.content.some((block: any) => block?.type === 'text');
-    }
-
-    if (item.role && Array.isArray(item.content)) {
-      return item.content.some((block: any) => block?.type === 'text');
-    }
-
-    return false;
-  });
 }
 
 function estimateTokensForMessages(messages: any[]): number {
@@ -91,143 +65,28 @@ function buildRequestBodyForLogging(
   }
   return requestBody;
 }
-/**
- * 规范化 Responses API 的 input 并提取系统提示
- *
- * Responses API 的 input 中不应包含 system/developer 角色的消息
- * 这些应该通过顶层的 instructions 字段传递
- *
- * @param input 原始 input 数据
- * @returns { normalizedInput, systemPrompt } 规范化后的 input 和提取的系统提示
- */
-function normalizeResponsesInput(input: any): { normalizedInput: any; systemPrompt?: string } {
-  if (!input) return { normalizedInput: input };
 
-  // 如果是字符串，直接返回
-  if (typeof input === 'string') return { normalizedInput: input };
-
-  // 如果是数组，递归处理每个元素
-  if (Array.isArray(input)) {
-    if (!responsesInputNeedsNormalization(input)) {
-      return { normalizedInput: input };
-    }
-
-    const systemPrompts: string[] = [];
-    const normalizedItems: any[] = [];
-
-    for (const item of input) {
-      if (!item || typeof item !== 'object') {
-        normalizedItems.push(item);
-        continue;
-      }
-
-      // 提取 developer/system 角色的消息作为系统提示
-      if ((item.role === 'developer' || item.role === 'system') && item.content) {
-        let textContent = '';
-        if (typeof item.content === 'string') {
-          textContent = item.content;
-        } else if (Array.isArray(item.content)) {
-          // 提取所有 text 类型的内容
-          textContent = item.content
-            .filter((block: any) => block?.type === 'text' || block?.type === 'input_text')
-            .map((block: any) => block.text)
-            .join('\n');
-        }
-        if (textContent) {
-          systemPrompts.push(textContent);
-        }
-        // 不将 developer/system 角色的消息添加到 normalizedItems
-        continue;
-      }
-
-      // 处理 message 类型的 item
-      if (item.type === 'message' && Array.isArray(item.content)) {
-        normalizedItems.push({
-          ...item,
-          content: item.content.map((contentBlock: any) => {
-            if (!contentBlock || typeof contentBlock !== 'object') return contentBlock;
-
-            // 将 type: 'text' 转换为 type: 'input_text'
-            if (contentBlock.type === 'text') {
-              return {
-                ...contentBlock,
-                type: 'input_text'
-              };
-            }
-
-            return contentBlock;
-          })
-        });
-        continue;
-      }
-
-      // 处理带有 role 和 content 数组的项（如来自 health check 的输入）
-      if (item.role && Array.isArray(item.content)) {
-        normalizedItems.push({
-          ...item,
-          content: item.content.map((contentBlock: any) => {
-            if (!contentBlock || typeof contentBlock !== 'object') return contentBlock;
-
-            // 将 type: 'text' 转换为 type: 'input_text'
-            if (contentBlock.type === 'text') {
-              return {
-                ...contentBlock,
-                type: 'input_text'
-              };
-            }
-
-            return contentBlock;
-          })
-        });
-        continue;
-      }
-
-      // 处理直接的 content block
-      if (item.type === 'text') {
-        normalizedItems.push({
-          ...item,
-          type: 'input_text'
-        });
-        continue;
-      }
-
-      normalizedItems.push(item);
-    }
-
-    // 合并所有提取的系统提示
-    const systemPrompt = systemPrompts.length > 0 ? systemPrompts.join('\n\n') : undefined;
-
-    return {
-      normalizedInput: normalizedItems,
-      systemPrompt
-    };
+function parseModelAttributes(currentModel?: any): any | undefined {
+  if (!currentModel?.model_attributes) {
+    return undefined;
   }
 
-  return { normalizedInput: input };
+  try {
+    return JSON.parse(currentModel.model_attributes);
+  } catch (e: any) {
+    memoryLogger.warn(`解析模型属性失败: ${e?.message || e}`, 'Proxy');
+    return undefined;
+  }
 }
-
 /**
  * 构建 Responses API 的 options 参数
  *
- * 关键：Responses API 的 instructions 字段是系统级指令（类似 Chat Completions 的 system message）
- * 需要从 input 中提取 developer/system 角色的消息，合并到 instructions 中
- *
  * @param body 请求体
  * @param includePrevId 是否包含 previous_response_id
- * @param extractedSystemPrompt 从 input 中提取的系统提示（如果有）
  */
-function buildResponsesOptions(body: any, includePrevId: boolean, extractedSystemPrompt?: string) {
-  // 合并系统指令：优先使用提取的系统提示，其次使用用户提供的 instructions
-  // 如果两者都存在，将它们合并（提取的系统提示在前）
-  let finalInstructions: string | undefined;
-  if (extractedSystemPrompt && body?.instructions) {
-    finalInstructions = `${extractedSystemPrompt}\n\n${body.instructions}`;
-  } else {
-    finalInstructions = extractedSystemPrompt || body?.instructions;
-  }
-
+function buildResponsesOptions(body: any, includePrevId: boolean) {
   const options: any = {
-    instructions: finalInstructions,
+    instructions: body?.instructions,
     temperature: body?.temperature,
     top_p: body?.top_p,
     store: body?.store,
@@ -249,6 +108,7 @@ function buildResponsesOptions(body: any, includePrevId: boolean, extractedSyste
     max_tool_calls: body?.max_tool_calls,
     background: body?.background,
     conversation: body?.conversation,
+    context_management: body?.context_management,
   };
   if (includePrevId && body?.previous_response_id) {
     options.previous_response_id = body.previous_response_id;
@@ -263,6 +123,7 @@ export function createOpenAIProxyHandler() {
     let providerId: string | undefined;
     let compressionStats: { originalTokens: number; savedTokens: number } | undefined;
     let currentModel: any | undefined;
+    let parsedModelAttributes: any | undefined;
     let requestIp = 'unknown';
     let requestUserAgent = '';
 
@@ -337,6 +198,7 @@ export function createOpenAIProxyHandler() {
       virtualKeyValue = vkValue;
       providerId = resolvedProviderId;
       currentModel = resolvedModel;
+      parsedModelAttributes = parseModelAttributes(currentModel);
 
       const { protocolConfig, path, vkDisplay, isStreamRequest } = configResult;
 
@@ -394,13 +256,12 @@ export function createOpenAIProxyHandler() {
       }
 
       // 应用模型属性到请求体
-      if (currentModel?.model_attributes) {
+      if (parsedModelAttributes) {
         try {
-          const modelAttributes = JSON.parse(currentModel.model_attributes);
-          const enhancedRequestBody = buildFullRequestBody(request.body, modelAttributes);
+          const enhancedRequestBody = buildFullRequestBody(request.body, parsedModelAttributes);
           request.body = enhancedRequestBody;
 
-          if (modelAttributes.supports_prompt_caching) {
+          if (parsedModelAttributes.supports_prompt_caching) {
             const messageCount = (request.body as any)?.messages?.length || 0;
             const toolsCount = (request.body as any)?.tools?.length || 0;
 
@@ -434,23 +295,10 @@ export function createOpenAIProxyHandler() {
 
       // 检测是否为 Responses API 请求
       const isResponsesApi = isResponsesApiPath(path);
-
-      let extractedSystemPrompt: string | undefined;
-      if (isResponsesApi && (request.body as any)?.input) {
-        const { normalizedInput, systemPrompt } = normalizeResponsesInput((request.body as any).input);
-        (request.body as any).input = normalizedInput;
-        extractedSystemPrompt = systemPrompt;
-
-        if (extractedSystemPrompt) {
-          memoryLogger.info(
-            `Responses API: 从 input 中提取系统提示 (${extractedSystemPrompt.length} 字符)`,
-            'Proxy'
-          );
-        }
-      }
+      const isResponsesCompactRequest = isResponsesCompactPath(path);
 
       // Responses API 只支持流式模式，非流式直接返回错误
-      if (!isStreamRequest && isResponsesApi) {
+      if (!isStreamRequest && isResponsesApi && !isResponsesCompactRequest) {
         return reply.code(400).send({
           error: {
             message: 'Responses API only supports streaming mode',
@@ -476,7 +324,7 @@ export function createOpenAIProxyHandler() {
           isResponsesApi,
           modelResult,
           virtualKeyValue!,
-          extractedSystemPrompt
+          parsedModelAttributes
         );
       }
 
@@ -492,7 +340,8 @@ export function createOpenAIProxyHandler() {
         compressionStats,
         currentModel,
         modelResult,
-        virtualKeyValue!
+        virtualKeyValue!,
+        parsedModelAttributes
       );
     } catch (error: any) {
       const duration = Date.now() - startTime;
@@ -509,15 +358,7 @@ export function createOpenAIProxyHandler() {
         if (virtualKey) {
           const shouldLogBody = shouldLogRequestBody(virtualKey);
 
-          let modelAttributes: any = undefined;
-          if (currentModel?.model_attributes) {
-            try {
-              modelAttributes = JSON.parse(currentModel.model_attributes);
-            } catch (e) {
-            }
-          }
-
-          const fullRequestBody = buildRequestBodyForLogging(request.body, modelAttributes, shouldLogBody);
+          const fullRequestBody = buildRequestBodyForLogging(request.body, parsedModelAttributes, shouldLogBody);
           const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
 
           const tokenCount = await calculateTokensIfNeeded(0, request.body);
@@ -568,9 +409,10 @@ export async function handleStreamRequest(
   isResponsesApi: boolean = false,
   modelResult?: any,
   virtualKeyValueParam?: string,
-  extractedSystemPrompt?: string
+  modelAttributesParam?: any
 ) {
   const circuitBreakerKey = modelResult?.circuitBreakerKey || providerId;
+  const modelAttributes = modelAttributesParam ?? parseModelAttributes(currentModel);
 
   memoryLogger.info(
     `流式请求开始: ${path} | virtual key: ${vkDisplay}`,
@@ -600,8 +442,7 @@ export async function handleStreamRequest(
     if (isResponsesApi) {
       // Responses API 请求
       const input = (request.body as any)?.input;
-      // 传递提取的系统提示到 buildResponsesOptions
-      const options = buildResponsesOptions((request.body as any), true, extractedSystemPrompt);
+      const options = buildResponsesOptions((request.body as any), true);
       (options as any).__forwardedHeaders = forwardedHeaders;
 
       // 记录最终的 instructions 和 tools（用于调试）
@@ -712,14 +553,6 @@ export async function handleStreamRequest(
 
     const shouldLogBody = shouldLogRequestBody(virtualKey);
 
-    let modelAttributes: any = undefined;
-    if (currentModel?.model_attributes) {
-      try {
-        modelAttributes = JSON.parse(currentModel.model_attributes);
-      } catch (e) {
-      }
-    }
-
     const fullRequestBody = buildRequestBodyForLogging(request.body, modelAttributes, shouldLogBody);
     const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
     const truncatedResponse = shouldLogBody
@@ -803,8 +636,7 @@ export async function handleStreamRequest(
           currentModel,
           compressionStats,
           startTime,
-          isResponsesApi,
-          extractedSystemPrompt
+          isResponsesApi
         });
         if (retried) {
           return;
@@ -816,14 +648,6 @@ export async function handleStreamRequest(
 
     // 记录失败请求
     const shouldLogBody = shouldLogRequestBody(virtualKey);
-
-    let modelAttributes: any = undefined;
-    if (currentModel?.model_attributes) {
-      try {
-        modelAttributes = JSON.parse(currentModel.model_attributes);
-      } catch (e) {
-      }
-    }
 
     const fullRequestBody = buildRequestBodyForLogging(request.body, modelAttributes, shouldLogBody);
     const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
@@ -908,10 +732,14 @@ export async function handleNonStreamRequest(
   compressionStats?: { originalTokens: number; savedTokens: number },
   currentModel?: any,
   modelResult?: any,
-  virtualKeyValueParam?: string
+  virtualKeyValueParam?: string,
+  modelAttributesParam?: any
 ) {
   let fromCache = false;
+  const modelAttributes = modelAttributesParam ?? parseModelAttributes(currentModel);
   const isEmbeddingsRequest = isEmbeddingsPath(path);
+  const isResponsesCompactRequest = isResponsesCompactPath(path);
+  const bypassGatewayCache = shouldBypassGatewayCache(path);
   const nonStreamRequestUserAgent = getRequestUserAgent(request);
   const nonStreamRequestIp = extractIp(request);
   const forwardedHeaders = requestHeaderForwardingService.buildForwardedHeaders(
@@ -928,7 +756,7 @@ export async function handleNonStreamRequest(
   const cacheResult = checkCache(
     virtualKey,
     isStreamRequest,
-    isEmbeddingsRequest,
+    bypassGatewayCache,
     request.body,
     vkDisplay
   );
@@ -949,14 +777,6 @@ export async function handleNonStreamRequest(
 
     const duration = Date.now() - startTime;
     const shouldLogBody = shouldLogRequestBody(virtualKey);
-
-    let modelAttributes: any = undefined;
-    if (currentModel?.model_attributes) {
-      try {
-        modelAttributes = JSON.parse(currentModel.model_attributes);
-      } catch (e) {
-      }
-    }
 
     const fullRequestBody = buildRequestBodyForLogging(request.body, modelAttributes, shouldLogBody);
     const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
@@ -1000,7 +820,27 @@ export async function handleNonStreamRequest(
   let response: any;
   let aifwCtx: any = null;
 
-  if (isEmbeddingsRequest) {
+  if (isResponsesCompactRequest) {
+    const input = (request.body as any)?.input;
+    const options: any = {
+      ...(request.body as any),
+      __forwardedHeaders: forwardedHeaders,
+    };
+    delete options.input;
+    delete options.model;
+    delete options.stream;
+
+    response = await makeHttpRequest(
+      protocolConfig,
+      [],
+      options,
+      false,
+      input,
+      false,
+      undefined,
+      true
+    );
+  } else if (isEmbeddingsRequest) {
     // Embeddings API 请求
     const messages = (request.body as any)?.messages || [];
     const options = {
@@ -1092,31 +932,62 @@ export async function handleNonStreamRequest(
   reply.code(response.statusCode);
 
   let responseData: any;
-  const responseText = response.body;
-
-  const truncatedResponseText = responseText.length > 500
-    ? `${responseText.substring(0, 500)}... (total length: ${responseText.length} chars)`
-    : responseText;
-
-  memoryLogger.debug(
-    `Raw response body: ${truncatedResponseText}`,
-    'Proxy'
-  );
+  const responseBody = response.body;
 
   const contentType = String(response.headers['content-type'] || '').toLowerCase();
   const isJsonResponse = contentType.includes('application/json') || contentType.includes('json');
 
-  if (!isJsonResponse && responseText) {
-    memoryLogger.warn(
-      `Upstream returned non-JSON response: Content-Type=${contentType}`,
+  if (typeof responseBody === 'string') {
+    const truncatedResponseText = responseBody.length > 500
+      ? `${responseBody.substring(0, 500)}... (total length: ${responseBody.length} chars)`
+      : responseBody;
+
+    memoryLogger.debug(
+      `Raw response body: ${truncatedResponseText}`,
       'Proxy'
     );
-    reply.header('Content-Type', contentType || 'text/plain');
-    return reply.send(responseText);
+
+    if (!isJsonResponse && responseBody) {
+      memoryLogger.warn(
+        `Upstream returned non-JSON response: Content-Type=${contentType}`,
+        'Proxy'
+      );
+      reply.header('Content-Type', contentType || 'text/plain');
+      return reply.send(responseBody);
+    }
+
+    try {
+      responseData = responseBody ? JSON.parse(responseBody) : { error: { message: 'Empty response body' } };
+    } catch (parseError) {
+      const truncatedResponse = responseBody.length > 200
+        ? `${responseBody.substring(0, 200)}... (total length: ${responseBody.length})`
+        : responseBody;
+      memoryLogger.error(
+        `JSON parse failed: ${parseError} | response: ${truncatedResponse}`,
+        'Proxy'
+      );
+      responseData = {
+        error: {
+          message: 'Invalid JSON response from upstream',
+          type: 'api_error',
+          param: null,
+          code: 'invalid_response'
+        }
+      };
+    }
+  } else {
+    responseData = responseBody ?? { error: { message: 'Empty response body' } };
+    const rawResponseBody = JSON.stringify(responseData);
+    const truncatedResponseText = rawResponseBody.length > 500
+      ? `${rawResponseBody.substring(0, 500)}... (total length: ${rawResponseBody.length} chars)`
+      : rawResponseBody;
+    memoryLogger.debug(
+      `Raw response body: ${truncatedResponseText}`,
+      'Proxy'
+    );
   }
 
   try {
-    responseData = responseText ? JSON.parse(responseText) : { error: { message: 'Empty response body' } };
     // 移除上游调试字段（例如 instructions）
     try {
       stripFieldRecursively(responseData, 'instructions');
@@ -1160,22 +1031,11 @@ export async function handleNonStreamRequest(
     }
 
     memoryLogger.debug(logMessage, 'Proxy');
-  } catch (parseError) {
-    const truncatedResponse = responseText.length > 200
-      ? `${responseText.substring(0, 200)}... (total length: ${responseText.length})`
-      : responseText;
+  } catch (postProcessError) {
     memoryLogger.error(
-      `JSON parse failed: ${parseError} | response: ${truncatedResponse}`,
+      `Response post-process failed: ${postProcessError}`,
       'Proxy'
     );
-    responseData = {
-      error: {
-        message: 'Invalid JSON response from upstream',
-        type: 'api_error',
-        param: null,
-        code: 'invalid_response'
-      }
-    };
   }
 
   const duration = Date.now() - startTime;
@@ -1215,14 +1075,6 @@ export async function handleNonStreamRequest(
   }
 
   const shouldLogBody = shouldLogRequestBody(virtualKey);
-
-  let modelAttributes: any = undefined;
-  if (currentModel?.model_attributes) {
-    try {
-      modelAttributes = JSON.parse(currentModel.model_attributes);
-    } catch (e) {
-    }
-  }
 
   const fullRequestBody = buildRequestBodyForLogging(request.body, modelAttributes, shouldLogBody);
   const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;

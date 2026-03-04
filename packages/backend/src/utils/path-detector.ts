@@ -61,6 +61,20 @@ export function isResponsesApiPath(path: string): boolean {
 }
 
 /**
+ * Check if the path is the Responses compact endpoint
+ */
+export function isResponsesCompactPath(path: string): boolean {
+  return path.toLowerCase().includes('/responses/compact');
+}
+
+/**
+ * Check whether gateway response cache should be bypassed for this path.
+ */
+export function shouldBypassGatewayCache(path: string): boolean {
+  return isEmbeddingsPath(path) || isResponsesCompactPath(path);
+}
+
+/**
  * Check if the path is an Anthropic messages endpoint
  */
 export function isMessagesPath(path: string): boolean {

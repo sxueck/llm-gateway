@@ -45,6 +45,7 @@ export function extractResponsesApiOptions(body: any): Record<string, any> {
     max_tool_calls: body?.max_tool_calls,
     background: body?.background,
     conversation: body?.conversation,
+    context_management: body?.context_management,
   };
 }
 

@@ -6,7 +6,7 @@ import { normalizeOpenAIError } from '../../utils/http-error-normalizer.js';
 export interface HttpResponse {
   statusCode: number;
   headers: Record<string, string | string[]>;
-  body: string;
+  body: any;
 }
 
 export interface ThinkingBlock {
@@ -32,6 +32,7 @@ export interface RequestOptions {
   input?: string | string[] | any[];
   isEmbeddingsRequest?: boolean;
   isResponsesRequest?: boolean;
+  isResponsesCompactRequest?: boolean;
   abortSignal?: AbortSignal;
 }
 
@@ -60,13 +61,16 @@ export async function makeHttpRequest(
   isEmbeddingsRequest: boolean = false,
   input?: string | string[],
   isResponsesRequest: boolean = false,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  isResponsesCompactRequest: boolean = false
 ): Promise<HttpResponse> {
   try {
     let response: any;
 
     if (isEmbeddingsRequest) {
       response = await protocolAdapter.createEmbedding(config, input || [], options, abortSignal);
+    } else if (isResponsesCompactRequest) {
+      response = await protocolAdapter.compactResponse(config, input || [], options, abortSignal);
     } else if (isResponsesRequest) {
       response = await protocolAdapter.createResponse(config, input || '', options, abortSignal);
     } else {
@@ -82,7 +86,7 @@ export async function makeHttpRequest(
     return {
       statusCode: 200,
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(response)
+      body: response
     };
   } catch (error: any) {
     const { statusCode, errorResponse } = normalizeError(error);
@@ -90,7 +94,7 @@ export async function makeHttpRequest(
     return {
       statusCode,
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(errorResponse)
+      body: errorResponse
     };
   }
 }

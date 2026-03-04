@@ -17,6 +17,7 @@ const API_GROUPS: Record<string, ApiGroup> = {
   proxy: {
     routes: [
       { path: '/chat/completions', method: 'ALL', handler: 'proxy' },
+      { path: '/responses/compact', method: 'ALL', handler: 'proxy' },
       { path: '/responses', method: 'ALL', handler: 'proxy' },
       { path: '/completions', method: 'ALL', handler: 'proxy' },
       { path: '/embeddings', method: 'ALL', handler: 'proxy' },
