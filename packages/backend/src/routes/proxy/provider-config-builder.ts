@@ -134,12 +134,8 @@ export async function buildProviderConfig(
     const pathMatch = path.match(/\/models\/([^:\/]+)/);
     if (pathMatch && pathMatch[1]) {
       model = pathMatch[1];
-      // 重要：将提取的模型名称注入到请求体中，以便 model-resolver 能正确匹配
-      if (request.body && typeof request.body === 'object') {
-        (request.body as any).model = model;
-      }
       memoryLogger.debug(
-        `从路径提取 Gemini 模型名称并注入请求体: ${model}`,
+        `从路径提取 Gemini 模型名称: ${model}`,
         'ProviderConfig'
       );
     }

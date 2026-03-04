@@ -5,6 +5,7 @@ export interface AnthropicMessage {
 
 export type AnthropicThinkingConfig =
   | { type: 'enabled'; budget_tokens: number }
+  | { type: 'adaptive' }
   | { type: 'disabled' };
 
 export interface AnthropicContentBlock {
@@ -20,6 +21,7 @@ export interface AnthropicContentBlock {
     | 'web_fetch_tool_result'
     | 'thinking'
     | 'redacted_thinking'
+    | 'compaction'
     | 'mcp_tool_use'
     | 'mcp_tool_result';
   text?: string;
@@ -57,6 +59,16 @@ export interface AnthropicRequest {
   stop_sequences?: string[];
   stream?: boolean;
   service_tier?: 'auto' | 'standard_only' | (string & {});
+  speed?: 'fast' | 'standard' | (string & {});
+  inference_geo?: 'global' | 'us' | (string & {});
+  cache_control?: {
+    type: 'ephemeral';
+    ttl?: '5m' | '1h';
+  };
+  container?: string | Record<string, any>;
+  context_management?: Record<string, any>;
+  mcp_servers?: Array<Record<string, any>>;
+  output_config?: Record<string, any>;
   metadata?: {
     user_id?: string;
   };
@@ -94,12 +106,19 @@ export interface AnthropicTool {
 export interface AnthropicUsage {
   input_tokens: number;
   output_tokens: number;
+  speed?: 'fast' | 'standard' | string;
+  inference_geo?: 'global' | 'us' | string;
   cache_creation_input_tokens?: number;
   cache_read_input_tokens?: number;
   cache_creation?: {
     ephemeral_5m_input_tokens?: number;
     ephemeral_1h_input_tokens?: number;
   };
+  iterations?: Array<{
+    type: string;
+    input_tokens: number;
+    output_tokens: number;
+  }>;
   service_tier?: string;
 }
  
@@ -115,6 +134,7 @@ export interface AnthropicResponse {
     | 'stop_sequence'
     | 'tool_use'
     | 'pause_turn'
+    | 'compaction'
     | 'refusal'
     | 'model_context_window_exceeded'
     | null;
@@ -128,11 +148,12 @@ export interface AnthropicStreamEvent {
   index?: number;
   content_block?: AnthropicContentBlock;
   delta?: {
-    type: 'text_delta' | 'input_json_delta' | 'thinking_delta' | 'signature_delta' | 'citations_delta';
+    type: 'text_delta' | 'input_json_delta' | 'thinking_delta' | 'signature_delta' | 'citations_delta' | 'compaction_delta';
     text?: string;
     partial_json?: string;
     thinking?: string;
     signature?: string;
+    content?: string;
     citation?: any;
     stop_reason?: string;
     stop_sequence?: string;

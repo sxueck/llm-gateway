@@ -64,9 +64,16 @@ curl -X POST http://localhost:3000/v1/messages \
 - `stop_sequences` (array): 停止序列
 - `stream` (boolean): 是否启用流式响应
 - `service_tier` (string): 服务档位（如 `auto` / `standard_only`，不同上游可能扩展）
+- `speed` (string): 速度模式（如 `fast` / `standard`）
+- `inference_geo` (string): 推理地域（如 `global` / `us`）
+- `cache_control` (object): 顶层自动缓存控制（如 `{ "type": "ephemeral", "ttl": "5m" }`）
+- `output_config` (object): 结构化输出配置（如 `output_config.format`）
+- `container` (string | object): 容器复用配置（code execution 场景）
+- `context_management` (object): 上下文管理配置（如 compaction）
+- `mcp_servers` (array): MCP 服务器定义列表
 - `metadata` (object): 元数据
 - `betas` (array): Beta 功能标识列表（会转为 `anthropic-beta`，兼容上游差异）
-- `thinking` (object): 扩展思考配置（例如 `{ "type": "enabled", "budget_tokens": 2048 }`）
+- `thinking` (object): 扩展思考配置（例如 `{ "type": "enabled", "budget_tokens": 2048 }` 或 `{ "type": "adaptive" }`）
 - `tools` (array): 工具定义
 - `tool_choice` (object): 工具选择策略
 

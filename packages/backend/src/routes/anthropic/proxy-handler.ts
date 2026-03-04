@@ -27,6 +27,20 @@ function createAnthropicError(message: string, type: string = 'invalid_request_e
   };
 }
 
+async function calculateAnthropicStreamTokenCount(
+  requestBody: AnthropicRequest,
+  tokenUsage: { totalTokens: number; promptTokens: number; completionTokens: number; streamChunks: string[] }
+) {
+  return calculateTokensIfNeeded(
+    tokenUsage.totalTokens,
+    requestBody,
+    undefined,
+    tokenUsage.streamChunks,
+    tokenUsage.promptTokens,
+    tokenUsage.completionTokens
+  );
+}
+
 export function createAnthropicProxyHandler() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const startTime = Date.now();
@@ -358,14 +372,7 @@ async function handleAnthropicStreamRequest(
 
     const shouldLogBody = shouldLogRequestBody(virtualKey);
 
-    const tokenCount = await calculateTokensIfNeeded(
-      tokenUsage.totalTokens,
-      requestBody,
-      undefined,
-      undefined,
-      tokenUsage.promptTokens,
-      tokenUsage.completionTokens
-    );
+    const tokenCount = await calculateAnthropicStreamTokenCount(requestBody, tokenUsage);
 
     await logApiRequestToDb({
       virtualKey,

@@ -83,6 +83,13 @@ function buildRequestParams(config: any, requestBody: AnthropicRequest, stream: 
     'top_k',
     'stop_sequences',
     'service_tier',
+    'speed',
+    'inference_geo',
+    'cache_control',
+    'container',
+    'context_management',
+    'mcp_servers',
+    'output_config',
     'metadata',
     'tool_choice',
     'thinking',
@@ -150,8 +157,14 @@ function hasAnthropicContent(event: AnthropicStreamEvent): boolean {
   if (event.type === 'content_block_start' && event.content_block?.type === 'thinking') {
     return true;
   }
+  if (event.type === 'content_block_start' && event.content_block?.type === 'compaction') {
+    return true;
+  }
   if (event.type === 'content_block_delta' && event.delta?.type === 'input_json_delta') {
     return true;
+  }
+  if (event.type === 'content_block_delta' && event.delta?.type === 'compaction_delta') {
+    return (event.delta.content || '').trim().length > 0;
   }
   return false;
 }
@@ -160,6 +173,192 @@ function getAnthropicBetaHeaders(requestBody: AnthropicRequest): Record<string, 
   const betas = (requestBody as any)?.betas;
   if (!Array.isArray(betas) || betas.length === 0) return undefined;
   return { 'anthropic-beta': betas.join(',') };
+}
+
+function buildAnthropicRequestOptions(
+  defaultHeaders: unknown,
+  forwardedHeaders: Record<string, string> | undefined,
+  requestBody: AnthropicRequest
+): any {
+  const betaHeaders = getAnthropicBetaHeaders(requestBody);
+  const clientForwarded = filterForwardedHeaders(defaultHeaders, forwardedHeaders);
+
+  if (!betaHeaders && !clientForwarded) {
+    return undefined;
+  }
+
+  return {
+    headers: {
+      ...(clientForwarded || {}),
+      ...(betaHeaders || {}),
+    },
+  } as any;
+}
+
+function hasAnthropicBetas(requestBody: AnthropicRequest): boolean {
+  const betas = (requestBody as any)?.betas;
+  return Array.isArray(betas) && betas.length > 0;
+}
+
+async function createAnthropicMessage(
+  client: Anthropic,
+  requestParams: any,
+  requestBody: AnthropicRequest,
+  requestOpts: any
+): Promise<any> {
+  if (!hasAnthropicBetas(requestBody)) {
+    return client.messages.create(requestParams, requestOpts);
+  }
+
+  try {
+    return await (client as any).beta?.messages?.create(
+      { ...requestParams, betas: (requestBody as any).betas },
+      requestOpts
+    );
+  } catch (error: any) {
+    memoryLogger.debug(
+      `Anthropic beta messages.create 调用失败，回退到标准 messages.create | error: ${error?.message || String(error)}`,
+      'Anthropic'
+    );
+    return client.messages.create(requestParams, requestOpts);
+  }
+}
+
+function createAnthropicMessageStream(
+  client: Anthropic,
+  requestParams: any,
+  requestBody: AnthropicRequest,
+  requestOpts: any
+): any {
+  if (!hasAnthropicBetas(requestBody)) {
+    return client.messages.stream(requestParams, requestOpts);
+  }
+
+  try {
+    return (client as any).beta?.messages?.stream(
+      { ...requestParams, betas: (requestBody as any).betas },
+      requestOpts
+    );
+  } catch (error: any) {
+    memoryLogger.debug(
+      `Anthropic beta messages.stream 调用失败，回退到标准 messages.stream | error: ${error?.message || String(error)}`,
+      'Anthropic'
+    );
+    return client.messages.stream(requestParams, requestOpts);
+  }
+}
+
+function ensureSseHeaders(reply: FastifyReply): void {
+  if (!reply.raw.headersSent) {
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
+  }
+}
+
+interface StreamAttemptResult {
+  promptTokens: number;
+  completionTokens: number;
+  hasAssistantContent: boolean;
+  streamChunks: string[];
+}
+
+async function consumeAnthropicStreamAttempt(
+  stream: any,
+  reply: FastifyReply,
+  flushOnEmptyOutput: boolean
+): Promise<StreamAttemptResult> {
+  let inputTokens = 0;
+  let cacheCreationInputTokens = 0;
+  let cacheReadInputTokens = 0;
+  let outputTokens = 0;
+  let buffering = true;
+  const pendingChunks: string[] = [];
+  let hasAssistantContent = false;
+  const streamChunks: string[] = [];
+
+  const flushPendingChunks = () => {
+    if (!buffering) return;
+    buffering = false;
+    ensureSseHeaders(reply);
+    for (const chunk of pendingChunks) {
+      reply.raw.write(chunk);
+      streamChunks.push(chunk);
+    }
+    pendingChunks.length = 0;
+  };
+
+  const writeChunk = (chunk: string) => {
+    if (buffering) {
+      pendingChunks.push(chunk);
+      return;
+    }
+
+    ensureSseHeaders(reply);
+    reply.raw.write(chunk);
+    streamChunks.push(chunk);
+  };
+
+  for await (const event of stream) {
+    const eventData = event as AnthropicStreamEvent;
+
+    if (!hasAssistantContent && hasAnthropicContent(eventData)) {
+      hasAssistantContent = true;
+      flushPendingChunks();
+    }
+
+    if (eventData.type === 'message_start') {
+      if (eventData.message?.usage) {
+        inputTokens = eventData.message.usage.input_tokens || 0;
+        const anyUsage: any = eventData.message.usage as any;
+        cacheCreationInputTokens = anyUsage?.cache_creation_input_tokens || 0;
+        cacheReadInputTokens = anyUsage?.cache_read_input_tokens || 0;
+      }
+    } else if (eventData.type === 'message_delta') {
+      const anyUsage: any = (eventData as any).usage;
+      if (anyUsage && anyUsage.output_tokens !== undefined) {
+        outputTokens = anyUsage.output_tokens as number;
+      }
+    }
+
+    const sseData = `event: ${eventData.type}\ndata: ${JSON.stringify(eventData)}\n\n`;
+    writeChunk(sseData);
+  }
+
+  try {
+    const finalMessage: any = await (stream as any).finalMessage?.();
+    if (finalMessage?.usage) {
+      inputTokens = finalMessage.usage.input_tokens ?? inputTokens;
+      outputTokens = finalMessage.usage.output_tokens ?? outputTokens;
+      cacheCreationInputTokens = finalMessage.usage.cache_creation_input_tokens ?? cacheCreationInputTokens;
+      cacheReadInputTokens = finalMessage.usage.cache_read_input_tokens ?? cacheReadInputTokens;
+    }
+  } catch (error: any) {
+    memoryLogger.debug(
+      `Anthropic finalMessage usage 获取失败，保留流式事件统计值 | error: ${error?.message || String(error)}`,
+      'Anthropic'
+    );
+  }
+
+  if (hasAssistantContent || flushOnEmptyOutput) {
+    flushPendingChunks();
+  }
+
+  if (hasAssistantContent && !reply.raw.writableEnded) {
+    reply.raw.end();
+  }
+
+  const promptTokens = inputTokens + cacheCreationInputTokens + cacheReadInputTokens;
+  const completionTokens = outputTokens;
+
+  return {
+    promptTokens,
+    completionTokens,
+    hasAssistantContent,
+    streamChunks,
+  };
 }
 
 export async function makeAnthropicRequest(
@@ -171,28 +370,8 @@ export async function makeAnthropicRequest(
     const headers = config.modelAttributes?.headers;
     const client = getAnthropicClient(config.baseUrl, config.apiKey, headers);
     const requestParams = buildRequestParams(config, requestBody);
-
-    const betaHeaders = getAnthropicBetaHeaders(requestBody);
-    const clientForwarded = filterForwardedHeaders(config?.modelAttributes?.headers, forwardedHeaders);
-    const requestOpts = (betaHeaders || clientForwarded)
-      ? ({ headers: { ...(clientForwarded || {}), ...(betaHeaders || {}) } } as any)
-      : undefined;
-
-    // Prefer Anthropic beta endpoint semantics when betas are present.
-    // Fallback to header-only for Anthropic-compatible providers that don't accept ?beta=true.
-    let response: any;
-    if (betaHeaders) {
-      try {
-        response = await (client as any).beta?.messages?.create(
-          { ...requestParams, betas: (requestBody as any).betas },
-          requestOpts
-        );
-      } catch (e: any) {
-        response = await client.messages.create(requestParams, requestOpts);
-      }
-    } else {
-      response = await client.messages.create(requestParams, requestOpts);
-    }
+    const requestOpts = buildAnthropicRequestOptions(config?.modelAttributes?.headers, forwardedHeaders, requestBody);
+    const response = await createAnthropicMessage(client, requestParams, requestBody, requestOpts);
 
     return {
       statusCode: 200,
@@ -217,6 +396,7 @@ export async function makeAnthropicStreamRequest(
   forwardedHeaders?: Record<string, string>
 ): Promise<StreamTokenUsage> {
   const headers = config.modelAttributes?.headers;
+  const requestOpts = buildAnthropicRequestOptions(headers, forwardedHeaders, requestBody);
 
   const totalAttempts = Math.max(1, getAnthropicEmptyRetryLimit(config) + 1);
   let lastEmptyError: EmptyOutputError | null = null;
@@ -226,138 +406,37 @@ export async function makeAnthropicStreamRequest(
     const requestParams = buildRequestParams(config, requestBody, true);
 
     try {
-      const betaHeaders = getAnthropicBetaHeaders(requestBody);
-      const clientForwarded = filterForwardedHeaders(config?.modelAttributes?.headers, forwardedHeaders);
-      const requestOpts = (betaHeaders || clientForwarded)
-        ? ({ headers: { ...(clientForwarded || {}), ...(betaHeaders || {}) } } as any)
-        : undefined;
-      let stream: any;
-      if (betaHeaders) {
-        try {
-          stream = (client as any).beta?.messages?.stream(
-            { ...requestParams, betas: (requestBody as any).betas },
-            requestOpts
-          );
-        } catch (e: any) {
-          stream = client.messages.stream(requestParams, requestOpts);
-        }
-      } else {
-        stream = client.messages.stream(requestParams, requestOpts);
-      }
+      const stream = createAnthropicMessageStream(client, requestParams, requestBody, requestOpts);
+      const attemptResult = await consumeAnthropicStreamAttempt(
+        stream,
+        reply,
+        attempt === totalAttempts
+      );
 
-      // 每次尝试都需要独立的变量，避免重试时状态混乱
-      let inputTokens = 0;
-      let cacheCreationInputTokens = 0;
-      let cacheReadInputTokens = 0;
-      let outputTokens = 0;
-      let buffering = true;
-      const pendingChunks: string[] = [];
-      let hasAssistantContent = false;
-      const streamChunks: string[] = [];
-
-      const flushPendingChunks = () => {
-        if (!buffering) return;
-        buffering = false;
-        if (!reply.raw.headersSent) {
-          reply.raw.writeHead(200, {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-          });
-        }
-        for (const chunk of pendingChunks) {
-          reply.raw.write(chunk);
-          streamChunks.push(chunk);
-        }
-        pendingChunks.length = 0;
-      };
-
-      const writeChunk = (chunk: string) => {
-        if (buffering) {
-          pendingChunks.push(chunk);
-        } else {
-          if (!reply.raw.headersSent) {
-            reply.raw.writeHead(200, {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache',
-              'Connection': 'keep-alive',
-            });
-          }
-          reply.raw.write(chunk);
-          streamChunks.push(chunk);
-        }
-      };
-
-      for await (const event of stream) {
-        const eventData = event as AnthropicStreamEvent;
-
-        if (!hasAssistantContent && hasAnthropicContent(eventData)) {
-          hasAssistantContent = true;
-          flushPendingChunks();
-        }
-
-        if (eventData.type === 'message_start') {
-          if (eventData.message?.usage) {
-            inputTokens = eventData.message.usage.input_tokens || 0;
-            const anyUsage: any = eventData.message.usage as any;
-            cacheCreationInputTokens = anyUsage?.cache_creation_input_tokens || 0;
-            cacheReadInputTokens = anyUsage?.cache_read_input_tokens || 0;
-          }
-        } else if (eventData.type === 'message_delta') {
-          const anyUsage: any = (eventData as any).usage;
-          if (anyUsage && anyUsage.output_tokens !== undefined) {
-            outputTokens = anyUsage.output_tokens as number;
-          }
-        }
-
-        const sseData = `event: ${eventData.type}\ndata: ${JSON.stringify(eventData)}\n\n`;
-        writeChunk(sseData);
-      }
-
-      // After stream completes, prefer SDK final snapshot usage for accuracy
-      try {
-        const finalMessage: any = await (stream as any).finalMessage?.();
-        if (finalMessage?.usage) {
-          inputTokens = finalMessage.usage.input_tokens ?? inputTokens;
-          outputTokens = finalMessage.usage.output_tokens ?? outputTokens;
-          cacheCreationInputTokens = finalMessage.usage.cache_creation_input_tokens ?? cacheCreationInputTokens;
-          cacheReadInputTokens = finalMessage.usage.cache_read_input_tokens ?? cacheReadInputTokens;
-        }
-      } catch {}
-
-       if (!hasAssistantContent) {
+      if (!attemptResult.hasAssistantContent) {
         if (attempt < totalAttempts) {
-           memoryLogger.warn(
-             `Anthropic 流式无实际输出，准备重试 | attempt ${attempt}/${totalAttempts}`,
-             'Anthropic'
-           );
-           lastEmptyError = new EmptyOutputError(
-             'Anthropic stream completed without assistant output',
-             { source: 'claude', attempt, totalAttempts }
-           );
-           continue;
+          memoryLogger.warn(
+            `Anthropic 流式无实际输出，准备重试 | attempt ${attempt}/${totalAttempts}`,
+            'Anthropic'
+          );
+          lastEmptyError = new EmptyOutputError(
+            'Anthropic stream completed without assistant output',
+            { source: 'claude', attempt, totalAttempts }
+          );
+          continue;
         }
-        
-        flushPendingChunks();
+
         throw lastEmptyError || new EmptyOutputError(
           'Anthropic stream ended without assistant output',
           { source: 'claude', totalAttempts }
         );
       }
 
-      flushPendingChunks();
-      if (!reply.raw.writableEnded) {
-          reply.raw.end();
-      }
-
-      const promptTokens = inputTokens + cacheCreationInputTokens + cacheReadInputTokens;
-      const completionTokens = outputTokens;
-
       return {
-        promptTokens,
-        completionTokens,
-        totalTokens: promptTokens + completionTokens,
-        streamChunks,
+        promptTokens: attemptResult.promptTokens,
+        completionTokens: attemptResult.completionTokens,
+        totalTokens: attemptResult.promptTokens + attemptResult.completionTokens,
+        streamChunks: attemptResult.streamChunks,
       };
 
     } catch (error: any) {
