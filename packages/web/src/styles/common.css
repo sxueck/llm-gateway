@@ -15,13 +15,8 @@
   background-color: rgba(24, 160, 88, 0.1);
 }
 
-.model-type-radio .n-radio__dot {
-  width: 18px;
-  height: 18px;
-}
-
+.model-type-radio .n-radio__dot,
 .model-type-radio .n-radio__dot-wrapper {
   width: 18px;
   height: 18px;
 }
-

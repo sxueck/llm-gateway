@@ -82,12 +82,16 @@
   transform: rotate(180deg);
 }
 
-.stat-card {
+.stat-card,
+.trend-card {
   background: #ffffff;
   border-radius: 12px;
   border: 1px solid #f3f4f6;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.stat-card {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   height: 100%;
   position: relative;
   overflow: hidden;
@@ -108,7 +112,8 @@
 }
 
 @media (max-width: 639px) {
-  .stat-card {
+  .stat-card,
+  .trend-card {
     border-radius: 10px;
   }
 }
@@ -276,18 +281,12 @@
   font-variant-numeric: tabular-nums;
 }
 
-.stat-detail-success .stat-detail-label {
-  color: #006241;
-}
-
+.stat-detail-success .stat-detail-label,
 .stat-detail-success .stat-detail-value {
   color: #006241;
 }
 
-.stat-detail-error .stat-detail-label {
-  color: #d03050;
-}
-
+.stat-detail-error .stat-detail-label,
 .stat-detail-error .stat-detail-value {
   color: #d03050;
 }
@@ -309,17 +308,7 @@
 
 
 .trend-card {
-  background: #ffffff;
-  border-radius: 12px;
-  border: 1px solid #f3f4f6;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@media (max-width: 639px) {
-  .trend-card {
-    border-radius: 10px;
-  }
 }
 
 .trend-card:hover {
@@ -590,9 +579,7 @@
   .overview-value {
     font-size: 16px;
   }
-}
 
-@media (max-width: 639px) {
   .overview-label {
     font-size: 12px;
   }

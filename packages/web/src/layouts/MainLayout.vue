@@ -127,13 +127,17 @@ const { t } = useI18n();
 
 const collapsed = ref(false);
 const windowWidth = ref(window.innerWidth);
+const windowHeight = ref(window.innerHeight);
 
 const toggleSidebar = () => {
   collapsed.value = !collapsed.value;
 };
 
+const isShortScreen = computed(() => windowHeight.value < 800);
+
 const handleResize = () => {
   windowWidth.value = window.innerWidth;
+  windowHeight.value = window.innerHeight;
   if (windowWidth.value < 768) {
     collapsed.value = true;
   } else {
@@ -215,7 +219,13 @@ const menuOptions = computed(() => [
   },
 ]);
 
-const defaultExpandedKeys = ['model-management', 'experimental-features', 'tools', 'settings'];
+const defaultExpandedKeys = computed(() => {
+  // 小屏幕时只展开核心菜单，折叠实验性功能与系统设置
+  if (isShortScreen.value) {
+    return ['model-management', 'tools'];
+  }
+  return ['model-management', 'tools', 'settings', 'experimental-features'];
+});
 
 const generalMenuOptions = computed(() => [
   {
@@ -302,6 +312,26 @@ onUnmounted(() => {
   -webkit-backdrop-filter: blur(12px);
   z-index: 100;
   height: calc(100vh - 32px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* 细滚动条样式 */
+.app-sider::-webkit-scrollbar {
+  width: 4px;
+}
+
+.app-sider::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-sider::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+
+.app-sider:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
 }
 
 .app-main-layout {
