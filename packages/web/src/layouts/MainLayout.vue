@@ -23,8 +23,9 @@
         :collapsed-icon-size="22"
         :options="menuOptions"
         :value="activeKey"
-        :default-expanded-keys="defaultExpandedKeys"
+        :expanded-keys="mainMenuExpandedKeys"
         @update:value="handleMenuSelect"
+        @update:expanded-keys="handleMainMenuExpandedKeysUpdate"
         class="custom-menu"
       />
 
@@ -36,7 +37,9 @@
         :collapsed-icon-size="22"
         :options="generalMenuOptions"
         :value="activeKey"
+        :expanded-keys="generalMenuExpandedKeys"
         @update:value="handleMenuSelect"
+        @update:expanded-keys="handleGeneralMenuExpandedKeysUpdate"
         class="custom-menu"
       />
     </n-layout-sider>
@@ -82,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, ref, onUnmounted } from 'vue';
+import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import {
@@ -128,12 +131,62 @@ const { t } = useI18n();
 const collapsed = ref(false);
 const windowWidth = ref(window.innerWidth);
 const windowHeight = ref(window.innerHeight);
+const mainMenuExpandedKeys = ref<string[]>([]);
+const generalMenuExpandedKeys = ref<string[]>([]);
+
+const MAIN_MENU_DEFAULT_KEYS = ['model-management', 'tools'];
+const COMPACT_SIDEBAR_HEIGHT = 960;
+const mainMenuParentByKey: Record<string, string> = {
+  providers: 'model-management',
+  models: 'model-management',
+  'virtual-models': 'model-management',
+  'expert-routing': 'experimental-features',
+  'cost-analysis': 'experimental-features',
+  'api-guide': 'tools',
+  logs: 'tools',
+  'api-requests': 'tools',
+};
+const generalMenuParentByKey: Record<string, string> = {
+  settings: 'settings',
+  'security-settings': 'settings',
+  backup: 'settings',
+  'developer-settings': 'settings',
+};
 
 const toggleSidebar = () => {
   collapsed.value = !collapsed.value;
 };
 
-const isShortScreen = computed(() => windowHeight.value < 800);
+const isCompactSidebar = computed(() => windowHeight.value < COMPACT_SIDEBAR_HEIGHT);
+
+function dedupeKeys(keys: string[]) {
+  return [...new Set(keys)];
+}
+
+function getDefaultMainMenuExpandedKeys() {
+  const keys = [...MAIN_MENU_DEFAULT_KEYS];
+
+  if (!isCompactSidebar.value) {
+    keys.push('experimental-features');
+  }
+
+  const activeParentKey = mainMenuParentByKey[activeKey.value];
+  if (activeParentKey) {
+    keys.push(activeParentKey);
+  }
+
+  return dedupeKeys(keys);
+}
+
+function getDefaultGeneralMenuExpandedKeys() {
+  const activeParentKey = generalMenuParentByKey[activeKey.value];
+  return activeParentKey ? [activeParentKey] : [];
+}
+
+function syncMenuExpandedKeys() {
+  mainMenuExpandedKeys.value = getDefaultMainMenuExpandedKeys();
+  generalMenuExpandedKeys.value = getDefaultGeneralMenuExpandedKeys();
+}
 
 const handleResize = () => {
   windowWidth.value = window.innerWidth;
@@ -143,6 +196,7 @@ const handleResize = () => {
   } else {
     collapsed.value = false;
   }
+  syncMenuExpandedKeys();
 };
 
 const menuOptions = computed(() => [
@@ -219,14 +273,6 @@ const menuOptions = computed(() => [
   },
 ]);
 
-const defaultExpandedKeys = computed(() => {
-  // 小屏幕时只展开核心菜单，折叠实验性功能与系统设置
-  if (isShortScreen.value) {
-    return ['model-management', 'tools'];
-  }
-  return ['model-management', 'tools', 'settings', 'experimental-features'];
-});
-
 const generalMenuOptions = computed(() => [
   {
     label: t('menu.settings'),
@@ -274,12 +320,24 @@ function handleMenuSelect(key: string) {
   router.push(`/${key}`);
 }
 
+function handleMainMenuExpandedKeysUpdate(keys: string[]) {
+  mainMenuExpandedKeys.value = keys;
+}
+
+function handleGeneralMenuExpandedKeysUpdate(keys: string[]) {
+  generalMenuExpandedKeys.value = keys;
+}
+
 function handleUserAction(key: string) {
   if (key === 'logout') {
     authStore.logout();
     router.push('/login');
   }
 }
+
+watch(activeKey, () => {
+  syncMenuExpandedKeys();
+}, { immediate: true });
 
 onMounted(async () => {
   if (authStore.token && !authStore.user) {
