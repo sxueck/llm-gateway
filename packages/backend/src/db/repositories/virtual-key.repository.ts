@@ -101,8 +101,8 @@ export const virtualKeyRepository = {
         `INSERT INTO virtual_keys (
           id, key_value, key_hash, name, provider_id, model_id,
           routing_strategy, model_ids, routing_config,
-          enabled, rate_limit, cache_enabled, disable_logging, dynamic_compression_enabled, image_compression_enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          enabled, rate_limit, cache_enabled, disable_logging, dynamic_compression_enabled, image_compression_enabled, pii_protection_enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           vk.id,
           vk.key_value,
@@ -119,6 +119,7 @@ export const virtualKeyRepository = {
           vk.disable_logging || 0,
           vk.dynamic_compression_enabled || 0,
           vk.image_compression_enabled || 0,
+          vk.pii_protection_enabled || 0,
           now,
           now
         ]

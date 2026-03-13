@@ -364,34 +364,7 @@ export default {
         content: '系统正在监控所有请求的User-Agent，检测到的爬虫请求将被记录或拦截。可在日志中查看详细的检测记录。',
       },
     },
-    aifw: {
-      title: 'AI 防火墙（OneAIFW）',
-      enabled: '启用 OneAIFW 预处理',
-      enabledDesc: '在转发到上游前脱敏敏感信息，并在返回时自动恢复',
-      enabled_info: {
-        title: 'OneAIFW 已启用',
-        content: '网关会在请求进入第一层时对文本进行脱敏处理，上游模型只会看到占位符；响应返回后会自动还原为原始敏感信息。',
-      },
-      bypass_info: {
-        title: '哪些情况下不走防火墙',
-        content: '当前仅 OpenAI Chat Completions 接口会启用隐私保护：/v1/chat/completions\n以下情况将直接转发到上游，不经过 OneAIFW：\n- OpenAI Responses API：/v1/responses\n- Embeddings：/v1/embeddings\n- 其他非 Chat Completions 的端点\n- 非 OpenAI 协议的上游（例如 Anthropic / Gemini 原生等）',
-      },
-      baseUrl: 'OneAIFW 服务地址',
-      baseUrlDesc: 'OneAIFW 本地/内网 HTTP 服务地址（默认 127.0.0.1:8844）',
-      baseUrlPlaceholder: 'http://127.0.0.1:8844',
-      failOpen: '失败时放行（fail-open）',
-      failOpenDesc: 'OneAIFW 不可用时是否仍将请求转发到上游（关闭则返回 503）',
-      timeoutMs: '超时（ms）',
-      timeoutMsDesc: '调用 OneAIFW 的超时时间（500~60000ms）',
-      httpApiKey: 'HTTP API Key（可选）',
-      httpApiKeySet: '已设置（出于安全不回显）',
-      httpApiKeyNotSet: '未设置',
-      httpApiKeyPlaceholder: '留空表示不修改；输入并保存将更新（清空并保存将删除）',
-      maskConfigJson: 'maskConfig（JSON）',
-      maskConfigJsonDesc: '将同步到 OneAIFW /api/config 的 maskConfig；留空表示不配置',
-      // Escape `{` / `}` for vue-i18n message compiler (otherwise treated as placeholders)
-      maskConfigJsonPlaceholder: '\'{\n  \"maskEmail\": true,\n  \"maskPhoneNumber\": true,\n  \"maskUserName\": true\n}\'',
-    },
+
   },
   modelPresets: {
     searchPlaceholder: '搜索模型名称，如: gpt-4, claude-3',

@@ -17,18 +17,28 @@ import { logApiRequestToDb } from '../../services/api-request-logger.js';
 import { normalizeUsageCounts } from '../../utils/usage-normalizer.js';
 import { isChatCompletionsPath, isResponsesApiPath, isResponsesCompactPath, isEmbeddingsPath, shouldBypassGatewayCache } from '../../utils/path-detector.js';
 // removed gemini import
-import { aifwService } from '../../services/aifw-service.js';
-import { restorePlaceholdersInObjectInPlace } from '../../utils/aifw-placeholders.js';
+import {
+  maskRequestBodyInPlace,
+  restoreResponseBodyInPlace,
+} from '../../services/pii-protection-service.js';
 import { maybeCompressImagesInOpenAIRequestBodyInPlace, logImageCompressionStats } from '../../services/image-compression.js';
 
 const MESSAGE_COMPRESSION_MIN_TOKENS = parseInt(process.env.MESSAGE_COMPRESSION_MIN_TOKENS || '2048', 10);
 
-function shouldApplyAifwForRequest(path: string, protocolConfig: any, isResponsesApi: boolean, isEmbeddingsRequest: boolean): boolean {
+function shouldApplyPiiProtection(
+  path: string,
+  protocolConfig: any,
+  isResponsesApi: boolean,
+  isEmbeddingsRequest: boolean,
+  virtualKey: any
+): boolean {
   // User requirement: privacy protection only for OpenAI Chat Completions.
   // - Disable for Responses API, Embeddings, and any non-OpenAI protocol.
   if (isResponsesApi) return false;
   if (isEmbeddingsRequest) return false;
   if (!isChatCompletionsPath(path)) return false;
+  // Check virtual key setting
+  if (virtualKey?.pii_protection_enabled !== 1) return false;
   // Be strict: don't guess "openai" when protocol is missing.
   return protocolConfig?.protocol === 'openai';
 }
@@ -477,9 +487,10 @@ export async function handleStreamRequest(
       // Chat Completions API 请求
       const messages = (request.body as any)?.messages || [];
 
-      const aifwCtx = shouldApplyAifwForRequest(path, protocolConfig, false, false)
-        ? await aifwService.maskRequestBodyInPlace(request.body)
-        : null;
+      const piiEnabled = shouldApplyPiiProtection(path, protocolConfig, false, false, virtualKey);
+      const piiResult = piiEnabled
+        ? maskRequestBodyInPlace(request.body, true)
+        : { applied: false, context: null, maskedCount: 0 };
 
       const options: any = {
         temperature: (request.body as any)?.temperature,
@@ -505,9 +516,12 @@ export async function handleStreamRequest(
 
       options.__forwardedHeaders = forwardedHeaders;
 
-      if (aifwCtx) {
-        options.__aifw = aifwCtx;
-        memoryLogger.debug('OneAIFW preprocessing enabled for this stream request', 'AIFW');
+      if (piiResult.context) {
+        options.__pii = piiResult.context;
+        memoryLogger.debug(
+          `PII protection masked ${piiResult.maskedCount} items for stream request`,
+          'PII'
+        );
       }
 
       // 支持 Gemini 原生格式：如果请求体包含 contents 字段，传递给 options
@@ -818,7 +832,7 @@ export async function handleNonStreamRequest(
   }
 
   let response: any;
-  let aifwCtx: any = null;
+  let piiResult: { applied: boolean; context: any; maskedCount: number } | null = null;
 
   if (isResponsesCompactRequest) {
     const input = (request.body as any)?.input;
@@ -862,11 +876,12 @@ export async function handleNonStreamRequest(
     // Chat Completions API 请求
     const messages = (request.body as any)?.messages || [];
 
-    // OneAIFW preprocessing: only apply after cache miss so cache key is derived from the original request.
+    // PII protection: only apply after cache miss so cache key is derived from the original request.
     // User requirement: only apply for OpenAI Chat Completions.
-    aifwCtx = shouldApplyAifwForRequest(path, protocolConfig, false, false)
-      ? await aifwService.maskRequestBodyInPlace(request.body)
-      : null;
+    const piiEnabled = shouldApplyPiiProtection(path, protocolConfig, false, false, virtualKey);
+    piiResult = piiEnabled
+      ? maskRequestBodyInPlace(request.body, true)
+      : { applied: false, context: null, maskedCount: 0 };
 
     const options: any = {
       temperature: (request.body as any)?.temperature,
@@ -892,9 +907,12 @@ export async function handleNonStreamRequest(
 
     options.__forwardedHeaders = forwardedHeaders;
 
-    if (aifwCtx) {
-      options.__aifw = aifwCtx;
-      memoryLogger.debug('OneAIFW preprocessing enabled for this non-stream request', 'AIFW');
+    if (piiResult.context) {
+      options.__pii = piiResult.context;
+      memoryLogger.debug(
+        `PII protection masked ${piiResult.maskedCount} items for non-stream request`,
+        'PII'
+      );
     }
 
     // 支持 Gemini 原生格式：如果请求体包含 contents 字段，传递给 options
@@ -993,24 +1011,13 @@ export async function handleNonStreamRequest(
       stripFieldRecursively(responseData, 'instructions');
     } catch (_e) {}
 
-    // Restore placeholders (masked by OneAIFW) back to original values for client.
-    if (aifwCtx?.maskMeta) {
+    // Restore PII masked values back to original for client.
+    if (piiResult?.context) {
       try {
-        await aifwService.restoreResponseBodyInPlace(responseData, aifwCtx.maskMeta);
+        restoreResponseBodyInPlace(responseData, piiResult.context);
       } catch (e: any) {
-        memoryLogger.error(`OneAIFW restore failed: ${e.message}`, 'Proxy');
-        // Fallback to local regex restoration if remote fails (best effort)
-        if (aifwCtx.placeholdersMap) {
-          try {
-            restorePlaceholdersInObjectInPlace(responseData, aifwCtx.placeholdersMap);
-          } catch {}
-        }
+        memoryLogger.error(`PII restore failed: ${e.message}`, 'Proxy');
       }
-    } else if (aifwCtx?.placeholdersMap) {
-      // Legacy fallback (shouldn't be reached if maskMeta is always present)
-      try {
-        restorePlaceholdersInObjectInPlace(responseData, aifwCtx.placeholdersMap);
-      } catch {}
     }
 
     const responseDataStr = JSON.stringify(responseData);

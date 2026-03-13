@@ -483,6 +483,49 @@ export const migrations: Migration[] = [
 
       await conn.query(`ALTER TABLE api_requests ADD COLUMN tfft_ms INT DEFAULT NULL AFTER response_time`);
     }
+  },
+  {
+    version: 28,
+    name: 'add_pii_protection_enabled_to_virtual_keys',
+    up: async (conn: Connection) => {
+      const hasColumn = async (col: string) => {
+        const [rows] = await conn.query(
+          `SELECT COUNT(*) AS cnt
+           FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = 'virtual_keys'
+             AND COLUMN_NAME = ?`,
+          [col]
+        );
+        const result = rows as any[];
+        return Number(result?.[0]?.cnt || 0) > 0;
+      };
+
+      if (await hasColumn('pii_protection_enabled')) return;
+
+      try {
+        await conn.query(
+          `ALTER TABLE virtual_keys
+           ADD COLUMN pii_protection_enabled TINYINT DEFAULT 0
+           AFTER zero_temperature_replacement`
+        );
+        console.log('[迁移] 已添加 virtual_keys.pii_protection_enabled 字段');
+      } catch (e: any) {
+        if (e.code === 'ER_DUP_FIELDNAME') {
+          console.log('[迁移] virtual_keys 已存在 pii_protection_enabled 字段，跳过');
+          return;
+        }
+        throw e;
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(`ALTER TABLE virtual_keys DROP COLUMN IF EXISTS pii_protection_enabled`);
+        console.log('[迁移] 已删除 virtual_keys.pii_protection_enabled 字段');
+      } catch (e: any) {
+        console.warn('[迁移] 删除 pii_protection_enabled 字段失败:', e.message);
+      }
+    }
   }
 ];
 

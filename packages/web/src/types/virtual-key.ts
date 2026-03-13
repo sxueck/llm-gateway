@@ -13,6 +13,7 @@ export interface VirtualKeyFormValue {
   imageCompressionEnabled: boolean;
   interceptZeroTemperature: boolean;
   zeroTemperatureReplacement: number | undefined;
+  piiProtectionEnabled: boolean;
 }
 
 export function createDefaultVirtualKeyForm(): VirtualKeyFormValue {
@@ -29,5 +30,6 @@ export function createDefaultVirtualKeyForm(): VirtualKeyFormValue {
     imageCompressionEnabled: false,
     interceptZeroTemperature: false,
     zeroTemperatureReplacement: 0.7,
+    piiProtectionEnabled: false,
   };
 }

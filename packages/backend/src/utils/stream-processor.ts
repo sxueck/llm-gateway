@@ -107,38 +107,38 @@ export async function processOpenAIChatCompletionStreamToSse(
         } catch {
           // Best-effort restoration.
         }
+      }
 
-        if (Array.isArray((chunk as any).choices)) {
-          for (const choice of (chunk as any).choices) {
-            const idx = typeof choice?.index === 'number' ? choice.index : 0;
-            const key = `chat:${idx}:content`;
-            const content = choice?.delta?.content;
+      if (Array.isArray((chunk as any).choices) && (streamRestorer || remoteStreamRestorer)) {
+        for (const choice of (chunk as any).choices) {
+          const idx = typeof choice?.index === 'number' ? choice.index : 0;
+          const key = `chat:${idx}:content`;
+          const content = choice?.delta?.content;
 
-            if (streamRestorer && typeof content === 'string') {
-              bufferedKeys.add(key);
-              choice.delta.content = streamRestorer.process(key, content);
-            } else if (remoteStreamRestorer && typeof content === 'string') {
-              bufferedKeys.add(key);
-              choice.delta.content = await remoteStreamRestorer.process(key, content, { flush: false });
-            }
+          if (streamRestorer && typeof content === 'string') {
+            bufferedKeys.add(key);
+            choice.delta.content = streamRestorer.process(key, content);
+          } else if (remoteStreamRestorer && typeof content === 'string') {
+            bufferedKeys.add(key);
+            choice.delta.content = await remoteStreamRestorer.process(key, content, { flush: false });
+          }
 
-            // If upstream signals completion, flush any pending placeholder fragments into THIS chunk.
-            if ((streamRestorer || remoteStreamRestorer) && choice?.finish_reason) {
-              bufferedKeys.add(key);
-              const flushText = streamRestorer
-                ? streamRestorer.flush(key)
-                : await remoteStreamRestorer!.flush(key);
-              if (flushText) {
-                if (!choice.delta || typeof choice.delta !== 'object') {
-                  choice.delta = { content: flushText };
-                } else if (typeof choice.delta.content === 'string') {
-                  choice.delta.content += flushText;
-                } else {
-                  choice.delta.content = flushText;
-                }
+          // If upstream signals completion, flush any pending placeholder fragments into THIS chunk.
+          if (choice?.finish_reason) {
+            bufferedKeys.add(key);
+            const flushText = streamRestorer
+              ? streamRestorer.flush(key)
+              : await remoteStreamRestorer!.flush(key);
+            if (flushText) {
+              if (!choice.delta || typeof choice.delta !== 'object') {
+                choice.delta = { content: flushText };
+              } else if (typeof choice.delta.content === 'string') {
+                choice.delta.content += flushText;
+              } else {
+                choice.delta.content = flushText;
               }
-              finishedByChoiceIndex.add(idx);
             }
+            finishedByChoiceIndex.add(idx);
           }
         }
       }

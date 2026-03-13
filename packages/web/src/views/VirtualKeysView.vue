@@ -100,6 +100,12 @@
             <span style="font-size: 12px; color: #999;">开启后,将传入的 temperature=0 替换为指定值</span>
           </n-space>
         </n-form-item>
+        <n-form-item label="PII 保护">
+          <n-space vertical :size="4">
+            <n-switch v-model:value="formValue.piiProtectionEnabled" size="small" />
+            <span style="font-size: 12px; color: #999;">开启后,将检测并替换请求中的敏感信息(secret、IP、邮箱)</span>
+          </n-space>
+        </n-form-item>
         <n-form-item label="启用">
           <n-switch v-model:value="formValue.enabled" size="small" />
         </n-form-item>
@@ -328,21 +334,22 @@ function handleEdit(vk: VirtualKey) {
     modelIds.push(...vk.modelIds);
   }
 
-	  formValue.value = {
-		name: vk.name,
-		modelIds: [...new Set(modelIds)],
-		keyType: 'auto',
-		customKey: '',
-		rateLimit: vk.rateLimit || undefined,
-		enabled: vk.enabled,
-		cacheEnabled: vk.cacheEnabled,
-		disableLogging: vk.disableLogging,
-		dynamicCompressionEnabled: vk.dynamicCompressionEnabled,
-		imageCompressionEnabled: vk.imageCompressionEnabled,
-		interceptZeroTemperature: vk.interceptZeroTemperature,
-		zeroTemperatureReplacement: vk.zeroTemperatureReplacement || 0.7,
-	  };
-	  showModal.value = true;
+  formValue.value = {
+    name: vk.name,
+    modelIds: [...new Set(modelIds)],
+    keyType: 'auto',
+    customKey: '',
+    rateLimit: vk.rateLimit || undefined,
+    enabled: vk.enabled,
+    cacheEnabled: vk.cacheEnabled,
+    disableLogging: vk.disableLogging,
+    dynamicCompressionEnabled: vk.dynamicCompressionEnabled,
+    imageCompressionEnabled: vk.imageCompressionEnabled,
+    interceptZeroTemperature: vk.interceptZeroTemperature,
+    zeroTemperatureReplacement: vk.zeroTemperatureReplacement || 0.7,
+    piiProtectionEnabled: vk.piiProtectionEnabled,
+  };
+  showModal.value = true;
 }
 
 async function handleDelete(id: string) {
@@ -361,20 +368,21 @@ async function handleSubmit() {
     submitting.value = true;
 
     if (editingId.value) {
-	  await virtualKeyApi.update(editingId.value, {
-		name: formValue.value.name,
-		modelIds: formValue.value.modelIds,
-		enabled: formValue.value.enabled,
-		rateLimit: formValue.value.rateLimit,
-		cacheEnabled: formValue.value.cacheEnabled,
-		disableLogging: formValue.value.disableLogging,
-		interceptZeroTemperature: formValue.value.interceptZeroTemperature,
-		zeroTemperatureReplacement: formValue.value.zeroTemperatureReplacement !== undefined
-		  ? Number(formValue.value.zeroTemperatureReplacement)
-		  : undefined,
-		dynamicCompressionEnabled: formValue.value.dynamicCompressionEnabled,
-		imageCompressionEnabled: formValue.value.imageCompressionEnabled,
-	  });
+      await virtualKeyApi.update(editingId.value, {
+        name: formValue.value.name,
+        modelIds: formValue.value.modelIds,
+        enabled: formValue.value.enabled,
+        rateLimit: formValue.value.rateLimit,
+        cacheEnabled: formValue.value.cacheEnabled,
+        disableLogging: formValue.value.disableLogging,
+        interceptZeroTemperature: formValue.value.interceptZeroTemperature,
+        zeroTemperatureReplacement: formValue.value.zeroTemperatureReplacement !== undefined
+          ? Number(formValue.value.zeroTemperatureReplacement)
+          : undefined,
+        dynamicCompressionEnabled: formValue.value.dynamicCompressionEnabled,
+        imageCompressionEnabled: formValue.value.imageCompressionEnabled,
+        piiProtectionEnabled: formValue.value.piiProtectionEnabled,
+      });
       message.success('更新成功');
       showModal.value = false;
     } else {
