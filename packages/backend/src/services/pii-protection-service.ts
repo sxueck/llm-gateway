@@ -1,11 +1,10 @@
 /**
  * PII Protection Service
  *
- * Main service for detecting and masking PII in request bodies,
+ * Builtin service for detecting and masking PII in request bodies,
  * and restoring original values in responses.
  *
- * Replaces the external oneaifw service with a lightweight,
- * synchronous, in-memory implementation.
+ * Lightweight, synchronous, in-memory implementation.
  */
 
 import { memoryLogger } from './logger.js';
@@ -34,7 +33,7 @@ interface TextRef {
 
 /**
  * Collect all text references from a request/response body
- * Similar to aifw-service.ts collectTextRefs but for our PII protection
+ * for built-in PII protection
  */
 function collectTextRefs(body: any): TextRef[] {
   const refs: TextRef[] = [];

@@ -10,11 +10,6 @@ type SyncStreamRestorer = {
   flush: (key: string) => string;
 };
 
-type AsyncStreamRestorer = {
-  process: (key: string, content: string, options: { flush: boolean }) => Promise<string>;
-  flush: (key: string) => Promise<string>;
-};
-
 export interface OpenAIChatStreamProcessorOptions {
   reply: FastifyReply;
   stream: AsyncIterable<any>;
@@ -22,11 +17,8 @@ export interface OpenAIChatStreamProcessorOptions {
   abortSignal?: AbortSignal;
   upstreamRequestStartedAt?: number;
 
-  // Optional placeholder restoration hooks.
-  placeholdersMap?: any;
-  restorePlaceholdersInObjectInPlace?: (obj: any, placeholdersMap: any) => void;
+  // Optional stream restorer for builtin PII protection
   streamRestorer?: SyncStreamRestorer | null;
-  remoteStreamRestorer?: AsyncStreamRestorer | null;
 
   logger?: {
     info: (msg: string, tag?: string) => void;
@@ -42,10 +34,7 @@ export async function processOpenAIChatCompletionStreamToSse(
     model,
     abortSignal,
     upstreamRequestStartedAt,
-    placeholdersMap,
-    restorePlaceholdersInObjectInPlace,
     streamRestorer,
-    remoteStreamRestorer,
     logger,
   } = options;
 
@@ -101,34 +90,22 @@ export async function processOpenAIChatCompletionStreamToSse(
         delete (chunk as any).instructions;
       }
 
-      if (placeholdersMap && restorePlaceholdersInObjectInPlace) {
-        try {
-          restorePlaceholdersInObjectInPlace(chunk, placeholdersMap);
-        } catch {
-          // Best-effort restoration.
-        }
-      }
-
-      if (Array.isArray((chunk as any).choices) && (streamRestorer || remoteStreamRestorer)) {
+      // Builtin PII protection: restore masked values in stream
+      if (Array.isArray((chunk as any).choices) && streamRestorer) {
         for (const choice of (chunk as any).choices) {
           const idx = typeof choice?.index === 'number' ? choice.index : 0;
           const key = `chat:${idx}:content`;
           const content = choice?.delta?.content;
 
-          if (streamRestorer && typeof content === 'string') {
+          if (typeof content === 'string') {
             bufferedKeys.add(key);
             choice.delta.content = streamRestorer.process(key, content);
-          } else if (remoteStreamRestorer && typeof content === 'string') {
-            bufferedKeys.add(key);
-            choice.delta.content = await remoteStreamRestorer.process(key, content, { flush: false });
           }
 
           // If upstream signals completion, flush any pending placeholder fragments into THIS chunk.
           if (choice?.finish_reason) {
             bufferedKeys.add(key);
-            const flushText = streamRestorer
-              ? streamRestorer.flush(key)
-              : await remoteStreamRestorer!.flush(key);
+            const flushText = streamRestorer.flush(key);
             if (flushText) {
               if (!choice.delta || typeof choice.delta !== 'object') {
                 choice.delta = { content: flushText };
@@ -198,9 +175,9 @@ export async function processOpenAIChatCompletionStreamToSse(
   }
 
   // Flush placeholder tails that did not coincide with an upstream finish_reason.
-  if ((streamRestorer || remoteStreamRestorer) && bufferedKeys.size > 0 && !reply.raw.destroyed && !reply.raw.writableEnded) {
+  if (streamRestorer && bufferedKeys.size > 0 && !reply.raw.destroyed && !reply.raw.writableEnded) {
     for (const key of bufferedKeys) {
-      const flushText = streamRestorer ? streamRestorer.flush(key) : await remoteStreamRestorer!.flush(key);
+      const flushText = streamRestorer.flush(key);
       if (!flushText) continue;
 
       const match = key.match(/^chat:(\d+):content$/);
@@ -212,7 +189,7 @@ export async function processOpenAIChatCompletionStreamToSse(
       }
 
       const flushChunk: any = {
-        id: lastChunkId || `aifw_flush_${Date.now()}`,
+        id: lastChunkId || `pii_flush_${Date.now()}`,
         object: 'chat.completion.chunk',
         created: Math.floor(Date.now() / 1000),
         model: lastChunkModel || model,

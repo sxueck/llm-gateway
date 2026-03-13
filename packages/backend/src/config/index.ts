@@ -1,8 +1,22 @@
-import { config } from 'dotenv';
-import { z } from 'zod';
-import { memoryLogger } from '../services/logger.js';
+import { existsSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { config } from 'dotenv'
+import { z } from 'zod'
+import { memoryLogger } from '../services/logger.js'
 
-config();
+const currentDir = dirname(fileURLToPath(import.meta.url))
+const envCandidates = [
+  resolve(currentDir, '../../../../.env'),
+  resolve(currentDir, '../../.env')
+]
+
+for (const envPath of envCandidates) {
+  if (existsSync(envPath)) {
+    config({ path: envPath })
+    break
+  }
+}
 
 const envSchema = z.object({
   PORT: z.string().default('3000'),
@@ -17,12 +31,12 @@ const envSchema = z.object({
   MYSQL_PASSWORD: z.string(),
   MYSQL_DATABASE: z.string().default('llm_gateway'),
   GEO_IP_ENABLED: z.string().optional(),
-  });
+})
 
-const env = envSchema.parse(process.env);
+const env = envSchema.parse(process.env)
 
-const port = parseInt(env.PORT, 10);
-const defaultPublicUrl = env.PUBLIC_URL || `http://localhost:${port}`;
+const port = parseInt(env.PORT, 10)
+const defaultPublicUrl = env.PUBLIC_URL || `http://localhost:${port}`
 
 export const appConfig = {
   port,
@@ -38,28 +52,28 @@ export const appConfig = {
     port: parseInt(env.MYSQL_PORT, 10),
     user: env.MYSQL_USER,
     password: env.MYSQL_PASSWORD,
-    database: env.MYSQL_DATABASE,
-  },
-};
+    database: env.MYSQL_DATABASE
+  }
+}
 
 export function validatePublicUrl(url: string): { valid: boolean; error?: string } {
   if (!url || !url.trim()) {
-    return { valid: false, error: 'LLM Gateway URL 不能为空' };
+    return { valid: false, error: 'LLM Gateway URL 不能为空' }
   }
 
   try {
-    new URL(url);
-    return { valid: true };
+    new URL(url)
+    return { valid: true }
   } catch (error: unknown) {
     memoryLogger.error(
       `URL 验证失败: ${error instanceof Error ? error.message : String(error)}`,
       'config',
       { url }
-    );
-    return { valid: false, error: 'LLM Gateway URL 格式无效，请输入有效的 URL（例如: http://example.com:3000）' };
+    )
+    return { valid: false, error: 'LLM Gateway URL 格式无效，请输入有效的 URL（例如: http://example.com:3000）' }
   }
 }
 
 export function setPublicUrl(url: string): void {
-  appConfig.publicUrl = url;
+  appConfig.publicUrl = url
 }

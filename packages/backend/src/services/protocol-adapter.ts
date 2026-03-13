@@ -2,9 +2,6 @@ import OpenAI from 'openai';
 import { FastifyReply } from 'fastify';
 import { memoryLogger } from './logger.js';
 import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-client.js';
-import { AifwStreamRestorer, restorePlaceholdersInObjectInPlace } from '../utils/aifw-placeholders.js';
-import { AifwClient } from './aifw-client.js';
-import { AifwRemoteStreamRestorer } from './aifw-remote-stream-restorer.js';
 import { PiiStreamRestorer } from './pii-protection-service.js';
 import { HttpClientFactory } from './http-client-factory.js';
 import { processOpenAIChatCompletionStreamToSse } from '../utils/stream-processor.js';
@@ -534,23 +531,9 @@ export class ProtocolAdapter {
     abortSignal?: AbortSignal
   ): Promise<StreamTokenUsage> {
     const client = this.getOpenAIClient(config);
-    const aifwCtx = (options as any)?.__aifw;
-    const placeholdersMap = aifwCtx?.placeholdersMap;
-    const streamRestorer = placeholdersMap ? new AifwStreamRestorer(placeholdersMap) : null;
-    const canUseRemoteAifwRestore =
-      !!aifwCtx?.maskMeta &&
-      (!placeholdersMap || Object.keys(placeholdersMap).length === 0) &&
-      !!aifwCtx?.clientConfig?.baseUrl;
-    const remoteAifwClient = canUseRemoteAifwRestore
-      ? new AifwClient({
-          baseUrl: aifwCtx.clientConfig.baseUrl,
-          httpApiKey: aifwCtx.clientConfig.httpApiKey,
-          timeoutMs: aifwCtx.clientConfig.timeoutMs,
-        })
-      : null;
-    const remoteStreamRestorer = remoteAifwClient
-      ? new AifwRemoteStreamRestorer(remoteAifwClient, aifwCtx.maskMeta)
-      : null;
+    // Responses API stream uses the same builtin PII protection as chat completions
+    const piiCtx = (options as any)?.__pii;
+    const streamRestorer = piiCtx ? new PiiStreamRestorer(piiCtx) : null;
 
     const requestParams: any = {
       model: config.model,
@@ -623,10 +606,7 @@ export class ProtocolAdapter {
       abortSignal,
       totalAttempts,
       initTimeoutMs,
-      placeholdersMap,
-      restorePlaceholdersInObjectInPlace,
       streamRestorer,
-      remoteStreamRestorer,
       logger: memoryLogger,
     });
   }
