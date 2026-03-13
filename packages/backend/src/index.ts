@@ -29,6 +29,7 @@ import { healthRunDb, systemConfigDb as systemConfigDbForDebug } from './db/inde
 import { debugModeService } from './services/debug-mode.js';
 import { manualIpBlocklist } from './services/manual-ip-blocklist.js';
 import { requestHeaderForwardingService } from './services/request-header-forwarding.js';
+import { requestCache } from './services/request-cache.js';
 import { runtimeSystemConfigCache } from './services/runtime-system-config-cache.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -299,6 +300,9 @@ const gracefulShutdown = async (signal: string) => {
 
     await healthCheckerService.stop();
     memoryLogger.info('健康检查服务已停止', 'System');
+
+    requestCache.destroy();
+    memoryLogger.info('请求缓存已清理', 'System');
 
     await fastify.close();
     memoryLogger.info('Fastify 服务已关闭', 'System');
