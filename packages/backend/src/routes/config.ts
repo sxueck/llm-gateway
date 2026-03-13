@@ -4,7 +4,6 @@ import { memoryLogger } from '../services/logger.js';
 import { apiRequestDb, routingConfigDb, modelDb, systemConfigDb, expertRoutingLogDb, healthTargetDb, virtualKeyDb } from '../db/index.js';
 import { nanoid } from 'nanoid';
 import { loadAntiBotConfig, validateUserAgentList } from '../utils/anti-bot-config.js';
-import { DEFAULT_AIFW_MASK_CONFIG, loadAifwConfig } from '../utils/aifw-config.js';
 import { hashKey } from '../utils/crypto.js';
 import { healthCheckerService } from '../services/health-checker.js';
 import { debugModeService } from '../services/debug-mode.js';
@@ -12,7 +11,6 @@ import { costMappingService } from '../services/cost-mapping.js';
 import { runtimeSystemConfigCache } from '../services/runtime-system-config-cache.js';
 import { threatIpBlocker } from '../services/threat-ip-blocker.js';
 import { manualIpBlocklist } from '../services/manual-ip-blocklist.js';
-import { aifwService } from '../services/aifw-service.js';
 import { requestHeaderForwardingService } from '../services/request-header-forwarding.js';
 import { getGeoInfo, normalizeIp } from '../utils/ip.js';
 
@@ -44,6 +42,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         image_compression_enabled: 0,
         intercept_zero_temperature: 0,
         zero_temperature_replacement: null,
+        pii_protection_enabled: 0,
       });
       await systemConfigDb.set('monitoring_virtual_key_id', monitoringKey.id, '监控专用虚拟密钥ID');
       memoryLogger.info(`已创建监控专用虚拟密钥: ${monitoringKey.id}`, 'Config');
@@ -82,7 +81,6 @@ export async function configRoutes(fastify: FastifyInstance) {
     const dashboardHideRequestSourceCardCfg = await systemConfigDb.get('dashboard_hide_request_source_card');
     const forwardClientUserAgentCfg = await systemConfigDb.get('forward_client_user_agent');
     const antiBot = await loadAntiBotConfig();
-    const aifw = await loadAifwConfig();
 
     const now = Date.now();
     const rawExpiresAt = debugExpiresCfg ? Number(debugExpiresCfg.value) : 0;
@@ -100,15 +98,6 @@ export async function configRoutes(fastify: FastifyInstance) {
       dashboardHideRequestSourceCard: dashboardHideRequestSourceCardCfg ? dashboardHideRequestSourceCardCfg.value === 'true' : false,
       forwardClientUserAgent: forwardClientUserAgentCfg ? forwardClientUserAgentCfg.value === 'true' : false,
       antiBot,
-      aifw: {
-        enabled: aifw.enabled,
-        baseUrl: aifw.baseUrl,
-        failOpen: aifw.failOpen,
-        timeoutMs: aifw.timeoutMs,
-        // Provide UI-friendly defaults even when config is empty.
-        maskConfig: aifw.maskConfig || DEFAULT_AIFW_MASK_CONFIG,
-        httpApiKeySet: !!aifw.httpApiKey,
-      },
     };
   });
 
@@ -200,7 +189,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/system-settings', async (request) => {
-    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, dashboardHideRequestSourceCard, forwardClientUserAgent, antiBot, aifw } = request.body as {
+    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, dashboardHideRequestSourceCard, forwardClientUserAgent, antiBot } = request.body as {
       allowRegistration?: boolean;
       corsEnabled?: boolean;
       publicUrl?: string;
@@ -219,14 +208,6 @@ export async function configRoutes(fastify: FastifyInstance) {
         logHeaders?: boolean;
         allowedUserAgents?: string[];
         blockedUserAgents?: string[];
-      };
-      aifw?: {
-        enabled?: boolean;
-        baseUrl?: string;
-        httpApiKey?: string;
-        failOpen?: boolean;
-        timeoutMs?: number;
-        maskConfigJson?: string;
       };
     };
 
@@ -406,72 +387,6 @@ export async function configRoutes(fastify: FastifyInstance) {
       }
     }
 
-      if (aifw !== undefined) {
-        if (aifw.enabled !== undefined) {
-          await systemConfigDb.set('aifw_enabled', aifw.enabled ? 'true' : 'false', '是否启用 OneAIFW 预处理');
-          memoryLogger.info(`OneAIFW 预处理已更新: ${aifw.enabled ? '启用' : '禁用'}`, 'Config');
-        }
-
-        if (aifw.baseUrl !== undefined) {
-          const trimmed = String(aifw.baseUrl || '').trim();
-          try {
-            const url = new URL(trimmed);
-            if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-              throw new Error('unsupported protocol');
-            }
-          } catch {
-            throw new Error('OneAIFW Base URL 无效，请使用 http(s)://...');
-          }
-          await systemConfigDb.set('aifw_base_url', trimmed.replace(/\/+$/, ''), 'OneAIFW 服务地址');
-        }
-
-        if (aifw.httpApiKey !== undefined) {
-          const key = String(aifw.httpApiKey || '').trim();
-          await systemConfigDb.set('aifw_http_api_key', key, 'OneAIFW HTTP API Key（可选）');
-        }
-
-        if (aifw.failOpen !== undefined) {
-          await systemConfigDb.set('aifw_fail_open', aifw.failOpen ? 'true' : 'false', 'OneAIFW 失败时是否放行（fail-open）');
-        }
-
-        if (aifw.timeoutMs !== undefined) {
-          const n = Number(aifw.timeoutMs);
-          if (!Number.isFinite(n) || n < 500 || n > 60000) {
-            throw new Error('OneAIFW 超时应在 500~60000ms 之间');
-          }
-          await systemConfigDb.set('aifw_timeout_ms', String(Math.floor(n)), 'OneAIFW 请求超时（ms）');
-        }
-
-        if (aifw.maskConfigJson !== undefined) {
-          const raw = String(aifw.maskConfigJson || '').trim();
-          if (raw) {
-            try {
-              const parsed = JSON.parse(raw);
-              if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-                throw new Error('maskConfigJson must be an object');
-              }
-
-              const allowedKeys = new Set<string>([
-                ...Object.keys(DEFAULT_AIFW_MASK_CONFIG),
-                'maskAll',
-              ]);
-              for (const [key, value] of Object.entries(parsed)) {
-                if (!allowedKeys.has(key)) {
-                  throw new Error(`unknown key: ${key}`);
-                }
-                if (typeof value !== 'boolean') {
-                  throw new Error(`invalid value type for ${key}`);
-                }
-              }
-            } catch (error: any) {
-              const detail = error?.message ? `: ${error.message}` : '';
-              throw new Error(`OneAIFW maskConfigJson 校验失败${detail}`);
-            }
-          }
-          await systemConfigDb.set('aifw_mask_config_json', raw, 'OneAIFW maskConfig 配置（JSON）');
-        }
-      }
-
       return { success: true };
     } catch (error: any) {
       memoryLogger.error(`系统配置更新失败: ${error.message}`, 'Config');
@@ -612,7 +527,6 @@ export async function configRoutes(fastify: FastifyInstance) {
     const lastRequest = await apiRequestDb.getLastRequest();
     const manualLastBlocked = manualIpBlocklist.getLastBlocked();
     const threatIpStats = threatIpBlocker.getStats();
-    const aifwStats = await aifwService.getStats();
     const threatLastBlocked = threatIpStats.lastBlockedIp
       ? { ip: threatIpStats.lastBlockedIp, timestamp: threatIpStats.lastBlockedAt || 0, reason: null, source: 'threat' as const }
       : null;
@@ -719,7 +633,6 @@ export async function configRoutes(fastify: FastifyInstance) {
       costStats,
       requestSourceStats,
       threatIpStats,
-      aifwStats,
     };
   });
 

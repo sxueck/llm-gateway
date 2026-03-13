@@ -22,6 +22,7 @@ const createVirtualKeySchema = z.object({
   imageCompressionEnabled: z.boolean().optional(),
   interceptZeroTemperature: z.boolean().optional(),
   zeroTemperatureReplacement: z.number().min(0).max(2).optional(),
+  piiProtectionEnabled: z.boolean().optional(),
 });
 
 const updateVirtualKeySchema = z.object({
@@ -39,6 +40,7 @@ const updateVirtualKeySchema = z.object({
   imageCompressionEnabled: z.boolean().optional(),
   interceptZeroTemperature: z.boolean().optional(),
   zeroTemperatureReplacement: z.number().min(0).max(2).optional(),
+  piiProtectionEnabled: z.boolean().optional(),
 });
 
 const validateKeySchema = z.object({
@@ -68,6 +70,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
         imageCompressionEnabled: vk.image_compression_enabled === 1,
         interceptZeroTemperature: vk.intercept_zero_temperature === 1,
         zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
+        piiProtectionEnabled: vk.pii_protection_enabled === 1,
         createdAt: vk.created_at,
         updatedAt: vk.updated_at,
       })),
@@ -99,6 +102,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       imageCompressionEnabled: vk.image_compression_enabled === 1,
       interceptZeroTemperature: vk.intercept_zero_temperature === 1,
       zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
+      piiProtectionEnabled: vk.pii_protection_enabled === 1,
       createdAt: vk.created_at,
       updatedAt: vk.updated_at,
     };
@@ -189,6 +193,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       image_compression_enabled: body.imageCompressionEnabled ? 1 : 0,
       intercept_zero_temperature: body.interceptZeroTemperature ? 1 : 0,
       zero_temperature_replacement: body.zeroTemperatureReplacement || null,
+      pii_protection_enabled: body.piiProtectionEnabled ? 1 : 0,
     });
 
     return {
@@ -209,6 +214,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
         imageCompressionEnabled: vk.image_compression_enabled === 1,
         interceptZeroTemperature: vk.intercept_zero_temperature === 1,
         zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
+        piiProtectionEnabled: vk.pii_protection_enabled === 1,
         createdAt: vk.created_at,
         updatedAt: vk.updated_at,
       },
@@ -283,6 +289,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     if (body.imageCompressionEnabled !== undefined) updates.image_compression_enabled = body.imageCompressionEnabled ? 1 : 0;
     if (body.interceptZeroTemperature !== undefined) updates.intercept_zero_temperature = body.interceptZeroTemperature ? 1 : 0;
     if (body.zeroTemperatureReplacement !== undefined) updates.zero_temperature_replacement = body.zeroTemperatureReplacement;
+    if (body.piiProtectionEnabled !== undefined) updates.pii_protection_enabled = body.piiProtectionEnabled ? 1 : 0;
 
     await virtualKeyDb.update(id, updates);
 
@@ -308,6 +315,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       imageCompressionEnabled: updated.image_compression_enabled === 1,
       interceptZeroTemperature: updated.intercept_zero_temperature === 1,
       zeroTemperatureReplacement: updated.zero_temperature_replacement ? Number(updated.zero_temperature_replacement) : null,
+      piiProtectionEnabled: updated.pii_protection_enabled === 1,
       createdAt: updated.created_at,
       updatedAt: updated.updated_at,
     };

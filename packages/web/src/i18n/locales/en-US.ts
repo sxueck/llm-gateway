@@ -361,34 +361,7 @@ export default {
         content: 'The system is monitoring User-Agents of all requests. Detected bot requests will be logged or blocked. You can view detailed detection records in the logs.',
       },
     },
-    aifw: {
-      title: 'AI Firewall (OneAIFW)',
-      enabled: 'Enable OneAIFW preprocessing',
-      enabledDesc: 'Mask sensitive text before upstream calls and restore it in responses',
-      enabled_info: {
-        title: 'OneAIFW Enabled',
-        content: 'The gateway masks sensitive text at the first layer so upstream models only see placeholders, then restores the original values in responses.',
-      },
-      bypass_info: {
-        title: 'When the firewall is bypassed',
-        content: 'Privacy protection is currently only applied to OpenAI Chat Completions: /v1/chat/completions\nRequests will be forwarded upstream without OneAIFW in the following cases:\n- OpenAI Responses API: /v1/responses\n- Embeddings: /v1/embeddings\n- Any non-Chat-Completions endpoint\n- Non-OpenAI upstream protocols (e.g. Anthropic / Gemini native)',
-      },
-      baseUrl: 'OneAIFW Base URL',
-      baseUrlDesc: 'Local/intranet OneAIFW HTTP service URL (default 127.0.0.1:8844)',
-      baseUrlPlaceholder: 'http://127.0.0.1:8844',
-      failOpen: 'Fail-open',
-      failOpenDesc: 'If OneAIFW is unavailable, still forward requests upstream (otherwise return 503)',
-      timeoutMs: 'Timeout (ms)',
-      timeoutMsDesc: 'Timeout for calling OneAIFW (500~60000ms)',
-      httpApiKey: 'HTTP API Key (optional)',
-      httpApiKeySet: 'Set (not shown for security)',
-      httpApiKeyNotSet: 'Not set',
-      httpApiKeyPlaceholder: 'Leave blank to keep unchanged; type and save to update (clear and save to remove)',
-      maskConfigJson: 'maskConfig (JSON)',
-      maskConfigJsonDesc: 'Will be synced to OneAIFW /api/config as maskConfig; leave blank to skip',
-      // Escape `{` / `}` for vue-i18n message compiler (otherwise treated as placeholders)
-      maskConfigJsonPlaceholder: '\'{\n  \"maskEmail\": true,\n  \"maskPhoneNumber\": true,\n  \"maskUserName\": true\n}\'',
-    },
+
   },
   modelPresets: {
     searchPlaceholder: 'Search model name, e.g.: gpt-4, claude-3',

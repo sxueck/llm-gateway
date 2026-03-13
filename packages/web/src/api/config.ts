@@ -150,12 +150,6 @@ export interface ThreatIpStats {
   lastUpdated: number | null;
 }
 
-export interface AifwStats {
-  maskedCount: number;
-  lastMaskedAt: number;
-  enabled: boolean;
-}
-
 type GetLogsParams = {
   level?: LogLevel;
   limit?: number;
@@ -179,7 +173,6 @@ type GetStatsResponse = {
   costStats: CostStats | null;
   requestSourceStats?: RequestSourceStats;
   threatIpStats?: ThreatIpStats;
-  aifwStats?: AifwStats;
 };
 
 type LookupRequestSourceResponse = {
@@ -237,15 +230,6 @@ type AntiBotSettings = {
   blockedUserAgents: string[];
 };
 
-type AifwSettings = {
-  enabled: boolean;
-  baseUrl: string;
-  failOpen: boolean;
-  timeoutMs: number;
-  maskConfig: AnyRecord;
-  httpApiKeySet: boolean;
-};
-
 type SystemSettingsResponse = {
   allowRegistration: boolean;
   corsEnabled: boolean;
@@ -258,7 +242,6 @@ type SystemSettingsResponse = {
   dashboardHideRequestSourceCard: boolean;
   forwardClientUserAgent: boolean;
   antiBot: AntiBotSettings;
-  aifw: AifwSettings;
 };
 
 type PublicSystemSettingsResponse = {
@@ -286,14 +269,6 @@ type UpdateSystemSettingsRequest = {
     logHeaders?: boolean;
     allowedUserAgents?: string[];
     blockedUserAgents?: string[];
-  };
-  aifw?: {
-    enabled?: boolean;
-    baseUrl?: string;
-    httpApiKey?: string;
-    failOpen?: boolean;
-    timeoutMs?: number;
-    maskConfigJson?: string;
   };
 };
 

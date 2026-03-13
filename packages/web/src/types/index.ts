@@ -70,6 +70,7 @@ export interface VirtualKey {
   imageCompressionEnabled: boolean;
   interceptZeroTemperature: boolean;
   zeroTemperatureReplacement?: number | null;
+  piiProtectionEnabled: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -152,6 +153,7 @@ export interface CreateVirtualKeyRequest {
   imageCompressionEnabled?: boolean;
   interceptZeroTemperature?: boolean;
   zeroTemperatureReplacement?: number;
+  piiProtectionEnabled?: boolean;
 }
 
 export interface UpdateVirtualKeyRequest {
@@ -169,4 +171,5 @@ export interface UpdateVirtualKeyRequest {
   imageCompressionEnabled?: boolean;
   interceptZeroTemperature?: boolean;
   zeroTemperatureReplacement?: number;
+  piiProtectionEnabled?: boolean;
 }

@@ -15,11 +15,6 @@ type SyncStreamRestorer = {
   flush: (key: string) => string;
 };
 
-type AsyncStreamRestorer = {
-  process: (key: string, content: string, options: { flush: boolean }) => Promise<string>;
-  flush: (key: string) => Promise<string>;
-};
-
 function responsesEventHasAssistantContent(event: any): boolean {
   if (!event || typeof event !== 'object') {
     return false;
@@ -59,11 +54,8 @@ export interface OpenAIResponsesStreamProcessorOptions {
   totalAttempts: number;
   initTimeoutMs: number;
 
-  // Optional placeholder restoration hooks.
-  placeholdersMap?: any;
-  restorePlaceholdersInObjectInPlace?: (obj: any, placeholdersMap: any) => void;
+  // Optional stream restorer for builtin PII protection
   streamRestorer?: SyncStreamRestorer | null;
-  remoteStreamRestorer?: AsyncStreamRestorer | null;
 
   logger?: {
     info: (msg: string, tag?: string) => void;
@@ -91,10 +83,7 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
     abortSignal,
     totalAttempts,
     initTimeoutMs,
-    placeholdersMap,
-    restorePlaceholdersInObjectInPlace,
     streamRestorer,
-    remoteStreamRestorer,
     logger,
   } = options;
 
@@ -225,33 +214,14 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
             await flushPendingChunks();
           }
 
-          if (placeholdersMap && restorePlaceholdersInObjectInPlace) {
-            try {
-              restorePlaceholdersInObjectInPlace(chunk, placeholdersMap);
-            } catch {
-              // Best-effort restoration.
-            }
-
-            if (
-              streamRestorer &&
-              typeof (chunk as any)?.delta?.text === 'string' &&
-              String((chunk as any)?.type || '').includes('output_text.delta')
-            ) {
-              bufferedOutputKeyUsed = true;
-              (chunk as any).delta.text = streamRestorer.process('responses:output_text', (chunk as any).delta.text);
-            }
-          } else if (remoteStreamRestorer) {
-            if (
-              typeof (chunk as any)?.delta?.text === 'string' &&
-              String((chunk as any)?.type || '').includes('output_text.delta')
-            ) {
-              bufferedOutputKeyUsed = true;
-              (chunk as any).delta.text = await remoteStreamRestorer.process(
-                'responses:output_text',
-                (chunk as any).delta.text,
-                { flush: false }
-              );
-            }
+          // Builtin PII protection: restore masked values in stream
+          if (
+            streamRestorer &&
+            typeof (chunk as any)?.delta?.text === 'string' &&
+            String((chunk as any)?.type || '').includes('output_text.delta')
+          ) {
+            bufferedOutputKeyUsed = true;
+            (chunk as any).delta.text = streamRestorer.process('responses:output_text', (chunk as any).delta.text);
           }
 
           const chunkData = JSON.stringify(chunk);
@@ -281,10 +251,9 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
           }
         }
 
-        if ((streamRestorer || remoteStreamRestorer) && bufferedOutputKeyUsed && !reply.raw.destroyed && !reply.raw.writableEnded) {
-          const flushText = streamRestorer
-            ? streamRestorer.flush('responses:output_text')
-            : await remoteStreamRestorer!.flush('responses:output_text');
+        // Flush any pending content from builtin PII stream restorer
+        if (streamRestorer && bufferedOutputKeyUsed && !reply.raw.destroyed && !reply.raw.writableEnded) {
+          const flushText = streamRestorer.flush('responses:output_text');
           if (flushText) {
             const flushEvent: any = {
               type: 'response.output_text.delta',
