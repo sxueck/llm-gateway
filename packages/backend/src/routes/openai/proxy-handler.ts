@@ -32,11 +32,10 @@ function shouldApplyPiiProtection(
   isEmbeddingsRequest: boolean,
   virtualKey: any
 ): boolean {
-  // User requirement: privacy protection only for OpenAI Chat Completions.
-  // - Disable for Responses API, Embeddings, and any non-OpenAI protocol.
-  if (isResponsesApi) return false;
+  // Enable PII protection for OpenAI Chat Completions and Responses API.
+  // Keep Embeddings excluded.
   if (isEmbeddingsRequest) return false;
-  if (!isChatCompletionsPath(path)) return false;
+  if (!isChatCompletionsPath(path) && !isResponsesApi) return false;
   // Check virtual key setting
   if (virtualKey?.pii_protection_enabled !== 1) return false;
   // Be strict: don't guess "openai" when protocol is missing.
@@ -451,9 +450,23 @@ export async function handleStreamRequest(
 
     if (isResponsesApi) {
       // Responses API 请求
+      // PII protection for Responses API
+      const piiEnabled = shouldApplyPiiProtection(path, protocolConfig, true, false, virtualKey);
+      const piiResult = piiEnabled
+        ? maskRequestBodyInPlace(request.body, true)
+        : { applied: false, context: null, maskedCount: 0 };
       const input = (request.body as any)?.input;
+
       const options = buildResponsesOptions((request.body as any), true);
       (options as any).__forwardedHeaders = forwardedHeaders;
+
+      if (piiResult.context) {
+        options.__pii = piiResult.context;
+        memoryLogger.debug(
+          `PII protection masked ${piiResult.maskedCount} items for Responses stream request`,
+          'PII'
+        );
+      }
 
       // 记录最终的 instructions 和 tools（用于调试）
       if (options.instructions) {
@@ -835,7 +848,13 @@ export async function handleNonStreamRequest(
   let piiResult: { applied: boolean; context: any; maskedCount: number } | null = null;
 
   if (isResponsesCompactRequest) {
+    // PII protection for Responses compact (non-stream)
+    const piiEnabled = shouldApplyPiiProtection(path, protocolConfig, true, false, virtualKey);
+    const piiResult = piiEnabled
+      ? maskRequestBodyInPlace(request.body, true)
+      : { applied: false, context: null, maskedCount: 0 };
     const input = (request.body as any)?.input;
+
     const options: any = {
       ...(request.body as any),
       __forwardedHeaders: forwardedHeaders,
@@ -843,6 +862,14 @@ export async function handleNonStreamRequest(
     delete options.input;
     delete options.model;
     delete options.stream;
+
+    if (piiResult.context) {
+      options.__pii = piiResult.context;
+      memoryLogger.debug(
+        `PII protection masked ${piiResult.maskedCount} items for Responses compact request`,
+        'PII'
+      );
+    }
 
     response = await makeHttpRequest(
       protocolConfig,
@@ -854,6 +881,12 @@ export async function handleNonStreamRequest(
       undefined,
       true
     );
+
+    // Store piiResult for response restoration later
+    if (piiResult.context) {
+      // We'll restore after receiving the response
+      (response as any).__piiContext = piiResult.context;
+    }
   } else if (isEmbeddingsRequest) {
     // Embeddings API 请求
     const messages = (request.body as any)?.messages || [];
@@ -1012,9 +1045,11 @@ export async function handleNonStreamRequest(
     } catch (_e) {}
 
     // Restore PII masked values back to original for client.
-    if (piiResult?.context) {
+    // Handle both chat completions piiResult and Responses compact __piiContext
+    const piiContext = piiResult?.context || (response as any)?.__piiContext;
+    if (piiContext) {
       try {
-        restoreResponseBodyInPlace(responseData, piiResult.context);
+        restoreResponseBodyInPlace(responseData, piiContext);
       } catch (e: any) {
         memoryLogger.error(`PII restore failed: ${e.message}`, 'Proxy');
       }

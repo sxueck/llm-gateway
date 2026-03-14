@@ -12,6 +12,10 @@ import { logApiRequestToDb } from '../../services/api-request-logger.js';
 import { calculateTokensIfNeeded } from '../proxy/token-calculator.js';
 import { maybeCompressImagesInAnthropicRequestBodyInPlace, logImageCompressionStats } from '../../services/image-compression.js';
 import { requestHeaderForwardingService } from '../../services/request-header-forwarding.js';
+import {
+  maskRequestBodyInPlace,
+  restoreResponseBodyInPlace,
+} from '../../services/pii-protection-service.js';
 
 function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
   return !virtualKey.disable_logging;
@@ -248,6 +252,19 @@ async function handleAnthropicNonStreamRequest(
   const requestIp = extractIp(request);
   const forwardedHeaders = requestHeaderForwardingService.buildForwardedHeaders(request.headers as any);
 
+  // PII protection: mask request before sending to upstream
+  const piiEnabled = virtualKey?.pii_protection_enabled === 1;
+  const piiResult = piiEnabled
+    ? maskRequestBodyInPlace(requestBody, true)
+    : { applied: false, context: null, maskedCount: 0 };
+
+  if (piiResult.context) {
+    memoryLogger.debug(
+      `PII protection masked ${piiResult.maskedCount} items for Anthropic non-stream request`,
+      'PII'
+    );
+  }
+
   try {
     const response = await makeAnthropicRequest(protocolConfig, requestBody, forwardedHeaders);
 
@@ -258,6 +275,16 @@ async function handleAnthropicNonStreamRequest(
       circuitBreaker.recordSuccess(circuitBreakerKey);
 
       const responseData = JSON.parse(response.body);
+
+      // PII protection: restore original values before sending to client
+      if (piiResult.context) {
+        try {
+          restoreResponseBodyInPlace(responseData, piiResult.context);
+        } catch (e: any) {
+          memoryLogger.error(`PII restore failed: ${e.message}`, 'Anthropic');
+        }
+      }
+
       const shouldLogBody = shouldLogRequestBody(virtualKey);
 
       const tokenCount = await calculateTokensIfNeeded(0, requestBody, responseData);
@@ -364,8 +391,27 @@ async function handleAnthropicStreamRequest(
   const streamIp = extractIp(request);
   const forwardedHeaders = requestHeaderForwardingService.buildForwardedHeaders(request.headers as any);
 
+  // PII protection: mask request before sending to upstream
+  const piiEnabled = virtualKey?.pii_protection_enabled === 1;
+  const piiResult = piiEnabled
+    ? maskRequestBodyInPlace(requestBody, true)
+    : { applied: false, context: null, maskedCount: 0 };
+
+  if (piiResult.context) {
+    memoryLogger.debug(
+      `PII protection masked ${piiResult.maskedCount} items for Anthropic stream request`,
+      'PII'
+    );
+  }
+
   try {
-    const tokenUsage = await makeAnthropicStreamRequest(protocolConfig, requestBody, reply, forwardedHeaders);
+    const tokenUsage = await makeAnthropicStreamRequest(
+      protocolConfig,
+      requestBody,
+      reply,
+      forwardedHeaders,
+      piiResult.context
+    );
 
     const duration = Date.now() - startTime;
     circuitBreaker.recordSuccess(circuitBreakerKey);

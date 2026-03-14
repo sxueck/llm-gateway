@@ -5,6 +5,8 @@ import type { AnthropicRequest, AnthropicStreamEvent } from '../../types/anthrop
 import { normalizeAnthropicError } from '../../utils/http-error-normalizer.js';
 import { EmptyOutputError } from '../../errors/empty-output-error.js';
 import { filterForwardedHeaders, sanitizeCustomHeaders } from '../../utils/header-sanitizer.js';
+import { PiiStreamRestorer } from '../../services/pii-protection-service.js';
+import type { PiiProtectionContext } from '../../services/pii-protection-types.js';
 
 export interface HttpResponse {
   statusCode: number;
@@ -265,10 +267,30 @@ interface StreamAttemptResult {
   streamChunks: string[];
 }
 
-async function consumeAnthropicStreamAttempt(
+interface AnthropicPiiDeltaKey {
+  blockIndex: number;
+  deltaType: 'text_delta' | 'thinking_delta';
+}
+
+function buildAnthropicPiiDeltaKey(blockIndex: number, deltaType: 'text_delta' | 'thinking_delta'): string {
+  return `anthropic:block:${blockIndex}:${deltaType === 'text_delta' ? 'text' : 'thinking'}`;
+}
+
+function buildAnthropicPiiFlushEvent(key: AnthropicPiiDeltaKey, text: string): AnthropicStreamEvent {
+  return {
+    type: 'content_block_delta',
+    index: key.blockIndex,
+    delta: key.deltaType === 'text_delta'
+      ? { type: 'text_delta', text }
+      : { type: 'thinking_delta', thinking: text },
+  };
+}
+
+export async function consumeAnthropicStreamAttempt(
   stream: any,
   reply: FastifyReply,
-  flushOnEmptyOutput: boolean
+  flushOnEmptyOutput: boolean,
+  piiCtx?: PiiProtectionContext | null
 ): Promise<StreamAttemptResult> {
   let inputTokens = 0;
   let cacheCreationInputTokens = 0;
@@ -278,6 +300,10 @@ async function consumeAnthropicStreamAttempt(
   const pendingChunks: string[] = [];
   let hasAssistantContent = false;
   const streamChunks: string[] = [];
+
+  // Initialize PII stream restorer if context is provided
+  const piiRestorer = piiCtx ? new PiiStreamRestorer(piiCtx) : null;
+  const usedPiiKeys = new Map<string, AnthropicPiiDeltaKey>();
 
   const flushPendingChunks = () => {
     if (!buffering) return;
@@ -299,6 +325,33 @@ async function consumeAnthropicStreamAttempt(
     ensureSseHeaders(reply);
     reply.raw.write(chunk);
     streamChunks.push(chunk);
+  };
+
+  const flushPiiKey = (key: string) => {
+    if (!piiRestorer) return;
+    const keyMeta = usedPiiKeys.get(key);
+    if (!keyMeta) return;
+
+    const flushedText = piiRestorer.flush(key);
+    if (!flushedText) return;
+
+    const flushEvent = buildAnthropicPiiFlushEvent(keyMeta, flushedText);
+    writeChunk(`event: ${flushEvent.type}\ndata: ${JSON.stringify(flushEvent)}\n\n`);
+  };
+
+  const flushPiiKeysForBlock = (blockIndex: number | undefined) => {
+    if (blockIndex === undefined) return;
+    for (const [key, keyMeta] of usedPiiKeys) {
+      if (keyMeta.blockIndex === blockIndex) {
+        flushPiiKey(key);
+      }
+    }
+  };
+
+  const flushAllPiiKeys = () => {
+    for (const key of usedPiiKeys.keys()) {
+      flushPiiKey(key);
+    }
   };
 
   for await (const event of stream) {
@@ -323,8 +376,51 @@ async function consumeAnthropicStreamAttempt(
       }
     }
 
+    if (piiRestorer) {
+      const shouldFlushBlockKeys =
+        eventData.type === 'content_block_stop' ||
+        eventData.type === 'message_stop' ||
+        (eventData.type === 'content_block_delta' &&
+          eventData.delta?.type !== 'text_delta' &&
+          eventData.delta?.type !== 'thinking_delta');
+
+      if (shouldFlushBlockKeys && eventData.type === 'message_stop') {
+        flushAllPiiKeys();
+      } else if (shouldFlushBlockKeys) {
+        flushPiiKeysForBlock(eventData.index);
+      }
+    }
+
+    // PII protection: restore masked values in stream text deltas
+    // Only restore text/thinking deltas, NOT input_json_delta or signature_delta
+    if (piiRestorer && eventData.type === 'content_block_delta' && eventData.delta) {
+      const blockIndex = eventData.index ?? 0;
+
+      // Restore text_delta content
+      if (eventData.delta.type === 'text_delta' && typeof eventData.delta.text === 'string') {
+        const key = buildAnthropicPiiDeltaKey(blockIndex, 'text_delta');
+        usedPiiKeys.set(key, { blockIndex, deltaType: 'text_delta' });
+        eventData.delta.text = piiRestorer.process(key, eventData.delta.text);
+      }
+
+      // Restore thinking_delta content
+      if (eventData.delta.type === 'thinking_delta' && typeof eventData.delta.thinking === 'string') {
+        const key = buildAnthropicPiiDeltaKey(blockIndex, 'thinking_delta');
+        usedPiiKeys.set(key, { blockIndex, deltaType: 'thinking_delta' });
+        eventData.delta.thinking = piiRestorer.process(key, eventData.delta.thinking);
+      }
+
+      // Note: We explicitly do NOT restore input_json_delta or signature_delta
+      // as these are structured payloads that should not be mutated
+    }
+
     const sseData = `event: ${eventData.type}\ndata: ${JSON.stringify(eventData)}\n\n`;
     writeChunk(sseData);
+  }
+
+  // Flush any pending PII restoration buffers
+  if (piiRestorer) {
+    flushAllPiiKeys();
   }
 
   try {
@@ -393,7 +489,8 @@ export async function makeAnthropicStreamRequest(
   config: any,
   requestBody: AnthropicRequest,
   reply: FastifyReply,
-  forwardedHeaders?: Record<string, string>
+  forwardedHeaders?: Record<string, string>,
+  piiCtx?: PiiProtectionContext | null
 ): Promise<StreamTokenUsage> {
   const headers = config.modelAttributes?.headers;
   const requestOpts = buildAnthropicRequestOptions(headers, forwardedHeaders, requestBody);
@@ -410,7 +507,8 @@ export async function makeAnthropicStreamRequest(
       const attemptResult = await consumeAnthropicStreamAttempt(
         stream,
         reply,
-        attempt === totalAttempts
+        attempt === totalAttempts,
+        piiCtx
       );
 
       if (!attemptResult.hasAssistantContent) {

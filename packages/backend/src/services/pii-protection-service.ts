@@ -53,7 +53,8 @@ function collectTextRefs(body: any): TextRef[] {
     }
     if (Array.isArray(message.content)) {
       for (const part of message.content) {
-        if (part && typeof part === 'object' && typeof part.text === 'string') {
+        // Only process text blocks, exclude tool_result and other structured blocks
+        if (part && typeof part === 'object' && part.type === 'text' && typeof part.text === 'string') {
           pushStringRef(() => part.text, (v) => { part.text = v; });
         }
       }
@@ -103,6 +104,61 @@ function collectTextRefs(body: any): TextRef[] {
   // Instructions field
   if (typeof body?.instructions === 'string') {
     pushStringRef(() => body.instructions, (v) => { body.instructions = v; });
+  }
+
+  // Anthropic system field: can be string or content blocks
+  if (typeof body?.system === 'string') {
+    pushStringRef(() => body.system, (v) => { body.system = v; });
+  } else if (Array.isArray(body?.system)) {
+    for (const block of body.system) {
+      if (block && typeof block === 'object' && block.type === 'text' && typeof block.text === 'string') {
+        pushStringRef(() => block.text, (v) => { block.text = v; });
+      }
+    }
+  }
+
+  // Anthropic response content blocks: text and thinking types
+  if (Array.isArray(body?.content)) {
+    for (const block of body.content) {
+      if (!block || typeof block !== 'object') continue;
+      // text blocks
+      if (block.type === 'text' && typeof block.text === 'string') {
+        pushStringRef(() => block.text, (v) => { block.text = v; });
+      }
+      // thinking blocks
+      if (block.type === 'thinking' && typeof block.thinking === 'string') {
+        pushStringRef(() => block.thinking, (v) => { block.thinking = v; });
+      }
+    }
+  }
+
+  // OpenAI Responses API non-stream response text shapes
+  // Shape 1: Top-level output_text field
+  if (typeof body?.output_text === 'string') {
+    pushStringRef(() => body.output_text, (v) => { body.output_text = v; });
+  }
+
+  // Shape 2 & 3: output array with text fields and nested content blocks
+  if (Array.isArray(body?.output)) {
+    for (const item of body.output) {
+      if (!item || typeof item !== 'object') continue;
+
+      // Shape 2: item.text field
+      if (typeof item.text === 'string') {
+        pushStringRef(() => item.text, (v) => { item.text = v; });
+      }
+
+      // Shape 3: item.content[] blocks with type 'output_text' or 'text'
+      if (Array.isArray(item.content)) {
+        for (const block of item.content) {
+          if (!block || typeof block !== 'object') continue;
+          // Only process text-bearing blocks, not tool calls or other structured data
+          if ((block.type === 'output_text' || block.type === 'text') && typeof block.text === 'string') {
+            pushStringRef(() => block.text, (v) => { block.text = v; });
+          }
+        }
+      }
+    }
   }
 
   return refs;
