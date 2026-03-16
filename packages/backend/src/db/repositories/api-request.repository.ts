@@ -538,4 +538,131 @@ export const apiRequestRepository = {
       conn.release();
     }
   },
+
+  async getPerformanceMetrics(options: { startTime: number; endTime: number }) {
+    const { startTime, endTime } = options;
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const loggingCondition = getDisableLoggingCondition();
+
+      // Query aggregated data by provider_id + model
+      const [rows] = await conn.query(
+        `SELECT
+          ar.provider_id,
+          p.name as provider_name,
+          ar.model,
+          COUNT(*) as request_count,
+          SUM(CASE WHEN ar.status = 'success' THEN 1 ELSE 0 END) as success_count,
+          SUM(CASE WHEN ar.status = 'error' THEN 1 ELSE 0 END) as failure_count,
+          AVG(CASE WHEN ar.tfft_ms >= 0 THEN ar.tfft_ms END) as avg_tfft_ms,
+          COUNT(CASE WHEN ar.tfft_ms >= 0 THEN 1 END) as valid_tfft_count,
+          AVG(CASE WHEN ar.response_time > 0 THEN ar.response_time END) as avg_response_time_ms,
+          COUNT(CASE WHEN ar.response_time > 0 THEN 1 END) as valid_response_time_count,
+          AVG(CASE
+            WHEN ar.completion_tokens > 0 AND ar.response_time > 0
+            THEN CASE
+              WHEN ar.tfft_ms IS NOT NULL AND ar.tfft_ms >= 0 AND (ar.response_time - ar.tfft_ms) > 0
+              THEN ar.completion_tokens / ((ar.response_time - ar.tfft_ms) / 1000)
+              ELSE ar.completion_tokens / (ar.response_time / 1000)
+            END
+            ELSE NULL
+          END) as avg_output_speed,
+          COUNT(CASE
+            WHEN ar.completion_tokens > 0 AND ar.response_time > 0
+            THEN CASE
+              WHEN ar.tfft_ms IS NOT NULL AND ar.tfft_ms >= 0 AND (ar.response_time - ar.tfft_ms) > 0
+              THEN 1
+              ELSE 1
+            END
+            ELSE NULL
+          END) as valid_speed_count
+        FROM api_requests ar
+        LEFT JOIN providers p ON ar.provider_id = p.id
+        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        WHERE ar.created_at >= ? AND ar.created_at <= ? AND ar.model IS NOT NULL AND ${loggingCondition}
+        GROUP BY ar.provider_id, ar.model, p.name
+        ORDER BY request_count DESC`,
+        [startTime, endTime]
+      );
+
+      const items = (rows as any[]).map(row => ({
+        providerId: row.provider_id,
+        providerName: row.provider_name || '未知供应商',
+        model: row.model,
+        requestCount: Number(row.request_count) || 0,
+        successCount: Number(row.success_count) || 0,
+        failureCount: Number(row.failure_count) || 0,
+        availability: row.request_count > 0 ? Number(row.success_count) / Number(row.request_count) : 0,
+        avgTfftMs: row.avg_tfft_ms !== null ? Number(row.avg_tfft_ms) : null,
+        validTfftCount: Number(row.valid_tfft_count) || 0,
+        avgResponseTimeMs: row.avg_response_time_ms !== null ? Number(row.avg_response_time_ms) : null,
+        validResponseTimeCount: Number(row.valid_response_time_count) || 0,
+        avgOutputSpeed: row.avg_output_speed !== null ? Number(row.avg_output_speed) : null,
+        validSpeedCount: Number(row.valid_speed_count) || 0,
+      }));
+
+      // Calculate summary from items
+      const totalRequests = items.reduce((sum, item) => sum + item.requestCount, 0);
+      const successCount = items.reduce((sum, item) => sum + item.successCount, 0);
+      const failureCount = items.reduce((sum, item) => sum + item.failureCount, 0);
+
+      // Calculate overall averages (weighted by valid sample count, not request count)
+      const validTfftItems = items.filter(i => i.avgTfftMs !== null && i.validTfftCount > 0);
+      const validResponseTimeItems = items.filter(i => i.avgResponseTimeMs !== null && i.validResponseTimeCount > 0);
+      const validSpeedItems = items.filter(i => i.avgOutputSpeed !== null && i.validSpeedCount > 0);
+
+      const avgTfftMs = validTfftItems.length > 0
+        ? validTfftItems.reduce((sum, i) => sum + (i.avgTfftMs! * i.validTfftCount), 0) /
+          validTfftItems.reduce((sum, i) => sum + i.validTfftCount, 0)
+        : null;
+
+      const avgResponseTimeMs = validResponseTimeItems.length > 0
+        ? validResponseTimeItems.reduce((sum, i) => sum + (i.avgResponseTimeMs! * i.validResponseTimeCount), 0) /
+          validResponseTimeItems.reduce((sum, i) => sum + i.validResponseTimeCount, 0)
+        : null;
+
+      const avgOutputSpeed = validSpeedItems.length > 0
+        ? validSpeedItems.reduce((sum, i) => sum + (i.avgOutputSpeed! * i.validSpeedCount), 0) /
+          validSpeedItems.reduce((sum, i) => sum + i.validSpeedCount, 0)
+        : null;
+
+      // Generate filters from items (same source ensures consistency)
+      const providerMap = new Map<string, { label: string; value: string }>();
+      const modelSet = new Set<string>();
+
+      for (const item of items) {
+        const providerValue = item.providerId ?? '__unknown_provider__';
+        if (!providerMap.has(providerValue)) {
+          providerMap.set(providerValue, {
+            label: item.providerName,
+            value: providerValue,
+          });
+        }
+        modelSet.add(item.model);
+      }
+
+      const providers = Array.from(providerMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+      const models = Array.from(modelSet).map(m => ({ label: m, value: m })).sort((a, b) => a.label.localeCompare(b.label));
+
+      return {
+        items,
+        summary: {
+          totalRequests,
+          successCount,
+          failureCount,
+          successRate: totalRequests > 0 ? successCount / totalRequests : 0,
+          avgTfftMs,
+          avgOutputSpeed,
+          avgResponseTimeMs,
+        },
+        filters: {
+          providers,
+          models,
+        },
+      };
+    } finally {
+      conn.release();
+    }
+  },
 };

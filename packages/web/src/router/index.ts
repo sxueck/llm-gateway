@@ -67,6 +67,11 @@ const router = createRouter({
           component: () => import('@/views/CostAnalysisView.vue'),
         },
         {
+          path: 'performance-monitoring',
+          name: 'PerformanceMonitoring',
+          component: () => import('@/views/PerformanceMonitoringView.vue'),
+        },
+        {
           path: 'api-guide',
           name: 'ApiGuide',
           component: () => import('@/views/ApiGuideView.vue'),
