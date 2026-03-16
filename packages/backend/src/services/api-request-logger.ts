@@ -24,6 +24,7 @@ export interface ApiLogParams {
   compressionStats?: { originalTokens: number; savedTokens: number };
   ip?: string;
   userAgent?: string;
+  piiMaskedCount?: number;
 }
 
 function safeParseJson(text: string | undefined): any | null {
@@ -45,9 +46,17 @@ function compactObject(input: Record<string, unknown>): Record<string, unknown> 
   return compacted;
 }
 
-function extractRequestParamsJson(requestBody: string | undefined): string | undefined {
+function extractRequestParamsJson(requestBody: string | undefined, piiMaskedCount?: number): string | undefined {
   const parsed = safeParseJson(requestBody);
-  if (!parsed || typeof parsed !== 'object') return undefined;
+
+  // Even if the request body can't be parsed (truncated/invalid),
+  // we still need to persist pii_masked_count for dashboard stats
+  if (!parsed || typeof parsed !== 'object') {
+    if (piiMaskedCount && piiMaskedCount > 0) {
+      return JSON.stringify({ pii_masked_count: piiMaskedCount });
+    }
+    return undefined;
+  }
 
   const params = compactObject({
     temperature: parsed.temperature,
@@ -58,6 +67,7 @@ function extractRequestParamsJson(requestBody: string | undefined): string | und
     tools_count: Array.isArray(parsed.tools) ? parsed.tools.length : undefined,
     reasoning_effort: parsed.reasoning?.effort,
     user: parsed.user,
+    pii_masked_count: piiMaskedCount,
   });
 
   if (Object.keys(params).length === 0) return undefined;
@@ -100,10 +110,10 @@ function normalizeErrorMessage(errorMessage: unknown): string | undefined {
 
 export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
   const normalizedErrorMessage = normalizeErrorMessage(params.errorMessage);
-  const requestParamsJson = extractRequestParamsJson(params.truncatedRequest);
+  const requestParamsJson = extractRequestParamsJson(params.truncatedRequest, params.piiMaskedCount);
   const responseMetaJson = extractResponseMetaJson(params.truncatedResponse);
 
-  await apiRequestDb.create({
+    await apiRequestDb.create({
     id: nanoid(),
     virtual_key_id: params.virtualKey.id,
     provider_id: params.providerId,

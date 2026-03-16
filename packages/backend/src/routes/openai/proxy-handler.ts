@@ -385,6 +385,7 @@ export function createOpenAIProxyHandler() {
             compressionStats,
             ip: requestIp,
             userAgent: requestUserAgent,
+            piiMaskedCount: 0,
           });
         }
       }
@@ -422,6 +423,7 @@ export async function handleStreamRequest(
 ) {
   const circuitBreakerKey = modelResult?.circuitBreakerKey || providerId;
   const modelAttributes = modelAttributesParam ?? parseModelAttributes(currentModel);
+  let piiMaskedCount = 0;
 
   memoryLogger.info(
     `流式请求开始: ${path} | virtual key: ${vkDisplay}`,
@@ -455,6 +457,7 @@ export async function handleStreamRequest(
       const piiResult = piiEnabled
         ? maskRequestBodyInPlace(request.body, true)
         : { applied: false, context: null, maskedCount: 0 };
+      piiMaskedCount = piiResult.maskedCount;
       const input = (request.body as any)?.input;
 
       const options = buildResponsesOptions((request.body as any), true);
@@ -504,6 +507,7 @@ export async function handleStreamRequest(
       const piiResult = piiEnabled
         ? maskRequestBodyInPlace(request.body, true)
         : { applied: false, context: null, maskedCount: 0 };
+      piiMaskedCount = piiResult.maskedCount;
 
       const options: any = {
         temperature: (request.body as any)?.temperature,
@@ -601,6 +605,7 @@ export async function handleStreamRequest(
       compressionStats,
       ip: streamRequestIp,
       userAgent: streamRequestUserAgent,
+      piiMaskedCount,
     });
 
     // Broadcast full, untruncated event to debug WebSocket clients when debug mode is active
@@ -694,6 +699,7 @@ export async function handleStreamRequest(
       compressionStats,
       ip: streamRequestIp,
       userAgent: streamRequestUserAgent,
+      piiMaskedCount,
     });
 
     if (debugModeService.isActive()) {
@@ -834,6 +840,7 @@ export async function handleNonStreamRequest(
       compressionStats,
       ip: nonStreamRequestIp,
       userAgent: nonStreamRequestUserAgent,
+      piiMaskedCount: 0,
     });
 
     memoryLogger.info(
@@ -845,12 +852,12 @@ export async function handleNonStreamRequest(
   }
 
   let response: any;
-  let piiResult: { applied: boolean; context: any; maskedCount: number } | null = null;
+  let piiResult: { applied: boolean; context: any; maskedCount: number } = { applied: false, context: null, maskedCount: 0 };
 
   if (isResponsesCompactRequest) {
     // PII protection for Responses compact (non-stream)
     const piiEnabled = shouldApplyPiiProtection(path, protocolConfig, true, false, virtualKey);
-    const piiResult = piiEnabled
+    piiResult = piiEnabled
       ? maskRequestBodyInPlace(request.body, true)
       : { applied: false, context: null, maskedCount: 0 };
     const input = (request.body as any)?.input;
@@ -1175,6 +1182,7 @@ export async function handleNonStreamRequest(
     compressionStats,
     ip: nonStreamRequestIp,
     userAgent: nonStreamRequestUserAgent,
+    piiMaskedCount: piiResult?.maskedCount || 0,
   });
 
   if (isSuccess) {

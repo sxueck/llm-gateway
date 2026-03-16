@@ -517,6 +517,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       endTime: now,
       interval: period === '24h' ? 'hour' : 'day'
     });
+    const piiProtectionCount = await apiRequestDb.getPiiProtectionCount({ startTime, endTime: now });
  
     const expertRoutingStats = await expertRoutingLogDb.getGlobalStatistics(startTime);
     const modelStats = await apiRequestDb.getModelStats({ startTime, endTime: now });
@@ -633,6 +634,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       costStats,
       requestSourceStats,
       threatIpStats,
+      piiProtectionCount,
     };
   });
 

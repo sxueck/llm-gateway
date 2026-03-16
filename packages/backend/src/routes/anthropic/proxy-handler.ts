@@ -221,6 +221,7 @@ export function createAnthropicProxyHandler() {
             cacheHit: 0,
             ip: requestIp,
             userAgent: requestUserAgent,
+            piiMaskedCount: 0,
           });
         }
       }
@@ -301,6 +302,7 @@ async function handleAnthropicNonStreamRequest(
         cacheHit: 0,
         ip: requestIp,
         userAgent: requestUserAgent,
+        piiMaskedCount: piiResult.maskedCount,
       });
 
       memoryLogger.info(
@@ -330,6 +332,7 @@ async function handleAnthropicNonStreamRequest(
         cacheHit: 0,
         ip: requestIp,
         userAgent: requestUserAgent,
+        piiMaskedCount: piiResult.maskedCount,
       });
 
       memoryLogger.error(
@@ -360,6 +363,7 @@ async function handleAnthropicNonStreamRequest(
       cacheHit: 0,
       ip: requestIp,
       userAgent: requestUserAgent,
+      piiMaskedCount: piiResult.maskedCount,
     });
 
     throw error;
@@ -432,6 +436,7 @@ async function handleAnthropicStreamRequest(
       cacheHit: 0,
       ip: streamIp,
       userAgent: streamUserAgent,
+      piiMaskedCount: piiResult.maskedCount,
     });
 
     memoryLogger.info(
@@ -466,6 +471,7 @@ async function handleAnthropicStreamRequest(
       cacheHit: 0,
       ip: streamIp,
       userAgent: streamUserAgent,
+      piiMaskedCount: piiResult.maskedCount,
     });
 
     return;

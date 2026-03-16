@@ -216,6 +216,7 @@ type GetStatsResponse = {
   costStats: CostStats | null;
   requestSourceStats?: RequestSourceStats;
   threatIpStats?: ThreatIpStats;
+  piiProtectionCount: number;
 };
 
 type LookupRequestSourceResponse = {

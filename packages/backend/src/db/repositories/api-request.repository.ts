@@ -539,6 +539,32 @@ export const apiRequestRepository = {
     }
   },
 
+  async getPiiProtectionCount(options?: { startTime?: number; endTime?: number }): Promise<number> {
+    const now = Date.now();
+    const startTime = options?.startTime ?? (now - 24 * 60 * 60 * 1000);
+    const endTime = options?.endTime || now;
+
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const loggingCondition = getDisableLoggingCondition();
+      const [rows] = await conn.query(
+        `SELECT COUNT(*) as pii_protection_count
+         FROM api_requests ar
+         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+         WHERE ar.created_at >= ? AND ar.created_at <= ?
+           AND ${loggingCondition}
+           AND JSON_EXTRACT(ar.request_params_json, '$.pii_masked_count') > 0`,
+        [startTime, endTime]
+      );
+      const result = rows as any[];
+      if (result.length === 0) return 0;
+      return result[0].pii_protection_count || 0;
+    } finally {
+      conn.release();
+    }
+  },
+
   async getPerformanceMetrics(options: { startTime: number; endTime: number }) {
     const { startTime, endTime } = options;
     const pool = getDatabase();
@@ -592,7 +618,10 @@ export const apiRequestRepository = {
         FROM api_requests ar
         LEFT JOIN providers p ON ar.provider_id = p.id
         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        LEFT JOIN models m ON vk.model_id = m.id
         WHERE ar.created_at >= ? AND ar.created_at <= ? AND ar.model IS NOT NULL AND ${loggingCondition}
+          AND (m.is_virtual IS NULL OR m.is_virtual = 0)
+          AND (m.expert_routing_id IS NULL)
         GROUP BY ar.provider_id, ar.model, p.name
         ORDER BY request_count DESC`,
         [startTime, endTime]

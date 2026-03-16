@@ -94,7 +94,6 @@
         <n-gi span="1 s:1 m:2 l:1">
           <n-card class="summary-card" :bordered="false">
             <div class="summary-header">
-              <n-icon size="20" color="#2080f0"><FlashOutline /></n-icon>
               <span>{{ t('performanceMonitoring.metrics.avgTffb') }}</span>
             </div>
             <div class="summary-value">
@@ -106,7 +105,6 @@
         <n-gi span="1 s:1 m:2 l:1">
           <n-card class="summary-card" :bordered="false">
             <div class="summary-header">
-              <n-icon size="20" color="#18a058"><SpeedometerOutline /></n-icon>
               <span>{{ t('performanceMonitoring.metrics.avgOutputSpeed') }}</span>
             </div>
             <div class="summary-value">
@@ -118,7 +116,6 @@
         <n-gi span="1 s:1 m:2 l:1">
           <n-card class="summary-card" :bordered="false">
             <div class="summary-header">
-              <n-icon size="20" color="#f0a020"><CheckmarkCircleOutline /></n-icon>
               <span>{{ t('performanceMonitoring.metrics.availability') }}</span>
             </div>
             <div class="summary-value">
@@ -129,7 +126,6 @@
         <n-gi span="1 s:1 m:2 l:1">
           <n-card class="summary-card" :bordered="false">
             <div class="summary-header">
-              <n-icon size="20" color="#8a2be2"><StatsChartOutline /></n-icon>
               <span>{{ t('performanceMonitoring.metrics.totalRequests') }}</span>
             </div>
             <div class="summary-value">
@@ -144,7 +140,6 @@
         <n-gi span="1 s:1 m:2 l:1">
           <n-card class="summary-card token-card" :bordered="false">
             <div class="summary-header">
-              <n-icon size="20" color="#2080f0"><SendOutline /></n-icon>
               <span>{{ t('performanceMonitoring.metrics.promptTokens') }}</span>
             </div>
             <div class="summary-value">
@@ -155,7 +150,6 @@
         <n-gi span="1 s:1 m:2 l:1">
           <n-card class="summary-card token-card" :bordered="false">
             <div class="summary-header">
-              <n-icon size="20" color="#18a058"><DownloadOutline /></n-icon>
               <span>{{ t('performanceMonitoring.metrics.completionTokens') }}</span>
             </div>
             <div class="summary-value">
@@ -166,7 +160,6 @@
         <n-gi span="1 s:1 m:2 l:1">
           <n-card class="summary-card token-card" :bordered="false">
             <div class="summary-header">
-              <n-icon size="20" color="#f0a020"><SaveOutline /></n-icon>
               <span>{{ t('performanceMonitoring.metrics.cachedTokens') }}</span>
             </div>
             <div class="summary-value">
@@ -177,7 +170,6 @@
         <n-gi span="1 s:1 m:2 l:1">
           <n-card class="summary-card token-card" :bordered="false">
             <div class="summary-header">
-              <n-icon size="20" color="#8a2be2"><ServerOutline /></n-icon>
               <span>{{ t('performanceMonitoring.metrics.totalTokens') }}</span>
             </div>
             <div class="summary-value">
@@ -248,14 +240,6 @@ import {
   CloseOutline,
   BarChartOutline,
   FilterOutline,
-  FlashOutline,
-  SpeedometerOutline,
-  CheckmarkCircleOutline,
-  StatsChartOutline,
-  SendOutline,
-  DownloadOutline,
-  SaveOutline,
-  ServerOutline,
 } from '@vicons/ionicons5';
 import { configApi, type PerformanceMetricsResponse, type PerformanceMetricItem } from '@/api/config';
 

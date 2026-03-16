@@ -53,7 +53,6 @@ function collectTextRefs(body: any): TextRef[] {
     }
     if (Array.isArray(message.content)) {
       for (const part of message.content) {
-        // Only process text blocks, exclude tool_result and other structured blocks
         if (part && typeof part === 'object' && part.type === 'text' && typeof part.text === 'string') {
           pushStringRef(() => part.text, (v) => { part.text = v; });
         }

@@ -241,19 +241,19 @@
         <n-gi class="stagger-item" style="--delay: 400ms">
           <n-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-header">安全拦截</div>
+              <div class="stat-header">PII 保护次数</div>
               <div class="stat-main-value">
                 <n-skeleton v-if="loading" text style="width: 40%; height: 42px" :sharp="false" />
                 <span v-else>
-                  {{ formatNumber(ipsumBlockedCount) }}
+                  {{ formatNumber(piiProtectionCount) }}
                 </span>
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">威胁库:</span>
+                  <span class="stat-detail-label">安全拦截次数:</span>
                   <span class="stat-detail-value">
                     <n-skeleton v-if="loading" text style="width: 40px" />
-                    <span v-else>{{ formatNumber(threatIpListSize) }}</span>
+                    <span v-else>{{ formatNumber(ipsumBlockedCount) }}</span>
                   </span>
                 </span>
               </div>
@@ -568,6 +568,7 @@ const circuitBreakerStats = ref<{
 const costStats = ref<CostStats | null>(null);
 const requestSourceStats = ref<RequestSourceStats | null>(null);
 const threatIpStats = ref<ThreatIpStats | null>(null);
+const piiProtectionCount = ref<number>(0);
 const requestSourceTableData = computed<RequestSourceEntry[]>(() => requestSourceStats.value?.recentSources || []);
 const lookupLoadingIp = ref<string | null>(null);
 const blockLoadingIp = ref<string | null>(null);
@@ -884,11 +885,6 @@ const completionTokens = computed(() => {
 const ipsumBlockedCount = computed(() => {
   if (!threatIpStats.value) return 0;
   return Number(threatIpStats.value.blockedCount || 0);
-});
-
-const threatIpListSize = computed(() => {
-  if (!threatIpStats.value) return 0;
-  return Number(threatIpStats.value.totalThreatIps || 0);
 });
 
 // 响应时间散点图可选模型列表（按 供应商/模型 显示）
@@ -1369,6 +1365,7 @@ async function loadStats() {
     costStats.value = result.costStats || null;
     requestSourceStats.value = result.requestSourceStats || null;
     threatIpStats.value = result.threatIpStats || null;
+    piiProtectionCount.value = result.piiProtectionCount || 0;
   } catch (error: any) {
     const errorMsg = error.message || '加载数据失败';
     loadError.value = errorMsg;
