@@ -53,30 +53,14 @@ export async function processOpenAIChatCompletionStreamToSse(
   let completionTokens = 0;
   let totalTokens = 0;
   let cachedTokens = 0;
-  let tfftMs: number | undefined;
+  let tffbMs: number | undefined;
   const streamChunks: string[] = [];
   let reasoningContent = '';
   let thinkingBlocks: ThinkingBlock[] = [];
   let toolCalls: any[] = [];
 
-  // 检测 chunk 是否包含首个有效输出 token（文本内容或工具调用均视为有效）
-  const hasFirstToken = (chunk: any): boolean => {
-    if (!chunk || typeof chunk !== 'object') return false;
-    if (!Array.isArray(chunk.choices)) return false;
-
-    for (const choice of chunk.choices) {
-      const delta = choice?.delta;
-      if (typeof delta?.content === 'string' && delta.content.length > 0) {
-        return true;
-      }
-      // tool_calls 同样是模型生成的 token，对纯 function-calling 请求应记录 TFFT
-      if (Array.isArray(delta?.tool_calls) && delta.tool_calls.length > 0) {
-        return true;
-      }
-    }
-
-    return false;
-  };
+  // TFFB (Time to First Byte) is triggered by the first upstream stream event observed by gateway.
+  // This measures gateway-level first event timing, not raw TCP bytes or first content/tool_call.
 
   try {
     for await (const chunk of stream) {
@@ -127,8 +111,9 @@ export async function processOpenAIChatCompletionStreamToSse(
       const sseData = `data: ${chunkData}\n\n`;
       streamChunks.push(sseData);
 
-      if (tfftMs === undefined && upstreamRequestStartedAt && hasFirstToken(chunk)) {
-        tfftMs = Date.now() - upstreamRequestStartedAt;
+      // Record TFFB on first upstream stream event observed
+      if (tffbMs === undefined && upstreamRequestStartedAt) {
+        tffbMs = Date.now() - upstreamRequestStartedAt;
       }
 
       if (!reply.raw.write(sseData)) {
@@ -223,7 +208,7 @@ export async function processOpenAIChatCompletionStreamToSse(
     totalTokens,
     cachedTokens,
     streamChunks,
-    tfftMs,
+    tffbMs,
     reasoningContent: reasoningContent || undefined,
     thinkingBlocks: thinkingBlocks.length > 0 ? thinkingBlocks : undefined,
   };

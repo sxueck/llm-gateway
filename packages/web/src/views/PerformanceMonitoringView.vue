@@ -95,11 +95,11 @@
           <n-card class="summary-card" :bordered="false">
             <div class="summary-header">
               <n-icon size="20" color="#2080f0"><FlashOutline /></n-icon>
-              <span>{{ t('performanceMonitoring.metrics.avgTfft') }}</span>
+              <span>{{ t('performanceMonitoring.metrics.avgTffb') }}</span>
             </div>
             <div class="summary-value">
-              {{ data.summary.avgTfftMs !== null ? formatNumber(data.summary.avgTfftMs) : '-' }}
-              <span v-if="data.summary.avgTfftMs !== null" class="summary-unit">ms</span>
+              {{ data.summary.avgTffbMs !== null ? formatNumber(data.summary.avgTffbMs) : '-' }}
+              <span v-if="data.summary.avgTffbMs !== null" class="summary-unit">ms</span>
             </div>
           </n-card>
         </n-gi>
@@ -124,9 +124,6 @@
             <div class="summary-value">
               {{ formatPercentage(data.summary.successRate) }}%
             </div>
-            <div class="summary-progress">
-              <div class="progress-bar" :style="{ width: `${data.summary.successRate * 100}%` }"></div>
-            </div>
           </n-card>
         </n-gi>
         <n-gi span="1 s:1 m:2 l:1">
@@ -137,6 +134,54 @@
             </div>
             <div class="summary-value">
               {{ formatNumber(data.summary.totalRequests) }}
+            </div>
+          </n-card>
+        </n-gi>
+      </n-grid>
+
+      <!-- Token Summary Cards -->
+      <n-grid :cols="4" :x-gap="16" :y-gap="16" responsive="screen" style="margin-top: 16px;">
+        <n-gi span="1 s:1 m:2 l:1">
+          <n-card class="summary-card token-card" :bordered="false">
+            <div class="summary-header">
+              <n-icon size="20" color="#2080f0"><SendOutline /></n-icon>
+              <span>{{ t('performanceMonitoring.metrics.promptTokens') }}</span>
+            </div>
+            <div class="summary-value">
+              {{ formatNumber(tokenSummaries.promptTokens) }}
+            </div>
+          </n-card>
+        </n-gi>
+        <n-gi span="1 s:1 m:2 l:1">
+          <n-card class="summary-card token-card" :bordered="false">
+            <div class="summary-header">
+              <n-icon size="20" color="#18a058"><DownloadOutline /></n-icon>
+              <span>{{ t('performanceMonitoring.metrics.completionTokens') }}</span>
+            </div>
+            <div class="summary-value">
+              {{ formatNumber(tokenSummaries.completionTokens) }}
+            </div>
+          </n-card>
+        </n-gi>
+        <n-gi span="1 s:1 m:2 l:1">
+          <n-card class="summary-card token-card" :bordered="false">
+            <div class="summary-header">
+              <n-icon size="20" color="#f0a020"><SaveOutline /></n-icon>
+              <span>{{ t('performanceMonitoring.metrics.cachedTokens') }}</span>
+            </div>
+            <div class="summary-value">
+              {{ formatNumber(tokenSummaries.cachedTokens) }}
+            </div>
+          </n-card>
+        </n-gi>
+        <n-gi span="1 s:1 m:2 l:1">
+          <n-card class="summary-card token-card" :bordered="false">
+            <div class="summary-header">
+              <n-icon size="20" color="#8a2be2"><ServerOutline /></n-icon>
+              <span>{{ t('performanceMonitoring.metrics.totalTokens') }}</span>
+            </div>
+            <div class="summary-value">
+              {{ formatNumber(tokenSummaries.totalTokens) }}
             </div>
           </n-card>
         </n-gi>
@@ -207,6 +252,10 @@ import {
   SpeedometerOutline,
   CheckmarkCircleOutline,
   StatsChartOutline,
+  SendOutline,
+  DownloadOutline,
+  SaveOutline,
+  ServerOutline,
 } from '@vicons/ionicons5';
 import { configApi, type PerformanceMetricsResponse, type PerformanceMetricItem } from '@/api/config';
 
@@ -242,6 +291,29 @@ const modelOptions = computed(() => {
 
 const hasActiveFilter = computed(() => {
   return selectedProvider.value !== null || selectedModel.value !== null;
+});
+
+// Token summaries computed from filteredItems to follow provider/model filters
+const tokenSummaries = computed(() => {
+  const items = filteredItems.value;
+  if (items.length === 0) {
+    return {
+      promptTokens: 0,
+      completionTokens: 0,
+      cachedTokens: 0,
+      totalTokens: 0,
+    };
+  }
+  return items.reduce(
+    (acc, item) => {
+      acc.promptTokens += item.promptTokens || 0;
+      acc.completionTokens += item.completionTokens || 0;
+      acc.cachedTokens += item.cachedTokens || 0;
+      acc.totalTokens += item.totalTokens || 0;
+      return acc;
+    },
+    { promptTokens: 0, completionTokens: 0, cachedTokens: 0, totalTokens: 0 }
+  );
 });
 
 // Filtered items (shared by charts and table)
@@ -343,14 +415,14 @@ const chartOption1 = computed(() => {
           name: t('performanceMonitoring.metrics.availability'),
           type: 'bar',
           data: availabilities,
-          itemStyle: { color: '#18a058' },
+          itemStyle: { color: '#18a058', borderRadius: [4, 4, 0, 0] },
         },
         {
           name: t('performanceMonitoring.metrics.avgOutputSpeed'),
           type: 'bar',
           yAxisIndex: 1,
           data: avgSpeeds,
-          itemStyle: { color: '#2080f0' },
+          itemStyle: { color: '#2080f0', borderRadius: [4, 4, 0, 0] },
         },
       ],
     };
@@ -387,7 +459,7 @@ const chartOption1 = computed(() => {
         name: t('performanceMonitoring.metrics.totalRequests'),
         type: 'bar',
         data: requestCounts,
-        itemStyle: { color: '#2080f0' },
+        itemStyle: { color: '#2080f0', borderRadius: [4, 4, 0, 0] },
       },
     ],
   };
@@ -407,7 +479,7 @@ const chartOption2 = computed(() => {
     selectedProvider.value ? item.model : `${item.providerName} - ${item.model}`
   );
   const availabilities = sortedItems.map(item => (item.availability * 100).toFixed(1));
-  const tfftValues = sortedItems.map(item => item.avgTfftMs || 0);
+  const tffbValues = sortedItems.map(item => item.avgTffbMs || 0);
 
   return {
     tooltip: {
@@ -423,7 +495,7 @@ const chartOption2 = computed(() => {
       },
     },
     legend: {
-      data: [t('performanceMonitoring.metrics.availability'), t('performanceMonitoring.metrics.avgTfft')],
+      data: [t('performanceMonitoring.metrics.availability'), t('performanceMonitoring.metrics.avgTffb')],
       bottom: 0,
     },
     grid: {
@@ -447,7 +519,7 @@ const chartOption2 = computed(() => {
       },
       {
         type: 'value',
-        name: t('performanceMonitoring.metrics.avgTfft') + ' (ms)',
+        name: t('performanceMonitoring.metrics.avgTffb') + ' (ms)',
         axisLabel: { formatter: '{value}' },
       },
     ],
@@ -456,14 +528,14 @@ const chartOption2 = computed(() => {
         name: t('performanceMonitoring.metrics.availability'),
         type: 'bar',
         data: availabilities,
-        itemStyle: { color: '#18a058' },
+        itemStyle: { color: '#18a058', borderRadius: [4, 4, 0, 0] },
       },
       {
-        name: t('performanceMonitoring.metrics.avgTfft'),
+        name: t('performanceMonitoring.metrics.avgTffb'),
         type: 'bar',
         yAxisIndex: 1,
-        data: tfftValues,
-        itemStyle: { color: '#f0a020' },
+        data: tffbValues,
+        itemStyle: { color: '#f0a020', borderRadius: [4, 4, 0, 0] },
       },
     ],
   };
@@ -506,11 +578,11 @@ const tableColumns = [
     },
   },
   {
-    title: t('performanceMonitoring.metrics.avgTfft'),
-    key: 'avgTfftMs',
-    sorter: (a: PerformanceMetricItem, b: PerformanceMetricItem) => (a.avgTfftMs || 0) - (b.avgTfftMs || 0),
+    title: t('performanceMonitoring.metrics.avgTffb'),
+    key: 'avgTffbMs',
+    sorter: (a: PerformanceMetricItem, b: PerformanceMetricItem) => (a.avgTffbMs || 0) - (b.avgTffbMs || 0),
     render(row: PerformanceMetricItem) {
-      return row.avgTfftMs !== null ? `${formatNumber(row.avgTfftMs)} ms` : '-';
+      return row.avgTffbMs !== null ? `${formatNumber(row.avgTffbMs)} ms` : '-';
     },
   },
   {
@@ -519,6 +591,38 @@ const tableColumns = [
     sorter: (a: PerformanceMetricItem, b: PerformanceMetricItem) => (a.avgOutputSpeed || 0) - (b.avgOutputSpeed || 0),
     render(row: PerformanceMetricItem) {
       return row.avgOutputSpeed !== null ? `${formatNumber(row.avgOutputSpeed)} tokens/s` : '-';
+    },
+  },
+  {
+    title: t('performanceMonitoring.metrics.promptTokens'),
+    key: 'promptTokens',
+    sorter: (a: PerformanceMetricItem, b: PerformanceMetricItem) => a.promptTokens - b.promptTokens,
+    render(row: PerformanceMetricItem) {
+      return formatNumber(row.promptTokens);
+    },
+  },
+  {
+    title: t('performanceMonitoring.metrics.completionTokens'),
+    key: 'completionTokens',
+    sorter: (a: PerformanceMetricItem, b: PerformanceMetricItem) => a.completionTokens - b.completionTokens,
+    render(row: PerformanceMetricItem) {
+      return formatNumber(row.completionTokens);
+    },
+  },
+  {
+    title: t('performanceMonitoring.metrics.cachedTokens'),
+    key: 'cachedTokens',
+    sorter: (a: PerformanceMetricItem, b: PerformanceMetricItem) => a.cachedTokens - b.cachedTokens,
+    render(row: PerformanceMetricItem) {
+      return formatNumber(row.cachedTokens);
+    },
+  },
+  {
+    title: t('performanceMonitoring.metrics.totalTokens'),
+    key: 'totalTokens',
+    sorter: (a: PerformanceMetricItem, b: PerformanceMetricItem) => a.totalTokens - b.totalTokens,
+    render(row: PerformanceMetricItem) {
+      return formatNumber(row.totalTokens);
     },
   },
 ];
@@ -658,21 +762,6 @@ onMounted(() => {
   margin-left: 4px;
 }
 
-.summary-progress {
-  margin-top: 12px;
-  height: 4px;
-  background-color: #e0e0e0;
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.progress-bar {
-  height: 100%;
-  background: linear-gradient(90deg, #18a058 0%, #36ad6a 100%);
-  border-radius: 2px;
-  transition: width 0.3s ease;
-}
-
 .charts-grid {
   margin-top: 24px;
 }
@@ -688,5 +777,14 @@ onMounted(() => {
 
 .table-card {
   margin-top: 24px;
+}
+
+.token-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%);
+}
+
+.token-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(32, 128, 240, 0.12);
 }
 </style>

@@ -72,7 +72,7 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
   totalTokens: number;
   cachedTokens: number;
   streamChunks: string[];
-  tfftMs?: number;
+  tffbMs?: number;
 }> {
   const {
     client,
@@ -98,7 +98,7 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
   let finalTotalTokens = 0;
   let finalCachedTokens = 0;
   let finalStreamChunks: string[] = [];
-  let tfftMs: number | undefined;
+  let tffbMs: number | undefined;
   let success = false;
   let lastEmptyError: ResponsesEmptyOutputError | null = null;
 
@@ -109,8 +109,9 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
       throw abortError;
     }
 
-    // 每次尝试独立记录开始时间，确保 TFFT 仅计算本次 attempt 的等待时间
+    // 每次尝试独立记录开始时间，确保 TFFB 仅计算本次 attempt 的等待时间
     const attemptStartedAt = Date.now();
+    let attemptTffbMs: number | undefined;
     const attemptStreamChunks: string[] = [];
     const pendingChunks: string[] = [];
     let buffering = true;
@@ -197,6 +198,11 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
             delete (chunk as any).instructions;
           }
 
+          // Record TFFB on first upstream stream event observed in the successful attempt
+          if (attemptTffbMs === undefined) {
+            attemptTffbMs = Date.now() - attemptStartedAt;
+          }
+
           const previousLength = responsesAggregate.outputText.length;
           const updatedAggregate = processResponsesEvent(responsesAggregate, chunk as any);
           const producedText = updatedAggregate.outputText.length > previousLength;
@@ -204,8 +210,6 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
 
           if (!hasAssistantOutput && (producedText || responsesEventHasAssistantContent(chunk))) {
             hasAssistantOutput = true;
-            // 使用本次 attempt 的开始时间计算 TFFT，避免重试时累计前序失败尝试的时间
-            tfftMs = Date.now() - attemptStartedAt;
             await flushPendingChunks();
           }
 
@@ -292,6 +296,7 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
       finalTotalTokens = totalTokens;
       finalCachedTokens = cachedTokens;
       finalStreamChunks = attemptStreamChunks;
+      tffbMs = attemptTffbMs;
       success = true;
       break;
     } catch (error: any) {
@@ -325,6 +330,6 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
     totalTokens: finalTotalTokens,
     cachedTokens: finalCachedTokens,
     streamChunks: finalStreamChunks,
-    tfftMs,
+    tffbMs,
   };
 }

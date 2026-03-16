@@ -15,7 +15,7 @@ export interface ApiLogParams {
   tokenCount: TokenCalculationResult; // { promptTokens, completionTokens, totalTokens }
   status: 'success' | 'error';
   responseTime: number;
-  tfftMs?: number;
+  tffbMs?: number;
   errorMessage?: unknown;
   truncatedRequest?: string;
   truncatedResponse?: string;
@@ -114,7 +114,7 @@ export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
     cached_tokens: params.cachedTokens,
     status: params.status,
     response_time: params.responseTime,
-    tfft_ms: params.tfftMs,
+    tffb_ms: params.tffbMs,
     error_message: normalizedErrorMessage,
     request_body: params.truncatedRequest,
     response_body: params.truncatedResponse,

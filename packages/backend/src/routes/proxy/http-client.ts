@@ -21,7 +21,7 @@ export interface StreamTokenUsage {
   totalTokens: number;
   cachedTokens: number;
   streamChunks: string[];
-  tfftMs?: number;
+  tffbMs?: number;
   reasoningContent?: string;
   thinkingBlocks?: ThinkingBlock[];
 }

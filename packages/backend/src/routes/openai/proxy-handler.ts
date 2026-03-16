@@ -593,7 +593,7 @@ export async function handleStreamRequest(
       tokenCount,
       status: 'success',
       responseTime: duration,
-      tfftMs: tokenUsage.tfftMs,
+      tffbMs: tokenUsage.tffbMs,
       truncatedRequest,
       truncatedResponse,
       cacheHit: 0,

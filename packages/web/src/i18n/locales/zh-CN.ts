@@ -608,11 +608,15 @@ export default {
       clear: '清空筛选',
     },
     metrics: {
-      avgTfft: '平均 TFFT',
+      avgTffb: '平均 TFFB',
       avgOutputSpeed: '平均输出速度',
       availability: '可用率',
       totalRequests: '总请求数',
       avgResponseTime: '平均响应时间',
+      promptTokens: '输入 Token',
+      completionTokens: '输出 Token',
+      cachedTokens: '缓存 Token',
+      totalTokens: '总 Token',
     },
     charts: {
       providerComparison: '供应商对比',

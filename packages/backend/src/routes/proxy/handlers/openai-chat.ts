@@ -109,7 +109,7 @@ export async function handleChatStreamRequest(params: ChatStreamParams): Promise
       tokenCount,
       status: 'success',
       responseTime: duration,
-      tfftMs: tokenUsage.tfftMs,
+      tffbMs: tokenUsage.tffbMs,
       truncatedRequest,
       truncatedResponse,
       cacheHit: 0,

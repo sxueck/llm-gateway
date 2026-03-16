@@ -72,9 +72,9 @@
                 </n-tag>
                 <span v-else>-</span>
               </n-descriptions-item>
-              <n-descriptions-item label="TFFT">
-                <n-tag v-if="selectedRequest.tfft_ms" type="warning" size="small">
-                  {{ selectedRequest.tfft_ms }}ms
+              <n-descriptions-item label="TFFB">
+                <n-tag v-if="selectedRequest.tffb_ms !== null" type="warning" size="small">
+                  {{ selectedRequest.tffb_ms }}ms
                 </n-tag>
                 <span v-else>-</span>
               </n-descriptions-item>
@@ -362,10 +362,10 @@ const columns: DataTableColumns<ApiRequest> = [
     render: (row) => h('span', { class: row.response_time ? 'table-latency' : 'table-placeholder' }, row.response_time ? `${row.response_time}ms` : '-'),
   },
   {
-    title: 'TFFT',
-    key: 'tfft_ms',
+    title: 'TFFB',
+    key: 'tffb_ms',
     width: 90,
-    render: (row) => h('span', { class: row.tfft_ms ? 'table-latency' : 'table-placeholder' }, row.tfft_ms ? `${row.tfft_ms}ms` : '-'),
+    render: (row) => h('span', { class: row.tffb_ms !== null ? 'table-latency' : 'table-placeholder' }, row.tffb_ms !== null ? `${row.tffb_ms}ms` : '-'),
   },
   {
     title: 'Tokens',

@@ -117,6 +117,7 @@ export async function createTables() {
         status VARCHAR(50),
         response_time INT,
         tfft_ms INT DEFAULT NULL,
+        tffb_ms INT DEFAULT NULL,
         error_message TEXT,
         request_body MEDIUMTEXT,
         response_body MEDIUMTEXT,

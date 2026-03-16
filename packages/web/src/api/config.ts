@@ -158,9 +158,13 @@ export interface PerformanceMetricItem {
   successCount: number;
   failureCount: number;
   availability: number;
-  avgTfftMs: number | null;
+  avgTffbMs: number | null;
   avgResponseTimeMs: number | null;
   avgOutputSpeed: number | null;
+  promptTokens: number;
+  completionTokens: number;
+  cachedTokens: number;
+  totalTokens: number;
 }
 
 export interface PerformanceMetricsSummary {
@@ -168,7 +172,8 @@ export interface PerformanceMetricsSummary {
   successCount: number;
   failureCount: number;
   successRate: number;
-  avgTfftMs: number | null;
+  avgTffbMs: number | null;
+  validTffbCount: number;
   avgOutputSpeed: number | null;
   avgResponseTimeMs: number | null;
 }

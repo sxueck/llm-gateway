@@ -11,7 +11,7 @@ export interface ApiRequest {
   cached_tokens: number | null;
   status: string;
   response_time: number | null;
-  tfft_ms: number | null;
+  tffb_ms: number | null;
   error_message: string | null;
   created_at: number;
   request_body: string | null;

@@ -286,7 +286,7 @@ export const apiRequestRepository = {
           ar.cached_tokens,
           ar.status,
           ar.response_time,
-          ar.tfft_ms,
+          ar.tffb_ms,
           ar.error_message,
           ar.request_params_json,
           ar.response_meta_json,
@@ -555,28 +555,40 @@ export const apiRequestRepository = {
           COUNT(*) as request_count,
           SUM(CASE WHEN ar.status = 'success' THEN 1 ELSE 0 END) as success_count,
           SUM(CASE WHEN ar.status = 'error' THEN 1 ELSE 0 END) as failure_count,
-          AVG(CASE WHEN ar.tfft_ms >= 0 THEN ar.tfft_ms END) as avg_tfft_ms,
-          COUNT(CASE WHEN ar.tfft_ms >= 0 THEN 1 END) as valid_tfft_count,
+          AVG(CASE WHEN ar.tffb_ms >= 0 THEN ar.tffb_ms END) as avg_tffb_ms,
+          COUNT(CASE WHEN ar.tffb_ms >= 0 THEN 1 END) as valid_tffb_count,
           AVG(CASE WHEN ar.response_time > 0 THEN ar.response_time END) as avg_response_time_ms,
           COUNT(CASE WHEN ar.response_time > 0 THEN 1 END) as valid_response_time_count,
           AVG(CASE
             WHEN ar.completion_tokens > 0 AND ar.response_time > 0
             THEN CASE
-              WHEN ar.tfft_ms IS NOT NULL AND ar.tfft_ms >= 0 AND (ar.response_time - ar.tfft_ms) > 0
-              THEN ar.completion_tokens / ((ar.response_time - ar.tfft_ms) / 1000)
-              ELSE ar.completion_tokens / (ar.response_time / 1000)
+              WHEN ar.tffb_ms IS NOT NULL AND ar.tffb_ms >= 0 AND (ar.response_time - ar.tffb_ms) > 0
+                AND ar.completion_tokens / ((ar.response_time - ar.tffb_ms) / 1000.0) <= 1000
+              THEN ar.completion_tokens / ((ar.response_time - ar.tffb_ms) / 1000.0)
+              WHEN (ar.tffb_ms IS NULL OR ar.tffb_ms < 0 OR (ar.response_time - ar.tffb_ms) <= 0)
+                AND ar.completion_tokens / (ar.response_time / 1000.0) <= 1000
+              THEN ar.completion_tokens / (ar.response_time / 1000.0)
+              ELSE NULL
             END
             ELSE NULL
           END) as avg_output_speed,
           COUNT(CASE
             WHEN ar.completion_tokens > 0 AND ar.response_time > 0
             THEN CASE
-              WHEN ar.tfft_ms IS NOT NULL AND ar.tfft_ms >= 0 AND (ar.response_time - ar.tfft_ms) > 0
+              WHEN ar.tffb_ms IS NOT NULL AND ar.tffb_ms >= 0 AND (ar.response_time - ar.tffb_ms) > 0
+                AND ar.completion_tokens / ((ar.response_time - ar.tffb_ms) / 1000.0) <= 1000
               THEN 1
-              ELSE 1
+              WHEN (ar.tffb_ms IS NULL OR ar.tffb_ms < 0 OR (ar.response_time - ar.tffb_ms) <= 0)
+                AND ar.completion_tokens / (ar.response_time / 1000.0) <= 1000
+              THEN 1
+              ELSE NULL
             END
             ELSE NULL
-          END) as valid_speed_count
+          END) as valid_speed_count,
+          SUM(ar.prompt_tokens) as prompt_tokens,
+          SUM(ar.completion_tokens) as completion_tokens,
+          SUM(ar.cached_tokens) as cached_tokens,
+          SUM(ar.total_tokens) as total_tokens
         FROM api_requests ar
         LEFT JOIN providers p ON ar.provider_id = p.id
         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
@@ -594,12 +606,16 @@ export const apiRequestRepository = {
         successCount: Number(row.success_count) || 0,
         failureCount: Number(row.failure_count) || 0,
         availability: row.request_count > 0 ? Number(row.success_count) / Number(row.request_count) : 0,
-        avgTfftMs: row.avg_tfft_ms !== null ? Number(row.avg_tfft_ms) : null,
-        validTfftCount: Number(row.valid_tfft_count) || 0,
+        avgTffbMs: row.avg_tffb_ms !== null ? Number(row.avg_tffb_ms) : null,
+        validTffbCount: Number(row.valid_tffb_count) || 0,
         avgResponseTimeMs: row.avg_response_time_ms !== null ? Number(row.avg_response_time_ms) : null,
         validResponseTimeCount: Number(row.valid_response_time_count) || 0,
         avgOutputSpeed: row.avg_output_speed !== null ? Number(row.avg_output_speed) : null,
         validSpeedCount: Number(row.valid_speed_count) || 0,
+        promptTokens: Number(row.prompt_tokens) || 0,
+        completionTokens: Number(row.completion_tokens) || 0,
+        cachedTokens: Number(row.cached_tokens) || 0,
+        totalTokens: Number(row.total_tokens) || 0,
       }));
 
       // Calculate summary from items
@@ -608,13 +624,13 @@ export const apiRequestRepository = {
       const failureCount = items.reduce((sum, item) => sum + item.failureCount, 0);
 
       // Calculate overall averages (weighted by valid sample count, not request count)
-      const validTfftItems = items.filter(i => i.avgTfftMs !== null && i.validTfftCount > 0);
+      const validTffbItems = items.filter(i => i.avgTffbMs !== null && i.validTffbCount > 0);
       const validResponseTimeItems = items.filter(i => i.avgResponseTimeMs !== null && i.validResponseTimeCount > 0);
       const validSpeedItems = items.filter(i => i.avgOutputSpeed !== null && i.validSpeedCount > 0);
 
-      const avgTfftMs = validTfftItems.length > 0
-        ? validTfftItems.reduce((sum, i) => sum + (i.avgTfftMs! * i.validTfftCount), 0) /
-          validTfftItems.reduce((sum, i) => sum + i.validTfftCount, 0)
+      const avgTffbMs = validTffbItems.length > 0
+        ? validTffbItems.reduce((sum, i) => sum + (i.avgTffbMs! * i.validTffbCount), 0) /
+          validTffbItems.reduce((sum, i) => sum + i.validTffbCount, 0)
         : null;
 
       const avgResponseTimeMs = validResponseTimeItems.length > 0
@@ -652,7 +668,8 @@ export const apiRequestRepository = {
           successCount,
           failureCount,
           successRate: totalRequests > 0 ? successCount / totalRequests : 0,
-          avgTfftMs,
+          avgTffbMs,
+          validTffbCount: validTffbItems.reduce((sum, i) => sum + i.validTffbCount, 0),
           avgOutputSpeed,
           avgResponseTimeMs,
         },

@@ -526,6 +526,32 @@ export const migrations: Migration[] = [
         console.warn('[迁移] 删除 pii_protection_enabled 字段失败:', e.message);
       }
     }
+  },
+  {
+    version: 29,
+    name: 'add_tffb_ms_to_api_requests',
+    up: async (conn: Connection) => {
+      const [rows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'api_requests'
+           AND COLUMN_NAME = 'tffb_ms'`
+      );
+      const exists = Number((rows as any[])[0]?.cnt || 0) > 0;
+      if (exists) return;
+
+      await conn.query(`ALTER TABLE api_requests ADD COLUMN tffb_ms INT DEFAULT NULL AFTER tfft_ms`);
+      console.log('[迁移] 已添加 api_requests.tffb_ms 字段');
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(`ALTER TABLE api_requests DROP COLUMN IF EXISTS tffb_ms`);
+        console.log('[迁移] 已删除 api_requests.tffb_ms 字段');
+      } catch (e: any) {
+        console.warn('[迁移] 删除 tffb_ms 字段失败:', e.message);
+      }
+    }
   }
 ];
 

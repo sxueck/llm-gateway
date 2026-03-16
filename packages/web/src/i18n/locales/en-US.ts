@@ -588,11 +588,15 @@ export default {
       clear: 'Clear Filters',
     },
     metrics: {
-      avgTfft: 'Avg TFFT',
+      avgTffb: 'Avg TFFB',
       avgOutputSpeed: 'Avg Output Speed',
       availability: 'Availability',
       totalRequests: 'Total Requests',
       avgResponseTime: 'Avg Response Time',
+      promptTokens: 'Input Tokens',
+      completionTokens: 'Output Tokens',
+      cachedTokens: 'Cached Tokens',
+      totalTokens: 'Total Tokens',
     },
     charts: {
       providerComparison: 'Provider Comparison',
