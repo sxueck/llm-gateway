@@ -47,7 +47,11 @@ const fastify = Fastify({
     } : undefined,
   },
   bodyLimit: 10 * 1024 * 1024, // 10MB 请求体大小限制
-});
+})
+
+fastify.server.on('connection', socket => {
+  socket.setNoDelay(true)
+})
 
 await fastify.register(cors, {
   origin: (_origin, callback) => {

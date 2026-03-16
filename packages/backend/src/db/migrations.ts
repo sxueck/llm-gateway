@@ -552,6 +552,34 @@ export const migrations: Migration[] = [
         console.warn('[迁移] 删除 tffb_ms 字段失败:', e.message);
       }
     }
+  },
+  {
+    version: 30,
+    name: 'repair_ttf_metrics_fields_on_api_requests',
+    up: async (conn: Connection) => {
+      const hasColumn = async (col: string) => {
+        const [rows] = await conn.query(
+          `SELECT COUNT(*) AS cnt
+           FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = 'api_requests'
+             AND COLUMN_NAME = ?`,
+          [col]
+        );
+        const result = rows as any[];
+        return Number(result?.[0]?.cnt || 0) > 0;
+      };
+
+      if (!(await hasColumn('tfft_ms'))) {
+        await conn.query(`ALTER TABLE api_requests ADD COLUMN tfft_ms INT DEFAULT NULL AFTER response_time`);
+        console.log('[迁移] 已补齐 api_requests.tfft_ms 字段');
+      }
+
+      if (!(await hasColumn('tffb_ms'))) {
+        await conn.query(`ALTER TABLE api_requests ADD COLUMN tffb_ms INT DEFAULT NULL AFTER tfft_ms`);
+        console.log('[迁移] 已补齐 api_requests.tffb_ms 字段');
+      }
+    }
   }
 ];
 
