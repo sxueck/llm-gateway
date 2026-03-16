@@ -1036,4 +1036,24 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // 性能监控指标接口
+  fastify.get('/performance-metrics', async () => {
+    try {
+      const now = Date.now();
+      const startTime = now - 7 * 24 * 60 * 60 * 1000; // 7 days ago
+
+      const metrics = await apiRequestDb.getPerformanceMetrics({ startTime, endTime: now });
+
+      return {
+        period: '7d',
+        summary: metrics.summary,
+        items: metrics.items,
+        filters: metrics.filters,
+      };
+    } catch (error: any) {
+      memoryLogger.error(`获取性能监控指标失败: ${error.message}`, 'Config');
+      throw error;
+    }
+  });
+
 }

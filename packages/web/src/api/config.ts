@@ -150,6 +150,44 @@ export interface ThreatIpStats {
   lastUpdated: number | null;
 }
 
+export interface PerformanceMetricItem {
+  providerId: string | null;
+  providerName: string;
+  model: string;
+  requestCount: number;
+  successCount: number;
+  failureCount: number;
+  availability: number;
+  avgTfftMs: number | null;
+  avgResponseTimeMs: number | null;
+  avgOutputSpeed: number | null;
+}
+
+export interface PerformanceMetricsSummary {
+  totalRequests: number;
+  successCount: number;
+  failureCount: number;
+  successRate: number;
+  avgTfftMs: number | null;
+  avgOutputSpeed: number | null;
+  avgResponseTimeMs: number | null;
+}
+
+export interface PerformanceMetricsFilter {
+  label: string;
+  value: string;
+}
+
+export interface PerformanceMetricsResponse {
+  period: string;
+  summary: PerformanceMetricsSummary;
+  items: PerformanceMetricItem[];
+  filters: {
+    providers: PerformanceMetricsFilter[];
+    models: PerformanceMetricsFilter[];
+  };
+}
+
 type GetLogsParams = {
   level?: LogLevel;
   limit?: number;
@@ -297,6 +335,7 @@ const ADMIN_REQUEST_SOURCES_BLOCK_PATH = adminConfigPath('/request-sources/block
 const ADMIN_ROUTING_CONFIGS_PATH = adminConfigPath('/routing-configs');
 const ADMIN_SYSTEM_SETTINGS_PATH = adminConfigPath('/system-settings');
 const ADMIN_HEALTH_TARGETS_PATH = adminConfigPath('/health-targets');
+const ADMIN_PERFORMANCE_METRICS_PATH = adminConfigPath('/performance-metrics');
 
 const PUBLIC_SYSTEM_SETTINGS_PATH = `${PUBLIC_BASE_PATH}/system-settings`;
 
@@ -359,5 +398,9 @@ export const configApi = {
 
   deleteHealthTarget(id: string): Promise<DeleteResponse> {
     return request.delete(withId(ADMIN_HEALTH_TARGETS_PATH, id));
+  },
+
+  getPerformanceMetrics(): Promise<PerformanceMetricsResponse> {
+    return request.get(ADMIN_PERFORMANCE_METRICS_PATH);
   },
 };

@@ -119,6 +119,7 @@ import {
   CloudDownloadOutline,
   CashOutline,
   MenuOutline,
+  SpeedometerOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
@@ -142,6 +143,7 @@ const mainMenuParentByKey: Record<string, string> = {
   'virtual-models': 'model-management',
   'expert-routing': 'experimental-features',
   'cost-analysis': 'experimental-features',
+  'performance-monitoring': 'experimental-features',
   'api-guide': 'tools',
   logs: 'tools',
   'api-requests': 'tools',
@@ -246,6 +248,11 @@ const menuOptions = computed(() => [
         label: t('menu.costAnalysis'),
         key: 'cost-analysis',
         icon: () => h(NIcon, null, { default: () => h(CashOutline) }),
+      },
+      {
+        label: t('menu.performanceMonitoring'),
+        key: 'performance-monitoring',
+        icon: () => h(NIcon, null, { default: () => h(SpeedometerOutline) }),
       },
     ],
   },
