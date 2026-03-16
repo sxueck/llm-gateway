@@ -173,7 +173,20 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, h } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useMessage, NTag, NSpace } from 'naive-ui';
+import {
+  useMessage,
+  NTag,
+  NSpace,
+  NGrid,
+  NGi,
+  NCard,
+  NSelect,
+  NButton,
+  NIcon,
+  NSkeleton,
+  NEmpty,
+  NDataTable,
+} from 'naive-ui';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { BarChart } from 'echarts/charts';
