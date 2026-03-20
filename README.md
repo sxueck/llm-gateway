@@ -2,7 +2,7 @@
 
 [Project Wiki](https://github.com/sxueck/llm-gateway/wiki)
 
-生产级别 LLM 网关管理系统，目前已经稳定负载超过 4亿 Token 的任务处理（还在稳定累积中），提供直观的 Web UI 界面，用于管理多个 LLM 提供商、虚拟密钥、路由配置和模型管理
+生产级别 LLM 网关管理系统，部署三个月已经稳定负载超过 50亿 Token 的任务处理（还在稳定累积中），提供直观的 Web UI 界面，用于管理多个 LLM 提供商、虚拟密钥、路由配置和模型管理
 
 <img width="2553" height="1857" alt="image" src="https://github.com/user-attachments/assets/a69d7e89-5225-4c2e-bae3-d11faddc9b56" />
 <img width="2682" height="1397" alt="image" src="https://github.com/user-attachments/assets/196adf78-2346-41f9-903b-a18920464486" />
