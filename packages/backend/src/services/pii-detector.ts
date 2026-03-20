@@ -14,6 +14,10 @@ export interface DetectedPii {
   end: number;
 }
 
+interface PiiMatchCandidate extends DetectedPii {
+  priority: number;
+}
+
 // Secret patterns - conservative matching
 const SECRET_PATTERNS: { name: string; regex: RegExp; type: PiiType }[] = [
   // OpenAI API keys: sk-xxx, sk-proj-xxx, sk-test-xxx, sk-admin-xxx
@@ -75,6 +79,13 @@ const IPV6_COMPRESSED_REGEX = /\b(?:[0-9a-fA-F]{1,4}:){1,7}:[0-9a-fA-F]{1,4}\b/g
 
 // Email pattern - RFC 5322 simplified
 const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+const QUICK_SECRET_HINT_REGEX = /\b(?:sk-|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|Bearer\s|eyJ)/;
+const QUICK_IPV4_HINT_REGEX = /\b(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\./;
+
+function resetRegex(regex: RegExp): RegExp {
+  regex.lastIndex = 0;
+  return regex;
+}
 
 /**
  * Check if a string looks like a false positive for secrets
@@ -122,28 +133,16 @@ function looksLikeConservativeGenericSecret(value: string): boolean {
  * Detect all PII in text
  */
 export function detectPii(text: string): DetectedPii[] {
-  const results: DetectedPii[] = [];
-  const seenRanges = new Set<string>();
+  const candidates: PiiMatchCandidate[] = [];
 
-  function addResult(type: PiiType, value: string, start: number, end: number) {
-    const key = `${start}:${end}`;
-    if (seenRanges.has(key)) return;
-
-    // Check for overlapping ranges
-    for (const range of seenRanges) {
-      const [s, e] = range.split(':').map(Number);
-      if ((start >= s && start < e) || (end > s && end <= e)) {
-        return; // Overlapping, skip
-      }
-    }
-
-    seenRanges.add(key);
-    results.push({ type, value, start, end });
+  function addCandidate(type: PiiType, value: string, start: number, end: number, priority: number) {
+    candidates.push({ type, value, start, end, priority });
   }
 
   // Detect secrets
-  for (const pattern of SECRET_PATTERNS) {
-    const regex = new RegExp(pattern.regex.source, pattern.regex.flags.replace('g', '') + 'g');
+  for (let priority = 0; priority < SECRET_PATTERNS.length; priority++) {
+    const pattern = SECRET_PATTERNS[priority];
+    const regex = resetRegex(pattern.regex);
     let match;
     while ((match = regex.exec(text)) !== null) {
       const value = match[0];
@@ -151,43 +150,60 @@ export function detectPii(text: string): DetectedPii[] {
         continue;
       }
       if (!looksLikeFalsePositiveSecret(value)) {
-        addResult(pattern.type, value, match.index, match.index + value.length);
+        addCandidate(pattern.type, value, match.index, match.index + value.length, priority);
       }
     }
   }
 
   // Detect IPv4
   let match;
-  const ipv4Regex = new RegExp(IPV4_REGEX.source, 'g');
+  const ipv4Regex = resetRegex(IPV4_REGEX);
   while ((match = ipv4Regex.exec(text)) !== null) {
     const value = match[0];
     // Skip common false positives like version numbers
     if (!looksLikeVersionNumber(value)) {
-      addResult('ip', value, match.index, match.index + value.length);
+      addCandidate('ip', value, match.index, match.index + value.length, SECRET_PATTERNS.length);
     }
   }
 
   // Detect IPv6
-  const ipv6Regex = new RegExp(IPV6_REGEX.source, 'g');
+  const ipv6Regex = resetRegex(IPV6_REGEX);
   while ((match = ipv6Regex.exec(text)) !== null) {
-    addResult('ip', match[0], match.index, match.index + match[0].length);
+    addCandidate('ip', match[0], match.index, match.index + match[0].length, SECRET_PATTERNS.length + 1);
   }
 
-  const ipv6CompressedRegex = new RegExp(IPV6_COMPRESSED_REGEX.source, 'g');
+  const ipv6CompressedRegex = resetRegex(IPV6_COMPRESSED_REGEX);
   while ((match = ipv6CompressedRegex.exec(text)) !== null) {
-    addResult('ip', match[0], match.index, match.index + match[0].length);
+    addCandidate('ip', match[0], match.index, match.index + match[0].length, SECRET_PATTERNS.length + 2);
   }
 
   // Detect emails
-  const emailRegex = new RegExp(EMAIL_REGEX.source, 'g');
+  const emailRegex = resetRegex(EMAIL_REGEX);
   while ((match = emailRegex.exec(text)) !== null) {
-    addResult('email', match[0], match.index, match.index + match[0].length);
+    addCandidate('email', match[0], match.index, match.index + match[0].length, SECRET_PATTERNS.length + 3);
   }
 
-  // Sort by position
-  results.sort((a, b) => a.start - b.start);
+  candidates.sort((a, b) => a.priority - b.priority || a.start - b.start || b.end - a.end);
 
-  return results;
+  const accepted: PiiMatchCandidate[] = [];
+  for (const candidate of candidates) {
+    const overlapsAccepted = accepted.some(
+      (existing) => candidate.start < existing.end && candidate.end > existing.start
+    );
+    if (overlapsAccepted) {
+      continue;
+    }
+    accepted.push(candidate);
+  }
+
+  accepted.sort((a, b) => a.start - b.start || b.end - a.end || a.priority - b.priority);
+
+  return accepted.map(({ type, value, start, end }) => ({
+    type,
+    value,
+    start,
+    end,
+  }));
 }
 
 /**
@@ -213,8 +229,8 @@ export function mightContainPii(text: string): boolean {
 
   // Quick heuristics
   if (text.includes('@')) return true; // Possible email
-  if (/\b(?:sk-|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|Bearer\s|eyJ)/.test(text)) return true;
-  if (/\b(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\./.test(text)) return true;
+  if (QUICK_SECRET_HINT_REGEX.test(text)) return true;
+  if (QUICK_IPV4_HINT_REGEX.test(text)) return true;
 
   return false;
 }

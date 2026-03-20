@@ -216,6 +216,8 @@ export function getOrCreateMaskedValue(
   // Store mappings
   ctx.replacements.set(original, masked);
   ctx.reverseReplacements.set(masked, original);
+  ctx.restorationCacheVersion += 1;
+  ctx.restorationRegex = null;
   ctx.detections.push({
     type,
     original,

@@ -31,6 +31,42 @@ interface TextRef {
   set: (value: string) => void;
 }
 
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getRestorationRegex(ctx: PiiProtectionContext): RegExp | null {
+  if (ctx.reverseReplacements.size === 0) {
+    ctx.restorationRegex = null;
+    ctx.restorationCacheBuiltAt = ctx.restorationCacheVersion;
+    return null;
+  }
+
+  if (ctx.restorationRegex && ctx.restorationCacheBuiltAt === ctx.restorationCacheVersion) {
+    ctx.restorationRegex.lastIndex = 0;
+    return ctx.restorationRegex;
+  }
+
+  const alternation = Array.from(ctx.reverseReplacements.keys())
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegex)
+    .join('|');
+
+  ctx.restorationRegex = alternation ? new RegExp(alternation, 'g') : null;
+  ctx.restorationCacheBuiltAt = ctx.restorationCacheVersion;
+  return ctx.restorationRegex;
+}
+
+function restoreMaskedValues(text: string, ctx: PiiProtectionContext): string {
+  const restorationRegex = getRestorationRegex(ctx);
+  if (!restorationRegex) {
+    return text;
+  }
+
+  restorationRegex.lastIndex = 0;
+  return text.replace(restorationRegex, (masked) => ctx.reverseReplacements.get(masked) ?? masked);
+}
+
 /**
  * Collect all text references from a request/response body
  * for built-in PII protection
@@ -259,12 +295,7 @@ export function restoreResponseBodyInPlace(
   let restoredCount = 0;
   for (const ref of refs) {
     const text = ref.get();
-    let result = text;
-
-    // Replace all masked values with originals
-    for (const [masked, original] of ctx.reverseReplacements) {
-      result = result.split(masked).join(original);
-    }
+    const result = restoreMaskedValues(text, ctx);
 
     if (result !== text) {
       ref.set(result);
@@ -288,6 +319,7 @@ export class PiiStreamRestorer {
   private pendingByKey = new Map<string, string>();
   private readonly ctx: PiiProtectionContext;
   private readonly maxMaskedValueLen: number;
+  private readonly restorationRegex: RegExp | null;
 
   constructor(ctx: PiiProtectionContext) {
     this.ctx = ctx;
@@ -296,6 +328,7 @@ export class PiiStreamRestorer {
       ...Array.from(ctx.reverseReplacements.keys()).map(k => k.length),
       1
     );
+    this.restorationRegex = getRestorationRegex(ctx);
   }
 
   /**
@@ -348,11 +381,12 @@ export class PiiStreamRestorer {
    * Restore masked values in text
    */
   private restoreInText(text: string): string {
-    let result = text;
-    for (const [masked, original] of this.ctx.reverseReplacements) {
-      result = result.split(masked).join(original);
+    if (!this.restorationRegex) {
+      return text;
     }
-    return result;
+
+    this.restorationRegex.lastIndex = 0;
+    return text.replace(this.restorationRegex, (masked) => this.ctx.reverseReplacements.get(masked) ?? masked);
   }
 }
 
