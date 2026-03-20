@@ -2,7 +2,7 @@
 
 [Project Wiki](https://github.com/sxueck/llm-gateway/wiki)
 
-一个轻量级 LLM 网关管理系统，提供直观的 Web UI 界面，用于管理多个 LLM 提供商、虚拟密钥、路由配置和模型管理
+生产级别 LLM 网关管理系统，目前已经稳定负载超过 4亿 Token 的任务处理（还在稳定累积中），提供直观的 Web UI 界面，用于管理多个 LLM 提供商、虚拟密钥、路由配置和模型管理
 
 <img width="2553" height="1857" alt="image" src="https://github.com/user-attachments/assets/a69d7e89-5225-4c2e-bae3-d11faddc9b56" />
 <img width="2682" height="1397" alt="image" src="https://github.com/user-attachments/assets/196adf78-2346-41f9-903b-a18920464486" />
@@ -28,10 +28,11 @@
 
 ### 前置要求
 
-- Node.js v20 或更高版本
+- Node.js v22 或更高版本
 - Bun v1.0 或更高版本（Monorepo 脚本基于 Bun workspaces）
 - MySQL 8.x（或兼容 MySQL 协议的数据库）
 - Docker (可选,用于容器化部署)
+- 最低使用 1C2G 机器运行（如果开启了 PII 隐私保护等计算密集功能，需要提升机器配置）
 
 ### 安装
 
