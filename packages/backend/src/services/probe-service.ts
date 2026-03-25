@@ -6,6 +6,7 @@ import {
   normalizeBaseUrl,
 } from '../utils/api-endpoint-builder.js';
 import { getBaseUrlForProtocol } from '../utils/protocol-utils.js';
+import { upstreamFetch } from '../utils/upstream-fetch.js';
 
 type Protocol = 'openai' | 'anthropic' | 'google' | null | undefined;
 
@@ -208,10 +209,15 @@ function parseGeminiNativeResponse(json: any): ParsedProbeResponse {
 // ---------- Low-level fetch helper ----------
 
 async function doJsonRequest(url: string, opts: CommonRequestOptions): Promise<{ ok: boolean; status: number; json?: any; text?: string }> {
-  const res = await fetch(url, opts as any);
+  const res = await upstreamFetch(url, {
+    method: opts.method,
+    headers: opts.headers,
+    body: opts.body,
+    signal: opts.signal,
+  });
   const status = res.status;
   const ok = res.ok;
-  
+
   try {
     if (!ok) {
       const text = await res.text();
@@ -743,7 +749,7 @@ export async function probeModelViaGateway(args: {
         stream: true,
       });
 
-      const res = await fetch(responsesUrl, {
+      const res = await upstreamFetch(responsesUrl, {
         method: 'POST',
         headers: {
           ...commonHeaders,
@@ -751,7 +757,7 @@ export async function probeModelViaGateway(args: {
         },
         body,
         signal: timer.controller.signal,
-      } as any);
+      });
 
       // 请求完成后立即清除超时定时器
       timer.clear();

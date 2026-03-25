@@ -2,6 +2,7 @@ import { memoryLogger } from './logger.js';
 import type { ModelAttributes } from '../types/index.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
+import { upstreamFetch } from '../utils/upstream-fetch.js';
 
 export interface ModelPresetInfo {
   max_tokens?: number;
@@ -224,12 +225,12 @@ export class ModelPresetsService {
     try {
       memoryLogger.info('开始从远程更新模型预设...', 'ModelPresets');
       
-      const response = await fetch(MODEL_PRESET_URL, {
+      const response = await upstreamFetch(MODEL_PRESET_URL, {
         headers: {
           accept: 'application/json',
           'user-agent': 'llm-gateway/0.2 (model-presets)'
         }
-      } as any);
+      });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }

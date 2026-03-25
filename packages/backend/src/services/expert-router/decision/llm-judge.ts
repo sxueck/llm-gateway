@@ -7,6 +7,7 @@ import { memoryLogger } from '../../logger.js';
 import { decryptApiKey } from '../../../utils/crypto.js';
 import { buildChatCompletionsEndpoint } from '../../../utils/api-endpoint-builder.js';
 import { jsonrepair } from 'jsonrepair';
+import { upstreamFetch } from '../../../utils/upstream-fetch.js';
 
 const DEFAULT_CLASSIFICATION_TIMEOUT = 10000;
 const DEFAULT_MAX_TOKENS = 512;
@@ -82,16 +83,16 @@ export class LLMJudge {
     }
 
      // 4. Call API
-     try {
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody),
-            signal: AbortSignal.timeout(classifierConfig.timeout || DEFAULT_CLASSIFICATION_TIMEOUT)
-        });
+      try {
+         const response = await upstreamFetch(endpoint, {
+             method: 'POST',
+             headers: {
+                 'Authorization': `Bearer ${apiKey}`,
+                 'Content-Type': 'application/json'
+             },
+             body: JSON.stringify(requestBody),
+             timeoutMs: classifierConfig.timeout || DEFAULT_CLASSIFICATION_TIMEOUT,
+         });
 
         if (!response.ok) {
             const errorText = await response.text().catch(() => response.statusText);

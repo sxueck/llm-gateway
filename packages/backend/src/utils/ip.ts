@@ -2,6 +2,7 @@ import { FastifyRequest } from 'fastify';
 import { isIP } from 'node:net';
 import { memoryLogger } from '../services/logger.js';
 import { appConfig } from '../config/index.js';
+import { upstreamFetch } from './upstream-fetch.js';
 
 const GEO_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 const geoCache = new Map<string, { expiresAt: number; info: GeoInfo }>();
@@ -91,13 +92,10 @@ function buildLocationLabel(parts: { country?: string; province?: string; city?:
 
 async function fetchGeoFromIpApiCom(ip: string) {
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
     // ip-api.com free endpoint is HTTP only
-    const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,message,country,regionName,city,isp,org,as,lat,lon`, {
-      signal: controller.signal
+    const res = await upstreamFetch(`http://ip-api.com/json/${ip}?fields=status,message,country,regionName,city,isp,org,as,lat,lon`, {
+      timeoutMs: 3000
     });
-    clearTimeout(timeout);
     if (!res.ok) return null;
     const data: any = await res.json();
     if (data.status !== 'success') return null;

@@ -10,6 +10,7 @@ import type { VirtualKey } from '../../types/index.js';
 import { extractIp } from '../../utils/ip.js';
 import { getRequestUserAgent } from '../../utils/http.js';
 import { requestHeaderForwardingService } from '../../services/request-header-forwarding.js';
+import { upstreamFetch } from '../../utils/upstream-fetch.js';
 
 const DEFAULT_GEMINI_EMPTY_RETRY_LIMIT = Math.max(
   parseInt(process.env.GEMINI_STREAM_EMPTY_RETRY_LIMIT || '1', 10),
@@ -229,7 +230,7 @@ export async function handleGeminiNativeNonStreamRequest(
   }
 
   try {
-    const upstreamResponse = await fetch(url.toString(), {
+    const upstreamResponse = await upstreamFetch(url.toString(), {
       method,
       headers: upstreamHeaders,
       body: requestBody,
@@ -419,7 +420,7 @@ export async function handleGeminiNativeStreamRequest(
         }
       }, 5 * 60 * 1000);
 
-      const upstreamResponse = await fetch(url.toString(), {
+      const upstreamResponse = await upstreamFetch(url.toString(), {
         method,
         headers: upstreamHeaders,
         body: requestBody,

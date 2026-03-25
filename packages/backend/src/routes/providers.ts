@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { providerDb } from '../db/index.js';
 import { encryptApiKey, decryptApiKey } from '../utils/crypto.js';
 import { buildModelsEndpoint } from '../utils/api-endpoint-builder.js';
+import { upstreamFetch } from '../utils/upstream-fetch.js';
 
 interface ProviderTestResult {
   success: boolean;
@@ -289,12 +290,12 @@ export async function providerRoutes(fastify: FastifyInstance) {
     try {
       const endpoint = buildModelsEndpoint(baseUrl);
 
-      const response = await fetch(endpoint, {
+      const response = await upstreamFetch(endpoint, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
         },
-        signal: AbortSignal.timeout(10000),
+        timeoutMs: 10000,
       });
 
       if (!response.ok) {

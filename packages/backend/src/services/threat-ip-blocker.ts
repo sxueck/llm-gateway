@@ -1,4 +1,5 @@
 import { memoryLogger } from './logger.js';
+import { upstreamFetch } from '../utils/upstream-fetch.js';
 
 export class ThreatIpBlocker {
   private threatIps: Set<string> = new Set();
@@ -28,10 +29,7 @@ export class ThreatIpBlocker {
 
       memoryLogger.info(`开始拉取威胁 IP 列表: ${url}`, 'ThreatIP');
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
-      const res = await fetch(url, { signal: controller.signal } as any);
-      clearTimeout(timeout);
+      const res = await upstreamFetch(url, { timeoutMs: 15000 });
       if (!res.ok) {
         throw new Error(`下载失败: HTTP ${res.status}`);
       }
