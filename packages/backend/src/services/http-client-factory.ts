@@ -1,9 +1,14 @@
 import OpenAI from 'openai';
-import { Agent as HttpAgent } from 'node:http';
-import { Agent as HttpsAgent } from 'node:https';
 import { createHash } from 'node:crypto';
 
 import { sanitizeCustomHeaders, getSanitizedHeadersCacheKey } from '../utils/header-sanitizer.js';
+import {
+  getProxyConfigFromEnv,
+  getProxyUrlForTarget,
+  isProxyConfigured,
+} from '../utils/upstream-proxy.js';
+import { createKeepAliveAgents, type KeepAliveAgents } from '../utils/proxy-agents.js';
+import { upstreamFetch } from '../utils/upstream-fetch.js';
 
 import type { ProtocolConfig } from './protocol-adapter.js';
 
@@ -24,11 +29,6 @@ type CachedOpenAIClient = {
   upstreamKey: string;
 };
 
-type KeepAliveAgents = {
-  httpAgent: HttpAgent;
-  httpsAgent: HttpsAgent;
-};
-
 type ResolvedClientConfig = {
   normalizedBaseUrl: string;
   upstreamKey: string;
@@ -36,11 +36,29 @@ type ResolvedClientConfig = {
   timeout: number;
   maxRetries: number;
   sanitizedHeaders?: Record<string, string>;
+  proxyUrl: string | null;
 };
+
+/**
+ * Create a custom fetch function that routes through upstreamFetch for proxy support.
+ * This provides proxy support for the OpenAI SDK.
+ *
+ * IMPORTANT: This function preserves full Request semantics by passing the Request
+ * object directly to upstreamFetch, which handles URL extraction and proxy routing.
+ */
+function createCustomFetch(): typeof fetch {
+  return async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    // Pass the full url (which may be a Request) to upstreamFetch
+    // upstreamFetch handles Request objects properly, preserving method/body/headers
+    return upstreamFetch(url, init ? { ...init } : {});
+  };
+}
 
 export class HttpClientFactory {
   private openaiClients: Map<string, CachedOpenAIClient> = new Map();
   private keepAliveAgents: Map<string, KeepAliveAgents> = new Map();
+  private proxyConfig = getProxyConfigFromEnv();
+  private hasProxyConfigured = isProxyConfigured();
 
   constructor(
     private readonly options: {
@@ -89,27 +107,21 @@ export class HttpClientFactory {
     headersKey: string;
     timeout: number;
     maxRetries: number;
+    proxyUrl: string | null;
   }): string {
     const apiKeyFingerprint = this.hashValue(input.apiKey || '');
     const timeoutPart = String(input.timeout);
     const retriesPart = String(input.maxRetries);
+    const proxyPart = input.proxyUrl ? this.hashValue(input.proxyUrl) : 'no-proxy';
 
-    return `${input.normalizedBaseUrl}|${apiKeyFingerprint}|${input.headersKey}|${timeoutPart}|${retriesPart}`;
+    return `${input.normalizedBaseUrl}|${apiKeyFingerprint}|${input.headersKey}|${timeoutPart}|${retriesPart}|${proxyPart}`;
   }
 
   private createKeepAliveAgents(): KeepAliveAgents {
-    return {
-      httpAgent: new HttpAgent({
-        keepAlive: true,
-        keepAliveMsecs: KEEP_ALIVE_MSECS,
-        maxSockets: this.options.keepAliveMaxSockets,
-      }),
-      httpsAgent: new HttpsAgent({
-        keepAlive: true,
-        keepAliveMsecs: KEEP_ALIVE_MSECS,
-        maxSockets: this.options.keepAliveMaxSockets,
-      }),
-    };
+    return createKeepAliveAgents({
+      keepAliveMsecs: KEEP_ALIVE_MSECS,
+      maxSockets: this.options.keepAliveMaxSockets,
+    });
   }
 
   private getKeepAliveAgents(upstreamKey: string): KeepAliveAgents {
@@ -120,6 +132,13 @@ export class HttpClientFactory {
     return this.keepAliveAgents.get(upstreamKey)!;
   }
 
+  private getProxyUrlForBaseUrl(baseUrl: string): string | null {
+    if (!this.hasProxyConfigured) {
+      return null;
+    }
+    return getProxyUrlForTarget(baseUrl, this.proxyConfig);
+  }
+
   private resolveClientConfig(config: ProtocolConfig): ResolvedClientConfig {
     const sanitizedHeaders = sanitizeCustomHeaders(config.modelAttributes?.headers);
     const normalizedBaseUrl = this.normalizeBaseUrl(config.baseUrl);
@@ -127,12 +146,15 @@ export class HttpClientFactory {
     const timeout = config.modelAttributes?.timeout ?? DEFAULT_TIMEOUT_MS;
     const maxRetries = config.modelAttributes?.maxRetries ?? DEFAULT_MAX_RETRIES;
     const headersKey = getSanitizedHeadersCacheKey(sanitizedHeaders) || NO_HEADERS_CACHE_KEY;
+    const proxyUrl = this.getProxyUrlForBaseUrl(normalizedBaseUrl === DEFAULT_BASE_URL ? 'https://api.openai.com' : normalizedBaseUrl);
+
     const cacheKey = this.buildClientCacheKey({
       normalizedBaseUrl,
       apiKey: config.apiKey,
       headersKey,
       timeout,
       maxRetries,
+      proxyUrl,
     });
 
     return {
@@ -142,6 +164,7 @@ export class HttpClientFactory {
       timeout,
       maxRetries,
       sanitizedHeaders,
+      proxyUrl,
     };
   }
 
@@ -159,16 +182,24 @@ export class HttpClientFactory {
 
   private buildOpenAIClientConfig(
     config: ProtocolConfig,
-    resolvedConfig: ResolvedClientConfig,
-    keepAliveAgents: KeepAliveAgents
+    resolvedConfig: ResolvedClientConfig
   ): any {
+    // Always use keep-alive agents for connection pooling
+    const agents = this.getKeepAliveAgents(resolvedConfig.upstreamKey);
+
     const clientConfig: any = {
       apiKey: config.apiKey,
       maxRetries: resolvedConfig.maxRetries,
       timeout: resolvedConfig.timeout,
-      httpAgent: keepAliveAgents.httpAgent,
-      httpsAgent: keepAliveAgents.httpsAgent,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
     };
+
+    // Only use custom fetch when proxy is actually configured
+    // This preserves original keep-alive behavior on the no-proxy path
+    if (resolvedConfig.proxyUrl) {
+      clientConfig.fetch = createCustomFetch();
+    }
 
     if (resolvedConfig.normalizedBaseUrl !== DEFAULT_BASE_URL) {
       clientConfig.baseURL = resolvedConfig.normalizedBaseUrl;
@@ -193,13 +224,11 @@ export class HttpClientFactory {
     }
 
     const agents = this.keepAliveAgents.get(upstreamKey);
-    if (!agents) {
-      return;
+    if (agents) {
+      agents.httpAgent.destroy();
+      agents.httpsAgent.destroy();
+      this.keepAliveAgents.delete(upstreamKey);
     }
-
-    agents.httpAgent.destroy();
-    agents.httpsAgent.destroy();
-    this.keepAliveAgents.delete(upstreamKey);
   }
 
   private evictOldestClientIfNeeded(preserveUpstreamKey?: string): void {
@@ -228,13 +257,12 @@ export class HttpClientFactory {
     }
 
     this.evictOldestClientIfNeeded(resolvedConfig.upstreamKey);
-    const keepAliveAgents = this.getKeepAliveAgents(resolvedConfig.upstreamKey);
-    const clientConfig = this.buildOpenAIClientConfig(config, resolvedConfig, keepAliveAgents);
+    const clientConfig = this.buildOpenAIClientConfig(config, resolvedConfig);
 
     const client = new OpenAI(clientConfig);
     this.openaiClients.set(resolvedConfig.cacheKey, { client, upstreamKey: resolvedConfig.upstreamKey });
     this.options.logger?.debug(
-      `创建 OpenAI 客户端 | baseUrl: ${resolvedConfig.normalizedBaseUrl} | upstream: ${resolvedConfig.upstreamKey} | maxRetries: ${resolvedConfig.maxRetries}`,
+      `创建 OpenAI 客户端 | baseUrl: ${resolvedConfig.normalizedBaseUrl} | upstream: ${resolvedConfig.upstreamKey} | maxRetries: ${resolvedConfig.maxRetries} | proxy: ${resolvedConfig.proxyUrl ? 'enabled' : 'disabled'}`,
       'Protocol'
     );
 
