@@ -31,6 +31,8 @@ import { manualIpBlocklist } from './services/manual-ip-blocklist.js';
 import { requestHeaderForwardingService } from './services/request-header-forwarding.js';
 import { requestCache } from './services/request-cache.js';
 import { runtimeSystemConfigCache } from './services/runtime-system-config-cache.js';
+import { getProxyConfigFromEnv, isProxyConfigured } from './utils/upstream-proxy.js';
+import { upstreamFetch } from './utils/upstream-fetch.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -204,6 +206,56 @@ fastify.setErrorHandler((error: any, _request, reply) => {
   });
 });
 
+function logProxyConfig() {
+  const proxyConfig = getProxyConfigFromEnv();
+  const isConfigured = isProxyConfigured();
+
+  if (isConfigured) {
+    memoryLogger.info('检测到代理配置:', 'System');
+    if (proxyConfig.httpProxyUrl) {
+      memoryLogger.info(`  HTTP_PROXY: ${proxyConfig.httpProxyUrl}`, 'System');
+    }
+    if (proxyConfig.httpsProxyUrl) {
+      memoryLogger.info(`  HTTPS_PROXY: ${proxyConfig.httpsProxyUrl}`, 'System');
+    }
+    if (proxyConfig.noProxy.length > 0) {
+      memoryLogger.info(`  NO_PROXY: ${proxyConfig.noProxy.join(', ')}`, 'System');
+    }
+  } else {
+    memoryLogger.info('未检测到代理配置', 'System');
+  }
+}
+
+async function checkGoogleConnectivity(): Promise<void> {
+  const GOOGLE_GENERATE_204_URL = 'https://www.google.com/generate_204';
+  const startTime = Date.now();
+
+  try {
+    const isConfigured = isProxyConfigured();
+
+    if (isConfigured) {
+      memoryLogger.info('正在通过代理测试网络连通性...', 'System');
+    } else {
+      memoryLogger.info('正在测试网络连通性...', 'System');
+    }
+
+    const response = await upstreamFetch(GOOGLE_GENERATE_204_URL, {
+      timeoutMs: 10000,
+    });
+
+    const latency = Date.now() - startTime;
+
+    if (response.status === 204) {
+      memoryLogger.info(`网络连通性测试成功 | 延迟: ${latency}ms`, 'System');
+    } else {
+      memoryLogger.warn(`网络连通性测试返回非预期状态码: HTTP ${response.status}`, 'System');
+    }
+  } catch (error: any) {
+    const latency = Date.now() - startTime;
+    memoryLogger.error(`网络连通性测试失败 (${latency}ms): ${error?.message || error}`, 'System');
+  }
+}
+
 async function cleanOldApiRequests() {
   try {
     const deletedCount = await apiRequestDb.cleanOldRecords(appConfig.apiRequestLogRetentionDays);
@@ -241,6 +293,12 @@ try {
   await fastify.listen({ port: appConfig.port, host: '0.0.0.0' });
   console.log(`Server listening on http://localhost:${appConfig.port}`);
   memoryLogger.info(`Server started on port ${appConfig.port}`, 'System');
+
+  // 显示代理配置信息
+  logProxyConfig();
+
+  // 测试网络连通性
+  await checkGoogleConnectivity();
 
   setInterval(cleanOldApiRequests, 24 * 60 * 60 * 1000);
   memoryLogger.info(
