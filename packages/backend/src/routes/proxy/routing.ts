@@ -540,13 +540,8 @@ export async function resolveExpertRouting(
           if (!body.max_tokens && !body.max_completion_tokens) {
             body.max_tokens = 4096;
           }
-        } else if (protocol === 'openai') {
-          // BigModel OpenAI compatible API also uses thinking object via extra_body
-          // Reference: BigModel docs show extra_body can inject thinking object
-          body.thinking = { type: 'enabled', budget_tokens: 1024 };
         } else {
-          // Default generic boolean fallback
-          body.thinking = true;
+          body.thinking = { type: 'enabled' };
         }
         memoryLogger.debug(`Adaptive thinking enabled: injected thinking schema for protocol=${protocol || 'auto'}`, 'ExpertRouter');
       }
