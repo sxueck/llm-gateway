@@ -216,6 +216,12 @@ export async function handleGeminiNativeNonStreamRequest(
   const url = new URL(upstreamBase + upstreamPath);
   url.searchParams.set('key', protocolConfig.apiKey);
 
+  const submittedModelIdentifier = protocolConfig.model;
+  memoryLogger.info(
+    `Gemini 上游提交: 完整URL="${url.toString().replace(/key=[^&]+/, 'key=***')}" | model_identifier="${submittedModelIdentifier}"`,
+    'GeminiNative'
+  );
+
   // 构造请求头
   const upstreamHeaders = buildUpstreamHeaders(
     request.headers as Record<string, string | string[] | undefined>,
@@ -369,6 +375,12 @@ export async function handleGeminiNativeStreamRequest(
   const url = new URL(upstreamBase + upstreamPath);
   url.searchParams.set('key', protocolConfig.apiKey);
   url.searchParams.set('alt', 'sse');
+
+  const submittedModelIdentifier = protocolConfig.model;
+  memoryLogger.info(
+    `Gemini 上游提交: 完整URL="${url.toString().replace(/key=[^&]+/, 'key=***')}" | model_identifier="${submittedModelIdentifier}"`,
+    'GeminiNative'
+  );
 
   // 构造请求头
   const upstreamHeaders = buildUpstreamHeaders(

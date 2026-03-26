@@ -79,8 +79,22 @@ export function createGeminiProxyHandler() {
 
       const { protocolConfig, vkDisplay, isStreamRequest } = configResult;
 
+      const resolvedModelIdentifier = currentModel?.model_identifier;
+      let upstreamUrl = request.url;
+      
+      if (resolvedModelIdentifier && modelFromUrl && modelFromUrl !== resolvedModelIdentifier) {
+        upstreamUrl = request.url.replace(
+          new RegExp(`/models/${modelFromUrl}([:/?]|$)`),
+          `/models/${resolvedModelIdentifier}$1`
+        );
+        memoryLogger.info(
+          `Gemini 模型标识转换: URL模型名="${modelFromUrl}" -> model_identifier="${resolvedModelIdentifier}"`,
+          'Gemini'
+        );
+      }
+
        memoryLogger.info(
-        `Gemini 请求: ${currentModel?.model_identifier || modelFromUrl} | stream: ${isStreamRequest} | virtual key: ${vkDisplay}`,
+        `Gemini 请求: 解析模型="${currentModel?.name || 'unknown'}" | model_identifier="${resolvedModelIdentifier || modelFromUrl}" | stream: ${isStreamRequest} | virtual key: ${vkDisplay}`,
         'Gemini'
       );
 
@@ -89,7 +103,7 @@ export function createGeminiProxyHandler() {
           request,
           reply,
           protocolConfig,
-          request.url,
+          upstreamUrl,
           virtualKey,
           resolvedProviderId,
           startTime,
@@ -101,7 +115,7 @@ export function createGeminiProxyHandler() {
           request,
           reply,
           protocolConfig,
-          request.url,
+          upstreamUrl,
           virtualKey,
           resolvedProviderId,
           startTime,
