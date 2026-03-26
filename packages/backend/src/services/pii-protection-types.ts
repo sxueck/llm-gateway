@@ -22,10 +22,14 @@ export interface PiiProtectionContext {
   reverseReplacements: Map<string, string>;
   /** Cached restoration regex version */
   restorationCacheVersion: number;
-  /** Last materialized replacement set version */
-  restorationCacheBuiltAt: number;
+  /** Last materialized regex version */
+  regexCacheBuiltAt: number;
+  /** Last materialized sorted keys version */
+  sortedKeysCacheBuiltAt: number;
   /** Cached regex for restoring masked values */
   restorationRegex: RegExp | null;
+  /** Cached sorted keys for non-regex restoration */
+  restorationSortedKeys: string[] | null;
   /** Detection records for debugging/auditing */
   detections: PiiDetection[];
   /** Counter for generating unique masked values */
@@ -59,8 +63,10 @@ export function createPiiProtectionContext(
     replacements: new Map(),
     reverseReplacements: new Map(),
     restorationCacheVersion: 0,
-    restorationCacheBuiltAt: -1,
+    regexCacheBuiltAt: -1,
+    sortedKeysCacheBuiltAt: -1,
     restorationRegex: null,
+    restorationSortedKeys: null,
     detections: [],
     counter: 0,
   };
@@ -73,8 +79,10 @@ export function resetPiiProtectionContext(ctx: PiiProtectionContext): void {
   ctx.replacements.clear();
   ctx.reverseReplacements.clear();
   ctx.restorationCacheVersion = 0;
-  ctx.restorationCacheBuiltAt = -1;
+  ctx.regexCacheBuiltAt = -1;
+  ctx.sortedKeysCacheBuiltAt = -1;
   ctx.restorationRegex = null;
+  ctx.restorationSortedKeys = null;
   ctx.detections.length = 0;
   ctx.counter = 0;
 }

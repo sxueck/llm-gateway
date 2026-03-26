@@ -27,7 +27,8 @@ Format:
     timeout: 10000,
     ignore_system_messages: false,
     max_messages_to_classify: 0,
-    enable_structured_output: true
+    enable_structured_output: true,
+    enable_adaptive_thinking: false
   };
 }
 

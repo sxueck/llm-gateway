@@ -1,4 +1,5 @@
 import { memoryLogger } from './logger.js';
+import { LRUCache } from '../utils/lru-cache.js';
 
 interface CacheEntry {
   response: any;
@@ -18,12 +19,10 @@ interface CacheStats {
 }
 
 export class RequestCache {
-  private cache: Map<string, CacheEntry>;
-  private accessOrder: Map<string, number>;
+  private cache: LRUCache<string, CacheEntry>;
   private stats: CacheStats;
   private readonly maxSize: number;
   private readonly defaultTTL: number;
-  private accessCounter: number;
   
   // 内存限制常量 (50MB 总上限, 100KB 单条上限)
   private readonly maxBytes: number = 50 * 1024 * 1024; // 50MB
@@ -34,8 +33,6 @@ export class RequestCache {
   private readonly cleanupIntervalMs: number = 60000; // 每分钟清扫一次
 
   constructor(maxSize: number = 1000, defaultTTL: number = 3600000) {
-    this.cache = new Map();
-    this.accessOrder = new Map();
     this.stats = {
       hits: 0,
       misses: 0,
@@ -46,7 +43,22 @@ export class RequestCache {
     };
     this.maxSize = maxSize;
     this.defaultTTL = defaultTTL;
-    this.accessCounter = 0;
+
+    this.cache = new LRUCache<string, CacheEntry>({
+      maxSize,
+      maxBytes: this.maxBytes,
+      getSize: (value) => value.size,
+      onEvict: (key, value, reason) => {
+        if (reason === 'bytes' || reason === 'size') {
+          this.stats.evictions++;
+          this.stats.bytesEvicted += value.size;
+          memoryLogger.debug(
+            `LRU 淘汰 | key=${key.substring(0, 8)}... | 淘汰原因=${reason} | 淘汰次数=${this.stats.evictions}`,
+            'RequestCache'
+          );
+        }
+      }
+    });
     
     // 启动主动 TTL 清扫
     this.startCleanupTimer();
@@ -130,55 +142,17 @@ export class RequestCache {
       if (now - entry.timestamp > entry.ttl) {
         cleanedBytes += entry.size;
         this.cache.delete(key);
-        this.accessOrder.delete(key);
         cleaned++;
       }
     }
     
     if (cleaned > 0) {
       this.stats.size = this.cache.size;
-      this.stats.totalBytes -= cleanedBytes;
+      this.stats.totalBytes = this.cache.totalBytes;
       memoryLogger.debug(
         `TTL 清扫完成 | 清理条目=${cleaned} | 释放字节=${cleanedBytes} | 剩余条目=${this.cache.size} | 剩余字节=${this.stats.totalBytes}`,
         'RequestCache'
       );
-    }
-  }
-  
-  /**
-   * 根据字节限制执行 LRU 淘汰
-   * @param requiredBytes 需要的字节数
-   * @param excludeKey 需要排除的 key（用于更新场景，避免淘汰正在更新的条目）
-   */
-  private evictByBytes(requiredBytes: number, excludeKey?: string): void {
-    while (this.stats.totalBytes + requiredBytes > this.maxBytes && this.cache.size > 0) {
-      let oldestKey: string | null = null;
-      let oldestAccess = Infinity;
-
-      for (const [key, accessTime] of this.accessOrder.entries()) {
-        // 跳过被排除的 key（更新场景下保护当前条目）
-        if (excludeKey && key === excludeKey) {
-          continue;
-        }
-        if (accessTime < oldestAccess) {
-          oldestAccess = accessTime;
-          oldestKey = key;
-        }
-      }
-
-      if (oldestKey) {
-        const entry = this.cache.get(oldestKey);
-        if (entry) {
-          this.stats.totalBytes -= entry.size;
-          this.stats.bytesEvicted += entry.size;
-        }
-        this.cache.delete(oldestKey);
-        this.accessOrder.delete(oldestKey);
-        this.stats.evictions++;
-        this.stats.size = this.cache.size;
-      } else {
-        break; // 无法找到可淘汰的条目（或只有被排除的 key）
-      }
     }
   }
 
@@ -195,56 +169,20 @@ export class RequestCache {
       return;
     }
 
-    const existingEntry = this.cache.get(key);
-    const isUpdate = !!existingEntry;
-    const oldSize = existingEntry?.size ?? 0;
-
-    // 计算净增字节数（更新时扣除旧大小）
-    const netBytesNeeded = isUpdate ? entrySize - oldSize : entrySize;
-
-    // 新条目：检查数量上限
-    if (!isUpdate && this.cache.size >= this.maxSize) {
-      this.evictLRU();
-    }
-
-    // 检查总字节上限，执行淘汰（基于净增字节数）
-    // 更新场景下传入 excludeKey，避免淘汰正在更新的同一个 key
-    if (this.stats.totalBytes + netBytesNeeded > this.maxBytes) {
-      this.evictByBytes(netBytesNeeded, isUpdate ? key : undefined);
-    }
-
-    // 如果淘汰后仍然超限，放弃缓存
-    // 确保 stats.size 与实际 cache.size 同步
-    if (this.stats.totalBytes + netBytesNeeded > this.maxBytes) {
-      if (isUpdate && existingEntry) {
-        this.cache.delete(key);
-        this.accessOrder.delete(key);
-        this.stats.totalBytes -= oldSize;
-      }
-      this.stats.size = this.cache.size;
-      memoryLogger.debug(
-        `缓存跳过 | key=${key.substring(0, 8)}... | 原因=总字节超限且无法淘汰`,
-        'RequestCache'
-      );
-      return;
-    }
-
-    // 正式写入缓存
-    this.cache.set(key, {
+    const newEntry: CacheEntry = {
       response,
       headers,
       timestamp: Date.now(),
       ttl: ttl || this.defaultTTL,
       size: entrySize
-    });
+    };
 
-    // 更新字节统计（使用净增字节数）
-    this.stats.totalBytes += netBytesNeeded;
-    this.accessOrder.set(key, ++this.accessCounter);
+    this.cache.set(key, newEntry);
     this.stats.size = this.cache.size;
+    this.stats.totalBytes = this.cache.totalBytes;
 
     memoryLogger.debug(
-      `缓存已存储 | key=${key.substring(0, 8)}... | TTL=${(ttl || this.defaultTTL) / 1000}s | 条目大小=${entrySize} | 当前条目数=${this.cache.size} | 总字节=${this.stats.totalBytes}`,
+      `缓存已设置 | key=${key.substring(0, 8)}... | 字节=${entrySize} | TTL=${newEntry.ttl/1000}s`,
       'RequestCache'
     );
   }
@@ -259,10 +197,9 @@ export class RequestCache {
 
     const now = Date.now();
     if (now - entry.timestamp > entry.ttl) {
-      this.stats.totalBytes -= entry.size;
       this.cache.delete(key);
-      this.accessOrder.delete(key);
       this.stats.size = this.cache.size;
+      this.stats.totalBytes = this.cache.totalBytes;
       this.stats.misses++;
       memoryLogger.debug(
         `缓存已过期 | key=${key.substring(0, 8)}... | 存活时间=${((now - entry.timestamp) / 1000).toFixed(1)}s | 释放字节=${entry.size}`,
@@ -271,7 +208,6 @@ export class RequestCache {
       return null;
     }
 
-    this.accessOrder.set(key, ++this.accessCounter);
     this.stats.hits++;
 
     memoryLogger.debug(
@@ -285,39 +221,10 @@ export class RequestCache {
     };
   }
 
-  private evictLRU(): void {
-    let oldestKey: string | null = null;
-    let oldestAccess = Infinity;
-
-    for (const [key, accessTime] of this.accessOrder.entries()) {
-      if (accessTime < oldestAccess) {
-        oldestAccess = accessTime;
-        oldestKey = key;
-      }
-    }
-
-    if (oldestKey) {
-      const entry = this.cache.get(oldestKey);
-      if (entry) {
-        this.stats.totalBytes -= entry.size;
-        this.stats.bytesEvicted += entry.size;
-      }
-      this.cache.delete(oldestKey);
-      this.accessOrder.delete(oldestKey);
-      this.stats.evictions++;
-      this.stats.size = this.cache.size;
-      memoryLogger.debug(
-        `LRU 淘汰 | key=${oldestKey.substring(0, 8)}... | 淘汰次数=${this.stats.evictions}`,
-        'RequestCache'
-      );
-    }
-  }
-
   clear(): void {
     const previousSize = this.cache.size;
-    const previousBytes = this.stats.totalBytes;
+    const previousBytes = this.cache.totalBytes;
     this.cache.clear();
-    this.accessOrder.clear();
     this.stats.size = 0;
     this.stats.totalBytes = 0;
     memoryLogger.info(
@@ -331,6 +238,8 @@ export class RequestCache {
     const hitRate = total > 0 ? ((this.stats.hits / total) * 100).toFixed(2) : '0.00';
     return {
       ...this.stats,
+      size: this.cache.size,
+      totalBytes: this.cache.totalBytes,
       hitRate: `${hitRate}%`,
       maxBytes: this.maxBytes,
       maxEntryBytes: this.maxEntryBytes

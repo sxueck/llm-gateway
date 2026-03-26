@@ -103,6 +103,7 @@ export interface ExpertRoutingConfig {
     max_messages_to_classify?: number;
     ignored_tags?: string[];
     enable_structured_output?: boolean;
+    enable_adaptive_thinking?: boolean;
   };
   routing?: {
     mode?: 'llm' | 'semantic' | 'hybrid' | 'pipeline';

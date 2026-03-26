@@ -30,16 +30,23 @@ interface CharClass {
 }
 
 function classifyChar(char: string): CharClass {
-  const c = char;
-  const isUpper = /[A-Z]/.test(c);
-  const isLower = /[a-z]/.test(c);
-  const isDigit = /[0-9]/.test(c);
-  const isHex = /[0-9a-fA-F]/.test(c);
-  const isBase64 = /[A-Za-z0-9+/=_-]/.test(c);
-  const isUrlSafe = /[A-Za-z0-9._-]/.test(c);
+  const code = char.charCodeAt(0);
+
+  // ASCII ranges for character classification (optimized over regex)
+  const isUpper = code >= 0x41 && code <= 0x5a; // A-Z
+  const isLower = code >= 0x61 && code <= 0x7a; // a-z
+  const isDigit = code >= 0x30 && code <= 0x39; // 0-9
+  const isHex = isDigit || (code >= 0x61 && code <= 0x66) || (code >= 0x41 && code <= 0x46); // 0-9, a-f, A-F
   const isSymbol = !isUpper && !isLower && !isDigit;
 
-  return { isUpper, isLower, isDigit, isHex, isBase64, isUrlSafe, isSymbol, char: c };
+  // Base64 chars: A-Z, a-z, 0-9, +, /, =, _, -
+  const isBase64 = isUpper || isLower || isDigit || code === 0x2b || code === 0x2f ||
+    code === 0x3d || code === 0x5f || code === 0x2d;
+
+  // URL-safe chars: A-Z, a-z, 0-9, ., _, -
+  const isUrlSafe = isUpper || isLower || isDigit || code === 0x2e || code === 0x5f || code === 0x2d;
+
+  return { isUpper, isLower, isDigit, isHex, isBase64, isUrlSafe, isSymbol, char };
 }
 
 /**

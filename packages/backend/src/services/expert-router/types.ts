@@ -62,5 +62,6 @@ export interface RouteDecision {
   expertId?: string;
   toolPolicy?: ToolPolicy;
   isToolCall?: boolean;
+  thinking_enabled?: boolean;
   metadata?: Record<string, any>;
 }

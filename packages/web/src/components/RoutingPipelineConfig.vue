@@ -80,6 +80,20 @@
           :virtual-model-options="virtualModelOptions"
         />
 
+        <n-form-item style="margin-top: 12px; margin-bottom: 0">
+          <n-checkbox v-model:checked="classifier.enable_adaptive_thinking">
+            {{ t('expertRouting.enableAdaptiveThinking') }}
+          </n-checkbox>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-icon size="16" class="info-icon" style="margin-left: 6px; vertical-align: middle;">
+                <InformationCircleOutline />
+              </n-icon>
+            </template>
+            {{ t('expertRouting.enableAdaptiveThinkingHint') }}
+          </n-tooltip>
+        </n-form-item>
+
         <n-collapse style="margin-top: 12px">
           <n-collapse-item :title="t('expertRouting.advancedLLMConfig')">
             <n-form-item :label="t('expertRouting.systemPrompt')">

@@ -496,6 +496,8 @@ export default {
     ignoredTagsPlaceholder: 'code, environment_details, system',
     enableStructuredOutput: '启用结构化输出',
     enableStructuredOutputHint: '启用后将添加 response_format: {type: "json_object"} 参数，确保模型返回有效的 JSON 格式。注意：系统提示词中必须包含 "json" 关键词',
+    enableAdaptiveThinking: '启用自适应思考',
+    enableAdaptiveThinkingHint: '开启后，分类器会额外输出任务是否需要深度思考；该结果不会作用于分类器本身，而是在路由到专家模型后，仅当用户未显式传入 thinking/reasoning 时，自动为专家模型开启标准 thinking。',
     addExpert: '添加专家',
     editExpert: '编辑专家',
     expertCategory: '分类类别',

@@ -498,8 +498,6 @@ export async function resolveExpertRouting(
       request.body.model = result.modelOverride;
     }
 
-
-
     // 对于 real 类型的专家，尝试获取模型信息
     let resolvedModel;
     if (result.expertType === 'real' && result.providerId && result.modelOverride) {
@@ -525,6 +523,33 @@ export async function resolveExpertRouting(
       }
     } else if (result.expert.model_id) {
       resolvedModel = await modelDb.getById(result.expert.model_id);
+    }
+
+    if (result.enable_adaptive_thinking === true && result.thinking_enabled === true) {
+      request.body = request.body || {};
+      const body = request.body;
+      const hasExplicitThinking = body.thinking !== undefined;
+      const hasExplicitReasoning = body.reasoning !== undefined;
+      const hasExplicitReasoningEffort = body.reasoning_effort !== undefined;
+
+      if (!hasExplicitThinking && !hasExplicitReasoning && !hasExplicitReasoningEffort) {
+        const protocol = resolvedModel?.protocol || result.provider?.protocol;
+        if (protocol === 'anthropic') {
+          body.thinking = { type: 'enabled', budget_tokens: 1024 };
+          // Anthropic also requires max_tokens to be greater than budget_tokens when thinking is enabled
+          if (!body.max_tokens && !body.max_completion_tokens) {
+            body.max_tokens = 4096;
+          }
+        } else if (protocol === 'openai') {
+          // BigModel OpenAI compatible API also uses thinking object via extra_body
+          // Reference: BigModel docs show extra_body can inject thinking object
+          body.thinking = { type: 'enabled', budget_tokens: 1024 };
+        } else {
+          // Default generic boolean fallback
+          body.thinking = true;
+        }
+        memoryLogger.debug(`Adaptive thinking enabled: injected thinking schema for protocol=${protocol || 'auto'}`, 'ExpertRouter');
+      }
     }
 
     return {

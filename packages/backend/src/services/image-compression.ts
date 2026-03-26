@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { memoryLogger } from './logger.js';
 import type { VirtualKey } from '../types/index.js';
+import { LRUCache } from '../utils/lru-cache.js';
 
 const DEFAULT_MAX_EDGE_PX = 768;
 const DEFAULT_CACHE_MAX_BYTES = 100 * 1024 * 1024; // 100MB
@@ -23,55 +24,10 @@ type CompressionStats = {
   bytesAfter: number;
 };
 
-class LruByteCache<T> {
-  private readonly maxBytes: number;
-  private readonly map = new Map<string, { value: T; size: number; access: number }>();
-  private accessCounter = 0;
-  private currentBytes = 0;
-
-  constructor(maxBytes: number) {
-    this.maxBytes = Math.max(1, maxBytes);
-  }
-
-  get(key: string): T | undefined {
-    const entry = this.map.get(key);
-    if (!entry) return undefined;
-    entry.access = ++this.accessCounter;
-    return entry.value;
-  }
-
-  set(key: string, value: T, size: number): void {
-    const normalizedSize = Math.max(0, size | 0);
-    const prev = this.map.get(key);
-    if (prev) {
-      this.currentBytes -= prev.size;
-    }
-    this.map.set(key, { value, size: normalizedSize, access: ++this.accessCounter });
-    this.currentBytes += normalizedSize;
-    this.evictIfNeeded();
-  }
-
-  private evictIfNeeded(): void {
-    if (this.currentBytes <= this.maxBytes) return;
-    // Evict LRU entries until within the budget.
-    while (this.currentBytes > this.maxBytes && this.map.size > 0) {
-      let oldestKey: string | null = null;
-      let oldestAccess = Infinity;
-      for (const [key, entry] of this.map.entries()) {
-        if (entry.access < oldestAccess) {
-          oldestAccess = entry.access;
-          oldestKey = key;
-        }
-      }
-      if (!oldestKey) return;
-      const entry = this.map.get(oldestKey);
-      if (entry) this.currentBytes -= entry.size;
-      this.map.delete(oldestKey);
-    }
-  }
-}
-
-const imageCache = new LruByteCache<CacheValue>(CACHE_MAX_BYTES);
+const imageCache = new LRUCache<string, CacheValue>({
+  maxBytes: CACHE_MAX_BYTES,
+  getSize: (value: CacheValue) => value.bytes.length
+});
 
 export async function maybeCompressImagesInOpenAIRequestBodyInPlace(body: any, virtualKey: VirtualKey): Promise<CompressionStats | null> {
   if (!body || virtualKey.image_compression_enabled !== 1) return null;
@@ -111,7 +67,7 @@ export async function maybeCompressImagesInOpenAIRequestBodyInPlace(body: any, v
         const work = requestScoped.get(key) || (async () => {
           const resized = await resizeWithSharp(parsed.bytes, parsed.mediaType, MAX_EDGE_PX);
           const value: CacheValue = { mediaType: parsed.mediaType, bytes: resized };
-          imageCache.set(key, value, resized.length);
+          imageCache.set(key, value);
           return value;
         })();
         requestScoped.set(key, work);
@@ -163,7 +119,7 @@ export async function maybeCompressImagesInOpenAIRequestBodyInPlace(body: any, v
         const work = requestScoped.get(key) || (async () => {
           const resized = await resizeWithSharp(parsed.bytes, parsed.mediaType, MAX_EDGE_PX);
           const value: CacheValue = { mediaType: parsed.mediaType, bytes: resized };
-          imageCache.set(key, value, resized.length);
+          imageCache.set(key, value);
           return value;
         })();
         requestScoped.set(key, work);
@@ -224,7 +180,7 @@ export async function maybeCompressImagesInAnthropicRequestBodyInPlace(body: any
       const work = requestScoped.get(key) || (async () => {
         const resized = await resizeWithSharp(bytes, mediaType, MAX_EDGE_PX);
         const value: CacheValue = { mediaType, bytes: resized };
-        imageCache.set(key, value, resized.length);
+        imageCache.set(key, value);
         return value;
       })();
       requestScoped.set(key, work);

@@ -5,7 +5,9 @@
  * Prioritizes precision over recall to avoid false positives.
  */
 
+import { createHash } from 'crypto';
 import { PiiType } from './pii-protection-types.js';
+import { LRUCache } from '../utils/lru-cache.js';
 
 export interface DetectedPii {
   type: PiiType;
@@ -16,6 +18,15 @@ export interface DetectedPii {
 
 interface PiiMatchCandidate extends DetectedPii {
   priority: number;
+}
+
+// Global caches for PII detection results (bounded LRU)
+// Caches use SHA-256 hash of text to prevent memory leaks from large strings
+const MIGHT_CONTAIN_CACHE = new LRUCache<string, boolean>({ maxSize: 5000 });
+const DETECT_PII_CACHE = new LRUCache<string, DetectedPii[]>({ maxSize: 5000 });
+
+function hashText(text: string): string {
+  return createHash('sha256').update(text).digest('hex');
 }
 
 // Secret patterns - conservative matching
@@ -132,7 +143,7 @@ function looksLikeConservativeGenericSecret(value: string): boolean {
 /**
  * Detect all PII in text
  */
-export function detectPii(text: string): DetectedPii[] {
+function _detectPii(text: string): DetectedPii[] {
   const candidates: PiiMatchCandidate[] = [];
 
   function addCandidate(type: PiiType, value: string, start: number, end: number, priority: number) {
@@ -221,10 +232,7 @@ function looksLikeVersionNumber(value: string): boolean {
   return false;
 }
 
-/**
- * Quick check if text might contain PII (for early exit)
- */
-export function mightContainPii(text: string): boolean {
+function _mightContainPii(text: string): boolean {
   if (!text || text.length < 3) return false;
 
   // Quick heuristics
@@ -233,4 +241,36 @@ export function mightContainPii(text: string): boolean {
   if (QUICK_IPV4_HINT_REGEX.test(text)) return true;
 
   return false;
+}
+
+/**
+ * Quick check if text might contain PII (for early exit)
+ * Uses text hash cache to avoid repeated regex checks for the same history chunks.
+ */
+export function mightContainPii(text: string): boolean {
+  if (!text || text.length < 3) return false;
+  
+  const hash = hashText(text);
+  const cached = MIGHT_CONTAIN_CACHE.get(hash);
+  if (cached !== undefined) return cached;
+  
+  const result = _mightContainPii(text);
+  MIGHT_CONTAIN_CACHE.set(hash, result);
+  return result;
+}
+
+/**
+ * Detect all PII in text
+ * Uses text hash cache to skip massive regex operations for identical history chunks.
+ */
+export function detectPii(text: string): DetectedPii[] {
+  if (!text) return [];
+  
+  const hash = hashText(text);
+  const cached = DETECT_PII_CACHE.get(hash);
+  if (cached !== undefined) return cached;
+  
+  const result = _detectPii(text);
+  DETECT_PII_CACHE.set(hash, result);
+  return result;
 }

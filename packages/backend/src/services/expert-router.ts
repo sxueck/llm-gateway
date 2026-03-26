@@ -26,6 +26,8 @@ interface ExpertRoutingResult {
   expertType: 'virtual' | 'real';
   expertName: string;
   expertModelId?: string;
+  thinking_enabled?: boolean;
+  enable_adaptive_thinking?: boolean;
 }
 
 export class ExpertRouter {
@@ -165,6 +167,8 @@ export class ExpertRouter {
       expertType: resolved.expertType,
       expertName: resolved.expertName,
       expertModelId: resolved.expertModelId,
+      thinking_enabled: decision.thinking_enabled,
+      enable_adaptive_thinking: classifierConfig.enable_adaptive_thinking,
     };
   }
 

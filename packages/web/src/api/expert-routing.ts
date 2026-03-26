@@ -35,6 +35,7 @@ export interface ClassifierConfig {
   max_messages_to_classify?: number;
   ignored_tags?: string[];
   enable_structured_output?: boolean;
+  enable_adaptive_thinking?: boolean;
 }
 
 export interface FallbackConfig {

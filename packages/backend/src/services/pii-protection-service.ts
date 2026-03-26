@@ -35,14 +35,16 @@ function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+const RESTORATION_REGEX_THRESHOLD = 50;
+
 function getRestorationRegex(ctx: PiiProtectionContext): RegExp | null {
   if (ctx.reverseReplacements.size === 0) {
     ctx.restorationRegex = null;
-    ctx.restorationCacheBuiltAt = ctx.restorationCacheVersion;
+    ctx.regexCacheBuiltAt = ctx.restorationCacheVersion;
     return null;
   }
 
-  if (ctx.restorationRegex && ctx.restorationCacheBuiltAt === ctx.restorationCacheVersion) {
+  if (ctx.restorationRegex && ctx.regexCacheBuiltAt === ctx.restorationCacheVersion) {
     ctx.restorationRegex.lastIndex = 0;
     return ctx.restorationRegex;
   }
@@ -53,18 +55,67 @@ function getRestorationRegex(ctx: PiiProtectionContext): RegExp | null {
     .join('|');
 
   ctx.restorationRegex = alternation ? new RegExp(alternation, 'g') : null;
-  ctx.restorationCacheBuiltAt = ctx.restorationCacheVersion;
+  ctx.regexCacheBuiltAt = ctx.restorationCacheVersion;
   return ctx.restorationRegex;
 }
 
 function restoreMaskedValues(text: string, ctx: PiiProtectionContext): string {
-  const restorationRegex = getRestorationRegex(ctx);
-  if (!restorationRegex) {
+  if (ctx.reverseReplacements.size === 0) {
     return text;
   }
 
-  restorationRegex.lastIndex = 0;
-  return text.replace(restorationRegex, (masked) => ctx.reverseReplacements.get(masked) ?? masked);
+  // For small mappings, use regex for efficiency
+  if (ctx.reverseReplacements.size <= RESTORATION_REGEX_THRESHOLD) {
+    const restorationRegex = getRestorationRegex(ctx);
+    if (!restorationRegex) {
+      return text;
+    }
+    restorationRegex.lastIndex = 0;
+    return text.replace(restorationRegex, (masked) => ctx.reverseReplacements.get(masked) ?? masked);
+  }
+
+  // For large mappings, use non-regex scan to avoid expensive regex compilation
+  return restoreMaskedValuesNonRegex(text, ctx);
+}
+
+function getRestorationSortedKeys(ctx: PiiProtectionContext): string[] {
+  if (ctx.restorationSortedKeys && ctx.sortedKeysCacheBuiltAt === ctx.restorationCacheVersion) {
+    return ctx.restorationSortedKeys;
+  }
+  
+  ctx.restorationSortedKeys = Array.from(ctx.reverseReplacements.keys())
+    .sort((a, b) => b.length - a.length);
+  ctx.sortedKeysCacheBuiltAt = ctx.restorationCacheVersion;
+  return ctx.restorationSortedKeys;
+}
+
+/**
+ * Non-regex restoration for large replacement sets
+ * Uses simple string scanning with sorted keys (longest first to avoid partial matches)
+ */
+function restoreMaskedValuesNonRegex(text: string, ctx: PiiProtectionContext): string {
+  if (ctx.reverseReplacements.size === 0) {
+    return text;
+  }
+
+  // Sort keys by length descending to match longest first
+  const keys = getRestorationSortedKeys(ctx);
+  let result = text;
+
+  for (const key of keys) {
+    const original = ctx.reverseReplacements.get(key);
+    if (!original) continue;
+
+    // Simple global replace
+    let idx = result.indexOf(key);
+    while (idx !== -1) {
+      result = result.slice(0, idx) + original + result.slice(idx + key.length);
+      // Continue searching after the replacement
+      idx = result.indexOf(key, idx + original.length);
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -201,6 +252,7 @@ function collectTextRefs(body: any): TextRef[] {
 
 /**
  * Apply PII masking to text
+ * Optimized: uses fragment array with single join() to avoid repeated string copies
  */
 function applyMasking(text: string, ctx: PiiProtectionContext): string {
   // Quick check first
@@ -214,15 +266,32 @@ function applyMasking(text: string, ctx: PiiProtectionContext): string {
     return text;
   }
 
-  // Build masked text from end to start to maintain positions
-  let result = text;
+  // Build masked text using fragment array + single join()
+  // Process from end to start to maintain positions
+  const fragments: string[] = [];
+  let lastPos = text.length;
+
   for (let i = detections.length - 1; i >= 0; i--) {
     const det = detections[i];
     const masked = getOrCreateMaskedValue(ctx, det.value, det.type);
-    result = result.slice(0, det.start) + masked + result.slice(det.end);
+
+    // Add fragment after current detection (from det.end to lastPos)
+    if (det.end < lastPos) {
+      fragments.push(text.slice(det.end, lastPos));
+    }
+
+    // Add masked value
+    fragments.push(masked);
+    lastPos = det.start;
   }
 
-  return result;
+  // Add remaining prefix
+  if (lastPos > 0) {
+    fragments.push(text.slice(0, lastPos));
+  }
+
+  // Reverse and join to get final result
+  return fragments.reverse().join('');
 }
 
 /**
@@ -314,12 +383,20 @@ export function restoreResponseBodyInPlace(
 /**
  * Stream restorer for SSE responses
  * Handles cross-chunk boundary restoration with bounded buffer
+ *
+ * Optimizations:
+ * - Buffers small fragments to reduce restore frequency
+ * - Uses non-regex path for large replacement sets
  */
 export class PiiStreamRestorer {
   private pendingByKey = new Map<string, string>();
   private readonly ctx: PiiProtectionContext;
   private readonly maxMaskedValueLen: number;
-  private readonly restorationRegex: RegExp | null;
+  private readonly useRegex: boolean;
+
+  // Buffering threshold: accumulate small fragments before restore
+  // Based on typical placeholder length (~20-40 chars) + safety margin
+  private readonly bufferThreshold: number;
 
   constructor(ctx: PiiProtectionContext) {
     this.ctx = ctx;
@@ -328,24 +405,35 @@ export class PiiStreamRestorer {
       ...Array.from(ctx.reverseReplacements.keys()).map(k => k.length),
       1
     );
-    this.restorationRegex = getRestorationRegex(ctx);
+    // Use regex only for small replacement sets
+    this.useRegex = ctx.reverseReplacements.size <= RESTORATION_REGEX_THRESHOLD;
+    // Set buffer threshold: at least 2x max placeholder length or 64 chars minimum
+    this.bufferThreshold = Math.max(this.maxMaskedValueLen * 2, 64);
   }
 
   /**
    * Process a text fragment, restoring any masked values
    * Returns the processed text (with original values restored where possible)
+   *
+   * Optimized: accumulates small fragments to reduce restore frequency
    */
   process(key: string, fragment: string): string {
     if (!fragment) return fragment;
 
     const pending = this.pendingByKey.get(key) || '';
-    let combined = pending + fragment;
+    const combined = pending + fragment;
+
+    // If combined buffer is still small, keep accumulating
+    if (combined.length < this.bufferThreshold) {
+      this.pendingByKey.set(key, combined);
+      return '';
+    }
 
     // Try to restore in the combined buffer
-    combined = this.restoreInText(combined);
+    const restored = this.restoreInText(combined);
 
     // Compute how much we can safely output
-    const { toProcess, nextPending } = this.computeSafeSplit(combined);
+    const { toProcess, nextPending } = this.computeSafeSplit(restored);
     this.pendingByKey.set(key, nextPending);
 
     return toProcess;
@@ -379,14 +467,22 @@ export class PiiStreamRestorer {
 
   /**
    * Restore masked values in text
+   * Uses regex for small sets, non-regex scan for large sets
    */
   private restoreInText(text: string): string {
-    if (!this.restorationRegex) {
+    if (this.ctx.reverseReplacements.size === 0) {
       return text;
     }
 
-    this.restorationRegex.lastIndex = 0;
-    return text.replace(this.restorationRegex, (masked) => this.ctx.reverseReplacements.get(masked) ?? masked);
+    if (this.useRegex) {
+      const regex = getRestorationRegex(this.ctx);
+      if (!regex) return text;
+      regex.lastIndex = 0;
+      return text.replace(regex, (masked) => this.ctx.reverseReplacements.get(masked) ?? masked);
+    }
+
+    // Non-regex path for large replacement sets
+    return restoreMaskedValuesNonRegex(text, this.ctx);
   }
 }
 

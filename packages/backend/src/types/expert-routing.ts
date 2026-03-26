@@ -24,6 +24,7 @@ export interface ClassifierConfig {
   ignore_system_messages?: boolean;
   max_messages_to_classify?: number;
   enable_structured_output?: boolean;
+  enable_adaptive_thinking?: boolean;
 }
 
 export interface FallbackConfig {

@@ -489,6 +489,8 @@ export default {
     ignoredTagsPlaceholder: 'code, environment_details, system',
     enableStructuredOutput: 'Enable Structured Output',
     enableStructuredOutputHint: 'When enabled, will add response_format: {type: "json_object"} parameter to ensure the model returns valid JSON format. Note: System prompt must contain "json" keyword',
+    enableAdaptiveThinking: 'Enable Adaptive Thinking',
+    enableAdaptiveThinkingHint: 'When enabled, the classifier also outputs whether the task needs deeper reasoning. This does not enable thinking for the classifier itself; after routing, standard thinking is only enabled for the selected expert model when the user did not explicitly pass thinking/reasoning.',
     addExpert: 'Add Expert',
     editExpert: 'Edit Expert',
     expertCategory: 'Category',
