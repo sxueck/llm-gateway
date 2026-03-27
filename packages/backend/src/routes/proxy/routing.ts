@@ -525,7 +525,7 @@ export async function resolveExpertRouting(
       resolvedModel = await modelDb.getById(result.expert.model_id);
     }
 
-    if (result.enable_adaptive_thinking === true && result.thinking_enabled === true) {
+    if (result.enable_adaptive_thinking === true && result.thinking_enabled !== undefined) {
       request.body = request.body || {};
       const body = request.body;
       const hasExplicitThinking = body.thinking !== undefined;
@@ -534,16 +534,20 @@ export async function resolveExpertRouting(
 
       if (!hasExplicitThinking && !hasExplicitReasoning && !hasExplicitReasoningEffort) {
         const protocol = resolvedModel?.protocol || result.provider?.protocol;
-        if (protocol === 'anthropic') {
-          body.thinking = { type: 'enabled', budget_tokens: 1024 };
-          // Anthropic also requires max_tokens to be greater than budget_tokens when thinking is enabled
-          if (!body.max_tokens && !body.max_completion_tokens) {
-            body.max_tokens = 4096;
+        if (result.thinking_enabled === true) {
+          if (protocol === 'anthropic') {
+            body.thinking = { type: 'enabled', budget_tokens: 1024 };
+            if (!body.max_tokens && !body.max_completion_tokens) {
+              body.max_tokens = 4096;
+            }
+          } else {
+            body.thinking = { type: 'enabled' };
           }
+          memoryLogger.debug(`thinking=enabled (${protocol || 'auto'})`, 'ExpertRouter');
         } else {
-          body.thinking = { type: 'enabled' };
+          body.thinking = { type: 'disabled' };
+          memoryLogger.debug(`thinking=disabled (${protocol || 'auto'})`, 'ExpertRouter');
         }
-        memoryLogger.debug(`Adaptive thinking enabled: injected thinking schema for protocol=${protocol || 'auto'}`, 'ExpertRouter');
       }
     }
 
