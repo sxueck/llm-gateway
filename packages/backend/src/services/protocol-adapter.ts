@@ -200,6 +200,8 @@ export class ProtocolAdapter {
     if ((options as any).reasoning_effort !== undefined) (requestParams as any).reasoning_effort = (options as any).reasoning_effort;
     if ((options as any).verbosity !== undefined) (requestParams as any).verbosity = (options as any).verbosity;
     if ((options as any).thinking !== undefined) (requestParams as any).thinking = (options as any).thinking;
+    if ((options as any).tool_search !== undefined) (requestParams as any).tool_search = (options as any).tool_search;
+    if ((options as any).phase !== undefined) (requestParams as any).phase = (options as any).phase;
 
     // 构建请求选项，支持超时和取消
     const requestOptions: any = {};
@@ -289,6 +291,8 @@ export class ProtocolAdapter {
     if ((options as any).reasoning_effort !== undefined) (requestParams as any).reasoning_effort = (options as any).reasoning_effort;
     if ((options as any).verbosity !== undefined) (requestParams as any).verbosity = (options as any).verbosity;
     if ((options as any).thinking !== undefined) (requestParams as any).thinking = (options as any).thinking;
+    if ((options as any).tool_search !== undefined) (requestParams as any).tool_search = (options as any).tool_search;
+    if ((options as any).phase !== undefined) (requestParams as any).phase = (options as any).phase;
 
     // 构建请求选项，支持超时和取消
     const requestOptions: any = {};
@@ -404,6 +408,10 @@ export class ProtocolAdapter {
     if (options.include !== undefined) params.include = options.include;
     if ((options as any).prompt_cache_key !== undefined) (params as any).prompt_cache_key = (options as any).prompt_cache_key;
     if ((options as any).safety_identifier !== undefined) (params as any).safety_identifier = (options as any).safety_identifier;
+    // OpenAI 新特性：Tool Search（工具搜索）- GPT-5.4-mini 支持
+    if ((options as any).tool_search !== undefined) (params as any).tool_search = (options as any).tool_search;
+    // OpenAI 新特性：Phase 参数 - 标记消息类型为 commentary 或 final_answer
+    if ((options as any).phase !== undefined) (params as any).phase = (options as any).phase;
     return params;
   }
 
