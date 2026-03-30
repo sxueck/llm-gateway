@@ -42,11 +42,16 @@ export class CircuitBreaker {
   }
 
   constructor(config?: Partial<CircuitBreakerConfig>) {
+    const rawHalfOpenMaxAttempts = config?.halfOpenMaxAttempts ?? 3;
+    if (rawHalfOpenMaxAttempts < 1) {
+      throw new Error('halfOpenMaxAttempts must be >= 1');
+    }
+
     this.config = {
       failureThreshold: config?.failureThreshold || 2,
       successThreshold: config?.successThreshold || 2,
       timeout: config?.timeout || 120000,
-      halfOpenMaxAttempts: config?.halfOpenMaxAttempts || 3
+      halfOpenMaxAttempts: rawHalfOpenMaxAttempts
     };
   }
 
@@ -80,13 +85,19 @@ export class CircuitBreaker {
           `熔断器进入半开状态 | key: ${circuitKey}`,
           'CircuitBreaker'
         );
+
+        stats.halfOpenAttempts++;
         return true;
       }
       return false;
     }
 
     if (stats.state === CircuitState.HALF_OPEN) {
-      return stats.halfOpenAttempts < this.config.halfOpenMaxAttempts;
+      if (stats.halfOpenAttempts >= this.config.halfOpenMaxAttempts) {
+        return false;
+      }
+      stats.halfOpenAttempts++;
+      return true;
     }
 
     return true;
@@ -97,7 +108,6 @@ export class CircuitBreaker {
 
     if (stats.state === CircuitState.HALF_OPEN) {
       stats.successes++;
-      stats.halfOpenAttempts++;
 
       if (stats.successes >= this.config.successThreshold) {
         stats.state = CircuitState.CLOSED;

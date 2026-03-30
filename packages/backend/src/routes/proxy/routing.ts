@@ -198,17 +198,7 @@ export function selectRoutingTarget(
   }
 
   if (type === 'fallback' || config.strategy?.mode === 'fallback') {
-    // Fallback 策略：按优先级顺序选择第一个可用的 target
-    // 不像 loadbalance 那样轮询，而是始终优先使用第一个可用的
-    for (const target of config.targets) {
-      if (circuitBreaker.isAvailable(getTargetKey(target)) &&
-          (!excludeProviders || !excludeProviders.has(target.provider))) {
-        return target;
-      }
-    }
-
-    // 所有目标都不可用
-    return null;
+    return availableTargets[0] || null;
   }
 
   // Hash模式：基于哈希key进行一致性哈希分配
