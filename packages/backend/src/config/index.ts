@@ -23,7 +23,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   LOG_LEVEL: z.string().default('info'),
   JWT_SECRET: z.string().min(32),
-  API_REQUEST_LOG_RETENTION_DAYS: z.string().default('3'),
+  API_REQUEST_LOG_RETENTION_DAYS: z.string().default('7'),
   PUBLIC_URL: z.string().optional(),
   MYSQL_HOST: z.string().default('localhost'),
   MYSQL_PORT: z.string().default('3306'),

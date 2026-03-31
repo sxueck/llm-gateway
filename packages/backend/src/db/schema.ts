@@ -318,6 +318,79 @@ export async function createTables() {
         INDEX idx_circuit_breaker_events_time (triggered_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+
+    // 备份记录表
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS backup_records (
+        id VARCHAR(255) PRIMARY KEY,
+        backup_key VARCHAR(255) NOT NULL,
+        backup_type ENUM('full', 'incremental') NOT NULL,
+        includes_logs TINYINT DEFAULT 0,
+        file_size BIGINT,
+        file_hash VARCHAR(64),
+        s3_key VARCHAR(500) NOT NULL,
+        encryption_key_hash VARCHAR(64),
+        status ENUM('pending', 'running', 'completed', 'failed') NOT NULL,
+        started_at BIGINT,
+        completed_at BIGINT,
+        error_message TEXT,
+        record_count INT,
+        checksum VARCHAR(64),
+        created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+        INDEX idx_backup_records_status (status),
+        INDEX idx_backup_records_created_at (created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // 恢复记录表
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS restore_records (
+        id VARCHAR(255) PRIMARY KEY,
+        backup_record_id VARCHAR(255) NOT NULL,
+        restore_type ENUM('full', 'partial') NOT NULL,
+        status ENUM('pending', 'running', 'completed', 'failed', 'rollback') NOT NULL,
+        started_at BIGINT,
+        completed_at BIGINT,
+        error_message TEXT,
+        backup_before_restore VARCHAR(255),
+        changes_made JSON,
+        rollback_data JSON,
+        created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+        FOREIGN KEY (backup_record_id) REFERENCES backup_records(id) ON DELETE CASCADE,
+        INDEX idx_restore_records_status (status),
+        INDEX idx_restore_records_created_at (created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // API 请求按天汇总表（支持 7 天外的统计查询，天边界为 Asia/Shanghai 时区）
+    // Nullable 维度使用空字符串作为 sentinel 值以满足唯一键约束
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS api_request_daily_summaries (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        summary_date DATE NOT NULL COMMENT 'Asia/Shanghai 时区的汇总日期',
+        virtual_key_id VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
+        provider_id VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
+        model VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
+        request_count INT NOT NULL DEFAULT 0,
+        success_count INT NOT NULL DEFAULT 0 COMMENT 'status 为成功状态的计数',
+        error_count INT NOT NULL DEFAULT 0 COMMENT 'status 为非成功状态的计数',
+        total_tokens BIGINT NOT NULL DEFAULT 0,
+        prompt_tokens BIGINT NOT NULL DEFAULT 0,
+        completion_tokens BIGINT NOT NULL DEFAULT 0,
+        cached_tokens BIGINT NOT NULL DEFAULT 0,
+        cache_hit_count INT NOT NULL DEFAULT 0 COMMENT 'cache_hit = 1 的计数',
+        prompt_cache_hit_count INT NOT NULL DEFAULT 0 COMMENT 'cached_tokens > 0 的计数（即使用了 prompt cache）',
+        total_response_time BIGINT NOT NULL DEFAULT 0 COMMENT '所有请求 response_time 总和(毫秒)',
+        response_time_count INT NOT NULL DEFAULT 0 COMMENT '参与 total_response_time 统计的请求数',
+        created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+        updated_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+        UNIQUE KEY uk_daily_summary_dimensions (summary_date, virtual_key_id, provider_id, model),
+        INDEX idx_summary_date (summary_date),
+        INDEX idx_summary_virtual_key (virtual_key_id, summary_date),
+        INDEX idx_summary_provider (provider_id, summary_date),
+        INDEX idx_summary_model (model, summary_date)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
   } finally {
     conn.release();
   }

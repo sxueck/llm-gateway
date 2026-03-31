@@ -258,10 +258,10 @@ async function checkGoogleConnectivity(): Promise<void> {
 
 async function cleanOldApiRequests() {
   try {
-    const deletedCount = await apiRequestDb.cleanOldRecords(appConfig.apiRequestLogRetentionDays);
-    if (deletedCount > 0) {
+    const result = await apiRequestDb.cleanOldRecords(appConfig.apiRequestLogRetentionDays);
+    if (result.deletedRequestCount > 0 || result.summarizedCount > 0) {
       memoryLogger.info(
-        `自动清理旧请求日志: 删除 ${deletedCount} 条记录 (保留 ${appConfig.apiRequestLogRetentionDays} 天)`,
+        `自动清理旧请求日志: 汇总 ${result.summarizedCount} 条，删除明细 ${result.deletedRequestCount} 条 (保留 ${appConfig.apiRequestLogRetentionDays} 天)`,
         'System'
       );
     }

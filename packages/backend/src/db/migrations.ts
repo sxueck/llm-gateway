@@ -7,577 +7,78 @@ export interface Migration {
   down?: (conn: Connection) => Promise<void>;
 }
 
-// 注意：schema.ts 中已经包含了全部当前需要的表结构和字段。
-// 迁移脚本仅保留版本追踪骨架，方便未来新增迁移时扩展。
 export const migrations: Migration[] = [
   {
-    version: 16,
-    name: 'add_backup_and_restore_tables',
+    version: 31,
+    name: 'add_api_request_daily_summaries',
     up: async (conn: Connection) => {
-      // Create backup_records table
       await conn.query(`
-        CREATE TABLE IF NOT EXISTS backup_records (
-          id VARCHAR(255) PRIMARY KEY,
-          backup_key VARCHAR(255) NOT NULL,
-          backup_type ENUM('full', 'incremental') NOT NULL,
-          includes_logs TINYINT DEFAULT 0,
-          file_size BIGINT,
-          file_hash VARCHAR(64),
-          s3_key VARCHAR(500) NOT NULL,
-          encryption_key_hash VARCHAR(64),
-          status ENUM('pending', 'running', 'completed', 'failed') NOT NULL,
-          started_at BIGINT,
-          completed_at BIGINT,
-          error_message TEXT,
-          record_count INT,
-          checksum VARCHAR(64),
-          created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
-          INDEX idx_backup_records_status (status),
-          INDEX idx_backup_records_created_at (created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-
-      // Create restore_records table
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS restore_records (
-          id VARCHAR(255) PRIMARY KEY,
-          backup_record_id VARCHAR(255) NOT NULL,
-          restore_type ENUM('full', 'partial') NOT NULL,
-          status ENUM('pending', 'running', 'completed', 'failed', 'rollback') NOT NULL,
-          started_at BIGINT,
-          completed_at BIGINT,
-          error_message TEXT,
-          backup_before_restore VARCHAR(255),
-          changes_made JSON,
-          rollback_data JSON,
-          created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
-          FOREIGN KEY (backup_record_id) REFERENCES backup_records(id) ON DELETE CASCADE,
-          INDEX idx_restore_records_status (status),
-          INDEX idx_restore_records_created_at (created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-    },
-    down: async (conn: Connection) => {
-      await conn.query('DROP TABLE IF EXISTS restore_records');
-      await conn.query('DROP TABLE IF EXISTS backup_records');
-    }
-  },
-  {
-    version: 17,
-    name: 'add_default_timestamps_and_generated_total_tokens',
-    up: async (conn: Connection) => {
-      // 使用 ALTER TABLE 为已有表补齐 created_at 默认值和 total_tokens 生成列
-      const statements: string[] = [
-        // 基础表
-        `ALTER TABLE users MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
-        `ALTER TABLE providers MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
-        `ALTER TABLE models MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
-        `ALTER TABLE virtual_keys MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
-        `ALTER TABLE routing_configs MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
-        `ALTER TABLE expert_routing_configs MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
-        `ALTER TABLE expert_routing_logs MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
-        `ALTER TABLE health_targets MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
-        `ALTER TABLE health_runs MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
-        `ALTER TABLE health_summaries MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
-        // 备份/恢复表
-        `ALTER TABLE backup_records MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
-        `ALTER TABLE restore_records MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
-        // api_requests: total_tokens 改为生成列 + created_at 默认值
-        `ALTER TABLE api_requests MODIFY created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)`,
-        `ALTER TABLE api_requests MODIFY total_tokens INT AS (prompt_tokens + completion_tokens) STORED`
-      ];
-
-      for (const sql of statements) {
-        try {
-          await conn.query(sql);
-        } catch (e: any) {
-          console.warn('[迁移] 执行语句失败, 已跳过:', sql, e.message);
-        }
-      }
-    }
-  },
-  {
-    version: 18,
-    name: 'remove_prompt_config_from_models',
-    up: async (conn: Connection) => {
-      // 删除 models 表中的 prompt_config 字段
-      try {
-        await conn.query(`ALTER TABLE models DROP COLUMN IF EXISTS prompt_config`);
-        console.log('[迁移] 已删除 models 表的 prompt_config 字段');
-      } catch (e: any) {
-        console.warn('[迁移] 删除 prompt_config 字段失败, 已跳过:', e.message);
-      }
-    },
-    down: async (conn: Connection) => {
-      // 回滚时重新添加 prompt_config 字段
-      try {
-        await conn.query(`ALTER TABLE models ADD COLUMN prompt_config TEXT DEFAULT NULL AFTER model_attributes`);
-        console.log('[迁移] 已恢复 models 表的 prompt_config 字段');
-      } catch (e: any) {
-        console.warn('[迁移] 恢复 prompt_config 字段失败:', e.message);
-      }
-    }
-  },
-  {
-    version: 19,
-    name: 'add_ip_to_api_requests',
-    up: async (conn: Connection) => {
-      try {
-        await conn.query(`ALTER TABLE api_requests ADD COLUMN ip VARCHAR(45) DEFAULT NULL AFTER compression_saved_tokens`);
-        console.log('[迁移] 已添加 api_requests 表的 ip 字段');
-      } catch (e: any) {
-        if (e.code === 'ER_DUP_FIELDNAME') {
-          console.log('[迁移] api_requests 表已存在 ip 字段，跳过');
-        } else {
-          throw e;
-        }
-      }
-    },
-    down: async (conn: Connection) => {
-      try {
-        await conn.query(`ALTER TABLE api_requests DROP COLUMN IF EXISTS ip`);
-        console.log('[迁移] 已删除 api_requests 表的 ip 字段');
-      } catch (e: any) {
-      console.warn('[迁移] 删除 ip 字段失败:', e.message);
-    }
-  }
-  },
-  {
-    version: 20,
-    name: 'add_user_agent_and_blocked_ips',
-    up: async (conn: Connection) => {
-      try {
-        await conn.query(`ALTER TABLE api_requests ADD COLUMN user_agent VARCHAR(500) DEFAULT NULL AFTER ip`);
-        console.log('[迁移] 已为 api_requests 表添加 user_agent 字段');
-      } catch (e: any) {
-        if (e.code === 'ER_DUP_FIELDNAME') {
-          console.log('[迁移] api_requests 表已存在 user_agent 字段，跳过');
-        } else {
-          throw e;
-        }
-      }
-    },
-    down: async (conn: Connection) => {
-      try {
-        await conn.query(`ALTER TABLE api_requests DROP COLUMN IF EXISTS user_agent`);
-        console.log('[迁移] 已删除 api_requests 表的 user_agent 字段');
-      } catch (e: any) {
-        console.warn('[迁移] 删除 user_agent 字段失败:', e.message);
-      }
-    },
-  },
-  {
-    version: 21,
-    name: 'add_circuit_breaker_stats_tables',
-    up: async (conn: Connection) => {
-      // 熔断器触发统计表
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS circuit_breaker_stats (
-          provider_id VARCHAR(255) PRIMARY KEY,
-          trigger_count INT NOT NULL DEFAULT 0,
-          last_trigger_at BIGINT NOT NULL,
-          created_at BIGINT NOT NULL,
-          updated_at BIGINT NOT NULL,
-          INDEX idx_circuit_breaker_trigger_count (trigger_count)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-
-      // 熔断器触发事件表
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS circuit_breaker_events (
+        CREATE TABLE IF NOT EXISTS api_request_daily_summaries (
           id BIGINT AUTO_INCREMENT PRIMARY KEY,
-          provider_id VARCHAR(255) NOT NULL,
-          triggered_at BIGINT NOT NULL,
-          INDEX idx_circuit_breaker_events_provider (provider_id),
-          INDEX idx_circuit_breaker_events_time (triggered_at)
+          summary_date DATE NOT NULL COMMENT 'Asia/Shanghai 时区的汇总日期',
+          virtual_key_id VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
+          provider_id VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
+          model VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
+          request_count INT NOT NULL DEFAULT 0,
+          success_count INT NOT NULL DEFAULT 0,
+          error_count INT NOT NULL DEFAULT 0,
+          total_tokens BIGINT NOT NULL DEFAULT 0,
+          prompt_tokens BIGINT NOT NULL DEFAULT 0,
+          completion_tokens BIGINT NOT NULL DEFAULT 0,
+          cached_tokens BIGINT NOT NULL DEFAULT 0,
+          cache_hit_count INT NOT NULL DEFAULT 0 COMMENT 'cache_hit = 1 的计数',
+          prompt_cache_hit_count INT NOT NULL DEFAULT 0 COMMENT 'cached_tokens > 0 的计数（即使用了 prompt cache）',
+          total_response_time BIGINT NOT NULL DEFAULT 0,
+          response_time_count INT NOT NULL DEFAULT 0,
+          created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+          updated_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+          UNIQUE KEY uk_daily_summary_dimensions (summary_date, virtual_key_id, provider_id, model),
+          INDEX idx_summary_date (summary_date),
+          INDEX idx_summary_virtual_key (virtual_key_id, summary_date),
+          INDEX idx_summary_provider (provider_id, summary_date),
+          INDEX idx_summary_model (model, summary_date)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       `);
-      
-      console.log('[迁移] 已创建熔断器统计相关表 (circuit_breaker_stats, circuit_breaker_events)');
+      console.log('[迁移] 已创建 api_request_daily_summaries 表');
     },
     down: async (conn: Connection) => {
-      await conn.query('DROP TABLE IF EXISTS circuit_breaker_events');
-      await conn.query('DROP TABLE IF EXISTS circuit_breaker_stats');
-      console.log('[迁移] 已删除熔断器统计相关表');
+      await conn.query('DROP TABLE IF EXISTS api_request_daily_summaries');
+      console.log('[迁移] 已删除 api_request_daily_summaries 表');
     }
   },
   {
-    version: 22,
-    name: 'add_expert_routing_stats_fields',
+    version: 32,
+    name: 'add_prompt_cache_hit_count_to_summaries',
     up: async (conn: Connection) => {
-      try {
+      const hasColumn = async (columnName: string) => {
+        const [rows] = await conn.query(
+          `SELECT COUNT(*) AS cnt
+           FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = 'api_request_daily_summaries'
+             AND COLUMN_NAME = ?`,
+          [columnName]
+        );
+        const result = rows as any[];
+        return Number(result?.[0]?.cnt || 0) > 0;
+      };
+
+      if (!(await hasColumn('prompt_cache_hit_count'))) {
         await conn.query(`
-          ALTER TABLE expert_routing_logs
-          ADD COLUMN route_source VARCHAR(50) DEFAULT NULL COMMENT 'l1_semantic, l2_heuristic, l3_llm, fallback',
-          ADD COLUMN prompt_tokens INT DEFAULT 0 COMMENT '原始请求预估Token',
-          ADD COLUMN cleaned_content_length INT DEFAULT 0 COMMENT '清洗后用于分类的文本长度',
-          ADD COLUMN semantic_score DECIMAL(5, 4) DEFAULT NULL COMMENT 'L1语义匹配分数'
+          ALTER TABLE api_request_daily_summaries
+          ADD COLUMN prompt_cache_hit_count INT NOT NULL DEFAULT 0
+          COMMENT 'cached_tokens > 0 的计数（即使用了 prompt cache）'
+          AFTER cache_hit_count
         `);
-        console.log('[迁移] 已为 expert_routing_logs 添加统计字段');
-      } catch (e: any) {
-        if (e.code === 'ER_DUP_FIELDNAME') {
-          console.log('[迁移] expert_routing_logs 字段已存在，跳过');
-        } else {
-          throw e;
-        }
+        console.log('[迁移] 已添加 api_request_daily_summaries.prompt_cache_hit_count 字段');
       }
     },
     down: async (conn: Connection) => {
       try {
-        await conn.query(`
-          ALTER TABLE expert_routing_logs
-          DROP COLUMN route_source,
-          DROP COLUMN prompt_tokens,
-          DROP COLUMN cleaned_content_length,
-          DROP COLUMN semantic_score
-        `);
+        await conn.query(`ALTER TABLE api_request_daily_summaries DROP COLUMN IF EXISTS prompt_cache_hit_count`);
+        console.log('[迁移] 已删除 api_request_daily_summaries.prompt_cache_hit_count 字段');
       } catch (e: any) {
-        console.warn('[迁移] 回滚 expert_routing_logs 字段失败:', e.message);
-      }
-    }
-  },
-  {
-    version: 23,
-    name: 'repair_expert_routing_stats_fields',
-    up: async (conn: Connection) => {
-      // v22 used a single ALTER TABLE with multiple ADD COLUMN.
-      // If ANY one column already existed, MySQL throws ER_DUP_FIELDNAME and the rest are not applied.
-      // Some deployments can end up with schema_migrations=v22 but missing prompt_tokens/cleaned_content_length/semantic_score.
-      const hasColumn = async (col: string) => {
-        const [rows] = await conn.query(
-          `SELECT COUNT(*) AS cnt
-           FROM INFORMATION_SCHEMA.COLUMNS
-           WHERE TABLE_SCHEMA = DATABASE()
-             AND TABLE_NAME = 'expert_routing_logs'
-             AND COLUMN_NAME = ?`,
-          [col]
-        );
-        const result = rows as any[];
-        return Number(result?.[0]?.cnt || 0) > 0;
-      };
-
-      const addColumnIfMissing = async (col: string, sql: string) => {
-        if (await hasColumn(col)) return;
-        try {
-          await conn.query(sql);
-          console.log(`[迁移] 已补齐 expert_routing_logs.${col}`);
-        } catch (e: any) {
-          if (e.code === 'ER_DUP_FIELDNAME') return;
-          throw e;
-        }
-      };
-
-      await addColumnIfMissing(
-        'route_source',
-        `ALTER TABLE expert_routing_logs ADD COLUMN route_source VARCHAR(50) DEFAULT NULL COMMENT 'l1_semantic, l2_heuristic, l3_llm, fallback'`
-      );
-      await addColumnIfMissing(
-        'prompt_tokens',
-        `ALTER TABLE expert_routing_logs ADD COLUMN prompt_tokens INT DEFAULT 0 COMMENT '原始请求预估Token'`
-      );
-      await addColumnIfMissing(
-        'cleaned_content_length',
-        `ALTER TABLE expert_routing_logs ADD COLUMN cleaned_content_length INT DEFAULT 0 COMMENT '清洗后用于分类的文本长度'`
-      );
-      await addColumnIfMissing(
-        'semantic_score',
-        `ALTER TABLE expert_routing_logs ADD COLUMN semantic_score DECIMAL(5, 4) DEFAULT NULL COMMENT 'L1语义匹配分数'`
-      );
-    },
-  },
-  {
-    version: 24,
-    name: 'cleanup_l1_semantic_fields',
-    up: async (conn: Connection) => {
-      const hasColumn = async (col: string) => {
-        const [rows] = await conn.query(
-          `SELECT COUNT(*) AS cnt
-           FROM INFORMATION_SCHEMA.COLUMNS
-           WHERE TABLE_SCHEMA = DATABASE()
-             AND TABLE_NAME = 'expert_routing_logs'
-             AND COLUMN_NAME = ?`,
-          [col]
-        );
-        const result = rows as any[];
-        return Number(result?.[0]?.cnt || 0) > 0;
-      };
-
-      // 清理 L1 语义路由相关字段
-      // 1. 删除 semantic_score 字段（L1 语义匹配分数，已废弃）
-      try {
-        if (await hasColumn('semantic_score')) {
-          await conn.query(`ALTER TABLE expert_routing_logs DROP COLUMN semantic_score`);
-          console.log('[迁移] 已删除 expert_routing_logs.semantic_score 字段');
-        }
-      } catch (e: any) {
-        console.warn('[迁移] 删除 semantic_score 字段失败或不存在:', e.message);
-      }
-
-      // 2. 更新 route_source 字段注释，移除 L1/L2/L3 层级概念
-      try {
-        await conn.query(`
-          ALTER TABLE expert_routing_logs
-          MODIFY COLUMN route_source VARCHAR(50) DEFAULT NULL
-          COMMENT '分类来源: llm, fallback'
-        `);
-        console.log('[迁移] 已更新 route_source 字段注释');
-      } catch (e: any) {
-        console.warn('[迁移] 更新 route_source 字段注释失败:', e.message);
-      }
-    },
-    down: async (conn: Connection) => {
-      // 回滚时恢复 L1 字段
-      try {
-        await conn.query(`
-          ALTER TABLE expert_routing_logs
-          ADD COLUMN semantic_score DECIMAL(5, 4) DEFAULT NULL COMMENT 'L1语义匹配分数'
-        `);
-        console.log('[迁移] 已恢复 expert_routing_logs.semantic_score 字段');
-      } catch (e: any) {
-        console.warn('[迁移] 恢复 semantic_score 字段失败:', e.message);
-      }
-
-      try {
-        await conn.query(`
-          ALTER TABLE expert_routing_logs
-          MODIFY COLUMN route_source VARCHAR(50) DEFAULT NULL
-          COMMENT 'l1_semantic, l2_heuristic, l3_llm, fallback'
-        `);
-        console.log('[迁移] 已恢复 route_source 字段注释');
-      } catch (e: any) {
-        console.warn('[迁移] 恢复 route_source 字段注释失败:', e.message);
-      }
-    }
-  },
-  {
-    version: 25,
-    name: 'add_image_compression_enabled_to_virtual_keys',
-    up: async (conn: Connection) => {
-      const hasColumn = async (col: string) => {
-        const [rows] = await conn.query(
-          `SELECT COUNT(*) AS cnt
-           FROM INFORMATION_SCHEMA.COLUMNS
-           WHERE TABLE_SCHEMA = DATABASE()
-             AND TABLE_NAME = 'virtual_keys'
-             AND COLUMN_NAME = ?`,
-          [col]
-        );
-        const result = rows as any[];
-        return Number(result?.[0]?.cnt || 0) > 0;
-      };
-
-      if (await hasColumn('image_compression_enabled')) return;
-
-      try {
-        await conn.query(
-          `ALTER TABLE virtual_keys
-           ADD COLUMN image_compression_enabled TINYINT DEFAULT 0
-           AFTER dynamic_compression_enabled`
-        );
-        console.log('[迁移] 已添加 virtual_keys.image_compression_enabled 字段');
-      } catch (e: any) {
-        if (e.code === 'ER_DUP_FIELDNAME') {
-          console.log('[迁移] virtual_keys 已存在 image_compression_enabled 字段，跳过');
-          return;
-        }
-        throw e;
-      }
-    },
-    down: async (conn: Connection) => {
-      try {
-        await conn.query(`ALTER TABLE virtual_keys DROP COLUMN IF EXISTS image_compression_enabled`);
-        console.log('[迁移] 已删除 virtual_keys.image_compression_enabled 字段');
-      } catch (e: any) {
-        console.warn('[迁移] 删除 image_compression_enabled 字段失败:', e.message);
-      }
-    }
-  },
-  {
-    version: 26,
-    name: 'split_api_request_payload_and_add_hot_indexes',
-    up: async (conn: Connection) => {
-      const hasColumn = async (table: string, col: string) => {
-        const [rows] = await conn.query(
-          `SELECT COUNT(*) AS cnt
-           FROM INFORMATION_SCHEMA.COLUMNS
-           WHERE TABLE_SCHEMA = DATABASE()
-             AND TABLE_NAME = ?
-             AND COLUMN_NAME = ?`,
-          [table, col]
-        );
-        const result = rows as any[];
-        return Number(result?.[0]?.cnt || 0) > 0;
-      };
-
-      const hasIndex = async (table: string, indexName: string) => {
-        const [rows] = await conn.query(
-          `SELECT COUNT(*) AS cnt
-           FROM INFORMATION_SCHEMA.STATISTICS
-           WHERE TABLE_SCHEMA = DATABASE()
-             AND TABLE_NAME = ?
-             AND INDEX_NAME = ?`,
-          [table, indexName]
-        );
-        const result = rows as any[];
-        return Number(result?.[0]?.cnt || 0) > 0;
-      };
-
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS api_request_payloads (
-          request_id VARCHAR(255) PRIMARY KEY,
-          request_body MEDIUMTEXT,
-          response_body MEDIUMTEXT,
-          created_at BIGINT NOT NULL,
-          FOREIGN KEY (request_id) REFERENCES api_requests(id) ON DELETE CASCADE,
-          INDEX idx_api_request_payloads_created_at (created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-
-      if (!(await hasColumn('api_requests', 'request_params_json'))) {
-        await conn.query(`ALTER TABLE api_requests ADD COLUMN request_params_json JSON DEFAULT NULL AFTER response_body`);
-      }
-
-      if (!(await hasColumn('api_requests', 'response_meta_json'))) {
-        await conn.query(`ALTER TABLE api_requests ADD COLUMN response_meta_json JSON DEFAULT NULL AFTER request_params_json`);
-      }
-
-      if (!(await hasIndex('api_requests', 'idx_api_requests_ip_created_at'))) {
-        await conn.query(`ALTER TABLE api_requests ADD INDEX idx_api_requests_ip_created_at (ip, created_at)`);
-      }
-
-      if (!(await hasIndex('api_requests', 'idx_api_requests_vk_created_at'))) {
-        await conn.query(`ALTER TABLE api_requests ADD INDEX idx_api_requests_vk_created_at (virtual_key_id, created_at)`);
-      }
-
-      if (!(await hasIndex('api_requests', 'idx_api_requests_provider_created_at'))) {
-        await conn.query(`ALTER TABLE api_requests ADD INDEX idx_api_requests_provider_created_at (provider_id, created_at)`);
-      }
-
-      if (!(await hasIndex('api_requests', 'idx_api_requests_status_created_at'))) {
-        await conn.query(`ALTER TABLE api_requests ADD INDEX idx_api_requests_status_created_at (status, created_at)`);
-      }
-
-      await conn.query(`
-        INSERT INTO api_request_payloads (request_id, request_body, response_body, created_at)
-        SELECT ar.id, ar.request_body, ar.response_body, ar.created_at
-        FROM api_requests ar
-        LEFT JOIN api_request_payloads ap ON ap.request_id = ar.id
-        WHERE ap.request_id IS NULL
-          AND (ar.request_body IS NOT NULL OR ar.response_body IS NOT NULL)
-      `);
-    }
-  },
-  {
-    version: 27,
-    name: 'add_tfft_ms_to_api_requests',
-    up: async (conn: Connection) => {
-      const [rows] = await conn.query(
-        `SELECT COUNT(*) AS cnt
-         FROM INFORMATION_SCHEMA.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE()
-           AND TABLE_NAME = 'api_requests'
-           AND COLUMN_NAME = 'tfft_ms'`
-      );
-      const exists = Number((rows as any[])[0]?.cnt || 0) > 0;
-      if (exists) return;
-
-      await conn.query(`ALTER TABLE api_requests ADD COLUMN tfft_ms INT DEFAULT NULL AFTER response_time`);
-    }
-  },
-  {
-    version: 28,
-    name: 'add_pii_protection_enabled_to_virtual_keys',
-    up: async (conn: Connection) => {
-      const hasColumn = async (col: string) => {
-        const [rows] = await conn.query(
-          `SELECT COUNT(*) AS cnt
-           FROM INFORMATION_SCHEMA.COLUMNS
-           WHERE TABLE_SCHEMA = DATABASE()
-             AND TABLE_NAME = 'virtual_keys'
-             AND COLUMN_NAME = ?`,
-          [col]
-        );
-        const result = rows as any[];
-        return Number(result?.[0]?.cnt || 0) > 0;
-      };
-
-      if (await hasColumn('pii_protection_enabled')) return;
-
-      try {
-        await conn.query(
-          `ALTER TABLE virtual_keys
-           ADD COLUMN pii_protection_enabled TINYINT DEFAULT 0
-           AFTER zero_temperature_replacement`
-        );
-        console.log('[迁移] 已添加 virtual_keys.pii_protection_enabled 字段');
-      } catch (e: any) {
-        if (e.code === 'ER_DUP_FIELDNAME') {
-          console.log('[迁移] virtual_keys 已存在 pii_protection_enabled 字段，跳过');
-          return;
-        }
-        throw e;
-      }
-    },
-    down: async (conn: Connection) => {
-      try {
-        await conn.query(`ALTER TABLE virtual_keys DROP COLUMN IF EXISTS pii_protection_enabled`);
-        console.log('[迁移] 已删除 virtual_keys.pii_protection_enabled 字段');
-      } catch (e: any) {
-        console.warn('[迁移] 删除 pii_protection_enabled 字段失败:', e.message);
-      }
-    }
-  },
-  {
-    version: 29,
-    name: 'add_tffb_ms_to_api_requests',
-    up: async (conn: Connection) => {
-      const [rows] = await conn.query(
-        `SELECT COUNT(*) AS cnt
-         FROM INFORMATION_SCHEMA.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE()
-           AND TABLE_NAME = 'api_requests'
-           AND COLUMN_NAME = 'tffb_ms'`
-      );
-      const exists = Number((rows as any[])[0]?.cnt || 0) > 0;
-      if (exists) return;
-
-      await conn.query(`ALTER TABLE api_requests ADD COLUMN tffb_ms INT DEFAULT NULL AFTER tfft_ms`);
-      console.log('[迁移] 已添加 api_requests.tffb_ms 字段');
-    },
-    down: async (conn: Connection) => {
-      try {
-        await conn.query(`ALTER TABLE api_requests DROP COLUMN IF EXISTS tffb_ms`);
-        console.log('[迁移] 已删除 api_requests.tffb_ms 字段');
-      } catch (e: any) {
-        console.warn('[迁移] 删除 tffb_ms 字段失败:', e.message);
-      }
-    }
-  },
-  {
-    version: 30,
-    name: 'repair_ttf_metrics_fields_on_api_requests',
-    up: async (conn: Connection) => {
-      const hasColumn = async (col: string) => {
-        const [rows] = await conn.query(
-          `SELECT COUNT(*) AS cnt
-           FROM INFORMATION_SCHEMA.COLUMNS
-           WHERE TABLE_SCHEMA = DATABASE()
-             AND TABLE_NAME = 'api_requests'
-             AND COLUMN_NAME = ?`,
-          [col]
-        );
-        const result = rows as any[];
-        return Number(result?.[0]?.cnt || 0) > 0;
-      };
-
-      if (!(await hasColumn('tfft_ms'))) {
-        await conn.query(`ALTER TABLE api_requests ADD COLUMN tfft_ms INT DEFAULT NULL AFTER response_time`);
-        console.log('[迁移] 已补齐 api_requests.tfft_ms 字段');
-      }
-
-      if (!(await hasColumn('tffb_ms'))) {
-        await conn.query(`ALTER TABLE api_requests ADD COLUMN tffb_ms INT DEFAULT NULL AFTER tfft_ms`);
-        console.log('[迁移] 已补齐 api_requests.tffb_ms 字段');
+        console.warn('[迁移] 删除 prompt_cache_hit_count 字段失败:', e.message);
       }
     }
   }

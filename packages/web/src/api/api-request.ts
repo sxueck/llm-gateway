@@ -52,7 +52,7 @@ export const apiRequestApi = {
     return request.get(`/admin/config/api-requests/${id}`);
   },
 
-  clean(daysToKeep: number = 30): Promise<{ success: boolean; deletedCount: number; message: string }> {
+  clean(daysToKeep: number = 7): Promise<{ success: boolean; deletedCount: number; summarizedCount?: number; deletedRequestCount?: number; message: string }> {
     return request.post('/admin/config/api-requests/clean', { daysToKeep });
   },
 };

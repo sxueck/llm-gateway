@@ -1,16 +1,24 @@
 import { getDatabase } from '../connection.js';
 import { ApiRequestBuffer } from '../types.js';
 import { addToBuffer, shouldFlush, flushApiRequestBuffer } from '../utils/buffer.js';
-import { generateTimeBuckets, initializeTimeBuckets } from '../utils/time-buckets.js';
+import { generateTimeBuckets, generateShanghaiDayBuckets, initializeTimeBuckets, getShanghaiDayStart } from '../utils/time-buckets.js';
 import { debugModeService } from '../../services/debug-mode.js';
+import { appConfig } from '../../config/index.js';
 
 function getDisableLoggingCondition(): string {
   return '(ar.virtual_key_id IS NULL OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)';
 }
 
+function getDisableLoggingConditionForSummary(tableAlias: string = 's'): string {
+  return `(${tableAlias}.virtual_key_id = '' OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)`;
+}
+
+function getDetailStartInclusive(): number {
+  return getShanghaiDayStart(-appConfig.apiRequestLogRetentionDays);
+}
+
 export const apiRequestRepository = {
   async create(request: ApiRequestBuffer): Promise<void> {
-    // When developer debug mode is active, skip persisting request logs to database.
     if (debugModeService.isActive()) {
       return;
     }
@@ -94,56 +102,117 @@ export const apiRequestRepository = {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
-      const loggingCondition = getDisableLoggingCondition();
-      const [rows] = await conn.query(
-        `SELECT
-          COUNT(*) as total_requests,
-          SUM(CASE WHEN ar.status = 'success' THEN 1 ELSE 0 END) as successful_requests,
-          SUM(CASE WHEN ar.status = 'error' THEN 1 ELSE 0 END) as failed_requests,
-          SUM(CASE WHEN ar.cache_hit = 0 THEN ar.total_tokens ELSE 0 END) as total_tokens,
-          SUM(CASE WHEN ar.cache_hit = 0 THEN ar.prompt_tokens ELSE 0 END) as prompt_tokens,
-          SUM(CASE WHEN ar.cache_hit = 0 THEN ar.completion_tokens ELSE 0 END) as completion_tokens,
-          SUM(ar.cached_tokens) as cached_tokens,
-          AVG(ar.response_time) as avg_response_time,
-          SUM(CASE WHEN ar.cache_hit = 1 THEN 1 ELSE 0 END) as cache_hits,
-          SUM(CASE WHEN ar.cached_tokens > 0 THEN 1 ELSE 0 END) as prompt_cache_hits,
-          0 as cache_saved_tokens
-        FROM api_requests ar
-        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-        WHERE ar.created_at >= ? AND ar.created_at <= ? AND ${loggingCondition}`,
-        [startTime, endTime]
-      );
+      const detailStart = getDetailStartInclusive();
+      const needsSummary = startTime < detailStart;
+      const needsDetail = endTime >= detailStart;
 
-      const result = rows as any[];
-      if (result.length === 0) {
-        return {
-          totalRequests: 0,
-          successfulRequests: 0,
-          failedRequests: 0,
-          totalTokens: 0,
-          promptTokens: 0,
-          completionTokens: 0,
-          cachedTokens: 0,
-          avgResponseTime: 0,
-          cacheHits: 0,
-          promptCacheHits: 0,
-          cacheSavedTokens: 0,
-        };
+      let totalRequests = 0;
+      let successfulRequests = 0;
+      let failedRequests = 0;
+      let totalTokens = 0;
+      let promptTokens = 0;
+      let completionTokens = 0;
+      let cachedTokens = 0;
+      let totalResponseTime = 0;
+      let responseTimeCount = 0;
+      let cacheHits = 0;
+      let promptCacheHits = 0;
+
+      if (needsSummary) {
+        const summaryLoggingCondition = getDisableLoggingConditionForSummary('s');
+        const lastSummaryDay = new Date(detailStart - 1);
+
+        const [summaryRows] = await conn.query(
+          `SELECT
+            SUM(s.request_count) as total_requests,
+            SUM(s.success_count) as successful_requests,
+            SUM(s.error_count) as failed_requests,
+            SUM(s.total_tokens) as total_tokens,
+            SUM(s.prompt_tokens) as prompt_tokens,
+            SUM(s.completion_tokens) as completion_tokens,
+            SUM(s.cached_tokens) as cached_tokens,
+            SUM(s.total_response_time) as total_response_time,
+            SUM(s.response_time_count) as response_time_count,
+            SUM(s.cache_hit_count) as cache_hits,
+            SUM(s.prompt_cache_hit_count) as prompt_cache_hits
+          FROM api_request_daily_summaries s
+          LEFT JOIN virtual_keys vk ON s.virtual_key_id = vk.id
+          WHERE s.summary_date >= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
+            AND s.summary_date <= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
+            AND ${summaryLoggingCondition}`,
+          [startTime, lastSummaryDay.getTime()]
+        );
+
+        const summary = (summaryRows as any[])[0];
+        if (summary) {
+          totalRequests += Number(summary.total_requests) || 0;
+          successfulRequests += Number(summary.successful_requests) || 0;
+          failedRequests += Number(summary.failed_requests) || 0;
+          totalTokens += Number(summary.total_tokens) || 0;
+          promptTokens += Number(summary.prompt_tokens) || 0;
+          completionTokens += Number(summary.completion_tokens) || 0;
+          cachedTokens += Number(summary.cached_tokens) || 0;
+          totalResponseTime += Number(summary.total_response_time) || 0;
+          responseTimeCount += Number(summary.response_time_count) || 0;
+          cacheHits += Number(summary.cache_hits) || 0;
+          promptCacheHits += Number(summary.prompt_cache_hits) || 0;
+        }
       }
 
-      const row = result[0];
+      // Query detail table for recent data
+      if (needsDetail) {
+        const detailStartTime = Math.max(startTime, detailStart);
+        const loggingCondition = getDisableLoggingCondition();
+
+        const [detailRows] = await conn.query(
+          `SELECT
+            COUNT(*) as total_requests,
+            SUM(CASE WHEN ar.status = 'success' THEN 1 ELSE 0 END) as successful_requests,
+            SUM(CASE WHEN ar.status = 'error' THEN 1 ELSE 0 END) as failed_requests,
+            SUM(CASE WHEN ar.cache_hit = 0 THEN ar.total_tokens ELSE 0 END) as total_tokens,
+            SUM(CASE WHEN ar.cache_hit = 0 THEN ar.prompt_tokens ELSE 0 END) as prompt_tokens,
+            SUM(CASE WHEN ar.cache_hit = 0 THEN ar.completion_tokens ELSE 0 END) as completion_tokens,
+            SUM(ar.cached_tokens) as cached_tokens,
+            SUM(ar.response_time) as total_response_time,
+            COUNT(CASE WHEN ar.response_time > 0 THEN 1 END) as response_time_count,
+            SUM(CASE WHEN ar.cache_hit = 1 THEN 1 ELSE 0 END) as cache_hits,
+            SUM(CASE WHEN ar.cached_tokens > 0 THEN 1 ELSE 0 END) as prompt_cache_hits
+          FROM api_requests ar
+          LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+          WHERE ar.created_at >= ? AND ar.created_at <= ? AND ${loggingCondition}`,
+          [detailStartTime, endTime]
+        );
+
+        const detail = (detailRows as any[])[0];
+        if (detail) {
+          totalRequests += Number(detail.total_requests) || 0;
+          successfulRequests += Number(detail.successful_requests) || 0;
+          failedRequests += Number(detail.failed_requests) || 0;
+          totalTokens += Number(detail.total_tokens) || 0;
+          promptTokens += Number(detail.prompt_tokens) || 0;
+          completionTokens += Number(detail.completion_tokens) || 0;
+          cachedTokens += Number(detail.cached_tokens) || 0;
+          totalResponseTime += Number(detail.total_response_time) || 0;
+          responseTimeCount += Number(detail.response_time_count) || 0;
+          cacheHits += Number(detail.cache_hits) || 0;
+          promptCacheHits += Number(detail.prompt_cache_hits) || 0;
+        }
+      }
+
+      const avgResponseTime = responseTimeCount > 0 ? totalResponseTime / responseTimeCount : 0;
+
       return {
-        totalRequests: row.total_requests || 0,
-        successfulRequests: row.successful_requests || 0,
-        failedRequests: row.failed_requests || 0,
-        totalTokens: row.total_tokens || 0,
-        promptTokens: row.prompt_tokens || 0,
-        completionTokens: row.completion_tokens || 0,
-        cachedTokens: row.cached_tokens || 0,
-        avgResponseTime: row.avg_response_time || 0,
-        cacheHits: row.cache_hits || 0,
-        promptCacheHits: row.prompt_cache_hits || 0,
-        cacheSavedTokens: row.cache_saved_tokens || 0,
+        totalRequests,
+        successfulRequests,
+        failedRequests,
+        totalTokens,
+        promptTokens,
+        completionTokens,
+        cachedTokens,
+        avgResponseTime,
+        cacheHits,
+        promptCacheHits,
+        cacheSavedTokens: 0,
       };
     } finally {
       conn.release();
@@ -176,68 +245,131 @@ export const apiRequestRepository = {
     const interval = options?.interval || 'hour';
 
     const intervalMs = interval === 'hour' ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+    const isDayInterval = interval === 'day';
 
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
-      const loggingCondition = getDisableLoggingCondition();
-      const [rows] = await conn.query(
-        `SELECT
-          FLOOR(ar.created_at / ?) * ? as time_bucket,
-          ar.virtual_key_id,
-          vk.name as virtual_key_name,
-          COUNT(*) as count,
-          SUM(CASE WHEN ar.status = 'success' THEN 1 ELSE 0 END) as success_count,
-          SUM(CASE WHEN ar.status = 'error' THEN 1 ELSE 0 END) as error_count,
-          SUM(ar.total_tokens) as total_tokens
-        FROM api_requests ar
-        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-        WHERE ar.created_at >= ? AND ar.created_at <= ? AND ${loggingCondition}
-        GROUP BY time_bucket, ar.virtual_key_id, vk.name
-        HAVING time_bucket IS NOT NULL
-        ORDER BY time_bucket ASC, ar.virtual_key_id ASC`,
-        [intervalMs, intervalMs, startTime, endTime]
-      );
-
-      const result = rows as any[];
-
-      if (!result || result.length === 0) {
-        return [];
-      }
+      const useMixedRead = isDayInterval;
+      const detailStart = useMixedRead ? getDetailStartInclusive() : startTime;
+      const needsSummary = useMixedRead && startTime < detailStart;
+      const needsDetail = !useMixedRead || endTime >= detailStart;
 
       const virtualKeyMap = new Map<string, { id: string; name: string }>();
       const dataByKey = new Map<string, Map<number, any>>();
+      const timePoints = isDayInterval
+        ? generateShanghaiDayBuckets(startTime, endTime)
+        : generateTimeBuckets(startTime, endTime, intervalMs);
 
-      const timePoints = generateTimeBuckets(startTime, endTime, intervalMs);
+      if (needsSummary) {
+        const lastSummaryDay = new Date(detailStart - 1);
+        const summaryEndTimestamp = lastSummaryDay.getTime();
+        const summaryLoggingCondition = getDisableLoggingConditionForSummary('s');
 
-      result.forEach(row => {
-        const keyId = row.virtual_key_id || 'unknown';
-        const keyName = row.virtual_key_name || '未知密钥';
+        const [summaryRows] = await conn.query(
+          `SELECT
+            UNIX_TIMESTAMP(s.summary_date - INTERVAL 8 HOUR) * 1000 as time_bucket,
+            s.virtual_key_id,
+            vk.name as virtual_key_name,
+            SUM(s.request_count) as count,
+            SUM(s.success_count) as success_count,
+            SUM(s.error_count) as error_count,
+            SUM(s.total_tokens) as total_tokens
+          FROM api_request_daily_summaries s
+          LEFT JOIN virtual_keys vk ON s.virtual_key_id = vk.id
+          WHERE s.summary_date >= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
+            AND s.summary_date <= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
+            AND ${summaryLoggingCondition}
+          GROUP BY s.summary_date, s.virtual_key_id`,
+          [startTime, summaryEndTimestamp]
+        );
 
-        if (!virtualKeyMap.has(keyId)) {
-          virtualKeyMap.set(keyId, { id: keyId, name: keyName });
-        }
+        (summaryRows as any[]).forEach(row => {
+          const keyId = row.virtual_key_id || 'unknown';
+          const keyName = row.virtual_key_name || '未知密钥';
 
-        if (!dataByKey.has(keyId)) {
-          dataByKey.set(keyId, initializeTimeBuckets(timePoints));
-        }
+          if (!virtualKeyMap.has(keyId)) {
+            virtualKeyMap.set(keyId, { id: keyId, name: keyName });
+          }
 
-        const bucket = Number(row.time_bucket);
-        if (!bucket || isNaN(bucket)) {
-          return;
-        }
+          if (!dataByKey.has(keyId)) {
+            dataByKey.set(keyId, initializeTimeBuckets(timePoints));
+          }
 
-        const keyBuckets = dataByKey.get(keyId)!;
-        if (keyBuckets.has(bucket)) {
-          keyBuckets.set(bucket, {
-            timestamp: bucket,
-            requestCount: Number(row.count) || 0,
-            successCount: Number(row.success_count) || 0,
-            errorCount: Number(row.error_count) || 0,
-            tokenCount: Number(row.total_tokens) || 0
-          });
-        }
-      });
+          const bucket = Number(row.time_bucket);
+          if (!bucket || isNaN(bucket)) return;
+
+          const keyBuckets = dataByKey.get(keyId)!;
+          if (keyBuckets.has(bucket)) {
+            const existing = keyBuckets.get(bucket);
+            keyBuckets.set(bucket, {
+              timestamp: bucket,
+              requestCount: existing.requestCount + (Number(row.count) || 0),
+              successCount: existing.successCount + (Number(row.success_count) || 0),
+              errorCount: existing.errorCount + (Number(row.error_count) || 0),
+              tokenCount: existing.tokenCount + (Number(row.total_tokens) || 0)
+            });
+          }
+        });
+      }
+
+      if (needsDetail) {
+        const detailStartTime = useMixedRead ? Math.max(startTime, detailStart) : startTime;
+        const loggingCondition = getDisableLoggingCondition();
+
+        const bucketExpression = isDayInterval
+          ? `FLOOR((ar.created_at + ${8 * 60 * 60 * 1000}) / ?) * ? - ${8 * 60 * 60 * 1000}`
+          : 'FLOOR(ar.created_at / ?) * ?';
+        const queryParams = isDayInterval
+          ? [intervalMs, intervalMs, detailStartTime, endTime]
+          : [intervalMs, intervalMs, detailStartTime, endTime];
+
+        const [detailRows] = await conn.query(
+          `SELECT
+            ${bucketExpression} as time_bucket,
+            ar.virtual_key_id,
+            vk.name as virtual_key_name,
+            COUNT(*) as count,
+            SUM(CASE WHEN ar.status = 'success' THEN 1 ELSE 0 END) as success_count,
+            SUM(CASE WHEN ar.status = 'error' THEN 1 ELSE 0 END) as error_count,
+            SUM(ar.total_tokens) as total_tokens
+          FROM api_requests ar
+          LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+          WHERE ar.created_at >= ? AND ar.created_at <= ? AND ${loggingCondition}
+          GROUP BY time_bucket, ar.virtual_key_id, vk.name
+          HAVING time_bucket IS NOT NULL
+          ORDER BY time_bucket ASC, ar.virtual_key_id ASC`,
+          queryParams
+        );
+
+        (detailRows as any[]).forEach(row => {
+          const keyId = row.virtual_key_id || 'unknown';
+          const keyName = row.virtual_key_name || '未知密钥';
+
+          if (!virtualKeyMap.has(keyId)) {
+            virtualKeyMap.set(keyId, { id: keyId, name: keyName });
+          }
+
+          if (!dataByKey.has(keyId)) {
+            dataByKey.set(keyId, initializeTimeBuckets(timePoints));
+          }
+
+          const bucket = Number(row.time_bucket);
+          if (!bucket || isNaN(bucket)) return;
+
+          const keyBuckets = dataByKey.get(keyId)!;
+          if (keyBuckets.has(bucket)) {
+            const existing = keyBuckets.get(bucket);
+            keyBuckets.set(bucket, {
+              timestamp: bucket,
+              requestCount: existing.requestCount + (Number(row.count) || 0),
+              successCount: existing.successCount + (Number(row.success_count) || 0),
+              errorCount: existing.errorCount + (Number(row.error_count) || 0),
+              tokenCount: existing.tokenCount + (Number(row.total_tokens) || 0)
+            });
+          }
+        });
+      }
 
       const trendByKey = Array.from(dataByKey.entries()).map(([keyId, buckets]) => ({
         virtualKeyId: keyId,
@@ -274,6 +406,7 @@ export const apiRequestRepository = {
         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
         WHERE ${loggingCondition}
       `;
+
       let dataQuery = `
         SELECT
           ar.id,
@@ -286,12 +419,11 @@ export const apiRequestRepository = {
           ar.cached_tokens,
           ar.status,
           ar.response_time,
+          ar.tfft_ms,
           ar.tffb_ms,
           ar.error_message,
           ar.request_params_json,
           ar.response_meta_json,
-          LEFT(COALESCE(ap.request_body, ar.request_body), 2000) AS request_body,
-          LEFT(COALESCE(ap.response_body, ar.response_body), 2000) AS response_body,
           ar.cache_hit,
           ar.request_type,
           ar.compression_original_tokens,
@@ -301,7 +433,6 @@ export const apiRequestRepository = {
           ar.created_at
         FROM api_requests ar
         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-        LEFT JOIN api_request_payloads ap ON ap.request_id = ar.id
         WHERE ${loggingCondition}
       `;
       const params: any[] = [];
@@ -387,57 +518,97 @@ export const apiRequestRepository = {
     }
   },
 
-  async cleanOldRecords(daysToKeep: number = 30): Promise<number> {
-    const cutoffTime = Date.now() - daysToKeep * 24 * 60 * 60 * 1000;
+  async cleanOldRecords(daysToKeep: number = 7): Promise<{ summarizedCount: number; deletedPayloadCount: number; deletedRequestCount: number; deletedCount: number }> {
+    const now = new Date();
+    const shanghaiOffset = 8 * 60 * 60 * 1000;
+    const shanghaiNow = new Date(now.getTime() + shanghaiOffset);
+
+    const retainedDate = new Date(shanghaiNow);
+    retainedDate.setUTCDate(retainedDate.getUTCDate() - daysToKeep);
+    retainedDate.setUTCHours(0, 0, 0, 0);
+
+    const cutoffTime = retainedDate.getTime() - shanghaiOffset;
+
     const pool = getDatabase();
     const conn = await pool.getConnection();
+
     try {
-      const [compactResult] = await conn.query(
-        `UPDATE api_requests ar
-         LEFT JOIN api_request_payloads ap ON ap.request_id = ar.id
-         SET ar.request_params_json = COALESCE(
-               ar.request_params_json,
-               CASE
-                 WHEN JSON_VALID(COALESCE(ap.request_body, ar.request_body)) THEN JSON_OBJECT(
-                   'temperature', JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.temperature'),
-                   'top_p', JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.top_p'),
-                   'max_tokens', COALESCE(JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.max_tokens'), JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.max_completion_tokens')),
-                   'stream', JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.stream'),
-                   'tool_choice', JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.tool_choice'),
-                   'tools_count', JSON_LENGTH(JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.tools')),
-                   'reasoning_effort', JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.reasoning.effort'),
-                   'user', JSON_EXTRACT(COALESCE(ap.request_body, ar.request_body), '$.user')
-                 )
-                 ELSE ar.request_params_json
-               END
-             ),
-             ar.response_meta_json = COALESCE(
-               ar.response_meta_json,
-               CASE
-                 WHEN JSON_VALID(COALESCE(ap.response_body, ar.response_body)) THEN JSON_OBJECT(
-                   'status', JSON_EXTRACT(COALESCE(ap.response_body, ar.response_body), '$.status'),
-                   'finish_reason', JSON_EXTRACT(COALESCE(ap.response_body, ar.response_body), '$.choices[0].finish_reason'),
-                   'input_tokens', COALESCE(JSON_EXTRACT(COALESCE(ap.response_body, ar.response_body), '$.usage.input_tokens'), JSON_EXTRACT(COALESCE(ap.response_body, ar.response_body), '$.usage.prompt_tokens')),
-                   'output_tokens', COALESCE(JSON_EXTRACT(COALESCE(ap.response_body, ar.response_body), '$.usage.output_tokens'), JSON_EXTRACT(COALESCE(ap.response_body, ar.response_body), '$.usage.completion_tokens')),
-                   'cached_tokens', COALESCE(JSON_EXTRACT(COALESCE(ap.response_body, ar.response_body), '$.usage.input_tokens_details.cached_tokens'), JSON_EXTRACT(COALESCE(ap.response_body, ar.response_body), '$.usage.prompt_tokens_details.cached_tokens'))
-                 )
-                 ELSE ar.response_meta_json
-               END
-             ),
-             ar.request_body = NULL,
-             ar.response_body = NULL
+      await conn.beginTransaction();
+
+      const [candidateCountResult] = await conn.query(
+        `SELECT COUNT(*) as candidate_count
+         FROM api_requests ar
+         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
          WHERE ar.created_at < ?
-           AND (
-             ar.request_body IS NOT NULL
-             OR ar.response_body IS NOT NULL
-             OR ap.request_id IS NOT NULL
-             OR ar.request_params_json IS NULL
-             OR ar.response_meta_json IS NULL
-           )`,
+           AND (ar.virtual_key_id IS NULL OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)`,
+        [cutoffTime]
+      );
+      const summarizedCount = Number((candidateCountResult as any[])[0]?.candidate_count) || 0;
+
+      await conn.query(
+        `INSERT INTO api_request_daily_summaries (
+          summary_date,
+          virtual_key_id,
+          provider_id,
+          model,
+          request_count,
+          success_count,
+          error_count,
+          total_tokens,
+          prompt_tokens,
+          completion_tokens,
+          cached_tokens,
+          cache_hit_count,
+          prompt_cache_hit_count,
+          total_response_time,
+          response_time_count,
+          created_at,
+          updated_at
+        )
+        SELECT
+          DATE(FROM_UNIXTIME(ar.created_at / 1000) + INTERVAL 8 HOUR) AS summary_date,
+          COALESCE(ar.virtual_key_id, '') AS virtual_key_id,
+          COALESCE(ar.provider_id, '') AS provider_id,
+          COALESCE(ar.model, '') AS model,
+          COUNT(*) AS request_count,
+          SUM(CASE WHEN ar.status = 'success' THEN 1 ELSE 0 END) AS success_count,
+          SUM(CASE WHEN ar.status != 'success' THEN 1 ELSE 0 END) AS error_count,
+          SUM(COALESCE(ar.total_tokens, 0)) AS total_tokens,
+          SUM(COALESCE(ar.prompt_tokens, 0)) AS prompt_tokens,
+          SUM(COALESCE(ar.completion_tokens, 0)) AS completion_tokens,
+          SUM(COALESCE(ar.cached_tokens, 0)) AS cached_tokens,
+          SUM(CASE WHEN ar.cache_hit = 1 THEN 1 ELSE 0 END) AS cache_hit_count,
+          SUM(CASE WHEN ar.cached_tokens > 0 THEN 1 ELSE 0 END) AS prompt_cache_hit_count,
+          SUM(COALESCE(ar.response_time, 0)) AS total_response_time,
+          COUNT(CASE WHEN ar.response_time > 0 THEN 1 END) AS response_time_count,
+          UNIX_TIMESTAMP() * 1000 AS created_at,
+          UNIX_TIMESTAMP() * 1000 AS updated_at
+        FROM api_requests ar
+        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        WHERE ar.created_at < ?
+          AND (ar.virtual_key_id IS NULL OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)
+        GROUP BY
+          DATE(FROM_UNIXTIME(ar.created_at / 1000) + INTERVAL 8 HOUR),
+          COALESCE(ar.virtual_key_id, ''),
+          COALESCE(ar.provider_id, ''),
+          COALESCE(ar.model, '')
+        ON DUPLICATE KEY UPDATE
+          request_count = request_count + VALUES(request_count),
+          success_count = success_count + VALUES(success_count),
+          error_count = error_count + VALUES(error_count),
+          total_tokens = total_tokens + VALUES(total_tokens),
+          prompt_tokens = prompt_tokens + VALUES(prompt_tokens),
+          completion_tokens = completion_tokens + VALUES(completion_tokens),
+          cached_tokens = cached_tokens + VALUES(cached_tokens),
+          cache_hit_count = cache_hit_count + VALUES(cache_hit_count),
+          prompt_cache_hit_count = prompt_cache_hit_count + VALUES(prompt_cache_hit_count),
+          total_response_time = total_response_time + VALUES(total_response_time),
+          response_time_count = response_time_count + VALUES(response_time_count),
+          updated_at = UNIX_TIMESTAMP() * 1000`,
         [cutoffTime]
       );
 
-      const [result] = await conn.query(
+      const [payloadDeleteResult] = await conn.query(
         `DELETE ap
          FROM api_request_payloads ap
          INNER JOIN api_requests ar ON ar.id = ap.request_id
@@ -445,9 +616,27 @@ export const apiRequestRepository = {
         [cutoffTime]
       );
 
-      const compactedRows = (compactResult as any).affectedRows || 0;
-      const deletedPayloadRows = (result as any).affectedRows || 0;
-      return Math.max(compactedRows, deletedPayloadRows);
+      const [requestDeleteResult] = await conn.query(
+        `DELETE ar
+         FROM api_requests ar
+         WHERE ar.created_at < ?`,
+        [cutoffTime]
+      );
+
+      await conn.commit();
+
+      const deletedPayloadCount = (payloadDeleteResult as any).affectedRows || 0;
+      const deletedRequestCount = (requestDeleteResult as any).affectedRows || 0;
+
+      return {
+        summarizedCount,
+        deletedPayloadCount,
+        deletedRequestCount,
+        deletedCount: deletedRequestCount
+      };
+    } catch (error) {
+      await conn.rollback();
+      throw error;
     } finally {
       conn.release();
     }
@@ -458,24 +647,115 @@ export const apiRequestRepository = {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
-      const loggingCondition = getDisableLoggingCondition();
-      const [rows] = await conn.query(
-        `SELECT
-          ar.model,
-          p.name as provider_name,
-          COUNT(*) as request_count,
-          SUM(ar.total_tokens) as total_tokens,
-          AVG(ar.response_time) as avg_response_time
-        FROM api_requests ar
-        LEFT JOIN providers p ON ar.provider_id = p.id
-        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-        WHERE ar.created_at >= ? AND ar.created_at <= ? AND ar.model IS NOT NULL AND ${loggingCondition}
-        GROUP BY ar.model, p.name
-        ORDER BY request_count DESC
-        LIMIT 5`,
-        [startTime, endTime]
-      );
-      return rows as any[];
+      const detailStart = getDetailStartInclusive();
+      const needsSummary = startTime < detailStart;
+      const needsDetail = endTime >= detailStart;
+
+      const modelStats = new Map<string, {
+        model: string;
+        providerName: string;
+        requestCount: number;
+        totalTokens: number;
+        totalResponseTime: number;
+        responseTimeCount: number;
+      }>();
+
+      if (needsSummary) {
+        const summaryLoggingCondition = getDisableLoggingConditionForSummary('s');
+        const lastSummaryDay = new Date(detailStart - 1);
+
+        const [summaryRows] = await conn.query(
+          `SELECT
+            COALESCE(s.model, '') as model,
+            COALESCE(p.name, '未知供应商') as provider_name,
+            COALESCE(s.provider_id, '') as provider_id,
+            SUM(s.request_count) as request_count,
+            SUM(s.total_tokens) as total_tokens,
+            SUM(s.total_response_time) as total_response_time,
+            SUM(s.response_time_count) as response_time_count
+          FROM api_request_daily_summaries s
+          LEFT JOIN providers p ON s.provider_id = p.id
+          LEFT JOIN virtual_keys vk ON s.virtual_key_id = vk.id
+          WHERE s.summary_date >= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
+            AND s.summary_date <= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
+            AND s.model != ''
+            AND ${summaryLoggingCondition}
+          GROUP BY s.model, p.name, s.provider_id`,
+          [startTime, lastSummaryDay.getTime()]
+        );
+
+        (summaryRows as any[]).forEach(row => {
+          const key = `${row.model}|${row.provider_name}`;
+          modelStats.set(key, {
+            model: row.model,
+            providerName: row.provider_name || '未知供应商',
+            requestCount: Number(row.request_count) || 0,
+            totalTokens: Number(row.total_tokens) || 0,
+            totalResponseTime: Number(row.total_response_time) || 0,
+            responseTimeCount: Number(row.response_time_count) || 0,
+          });
+        });
+      }
+
+      // Query detail table for recent data
+      if (needsDetail) {
+        const detailStartTime = Math.max(startTime, detailStart);
+        const loggingCondition = getDisableLoggingCondition();
+
+        const [detailRows] = await conn.query(
+          `SELECT
+            ar.model,
+            p.name as provider_name,
+            COUNT(*) as request_count,
+            SUM(ar.total_tokens) as total_tokens,
+            AVG(ar.response_time) as avg_response_time,
+            SUM(ar.response_time) as total_response_time,
+            COUNT(CASE WHEN ar.response_time > 0 THEN 1 END) as response_time_count
+          FROM api_requests ar
+          LEFT JOIN providers p ON ar.provider_id = p.id
+          LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+          WHERE ar.created_at >= ? AND ar.created_at <= ?
+            AND ar.model IS NOT NULL AND ${loggingCondition}
+          GROUP BY ar.model, p.name`,
+          [detailStartTime, endTime]
+        );
+
+        (detailRows as any[]).forEach(row => {
+          const key = `${row.model}|${row.provider_name || '未知供应商'}`;
+          const existing = modelStats.get(key);
+
+          if (existing) {
+            existing.requestCount += Number(row.request_count) || 0;
+            existing.totalTokens += Number(row.total_tokens) || 0;
+            existing.totalResponseTime += Number(row.total_response_time) || 0;
+            existing.responseTimeCount += Number(row.response_time_count) || 0;
+          } else {
+            modelStats.set(key, {
+              model: row.model,
+              providerName: row.provider_name || '未知供应商',
+              requestCount: Number(row.request_count) || 0,
+              totalTokens: Number(row.total_tokens) || 0,
+              totalResponseTime: Number(row.total_response_time) || 0,
+              responseTimeCount: Number(row.response_time_count) || 0,
+            });
+          }
+        });
+      }
+
+      const results = Array.from(modelStats.values())
+        .map(stat => ({
+          model: stat.model,
+          provider_name: stat.providerName,
+          request_count: stat.requestCount,
+          total_tokens: stat.totalTokens,
+          avg_response_time: stat.responseTimeCount > 0
+            ? stat.totalResponseTime / stat.responseTimeCount
+            : 0,
+        }))
+        .sort((a, b) => b.request_count - a.request_count)
+        .slice(0, 5);
+
+      return results;
     } finally {
       conn.release();
     }

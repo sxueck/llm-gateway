@@ -13,6 +13,7 @@ import { threatIpBlocker } from '../services/threat-ip-blocker.js';
 import { manualIpBlocklist } from '../services/manual-ip-blocklist.js';
 import { requestHeaderForwardingService } from '../services/request-header-forwarding.js';
 import { getGeoInfo, normalizeIp } from '../utils/ip.js';
+import { getShanghaiDayStart } from '../db/utils/time-buckets.js';
 
 export async function configRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
@@ -497,10 +498,12 @@ export async function configRoutes(fastify: FastifyInstance) {
 
     switch (period) {
       case '7d':
-        startTime = now - 7 * 24 * 60 * 60 * 1000;
+        // Align to Shanghai natural-day window: 7 complete days before today
+        startTime = getShanghaiDayStart(-7);
         break;
       case '30d':
-        startTime = now - 30 * 24 * 60 * 60 * 1000;
+        // Align to Shanghai natural-day window: 30 complete days before today
+        startTime = getShanghaiDayStart(-30);
         break;
       case 'all':
         startTime = 0;
@@ -685,16 +688,22 @@ export async function configRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/api-requests/clean', async (request) => {
-    const { daysToKeep = 30 } = request.body as { daysToKeep?: number };
+    const { daysToKeep = 7 } = request.body as { daysToKeep?: number };
 
     try {
-      const deletedCount = await apiRequestDb.cleanOldRecords(daysToKeep);
-      memoryLogger.info(`清理旧请求日志: 删除 ${deletedCount} 条记录 (保留 ${daysToKeep} 天)`, 'Config');
+      const result = await apiRequestDb.cleanOldRecords(daysToKeep);
+      memoryLogger.info(
+        `清理旧请求日志: 汇总 ${result.summarizedCount} 条，删除明细 ${result.deletedRequestCount} 条 (保留 ${daysToKeep} 天)`,
+        'Config'
+      );
 
       return {
         success: true,
-        deletedCount,
-        message: `已删除 ${deletedCount} 条超过 ${daysToKeep} 天的请求日志`,
+        summarizedCount: result.summarizedCount,
+        deletedPayloadCount: result.deletedPayloadCount,
+        deletedRequestCount: result.deletedRequestCount,
+        deletedCount: result.deletedCount, // For backward compatibility with frontend
+        message: `已汇总 ${result.summarizedCount} 条并删除 ${result.deletedRequestCount} 条超过 ${daysToKeep} 天的请求明细`,
       };
     } catch (error: any) {
       memoryLogger.error(`清理请求日志失败: ${error.message}`, 'Config');
