@@ -8,7 +8,7 @@ export interface ModelResolutionResult {
   providerId: string;
   circuitBreakerKey?: string;
   currentModel?: any;
-  excludeProviders?: Set<string>;
+  excludeTargetKeys?: Set<string>;
   canRetry?: boolean; // 是否支持重试（仅智能路由模式）
   modelId?: string; // 用于重试时重新解析
 }
@@ -165,14 +165,14 @@ export async function resolveModelAndProvider(
             currentModel = result.resolvedModel;
           }
 
-          const canRetry = !!(model.is_virtual && model.routing_config_id && result.excludeProviders);
+          const canRetry = !!(model.is_virtual && model.routing_config_id && result.canRetry);
 
           return {
             provider,
             providerId: providerId!,
             circuitBreakerKey: result.circuitBreakerKey || providerId!,
             currentModel,
-            excludeProviders: result.excludeProviders,
+            excludeTargetKeys: result.excludeTargetKeys,
             canRetry,
             modelId: selectedModelId
           };
@@ -225,14 +225,14 @@ export async function resolveModelAndProvider(
       }
 
       // 检查是否是智能路由（loadbalance/hash/affinity），如果是则支持重试
-      const canRetry = !!(model.is_virtual && model.routing_config_id && result.excludeProviders);
+      const canRetry = !!(model.is_virtual && model.routing_config_id && result.canRetry);
 
       return {
         provider,
         providerId: providerId!,
         circuitBreakerKey: result.circuitBreakerKey || providerId!,
         currentModel,
-        excludeProviders: result.excludeProviders,
+        excludeTargetKeys: result.excludeTargetKeys,
         canRetry,
         modelId: virtualKey.model_id
       };
@@ -424,14 +424,14 @@ export async function resolveModelAndProvider(
         }
 
         // 检查是否是智能路由（loadbalance/hash/affinity），如果是则支持重试
-        const canRetry = !!(model.is_virtual && model.routing_config_id && result.excludeProviders);
+        const canRetry = !!(model.is_virtual && model.routing_config_id && result.canRetry);
 
         return {
           provider,
           providerId: providerId!,
           circuitBreakerKey: result.circuitBreakerKey || providerId!,
           currentModel,
-          excludeProviders: result.excludeProviders,
+          excludeTargetKeys: result.excludeTargetKeys,
           canRetry,
           modelId: targetModelId
         };
@@ -520,13 +520,13 @@ export async function resolveModelAndProvider(
 }
 
 /**
- * 智能路由重试：使用 excludeProviders 重新解析 provider
+ * 智能路由重试：使用 excludeTargetKeys 重新解析目标
  */
 export async function retrySmartRouting(
   virtualKey: any,
   request: FastifyRequest,
   modelId: string,
-  excludeProviders: Set<string>
+  excludeTargetKeys: Set<string>
 ): Promise<ModelResolutionResult | ModelResolutionError> {
   const model = await modelDb.getById(modelId);
   if (!model) {
@@ -545,12 +545,12 @@ export async function retrySmartRouting(
   }
 
   try {
-    // 直接基于已排除 provider 重新选择，避免再次命中同一目标
+    // 直接基于已排除 target 重新选择，避免重复命中已失败的真实模型。
     const retryResult = await resolveSmartRoutingWithExclude(
       model,
       request as any,
       virtualKey.id,
-      excludeProviders
+      excludeTargetKeys
     );
 
     if (!retryResult) {
@@ -562,15 +562,14 @@ export async function retrySmartRouting(
       currentModel = retryResult.resolvedModel;
     }
 
-    // 检查是否还有更多可用目标（简单判断：已排除数量 < targets 数量）
-    const canRetry = !!retryResult.excludeProviders;
+    const canRetry = retryResult.canRetry === true;
 
     return {
       provider: retryResult.provider,
       providerId: retryResult.providerId!,
       circuitBreakerKey: retryResult.circuitBreakerKey || retryResult.providerId!,
       currentModel,
-      excludeProviders: retryResult.excludeProviders,
+      excludeTargetKeys: retryResult.excludeTargetKeys,
       canRetry,
       modelId
     };
@@ -594,8 +593,8 @@ async function resolveSmartRoutingWithExclude(
   model: any,
   request: any,
   virtualKeyId?: string,
-  excludeProviders?: Set<string>
+  excludeTargetKeys?: Set<string>
 ): Promise<any> {
   const { resolveSmartRouting } = await import('./routing.js');
-  return await resolveSmartRouting(model, request, virtualKeyId, excludeProviders);
+  return await resolveSmartRouting(model, request, virtualKeyId, excludeTargetKeys);
 }

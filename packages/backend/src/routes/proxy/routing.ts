@@ -30,7 +30,8 @@ export interface ResolveProviderResult {
   circuitBreakerKey?: string;
   modelOverride?: string;
   resolvedModel?: any;
-  excludeProviders?: Set<string>;
+  excludeTargetKeys?: Set<string>;
+  canRetry?: boolean;
 }
 
 export interface ProxyRequest {
@@ -45,14 +46,58 @@ interface AffinityState {
   timestamp: number;
 }
 const affinityStateMap = new Map<string, AffinityState>();
+const loadBalanceCursorMap = new Map<string, number>();
 
-function getTargetKey(target: RoutingTarget): string {
+export function getTargetKey(target: RoutingTarget): string {
   const overrideModel = target.override_params?.model?.trim();
   if (!overrideModel) {
     return target.provider;
   }
 
   return `${target.provider}::${overrideModel}`;
+}
+
+function buildLoadBalanceStateKey(config: RoutingConfig, configId?: string): string {
+  if (configId) {
+    return configId;
+  }
+
+  return config.targets.map(getTargetKey).join('|');
+}
+
+function selectRoundRobinTarget(
+  availableTargets: RoutingTarget[],
+  config: RoutingConfig,
+  configId?: string
+): RoutingTarget {
+  const stateKey = buildLoadBalanceStateKey(config, configId);
+  const cursor = loadBalanceCursorMap.get(stateKey) || 0;
+  const availableTargetSet = new Set(availableTargets);
+
+  for (let offset = 0; offset < config.targets.length; offset++) {
+    const targetIndex = (cursor + offset) % config.targets.length;
+    const candidateTarget = config.targets[targetIndex];
+
+    if (!candidateTarget || !availableTargetSet.has(candidateTarget)) {
+      continue;
+    }
+
+    loadBalanceCursorMap.set(stateKey, (targetIndex + 1) % config.targets.length);
+    return candidateTarget;
+  }
+
+  // selectRoutingTarget 已保证至少存在一个可用目标，这里仅作防御性兜底。
+  return availableTargets[0];
+}
+
+export function hasAvailableRoutingTargets(
+  config: RoutingConfig,
+  excludeTargetKeys?: Set<string>
+): boolean {
+  return config.targets.some(target =>
+    circuitBreaker.isAvailable(getTargetKey(target)) &&
+    (!excludeTargetKeys || !excludeTargetKeys.has(getTargetKey(target)))
+  );
 }
 
 function normalizeAffinityScopeKey(raw: unknown): string | undefined {
@@ -99,7 +144,7 @@ function extractAffinityScopeKey(request?: any, virtualKeyId?: string): string |
 const AFFINITY_CLEANUP_INTERVAL = 60 * 60 * 1000; // 1小时
 const MAX_AFFINITY_AGE = 24 * 60 * 60 * 1000; // 24小时
 
-setInterval(() => {
+const affinityCleanupTimer = setInterval(() => {
   const now = Date.now();
   const expiredKeys: string[] = [];
   
@@ -117,6 +162,8 @@ setInterval(() => {
     );
   }
 }, AFFINITY_CLEANUP_INTERVAL);
+
+affinityCleanupTimer.unref?.();
 
 // 简单的字符串哈希函数
 function simpleHash(str: string): number {
@@ -158,7 +205,7 @@ export function selectRoutingTarget(
   type: string,
   configId?: string,
   hashKey?: string,
-  excludeProviders?: Set<string>
+  excludeTargetKeys?: Set<string>
 ): RoutingTarget | null {
   if (!config.targets || config.targets.length === 0) {
     return null;
@@ -166,13 +213,13 @@ export function selectRoutingTarget(
 
   const availableTargets = config.targets.filter(t =>
     circuitBreaker.isAvailable(getTargetKey(t)) &&
-    (!excludeProviders || !excludeProviders.has(t.provider))
+    (!excludeTargetKeys || !excludeTargetKeys.has(getTargetKey(t)))
   );
 
   if (availableTargets.length === 0) {
     memoryLogger.warn(
       `所有路由目标均不可用 | total: ${config.targets.length}` +
-      (excludeProviders ? ` | 已排除: ${excludeProviders.size}` : ''),
+      (excludeTargetKeys ? ` | 已排除: ${excludeTargetKeys.size}` : ''),
       'Routing'
     );
     return null;
@@ -181,7 +228,7 @@ export function selectRoutingTarget(
   if (type === 'loadbalance' || config.strategy?.mode === 'loadbalance') {
     const weightedTargets = availableTargets.filter(t => t.weight && t.weight > 0);
     if (weightedTargets.length === 0) {
-      return availableTargets[0];
+      return selectRoundRobinTarget(availableTargets, config, configId);
     }
 
     const totalWeight = weightedTargets.reduce((sum, t) => sum + (t.weight || 0), 0);
@@ -305,7 +352,7 @@ export async function resolveSmartRouting(
   model: any,
   request?: ProxyRequest,
   virtualKeyId?: string,
-  excludeProviders?: Set<string>
+  excludeTargetKeys?: Set<string>
 ): Promise<ResolveProviderResult | null> {
   if (model.is_virtual !== 1 || !model.routing_config_id) {
     return null;
@@ -320,53 +367,53 @@ export async function resolveSmartRouting(
   try {
     const config = JSON.parse(routingConfig.config);
 
-     const mode: RoutingConfig['strategy']['mode'] = (config.strategy?.mode || routingConfig.type) as any;
+    const mode: RoutingConfig['strategy']['mode'] = (config.strategy?.mode || routingConfig.type) as any;
 
-     let routingKey: string | undefined;
-     if (mode === 'hash') {
-       const hashSource = config.strategy?.hashSource || 'virtualKey';
-       if (hashSource === 'virtualKey' && virtualKeyId) {
-         routingKey = virtualKeyId;
-       } else if (hashSource === 'request' && request?.body) {
-         // 使用请求体的哈希作为key
-         routingKey = JSON.stringify(request.body);
-       }
-     } else if (mode === 'affinity') {
-       routingKey = extractAffinityScopeKey(request as any, virtualKeyId);
-     }
- 
-     // 记录当前路由配置是否存在 targets，用于后续区分配置问题 vs. 熔断/负载问题
-     const hasTargets = Array.isArray(config.targets) && config.targets.length > 0;
- 
-      const selectedTarget = selectRoutingTarget(
-        config,
-        routingConfig.type,
-        model.routing_config_id,
-        routingKey,
-        excludeProviders
+    let routingKey: string | undefined;
+    if (mode === 'hash') {
+      const hashSource = config.strategy?.hashSource || 'virtualKey';
+      if (hashSource === 'virtualKey' && virtualKeyId) {
+        routingKey = virtualKeyId;
+      } else if (hashSource === 'request' && request?.body) {
+        // 使用请求体的哈希作为key
+        routingKey = JSON.stringify(request.body);
+      }
+    } else if (mode === 'affinity') {
+      routingKey = extractAffinityScopeKey(request as any, virtualKeyId);
+    }
+
+    // 记录当前路由配置是否存在 targets，用于后续区分配置问题 vs. 熔断/负载问题
+    const hasTargets = Array.isArray(config.targets) && config.targets.length > 0;
+
+    const selectedTarget = selectRoutingTarget(
+      config,
+      routingConfig.type,
+      model.routing_config_id,
+      routingKey,
+      excludeTargetKeys
+    );
+
+    if (!selectedTarget) {
+      if (!hasTargets) {
+        memoryLogger.error(
+          `Smart routing config has no targets: ${model.routing_config_id}`,
+          'Proxy'
+        );
+        throw new Error('Smart routing config has no targets');
+      }
+
+      // 存在 targets 但没有可用目标，说明可能全部被熔断或在本次请求中轮转耗尽
+      const error: any = new Error('当前上游负载忙，请稍后重试');
+      error.statusCode = 503;
+      error.code = 'upstream_overloaded';
+
+      memoryLogger.warn(
+        `Smart routing: all targets unavailable (possibly circuit breaker open) | config: ${model.routing_config_id}`,
+        'Proxy'
       );
- 
-     if (!selectedTarget) {
-       if (!hasTargets) {
-         memoryLogger.error(
-           `Smart routing config has no targets: ${model.routing_config_id}`,
-           'Proxy'
-         );
-         throw new Error('Smart routing config has no targets');
-       }
- 
-       // 存在 targets 但没有可用目标，说明可能全部被熔断或在本次请求中轮转耗尽
-       const error: any = new Error('当前上游负载忙，请稍后重试');
-       error.statusCode = 503;
-       error.code = 'upstream_overloaded';
- 
-       memoryLogger.warn(
-         `Smart routing: all targets unavailable (possibly circuit breaker open) | config: ${model.routing_config_id}`,
-         'Proxy'
-       );
- 
-       throw error;
-     }
+
+      throw error;
+    }
 
     const provider = await providerDb.getById(selectedTarget.provider);
     if (!provider) {
@@ -374,15 +421,16 @@ export async function resolveSmartRouting(
       throw new Error('Smart routing target provider not found');
     }
 
-    // 初始化或更新 excludeProviders
-    const updatedExcludeProviders = excludeProviders || new Set<string>();
-    updatedExcludeProviders.add(selectedTarget.provider);
+    // 智能路由重试需要按 target key 排除，避免同一 provider 下的其他真实模型被误伤。
+    const updatedExcludeTargetKeys = excludeTargetKeys || new Set<string>();
+    updatedExcludeTargetKeys.add(getTargetKey(selectedTarget));
 
     const result: ResolveProviderResult = {
       provider,
       providerId: selectedTarget.provider,
       circuitBreakerKey: getTargetKey(selectedTarget),
-      excludeProviders: updatedExcludeProviders
+      excludeTargetKeys: updatedExcludeTargetKeys,
+      canRetry: hasAvailableRoutingTargets(config, updatedExcludeTargetKeys)
     };
 
     // 查找真实模型配置（用于获取 protocol）
@@ -587,7 +635,7 @@ export async function resolveProviderFromModel(
       provider: smartRoutingResult.provider,
       providerId: smartRoutingResult.providerId,
       circuitBreakerKey: smartRoutingResult.circuitBreakerKey,
-      excludeProviders: smartRoutingResult.excludeProviders,
+      excludeTargetKeys: smartRoutingResult.excludeTargetKeys,
       resolvedModel: smartRoutingResult.resolvedModel
     };
   }

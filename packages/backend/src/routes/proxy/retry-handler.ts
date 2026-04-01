@@ -53,7 +53,7 @@ async function handleSmartRoutingRetry(
     return false;
   }
 
-  if (!context.modelResult.excludeProviders || !context.modelResult.modelId) {
+  if (!context.modelResult.excludeTargetKeys || !context.modelResult.modelId) {
     if (!isStream) {
       memoryLogger.warn('缺少重试所需信息', 'Proxy');
     }
@@ -62,7 +62,7 @@ async function handleSmartRoutingRetry(
 
   const logPrefix = isStream ? '智能路由重试(流式)' : '智能路由重试';
   memoryLogger.info(
-    `${logPrefix}: 检测到失败 (${statusCode})，尝试下一个目标 | 已尝试: ${context.modelResult.excludeProviders.size}`,
+    `${logPrefix}: 检测到失败 (${statusCode})，尝试下一个目标 | 已尝试: ${context.modelResult.excludeTargetKeys.size}`,
     'Proxy'
   );
 
@@ -70,14 +70,14 @@ async function handleSmartRoutingRetry(
     context.virtualKey,
     request,
     context.modelResult.modelId,
-    context.modelResult.excludeProviders
+    context.modelResult.excludeTargetKeys
   );
 
   if ('code' in retryResult) {
     memoryLogger.warn(
       isStream
         ? `${logPrefix}失败: 没有更多可用目标`
-        : `${logPrefix}失败: 没有更多可用目标 | 已尝试: ${context.modelResult.excludeProviders.size}`,
+        : `${logPrefix}失败: 没有更多可用目标 | 已尝试: ${context.modelResult.excludeTargetKeys.size}`,
       'Proxy'
     );
     return false;
