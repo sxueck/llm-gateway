@@ -50,7 +50,7 @@ export class CircuitBreaker {
     this.config = {
       failureThreshold: config?.failureThreshold || 2,
       successThreshold: config?.successThreshold || 2,
-      timeout: config?.timeout || 120000,
+      timeout: config?.timeout || 10000,
       halfOpenMaxAttempts: rawHalfOpenMaxAttempts
     };
   }

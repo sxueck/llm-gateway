@@ -90,6 +90,33 @@ function selectRoundRobinTarget(
   return availableTargets[0];
 }
 
+function sortTargetsByWeightDesc(targets: RoutingTarget[]): RoutingTarget[] {
+  return [...targets].sort((left, right) => (right.weight || 0) - (left.weight || 0));
+}
+
+function selectWeightedRandomTarget(weightedTargets: RoutingTarget[]): RoutingTarget {
+  const totalWeight = weightedTargets.reduce((sum, target) => sum + (target.weight || 0), 0);
+  let random = Math.random() * totalWeight;
+
+  for (const target of weightedTargets) {
+    random -= target.weight || 0;
+    if (random <= 0) {
+      return target;
+    }
+  }
+
+  return weightedTargets[0]!;
+}
+
+function selectFailoverTarget(availableTargets: RoutingTarget[]): RoutingTarget {
+  const weightedTargets = availableTargets.filter(target => (target.weight || 0) > 0);
+  if (weightedTargets.length > 0) {
+    return sortTargetsByWeightDesc(weightedTargets)[0]!;
+  }
+
+  return availableTargets[0]!;
+}
+
 export function hasAvailableRoutingTargets(
   config: RoutingConfig,
   excludeTargetKeys?: Set<string>
@@ -231,17 +258,11 @@ export function selectRoutingTarget(
       return selectRoundRobinTarget(availableTargets, config, configId);
     }
 
-    const totalWeight = weightedTargets.reduce((sum, t) => sum + (t.weight || 0), 0);
-    let random = Math.random() * totalWeight;
-
-    for (const target of weightedTargets) {
-      random -= target.weight || 0;
-      if (random <= 0) {
-        return target;
-      }
+    if (excludeTargetKeys && excludeTargetKeys.size > 0) {
+      return selectFailoverTarget(availableTargets);
     }
 
-    return weightedTargets[0];
+    return selectWeightedRandomTarget(weightedTargets);
   }
 
   if (type === 'fallback' || config.strategy?.mode === 'fallback') {
@@ -315,17 +336,10 @@ export function selectRoutingTarget(
     let selectedTarget: RoutingTarget;
 
     if (weightedTargets.length > 0) {
-      const totalWeight = weightedTargets.reduce((sum, t) => sum + (t.weight || 0), 0);
-      let random = Math.random() * totalWeight;
-
-      selectedTarget = weightedTargets[0];
-      for (const target of weightedTargets) {
-        random -= target.weight || 0;
-        if (random <= 0) {
-          selectedTarget = target;
-          break;
-        }
-      }
+      const shouldUseFailoverOrder = !!state || !!excludeTargetKeys?.size;
+      selectedTarget = shouldUseFailoverOrder
+        ? selectFailoverTarget(availableTargets)
+        : selectWeightedRandomTarget(weightedTargets);
     } else {
       selectedTarget = availableTargets[0];
     }

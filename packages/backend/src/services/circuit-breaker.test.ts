@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 
 import { CircuitBreaker, CircuitState } from './circuit-breaker.js';
 
+test('CircuitBreaker defaults cooldown timeout to 10 seconds', () => {
+  const breaker = new CircuitBreaker();
+
+  assert.equal((breaker as any).config.timeout, 10_000);
+});
+
 test('CircuitBreaker isolates different model scopes under same provider', () => {
   const breaker = new CircuitBreaker({
     failureThreshold: 1,
