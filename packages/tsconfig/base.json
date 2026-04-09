@@ -39,8 +39,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "noImplicitReturns": true,
-    "downlevelIteration": true
+    "noImplicitReturns": true
   },
   "exclude": [
     "node_modules",

@@ -187,3 +187,42 @@ test('loadbalance retry can probe a half-open target after all healthy targets a
     circuitBreaker.resetAll();
   }
 });
+
+test('hasAvailableRoutingTargets does not consume half-open attempts during passive checks', async () => {
+  circuitBreaker.resetAll();
+
+  const originalTimeout = (circuitBreaker as any).config.timeout;
+  const originalHalfOpenMaxAttempts = (circuitBreaker as any).config.halfOpenMaxAttempts;
+
+  (circuitBreaker as any).config.timeout = 1;
+  (circuitBreaker as any).config.halfOpenMaxAttempts = 1;
+
+  try {
+    const config: RoutingConfig = {
+      strategy: { mode: 'loadbalance' },
+      targets: [
+        { provider: 'provider-a' },
+        { provider: 'provider-b' },
+      ],
+    };
+
+    circuitBreaker.recordFailure(getTargetKey(config.targets[0]!), new Error('provider-a down'));
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    assert.equal(hasAvailableRoutingTargets(config, new Set([getTargetKey(config.targets[1]!)])), true);
+
+    const selectedTarget = selectRoutingTarget(
+      config,
+      'loadbalance',
+      'half-open-passive-check-test-1',
+      undefined,
+      new Set([getTargetKey(config.targets[1]!)])
+    );
+
+    assert.equal(selectedTarget?.provider, 'provider-a');
+  } finally {
+    (circuitBreaker as any).config.timeout = originalTimeout;
+    (circuitBreaker as any).config.halfOpenMaxAttempts = originalHalfOpenMaxAttempts;
+    circuitBreaker.resetAll();
+  }
+});

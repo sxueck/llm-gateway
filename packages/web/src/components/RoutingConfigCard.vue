@@ -121,7 +121,7 @@
         </div>
         <div class="strategy-meta" v-if="config.type === 'affinity'">
           <n-icon><TimeOutline /></n-icon>
-          <span>会话保持: {{ (config.config.strategy.affinityTTL || 0) / 1000 }}s</span>
+          <span>亲和保持: {{ (config.config.strategy.affinityTTL || 0) / 1000 }}s (需session标识)</span>
         </div>
         <div class="strategy-meta" v-if="config.type === 'hash'">
           <n-icon><KeyOutline /></n-icon>

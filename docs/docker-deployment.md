@@ -1,6 +1,6 @@
 # Docker 部署指南
 
-本文档介绍如何使用 Docker 和 Docker Compose 部署 LLM Gateway, 具体可以下载 Compose 目录以一键启动
+本文档介绍如何使用 Docker 和 Docker Compose 部署 LLM Gateway, 可以通过下载 Compose 目录以一键启动，目录内已经配置完成了 MySQL 的相关参数
 
 ## 前置要求
 
@@ -32,7 +32,7 @@ cp .env.example .env
 JWT_SECRET=your-strong-random-secret-key-at-least-32-characters # 注意修改这个值！！！
 ```
 
-**重要**: 生产环境必须修改 `JWT_SECRET` 为一个强随机字符串。
+**重要**: 生产环境必须修改 `JWT_SECRET` 为一个强随机字符串，该值也会用于加密数据，如果需要迁移环境请保持该值不变（例如备份等情况）
 
 ### 3. 启动服务
 
@@ -73,7 +73,6 @@ docker-compose logs -f
 | `JWT_SECRET` | JWT 密钥,生产环境必须修改 | 默认值(不安全) |
 | `NODE_ENV` | 运行环境 | production |
 | `PORT` | 服务端口 | 3000 |
-| `DB_PATH` | 数据库文件路径 | /app/data/gateway.db |
 | `LOG_LEVEL` | 日志级别 | info |
 | `API_REQUEST_LOG_RETENTION_DAYS` | API 请求日志保留天数 | 3 |
 
@@ -81,6 +80,8 @@ docker-compose logs -f
 ## 生产环境部署建议
 
 ### 使用反向代理
+
+关于反代配置的疑点，可以参考 [Issue #23](https://github.com/sxueck/llm-gateway/issues/23)
 
 建议使用 Nginx 作为反向代理,配置 HTTPS:
 

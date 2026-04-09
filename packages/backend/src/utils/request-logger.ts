@@ -1,6 +1,7 @@
 import { createInitialAggregate, processResponsesEvent } from './responses-parser.js';
 const MAX_BODY_LENGTH = 2000; // 最大字节长度限制
 const MAX_STRING_LENGTH = 500; // 单个字符串字段的最大字符长度（保守估计，确保总体不超过 2000 字节）
+const MIN_STRING_LENGTH = 64;
 
 export interface ReasoningExtraction {
   reasoningContent: string;
@@ -41,6 +42,55 @@ function truncateStringsRecursively(obj: any, maxLength: number = MAX_STRING_LEN
 
   // 其他类型（number, boolean 等）直接返回
   return obj;
+}
+
+function buildOversizedPayloadSummary(payload: any): Record<string, unknown> {
+  const summary: Record<string, unknown> = {
+    truncated: true,
+    top_level_keys: payload && typeof payload === 'object' ? Object.keys(payload).slice(0, 12) : []
+  };
+
+  if (payload && typeof payload === 'object') {
+    if (typeof payload.model === 'string') summary.model = payload.model;
+    if (Array.isArray(payload.messages)) summary.messages_count = payload.messages.length;
+    if (Array.isArray(payload.tools)) summary.tools_count = payload.tools.length;
+    if (Array.isArray(payload.choices)) summary.choices_count = payload.choices.length;
+    if (Array.isArray(payload.output)) summary.output_count = payload.output.length;
+    if (payload.usage && typeof payload.usage === 'object') summary.usage = payload.usage;
+  }
+
+  return summary;
+}
+
+function stringifyJsonWithinLimit(payload: any, maxLength: number = MAX_BODY_LENGTH): string {
+  let stringLimit = MAX_STRING_LENGTH;
+
+  while (stringLimit >= MIN_STRING_LENGTH) {
+    const candidate = JSON.stringify(truncateStringsRecursively(payload, stringLimit));
+    if (candidate.length <= maxLength) {
+      return candidate;
+    }
+
+    if (stringLimit === MIN_STRING_LENGTH) {
+      break;
+    }
+
+    stringLimit = Math.max(MIN_STRING_LENGTH, Math.floor(stringLimit / 2));
+  }
+
+  const summary = JSON.stringify(buildOversizedPayloadSummary(payload));
+  return summary.length <= maxLength ? summary : JSON.stringify({ truncated: true });
+}
+
+function stringifyRawValueWithinLimit(value: unknown, maxLength: number = MAX_BODY_LENGTH): string {
+  const bodyStr = typeof value === 'string' ? value : JSON.stringify(value);
+  const previewLimit = Math.max(0, maxLength - 80);
+  const wrapped = JSON.stringify({
+    truncated: bodyStr.length > previewLimit,
+    raw_preview: bodyStr.substring(0, previewLimit)
+  });
+
+  return wrapped.length <= maxLength ? wrapped : JSON.stringify({ truncated: true });
 }
 
 export function buildFullRequestBody(
@@ -178,15 +228,10 @@ export function truncateRequestBody(body: any): string {
       }
     }
 
-    const result = JSON.stringify(truncated);
-    // 如果最终结果还是太长，进行整体截断
-    return result.length <= MAX_BODY_LENGTH
-      ? result
-      : result.substring(0, MAX_BODY_LENGTH) + '...[truncated]';
+    return stringifyJsonWithinLimit(truncated);
   } catch {
-    // 如果解析失败，尝试作为字符串处理
-    const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
-    return bodyStr.substring(0, MAX_BODY_LENGTH) + '...[truncated]';
+    // 如果解析失败，仍返回合法 JSON，避免前端详情格式化失败
+    return stringifyRawValueWithinLimit(body);
   }
 }
 
@@ -231,15 +276,10 @@ export function truncateResponseBody(body: any): string {
       }
     }
 
-    const result = JSON.stringify(truncated);
-    // 如果最终结果还是太长，进行整体截断
-    return result.length <= MAX_BODY_LENGTH
-      ? result
-      : result.substring(0, MAX_BODY_LENGTH) + '...[truncated]';
+    return stringifyJsonWithinLimit(truncated);
   } catch {
-    // 如果解析失败，尝试作为字符串处理
-    const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
-    return bodyStr.substring(0, MAX_BODY_LENGTH) + '...[truncated]';
+    // 如果解析失败，仍返回合法 JSON，避免前端详情格式化失败
+    return stringifyRawValueWithinLimit(body);
   }
 }
 
@@ -320,7 +360,7 @@ export function accumulateStreamResponse(chunks: string[]): string {
 
     return truncateResponseBody(accumulated);
   } catch {
-    return chunks.join('').substring(0, MAX_BODY_LENGTH) + '...[truncated]';
+    return stringifyRawValueWithinLimit(chunks.join(''));
   }
 }
 
@@ -361,6 +401,6 @@ export function accumulateResponsesStream(chunks: string[]): string {
 
     return truncateResponseBody(accumulated);
   } catch {
-    return chunks.join('').substring(0, MAX_BODY_LENGTH) + '...[truncated]';
+    return stringifyRawValueWithinLimit(chunks.join(''));
   }
 }

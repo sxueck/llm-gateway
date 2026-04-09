@@ -36,18 +36,39 @@
         </n-empty>
       </div>
 
-      <n-grid v-else x-gap="16" y-gap="16" cols="1 640:2 960:3 1280:4" responsive="screen">
-        <n-grid-item v-for="config in configs" :key="config.id">
-          <RoutingConfigCard
-            :config="config"
-            :providers="providerStore.providers"
-            :models="modelStore.models"
-            @edit="handleEdit"
-            @preview="handlePreview"
-            @delete="handleDelete"
-          />
-        </n-grid-item>
-      </n-grid>
+      <template v-else>
+        <n-grid x-gap="16" y-gap="16" cols="1 640:2 960:3 1280:4" responsive="screen">
+          <n-grid-item v-for="config in paginatedConfigs" :key="config.id">
+            <RoutingConfigCard
+              :config="config"
+              :providers="providerStore.providers"
+              :models="modelStore.models"
+              @edit="handleEdit"
+              @preview="handlePreview"
+              @delete="handleDelete"
+            />
+          </n-grid-item>
+        </n-grid>
+
+        <div class="pagination-bar">
+          <span class="pagination-total">共 {{ configs.length }} 条</span>
+          <n-space align="center" :size="12" wrap>
+            <n-select
+              v-model:value="pageSize"
+              :options="pageSizeOptions"
+              size="small"
+              class="page-size-select"
+            />
+            <n-pagination
+              v-model:page="currentPage"
+              :page-size="pageSize"
+              :item-count="configs.length"
+              size="small"
+              :show-size-picker="false"
+            />
+          </n-space>
+        </div>
+      </template>
     </n-space>
 
     <n-modal
@@ -108,7 +129,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import {
   useMessage,
   NSpace,
@@ -120,6 +141,8 @@ import {
   NGridItem,
   NSpin,
   NEmpty,
+  NPagination,
+  NSelect,
 } from 'naive-ui';
 import {
   AddOutline,
@@ -146,8 +169,16 @@ const configType = ref<RoutingConfigType>('loadbalance');
 const configs = ref<any[]>([]);
 const previewConfig = ref('');
 const editingId = ref<string | null>(null);
+const currentPage = ref(1);
+const pageSize = ref(12);
 
 const formValue = ref<VirtualModelFormValue>(createDefaultVirtualModelForm());
+
+const pageSizeOptions = [
+  { label: '12 / 页', value: 12 },
+  { label: '24 / 页', value: 24 },
+  { label: '48 / 页', value: 48 },
+];
 
 const statusCodeOptions = [
   { label: '401 - 未授权', value: 401 },
@@ -166,6 +197,23 @@ const providerOptions = computed(() => {
       label: p.name,
       value: p.id,
     }));
+});
+
+const paginatedConfigs = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  const end = start + pageSize.value;
+  return configs.value.slice(start, end);
+});
+
+watch(pageSize, () => {
+  currentPage.value = 1;
+});
+
+watch(configs, newConfigs => {
+  const maxPage = Math.max(1, Math.ceil(newConfigs.length / pageSize.value));
+  if (currentPage.value > maxPage) {
+    currentPage.value = maxPage;
+  }
 });
 
 function getModelOptionsByProvider(providerId: string) {
@@ -387,6 +435,24 @@ onMounted(async () => {
   display: flex;
   justify-content: center;
   align-items: center;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-top: 8px;
+  flex-wrap: wrap;
+}
+
+.pagination-total {
+  font-size: 13px;
+  color: #8c8c8c;
+}
+
+.page-size-select {
+  width: 100px;
 }
 
 .code-preview {

@@ -103,6 +103,24 @@ export class CircuitBreaker {
     return true;
   }
 
+  peekAvailability(circuitKey: string): boolean {
+    const stats = this.getStats(circuitKey);
+
+    if (stats.state === CircuitState.CLOSED) {
+      return true;
+    }
+
+    if (stats.state === CircuitState.OPEN) {
+      return Date.now() - stats.lastFailureTime >= this.config.timeout;
+    }
+
+    if (stats.state === CircuitState.HALF_OPEN) {
+      return stats.halfOpenAttempts < this.config.halfOpenMaxAttempts;
+    }
+
+    return true;
+  }
+
   recordSuccess(circuitKey: string): void {
     const stats = this.getStats(circuitKey);
 

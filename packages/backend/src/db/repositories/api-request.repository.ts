@@ -430,9 +430,11 @@ export const apiRequestRepository = {
           ar.compression_saved_tokens,
           ar.ip,
           ar.user_agent,
-          ar.created_at
+          ar.created_at,
+          ap.request_body AS payload_request_body
         FROM api_requests ar
         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        LEFT JOIN api_request_payloads ap ON ap.request_id = ar.id
         WHERE ${loggingCondition}
       `;
       const params: any[] = [];
@@ -481,8 +483,14 @@ export const apiRequestRepository = {
 
       const [rows] = await conn.query(dataQuery, dataParams);
 
+      const normalizedRows = (rows as any[]).map(row => {
+        row.request_body = row.payload_request_body ?? null;
+        delete row.payload_request_body;
+        return row;
+      });
+
       return {
-        data: rows,
+        data: normalizedRows,
         total,
         page: Math.floor(offset / limit) + 1,
         pageSize: limit,

@@ -20,7 +20,6 @@ export class LLMJudge {
   ): Promise<RouteDecision> {
     const startTime = Date.now();
 
-    // 1. Prepare Prompt
     let userPrompt = signal.intentText;
     
     // Apply ignored tags filter
@@ -84,7 +83,6 @@ export class LLMJudge {
         // We ensure JSON keyword is in the prompt in buildSystemPrompt
     }
 
-     // 4. Call API
       try {
          const response = await upstreamFetch(endpoint, {
              method: 'POST',
@@ -147,7 +145,6 @@ export class LLMJudge {
 
     const sections: string[] = [];
 
-    // 1. Base Identity (if not already provided in base message)
     if (!baseSystemMessage) {
         sections.push("You are an intelligent router for an LLM gateway system. Your task is to analyze the user's request and route it to the most suitable expert model based on their specific capabilities and boundaries.");
     } else {

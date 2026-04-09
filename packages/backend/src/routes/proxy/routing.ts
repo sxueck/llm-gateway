@@ -2,6 +2,7 @@ import { providerDb, modelDb, routingConfigDb, expertRoutingConfigDb } from '../
 import { memoryLogger } from '../../services/logger.js';
 import { expertRouter } from '../../services/expert-router.js';
 import { circuitBreaker } from '../../services/circuit-breaker.js';
+import { parsePositiveInt } from '../../utils/parse-positive-int.js';
 
 export interface RoutingTarget {
   provider: string;
@@ -44,9 +45,61 @@ interface AffinityState {
   targetKey: string;
   providerId: string;
   timestamp: number;
+  kind: 'explicit' | 'anonymous';
+  expiresAt: number;
 }
+
+const DEFAULT_MAX_AFFINITY_STATE_ENTRIES = 20000;
+const DEFAULT_MAX_LOAD_BALANCE_CURSOR_ENTRIES = 10000;
+const DEFAULT_EXPLICIT_AFFINITY_IDLE_TTL_MS = 60 * 60 * 1000;
+
+const MAX_AFFINITY_STATE_ENTRIES = parsePositiveInt(
+  process.env.MAX_AFFINITY_STATE_ENTRIES,
+  DEFAULT_MAX_AFFINITY_STATE_ENTRIES
+);
+
+const MAX_LOAD_BALANCE_CURSOR_ENTRIES = parsePositiveInt(
+  process.env.MAX_LOAD_BALANCE_CURSOR_ENTRIES,
+  DEFAULT_MAX_LOAD_BALANCE_CURSOR_ENTRIES
+);
+
+const EXPLICIT_AFFINITY_IDLE_TTL_MS = parsePositiveInt(
+  process.env.EXPLICIT_AFFINITY_IDLE_TTL_MS,
+  DEFAULT_EXPLICIT_AFFINITY_IDLE_TTL_MS
+);
+
 const affinityStateMap = new Map<string, AffinityState>();
 const loadBalanceCursorMap = new Map<string, number>();
+
+function evictOldestEntries<T>(targetMap: Map<string, T>, maxEntries: number): number {
+  let removedCount = 0;
+
+  while (targetMap.size > maxEntries) {
+    const oldestEntryKey = targetMap.keys().next().value as string | undefined;
+    if (!oldestEntryKey) {
+      break;
+    }
+
+    targetMap.delete(oldestEntryKey);
+    removedCount++;
+  }
+
+  return removedCount;
+}
+
+function setMapValueWithCapacity<T>(
+  targetMap: Map<string, T>,
+  key: string,
+  value: T,
+  maxEntries: number
+): void {
+  if (targetMap.has(key)) {
+    targetMap.delete(key);
+  }
+
+  targetMap.set(key, value);
+  evictOldestEntries(targetMap, maxEntries);
+}
 
 export function getTargetKey(target: RoutingTarget): string {
   const overrideModel = target.override_params?.model?.trim();
@@ -82,7 +135,12 @@ function selectRoundRobinTarget(
       continue;
     }
 
-    loadBalanceCursorMap.set(stateKey, (targetIndex + 1) % config.targets.length);
+    setMapValueWithCapacity(
+      loadBalanceCursorMap,
+      stateKey,
+      (targetIndex + 1) % config.targets.length,
+      MAX_LOAD_BALANCE_CURSOR_ENTRIES
+    );
     return candidateTarget;
   }
 
@@ -122,8 +180,8 @@ export function hasAvailableRoutingTargets(
   excludeTargetKeys?: Set<string>
 ): boolean {
   return config.targets.some(target =>
-    circuitBreaker.isAvailable(getTargetKey(target)) &&
-    (!excludeTargetKeys || !excludeTargetKeys.has(getTargetKey(target)))
+    (!excludeTargetKeys || !excludeTargetKeys.has(getTargetKey(target))) &&
+    circuitBreaker.peekAvailability(getTargetKey(target))
   );
 }
 
@@ -134,11 +192,15 @@ function normalizeAffinityScopeKey(raw: unknown): string | undefined {
   return v.length > 256 ? v.slice(0, 256) : v;
 }
 
-function buildAffinityCacheKey(configId: string, affinityScopeKey?: string): string {
-  return affinityScopeKey ? `${configId}:${affinityScopeKey}` : configId;
+function buildAffinityCacheKey(configId: string, affinityScopeKey: string): string {
+  return `${configId}:${affinityScopeKey}`;
 }
 
-function extractAffinityScopeKey(request?: any, virtualKeyId?: string): string | undefined {
+function buildAnonymousAffinityCacheKey(configId: string): string {
+  return `${configId}:__anonymous__`;
+}
+
+function extractAffinityScopeKey(request?: any): string | undefined {
   const headers: Record<string, any> = (request?.headers as any) || {};
   const body: any = request?.body || {};
 
@@ -146,18 +208,11 @@ function extractAffinityScopeKey(request?: any, virtualKeyId?: string): string |
 
   const candidates: unknown[] = [
     header('x-session-id'),
-    header('x-conversation-id'),
+    header('x-session-affinity'),
     body?.session_id,
     body?.sessionId,
-    body?.conversation_id,
-    body?.conversationId,
     body?.metadata?.session_id,
     body?.metadata?.sessionId,
-    body?.metadata?.conversation_id,
-    body?.metadata?.conversationId,
-    body?.metadata?.user_id,
-    body?.user,
-    virtualKeyId,
   ];
 
   for (const c of candidates) {
@@ -167,16 +222,33 @@ function extractAffinityScopeKey(request?: any, virtualKeyId?: string): string |
   return undefined;
 }
 
-// 定期清理过期的affinity状态（每小时执行一次）
+function selectLoadBalanceTarget(
+  availableTargets: RoutingTarget[],
+  config: RoutingConfig,
+  configId?: string,
+  excludeTargetKeys?: Set<string>
+): RoutingTarget {
+  const weightedTargets = availableTargets.filter(t => t.weight && t.weight > 0);
+  if (weightedTargets.length === 0) {
+    return selectRoundRobinTarget(availableTargets, config, configId);
+  }
+
+  if (excludeTargetKeys && excludeTargetKeys.size > 0) {
+    return selectFailoverTarget(availableTargets);
+  }
+
+  return selectWeightedRandomTarget(weightedTargets);
+}
+
+// 定期清理已过期的 affinity 状态。
 const AFFINITY_CLEANUP_INTERVAL = 60 * 60 * 1000; // 1小时
-const MAX_AFFINITY_AGE = 24 * 60 * 60 * 1000; // 24小时
 
 const affinityCleanupTimer = setInterval(() => {
   const now = Date.now();
   const expiredKeys: string[] = [];
   
   for (const [key, state] of affinityStateMap.entries()) {
-    if (now - state.timestamp > MAX_AFFINITY_AGE) {
+    if (now >= state.expiresAt) {
       expiredKeys.push(key);
     }
   }
@@ -184,7 +256,26 @@ const affinityCleanupTimer = setInterval(() => {
   if (expiredKeys.length > 0) {
     expiredKeys.forEach(key => affinityStateMap.delete(key));
     memoryLogger.info(
-      `清理了 ${expiredKeys.length} 个过期的 affinity 状态`,
+      `清理了 ${expiredKeys.length} 个已过期的 affinity 状态`,
+      'Routing'
+    );
+  }
+
+  const removedOverflowCount = evictOldestEntries(affinityStateMap, MAX_AFFINITY_STATE_ENTRIES);
+  if (removedOverflowCount > 0) {
+    memoryLogger.warn(
+      `affinity 状态超过上限 ${MAX_AFFINITY_STATE_ENTRIES}，已额外清理 ${removedOverflowCount} 条`,
+      'Routing'
+    );
+  }
+
+  const removedCursorOverflowCount = evictOldestEntries(
+    loadBalanceCursorMap,
+    MAX_LOAD_BALANCE_CURSOR_ENTRIES
+  );
+  if (removedCursorOverflowCount > 0) {
+    memoryLogger.warn(
+      `loadbalance 游标状态超过上限 ${MAX_LOAD_BALANCE_CURSOR_ENTRIES}，已清理 ${removedCursorOverflowCount} 条`,
       'Routing'
     );
   }
@@ -239,9 +330,20 @@ export function selectRoutingTarget(
   }
 
   const availableTargets = config.targets.filter(t =>
-    circuitBreaker.isAvailable(getTargetKey(t)) &&
-    (!excludeTargetKeys || !excludeTargetKeys.has(getTargetKey(t)))
+    (!excludeTargetKeys || !excludeTargetKeys.has(getTargetKey(t))) &&
+    circuitBreaker.isAvailable(getTargetKey(t))
   );
+
+  // 记录经过熔断和排除过滤后的可用 targets
+  if (availableTargets.length > 0) {
+    const availableInfo = availableTargets.map((t, idx) =>
+      `[${idx}] provider=${t.provider}, model=${t.override_params?.model || 'default'}, weight=${t.weight || 0}, key=${getTargetKey(t)}`
+    ).join('; ');
+    memoryLogger.info(
+      `Smart routing available targets after filter | mode=${type} | count=${availableTargets.length} | targets=[${availableInfo}]`,
+      'Routing'
+    );
+  }
 
   if (availableTargets.length === 0) {
     memoryLogger.warn(
@@ -253,16 +355,7 @@ export function selectRoutingTarget(
   }
 
   if (type === 'loadbalance' || config.strategy?.mode === 'loadbalance') {
-    const weightedTargets = availableTargets.filter(t => t.weight && t.weight > 0);
-    if (weightedTargets.length === 0) {
-      return selectRoundRobinTarget(availableTargets, config, configId);
-    }
-
-    if (excludeTargetKeys && excludeTargetKeys.size > 0) {
-      return selectFailoverTarget(availableTargets);
-    }
-
-    return selectWeightedRandomTarget(weightedTargets);
+    return selectLoadBalanceTarget(availableTargets, config, configId, excludeTargetKeys);
   }
 
   if (type === 'fallback' || config.strategy?.mode === 'fallback') {
@@ -302,57 +395,64 @@ export function selectRoutingTarget(
     return targetsToUse[0];
   }
 
-  // Affinity模式：在短时间内优先使用同一个provider
+  // Affinity模式：显式 session 在活跃期间保持亲和；无显式 session 时按配置的 affinityTTL 做绝对粘性。
   if (type === 'affinity' || config.strategy?.mode === 'affinity') {
     if (!configId) {
-      return availableTargets[0];
+      return selectLoadBalanceTarget(availableTargets, config, configId, excludeTargetKeys);
     }
 
-    const ttl = config.strategy?.affinityTTL || 5 * 60 * 1000; // 默认5分钟
+    const ttl = config.strategy?.affinityTTL || 5 * 60 * 1000;
     const now = Date.now();
     const affinityScopeKey = normalizeAffinityScopeKey(hashKey);
-    const affinityCacheKey = buildAffinityCacheKey(String(configId), affinityScopeKey);
+    const hasExplicitSession = !!affinityScopeKey;
+    const affinityCacheKey = hasExplicitSession
+      ? buildAffinityCacheKey(String(configId), affinityScopeKey)
+      : buildAnonymousAffinityCacheKey(String(configId));
     const state = affinityStateMap.get(affinityCacheKey);
 
-    // 检查是否有有效的affinity状态
-    if (state && (now - state.timestamp) < ttl) {
+    if (state) {
       const currentTarget = availableTargets.find(t => getTargetKey(t) === state.targetKey);
       if (currentTarget) {
-        memoryLogger.debug(
-          `Affinity路由: 使用缓存的 target=${state.targetKey} (剩余${Math.floor((ttl - (now - state.timestamp)) / 1000)}秒)`,
-          'Routing'
-        );
-        return currentTarget;
+        if (state.kind === 'explicit') {
+          if (now >= state.expiresAt) {
+            affinityStateMap.delete(affinityCacheKey);
+          } else {
+            setMapValueWithCapacity(
+              affinityStateMap,
+              affinityCacheKey,
+              { ...state, timestamp: now, expiresAt: now + EXPLICIT_AFFINITY_IDLE_TTL_MS },
+              MAX_AFFINITY_STATE_ENTRIES
+            );
+            return currentTarget;
+          }
+        }
+
+        if (now < state.expiresAt) {
+          return currentTarget;
+        }
       }
 
-      memoryLogger.info(
-        `Affinity路由: 缓存的 target=${state.targetKey}不可用，重新选择`,
+      affinityStateMap.delete(affinityCacheKey);
+      memoryLogger.debug(
+        `Affinity路由: ${state.kind === 'explicit' ? '显式 session' : '匿名粘性'} 绑定的 target=${state.targetKey} ${currentTarget ? '已过期' : '不可用'}，重新选择`,
         'Routing'
       );
     }
 
-    // 需要选择新的provider（基于权重）
-    const weightedTargets = availableTargets.filter(t => t.weight && t.weight > 0);
-    let selectedTarget: RoutingTarget;
+    const selectedTarget = selectLoadBalanceTarget(availableTargets, config, configId, excludeTargetKeys);
 
-    if (weightedTargets.length > 0) {
-      const shouldUseFailoverOrder = !!state || !!excludeTargetKeys?.size;
-      selectedTarget = shouldUseFailoverOrder
-        ? selectFailoverTarget(availableTargets)
-        : selectWeightedRandomTarget(weightedTargets);
-    } else {
-      selectedTarget = availableTargets[0];
-    }
-
-    // 更新affinity状态
-    affinityStateMap.set(affinityCacheKey, {
+    const nextState: AffinityState = {
       targetKey: getTargetKey(selectedTarget),
       providerId: selectedTarget.provider,
-      timestamp: now
-    });
+      timestamp: now,
+      kind: hasExplicitSession ? 'explicit' : 'anonymous',
+      expiresAt: now + (hasExplicitSession ? EXPLICIT_AFFINITY_IDLE_TTL_MS : ttl)
+    };
+
+    setMapValueWithCapacity(affinityStateMap, affinityCacheKey, nextState, MAX_AFFINITY_STATE_ENTRIES);
 
     memoryLogger.info(
-      `Affinity路由: 选择新 target=${getTargetKey(selectedTarget)} (TTL=${ttl / 1000}秒)`,
+      `Affinity路由: ${hasExplicitSession ? `显式 session 绑定` : `匿名粘性选择`} target=${getTargetKey(selectedTarget)}，TTL=${Math.floor((hasExplicitSession ? EXPLICIT_AFFINITY_IDLE_TTL_MS : ttl) / 1000)}秒`,
       'Routing'
     );
 
@@ -378,118 +478,133 @@ export async function resolveSmartRouting(
     throw new Error('Smart routing config not found');
   }
 
+  let config: RoutingConfig;
   try {
-    const config = JSON.parse(routingConfig.config);
-
-    const mode: RoutingConfig['strategy']['mode'] = (config.strategy?.mode || routingConfig.type) as any;
-
-    let routingKey: string | undefined;
-    if (mode === 'hash') {
-      const hashSource = config.strategy?.hashSource || 'virtualKey';
-      if (hashSource === 'virtualKey' && virtualKeyId) {
-        routingKey = virtualKeyId;
-      } else if (hashSource === 'request' && request?.body) {
-        // 使用请求体的哈希作为key
-        routingKey = JSON.stringify(request.body);
-      }
-    } else if (mode === 'affinity') {
-      routingKey = extractAffinityScopeKey(request as any, virtualKeyId);
-    }
-
-    // 记录当前路由配置是否存在 targets，用于后续区分配置问题 vs. 熔断/负载问题
-    const hasTargets = Array.isArray(config.targets) && config.targets.length > 0;
-
-    const selectedTarget = selectRoutingTarget(
-      config,
-      routingConfig.type,
-      model.routing_config_id,
-      routingKey,
-      excludeTargetKeys
-    );
-
-    if (!selectedTarget) {
-      if (!hasTargets) {
-        memoryLogger.error(
-          `Smart routing config has no targets: ${model.routing_config_id}`,
-          'Proxy'
-        );
-        throw new Error('Smart routing config has no targets');
-      }
-
-      // 存在 targets 但没有可用目标，说明可能全部被熔断或在本次请求中轮转耗尽
-      const error: any = new Error('当前上游负载忙，请稍后重试');
-      error.statusCode = 503;
-      error.code = 'upstream_overloaded';
-
-      memoryLogger.warn(
-        `Smart routing: all targets unavailable (possibly circuit breaker open) | config: ${model.routing_config_id}`,
-        'Proxy'
-      );
-
-      throw error;
-    }
-
-    const provider = await providerDb.getById(selectedTarget.provider);
-    if (!provider) {
-      memoryLogger.error(`Smart routing target provider not found: ${selectedTarget.provider}`, 'Proxy');
-      throw new Error('Smart routing target provider not found');
-    }
-
-    // 智能路由重试需要按 target key 排除，避免同一 provider 下的其他真实模型被误伤。
-    const updatedExcludeTargetKeys = excludeTargetKeys || new Set<string>();
-    updatedExcludeTargetKeys.add(getTargetKey(selectedTarget));
-
-    const result: ResolveProviderResult = {
-      provider,
-      providerId: selectedTarget.provider,
-      circuitBreakerKey: getTargetKey(selectedTarget),
-      excludeTargetKeys: updatedExcludeTargetKeys,
-      canRetry: hasAvailableRoutingTargets(config, updatedExcludeTargetKeys)
-    };
-
-    // 查找真实模型配置（用于获取 protocol）
-    let resolvedModel: any = null;
-    if (selectedTarget.override_params?.model) {
-      result.modelOverride = selectedTarget.override_params.model;
-
-      // 从 provider 下查找匹配的真实模型
-      const providerModels = await modelDb.getByProviderId(selectedTarget.provider);
-      resolvedModel = providerModels.find(m =>
-        m.is_virtual !== 1 && (
-          m.model_identifier === selectedTarget.override_params!.model ||
-          m.name === selectedTarget.override_params!.model
-        )
-      );
-
-      if (resolvedModel) {
-        result.resolvedModel = resolvedModel;
-        memoryLogger.debug(
-          `Smart routing resolved real model: ${resolvedModel.name} | protocol: ${resolvedModel.protocol || 'auto'}`,
-          'Routing'
-        );
-      } else {
-        memoryLogger.warn(
-          `Smart routing could not find real model for: ${selectedTarget.override_params.model} in provider: ${provider.name}`,
-          'Routing'
-        );
-      }
-
-      memoryLogger.debug(
-        `Smart routing model override: ${selectedTarget.override_params.model}`,
-        'Proxy'
-      );
-    }
-
-    memoryLogger.info(
-      `Smart routing target selected: provider=${provider.name} | model=${selectedTarget.override_params?.model || 'default'} | protocol=${resolvedModel?.protocol || 'auto'}`,
-      'Proxy'
-    );
-
-    return result;
+    config = JSON.parse(routingConfig.config);
   } catch (e: any) {
     memoryLogger.error(`Failed to parse smart routing config: ${e.message}`, 'Proxy');
     throw new Error(`Smart routing config parse error: ${e.message}`);
   }
+
+  const mode: RoutingConfig['strategy']['mode'] = (config.strategy?.mode || routingConfig.type) as any;
+
+  // 记录所有配置的 targets（原始列表）
+  if (config.targets && config.targets.length > 0) {
+    const targetsInfo = config.targets.map((t, idx) => {
+      const targetKey = getTargetKey(t);
+      const isAvailable = circuitBreaker.peekAvailability(targetKey);
+      const isExcluded = excludeTargetKeys?.has(targetKey);
+      return `[${idx}] provider=${t.provider}, model=${t.override_params?.model || 'default'}, weight=${t.weight || 0}, key=${targetKey}, available=${isAvailable}${isExcluded ? ', excluded' : ''}`;
+    }).join('; ');
+    memoryLogger.info(
+      `Smart routing targets config | mode=${mode} | total=${config.targets.length} | targets=[${targetsInfo}]`,
+      'Routing'
+    );
+  }
+
+  let routingKey: string | undefined;
+  if (mode === 'hash') {
+    const hashSource = config.strategy?.hashSource || 'virtualKey';
+    if (hashSource === 'virtualKey' && virtualKeyId) {
+      routingKey = virtualKeyId;
+    } else if (hashSource === 'request' && request?.body) {
+      // 使用请求体的哈希作为key
+      routingKey = JSON.stringify(request.body);
+    }
+  } else if (mode === 'affinity') {
+    routingKey = extractAffinityScopeKey(request as any);
+  }
+
+  // 记录当前路由配置是否存在 targets，用于后续区分配置问题 vs. 熔断/负载问题
+  const hasTargets = Array.isArray(config.targets) && config.targets.length > 0;
+
+  const selectedTarget = selectRoutingTarget(
+    config,
+    routingConfig.type,
+    model.routing_config_id,
+    routingKey,
+    excludeTargetKeys
+  );
+
+  if (!selectedTarget) {
+    if (!hasTargets) {
+      memoryLogger.error(
+        `Smart routing config has no targets: ${model.routing_config_id}`,
+        'Proxy'
+      );
+      throw new Error('Smart routing config has no targets');
+    }
+
+    // 存在 targets 但没有可用目标，说明可能全部被熔断或在本次请求中轮转耗尽
+    const error: any = new Error('当前上游负载忙，请稍后重试');
+    error.statusCode = 503;
+    error.code = 'upstream_overloaded';
+
+    memoryLogger.warn(
+      `Smart routing: all targets unavailable (possibly circuit breaker open) | config: ${model.routing_config_id}`,
+      'Proxy'
+    );
+
+    throw error;
+  }
+
+  const provider = await providerDb.getById(selectedTarget.provider);
+  if (!provider) {
+    memoryLogger.error(`Smart routing target provider not found: ${selectedTarget.provider}`, 'Proxy');
+    throw new Error('Smart routing target provider not found');
+  }
+
+  // 智能路由重试需要按 target key 排除，避免同一 provider 下的其他真实模型被误伤。
+  const updatedExcludeTargetKeys = excludeTargetKeys || new Set<string>();
+  updatedExcludeTargetKeys.add(getTargetKey(selectedTarget));
+
+  const result: ResolveProviderResult = {
+    provider,
+    providerId: selectedTarget.provider,
+    circuitBreakerKey: getTargetKey(selectedTarget),
+    excludeTargetKeys: updatedExcludeTargetKeys,
+    canRetry: hasAvailableRoutingTargets(config, updatedExcludeTargetKeys)
+  };
+
+  // 查找真实模型配置（用于获取 protocol）
+  let resolvedModel: any = null;
+  if (selectedTarget.override_params?.model) {
+    result.modelOverride = selectedTarget.override_params.model;
+
+    // 从 provider 下查找匹配的真实模型
+    const providerModels = await modelDb.getByProviderId(selectedTarget.provider);
+    resolvedModel = providerModels.find(m =>
+      m.is_virtual !== 1 && (
+        m.model_identifier === selectedTarget.override_params!.model ||
+        m.name === selectedTarget.override_params!.model
+      )
+    );
+
+    if (resolvedModel) {
+      result.resolvedModel = resolvedModel;
+      memoryLogger.debug(
+        `Smart routing resolved real model: ${resolvedModel.name} | protocol: ${resolvedModel.protocol || 'auto'}`,
+        'Routing'
+      );
+    } else {
+      memoryLogger.warn(
+        `Smart routing could not find real model for: ${selectedTarget.override_params.model} in provider: ${provider.name}`,
+        'Routing'
+      );
+    }
+
+    memoryLogger.debug(
+      `Smart routing model override: ${selectedTarget.override_params.model}`,
+      'Proxy'
+    );
+  }
+
+  memoryLogger.info(
+    `Smart routing target selected: provider=${provider.name} | providerId=${selectedTarget.provider} | model=${selectedTarget.override_params?.model || 'default'} | weight=${selectedTarget.weight || 0} | protocol=${resolvedModel?.protocol || 'auto'}${resolvedModel ? ` | resolvedModelId=${resolvedModel.id}` : ''}`,
+    'Routing'
+  );
+
+  return result;
 }
 
 export async function resolveExpertRouting(

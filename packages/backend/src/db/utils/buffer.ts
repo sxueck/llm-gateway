@@ -1,11 +1,61 @@
 import { getDatabase } from '../connection.js';
 import { ApiRequestBuffer } from '../types.js';
 import { getByteLength, truncateToByteLength } from './string-utils.js';
+import { parsePositiveInt } from '../../utils/parse-positive-int.js';
 
 let apiRequestBuffer: ApiRequestBuffer[] = [];
 let bufferFlushTimer: NodeJS.Timeout | null = null;
 const BUFFER_FLUSH_INTERVAL = 10000;
 const BUFFER_MAX_SIZE = 200;
+const DEFAULT_MAX_FLUSH_RETRY_ATTEMPTS = 5;
+
+const BUFFER_MAX_FLUSH_RETRY_ATTEMPTS = parsePositiveInt(
+  process.env.API_REQUEST_BUFFER_MAX_RETRY_ATTEMPTS,
+  DEFAULT_MAX_FLUSH_RETRY_ATTEMPTS
+);
+
+const flushRetryAttempts = new Map<string, number>();
+
+function clearRetryAttempts(requests: ApiRequestBuffer[]): void {
+  for (const request of requests) {
+    flushRetryAttempts.delete(request.id);
+  }
+}
+
+function requeueRequestsAfterFailure(requests: ApiRequestBuffer[], error: unknown): void {
+  const requeueRequests: ApiRequestBuffer[] = [];
+  let droppedCount = 0;
+
+  for (const request of requests) {
+    const currentAttempts = flushRetryAttempts.get(request.id) || 0;
+    const nextAttempts = currentAttempts + 1;
+
+    if (nextAttempts >= BUFFER_MAX_FLUSH_RETRY_ATTEMPTS) {
+      flushRetryAttempts.delete(request.id);
+      droppedCount++;
+      continue;
+    }
+
+    flushRetryAttempts.set(request.id, nextAttempts);
+    requeueRequests.push(request);
+  }
+
+  if (requeueRequests.length > 0) {
+    apiRequestBuffer.unshift(...requeueRequests);
+  }
+
+  const errorMessage = error instanceof Error ? error.message : String(error);
+
+  if (requeueRequests.length > 0) {
+    console.error(
+      `[数据库] API 请求日志写入失败，已回灌 ${requeueRequests.length} 条，丢弃 ${droppedCount} 条，错误: ${errorMessage}`
+    );
+  } else {
+    console.error(
+      `[数据库] API 请求日志写入失败，已达到最大重试次数并丢弃 ${droppedCount} 条，错误: ${errorMessage}`
+    );
+  }
+}
 
 export function startBufferFlush() {
   if (bufferFlushTimer) {
@@ -34,9 +84,10 @@ export async function flushApiRequestBuffer() {
   apiRequestBuffer = [];
 
   const pool = getDatabase();
-  const conn = await pool.getConnection();
+  let conn: Awaited<ReturnType<typeof pool.getConnection>> | null = null;
 
   try {
+    conn = await pool.getConnection();
     await conn.beginTransaction();
 
     const values: any[] = [];
@@ -129,13 +180,18 @@ export async function flushApiRequestBuffer() {
     }
 
     await conn.commit();
+    clearRetryAttempts(requests);
   } catch (error: any) {
-    await conn.rollback();
-    console.error('[数据库] 批量写入 API 请求日志失败:', error.message);
-    // 失败时放回缓冲区
-    apiRequestBuffer.unshift(...requests);
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_rollbackError) {
+      }
+    }
+
+    requeueRequestsAfterFailure(requests, error);
   } finally {
-    conn.release();
+    conn?.release();
   }
 }
 

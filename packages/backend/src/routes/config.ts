@@ -415,64 +415,114 @@ export async function configRoutes(fastify: FastifyInstance) {
 
   // 计算成本的辅助函数
   async function calculateCostStats(startTime: number, endTime: number) {
-    const pool = await import('../db/connection.js').then(m => m.getDatabase());
+      const pool = await import('../db/connection.js').then(m => m.getDatabase());
     const conn = await pool.getConnection();
     try {
-      // 获取所有请求的模型和 token 使用情况
-      const [rows] = await conn.query(
-        `SELECT
-          ar.model,
-          SUM(ar.prompt_tokens) as total_prompt_tokens,
-          SUM(ar.completion_tokens) as total_completion_tokens,
-          SUM(ar.cached_tokens) as total_cached_tokens
-        FROM api_requests ar
-        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-        WHERE ar.created_at >= ? AND ar.created_at <= ?
-          AND ar.status = 'success'
-          AND (ar.virtual_key_id IS NULL OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)
-        GROUP BY ar.model`,
-        [startTime, endTime]
-      );
+      const detailStart = getShanghaiDayStart(-appConfig.apiRequestLogRetentionDays);
+      const needsSummary = startTime < detailStart;
+      const needsDetail = endTime >= detailStart;
 
-      const modelUsage = rows as any[];
+      // 使用 Map 聚合各模型的 token 使用情况
+      const modelUsageMap = new Map<string, {
+        promptTokens: number;
+        completionTokens: number;
+        cachedTokens: number;
+      }>();
+
+      // 从历史汇总表查询历史数据
+      if (needsSummary) {
+        const lastSummaryDay = new Date(detailStart - 1);
+        const [summaryRows] = await conn.query(
+          `SELECT
+            s.model,
+            SUM(s.prompt_tokens) as total_prompt_tokens,
+            SUM(s.completion_tokens) as total_completion_tokens,
+            SUM(s.cached_tokens) as total_cached_tokens
+          FROM api_request_daily_summaries s
+          LEFT JOIN virtual_keys vk ON s.virtual_key_id = vk.id
+          WHERE s.summary_date >= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
+            AND s.summary_date <= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
+            AND (s.virtual_key_id = '' OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)
+          GROUP BY s.model`,
+          [startTime, lastSummaryDay.getTime()]
+        );
+
+        for (const row of summaryRows as any[]) {
+          if (!row.model) continue;
+          const existing = modelUsageMap.get(row.model) || { promptTokens: 0, completionTokens: 0, cachedTokens: 0 };
+          existing.promptTokens += Number(row.total_prompt_tokens) || 0;
+          existing.completionTokens += Number(row.total_completion_tokens) || 0;
+          existing.cachedTokens += Number(row.total_cached_tokens) || 0;
+          modelUsageMap.set(row.model, existing);
+        }
+      }
+
+      // 从明细表查询近期数据
+      if (needsDetail) {
+        const detailStartTime = Math.max(startTime, detailStart);
+        const [detailRows] = await conn.query(
+          `SELECT
+            ar.model,
+            SUM(ar.prompt_tokens) as total_prompt_tokens,
+            SUM(ar.completion_tokens) as total_completion_tokens,
+            SUM(ar.cached_tokens) as total_cached_tokens
+          FROM api_requests ar
+          LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+          WHERE ar.created_at >= ? AND ar.created_at <= ?
+            AND ar.status = 'success'
+            AND (ar.virtual_key_id IS NULL OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)
+          GROUP BY ar.model`,
+          [detailStartTime, endTime]
+        );
+
+        for (const row of detailRows as any[]) {
+          if (!row.model) continue;
+          const existing = modelUsageMap.get(row.model) || { promptTokens: 0, completionTokens: 0, cachedTokens: 0 };
+          existing.promptTokens += Number(row.total_prompt_tokens) || 0;
+          existing.completionTokens += Number(row.total_completion_tokens) || 0;
+          existing.cachedTokens += Number(row.total_cached_tokens) || 0;
+          modelUsageMap.set(row.model, existing);
+        }
+      }
+
       let totalCost = 0;
       const modelCosts: any[] = [];
 
-      for (const usage of modelUsage) {
-        if (!usage.model) continue;
-
+      for (const [model, usage] of modelUsageMap.entries()) {
         // 尝试解析模型成本
-        const costInfo = await costMappingService.resolveModelCost(usage.model);
-        
+        const costInfo = await costMappingService.resolveModelCost(model);
+
         if (costInfo && costInfo.info) {
           const info = costInfo.info;
           let modelCost = 0;
 
           // 计算输入成本
-          if (info.input_cost_per_token && usage.total_prompt_tokens) {
-            modelCost += Number(usage.total_prompt_tokens) * Number(info.input_cost_per_token);
+          if (info.input_cost_per_token && usage.promptTokens) {
+            modelCost += usage.promptTokens * Number(info.input_cost_per_token);
           }
 
           // 计算输出成本
-          if (info.output_cost_per_token && usage.total_completion_tokens) {
-            modelCost += Number(usage.total_completion_tokens) * Number(info.output_cost_per_token);
+          if (info.output_cost_per_token && usage.completionTokens) {
+            modelCost += usage.completionTokens * Number(info.output_cost_per_token);
           }
 
-          // 缓存 tokens 通常成本更低（如果有专门的缓存成本）
-          // 这里假设缓存成本为输入成本的 10%
-          if (info.input_cost_per_token && usage.total_cached_tokens) {
-            modelCost += Number(usage.total_cached_tokens) * Number(info.input_cost_per_token) * 0.1;
+          // 使用模型定义的缓存读取成本，若未定义则使用输入成本作为回退
+          if (usage.cachedTokens) {
+            const cacheReadCostPerToken = info.cache_read_cost_per_token ?? info.input_cost_per_token;
+            if (cacheReadCostPerToken) {
+              modelCost += usage.cachedTokens * Number(cacheReadCostPerToken);
+            }
           }
 
           totalCost += modelCost;
-          
+
           if (modelCost > 0) {
             modelCosts.push({
-              model: usage.model,
+              model,
               cost: modelCost,
-              promptTokens: Number(usage.total_prompt_tokens || 0),
-              completionTokens: Number(usage.total_completion_tokens || 0),
-              cachedTokens: Number(usage.total_cached_tokens || 0),
+              promptTokens: usage.promptTokens,
+              completionTokens: usage.completionTokens,
+              cachedTokens: usage.cachedTokens,
             });
           }
         }

@@ -54,7 +54,7 @@
               :options="[{ label: '虚拟密钥 (Virtual Key)', value: 'virtualKey' }, { label: '请���内容 (Request)', value: 'request' }]"
             />
           </n-form-item>
-          <n-form-item v-if="localConfigType === 'affinity'" label="会话保持时间 (秒)">
+          <n-form-item v-if="localConfigType === 'affinity'" label="亲和保持时间 (秒)">
             <n-input-number v-model:value="localFormValue.affinityTTLSeconds" :min="1" />
           </n-form-item>
         </div>
@@ -98,7 +98,7 @@
             <!-- Affinity 提示 -->
             <span class="header-tip flex-center" v-if="localConfigType === 'affinity'">
               <n-icon :component="InformationCircleOutline" class="mr-1 icon-small" />
-              同一用户的请求将在 {{ localFormValue.affinityTTLSeconds || 300 }}秒 内保持在同一目标
+              携带相同 session 标识的请求将在 {{ localFormValue.affinityTTLSeconds || 300 }}秒 内保持在同一目标
             </span>
           </div>
           <n-button size="small" type="primary" dashed @click="addTarget">

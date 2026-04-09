@@ -4,9 +4,7 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
-      "@llm-gateway/shared": ["../shared/src"],
-      "@llm-gateway/shared/*": ["../shared/src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": [

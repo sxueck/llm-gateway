@@ -31,7 +31,7 @@
             <n-radio value="affinity">
               <div class="config-type-option">
                 <div class="option-title">时间窗口亲和</div>
-                <div class="option-description">在短时间窗口内持续使用同一provider，最大化缓存效益</div>
+                <div class="option-description">基于显式session标识，在TTL时间内同一session路由到同一provider</div>
               </div>
             </n-radio>
           </n-space>
@@ -88,7 +88,7 @@
               </template>
             </n-input-number>
             <div style="font-size: 11px; color: #8c8c8c; margin-top: 4px;">
-              在此时间内，所有请求将使用同一provider（默认300秒/5分钟）
+              携带相同session标识的请求在TTL时间内将使用同一provider（默认300秒/5分钟）
             </div>
           </n-form-item>
         </n-form>
@@ -102,7 +102,7 @@
           <div style="font-size: 13px;">Hash模式：权重决定了哈希空间的分配，权重越高，被分配到的概率越大</div>
         </n-alert>
         <n-alert v-if="localConfigType === 'affinity'" type="info" style="margin-bottom: 16px;">
-          <div style="font-size: 13px;">Affinity模式：每次选择新provider时基于权重随机选择，在TTL时间内持续使用</div>
+          <div style="font-size: 13px;">Affinity模式：基于显式session标识，相同session在TTL内路由到同一provider；无session则无粘性</div>
         </n-alert>
 
         <n-space vertical :size="12">

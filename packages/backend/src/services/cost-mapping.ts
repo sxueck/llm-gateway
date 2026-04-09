@@ -3,7 +3,6 @@ import { modelPresetsService } from './model-presets.js';
 
 export class CostMappingService {
   async resolveModelCost(modelName: string) {
-    // 1. Check if exact match exists in presets
     const directMatch = modelPresetsService.getModelInfo(modelName);
     if (directMatch) {
       return {
@@ -13,7 +12,6 @@ export class CostMappingService {
       };
     }
 
-    // 2. Check mappings
     const mappings = await costMappingDb.getEnabledMappings();
     for (const mapping of mappings) {
       // Convert wildcard pattern to regex

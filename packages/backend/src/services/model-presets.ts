@@ -19,6 +19,10 @@ export interface ModelPresetInfo {
   input_cost_per_audio_per_second?: number;
   output_cost_per_audio_per_second?: number;
   input_cost_per_video_per_second?: number;
+  /** Cost per token for cache read operations (prompt caching) */
+  cache_read_cost_per_token?: number;
+  /** Cost per token for cache write operations (prompt caching) */
+  cache_write_cost_per_token?: number;
   litellm_provider?: string;
   provider?: string;
   mode?: string;
@@ -152,6 +156,8 @@ function parseModelsDevApiJson(apiJson: unknown): ModelPresetData {
 
         input_cost_per_token: toPerTokenFromPer1M(cost.input),
         output_cost_per_token: toPerTokenFromPer1M(cost.output),
+        cache_read_cost_per_token: toPerTokenFromPer1M(cost.cache_read),
+        cache_write_cost_per_token: toPerTokenFromPer1M(cost.cache_write),
 
         supports_function_calling: typeof model.tool_call === 'boolean' ? model.tool_call : undefined,
         supports_response_schema:
@@ -318,6 +324,8 @@ export class ModelPresetsService {
       'max_output_tokens',
       'input_cost_per_token',
       'output_cost_per_token',
+      'cache_read_cost_per_token',
+      'cache_write_cost_per_token',
       'provider',
       'mode',
       'supports_function_calling',

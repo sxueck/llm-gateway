@@ -45,6 +45,17 @@ export class ExpertRouter {
 
     const config: ExpertRoutingConfig = JSON.parse(expertRoutingConfig.config);
 
+    // 记录所有可用的专家配置
+    if (config.experts && config.experts.length > 0) {
+      const expertsInfo = config.experts.map((e, idx) =>
+        `[${idx}] id=${e.id}, category=${e.category}, type=${e.type}, providerId=${e.provider_id}, modelId=${e.model_id || 'none'}, model=${e.model || 'default'}`
+      ).join('; ');
+      memoryLogger.info(
+        `Expert routing experts config | total=${config.experts.length} | experts=[${expertsInfo}]`,
+        'ExpertRouter'
+      );
+    }
+
     // 1. Build Routing Signal (preprocessing)
     let signal;
     try {
@@ -83,6 +94,10 @@ export class ExpertRouter {
     if (!decision) {
         memoryLogger.warn('Classification failed', 'ExpertRouter');
         if (config.fallback) {
+            memoryLogger.info(
+                `Expert routing using fallback | reason=classification_failed | fallbackType=${config.fallback.type} | providerId=${config.fallback.provider_id} | modelId=${config.fallback.model_id || 'none'}`,
+                'ExpertRouter'
+            );
             return await this.resolveFallback(config.fallback, 'routing_failed', startTime, expertRoutingId, context, request, signal.stats, llmJudgeFailedRequest);
         }
         throw new Error('Routing failed and no fallback configured');
@@ -98,11 +113,20 @@ export class ExpertRouter {
       );
 
       if (config.fallback) {
+        memoryLogger.info(
+          `Expert routing using fallback | reason=no_expert_for_category | category=${decision.category} | fallbackType=${config.fallback.type} | providerId=${config.fallback.provider_id} | modelId=${config.fallback.model_id || 'none'}`,
+          'ExpertRouter'
+        );
         return await this.resolveFallback(config.fallback, decision.category, startTime, expertRoutingId, context, request, signal.stats);
       }
 
       throw new Error(`No expert found for category: ${decision.category}`);
     }
+
+    memoryLogger.info(
+      `Expert routing expert selected | category=${decision.category} | expertId=${expert.id} | expertType=${expert.type} | providerId=${expert.provider_id} | modelId=${expert.model_id || 'none'} | model=${expert.model || 'default'}`,
+      'ExpertRouter'
+    );
 
     const classificationTime = Date.now() - startTime;
 
