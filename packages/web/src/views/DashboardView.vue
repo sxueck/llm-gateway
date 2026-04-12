@@ -775,12 +775,13 @@ async function toggleTokenCard() {
   isTokenCardFlipped.value = !isTokenCardFlipped.value;
   if (isTokenCardFlipped.value && !statsAllTime.value) {
     try {
-      const result = await configApi.getStats('all');
+      const result = await configApi.getStatsSummary('all');
       if (result && result.stats) {
         statsAllTime.value = result.stats;
       }
     } catch (e) {
       console.error('Failed to load all-time stats', e);
+      message.error('加载历史总消耗失败');
     }
   }
 }

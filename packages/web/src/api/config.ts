@@ -219,6 +219,11 @@ type GetStatsResponse = {
   piiProtectionCount: number;
 };
 
+type GetStatsSummaryResponse = {
+  period: string;
+  stats: ApiStats;
+};
+
 type LookupRequestSourceResponse = {
   ip: string;
   geo: RequestSourceGeoInfo | null;
@@ -352,6 +357,10 @@ export const configApi = {
 
   getStats(period?: Period): Promise<GetStatsResponse> {
     return request.get(ADMIN_STATS_PATH, { params: { period } });
+  },
+
+  getStatsSummary(period?: Period): Promise<GetStatsSummaryResponse> {
+    return request.get(`${ADMIN_STATS_PATH}/summary`, { params: { period } });
   },
 
   lookupRequestSource(ip: string): Promise<LookupRequestSourceResponse> {

@@ -18,6 +18,42 @@ import { getShanghaiDayStart } from '../db/utils/time-buckets.js';
 export async function configRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
 
+  type StatsPeriod = '24h' | '7d' | '30d' | 'all';
+
+  function resolveStatsStartTime(period: StatsPeriod) {
+    const now = Date.now();
+
+    switch (period) {
+      case '7d':
+        // Align to Shanghai natural-day window: 7 complete days before today
+        return { now, startTime: getShanghaiDayStart(-7) };
+      case '30d':
+        // Align to Shanghai natural-day window: 30 complete days before today
+        return { now, startTime: getShanghaiDayStart(-30) };
+      case 'all':
+        return { now, startTime: 0 };
+      default:
+        return { now, startTime: now - 24 * 60 * 60 * 1000 };
+    }
+  }
+
+  async function getStatsOverview(period: StatsPeriod) {
+    const { now, startTime } = resolveStatsStartTime(period);
+    const stats = await apiRequestDb.getStats({ startTime, endTime: now });
+    const dbSize = await apiRequestDb.getDbSize();
+    const dbUptime = await apiRequestDb.getDbUptime();
+
+    return {
+      now,
+      startTime,
+      stats: {
+        ...stats,
+        dbSize,
+        dbUptime,
+      },
+    };
+  }
+
   async function ensureMonitoringVirtualKey() {
     const keyIdCfg = await systemConfigDb.get('monitoring_virtual_key_id');
     let monitoringKey = keyIdCfg ? await virtualKeyDb.getById(keyIdCfg.value) : undefined;
@@ -541,30 +577,8 @@ export async function configRoutes(fastify: FastifyInstance) {
   }
 
   fastify.get('/stats', async (request) => {
-    const { period = '24h' } = request.query as { period?: '24h' | '7d' | '30d' | 'all' };
-
-    const now = Date.now();
-    let startTime: number;
-
-    switch (period) {
-      case '7d':
-        // Align to Shanghai natural-day window: 7 complete days before today
-        startTime = getShanghaiDayStart(-7);
-        break;
-      case '30d':
-        // Align to Shanghai natural-day window: 30 complete days before today
-        startTime = getShanghaiDayStart(-30);
-        break;
-      case 'all':
-        startTime = 0;
-        break;
-      default:
-        startTime = now - 24 * 60 * 60 * 1000;
-    }
-
-    const stats = await apiRequestDb.getStats({ startTime, endTime: now });
-    const dbSize = await apiRequestDb.getDbSize();
-    const dbUptime = await apiRequestDb.getDbUptime();
+    const { period = '24h' } = request.query as { period?: StatsPeriod };
+    const { now, startTime, stats } = await getStatsOverview(period);
     const trend = await apiRequestDb.getTrend({
       startTime,
       endTime: now,
@@ -676,18 +690,28 @@ export async function configRoutes(fastify: FastifyInstance) {
       memoryLogger.warn(`计算成本统计失败: ${error.message}`, 'Config');
     }
 
-    return {
-      period,
-      stats: { ...stats, dbSize, dbUptime },
-      trend,
-      expertRoutingStats,
-      modelStats,
+      return {
+        period,
+        stats,
+        trend,
+        expertRoutingStats,
+        modelStats,
       modelResponseTimeStats,
       circuitBreakerStats,
       costStats,
       requestSourceStats,
       threatIpStats,
-      piiProtectionCount,
+        piiProtectionCount,
+      };
+  });
+
+  fastify.get('/stats/summary', async (request) => {
+    const { period = '24h' } = request.query as { period?: StatsPeriod };
+    const { stats } = await getStatsOverview(period);
+
+    return {
+      period,
+      stats,
     };
   });
 

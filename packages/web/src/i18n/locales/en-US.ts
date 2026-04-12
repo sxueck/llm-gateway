@@ -150,7 +150,7 @@ export default {
     batchAddTitle: 'Batch Add Models',
     testModel: 'Test Model',
     notConfigured: 'Not Configured',
-    virtualKeyCount: 'Virtual Key Count',
+    virtualKeyCount: 'Reference Count',
     deleteConfirm: 'Are you sure you want to delete this model?',
     deleteVirtualModelConfirm: 'Are you sure you want to delete this virtual model? Associated routing configurations will be invalidated.',
     deleteSuccess: 'Deleted successfully',

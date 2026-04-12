@@ -63,7 +63,14 @@ export async function modelRoutes(fastify: FastifyInstance) {
     const providers = await providerDb.getAll();
     const providerMap = new Map(providers.map(p => [p.id, p]));
 
-    const virtualKeyCounts = await virtualKeyDb.countByModelIds(models.map(m => m.id));
+    // Prepare model reference info for accurate counting (includes routing_config references)
+    const modelRefInfos = models.map(m => ({
+      id: m.id,
+      provider_id: m.provider_id,
+      model_identifier: m.model_identifier,
+      name: m.name
+    }));
+    const virtualKeyCounts = await virtualKeyDb.countByModels(modelRefInfos);
 
     const modelPromises = models.map(async m => {
       const provider = m.provider_id ? providerMap.get(m.provider_id) : null;
@@ -107,7 +114,13 @@ export async function modelRoutes(fastify: FastifyInstance) {
     }
 
     const provider = model.provider_id ? await providerDb.getById(model.provider_id) : null;
-    const virtualKeyCount = await virtualKeyDb.countByModelId(model.id);
+    // Use full model metadata for accurate reference counting including routing_config
+    const virtualKeyCount = await virtualKeyDb.countByModels([{
+      id: model.id,
+      provider_id: model.provider_id,
+      model_identifier: model.model_identifier,
+      name: model.name
+    }]).then(map => map.get(model.id) || 0);
 
     let modelAttributes = null;
     try {
@@ -231,10 +244,17 @@ export async function modelRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: '模型不存在' });
     }
 
-    const virtualKeyCount = await virtualKeyDb.countByModelId(id);
+    // Use full model metadata for accurate reference counting including routing_config
+    const virtualKeyCount = await virtualKeyDb.countByModels([{
+      id: model.id,
+      provider_id: model.provider_id,
+      model_identifier: model.model_identifier,
+      name: model.name
+    }]).then(map => map.get(model.id) || 0);
+
     if (virtualKeyCount > 0) {
-      return reply.code(400).send({ 
-        error: `无法删除模型，有 ${virtualKeyCount} 个虚拟密钥正在使用此模型` 
+      return reply.code(400).send({
+        error: `无法删除模型，有 ${virtualKeyCount} 个虚拟密钥正在引用此模型`
       });
     }
 

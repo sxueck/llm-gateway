@@ -150,7 +150,7 @@ export default {
     batchAddTitle: '批量添加模型',
     testModel: '模型测试',
     notConfigured: '未配置',
-    virtualKeyCount: '绑定密钥数',
+    virtualKeyCount: '引用数',
     deleteConfirm: '确定删除此模型吗？',
     deleteVirtualModelConfirm: '确定删除此虚拟模型吗？删除后关联的路由配置将失效。',
     deleteSuccess: '删除成功',
