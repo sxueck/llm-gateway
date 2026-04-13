@@ -51,7 +51,7 @@
           <n-form-item v-if="localConfigType === 'hash'" label="哈希源">
             <n-select 
               v-model:value="localFormValue.hashSource" 
-              :options="[{ label: '虚拟密钥 (Virtual Key)', value: 'virtualKey' }, { label: '请���内容 (Request)', value: 'request' }]"
+              :options="[{ label: '虚拟密钥 (Virtual Key)', value: 'virtualKey' }, { label: '请求内容 (Request)', value: 'request' }]"
             />
           </n-form-item>
           <n-form-item v-if="localConfigType === 'affinity'" label="亲和保持时间 (秒)">

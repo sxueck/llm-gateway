@@ -64,38 +64,37 @@
               <n-icon v-else color="#f0a020"><AlertCircleOutline /></n-icon>
             </div>
             <div class="target-content">
-              <div class="target-main">
-                <n-tag size="tiny" :bordered="false" class="provider-tag">
-                  {{ target.providerName }}
-                </n-tag>
-                <span class="model-name">{{ target.modelName }}</span>
+              <div class="target-main target-main-split">
+                <div class="target-identity">
+                  <n-tag size="tiny" :bordered="false" class="provider-tag">
+                    {{ target.providerName }}
+                  </n-tag>
+                  <span class="model-name">{{ target.modelName }}</span>
+                </div>
+                <div class="target-main-side" v-if="getTargetStatus(target)">
+                  <n-tag
+                    size="tiny"
+                    :type="getCircuitStateType(getTargetStatus(target)!.circuitState)"
+                    class="status-badge"
+                  >
+                    {{ getCircuitStateLabel(getTargetStatus(target)!.circuitState) }}
+                  </n-tag>
+                  <n-tag
+                    v-if="getTargetStatus(target)!.isAnonymousAffinitySelected"
+                    size="tiny"
+                    type="info"
+                    class="status-badge is-secondary"
+                  >
+                    当前周期选中
+                  </n-tag>
+                </div>
               </div>
               <div class="target-meta" v-if="index > 0 && target.onStatusCodes?.length">
                 <span class="meta-label">触发条件:</span>
                 <span class="status-codes">{{ target.onStatusCodes.join(', ') }}</span>
               </div>
-              <div class="target-status-row" v-if="getTargetStatus(target)">
-                <n-tag
-                  size="tiny"
-                  :type="getCircuitStateType(getTargetStatus(target)!.circuitState)"
-                  class="status-badge"
-                >
-                  {{ getCircuitStateLabel(getTargetStatus(target)!.circuitState) }}
-                </n-tag>
-                <n-tag
-                  v-if="getTargetStatus(target)!.isAnonymousAffinitySelected"
-                  size="tiny"
-                  type="info"
-                  class="status-badge"
-                >
-                  当前周期选中
-                </n-tag>
-                <span
-                  v-if="getTargetStatus(target)!.boundSessionCount > 0"
-                  class="session-count"
-                >
-                  绑定了 {{ getTargetStatus(target)!.boundSessionCount }} 个 session
-                </span>
+              <div class="target-subline" v-if="getBoundSessionCount(target) > 0">
+                绑定了 {{ getBoundSessionCount(target) }} 个 session
               </div>
             </div>
             <div class="priority-badge">P{{ index + 1 }}</div>
@@ -111,13 +110,34 @@
           class="target-item lb-item"
         >
           <div class="lb-info">
-            <div class="target-main">
-              <n-tag size="tiny" :bordered="false" class="provider-tag">
-                {{ target.providerName }}
-              </n-tag>
-              <span class="model-name">{{ target.modelName }}</span>
+            <div class="target-main target-main-split">
+              <div class="target-identity">
+                <n-tag size="tiny" :bordered="false" class="provider-tag">
+                  {{ target.providerName }}
+                </n-tag>
+                <span class="model-name">{{ target.modelName }}</span>
+              </div>
+              <div class="target-main-side">
+                <div class="target-status-inline" v-if="getTargetStatus(target)">
+                  <n-tag
+                    size="tiny"
+                    :type="getCircuitStateType(getTargetStatus(target)!.circuitState)"
+                    class="status-badge"
+                  >
+                    {{ getCircuitStateLabel(getTargetStatus(target)!.circuitState) }}
+                  </n-tag>
+                  <n-tag
+                    v-if="getTargetStatus(target)!.isAnonymousAffinitySelected"
+                    size="tiny"
+                    type="info"
+                    class="status-badge is-secondary"
+                  >
+                    当前周期选中
+                  </n-tag>
+                </div>
+                <span class="weight-label">{{ (target.weight * 100).toFixed(0) }}%</span>
+              </div>
             </div>
-            <span class="weight-label">{{ (target.weight * 100).toFixed(0) }}%</span>
           </div>
           <n-progress
             type="line"
@@ -127,28 +147,8 @@
             :color="getWeightColor(target.weight)"
             processing
           />
-          <div class="target-status-row" v-if="getTargetStatus(target)">
-            <n-tag
-              size="tiny"
-              :type="getCircuitStateType(getTargetStatus(target)!.circuitState)"
-              class="status-badge"
-            >
-              {{ getCircuitStateLabel(getTargetStatus(target)!.circuitState) }}
-            </n-tag>
-            <n-tag
-              v-if="getTargetStatus(target)!.isAnonymousAffinitySelected"
-              size="tiny"
-              type="info"
-              class="status-badge"
-            >
-              当前周期选中
-            </n-tag>
-            <span
-              v-if="getTargetStatus(target)!.boundSessionCount > 0"
-              class="session-count"
-            >
-              绑定了 {{ getTargetStatus(target)!.boundSessionCount }} 个 session
-            </span>
+          <div class="target-subline" v-if="getBoundSessionCount(target) > 0">
+            绑定了 {{ getBoundSessionCount(target) }} 个 session
           </div>
         </div>
       </div>
@@ -161,34 +161,33 @@
           class="target-item default-item"
         >
           <div class="target-content">
-            <div class="target-main">
-              <n-tag size="tiny" :bordered="false" class="provider-tag">
-                {{ target.providerName }}
-              </n-tag>
-              <span class="model-name">{{ target.modelName }}</span>
+            <div class="target-main target-main-split">
+              <div class="target-identity">
+                <n-tag size="tiny" :bordered="false" class="provider-tag">
+                  {{ target.providerName }}
+                </n-tag>
+                <span class="model-name">{{ target.modelName }}</span>
+              </div>
+              <div class="target-main-side" v-if="getTargetStatus(target)">
+                <n-tag
+                  size="tiny"
+                  :type="getCircuitStateType(getTargetStatus(target)!.circuitState)"
+                  class="status-badge"
+                >
+                  {{ getCircuitStateLabel(getTargetStatus(target)!.circuitState) }}
+                </n-tag>
+                <n-tag
+                  v-if="getTargetStatus(target)!.isAnonymousAffinitySelected"
+                  size="tiny"
+                  type="info"
+                  class="status-badge is-secondary"
+                >
+                  当前周期选中
+                </n-tag>
+              </div>
             </div>
-            <div class="target-status-row" v-if="getTargetStatus(target)">
-              <n-tag
-                size="tiny"
-                :type="getCircuitStateType(getTargetStatus(target)!.circuitState)"
-                class="status-badge"
-              >
-                {{ getCircuitStateLabel(getTargetStatus(target)!.circuitState) }}
-              </n-tag>
-              <n-tag
-                v-if="getTargetStatus(target)!.isAnonymousAffinitySelected"
-                size="tiny"
-                type="info"
-                class="status-badge"
-              >
-                当前周期选中
-              </n-tag>
-              <span
-                v-if="getTargetStatus(target)!.boundSessionCount > 0"
-                class="session-count"
-              >
-                绑定了 {{ getTargetStatus(target)!.boundSessionCount }} 个 session
-              </span>
+            <div class="target-subline" v-if="getBoundSessionCount(target) > 0">
+              绑定了 {{ getBoundSessionCount(target) }} 个 session
             </div>
           </div>
         </div>
@@ -250,6 +249,10 @@ function getTargetStatus(target: any): RoutingTargetStatus | undefined {
   if (!props.routingStatus) return undefined;
   const key = getTargetKey(target);
   return props.routingStatus.find(s => s.targetKey === key);
+}
+
+function getBoundSessionCount(target: any): number {
+  return getTargetStatus(target)?.boundSessionCount ?? 0;
 }
 
 function getCircuitStateType(state: string): 'success' | 'error' | 'warning' {
@@ -406,18 +409,39 @@ function getWeightColor(weight: number) {
   font-size: 13px;
 }
 
-.target-meta {
-  font-size: 11px;
-  color: #999;
-  margin-top: 2px;
+.target-main-split {
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.target-status-row {
+.target-identity {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.target-main-side {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
   flex-wrap: wrap;
+}
+
+.target-status-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.target-meta {
+  font-size: 11px;
+  color: #999;
+  margin-top: 6px;
 }
 
 .status-badge {
@@ -426,9 +450,14 @@ function getWeightColor(weight: number) {
   padding: 0 6px;
 }
 
-.session-count {
+.status-badge.is-secondary {
+  opacity: 0.92;
+}
+
+.target-subline {
   font-size: 11px;
   color: #666;
+  margin-top: 6px;
 }
 
 .priority-badge {
@@ -468,8 +497,6 @@ function getWeightColor(weight: number) {
 
 .lb-info {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
 
 .weight-label {
@@ -488,11 +515,23 @@ function getWeightColor(weight: number) {
 
 .default-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   background: #f9f9fa;
   padding: 6px 10px;
   border-radius: 6px;
+}
+
+@media (max-width: 768px) {
+  .target-main-split {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .target-main-side,
+  .target-status-inline {
+    justify-content: flex-start;
+  }
 }
 
 .strategy-meta {

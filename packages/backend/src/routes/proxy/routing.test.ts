@@ -155,6 +155,59 @@ test('affinity reroutes to the next weighted target and keeps affinity there', (
   }
 });
 
+test('affinity selects each new explicit session independently by weight', () => {
+  circuitBreaker.resetAll();
+
+  const originalRandom = Math.random;
+  let callCount = 0;
+  Math.random = () => {
+    callCount++;
+    return callCount === 1 ? 0 : 0.999;
+  };
+
+  try {
+    const config: RoutingConfig = {
+      strategy: { mode: 'affinity', affinityTTL: 60_000 },
+      targets: [
+        { provider: 'provider-a', weight: 100 },
+        { provider: 'provider-b', weight: 1 },
+      ],
+    };
+
+    const firstSessionFirstTarget = selectRoutingTarget(
+      config,
+      'affinity',
+      'explicit-weighted-session-test-1',
+      'session-1'
+    );
+    const secondSessionFirstTarget = selectRoutingTarget(
+      config,
+      'affinity',
+      'explicit-weighted-session-test-1',
+      'session-2'
+    );
+    const firstSessionStickyTarget = selectRoutingTarget(
+      config,
+      'affinity',
+      'explicit-weighted-session-test-1',
+      'session-1'
+    );
+    const secondSessionStickyTarget = selectRoutingTarget(
+      config,
+      'affinity',
+      'explicit-weighted-session-test-1',
+      'session-2'
+    );
+
+    assert.equal(firstSessionFirstTarget?.provider, 'provider-a');
+    assert.equal(secondSessionFirstTarget?.provider, 'provider-b');
+    assert.equal(firstSessionStickyTarget?.provider, 'provider-a');
+    assert.equal(secondSessionStickyTarget?.provider, 'provider-b');
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
 test('loadbalance retry can probe a half-open target after all healthy targets are exhausted', async () => {
   circuitBreaker.resetAll();
 
