@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { circuitBreaker } from '../../services/circuit-breaker.js';
-import { getTargetKey, hasAvailableRoutingTargets, selectRoutingTarget, type RoutingConfig } from './routing.js';
+import { getTargetKey, hasAvailableRoutingTargets, selectRoutingTarget, getAnonymousAffinityTargetKey, countExplicitSessionBindings, type RoutingConfig } from './routing.js';
 
 test('selectRoutingTarget rotates loadbalance targets without weights', () => {
   circuitBreaker.resetAll();
@@ -225,4 +225,46 @@ test('hasAvailableRoutingTargets does not consume half-open attempts during pass
     (circuitBreaker as any).config.halfOpenMaxAttempts = originalHalfOpenMaxAttempts;
     circuitBreaker.resetAll();
   }
+});
+
+test('getAnonymousAffinityTargetKey returns the sticky target for anonymous affinity and does not count as explicit session', () => {
+  circuitBreaker.resetAll();
+
+  const config: RoutingConfig = {
+    strategy: { mode: 'affinity', affinityTTL: 60_000 },
+    targets: [
+      { provider: 'provider-a' },
+      { provider: 'provider-b' },
+    ],
+  };
+
+  const selected = selectRoutingTarget(config, 'affinity', 'anonymous-affinity-test-2');
+  const stickyKey = getAnonymousAffinityTargetKey('anonymous-affinity-test-2');
+
+  assert.equal(stickyKey, getTargetKey(selected!));
+  assert.equal(countExplicitSessionBindings('anonymous-affinity-test-2', getTargetKey(selected!)), 0);
+});
+
+test('getAnonymousAffinityTargetKey returns null when no anonymous affinity exists', () => {
+  const stickyKey = getAnonymousAffinityTargetKey('nonexistent-config-id');
+  assert.equal(stickyKey, null);
+});
+
+test('countExplicitSessionBindings counts only non-expired explicit sessions for a target', () => {
+  circuitBreaker.resetAll();
+
+  const config: RoutingConfig = {
+    strategy: { mode: 'affinity', affinityTTL: 60_000 },
+    targets: [
+      { provider: 'provider-a' },
+      { provider: 'provider-b' },
+    ],
+  };
+
+  selectRoutingTarget(config, 'affinity', 'explicit-binding-test-1', 'session-1');
+  selectRoutingTarget(config, 'affinity', 'explicit-binding-test-1', 'session-2');
+  selectRoutingTarget(config, 'affinity', 'explicit-binding-test-1', 'session-3');
+
+  assert.equal(countExplicitSessionBindings('explicit-binding-test-1', getTargetKey(config.targets[0]!)), 2);
+  assert.equal(countExplicitSessionBindings('explicit-binding-test-1', getTargetKey(config.targets[1]!)), 1);
 });

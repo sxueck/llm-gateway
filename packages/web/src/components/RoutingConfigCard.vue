@@ -54,8 +54,8 @@
       <div v-if="config.type === 'fallback'" class="strategy-view fallback-view">
         <div class="timeline-connector"></div>
         <div class="target-list">
-          <div 
-            v-for="(target, index) in enrichedTargets" 
+          <div
+            v-for="(target, index) in enrichedTargets"
             :key="index"
             class="target-item fallback-item"
           >
@@ -74,6 +74,29 @@
                 <span class="meta-label">触发条件:</span>
                 <span class="status-codes">{{ target.onStatusCodes.join(', ') }}</span>
               </div>
+              <div class="target-status-row" v-if="getTargetStatus(target)">
+                <n-tag
+                  size="tiny"
+                  :type="getCircuitStateType(getTargetStatus(target)!.circuitState)"
+                  class="status-badge"
+                >
+                  {{ getCircuitStateLabel(getTargetStatus(target)!.circuitState) }}
+                </n-tag>
+                <n-tag
+                  v-if="getTargetStatus(target)!.isAnonymousAffinitySelected"
+                  size="tiny"
+                  type="info"
+                  class="status-badge"
+                >
+                  当前周期选中
+                </n-tag>
+                <span
+                  v-if="getTargetStatus(target)!.boundSessionCount > 0"
+                  class="session-count"
+                >
+                  绑定了 {{ getTargetStatus(target)!.boundSessionCount }} 个 session
+                </span>
+              </div>
             </div>
             <div class="priority-badge">P{{ index + 1 }}</div>
           </div>
@@ -82,8 +105,8 @@
 
       <!-- 负载均衡视图 (Load Balance) -->
       <div v-else-if="config.type === 'loadbalance'" class="strategy-view lb-view">
-        <div 
-          v-for="(target, index) in enrichedTargets" 
+        <div
+          v-for="(target, index) in enrichedTargets"
           :key="index"
           class="target-item lb-item"
         >
@@ -96,28 +119,78 @@
             </div>
             <span class="weight-label">{{ (target.weight * 100).toFixed(0) }}%</span>
           </div>
-          <n-progress 
-            type="line" 
-            :percentage="Math.round(target.weight * 100)" 
+          <n-progress
+            type="line"
+            :percentage="Math.round(target.weight * 100)"
             :show-indicator="false"
             :height="4"
             :color="getWeightColor(target.weight)"
             processing
           />
+          <div class="target-status-row" v-if="getTargetStatus(target)">
+            <n-tag
+              size="tiny"
+              :type="getCircuitStateType(getTargetStatus(target)!.circuitState)"
+              class="status-badge"
+            >
+              {{ getCircuitStateLabel(getTargetStatus(target)!.circuitState) }}
+            </n-tag>
+            <n-tag
+              v-if="getTargetStatus(target)!.isAnonymousAffinitySelected"
+              size="tiny"
+              type="info"
+              class="status-badge"
+            >
+              当前周期选中
+            </n-tag>
+            <span
+              v-if="getTargetStatus(target)!.boundSessionCount > 0"
+              class="session-count"
+            >
+              绑定了 {{ getTargetStatus(target)!.boundSessionCount }} 个 session
+            </span>
+          </div>
         </div>
       </div>
 
       <!-- 其他视图 (Hash/Affinity) -->
       <div v-else class="strategy-view default-view">
-        <div 
-          v-for="(target, index) in enrichedTargets" 
+        <div
+          v-for="(target, index) in enrichedTargets"
           :key="index"
           class="target-item default-item"
         >
-           <n-tag size="tiny" :bordered="false" class="provider-tag">
-              {{ target.providerName }}
-           </n-tag>
-           <span class="model-name">{{ target.modelName }}</span>
+          <div class="target-content">
+            <div class="target-main">
+              <n-tag size="tiny" :bordered="false" class="provider-tag">
+                {{ target.providerName }}
+              </n-tag>
+              <span class="model-name">{{ target.modelName }}</span>
+            </div>
+            <div class="target-status-row" v-if="getTargetStatus(target)">
+              <n-tag
+                size="tiny"
+                :type="getCircuitStateType(getTargetStatus(target)!.circuitState)"
+                class="status-badge"
+              >
+                {{ getCircuitStateLabel(getTargetStatus(target)!.circuitState) }}
+              </n-tag>
+              <n-tag
+                v-if="getTargetStatus(target)!.isAnonymousAffinitySelected"
+                size="tiny"
+                type="info"
+                class="status-badge"
+              >
+                当前周期选中
+              </n-tag>
+              <span
+                v-if="getTargetStatus(target)!.boundSessionCount > 0"
+                class="session-count"
+              >
+                绑定了 {{ getTargetStatus(target)!.boundSessionCount }} 个 session
+              </span>
+            </div>
+          </div>
         </div>
         <div class="strategy-meta" v-if="config.type === 'affinity'">
           <n-icon><TimeOutline /></n-icon>
@@ -144,10 +217,13 @@ import {
   TimeOutline, KeyOutline
 } from '@vicons/ionicons5';
 
+import type { RoutingTargetStatus } from '@/api/config';
+
 const props = defineProps<{
   config: any;
   providers: any[];
   models: any[];
+  routingStatus?: RoutingTargetStatus[];
 }>();
 
 defineEmits(['edit', 'preview', 'delete']);
@@ -162,15 +238,53 @@ const typeConfig = computed(() => {
   return map[props.config.type] || { label: props.config.type, tagType: 'default' };
 });
 
+function getTargetKey(target: any): string {
+  const overrideModel = target.override_params?.model?.trim();
+  if (!overrideModel) {
+    return target.provider;
+  }
+  return `${target.provider}::${overrideModel}`;
+}
+
+function getTargetStatus(target: any): RoutingTargetStatus | undefined {
+  if (!props.routingStatus) return undefined;
+  const key = getTargetKey(target);
+  return props.routingStatus.find(s => s.targetKey === key);
+}
+
+function getCircuitStateType(state: string): 'success' | 'error' | 'warning' {
+  switch (state) {
+    case 'OPEN':
+      return 'error';
+    case 'HALF_OPEN':
+      return 'warning';
+    case 'CLOSED':
+    default:
+      return 'success';
+  }
+}
+
+function getCircuitStateLabel(state: string): string {
+  switch (state) {
+    case 'OPEN':
+      return '熔断开启';
+    case 'HALF_OPEN':
+      return '半开试探';
+    case 'CLOSED':
+    default:
+      return '正常';
+  }
+}
+
 const enrichedTargets = computed(() => {
   if (!props.config.config?.targets) return [];
-  
+
   return props.config.config.targets.map((t: any) => {
     const provider = props.providers.find(p => p.id === t.provider);
     const modelId = t.override_params?.model;
     // Attempt to find model name, fallback to ID
     const model = props.models.find(m => m.modelIdentifier === modelId && m.providerId === t.provider);
-    
+
     return {
       ...t,
       providerName: provider?.name || t.provider,
@@ -296,6 +410,25 @@ function getWeightColor(weight: number) {
   font-size: 11px;
   color: #999;
   margin-top: 2px;
+}
+
+.target-status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.status-badge {
+  font-size: 10px;
+  height: 18px;
+  padding: 0 6px;
+}
+
+.session-count {
+  font-size: 11px;
+  color: #666;
 }
 
 .priority-badge {

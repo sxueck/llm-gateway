@@ -43,6 +43,7 @@
               :config="config"
               :providers="providerStore.providers"
               :models="modelStore.models"
+              :routing-status="getConfigStatus(config.id)"
               @edit="handleEdit"
               @preview="handlePreview"
               @delete="handleDelete"
@@ -151,7 +152,7 @@ import {
 } from '@vicons/ionicons5';
 import { useProviderStore } from '@/stores/provider';
 import { useModelStore } from '@/stores/model';
-import { configApi } from '@/api/config';
+import { configApi, type RoutingStatusResponse } from '@/api/config';
 import RoutingConfigEditor from '@/components/RoutingConfigEditor.vue';
 import RoutingConfigCard from '@/components/RoutingConfigCard.vue';
 import { copyToClipboard } from '@/utils/common';
@@ -171,6 +172,8 @@ const previewConfig = ref('');
 const editingId = ref<string | null>(null);
 const currentPage = ref(1);
 const pageSize = ref(12);
+const routingStatus = ref<RoutingStatusResponse | null>(null);
+let routingStatusInterval: ReturnType<typeof setInterval> | null = null;
 
 const formValue = ref<VirtualModelFormValue>(createDefaultVirtualModelForm());
 
@@ -384,6 +387,36 @@ async function loadConfigs() {
   }
 }
 
+async function loadRoutingStatus() {
+  try {
+    const result = await configApi.getRoutingStatus();
+    routingStatus.value = result;
+  } catch (error: any) {
+    // Silently fail - status is optional enhancement
+  }
+}
+
+function getConfigStatus(configId: string) {
+  if (!routingStatus.value) return undefined;
+  const config = routingStatus.value.configs.find(c => c.configId === configId);
+  return config?.targets;
+}
+
+function startRoutingStatusPolling() {
+  loadRoutingStatus();
+  if (routingStatusInterval) {
+    clearInterval(routingStatusInterval);
+  }
+  routingStatusInterval = setInterval(loadRoutingStatus, 15000);
+}
+
+function stopRoutingStatusPolling() {
+  if (routingStatusInterval) {
+    clearInterval(routingStatusInterval);
+    routingStatusInterval = null;
+  }
+}
+
 async function refreshData() {
   await Promise.all([
     providerStore.fetchProviders(),
@@ -399,11 +432,19 @@ function handleCreateModalOpen() {
 async function handleRefresh() {
   await refreshData();
   await loadConfigs();
+  await loadRoutingStatus();
 }
 
 onMounted(async () => {
   await refreshData();
-  loadConfigs();
+  await loadConfigs();
+  startRoutingStatusPolling();
+});
+
+import { onUnmounted } from 'vue';
+
+onUnmounted(() => {
+  stopRoutingStatusPolling();
 });
 
 </script>

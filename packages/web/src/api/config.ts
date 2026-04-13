@@ -323,6 +323,25 @@ type UpdateSystemSettingsRequest = {
 
 type HealthTargetsResponse = { targets: any[] };
 
+export interface RoutingTargetStatus {
+  targetKey: string;
+  circuitState: 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+  isAnonymousAffinitySelected: boolean;
+  boundSessionCount: number;
+}
+
+export interface RoutingConfigStatus {
+  configId: string;
+  targets: RoutingTargetStatus[];
+}
+
+export interface RoutingStatusResponse {
+  configs: RoutingConfigStatus[];
+  meta: {
+    polledAt: string;
+  };
+}
+
 type CreateHealthTargetRequest = {
   type: 'model' | 'virtual_model';
   target_id: string;
@@ -347,6 +366,7 @@ const ADMIN_ROUTING_CONFIGS_PATH = adminConfigPath('/routing-configs');
 const ADMIN_SYSTEM_SETTINGS_PATH = adminConfigPath('/system-settings');
 const ADMIN_HEALTH_TARGETS_PATH = adminConfigPath('/health-targets');
 const ADMIN_PERFORMANCE_METRICS_PATH = adminConfigPath('/performance-metrics');
+const ADMIN_ROUTING_STATUS_PATH = adminConfigPath('/routing-status');
 
 const PUBLIC_SYSTEM_SETTINGS_PATH = `${PUBLIC_BASE_PATH}/system-settings`;
 
@@ -417,5 +437,9 @@ export const configApi = {
 
   getPerformanceMetrics(): Promise<PerformanceMetricsResponse> {
     return request.get(ADMIN_PERFORMANCE_METRICS_PATH);
+  },
+
+  getRoutingStatus(): Promise<RoutingStatusResponse> {
+    return request.get(ADMIN_ROUTING_STATUS_PATH);
   },
 };

@@ -200,6 +200,32 @@ function buildAnonymousAffinityCacheKey(configId: string): string {
   return `${configId}:__anonymous__`;
 }
 
+export function getAnonymousAffinityTargetKey(configId: string): string | null {
+  const cacheKey = buildAnonymousAffinityCacheKey(configId);
+  const state = affinityStateMap.get(cacheKey);
+  if (!state) return null;
+  if (Date.now() >= state.expiresAt) {
+    affinityStateMap.delete(cacheKey);
+    return null;
+  }
+  return state.targetKey;
+}
+
+export function countExplicitSessionBindings(configId: string, targetKey: string): number {
+  const anonymousKey = buildAnonymousAffinityCacheKey(configId);
+  const prefix = `${configId}:`;
+  let count = 0;
+  const now = Date.now();
+  for (const [key, state] of affinityStateMap.entries()) {
+    if (key.startsWith(prefix) && key !== anonymousKey) {
+      if (state.targetKey === targetKey && now < state.expiresAt) {
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
 function extractAffinityScopeKey(request?: any): string | undefined {
   const headers: Record<string, any> = (request?.headers as any) || {};
   const body: any = request?.body || {};

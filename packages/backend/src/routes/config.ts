@@ -14,6 +14,8 @@ import { manualIpBlocklist } from '../services/manual-ip-blocklist.js';
 import { requestHeaderForwardingService } from '../services/request-header-forwarding.js';
 import { getGeoInfo, normalizeIp } from '../utils/ip.js';
 import { getShanghaiDayStart } from '../db/utils/time-buckets.js';
+import { circuitBreaker } from '../services/circuit-breaker.js';
+import { getTargetKey, getAnonymousAffinityTargetKey, countExplicitSessionBindings } from './proxy/routing.js';
 
 export async function configRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
@@ -953,6 +955,46 @@ export async function configRoutes(fastify: FastifyInstance) {
       return { success: true };
     } catch (error: any) {
       memoryLogger.error(`删除路由配置失败: ${error.message}`, 'Config');
+      throw error;
+    }
+  });
+
+  fastify.get('/routing-status', async () => {
+    try {
+      const configs = await routingConfigDb.getAll();
+      const result = (configs as any[]).map(c => {
+        let parsedConfig: any;
+        try {
+          parsedConfig = JSON.parse(c.config);
+        } catch {
+          parsedConfig = { targets: [] };
+        }
+        const targets = parsedConfig.targets || [];
+        const configId = String(c.id);
+        const anonymousStickyTarget = getAnonymousAffinityTargetKey(configId);
+
+        const targetStatuses = targets.map((target: any) => {
+          const targetKey = getTargetKey(target);
+          return {
+            targetKey,
+            circuitState: circuitBreaker.getState(targetKey),
+            isAnonymousAffinitySelected: anonymousStickyTarget === targetKey,
+            boundSessionCount: countExplicitSessionBindings(configId, targetKey),
+          };
+        });
+
+        return {
+          configId,
+          targets: targetStatuses,
+        };
+      });
+
+      return {
+        configs: result,
+        meta: { polledAt: new Date().toISOString() },
+      };
+    } catch (error: any) {
+      memoryLogger.error(`获取路由状态失败: ${error.message}`, 'Config');
       throw error;
     }
   });
