@@ -106,7 +106,7 @@
         </n-alert>
 
         <n-space vertical :size="12">
-          <n-card v-for="(target, index) in localFormValue.targets" :key="index" size="small" class="target-card">
+          <n-card v-for="(target, index) in localFormValue.targets" :key="target.providerId + '-' + index" size="small" class="target-card">
             <template #header>
               <n-space justify="space-between" align="center">
                 <span class="target-title">
@@ -219,9 +219,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { VirtualModelFormValue, RoutingConfigType } from '@/types/virtual-model';
+import { useRoutingTargets } from '@/composables/useRoutingTargets';
 
 const { t } = useI18n();
 import {
@@ -280,6 +281,19 @@ const localFormValue = computed({
   set: (value) => emit('update:formValue', value),
 });
 
+const targetsProxy = computed<typeof localFormValue.value.targets>({
+  get: () => localFormValue.value.targets,
+  set: (val) => {
+    localFormValue.value = { ...localFormValue.value, targets: val };
+  },
+});
+
+const { addTarget, removeTarget, moveTargetUp, moveTargetDown, validateTargets } = useRoutingTargets({
+  configType: localConfigType,
+  targets: targetsProxy as any,
+  clearOnTypeChange: true,
+});
+
 const stepStatus = computed(() => {
   if (currentStep.value === 3 && localFormValue.value.targets.length === 0) {
     return 'error';
@@ -312,57 +326,18 @@ function prevStep() {
   currentStep.value--;
 }
 
-function addTarget() {
-  localFormValue.value.targets.push({
-    providerId: '',
-    modelName: '',
-    weight: ['loadbalance', 'hash', 'affinity'].includes(localConfigType.value) ? 0.5 : undefined,
-    onStatusCodes: localConfigType.value === 'fallback' ? [] : undefined,
-  });
-}
-
-function removeTarget(index: number) {
-  localFormValue.value.targets.splice(index, 1);
-}
-
-function moveTargetUp(index: number) {
-  if (index > 0) {
-    const temp = localFormValue.value.targets[index];
-    localFormValue.value.targets[index] = localFormValue.value.targets[index - 1];
-    localFormValue.value.targets[index - 1] = temp;
-  }
-}
-
-function moveTargetDown(index: number) {
-  if (index < localFormValue.value.targets.length - 1) {
-    const temp = localFormValue.value.targets[index];
-    localFormValue.value.targets[index] = localFormValue.value.targets[index + 1];
-    localFormValue.value.targets[index + 1] = temp;
-  }
-}
-
 function handleSave() {
-  if (localFormValue.value.targets.length === 0) {
-    message.error('请至少添加一个目标');
+  const result = validateTargets();
+  if (!result.valid) {
+    message.error(result.message!);
     return;
   }
-
-  const hasEmptyProvider = localFormValue.value.targets.some(t => !t.providerId);
-  if (hasEmptyProvider) {
-    message.error('请为所有目标选择提供商');
-    return;
-  }
-
   emit('save');
 }
 
 function handleCancel() {
   emit('cancel');
 }
-
-watch(() => localConfigType.value, () => {
-  localFormValue.value.targets = [];
-});
 </script>
 
 <style scoped>

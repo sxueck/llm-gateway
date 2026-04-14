@@ -56,7 +56,7 @@
         <div class="target-list">
           <div
             v-for="(target, index) in enrichedTargets"
-            :key="index"
+            :key="target.provider + '-' + (target.modelName || index)"
             class="target-item fallback-item"
           >
             <div class="target-icon">
@@ -106,7 +106,7 @@
       <div v-else-if="config.type === 'loadbalance'" class="strategy-view lb-view">
         <div
           v-for="(target, index) in enrichedTargets"
-          :key="index"
+          :key="target.provider + '-' + (target.modelName || index)"
           class="target-item lb-item"
         >
           <div class="lb-info">
@@ -157,7 +157,7 @@
       <div v-else class="strategy-view default-view">
         <div
           v-for="(target, index) in enrichedTargets"
-          :key="index"
+          :key="target.provider + '-' + (target.modelName || index)"
           class="target-item default-item"
         >
           <div class="target-content">

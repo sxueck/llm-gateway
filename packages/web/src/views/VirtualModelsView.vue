@@ -130,7 +130,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import {
   useMessage,
   NSpace,
@@ -440,8 +440,6 @@ onMounted(async () => {
   await loadConfigs();
   startRoutingStatusPolling();
 });
-
-import { onUnmounted } from 'vue';
 
 onUnmounted(() => {
   stopRoutingStatusPolling();

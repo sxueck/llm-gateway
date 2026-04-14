@@ -77,7 +77,7 @@
         </n-alert>
 
         <n-space vertical :size="12">
-          <n-card v-for="(target, index) in localFormValue.targets" :key="index" size="small" class="target-card">
+          <n-card v-for="(target, index) in localFormValue.targets" :key="target.providerId + '-' + index" size="small" class="target-card">
             <template #header>
               <n-space justify="space-between" align="center">
                 <span class="target-title">
@@ -186,7 +186,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed } from 'vue';
 import {
   NSteps,
   NStep,
@@ -213,6 +213,7 @@ import {
   ArrowUpOutline,
   ArrowDownOutline,
 } from '@vicons/ionicons5';
+import { useRoutingTargets } from '@/composables/useRoutingTargets';
 
 interface Target {
   providerId: string;
@@ -261,6 +262,21 @@ const localFormValue = computed({
   set: (value) => emit('update:formValue', value),
 });
 
+const targetsProxy = computed<typeof localFormValue.value.targets>({
+  get: () => localFormValue.value.targets,
+  set: (val) => {
+    localFormValue.value = { ...localFormValue.value, targets: val };
+  },
+});
+
+const { addTarget, removeTarget, moveTargetUp, moveTargetDown, validateTargets, getTotalWeight } =
+  useRoutingTargets({
+    configType: localConfigType as any,
+    targets: targetsProxy as any,
+    clearOnTypeChange: true,
+    defaultFallbackStatusCodes: [429, 500],
+  });
+
 const stepStatus = computed(() => {
   return currentStep.value === 3 && localFormValue.value.targets.length === 0 ? 'error' : 'process';
 });
@@ -288,50 +304,11 @@ function prevStep() {
   currentStep.value--;
 }
 
-function addTarget() {
-  localFormValue.value.targets.push({
-    providerId: '',
-    modelName: '',
-    weight: localConfigType.value === 'loadbalance' ? 0.5 : undefined,
-    onStatusCodes: localFormValue.value.targets.length === 0 && localConfigType.value === 'fallback' ? [429, 500] : localConfigType.value === 'fallback' ? [429, 500] : undefined,
-  });
-}
-
-function removeTarget(index: number) {
-  localFormValue.value.targets.splice(index, 1);
-}
-
-function moveTargetUp(index: number) {
-  if (index > 0) {
-    const temp = localFormValue.value.targets[index];
-    localFormValue.value.targets[index] = localFormValue.value.targets[index - 1];
-    localFormValue.value.targets[index - 1] = temp;
-  }
-}
-
-function moveTargetDown(index: number) {
-  if (index < localFormValue.value.targets.length - 1) {
-    const temp = localFormValue.value.targets[index];
-    localFormValue.value.targets[index] = localFormValue.value.targets[index + 1];
-    localFormValue.value.targets[index + 1] = temp;
-  }
-}
-
 function handleSave() {
-  if (localFormValue.value.targets.length === 0) {
-    message.error('请至少添加一个目标');
+  const result = validateTargets();
+  if (!result.valid) {
+    message.error(result.message!);
     return;
-  }
-
-  for (const target of localFormValue.value.targets) {
-    if (!target.providerId) {
-      message.error('请为所有目标选择提供商');
-      return;
-    }
-    if (!target.modelName) {
-      message.error('请为所有目标选择模型');
-      return;
-    }
   }
 
   if (localFormValue.value.createVirtualModel) {
@@ -341,7 +318,7 @@ function handleSave() {
     }
   }
 
-  const totalWeight = localFormValue.value.targets.reduce((sum, t) => sum + (t.weight || 0), 0);
+  const totalWeight = getTotalWeight();
   if (localConfigType.value === 'loadbalance' && Math.abs(totalWeight - 1) > 0.01) {
     message.warning(`权重总和应为 1.0，当前为 ${totalWeight.toFixed(2)}`);
   }
@@ -352,11 +329,6 @@ function handleSave() {
 function handleCancel() {
   emit('cancel');
 }
-
-// 监听配置类型变化，重置表单
-watch(localConfigType, () => {
-  localFormValue.value.targets = [];
-});
 </script>
 
 <style scoped>

@@ -205,6 +205,7 @@ import {
 } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import { configApi } from '@/api/config';
+import { modelApi } from '@/api/model';
 
 const { t } = useI18n();
 const message = useMessage();
@@ -390,16 +391,7 @@ async function loadHealthTargets() {
 async function loadAvailableModels() {
   try {
     loadingModels.value = true;
-    // 使用models API获取所有模型
-    const response = await fetch('/api/admin/models', {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-      },
-    });
-    if (!response.ok) {
-      throw new Error('Failed to load models');
-    }
-    const data = await response.json();
+    const data = await modelApi.getAll();
     const allModels = data.models || [];
 
     // 过滤出真实模型和虚拟模型
