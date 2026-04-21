@@ -114,15 +114,15 @@
             </template>
           </n-empty>
 
-          <TransitionGroup 
-            v-else 
-            name="list" 
-            tag="div" 
+          <TransitionGroup
+            v-else
+            name="list"
+            tag="div"
             class="targets-list"
           >
-            <div 
-              v-for="(target, index) in localFormValue.targets" 
-              :key="index"
+            <div
+              v-for="(target, index) in localFormValue.targets"
+              :key="target.providerId + '-' + index"
               class="target-item"
               :class="localConfigType"
             >
@@ -212,11 +212,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue';
-import { 
-  GitNetworkOutline, 
-  GitMergeOutline, 
-  TimeOutline, 
+import { computed } from 'vue';
+import {
+  GitNetworkOutline,
+  GitMergeOutline,
+  TimeOutline,
   KeyOutline,
   CheckmarkCircle,
   Add,
@@ -225,11 +225,12 @@ import {
   ArrowDown,
   InformationCircleOutline
 } from '@vicons/ionicons5';
-import { 
-  NFormItem, NInput, NInputNumber, NSelect, NRadioGroup, 
+import {
+  NFormItem, NInput, NInputNumber, NSelect, NRadioGroup,
   NGrid, NGridItem, NIcon, NDivider, NButton, NTag, NEmpty
 } from 'naive-ui';
 import type { VirtualModelFormValue, RoutingConfigType } from '@/types/virtual-model';
+import { useRoutingTargets } from '@/composables/useRoutingTargets';
 
 interface StrategyType {
   label: string;
@@ -294,14 +295,24 @@ const localFormValue = computed({
   set: (v) => emit('update:formValue', v)
 });
 
-const currentStrategyInfo = computed(() => 
+const targetsProxy = computed<typeof localFormValue.value.targets>({
+  get: () => localFormValue.value.targets,
+  set: (val) => {
+    localFormValue.value = { ...localFormValue.value, targets: val };
+  },
+});
+
+const { addTarget, removeTarget, moveTargetUp, moveTargetDown, getTotalWeight } = useRoutingTargets({
+  configType: localConfigType as any,
+  targets: targetsProxy as any,
+  clearOnTypeChange: false,
+});
+
+const currentStrategyInfo = computed(() =>
   strategyTypes.find(s => s.value === localConfigType.value) || strategyTypes[0]
 );
 
-const totalWeight = computed(() => {
-  if (!['loadbalance', 'hash', 'affinity'].includes(localConfigType.value)) return 0;
-  return localFormValue.value.targets.reduce((sum, t) => sum + (t.weight || 0), 0);
-});
+const totalWeight = computed(() => getTotalWeight());
 
 const isValid = computed(() => {
   if (!localFormValue.value.virtualModelName) return false;
@@ -309,52 +320,14 @@ const isValid = computed(() => {
   return localFormValue.value.targets.every(t => t.providerId && t.modelName);
 });
 
-// Actions
-function addTarget() {
-  localFormValue.value.targets.push({
-    providerId: '',
-    modelName: '',
-    weight: ['loadbalance', 'hash', 'affinity'].includes(localConfigType.value) ? 0.5 : undefined,
-    onStatusCodes: localConfigType.value === 'fallback' ? [] : undefined,
-  });
-}
-
-function removeTarget(index: number) {
-  localFormValue.value.targets.splice(index, 1);
-}
-
-function moveTargetUp(index: number) {
-  if (index <= 0) return;
-  const items = [...localFormValue.value.targets];
-  [items[index - 1], items[index]] = [items[index], items[index - 1]];
-  localFormValue.value.targets = items;
-}
-
-function moveTargetDown(index: number) {
-  if (index >= localFormValue.value.targets.length - 1) return;
-  const items = [...localFormValue.value.targets];
-  [items[index + 1], items[index]] = [items[index], items[index + 1]];
-  localFormValue.value.targets = items;
-}
-
 function handleSave() {
   // Set createVirtualModel to true implicitly as we are designing for "Smart Routing" which implies a virtual model entry
   localFormValue.value.createVirtualModel = true;
-  localFormValue.value.name = localFormValue.value.virtualModelName; 
+  localFormValue.value.name = localFormValue.value.virtualModelName;
   emit('save');
 }
 
-// Watchers
-watch(localConfigType, () => {
-  // Clear targets on type change to avoid incompatible configs? 
-  // Or maybe keep them but reset strategy-specific fields. 
-  // For UX, keeping providers is nice, but weights need reset.
-  localFormValue.value.targets = localFormValue.value.targets.map(t => ({
-    ...t,
-    weight: ['loadbalance', 'hash', 'affinity'].includes(localConfigType.value) ? 0.5 : undefined,
-    onStatusCodes: localConfigType.value === 'fallback' ? [] : undefined
-  }));
-});
+
 </script>
 
 <style scoped>
