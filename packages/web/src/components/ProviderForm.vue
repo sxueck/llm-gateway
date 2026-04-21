@@ -159,7 +159,7 @@
               <n-form-item label="Anthropic URL">
                 <n-input
                   v-model:value="protocolUrls.anthropic"
-                  placeholder="https://api.anthropic.com/claude"
+                  placeholder="https://api.anthropic.com"
                   size="small"
                 />
               </n-form-item>
