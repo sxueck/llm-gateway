@@ -192,7 +192,7 @@
               <div class="stat-main-value">
                 <n-skeleton v-if="loading" text style="width: 50%; height: 42px" :sharp="false" />
                 <span v-else>
-                  {{ formatResponseTime(expertRoutingSpeed) }}<span class="stat-unit">{{ expertRoutingSpeed >= 1000 ? 's' : 'ms' }}</span>
+                  {{ expertRoutingSpeed >= 1000 ? (expertRoutingSpeed / 1000).toFixed(2) : formatResponseTime(expertRoutingSpeed) }}<span class="stat-unit">{{ expertRoutingSpeed >= 1000 ? 's' : 'ms' }}</span>
                 </span>
               </div>
               <div class="stat-details">

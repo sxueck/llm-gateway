@@ -30,7 +30,7 @@
       <div v-else class="models-list">
         <n-card
           v-for="(model, index) in models"
-          :key="index"
+          :key="model.modelIdentifier + '-' + index"
           size="small"
           class="model-card"
         >

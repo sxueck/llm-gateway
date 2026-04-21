@@ -308,7 +308,7 @@ import {
   NCheckbox,
   NText,
 } from 'naive-ui';
-import axios from 'axios';
+import request from '@/utils/request';
 
 const message = useMessage();
 
@@ -523,39 +523,29 @@ const restoreColumns = [
 // Methods
 async function loadS3Config() {
   try {
-    const token = localStorage.getItem('token');
-    const response = await axios.get('/api/admin/backup/s3-config', {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const data = await request.get('/admin/backup/s3-config');
 
     s3Config.value = {
-      endpoint: response.data.endpoint,
-      bucketName: response.data.bucketName,
-      region: response.data.region,
-      accessKeyId: response.data.accessKeyId,
-      secretAccessKey: response.data.secretAccessKey, // Already '******' from backend
-      forcePathStyle: response.data.forcePathStyle
+      endpoint: data.endpoint,
+      bucketName: data.bucketName,
+      region: data.region,
+      accessKeyId: data.accessKeyId,
+      secretAccessKey: data.secretAccessKey, // Already '******' from backend
+      forcePathStyle: data.forcePathStyle
     };
   } catch (error: any) {
-    message.error(`加载S3配置失败: ${error.response?.data?.error?.message || error.message}`);
+    message.error(`加载S3配置失败: ${error.message}`);
   }
 }
 
 async function saveS3Config() {
   savingS3Config.value = true;
   try {
-    const token = localStorage.getItem('token');
-    await axios.put(
-      '/api/admin/backup/s3-config',
-      s3Config.value,
-      {
-        headers: { Authorization: `Bearer ${token}` }
-      }
-    );
+    await request.put('/admin/backup/s3-config', s3Config.value);
 
     message.success('S3配置保存成功');
   } catch (error: any) {
-    message.error(`保存S3配置失败: ${error.response?.data?.error?.message || error.message}`);
+    message.error(`保存S3配置失败: ${error.message}`);
   } finally {
     savingS3Config.value = false;
   }
@@ -564,20 +554,13 @@ async function saveS3Config() {
 async function testS3Connection() {
   testingConnection.value = true;
   try {
-    const token = localStorage.getItem('token');
-    const response = await axios.post(
-      '/api/admin/backup/test-s3',
-      s3Config.value,
-      {
-        headers: { Authorization: `Bearer ${token}` }
-      }
-    );
+    const data = await request.post('/admin/backup/test-s3', s3Config.value);
 
-    if (response.data.connected) {
+    if (data.connected) {
       message.success('S3 连接测试成功');
     } else {
       // Show detailed error message from backend
-      const errorMsg = response.data.error || '未知错误';
+      const errorMsg = data.error || '未知错误';
       message.error(`S3 连接测试失败: ${errorMsg}`);
     }
   } catch (error: any) {
@@ -589,44 +572,34 @@ async function testS3Connection() {
 
 async function loadBackupConfig() {
   try {
-    const token = localStorage.getItem('token');
-    const response = await axios.get('/api/admin/backup/config', {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const data = await request.get('/admin/backup/config');
 
     backupConfig.value = {
-      schedule: response.data.schedule,
-      retentionDays: response.data.retention_days,
-      maxBackupCount: response.data.max_backup_count,
-      includeLogs: response.data.include_logs,
-      schedulerRunning: response.data.scheduler_running
+      schedule: data.schedule,
+      retentionDays: data.retention_days,
+      maxBackupCount: data.max_backup_count,
+      includeLogs: data.include_logs,
+      schedulerRunning: data.scheduler_running
     };
   } catch (error: any) {
-    message.error(`加载配置失败: ${error.response?.data?.error?.message || error.message}`);
+    message.error(`加载配置失败: ${error.message}`);
   }
 }
 
 async function updateBackupConfig() {
   updatingConfig.value = true;
   try {
-    const token = localStorage.getItem('token');
-    await axios.put(
-      '/api/admin/backup/config',
-      {
-        schedule: backupConfig.value.schedule,
-        retention_days: backupConfig.value.retentionDays,
-        max_backup_count: backupConfig.value.maxBackupCount,
-        include_logs: backupConfig.value.includeLogs
-      },
-      {
-        headers: { Authorization: `Bearer ${token}` }
-      }
-    );
+    await request.put('/admin/backup/config', {
+      schedule: backupConfig.value.schedule,
+      retention_days: backupConfig.value.retentionDays,
+      max_backup_count: backupConfig.value.maxBackupCount,
+      include_logs: backupConfig.value.includeLogs
+    });
 
     message.success('配置更新成功');
     await loadBackupConfig();
   } catch (error: any) {
-    message.error(`配置更新失败: ${error.response?.data?.error?.message || error.message}`);
+    message.error(`配置更新失败: ${error.message}`);
   } finally {
     updatingConfig.value = false;
   }
@@ -635,20 +608,18 @@ async function updateBackupConfig() {
 async function loadBackupList() {
   loadingBackups.value = true;
   try {
-    const token = localStorage.getItem('token');
-    const response = await axios.get('/api/admin/backup/list', {
+    const data = await request.get('/admin/backup/list', {
       params: {
         page: backupPagination.value.page,
         limit: backupPagination.value.pageSize,
         status: 'all'
-      },
-      headers: { Authorization: `Bearer ${token}` }
+      }
     });
 
-    backupList.value = response.data.backups;
-    backupPagination.value.itemCount = response.data.total;
+    backupList.value = data.backups;
+    backupPagination.value.itemCount = data.total;
   } catch (error: any) {
-    message.error(`加载备份列表失败: ${error.response?.data?.error?.message || error.message}`);
+    message.error(`加载备份列表失败: ${error.message}`);
   } finally {
     loadingBackups.value = false;
   }
@@ -657,20 +628,18 @@ async function loadBackupList() {
 async function loadRestoreList() {
   loadingRestores.value = true;
   try {
-    const token = localStorage.getItem('token');
-    const response = await axios.get('/api/admin/restore/list', {
+    const data = await request.get('/admin/restore/list', {
       params: {
         page: restorePagination.value.page,
         limit: restorePagination.value.pageSize,
         status: 'all'
-      },
-      headers: { Authorization: `Bearer ${token}` }
+      }
     });
 
-    restoreList.value = response.data.restores;
-    restorePagination.value.itemCount = response.data.total;
+    restoreList.value = data.restores;
+    restorePagination.value.itemCount = data.total;
   } catch (error: any) {
-    message.error(`加载恢复列表失败: ${error.response?.data?.error?.message || error.message}`);
+    message.error(`加载恢复列表失败: ${error.message}`);
   } finally {
     loadingRestores.value = false;
   }
@@ -683,16 +652,9 @@ async function confirmCreateBackup() {
 async function createBackup() {
   creatingBackup.value = true;
   try {
-    const token = localStorage.getItem('token');
-    await axios.post(
-      '/api/admin/backup/create',
-      {
-        includes_logs: createBackupForm.value.includeLogs
-      },
-      {
-        headers: { Authorization: `Bearer ${token}` }
-      }
-    );
+    await request.post('/admin/backup/create', {
+      includes_logs: createBackupForm.value.includeLogs
+    });
 
     message.success('备份任务已启动，请稍后刷新列表查看进度');
     showCreateBackupModal.value = false;
@@ -710,19 +672,12 @@ async function createBackup() {
 async function syncBackupsFromS3() {
   syncingBackups.value = true;
   try {
-    const token = localStorage.getItem('token');
-    const response = await axios.post(
-      '/api/admin/backup/sync',
-      {},
-      {
-        headers: { Authorization: `Bearer ${token}` }
-      }
-    );
+    const data = await request.post('/admin/backup/sync', {});
 
-    message.success(response.data.message);
+    message.success(data.message);
     await loadBackupList();
   } catch (error: any) {
-    message.error(`同步备份失败: ${error.response?.data?.error?.message || error.message}`);
+    message.error(`同步备份失败: ${error.message}`);
   } finally {
     syncingBackups.value = false;
   }
@@ -755,7 +710,6 @@ async function restoreBackup() {
 
   restoringBackup.value = true;
   try {
-    const token = localStorage.getItem('token');
     const payload: any = {
       backup_id: selectedBackup.value.id,
       restore_type: restoreForm.value.restoreType,
@@ -766,13 +720,7 @@ async function restoreBackup() {
       payload.tables_to_restore = restoreForm.value.tablesToRestore;
     }
 
-    await axios.post(
-      '/api/admin/restore',
-      payload,
-      {
-        headers: { Authorization: `Bearer ${token}` }
-      }
-    );
+    await request.post('/admin/restore', payload);
 
     message.success('恢复任务已启动，请稍后刷新列表查看进度');
     showRestoreModal.value = false;
@@ -781,7 +729,7 @@ async function restoreBackup() {
       loadRestoreList();
     }, 2000);
   } catch (error: any) {
-    message.error(`恢复失败: ${error.response?.data?.error?.message || error.message}`);
+    message.error(`恢复失败: ${error.message}`);
   } finally {
     restoringBackup.value = false;
   }
@@ -789,15 +737,12 @@ async function restoreBackup() {
 
 async function deleteBackup(id: string) {
   try {
-    const token = localStorage.getItem('token');
-    await axios.delete(`/api/admin/backup/${id}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    await request.delete(`/admin/backup/${id}`);
 
     message.success('备份已删除');
     await loadBackupList();
   } catch (error: any) {
-    message.error(`删除备份失败: ${error.response?.data?.error?.message || error.message}`);
+    message.error(`删除备份失败: ${error.message}`);
   }
 }
 
