@@ -7,6 +7,7 @@ import { EmptyOutputError } from '../../errors/empty-output-error.js';
 import { filterForwardedHeaders, sanitizeCustomHeaders } from '../../utils/header-sanitizer.js';
 import { PiiStreamRestorer } from '../../services/pii-protection-service.js';
 import type { PiiProtectionContext } from '../../services/pii-protection-types.js';
+import { removeV1Suffix } from '../../utils/api-endpoint-builder.js';
 
 export interface HttpResponse {
   statusCode: number;
@@ -29,7 +30,7 @@ function getAnthropicClient(baseUrl: string | undefined, apiKey: string, headers
   };
 
   if (baseUrl) {
-    clientConfig.baseURL = baseUrl;
+    clientConfig.baseURL = removeV1Suffix(baseUrl);
   }
 
   // 添加自定义请求头支持

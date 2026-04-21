@@ -1,3 +1,5 @@
+import { removeV1Suffix } from '../utils/api-endpoint-builder.js';
+
 interface ProviderConfig {
   provider: string;
   baseUrl: string;
@@ -69,6 +71,9 @@ class OpenAICompatibleAdapter extends BaseAdapter {
 }
 
 class AnthropicAdapter extends BaseAdapter {
+  normalizeBaseUrl(baseUrl: string): string {
+    return removeV1Suffix(super.normalizeBaseUrl(baseUrl));
+  }
 }
 
 export class ProviderAdapterFactory {
@@ -110,4 +115,3 @@ export class ProviderAdapterFactory {
     }
   }
 }
-
