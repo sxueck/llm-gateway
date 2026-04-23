@@ -224,6 +224,7 @@ test('loadbalance retry can probe a half-open target after all healthy targets a
     };
 
     circuitBreaker.recordFailure(getTargetKey(config.targets[1]!), new Error('provider-b down'));
+    circuitBreaker.recordFailure(getTargetKey(config.targets[1]!), new Error('provider-b still down'));
     await new Promise(resolve => setTimeout(resolve, 20));
 
     const selectedTarget = selectRoutingTarget(
@@ -280,6 +281,80 @@ test('hasAvailableRoutingTargets does not consume half-open attempts during pass
   }
 });
 
+test('selectRoutingTarget does not spend half-open attempts on unselected fallback targets', async () => {
+  circuitBreaker.resetAll();
+
+  const originalTimeout = (circuitBreaker as any).config.timeout;
+  const originalHalfOpenMaxAttempts = (circuitBreaker as any).config.halfOpenMaxAttempts;
+
+  (circuitBreaker as any).config.timeout = 1;
+  (circuitBreaker as any).config.halfOpenMaxAttempts = 1;
+
+  try {
+    const config: RoutingConfig = {
+      strategy: { mode: 'fallback' },
+      targets: [
+        { provider: 'provider-a' },
+        { provider: 'provider-b' },
+      ],
+    };
+
+    circuitBreaker.recordFailure(getTargetKey(config.targets[1]!), new Error('provider-b down'));
+    circuitBreaker.recordFailure(getTargetKey(config.targets[1]!), new Error('provider-b still down'));
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    const selectedTarget = selectRoutingTarget(config, 'fallback', 'fallback-half-open-spend-test-1');
+    const halfOpenStats = circuitBreaker.getProviderStats(getTargetKey(config.targets[1]!));
+
+    assert.equal(selectedTarget?.provider, 'provider-a');
+    assert.equal(halfOpenStats.state, 'OPEN');
+    assert.equal(halfOpenStats.halfOpenAttempts, 0);
+  } finally {
+    (circuitBreaker as any).config.timeout = originalTimeout;
+    (circuitBreaker as any).config.halfOpenMaxAttempts = originalHalfOpenMaxAttempts;
+    circuitBreaker.resetAll();
+  }
+});
+
+test('fallback periodically probes cooled-down targets even when one healthy target stays available', async () => {
+  circuitBreaker.resetAll();
+
+  const originalTimeout = (circuitBreaker as any).config.timeout;
+  const originalHalfOpenMaxAttempts = (circuitBreaker as any).config.halfOpenMaxAttempts;
+
+  (circuitBreaker as any).config.timeout = 1;
+  (circuitBreaker as any).config.halfOpenMaxAttempts = 3;
+
+  try {
+    const config: RoutingConfig = {
+      strategy: { mode: 'fallback' },
+      targets: [
+        { provider: 'provider-a' },
+        { provider: 'provider-b' },
+        { provider: 'provider-c' },
+      ],
+    };
+
+    circuitBreaker.recordFailure(getTargetKey(config.targets[1]!), new Error('provider-b down'));
+    circuitBreaker.recordFailure(getTargetKey(config.targets[1]!), new Error('provider-b still down'));
+    circuitBreaker.recordFailure(getTargetKey(config.targets[2]!), new Error('provider-c down'));
+    circuitBreaker.recordFailure(getTargetKey(config.targets[2]!), new Error('provider-c still down'));
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    const selectedProviders = Array.from({ length: 20 }, () =>
+      selectRoutingTarget(config, 'fallback', 'fallback-half-open-probe-test-1')?.provider
+    );
+
+    assert.equal(selectedProviders.filter(provider => provider === 'provider-a').length, 18);
+    assert.equal(selectedProviders.filter(provider => provider === 'provider-b').length, 1);
+    assert.equal(selectedProviders.filter(provider => provider === 'provider-c').length, 1);
+  } finally {
+    (circuitBreaker as any).config.timeout = originalTimeout;
+    (circuitBreaker as any).config.halfOpenMaxAttempts = originalHalfOpenMaxAttempts;
+    circuitBreaker.resetAll();
+  }
+});
+
 test('getAnonymousAffinityTargetKey returns the sticky target for anonymous affinity and does not count as explicit session', () => {
   circuitBreaker.resetAll();
 
@@ -320,4 +395,96 @@ test('countExplicitSessionBindings counts only non-expired explicit sessions for
 
   assert.equal(countExplicitSessionBindings('explicit-binding-test-1', getTargetKey(config.targets[0]!)), 2);
   assert.equal(countExplicitSessionBindings('explicit-binding-test-1', getTargetKey(config.targets[1]!)), 1);
+});
+
+test('hash mode does not drift target when probe mechanism is triggered', async () => {
+  circuitBreaker.resetAll();
+
+  const originalTimeout = (circuitBreaker as any).config.timeout;
+  const originalHalfOpenMaxAttempts = (circuitBreaker as any).config.halfOpenMaxAttempts;
+
+  (circuitBreaker as any).config.timeout = 1;
+  // 给 HALF_OPEN 目标充足的尝试次数，避免测试期间因次数耗尽导致重试
+  (circuitBreaker as any).config.halfOpenMaxAttempts = 100;
+
+  try {
+    const config: RoutingConfig = {
+      strategy: { mode: 'hash', hashSource: 'request' },
+      targets: [
+        { provider: 'provider-a' },
+        { provider: 'provider-b' },
+      ],
+    };
+
+    // 让 provider-b 进入 OPEN 状态（后续可能进入 HALF_OPEN）
+    circuitBreaker.recordFailure(getTargetKey(config.targets[1]!), new Error('provider-b down'));
+    circuitBreaker.recordFailure(getTargetKey(config.targets[1]!), new Error('provider-b still down'));
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    const hashKey = 'stable-hash-key-123';
+    const selectedProviders: (string | undefined)[] = [];
+
+    // 发起 20 次请求，probe 机制每 10 次触发一次
+    for (let i = 0; i < 20; i++) {
+      selectedProviders.push(selectRoutingTarget(config, 'hash', 'hash-probe-stability-test-1', hashKey)?.provider);
+    }
+
+    // 所有请求应该返回同一个 provider，不因 probe 机制而漂移
+    const firstProvider = selectedProviders[0];
+    assert.ok(firstProvider, 'First request should select a provider');
+    assert.ok(
+      selectedProviders.every(p => p === firstProvider),
+      `Hash routing should be stable: all 20 requests should return ${firstProvider}, but got variations`
+    );
+  } finally {
+    (circuitBreaker as any).config.timeout = originalTimeout;
+    (circuitBreaker as any).config.halfOpenMaxAttempts = originalHalfOpenMaxAttempts;
+    circuitBreaker.resetAll();
+  }
+});
+
+test('affinity mode does not drift target when probe mechanism is triggered', async () => {
+  circuitBreaker.resetAll();
+
+  const originalTimeout = (circuitBreaker as any).config.timeout;
+  const originalHalfOpenMaxAttempts = (circuitBreaker as any).config.halfOpenMaxAttempts;
+
+  (circuitBreaker as any).config.timeout = 1;
+  // 给 HALF_OPEN 目标充足的尝试次数，避免测试期间因次数耗尽导致重试
+  (circuitBreaker as any).config.halfOpenMaxAttempts = 100;
+
+  try {
+    const config: RoutingConfig = {
+      strategy: { mode: 'affinity', affinityTTL: 60_000 },
+      targets: [
+        { provider: 'provider-a' },
+        { provider: 'provider-b' },
+      ],
+    };
+
+    // 让 provider-b 进入 OPEN 状态（后续可能进入 HALF_OPEN）
+    circuitBreaker.recordFailure(getTargetKey(config.targets[1]!), new Error('provider-b down'));
+    circuitBreaker.recordFailure(getTargetKey(config.targets[1]!), new Error('provider-b still down'));
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    const sessionId = 'stable-session-456';
+    const selectedProviders: (string | undefined)[] = [];
+
+    // 发起 20 次请求，probe 机制每 10 次触发一次
+    for (let i = 0; i < 20; i++) {
+      selectedProviders.push(selectRoutingTarget(config, 'affinity', 'affinity-probe-stability-test-1', sessionId)?.provider);
+    }
+
+    // 所有请求应该返回同一个 provider（粘性绑定），不因 probe 机制而漂移
+    const firstProvider = selectedProviders[0];
+    assert.ok(firstProvider, 'First request should select a provider');
+    assert.ok(
+      selectedProviders.every(p => p === firstProvider),
+      `Affinity routing should be sticky: all 20 requests should return ${firstProvider}, but got variations`
+    );
+  } finally {
+    (circuitBreaker as any).config.timeout = originalTimeout;
+    (circuitBreaker as any).config.halfOpenMaxAttempts = originalHalfOpenMaxAttempts;
+    circuitBreaker.resetAll();
+  }
 });
