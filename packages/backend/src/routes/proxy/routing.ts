@@ -1,7 +1,7 @@
 import { providerDb, modelDb, routingConfigDb, expertRoutingConfigDb } from '../../db/index.js';
 import { memoryLogger } from '../../services/logger.js';
 import { expertRouter } from '../../services/expert-router.js';
-import { circuitBreaker } from '../../services/circuit-breaker.js';
+import { CircuitState, circuitBreaker } from '../../services/circuit-breaker.js';
 import { parsePositiveInt } from '../../utils/parse-positive-int.js';
 
 export interface RoutingTarget {
@@ -68,8 +68,11 @@ const EXPLICIT_AFFINITY_IDLE_TTL_MS = parsePositiveInt(
   DEFAULT_EXPLICIT_AFFINITY_IDLE_TTL_MS
 );
 
+const HALF_OPEN_PROBE_REQUEST_INTERVAL = 10;
+
 const affinityStateMap = new Map<string, AffinityState>();
 const loadBalanceCursorMap = new Map<string, number>();
+const halfOpenProbeCounterMap = new Map<string, number>();
 
 function evictOldestEntries<T>(targetMap: Map<string, T>, maxEntries: number): number {
   let removedCount = 0;
@@ -118,12 +121,17 @@ function buildLoadBalanceStateKey(config: RoutingConfig, configId?: string): str
   return config.targets.map(getTargetKey).join('|');
 }
 
+function buildHalfOpenProbeStateKey(config: RoutingConfig, configId?: string): string {
+  return `${buildLoadBalanceStateKey(config, configId)}::half-open-probe`;
+}
+
 function selectRoundRobinTarget(
   availableTargets: RoutingTarget[],
   config: RoutingConfig,
-  configId?: string
+  configId?: string,
+  stateKeyOverride?: string
 ): RoutingTarget {
-  const stateKey = buildLoadBalanceStateKey(config, configId);
+  const stateKey = stateKeyOverride ?? buildLoadBalanceStateKey(config, configId);
   const cursor = loadBalanceCursorMap.get(stateKey) || 0;
   const availableTargetSet = new Set(availableTargets);
 
@@ -266,6 +274,50 @@ function selectLoadBalanceTarget(
   return selectWeightedRandomTarget(weightedTargets);
 }
 
+function shouldProbeHalfOpenTarget(
+  config: RoutingConfig,
+  configId: string | undefined,
+  excludeTargetKeys: Set<string>,
+  healthyTargets: RoutingTarget[],
+  probeTargets: RoutingTarget[]
+): boolean {
+  if (probeTargets.length === 0) {
+    return false;
+  }
+
+  if (healthyTargets.length === 0) {
+    return true;
+  }
+
+  if (excludeTargetKeys.size > 0) {
+    return false;
+  }
+
+  const stateKey = buildHalfOpenProbeStateKey(config, configId);
+  const nextCount = (halfOpenProbeCounterMap.get(stateKey) || 0) + 1;
+  setMapValueWithCapacity(
+    halfOpenProbeCounterMap,
+    stateKey,
+    nextCount,
+    MAX_LOAD_BALANCE_CURSOR_ENTRIES
+  );
+
+  return nextCount % HALF_OPEN_PROBE_REQUEST_INTERVAL === 0;
+}
+
+function selectHalfOpenProbeTarget(
+  probeTargets: RoutingTarget[],
+  config: RoutingConfig,
+  configId?: string
+): RoutingTarget {
+  return selectRoundRobinTarget(
+    probeTargets,
+    config,
+    configId,
+    buildHalfOpenProbeStateKey(config, configId)
+  );
+}
+
 // 定期清理已过期的 affinity 状态。
 const AFFINITY_CLEANUP_INTERVAL = 60 * 60 * 1000; // 1小时
 
@@ -302,6 +354,17 @@ const affinityCleanupTimer = setInterval(() => {
   if (removedCursorOverflowCount > 0) {
     memoryLogger.warn(
       `loadbalance 游标状态超过上限 ${MAX_LOAD_BALANCE_CURSOR_ENTRIES}，已清理 ${removedCursorOverflowCount} 条`,
+      'Routing'
+    );
+  }
+
+  const removedHalfOpenProbeOverflowCount = evictOldestEntries(
+    halfOpenProbeCounterMap,
+    MAX_LOAD_BALANCE_CURSOR_ENTRIES
+  );
+  if (removedHalfOpenProbeOverflowCount > 0) {
+    memoryLogger.warn(
+      `half-open probe 状态超过上限 ${MAX_LOAD_BALANCE_CURSOR_ENTRIES}，已清理 ${removedHalfOpenProbeOverflowCount} 条`,
       'Routing'
     );
   }
@@ -355,137 +418,187 @@ export function selectRoutingTarget(
     return null;
   }
 
-  const availableTargets = config.targets.filter(t =>
-    (!excludeTargetKeys || !excludeTargetKeys.has(getTargetKey(t))) &&
-    circuitBreaker.isAvailable(getTargetKey(t))
-  );
+  const localExcludeTargetKeys = new Set(excludeTargetKeys || []);
 
-  // 记录经过熔断和排除过滤后的可用 targets
-  if (availableTargets.length > 0) {
-    const availableInfo = availableTargets.map((t, idx) =>
-      `[${idx}] provider=${t.provider}, model=${t.override_params?.model || 'default'}, weight=${t.weight || 0}, key=${getTargetKey(t)}`
-    ).join('; ');
-    memoryLogger.info(
-      `Smart routing available targets after filter | mode=${type} | count=${availableTargets.length} | targets=[${availableInfo}]`,
-      'Routing'
+  while (true) {
+    const availableTargets = config.targets.filter(target =>
+      !localExcludeTargetKeys.has(getTargetKey(target)) &&
+      circuitBreaker.peekAvailability(getTargetKey(target))
     );
-  }
 
-  if (availableTargets.length === 0) {
-    memoryLogger.warn(
-      `所有路由目标均不可用 | total: ${config.targets.length}` +
-      (excludeTargetKeys ? ` | 已排除: ${excludeTargetKeys.size}` : ''),
-      'Routing'
-    );
-    return null;
-  }
-
-  if (type === 'loadbalance' || config.strategy?.mode === 'loadbalance') {
-    return selectLoadBalanceTarget(availableTargets, config, configId, excludeTargetKeys);
-  }
-
-  if (type === 'fallback' || config.strategy?.mode === 'fallback') {
-    return availableTargets[0] || null;
-  }
-
-  // Hash模式：基于哈希key进行一致性哈希分配
-  if (type === 'hash' || config.strategy?.mode === 'hash') {
-    if (!hashKey) {
-      memoryLogger.warn('Hash模式需要提供hashKey，降级为随机选择', 'Routing');
-      return availableTargets[0];
-    }
-
-    const weightedTargets = availableTargets.filter(t => t.weight && t.weight > 0);
-    const targetsToUse = weightedTargets.length > 0 ? weightedTargets : availableTargets;
-
-    // 计算总权重
-    const totalWeight = targetsToUse.reduce((sum, t) => sum + (t.weight || 1), 0);
-
-    // 使用哈希值对总权重取模，得到一个位置
-    const hash = simpleHash(hashKey);
-    let position = hash % totalWeight;
-
-    // 根据权重找到对应的target
-    for (const target of targetsToUse) {
-      const weight = target.weight || 1;
-      if (position < weight) {
-        memoryLogger.debug(
-          `Hash路由: hashKey=${hashKey.substring(0, 8)}... -> provider=${target.provider}`,
-          'Routing'
-        );
-        return target;
-      }
-      position -= weight;
-    }
-
-    return targetsToUse[0];
-  }
-
-  // Affinity模式：显式 session 在活跃期间保持亲和；无显式 session 时按配置的 affinityTTL 做绝对粘性。
-  if (type === 'affinity' || config.strategy?.mode === 'affinity') {
-    if (!configId) {
-      return selectLoadBalanceTarget(availableTargets, config, configId, excludeTargetKeys);
-    }
-
-    const ttl = config.strategy?.affinityTTL || 5 * 60 * 1000;
-    const now = Date.now();
-    const affinityScopeKey = normalizeAffinityScopeKey(hashKey);
-    const hasExplicitSession = !!affinityScopeKey;
-    const affinityCacheKey = hasExplicitSession
-      ? buildAffinityCacheKey(String(configId), affinityScopeKey)
-      : buildAnonymousAffinityCacheKey(String(configId));
-    const state = affinityStateMap.get(affinityCacheKey);
-
-    if (state) {
-      const currentTarget = availableTargets.find(t => getTargetKey(t) === state.targetKey);
-      if (currentTarget) {
-        if (state.kind === 'explicit') {
-          if (now >= state.expiresAt) {
-            affinityStateMap.delete(affinityCacheKey);
-          } else {
-            setMapValueWithCapacity(
-              affinityStateMap,
-              affinityCacheKey,
-              { ...state, timestamp: now, expiresAt: now + EXPLICIT_AFFINITY_IDLE_TTL_MS },
-              MAX_AFFINITY_STATE_ENTRIES
-            );
-            return currentTarget;
-          }
-        }
-
-        if (now < state.expiresAt) {
-          return currentTarget;
-        }
-      }
-
-      affinityStateMap.delete(affinityCacheKey);
-      memoryLogger.debug(
-        `Affinity路由: ${state.kind === 'explicit' ? '显式 session' : '匿名粘性'} 绑定的 target=${state.targetKey} ${currentTarget ? '已过期' : '不可用'}，重新选择`,
+    if (availableTargets.length > 0) {
+      const availableInfo = availableTargets.map((target, idx) => {
+        const targetKey = getTargetKey(target);
+        return `[${idx}] provider=${target.provider}, model=${target.override_params?.model || 'default'}, weight=${target.weight || 0}, key=${targetKey}, state=${circuitBreaker.getState(targetKey)}`;
+      }).join('; ');
+      memoryLogger.info(
+        `Smart routing available targets after filter | mode=${type} | count=${availableTargets.length} | targets=[${availableInfo}]`,
         'Routing'
       );
     }
 
-    const selectedTarget = selectLoadBalanceTarget(availableTargets, config, configId, excludeTargetKeys);
+    if (availableTargets.length === 0) {
+      memoryLogger.warn(
+        `所有路由目标均不可用 | total: ${config.targets.length}` +
+        (localExcludeTargetKeys.size > 0 ? ` | 已排除: ${localExcludeTargetKeys.size}` : ''),
+        'Routing'
+      );
+      return null;
+    }
 
-    const nextState: AffinityState = {
-      targetKey: getTargetKey(selectedTarget),
-      providerId: selectedTarget.provider,
-      timestamp: now,
-      kind: hasExplicitSession ? 'explicit' : 'anonymous',
-      expiresAt: now + (hasExplicitSession ? EXPLICIT_AFFINITY_IDLE_TTL_MS : ttl)
-    };
-
-    setMapValueWithCapacity(affinityStateMap, affinityCacheKey, nextState, MAX_AFFINITY_STATE_ENTRIES);
-
-    memoryLogger.info(
-      `Affinity路由: ${hasExplicitSession ? `显式 session 绑定` : `匿名粘性选择`} target=${getTargetKey(selectedTarget)}，TTL=${Math.floor((hasExplicitSession ? EXPLICIT_AFFINITY_IDLE_TTL_MS : ttl) / 1000)}秒`,
-      'Routing'
+    const healthyTargets = availableTargets.filter(
+      target => circuitBreaker.getState(getTargetKey(target)) === CircuitState.CLOSED
+    );
+    const probeTargets = availableTargets.filter(
+      target => circuitBreaker.getState(getTargetKey(target)) !== CircuitState.CLOSED
     );
 
-    return selectedTarget;
-  }
+    let selectedTarget: RoutingTarget | null = null;
 
-  return availableTargets[0];
+    if (type === 'loadbalance' || config.strategy?.mode === 'loadbalance') {
+      const shouldProbe = shouldProbeHalfOpenTarget(
+        config,
+        configId,
+        localExcludeTargetKeys,
+        healthyTargets,
+        probeTargets
+      );
+      const targetPool = shouldProbe
+        ? probeTargets
+        : (healthyTargets.length > 0 ? healthyTargets : availableTargets);
+      if (shouldProbe) {
+        selectedTarget = selectHalfOpenProbeTarget(targetPool, config, configId);
+      } else {
+        selectedTarget = selectLoadBalanceTarget(targetPool, config, configId, localExcludeTargetKeys);
+      }
+    } else if (type === 'fallback' || config.strategy?.mode === 'fallback') {
+      const shouldProbe = shouldProbeHalfOpenTarget(
+        config,
+        configId,
+        localExcludeTargetKeys,
+        healthyTargets,
+        probeTargets
+      );
+      const targetPool = shouldProbe
+        ? probeTargets
+        : (healthyTargets.length > 0 ? healthyTargets : availableTargets);
+      if (shouldProbe) {
+        selectedTarget = selectHalfOpenProbeTarget(targetPool, config, configId);
+      } else {
+        selectedTarget = targetPool[0] || null;
+      }
+    } else if (type === 'hash' || config.strategy?.mode === 'hash') {
+      // hash 模式使用完整的 availableTargets 以保持路由稳定性，不受 probe 调度影响
+      const targetPool = availableTargets;
+      if (!hashKey) {
+        memoryLogger.warn('Hash模式需要提供hashKey，降级为随机选择', 'Routing');
+        selectedTarget = targetPool[0] || null;
+      } else {
+        const weightedTargets = targetPool.filter(t => t.weight && t.weight > 0);
+        const targetsToUse = weightedTargets.length > 0 ? weightedTargets : targetPool;
+        const totalWeight = targetsToUse.reduce((sum, target) => sum + (target.weight || 1), 0);
+        const hash = simpleHash(hashKey);
+        let position = hash % totalWeight;
+
+        for (const target of targetsToUse) {
+          const weight = target.weight || 1;
+          if (position < weight) {
+            memoryLogger.debug(
+              `Hash路由: hashKey=${hashKey.substring(0, 8)}... -> provider=${target.provider}`,
+              'Routing'
+            );
+            selectedTarget = target;
+            break;
+          }
+          position -= weight;
+        }
+
+        selectedTarget = selectedTarget || targetsToUse[0] || null;
+      }
+    } else if (type === 'affinity' || config.strategy?.mode === 'affinity') {
+      // affinity 模式使用完整的 availableTargets 以保持路由稳定性，不受 probe 调度影响
+      const targetPool = availableTargets;
+      if (!configId) {
+        selectedTarget = selectLoadBalanceTarget(targetPool, config, configId, localExcludeTargetKeys);
+      } else {
+        const ttl = config.strategy?.affinityTTL || 5 * 60 * 1000;
+        const now = Date.now();
+        const affinityScopeKey = normalizeAffinityScopeKey(hashKey);
+        const hasExplicitSession = !!affinityScopeKey;
+        const affinityCacheKey = hasExplicitSession
+          ? buildAffinityCacheKey(String(configId), affinityScopeKey)
+          : buildAnonymousAffinityCacheKey(String(configId));
+        const state = affinityStateMap.get(affinityCacheKey);
+
+        if (state) {
+          const currentTarget = targetPool.find(target => getTargetKey(target) === state.targetKey);
+          if (currentTarget) {
+            if (state.kind === 'explicit') {
+              if (now >= state.expiresAt) {
+                affinityStateMap.delete(affinityCacheKey);
+              } else {
+                setMapValueWithCapacity(
+                  affinityStateMap,
+                  affinityCacheKey,
+                  { ...state, timestamp: now, expiresAt: now + EXPLICIT_AFFINITY_IDLE_TTL_MS },
+                  MAX_AFFINITY_STATE_ENTRIES
+                );
+                selectedTarget = currentTarget;
+              }
+            }
+
+            if (!selectedTarget && now < state.expiresAt) {
+              selectedTarget = currentTarget;
+            }
+          }
+
+          if (!selectedTarget) {
+            affinityStateMap.delete(affinityCacheKey);
+            memoryLogger.debug(
+              `Affinity路由: ${state.kind === 'explicit' ? '显式 session' : '匿名粘性'} 绑定的 target=${state.targetKey} ${currentTarget ? '已过期' : '不可用'}，重新选择`,
+              'Routing'
+            );
+          }
+        }
+
+        if (!selectedTarget) {
+          selectedTarget = selectLoadBalanceTarget(targetPool, config, configId, localExcludeTargetKeys);
+          const nextState: AffinityState = {
+            targetKey: getTargetKey(selectedTarget),
+            providerId: selectedTarget.provider,
+            timestamp: now,
+            kind: hasExplicitSession ? 'explicit' : 'anonymous',
+            expiresAt: now + (hasExplicitSession ? EXPLICIT_AFFINITY_IDLE_TTL_MS : ttl)
+          };
+
+          setMapValueWithCapacity(affinityStateMap, affinityCacheKey, nextState, MAX_AFFINITY_STATE_ENTRIES);
+
+          memoryLogger.info(
+            `Affinity路由: ${hasExplicitSession ? `显式 session 绑定` : `匿名粘性选择`} target=${getTargetKey(selectedTarget)}，TTL=${Math.floor((hasExplicitSession ? EXPLICIT_AFFINITY_IDLE_TTL_MS : ttl) / 1000)}秒`,
+            'Routing'
+          );
+        }
+      }
+    } else {
+      // 未知模式默认使用完整可用目标池
+      selectedTarget = availableTargets[0] || null;
+    }
+
+    if (!selectedTarget) {
+      return null;
+    }
+
+    const selectedTargetKey = getTargetKey(selectedTarget);
+    if (circuitBreaker.isAvailable(selectedTargetKey)) {
+      return selectedTarget;
+    }
+
+    localExcludeTargetKeys.add(selectedTargetKey);
+    memoryLogger.debug(
+      `Smart routing target became unavailable before claim | key=${selectedTargetKey}，重试选择下一个 target`,
+      'Routing'
+    );
+  }
 }
 
 export async function resolveSmartRouting(
