@@ -22,6 +22,23 @@ import {
   restoreResponseBodyInPlace,
 } from '../../services/pii-protection-service.js';
 import { maybeCompressImagesInOpenAIRequestBodyInPlace, logImageCompressionStats } from '../../services/image-compression.js';
+import { virtualKeyQueueService } from '../../services/virtual-key-queue.js';
+
+function buildQueue429Error(reason: 'queue_full' | 'timeout' | 'cancelled') {
+  const message = reason === 'queue_full'
+    ? 'Request queue is full for this virtual key. Please try again later.'
+    : reason === 'timeout'
+    ? 'Request timed out waiting in queue. Please try again later.'
+    : 'Request was cancelled while waiting in queue.';
+  return {
+    error: {
+      message,
+      type: 'rate_limit_error',
+      param: null,
+      code: `queue_${reason}`
+    }
+  };
+}
 
 const MESSAGE_COMPRESSION_MIN_TOKENS = parseInt(process.env.MESSAGE_COMPRESSION_MIN_TOKENS || '2048', 10);
 
@@ -447,6 +464,15 @@ export async function handleStreamRequest(
     }
   });
 
+  const acquireResult = await virtualKeyQueueService.acquire(virtualKeyValueParam || virtualKey.key_value, abortController.signal);
+  if (!acquireResult.granted) {
+    if (acquireResult.reason !== 'cancelled' && !reply.sent) {
+      reply.code(429).send(buildQueue429Error(acquireResult.reason));
+    }
+    return;
+  }
+  const { release } = acquireResult;
+
   try {
     let tokenUsage: any;
 
@@ -637,6 +663,7 @@ export async function handleStreamRequest(
  
     return;
   } catch (streamError: any) {
+    release();
     const duration = Date.now() - startTime;
 
     // 检查是否是用户取消
@@ -750,6 +777,8 @@ export async function handleStreamRequest(
     }
 
     return;
+  } finally {
+    release();
   }
 }
 
@@ -851,6 +880,21 @@ export async function handleNonStreamRequest(
     return reply.send(cachedResponseForClient);
   }
 
+  const abortController = new AbortController();
+  request.raw.on('close', () => {
+    abortController.abort();
+  });
+
+  const acquireResult = await virtualKeyQueueService.acquire(virtualKeyValue, abortController.signal);
+  if (!acquireResult.granted) {
+    if (acquireResult.reason !== 'cancelled') {
+      reply.code(429).send(buildQueue429Error(acquireResult.reason));
+    }
+    return;
+  }
+  const { release } = acquireResult;
+
+  try {
   let response: any;
   let piiResult: { applied: boolean; context: any; maskedCount: number } = { applied: false, context: null, maskedCount: 0 };
 
@@ -1092,6 +1136,7 @@ export async function handleNonStreamRequest(
 
   // 智能路由重试逻辑
   if (!isSuccess && modelResult && virtualKeyValue) {
+    release();
     const { shouldRetrySmartRouting } = await import('../proxy/routing.js');
     if (modelResult.canRetry && shouldRetrySmartRouting(response.statusCode)) {
       memoryLogger.info(
@@ -1238,4 +1283,7 @@ export async function handleNonStreamRequest(
   );
 
   return reply.send(responseData);
+  } finally {
+    release();
+  }
 }
