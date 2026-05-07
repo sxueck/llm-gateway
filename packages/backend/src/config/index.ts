@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { config } from 'dotenv'
 import { z } from 'zod'
 import { memoryLogger } from '../services/logger.js'
+import { virtualKeyQueueService } from '../services/virtual-key-queue.js'
 
 const currentDir = dirname(fileURLToPath(import.meta.url))
 const envCandidates = [
@@ -31,6 +32,9 @@ const envSchema = z.object({
   MYSQL_PASSWORD: z.string(),
   MYSQL_DATABASE: z.string().default('llm_gateway'),
   GEO_IP_ENABLED: z.string().optional(),
+  QUEUE_MAX_CONCURRENCY: z.string().default('20'),
+  QUEUE_MAX_SIZE: z.string().default('200'),
+  QUEUE_TIMEOUT_MS: z.string().default('30000'),
 })
 
 const env = envSchema.parse(process.env)
@@ -53,8 +57,15 @@ export const appConfig = {
     user: env.MYSQL_USER,
     password: env.MYSQL_PASSWORD,
     database: env.MYSQL_DATABASE
+  },
+  queue: {
+    maxConcurrency: parseInt(env.QUEUE_MAX_CONCURRENCY, 10),
+    maxQueueSize: parseInt(env.QUEUE_MAX_SIZE, 10),
+    queueTimeoutMs: parseInt(env.QUEUE_TIMEOUT_MS, 10)
   }
 }
+
+virtualKeyQueueService.configure(appConfig.queue)
 
 export function validatePublicUrl(url: string): { valid: boolean; error?: string } {
   if (!url || !url.trim()) {
