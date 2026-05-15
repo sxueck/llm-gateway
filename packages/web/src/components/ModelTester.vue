@@ -24,7 +24,6 @@
       <div v-if="testResult" class="test-result">
         <n-card size="small" class="result-card">
           <n-space vertical :size="16">
-            <!-- Chat Completions 测试结果 -->
             <div class="endpoint-result">
               <n-divider style="margin: 8px 0;">
                 <n-space :size="8" align="center">

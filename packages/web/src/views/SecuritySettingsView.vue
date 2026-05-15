@@ -3,7 +3,6 @@
     <n-space vertical :size="24">
       <n-card :title="$t('settings.security')">
         <n-space vertical :size="16">
-          <!-- 上游请求头透传 -->
           <n-space vertical :size="16">
             <div style="font-size: 16px; font-weight: 500;">{{ $t('settings.headerForwarding.title') }}</div>
 
@@ -16,7 +15,6 @@
             </n-space>
           </n-space>
 
-          <!-- 反爬虫设置 -->
           <n-space vertical :size="16">
             <div style="font-size: 16px; font-weight: 500;">{{ $t('settings.antiBot.title') }}</div>
             

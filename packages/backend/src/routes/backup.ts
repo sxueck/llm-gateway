@@ -11,7 +11,6 @@ const backupService = new BackupService();
 const restoreService = new RestoreService();
 
 export default async function backupRoutes(fastify: FastifyInstance) {
-  // Get S3 configuration
   fastify.get('/api/admin/backup/s3-config', {
     onRequest: [fastify.authenticate],
     handler: async (_request, reply) => {
@@ -42,7 +41,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Save S3 configuration
   fastify.put('/api/admin/backup/s3-config', {
     onRequest: [fastify.authenticate],
     handler: async (request, reply) => {
@@ -56,7 +54,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           forcePathStyle: boolean;
         };
 
-        // Validate required fields (except secretAccessKey which can be kept unchanged)
         if (!body.endpoint || !body.bucketName || !body.accessKeyId) {
           return reply.code(400).send({
             error: {
@@ -67,7 +64,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           });
         }
 
-        // Get existing secret key if not provided or if placeholder is sent
         let secretAccessKey = body.secretAccessKey;
         if (!secretAccessKey || secretAccessKey === '******') {
           const existingSecret = await systemConfigDb.get('s3_secret_access_key');
@@ -83,7 +79,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           secretAccessKey = existingSecret.value;
         }
 
-        // Save to system_config
         await systemConfigDb.set('s3_endpoint', body.endpoint, 'S3 endpoint URL');
         await systemConfigDb.set('s3_bucket_name', body.bucketName, 'S3 bucket name');
         await systemConfigDb.set('s3_region', body.region || 'us-east-1', 'S3 region');
@@ -91,7 +86,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
         await systemConfigDb.set('s3_secret_access_key', secretAccessKey, 'S3 secret access key');
         await systemConfigDb.set('s3_force_path_style', body.forcePathStyle ? 'true' : 'false', 'S3 force path style');
 
-        // Reset S3 service to use new config
         const s3Service = getS3Service();
         s3Service.initializeClient({
           endpoint: body.endpoint,
@@ -156,7 +150,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Create backup
   fastify.post('/api/admin/backup/create', {
     onRequest: [fastify.authenticate],
     handler: async (request, reply) => {
@@ -165,18 +158,15 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           includes_logs?: boolean;
         };
 
-        // Start backup asynchronously (always full backup)
         const backupPromise = backupService.createFullBackup({
           includes_logs: body.includes_logs || false
         });
 
-        // Return immediately with pending status
         reply.send({
           message: 'Backup task started',
           status: 'running'
         });
 
-        // Execute backup in background
         backupPromise.catch((error) => {
           console.error('Background backup failed:', error);
         });
@@ -251,7 +241,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Get backup details
   fastify.get('/api/admin/backup/:id', {
     onRequest: [fastify.authenticate],
     handler: async (request, reply) => {
@@ -282,7 +271,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Delete backup
   fastify.delete('/api/admin/backup/:id', {
     onRequest: [fastify.authenticate],
     handler: async (request, reply) => {
@@ -300,7 +288,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           });
         }
 
-        // Delete from S3
         try {
           const s3Service = getS3Service();
           await s3Service.deleteFile(backup.s3_key);
@@ -308,7 +295,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           console.error('Failed to delete from S3:', error);
         }
 
-        // Delete from database
         await backupDb.deleteBackupRecord(params.id);
 
         reply.send({ message: 'Backup deleted' });
@@ -324,7 +310,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Create restore
   fastify.post('/api/admin/restore', {
     onRequest: [fastify.authenticate],
     handler: async (request, reply) => {
@@ -346,7 +331,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           });
         }
 
-        // Validate partial restore
         if (body.restore_type === 'partial' && (!body.tables_to_restore || body.tables_to_restore.length === 0)) {
           return reply.code(400).send({
             error: {
@@ -357,7 +341,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           });
         }
 
-        // Start restore asynchronously
         const restorePromise = restoreService.restoreFromBackup(body.backup_id, {
           restore_type: body.restore_type || 'full',
           create_backup_before_restore: body.create_backup_before_restore !== false,
@@ -369,7 +352,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           status: 'pending'
         });
 
-        // Execute restore in background
         restorePromise.catch((error) => {
           console.error('Background restore failed:', error);
         });
@@ -421,7 +403,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Get restore details
   fastify.get('/api/admin/restore/:id', {
     onRequest: [fastify.authenticate],
     handler: async (request, reply) => {
@@ -474,7 +455,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Get backup configuration
   fastify.get('/api/admin/backup/config', {
     onRequest: [fastify.authenticate],
     handler: async (_request, reply) => {
@@ -503,7 +483,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Update backup configuration
   fastify.put('/api/admin/backup/config', {
     onRequest: [fastify.authenticate],
     handler: async (request, reply) => {
@@ -515,7 +494,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           include_logs?: boolean;
         };
 
-        // Save configuration to system_config
         if (body.schedule !== undefined) {
           await systemConfigDb.set('backup_schedule', body.schedule, 'Backup schedule cron expression');
         }
@@ -529,13 +507,11 @@ export default async function backupRoutes(fastify: FastifyInstance) {
           await systemConfigDb.set('backup_include_logs', body.include_logs ? 'true' : 'false', 'Include logs in backup');
         }
 
-        // Update scheduler if schedule changed
         if (body.schedule) {
           const scheduler = getBackupScheduler();
           scheduler.updateSchedule(body.schedule);
         }
 
-        // Update scheduler config if other parameters changed
         if (body.retention_days !== undefined || body.max_backup_count !== undefined || body.include_logs !== undefined) {
           const scheduler = getBackupScheduler();
           scheduler.updateConfig({

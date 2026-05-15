@@ -641,14 +641,12 @@ onMounted(async () => {
 
 watch(showEditorModal, async (show) => {
   if (show) {
-    // Keep initial frame cheap so the modal animation stays smooth.
     renderEditor.value = false;
     await nextTick();
     requestAnimationFrame(() => {
       renderEditor.value = true;
     });
   } else {
-    // Unmount after the leave transition to avoid doing work during close.
     window.setTimeout(() => {
       renderEditor.value = false;
     }, 250);

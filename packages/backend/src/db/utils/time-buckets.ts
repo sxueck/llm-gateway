@@ -1,10 +1,5 @@
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000; // Asia/Shanghai is UTC+8
 
-/**
- * Get the UTC timestamp for the start of a day in Asia/Shanghai timezone.
- * @param daysOffset Offset from today (negative for past days, 0 for today)
- * @returns UTC timestamp (milliseconds) of Shanghai midnight for the specified day
- */
 export function getShanghaiDayStart(daysOffset: number = 0): number {
   const now = new Date();
   const shanghaiNow = new Date(now.getTime() + SHANGHAI_OFFSET_MS);
@@ -31,13 +26,6 @@ export function generateTimeBuckets(startTime: number, endTime: number, interval
   return timePoints;
 }
 
-/**
- * Generate time buckets aligned to Shanghai timezone day boundaries.
- * This ensures summary data (stored by Shanghai date) and detail data bucketize consistently.
- * @param startTime Start timestamp (milliseconds, UTC)
- * @param endTime End timestamp (milliseconds, UTC)
- * @returns Array of bucket start timestamps (milliseconds, UTC), each representing 00:00 Shanghai time
- */
 export function generateShanghaiDayBuckets(startTime: number, endTime: number): number[] {
   const dayMs = 24 * 60 * 60 * 1000;
   const timePoints: number[] = [];

@@ -1,6 +1,5 @@
 <template>
   <div class="routing-pipeline">
-    <!-- Layer 1: Request Preprocessing -->
     <n-card class="pipeline-stage" :bordered="false">
       <template #header>
         <div class="stage-header">
@@ -49,7 +48,6 @@
       <n-icon size="24"><ArrowDownOutline /></n-icon>
     </div>
 
-    <!-- Step 2: LLM Judge -->
     <n-card class="pipeline-stage" :bordered="false">
       <template #header>
         <div class="stage-header">

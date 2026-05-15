@@ -1,11 +1,3 @@
-/**
- * Upstream fetch wrapper with proxy support.
- * Provides a unified interface for making HTTP requests with proxy support.
- * 
- * Runtime-specific implementation:
- * - Bun: Uses native `proxy` option in fetch
- * - Node.js: Uses undici's ProxyAgent
- */
 
 import {
   getProxyConfigFromEnv,
@@ -44,9 +36,6 @@ export interface UpstreamFetchOptions extends RequestInit {
   timeoutMs?: number;
 }
 
-/**
- * Build headers for upstream request, merging defaults with provided headers.
- */
 function buildHeaders(
   defaultHeaders: Record<string, string>,
   requestHeaders?: RequestInit['headers']
@@ -70,15 +59,6 @@ function buildHeaders(
   return merged;
 }
 
-/**
- * Create an AbortSignal with timeout that properly composes with an existing signal.
- * 
- * Features:
- * - Returns null immediately if the existing signal is already aborted
- * - Clears timeout when existing signal aborts (to prevent memory leaks)
- * - Aborts composed signal when either timeout fires or existing signal aborts
- * - Cleans up resources on successful completion
- */
 function createComposedAbortSignal(timeoutMs: number, existingSignal?: AbortSignal): AbortSignal | null {
   // If existing signal is already aborted, return null immediately
   if (existingSignal?.aborted) {
@@ -139,10 +119,6 @@ function cleanupComposedSignal(signal: AbortSignal | undefined): void {
   }
 }
 
-/**
- * Extract URL string from various input types.
- * Handles string, URL, and Request objects properly.
- */
 export function extractUrlString(url: string | URL | Request): string {
   if (typeof url === 'string') {
     return url;
@@ -311,14 +287,6 @@ export async function upstreamJsonPost<T = any>(
   return response.json() as Promise<T>;
 }
 
-/**
- * Make a JSON GET request with automatic proxy support.
- *
- * @param url Target URL
- * @param headers Optional headers
- * @param options Optional fetch options
- * @returns Parsed JSON response
- */
 export async function upstreamJsonGet<T = any>(
   url: string,
   headers?: Record<string, string>,

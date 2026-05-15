@@ -18,7 +18,6 @@
     <div class="main-content">
       <n-tabs type="line" v-model:value="activeTab">
         <n-tab-pane name="mappings" :tab="t('costAnalysis.tabs.mappings')">
-          <!-- Search Bar -->
           <div class="search-bar">
             <n-input
               v-model:value="searchQuery"
@@ -31,7 +30,6 @@
             </n-input>
           </div>
 
-          <!-- Mapping List -->
           <n-data-table
             :columns="columns"
             :data="filteredMappings"
@@ -40,7 +38,6 @@
             :max-height="400"
           />
 
-          <!-- Test Section -->
           <n-card :title="t('costAnalysis.testMapping')" class="test-section">
             <n-space vertical>
               <n-input-group>
@@ -87,7 +84,6 @@
         </n-tab-pane>
 
         <n-tab-pane name="prices" :tab="t('costAnalysis.tabs.prices')">
-          <!-- Search Bar for Prices -->
           <div class="search-bar">
             <n-input
               v-model:value="pricesSearchQuery"
@@ -111,7 +107,6 @@
       </n-tabs>
     </div>
 
-    <!-- Create/Edit Modal -->
     <n-modal v-model:show="showModal" preset="card" :title="editingId ? t('costAnalysis.editMapping') : t('costAnalysis.addMapping')" style="width: 600px">
       <n-form ref="formRef" :model="formModel" :rules="rules">
         <n-form-item :label="t('costAnalysis.pattern')" path="pattern">
@@ -186,7 +181,6 @@ import ModelPresetSelector from '@/components/ModelPresetSelector.vue';
 const { t } = useI18n();
 const message = useMessage();
 
-// State
 const activeTab = ref('mappings');
 const mappings = ref<CostMapping[]>([]);
 const loading = ref(false);
@@ -218,12 +212,10 @@ const rules = {
   target_model: { required: true, message: t('validation.required'), trigger: 'blur' }
 };
 
-// Pagination
 const pagination = {
   pageSize: 10
 };
 
-// Computed
 const filteredMappings = computed(() => {
   if (!searchQuery.value) return mappings.value;
   const query = searchQuery.value.toLowerCase();
@@ -356,7 +348,6 @@ const priceColumns = [
   },
 ];
 
-// Methods
 async function fetchPrices() {
   if (prices.value.length > 0) return;
   pricesLoading.value = true;
@@ -417,7 +408,6 @@ function notifyCostMappingUpdated() {
     // Broadcast an event so the dashboard can refresh its cost statistics in real time
     window.dispatchEvent(new CustomEvent('cost-mapping-updated'));
   } catch (e) {
-    // Ignore errors in non-browser environments
   }
 }
  

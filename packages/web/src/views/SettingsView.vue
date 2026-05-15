@@ -101,7 +101,6 @@
               {{ $t('healthMonitoring.title') }}
             </div>
 
-            <!-- 启用持久监控 -->
             <n-space align="center" justify="space-between">
               <div>
                 <div>{{ $t('healthMonitoring.enablePersistentMonitoring') }}</div>
@@ -114,7 +113,6 @@
               {{ $t('healthMonitoring.persistentMonitoringRequired') }}
             </n-alert>
 
-            <!-- 开启公开监控页面 -->
             <n-space align="center" justify="space-between">
               <div>
                 <div>{{ $t('healthMonitoring.enablePublicPage') }}</div>
@@ -141,7 +139,6 @@
 
             <n-divider style="margin: 8px 0;" />
 
-            <!-- 监控目标配置 -->
             <div>
               <n-space justify="space-between" align="center" style="margin-bottom: 12px;">
                 <div>
@@ -196,7 +193,6 @@
       </n-card>
     </n-space>
 
-    <!-- 编辑监控目标弹窗 -->
     <n-modal
       v-model:show="showEditModal"
       preset="dialog"
@@ -250,7 +246,6 @@
       </n-form>
     </n-modal>
 
-    <!-- 添加监控目标弹窗 -->
     <n-modal
       v-model:show="showAddTargetModal"
       preset="dialog"

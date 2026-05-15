@@ -1,7 +1,6 @@
 <template>
   <div>
     <n-space vertical :size="24">
-      <!-- S3 Storage Configuration -->
       <n-card title="S3 存储配置">
         <n-alert type="info" style="margin-bottom: 16px;">
           支持所有 S3 兼容存储服务：AWS S3、MinIO、Cloudflare R2、阿里云 OSS 等
@@ -80,7 +79,6 @@
         </n-space>
       </n-card>
 
-      <!-- Backup Schedule Configuration -->
       <n-card title="备份计划配置">
         <n-descriptions bordered :column="3">
           <n-descriptions-item label="调度状态">
@@ -125,7 +123,6 @@
         </n-descriptions>
       </n-card>
 
-      <!-- Backup List -->
       <n-card title="备份列表">
         <template #header-extra>
           <n-space>
@@ -157,7 +154,6 @@
         />
       </n-card>
 
-      <!-- Restore History -->
       <n-card title="恢复记录">
         <template #header-extra>
           <n-button @click="loadRestoreList">
@@ -179,7 +175,6 @@
       </n-card>
     </n-space>
 
-    <!-- Create Backup Modal -->
     <n-modal v-model:show="showCreateBackupModal" preset="dialog" title="创建备份">
       <n-form :model="createBackupForm" label-placement="left" label-width="100">
         <n-form-item label="包含日志">
@@ -201,7 +196,6 @@
       </template>
     </n-modal>
 
-    <!-- Restore Modal -->
     <n-modal v-model:show="showRestoreModal" preset="dialog" title="恢复备份" style="width: 600px;">
       <n-descriptions bordered :column="1" size="small">
         <n-descriptions-item label="备份文件">
@@ -312,7 +306,6 @@ import request from '@/utils/request';
 
 const message = useMessage();
 
-// S3 Configuration
 const s3Config = ref({
   endpoint: 'http://localhost:9000',
   bucketName: 'llm-gateway-backups',
@@ -322,7 +315,6 @@ const s3Config = ref({
   forcePathStyle: true
 });
 
-// Backup Configuration
 const backupConfig = ref({
   schedule: '0 2 * * *',
   retentionDays: 30,
@@ -331,7 +323,6 @@ const backupConfig = ref({
   schedulerRunning: false
 });
 
-// State
 const testingConnection = ref(false);
 const savingS3Config = ref(false);
 const updatingConfig = ref(false);
@@ -341,11 +332,9 @@ const creatingBackup = ref(false);
 const restoringBackup = ref(false);
 const syncingBackups = ref(false);
 
-// Modals
 const showCreateBackupModal = ref(false);
 const showRestoreModal = ref(false);
 
-// Forms
 const createBackupForm = ref({
   includeLogs: false
 });
@@ -356,12 +345,10 @@ const restoreForm = ref({
   tablesToRestore: [] as string[]
 });
 
-// Data
 const backupList = ref<any[]>([]);
 const restoreList = ref<any[]>([]);
 const selectedBackup = ref<any>(null);
 
-// Pagination
 const backupPagination = ref({
   page: 1,
   pageSize: 10,
@@ -396,7 +383,6 @@ const restorePagination = ref({
   }
 });
 
-// Columns
 const backupColumns = [
   {
     title: '备份 ID',
@@ -520,7 +506,6 @@ const restoreColumns = [
   }
 ];
 
-// Methods
 async function loadS3Config() {
   try {
     const data = await request.get('/admin/backup/s3-config');
@@ -696,7 +681,6 @@ function openRestoreModal(backup: any) {
 async function confirmRestoreBackup() {
   if (!selectedBackup.value) return;
 
-  // Validate partial restore
   if (restoreForm.value.restoreType === 'partial' && restoreForm.value.tablesToRestore.length === 0) {
     message.error('请至少选择一个要恢复的表');
     return;
@@ -758,7 +742,6 @@ function formatFileSize(bytes?: number): string {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
-// Lifecycle
 onMounted(() => {
   loadS3Config();
   loadBackupConfig();

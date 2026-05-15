@@ -7,7 +7,6 @@
     </n-steps>
 
     <div class="step-content">
-      <!-- 步骤 1: 选择类型 -->
       <div v-if="currentStep === 1" class="step-panel">
         <n-radio-group v-model:value="localConfigType">
           <n-space vertical :size="12">
@@ -27,7 +26,6 @@
         </n-radio-group>
       </div>
 
-      <!-- 步骤 2: 基本信息 -->
       <div v-if="currentStep === 2" class="step-panel">
         <n-form ref="basicFormRef" :model="localFormValue" label-placement="top" :show-feedback="false">
           <n-form-item label="配置名称" path="name" :rule="{ required: true, message: '请输入配置名称' }">
@@ -70,7 +68,6 @@
         </n-form>
       </div>
 
-      <!-- 步骤 3: 目标配置 -->
       <div v-if="currentStep === 3" class="step-panel">
         <n-alert v-if="localConfigType === 'fallback'" type="info" style="margin-bottom: 16px;">
           <div style="font-size: 13px;">按优先级从高到低排列，失败时自动切换到下一个</div>

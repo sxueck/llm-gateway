@@ -4,7 +4,7 @@ import { calculateTokensIfNeeded } from '../proxy/token-calculator.js';
 import { logApiRequestToDb } from '../../services/api-request-logger.js';
 import { shouldLogRequestBody, getModelForLogging } from '../proxy/handlers/shared.js';
 import { truncateRequestBody } from '../../utils/request-logger.js';
-import { GeminiEmptyOutputError } from '../../errors/gemini-empty-output-error.js';
+import { EmptyOutputError } from '../../errors/empty-output-error.js';
 import type { ProtocolConfig } from '../../services/protocol-adapter.js';
 import type { VirtualKey } from '../../types/index.js';
 import { extractIp } from '../../utils/ip.js';
@@ -465,7 +465,7 @@ export async function handleGeminiNativeStreamRequest(
   let totalBytes = 0;
   let headersSent = false;
   let success = false;
-  let lastEmptyError: GeminiEmptyOutputError | null = null;
+  let lastEmptyError: EmptyOutputError | null = null;
 
   try {
     for (let attempt = 1; attempt <= totalAttempts; attempt++) {
@@ -588,9 +588,9 @@ export async function handleGeminiNativeStreamRequest(
       );
 
       if (!attemptResult.hasAssistantContent && !attemptResult.bypassGuard) {
-        lastEmptyError = new GeminiEmptyOutputError(
+        lastEmptyError = new EmptyOutputError(
           'Gemini native stream completed without assistant output',
-          { attempt, totalAttempts }
+          { source: 'gemini', attempt, totalAttempts }
         );
         memoryLogger.warn(
           `Gemini 原生流式无实际输出，准备重试 | attempt ${attempt}/${totalAttempts}`,
@@ -609,9 +609,9 @@ export async function handleGeminiNativeStreamRequest(
       if (!reply.raw.destroyed && !reply.raw.writableEnded) {
         reply.raw.end();
       }
-      throw lastEmptyError || new GeminiEmptyOutputError(
+      throw lastEmptyError || new EmptyOutputError(
         'Gemini native stream ended without assistant output',
-        { totalAttempts }
+        { source: 'gemini', totalAttempts }
       );
     }
 

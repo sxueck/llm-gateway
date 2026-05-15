@@ -15,7 +15,6 @@
         </n-space>
       </template>
 
-      <!-- 全局概览 -->
       <n-spin :show="loading && !globalSummary">
         <div v-if="globalSummary" class="global-summary">
           <n-grid cols="2 s:3 m:4 l:5" responsive="screen" :x-gap="12" :y-gap="12">
@@ -56,7 +55,6 @@
 
       <n-divider />
 
-      <!-- 筛选区 -->
       <n-space class="filters" :size="12">
         <n-input
           v-model:value="searchKeyword"
@@ -79,7 +77,6 @@
 
       <n-divider />
 
-      <!-- 目标列表 -->
       <n-spin :show="loading">
         <div v-if="filteredTargets.length === 0" class="empty-state">
           <n-empty description="暂无监控目标" />
@@ -127,7 +124,6 @@
                   </div>
                 </div>
 
-                <!-- Visual health history timeline -->
                 <div v-if="target.healthHistory && target.healthHistory.length > 0" class="health-timeline">
                   <HealthTimeline
                     :history="target.healthHistory.slice().reverse()"
@@ -148,13 +144,11 @@
       </n-spin>
     </n-card>
 
-    <!-- 色块点击详情弹窗 -->
     <HealthCheckDetailModal
       v-model:show="showCheckDetail"
       :check="selectedCheck"
     />
 
-    <!-- 编辑目标弹窗 -->
   </div>
 </template>
 
