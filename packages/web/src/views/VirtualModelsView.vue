@@ -448,6 +448,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+@import '@/styles/modal.css';
 .virtual-models-view {
   max-width: 1400px;
   margin: 0 auto;
@@ -457,7 +458,7 @@ onUnmounted(() => {
   margin: 0;
   font-size: 24px;
   font-weight: 600;
-  color: #1e3932;
+  color: var(--color-title);
   letter-spacing: -0.02em;
 }
 
@@ -504,7 +505,7 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-    .modal-content-wrapper-no-padding {
+.modal-content-wrapper-no-padding {
   height: auto;
   max-height: calc(90vh - 140px);
   overflow: hidden;
@@ -512,27 +513,7 @@ onUnmounted(() => {
 
 .modal-content-wrapper {
   max-height: calc(85vh - 180px);
-  overflow-y: auto;
-  overflow-x: hidden;
   padding: 16px 20px;
-}
-
-.modal-content-wrapper::-webkit-scrollbar {
-  width: 6px;
-}
-
-.modal-content-wrapper::-webkit-scrollbar-track {
-  background: #f0f0f0;
-  border-radius: 3px;
-}
-
-.modal-content-wrapper::-webkit-scrollbar-thumb {
-  background: #d0d0d0;
-  border-radius: 3px;
-}
-
-.modal-content-wrapper::-webkit-scrollbar-thumb:hover {
-  background: #b0b0b0;
 }
 
 .virtual-model-modal :deep(.n-card__footer),

@@ -95,7 +95,7 @@ function handleClick(check: HealthCheck) {
 }
 
 .timeline-block.check-success {
-  background-color: #18a058;
+  background-color: var(--color-primary);
 }
 
 .timeline-block.check-error {

@@ -446,7 +446,7 @@ watch(showModal, async (val) => {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #1e3932;
+  color: var(--color-title);
   margin: 0;
   letter-spacing: -0.02em;
 }
@@ -504,11 +504,11 @@ watch(showModal, async (val) => {
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:hover) {
   background: rgba(15, 107, 74, 0.08);
-  color: #0f6b4a;
+  color: var(--color-primary);
 }
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:hover .n-icon) {
-  color: #0f6b4a;
+  color: var(--color-primary);
 }
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape .n-icon) {

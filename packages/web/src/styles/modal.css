@@ -1,0 +1,22 @@
+.modal-content-wrapper {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.modal-content-wrapper::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 3px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar-thumb {
+  background: #d0d0d0;
+  border-radius: 3px;
+}
+
+.modal-content-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #b0b0b0;
+}

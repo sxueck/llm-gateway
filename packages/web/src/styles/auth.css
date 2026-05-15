@@ -4,6 +4,7 @@
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, #f7faf8 0%, #edf2ef 100%);
+  overflow: auto;
 }
 
 .auth-container {
@@ -130,13 +131,13 @@
   font-size: 16px;
   font-weight: 600;
   border-radius: 12px;
-  background: linear-gradient(135deg, #0f6b4a, #0d5a3e);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
   box-shadow: 0 2px 8px rgba(15, 107, 74, 0.25);
   transition: all 0.2s ease;
 }
 
 .login-button:hover {
-  background: linear-gradient(135deg, #0d5a3e, #0a4830);
+  background: linear-gradient(135deg, var(--color-primary-hover), var(--color-primary-pressed));
   box-shadow: 0 4px 12px rgba(15, 107, 74, 0.35);
   transform: translateY(-1px);
 }
@@ -159,11 +160,11 @@
 }
 
 .register-link:hover {
-  color: #0f6b4a;
+  color: var(--color-primary);
 }
 
 .link-text {
-  color: #0f6b4a;
+  color: var(--color-primary);
   font-weight: 500;
 }
 

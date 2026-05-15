@@ -24,7 +24,7 @@
             <n-grid-item>
               <n-statistic label="健康目标" :value="globalSummary.healthyTargets">
                 <template #suffix>
-                  <n-icon color="#18a058" :component="CheckmarkCircle" />
+                  <n-icon color="#0f6b4a" :component="CheckmarkCircle" />
                 </template>
               </n-statistic>
             </n-grid-item>
@@ -451,7 +451,7 @@ onUnmounted(() => {
 }
 
 :deep(.n-card-header__main) {
-  color: #1e3932;
+  color: var(--color-title);
 }
 
 .target-title-row {

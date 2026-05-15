@@ -673,6 +673,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+@import '@/styles/modal.css';
 .models-view {
   max-width: 1400px;
   margin: 0 auto;
@@ -681,7 +682,7 @@ onMounted(async () => {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #1e3932;
+  color: var(--color-title);
   margin: 0;
   letter-spacing: -0.02em;
 }
@@ -739,11 +740,11 @@ onMounted(async () => {
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:hover) {
   background: rgba(15, 107, 74, 0.08);
-  color: #0f6b4a;
+  color: var(--color-primary);
 }
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:hover .n-icon) {
-  color: #0f6b4a;
+  color: var(--color-primary);
 }
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape .n-icon) {
@@ -774,27 +775,7 @@ onMounted(async () => {
 
 .modal-content-wrapper {
   max-height: calc(85vh - 180px);
-  overflow-y: auto;
-  overflow-x: hidden;
   padding: 16px 20px;
-}
-
-.modal-content-wrapper::-webkit-scrollbar {
-  width: 6px;
-}
-
-.modal-content-wrapper::-webkit-scrollbar-track {
-  background: #f0f0f0;
-  border-radius: 3px;
-}
-
-.modal-content-wrapper::-webkit-scrollbar-thumb {
-  background: #d0d0d0;
-  border-radius: 3px;
-}
-
-.modal-content-wrapper::-webkit-scrollbar-thumb:hover {
-  background: #b0b0b0;
 }
 
 .model-modal :deep(.n-card__footer) {
