@@ -25,7 +25,6 @@ export class RestoreService {
     const timestamp = Date.now();
 
     try {
-      // Get backup record
       const backupRecord = await backupDb.getBackupRecord(backupId);
       if (!backupRecord) {
         throw new Error(`Backup not found: ${backupId}`);
@@ -35,7 +34,6 @@ export class RestoreService {
         throw new Error(`Backup is not completed: ${backupId}`);
       }
 
-      // Create backup before restore if requested
       let backupBeforeRestore: string | null = null;
       if (options.create_backup_before_restore) {
         memoryLogger.info('Creating safety backup before restore', 'Restore');
@@ -46,7 +44,6 @@ export class RestoreService {
         backupBeforeRestore = safetyBackup.id;
       }
 
-      // Create restore record
       await restoreDb.createRestoreRecord({
         id: restoreId,
         backup_record_id: backupId,
@@ -80,7 +77,6 @@ export class RestoreService {
         cwd: extractDir
       });
 
-      // Find backup directory
       const fs = await import('fs/promises');
       const dirs = await fs.readdir(extractDir);
       const backupDir = join(extractDir, dirs[0]);
@@ -94,7 +90,6 @@ export class RestoreService {
         const checksumPath = join(backupDir, 'checksum.md5');
         await fs.readFile(checksumPath, 'utf-8');
         // Note: Full checksum verification would require recalculating
-        // For now, we just check that checksum file exists
       }
 
       // Read index
@@ -110,7 +105,6 @@ export class RestoreService {
         memoryLogger.info(`Partial restore: restoring ${tablesToRestore.length} tables`, 'Restore');
       }
 
-      // Restore data
       const changesMade: Record<string, number> = {};
       const pool = getPool();
 
@@ -122,12 +116,10 @@ export class RestoreService {
         try {
           const data = JSON.parse(await fs.readFile(dataPath, 'utf-8'));
 
-          // Clear existing data (only for full restore)
           if (options.restore_type === 'full') {
             await pool.query(`DELETE FROM \`${table}\``);
           }
 
-          // For partial restore with incremental backup, use upsert logic
           if (data.length > 0) {
             const columns = Object.keys(data[0]);
 
@@ -154,7 +146,6 @@ export class RestoreService {
         }
       }
 
-      // Update restore record
       await restoreDb.updateRestoreRecord(restoreId, {
         status: 'completed',
         completed_at: Date.now(),
@@ -194,13 +185,11 @@ export class RestoreService {
 
     memoryLogger.info(`Rolling back restore ${restoreId}`, 'Restore');
 
-    // Restore from the safety backup
     await this.restoreFromBackup(restoreRecord.backup_before_restore, {
       restore_type: 'full',
       create_backup_before_restore: false
     });
 
-    // Update restore record status
     await restoreDb.updateRestoreRecord(restoreId, {
       status: 'rollback'
     });
@@ -213,14 +202,12 @@ export class RestoreService {
     const pool = getPool();
 
     try {
-      // Check database connection
       await pool.query('SELECT 1');
     } catch (error) {
       errors.push('Database connection failed');
     }
 
     try {
-      // Check S3 connection
       const s3Service = getS3Service();
       const connected = await s3Service.testConnection();
       if (!connected) {
@@ -230,7 +217,6 @@ export class RestoreService {
       errors.push('S3 service not configured');
     }
 
-    // Check temp directory access
     try {
       mkdirSync(this.tempDir, { recursive: true });
     } catch (error) {

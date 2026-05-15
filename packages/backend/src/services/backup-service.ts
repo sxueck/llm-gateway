@@ -50,7 +50,6 @@ export class BackupService {
     const backupType = 'full'; // Always create full backup
 
     try {
-      // Create backup record
       const backupRecord = await backupDb.createBackupRecord({
         id: backupId,
         backup_key: `${backupId}.tar.gz.enc`,
@@ -70,13 +69,11 @@ export class BackupService {
 
       memoryLogger.info(`Starting full backup: ${backupId}`, 'Backup');
 
-      // Create temp directory
       mkdirSync(this.tempDir, { recursive: true });
       const backupDir = join(this.tempDir, backupId);
       mkdirSync(backupDir, { recursive: true });
       mkdirSync(join(backupDir, 'data'), { recursive: true });
 
-      // Export metadata
       const metadata = {
         backup_id: backupId,
         backup_type: backupType,
@@ -86,10 +83,8 @@ export class BackupService {
       };
       await this.writeJsonFile(join(backupDir, 'metadata.json'), metadata);
 
-      // Export database schema
       await this.exportSchema(join(backupDir, 'schema.sql'));
 
-      // Export core data
       const tablesToBackup = [...BACKUP_TABLES];
       if (options.includes_logs) {
         tablesToBackup.push(...LOG_TABLES);
@@ -105,11 +100,9 @@ export class BackupService {
         totalRecords += recordCount;
       }
 
-      // Create checksum
       const checksum = await this.createChecksum(backupDir);
       await this.writeJsonFile(join(backupDir, 'checksum.md5'), { checksum });
 
-      // Create index
       const index = {
         backup_id: backupId,
         tables: tablesToBackup,
@@ -118,7 +111,6 @@ export class BackupService {
       };
       await this.writeJsonFile(join(backupDir, 'index.json'), index);
 
-      // Create tar.gz archive
       const tarPath = join(this.tempDir, `${backupId}.tar.gz`);
       await tar.create(
         {
@@ -133,7 +125,6 @@ export class BackupService {
       const encryptedPath = join(this.tempDir, `${backupId}.tar.gz.enc`);
       await this.encryptFile(tarPath, encryptedPath);
 
-      // Get file size and hash
       const fs = await import('fs/promises');
       const stats = await fs.stat(encryptedPath);
       const fileHash = await this.getFileHash(encryptedPath);
@@ -142,7 +133,6 @@ export class BackupService {
       const s3Service = getS3Service();
       await s3Service.uploadFile(encryptedPath, backupRecord.s3_key);
 
-      // Update backup record
       await backupDb.updateBackupRecord(backupId, {
         status: 'completed',
         completed_at: Date.now(),
@@ -302,13 +292,11 @@ export class BackupService {
           const fileName = file.key.split('/').pop() || '';
           const backupId = fileName.replace('.tar.gz.enc', '');
 
-          // Check if backup record already exists
           const existingRecord = await backupDb.getBackupRecord(backupId);
           if (existingRecord) {
             continue; // Skip if already exists
           }
 
-          // Create backup record from S3 metadata
           await backupDb.createBackupRecord({
             id: backupId,
             backup_key: fileName,

@@ -1,6 +1,5 @@
 <template>
   <div class="performance-monitoring-container">
-    <!-- Header -->
     <div class="page-header">
       <div class="page-title-section">
         <h1 class="page-title">{{ t('performanceMonitoring.title') }}</h1>
@@ -22,7 +21,6 @@
       </div>
     </div>
 
-    <!-- Filters -->
     <n-card class="filter-card" :bordered="false">
       <n-space align="center" :wrap="true" :size="16">
         <div class="filter-item">
@@ -56,13 +54,11 @@
       </n-space>
     </n-card>
 
-    <!-- Loading State -->
     <div v-if="loading" class="loading-container">
       <n-skeleton text :repeat="4" style="height: 100px; margin-bottom: 16px" />
       <n-skeleton text style="height: 400px" />
     </div>
 
-    <!-- Empty State -->
     <n-empty
       v-else-if="!data || data.items.length === 0"
       :description="t('performanceMonitoring.empty.noData')"
@@ -73,7 +69,6 @@
       </template>
     </n-empty>
 
-    <!-- No Results After Filter -->
     <n-empty
       v-else-if="filteredItems.length === 0"
       :description="t('performanceMonitoring.empty.noResults')"
@@ -87,9 +82,7 @@
       </template>
     </n-empty>
 
-    <!-- Main Content -->
     <template v-else>
-      <!-- Summary Cards -->
       <n-grid :cols="4" :x-gap="16" :y-gap="16" responsive="screen">
         <n-gi span="1 s:1 m:2 l:1">
           <n-card class="summary-card" :bordered="false">
@@ -135,7 +128,6 @@
         </n-gi>
       </n-grid>
 
-      <!-- Token Summary Cards -->
       <n-grid :cols="4" :x-gap="16" :y-gap="16" responsive="screen" style="margin-top: 16px;">
         <n-gi span="1 s:1 m:2 l:1">
           <n-card class="summary-card token-card" :bordered="false">
@@ -179,7 +171,6 @@
         </n-gi>
       </n-grid>
 
-      <!-- Charts -->
       <n-grid :cols="2" :x-gap="16" :y-gap="16" responsive="screen" class="charts-grid">
         <n-gi span="2 s:2 m:1">
           <n-card :title="chart1Title" class="chart-card" :bordered="false">
@@ -193,7 +184,6 @@
         </n-gi>
       </n-grid>
 
-      <!-- Detail Table -->
       <n-card :title="t('performanceMonitoring.table.title')" class="table-card" :bordered="false">
         <n-data-table
           :columns="tableColumns"
@@ -256,7 +246,6 @@ use([
 const { t } = useI18n();
 const message = useMessage();
 
-// State
 const loading = ref(false);
 const data = ref<PerformanceMetricsResponse | null>(null);
 const selectedProvider = ref<string | null>(null);
@@ -305,7 +294,6 @@ const filteredItems = computed(() => {
   if (!data.value) return [];
   
   return data.value.items.filter((item) => {
-    // Provider filter: when selected, show items matching that provider
     if (selectedProvider.value) {
       const itemProviderId = item.providerId ?? '__unknown_provider__';
       if (itemProviderId !== selectedProvider.value) {
@@ -313,7 +301,6 @@ const filteredItems = computed(() => {
       }
     }
     
-    // Model filter: when selected, show items matching that model
     if (selectedModel.value) {
       if (item.model !== selectedModel.value) {
         return false;
@@ -329,7 +316,6 @@ const chart1Title = computed(() => {
   if (selectedModel.value) {
     return t('performanceMonitoring.charts.modelComparison', { model: selectedModel.value });
   }
-  // Default state shows top models by request count
   return t('performanceMonitoring.charts.topModels');
 });
 
@@ -341,12 +327,10 @@ const chart2Title = computed(() => {
   return t('performanceMonitoring.charts.overallPerformance');
 });
 
-// Chart 1: Model comparison across providers OR provider comparison
 const chartOption1 = computed(() => {
   const items = filteredItems.value;
   if (items.length === 0) return {};
 
-  // If model is selected, compare across providers
   if (selectedModel.value) {
     const providers = items.map(item => item.providerName);
     const availabilities = items.map(item => (item.availability * 100).toFixed(1));
@@ -412,7 +396,6 @@ const chartOption1 = computed(() => {
     };
   }
 
-  // Default: Show top models by request count
   const sortedItems = [...items].sort((a, b) => b.requestCount - a.requestCount).slice(0, 10);
   const modelNames = sortedItems.map(item => item.model);
   const requestCounts = sortedItems.map(item => item.requestCount);
@@ -611,12 +594,10 @@ const tableColumns = [
   },
 ];
 
-// Pagination
 const pagination = {
   pageSize: 10,
 };
 
-// Methods
 function formatNumber(num: number): string {
   if (num === 0) return '0';
   if (num < 1000) return num.toFixed(0);
@@ -629,7 +610,6 @@ function formatPercentage(value: number): string {
 }
 
 function handleFilterChange() {
-  // Filters are applied reactively via computed properties
 }
 
 function clearFilters() {

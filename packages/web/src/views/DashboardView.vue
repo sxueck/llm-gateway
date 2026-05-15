@@ -539,7 +539,6 @@ use([
   LegendComponent,
   GridComponent,
   DataZoomComponent,
-  // ECharts v6: grid.containLabel is a legacy feature.
   LegacyGridContainLabel,
 ]);
 

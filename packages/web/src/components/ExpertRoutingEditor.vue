@@ -9,7 +9,6 @@
     </div>
 
     <div class="step-content">
-      <!-- STEP 1: Define Experts (The "Who") -->
       <div v-show="currentStep === 1">
         <div class="step-header-text">
           <h3>{{ t('expertRouting.basicInfo') }}</h3>
@@ -38,7 +37,6 @@
           <p class="step-sub-text">{{ t('expertRouting.expertsConfigHint') }}</p>
         </div>
         
-        <!-- Use existing visualization component but in editable mode -->
         <ExpertRoutingVisualization
           v-model:experts="formValue.experts"
           :classifier-config="formValue.classifier"
@@ -48,7 +46,6 @@
         />
       </div>
 
-      <!-- STEP 2: Configure Pipeline (The "How") -->
       <div v-show="currentStep === 2">
         <div class="step-header-text" style="text-align: center; margin-bottom: 20px;">
           <h3>{{ t('expertRouting.pipelineConfig') }}</h3>
@@ -64,7 +61,6 @@
         />
       </div>
 
-      <!-- STEP 3: Fallback & Review -->
       <div v-show="currentStep === 3">
         <n-form :model="formValue" label-placement="left" :label-width="120">
           <div class="step-header-text">
@@ -262,7 +258,6 @@ onMounted(async () => {
 watch(
   () => props.config,
   (cfg) => {
-    // Shallow clone is enough; normalize will create missing nested objects.
     formValue.value = { ...cfg };
     normalizeForm(formValue.value);
     currentStep.value = 1;

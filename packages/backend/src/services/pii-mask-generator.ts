@@ -49,10 +49,6 @@ function classifyChar(char: string): CharClass {
   return { isUpper, isLower, isDigit, isHex, isBase64, isUrlSafe, isSymbol, char };
 }
 
-/**
- * Generate a deterministic masked character based on the original character class
- * and a position/index for variation
- */
 function generateMaskedChar(original: CharClass, position: number, type: PiiType, variant = 0): string {
   // Use position and type to create deterministic but varied output
   const seed = position * 31 + type.length + variant * 17;
@@ -83,9 +79,6 @@ function generateMaskedChar(original: CharClass, position: number, type: PiiType
   return 'x';
 }
 
-/**
- * Mask a secret while preserving length and character classes
- */
 function maskSecret(value: string, variant = 0): string {
   let result = '';
 
@@ -104,9 +97,6 @@ function maskSecret(value: string, variant = 0): string {
   return result;
 }
 
-/**
- * Mask an IP address while preserving format
- */
 function maskIpAddress(value: string, variant = 0): string {
   if (value.includes(':')) {
     // IPv6
@@ -158,9 +148,6 @@ function maskIpv6(value: string, variant = 0): string {
   return maskedSegments.join(':');
 }
 
-/**
- * Mask an email while preserving structure
- */
 function maskEmail(value: string, variant = 0): string {
   const atIndex = value.lastIndexOf('@');
   if (atIndex <= 0 || atIndex === value.length - 1) {
@@ -181,9 +168,6 @@ function maskEmail(value: string, variant = 0): string {
   return result;
 }
 
-/**
- * Generate a masked value for the given PII type and original value
- */
 export function generateMaskedValue(value: string, type: PiiType, variant = 0): string {
   switch (type) {
     case 'secret':
@@ -197,10 +181,6 @@ export function generateMaskedValue(value: string, type: PiiType, variant = 0): 
   }
 }
 
-/**
- * Get or create a masked value for an original value in the context
- * This ensures stable mapping within a request
- */
 export function getOrCreateMaskedValue(
   ctx: PiiProtectionContext,
   original: string,
@@ -235,9 +215,6 @@ export function getOrCreateMaskedValue(
   return masked;
 }
 
-/**
- * Restore original value from masked value
- */
 export function restoreOriginalValue(ctx: PiiProtectionContext, masked: string): string {
   return ctx.reverseReplacements.get(masked) ?? masked;
 }

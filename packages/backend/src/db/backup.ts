@@ -110,18 +110,15 @@ export const backupDb = {
     const pool = getDbPool();
     const cutoffTime = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
 
-    // Get all backups ordered by creation time
     const [rows] = await pool.query(
       'SELECT id FROM backup_records ORDER BY created_at DESC'
     );
     const allBackups = rows as { id: string }[];
 
-    // Delete backups older than retention period
     await pool.query('DELETE FROM backup_records WHERE created_at < ?', [
       cutoffTime
     ]);
 
-    // Delete backups exceeding max count
     if (allBackups.length > maxCount) {
       const toDelete = allBackups.slice(maxCount);
       if (toDelete.length > 0) {

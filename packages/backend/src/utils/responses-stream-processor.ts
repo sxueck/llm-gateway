@@ -2,7 +2,7 @@ import type { FastifyReply } from 'fastify';
 
 import { normalizeUsageCounts } from './usage-normalizer.js';
 import { createInitialAggregate, processResponsesEvent } from './responses-parser.js';
-import { ResponsesEmptyOutputError } from '../errors/responses-empty-output-error.js';
+import { EmptyOutputError } from '../errors/empty-output-error.js';
 
 // Responses API 空输出重试默认次数（可通过环境变量或模型属性配置）
 export const DEFAULT_RESPONSES_EMPTY_OUTPUT_MAX_RETRIES = Math.max(
@@ -100,7 +100,7 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
   let finalStreamChunks: string[] = [];
   let tffbMs: number | undefined;
   let success = false;
-  let lastEmptyError: ResponsesEmptyOutputError | null = null;
+  let lastEmptyError: EmptyOutputError | null = null;
 
   attemptLoop: for (let attempt = 1; attempt <= totalAttempts; attempt++) {
     if (abortSignal?.aborted) {
@@ -274,7 +274,8 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
       }
 
       if (!hasAssistantOutput && !bypassEmptyGuard) {
-        lastEmptyError = new ResponsesEmptyOutputError('Responses API stream completed without assistant output', {
+        lastEmptyError = new EmptyOutputError('Responses API stream completed without assistant output', {
+          source: 'responses',
           attempt,
           totalAttempts,
           status: responsesAggregate.status,
@@ -310,7 +311,8 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
   if (!success) {
     const errorToThrow =
       lastEmptyError ||
-      new ResponsesEmptyOutputError('Responses API stream ended without assistant output', {
+      new EmptyOutputError('Responses API stream ended without assistant output', {
+        source: 'responses',
         totalAttempts,
       });
 

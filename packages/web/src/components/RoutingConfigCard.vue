@@ -50,7 +50,6 @@
     </template>
 
     <div class="card-body">
-      <!-- 故障转移视图 (Fallback) -->
       <div v-if="config.type === 'fallback'" class="strategy-view fallback-view">
         <div class="timeline-connector"></div>
         <div class="target-list">
@@ -102,7 +101,6 @@
         </div>
       </div>
 
-      <!-- 负载均衡视图 (Load Balance) -->
       <div v-else-if="config.type === 'loadbalance'" class="strategy-view lb-view">
         <div
           v-for="(target, index) in enrichedTargets"
@@ -153,7 +151,6 @@
         </div>
       </div>
 
-      <!-- 其他视图 (Hash/Affinity) -->
       <div v-else class="strategy-view default-view">
         <div
           v-for="(target, index) in enrichedTargets"

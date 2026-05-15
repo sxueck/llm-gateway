@@ -140,9 +140,6 @@ function looksLikeConservativeGenericSecret(value: string): boolean {
   return true;
 }
 
-/**
- * Detect all PII in text
- */
 function _detectPii(text: string): DetectedPii[] {
   const candidates: PiiMatchCandidate[] = [];
 
@@ -259,10 +256,6 @@ export function mightContainPii(text: string): boolean {
   return result;
 }
 
-/**
- * Detect all PII in text
- * Uses text hash cache to skip massive regex operations for identical history chunks.
- */
 export function detectPii(text: string): DetectedPii[] {
   if (!text) return [];
   

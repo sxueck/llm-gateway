@@ -224,7 +224,6 @@ const previewFromJson = (value: JsonLike): string => {
   return text.length > 80 ? `${text.slice(0, 80)}...` : text;
 };
 
-// Token helpers - inline for zero net line change
 const getTokens = (row: ApiRequest, type: 'input' | 'output') => {
   const isInput = type === 'input'
   const direct = isInput ? row.prompt_tokens : row.completion_tokens

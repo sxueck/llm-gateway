@@ -1,7 +1,6 @@
 <template>
   <div>
     <n-space vertical :size="16">
-      <!-- Top Overview -->
       <n-grid :cols="3" :x-gap="12">
         <n-gi>
           <n-card size="small">
@@ -24,7 +23,6 @@
         </n-gi>
       </n-grid>
 
-      <!-- Routing Flow / Distribution -->
       <n-card :title="t('expertRouting.routingDistribution')" size="small">
         <n-space vertical :size="12">
           <div
@@ -46,7 +44,6 @@
         </n-space>
       </n-card>
 
-      <!-- Category Distribution -->
       <n-card :title="t('expertRouting.categoryDistribution')" size="small">
         <n-space vertical :size="8">
           <div
@@ -70,7 +67,6 @@
         </n-space>
       </n-card>
 
-      <!-- Logs -->
       <n-card :title="t('expertRouting.logs')" size="small">
         <n-data-table
           :columns="logColumns"
@@ -270,8 +266,6 @@ const showClassifierResponse = ref(false);
 const cleaningEfficiency = computed(() => {
   const stats = statistics.value.cleaningStats;
   if (!stats || stats.avgPromptTokens === 0) return 0;
-  // Use length estimation for prompt tokens to compare: chars vs chars?
-  // Backend returns avgCleanedLength (chars) and avgPromptTokens (tokens).
   // 1 token approx 4 chars.
   const estimatedOriginalChars = stats.avgPromptTokens * 4;
   if (estimatedOriginalChars <= 0) return 0;

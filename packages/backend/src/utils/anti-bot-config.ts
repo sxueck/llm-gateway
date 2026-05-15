@@ -62,7 +62,7 @@ export function validateUserAgentPattern(pattern: string): { valid: boolean; err
     new RegExp(pattern);
     return { valid: true };
   } catch (e) {
-    return { valid: true };
+    return { valid: false, error: 'Invalid regex pattern' };
   }
 }
 

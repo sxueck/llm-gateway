@@ -45,7 +45,6 @@
           </n-radio-group>
         </div>
 
-        <!-- 高级参数区 -->
         <div v-if="localConfigType === 'hash' || localConfigType === 'affinity'" class="sidebar-section advanced-params">
           <div class="section-title">高级参数</div>
           <n-form-item v-if="localConfigType === 'hash'" label="哈希源">
@@ -68,7 +67,6 @@
               {{ currentStrategyInfo.label }}模式
             </n-tag>
             
-            <!-- LoadBalance 提示 -->
             <div class="header-tip-group" v-if="localConfigType === 'loadbalance'">
               <span class="header-tip">总权重:</span>
               <div class="weight-progress-bar">
@@ -83,19 +81,16 @@
               </span>
             </div>
 
-            <!-- Fallback 提示 -->
             <span class="header-tip flex-center" v-if="localConfigType === 'fallback'">
               <n-icon :component="InformationCircleOutline" class="mr-1 icon-small" />
               请求将按列表顺序尝试，直到成功
             </span>
 
-            <!-- Hash 提示 -->
             <span class="header-tip flex-center" v-if="localConfigType === 'hash'">
               <n-icon :component="InformationCircleOutline" class="mr-1 icon-small" />
               根据 {{ localFormValue.hashSource === 'request' ? '请求内容' : '虚拟密钥' }} 映射到固定目标
             </span>
 
-            <!-- Affinity 提示 -->
             <span class="header-tip flex-center" v-if="localConfigType === 'affinity'">
               <n-icon :component="InformationCircleOutline" class="mr-1 icon-small" />
               携带相同 session 标识的请求将在 {{ localFormValue.affinityTTLSeconds || 300 }}秒 内保持在同一目标
@@ -126,7 +121,6 @@
               class="target-item"
               :class="localConfigType"
             >
-              <!-- 序号/拖拽把手 -->
               <div class="item-handle">
                 <div class="index-badge" :class="{ 'bg-primary': index === 0 && localConfigType === 'fallback' }">
                   {{ index + 1 }}
@@ -134,7 +128,6 @@
                 <div class="connector-line" v-if="index < localFormValue.targets.length - 1 && localConfigType === 'fallback'"></div>
               </div>
 
-              <!-- 主体内容 -->
               <div class="item-content">
                 <div class="content-row">
                   <div class="row-inputs">
@@ -156,7 +149,6 @@
                     />
                   </div>
                   
-                  <!-- 权重设置 (LoadBalance/Hash/Affinity) -->
                   <div v-if="['loadbalance', 'hash', 'affinity'].includes(localConfigType)" class="weight-control">
                     <span class="label">权重</span>
                     <n-input-number 
@@ -173,7 +165,6 @@
                   </n-button>
                 </div>
 
-                <!-- 额外配置 (Fallback 状态码) -->
                 <div v-if="localConfigType === 'fallback'" class="extra-row">
                   <span class="label">触发条件:</span>
                   <n-select 
@@ -186,7 +177,6 @@
                   />
                 </div>
 
-                <!-- 移动按钮 (Fallback 排序) -->
                 <div v-if="localConfigType === 'fallback'" class="sort-actions">
                   <n-button text size="tiny" :disabled="index === 0" @click="moveTargetUp(index)">
                     <n-icon :component="ArrowUp" />
@@ -252,7 +242,6 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:configType', 'update:formValue', 'save', 'cancel']);
 
-// Strategy Definitions
 const strategyTypes: StrategyType[] = [
   { 
     label: '负载均衡', 
@@ -284,7 +273,6 @@ const strategyTypes: StrategyType[] = [
   }
 ];
 
-// Local State Proxies
 const localConfigType = computed({
   get: () => props.configType,
   set: (v) => emit('update:configType', v)

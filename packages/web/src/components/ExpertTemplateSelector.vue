@@ -7,7 +7,6 @@
 
     <n-spin :show="loading">
       <div class="templates-grid">
-      <!-- Custom / Empty Option -->
       <div 
         class="template-card custom-card"
         @click="handleSelect('custom')"
@@ -21,7 +20,6 @@
         </div>
       </div>
 
-      <!-- Presets -->
       <div
         v-for="tpl in templates"
         :key="tpl.value"

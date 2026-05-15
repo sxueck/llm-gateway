@@ -2,7 +2,6 @@
   <div class="expert-form">
     <n-form :model="formValue" label-placement="left" :label-width="120">
       <n-tabs type="line" animated>
-        <!-- Tab 1: Basic Information -->
         <n-tab-pane name="basic" :tab="t('expertRouting.basicInfo')">
           <n-form-item :label="t('expertRouting.expertCategory')" required>
             <n-input
@@ -80,7 +79,6 @@
           </n-form-item>
         </n-tab-pane>
 
-        <!-- Tab 2: Semantics (Utterances) -->
         <n-tab-pane
           v-if="showUtterances"
           name="semantics"

@@ -11,8 +11,6 @@ import { memoryLogger } from './logger.js';
 import {
   PiiProtectionContext,
   createPiiProtectionContext,
-  PiiMaskingOptions,
-  DEFAULT_MASKING_OPTIONS,
 } from './pii-protection-types.js';
 import { detectPii, mightContainPii } from './pii-detector.js';
 import { getOrCreateMaskedValue } from './pii-mask-generator.js';
@@ -299,26 +297,23 @@ function applyMasking(text: string, ctx: PiiProtectionContext): string {
  *
  * @param body - The request body to mask
  * @param enabled - Whether PII protection is enabled
- * @param options - Optional masking options
  * @returns Result with context for restoration
  */
 export function maskRequestBodyInPlace(
   body: any,
-  enabled: boolean,
-  options?: PiiMaskingOptions
+  enabled: boolean
 ): PiiProtectionResult {
   if (!enabled) {
     return { applied: false, context: null, maskedCount: 0 };
   }
 
-  const mergedOptions = { ...DEFAULT_MASKING_OPTIONS, ...options };
   const refs = collectTextRefs(body);
 
   if (refs.length === 0) {
     return { applied: false, context: null, maskedCount: 0 };
   }
 
-  const ctx = createPiiProtectionContext(enabled, mergedOptions);
+  const ctx = createPiiProtectionContext(enabled);
   let maskedCount = 0;
 
   for (const ref of refs) {

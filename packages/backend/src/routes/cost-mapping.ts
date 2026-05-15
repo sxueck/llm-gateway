@@ -13,7 +13,6 @@ const CostMappingSchema = z.object({
 });
 
 export async function costMappingRoutes(fastify: FastifyInstance) {
-  // Get all mappings
   fastify.get('/', async (request, reply) => {
     try {
       const mappings = await costMappingDb.getAll();
@@ -24,7 +23,6 @@ export async function costMappingRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Get prices for configured models
   fastify.get('/prices', async (request, reply) => {
     try {
       // 1. Get all configured models and providers from DB
@@ -33,7 +31,6 @@ export async function costMappingRoutes(fastify: FastifyInstance) {
         providerDb.getAll(),
       ]);
 
-      // Create a map of provider ID to provider name
       const providerMap = new Map(providers.map((p) => [p.id, p.name]));
 
       // 2. Resolve cost for each model
@@ -68,7 +65,6 @@ export async function costMappingRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Create a new mapping
   fastify.post('/', async (request, reply) => {
     try {
       const data = CostMappingSchema.parse(request.body);
@@ -92,7 +88,6 @@ export async function costMappingRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Update a mapping
   fastify.put('/:id', async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
@@ -119,7 +114,6 @@ export async function costMappingRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Delete a mapping
   fastify.delete('/:id', async (request, reply) => {
     try {
       const { id } = request.params as { id: string };

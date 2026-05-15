@@ -51,12 +51,8 @@ export const DEFAULT_MASKING_OPTIONS: Required<PiiMaskingOptions> = {
   detectEmails: true,
 };
 
-/**
- * Create a new request-scoped PII protection context
- */
 export function createPiiProtectionContext(
-  enabled: boolean,
-  _options?: PiiMaskingOptions
+  enabled: boolean
 ): PiiProtectionContext {
   return {
     enabled,

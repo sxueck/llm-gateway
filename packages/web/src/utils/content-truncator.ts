@@ -1,14 +1,6 @@
-/**
- * 内容截断工具 - 前端版本
- * 用于在列表中显示API请求和响应的预览
- */
 
 const MAX_TEXT_LENGTH = 400; // 文本内容最大长度
 
-/**
- * 提取消息内容的文本预览
- * 用于前端列表展示
- */
 export function extractContentPreview(content: any, maxLength: number = MAX_TEXT_LENGTH): string {
   if (!content) return '';
 
