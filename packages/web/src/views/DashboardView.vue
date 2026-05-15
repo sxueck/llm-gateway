@@ -293,7 +293,7 @@
               <div class="stat-details">
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">状态:</span>
-                  <span class="stat-detail-value" style="color: #006241">正常</span>
+                  <span class="stat-detail-value" style="color: var(--color-primary)">正常</span>
                 </span>
                 <span class="stat-detail-item">
                   <span class="stat-detail-label">运行时长:</span>
@@ -549,7 +549,6 @@ const virtualKeyStore = useVirtualKeyStore();
 const { dashboardHideRequestSourceCard } = useSystemConfig();
 
 const showRequestSourceCard = computed(() => !dashboardHideRequestSourceCard.value);
-
 const stats = ref<ApiStats | null>(null);
 const statsAllTime = ref<ApiStats | null>(null);
 const isTokenCardFlipped = ref(false);

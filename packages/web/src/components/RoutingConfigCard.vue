@@ -59,7 +59,7 @@
             class="target-item fallback-item"
           >
             <div class="target-icon">
-              <n-icon v-if="index === 0" color="#18a058"><CheckmarkCircle /></n-icon>
+              <n-icon v-if="index === 0" color="#0f6b4a"><CheckmarkCircle /></n-icon>
               <n-icon v-else color="#f0a020"><AlertCircleOutline /></n-icon>
             </div>
             <div class="target-content">
@@ -294,7 +294,7 @@ const enrichedTargets = computed(() => {
 });
 
 function getWeightColor(weight: number) {
-  if (weight >= 0.8) return '#18a058'; // Green
+  if (weight >= 0.8) return '#0f6b4a';
   if (weight >= 0.4) return '#2080f0'; // Blue
   return '#f0a020'; // Orange
 }

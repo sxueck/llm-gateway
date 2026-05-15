@@ -77,7 +77,7 @@
         </div>
       </n-layout-header>
 
-      <n-layout-content content-style="padding: 8px 32px 32px 32px; background-color: transparent;">
+      <n-layout-content content-style="padding: 8px 24px 24px; background-color: transparent;">
         <router-view />
       </n-layout-content>
     </n-layout>
@@ -489,11 +489,11 @@ onUnmounted(() => {
 
 .app-layout .custom-menu :deep(.n-menu-item-content:hover) {
   background: rgba(15, 107, 74, 0.06) !important;
-  color: #0f6b4a !important;
+  color: var(--color-primary) !important;
 }
 
 .app-layout .custom-menu :deep(.n-menu-item-content:hover .n-menu-item-content__icon) {
-  color: #0f6b4a !important;
+  color: var(--color-primary) !important;
 }
 
 .app-layout .custom-menu :deep(.n-menu-item-content:hover::before) {
@@ -502,12 +502,12 @@ onUnmounted(() => {
 
 .app-layout .custom-menu :deep(.n-menu-item-content--selected) {
   background: rgba(15, 107, 74, 0.08) !important;
-  color: #0f6b4a !important;
+  color: var(--color-primary) !important;
   box-shadow: none;
 }
 
 .app-layout .custom-menu :deep(.n-menu-item-content--selected .n-menu-item-content__icon) {
-  color: #0f6b4a !important;
+  color: var(--color-primary) !important;
 }
 
 .app-layout .custom-menu :deep(.n-menu-item-content--selected::before) {

@@ -69,7 +69,7 @@ function getStatusText(): string {
 }
 
 function getIconColor(): string {
-  if (isSupported.value) return '#18a058';
+  if (isSupported.value) return '#0f6b4a';
   return '#f0a020';
 }
 </script>

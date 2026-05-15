@@ -96,7 +96,7 @@ const stats = computed(() => {
 }
 
 .stat-value.stat-enabled {
-  color: #0f6b4a;
+  color: var(--color-primary);
 }
 
 .stat-label {

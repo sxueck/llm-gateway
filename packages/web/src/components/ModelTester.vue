@@ -316,7 +316,7 @@ function getTotalTokens(usage: any): number {
 }
 
 .result-card.success {
-  border-color: #18a058;
+  border-color: var(--color-primary);
 }
 
 .result-card.error {

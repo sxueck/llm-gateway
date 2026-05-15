@@ -19,7 +19,7 @@ const themeOverrides = {
     borderRadius: '12px',
     borderColor: 'transparent',
     dividerColor: '#e8e8e8',
-    fontFamily: '__Inter_1c856b, __Inter_Fallback_1c856b, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    fontFamily: 'MiSans, PingFang SC, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif',
   },
   Card: {
     borderRadius: '16px',

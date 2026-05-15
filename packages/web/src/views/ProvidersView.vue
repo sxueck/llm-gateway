@@ -155,9 +155,9 @@ const columns = [
         return h('span', { style: 'color: #ccc' }, '-');
       }
 
-      // Starbucks Green for good
-      let color = '#00704A';
-      let bgColor = 'rgba(0, 112, 74, 0.08)';
+      // Primary green for good
+      let color = '#0f6b4a';
+      let bgColor = 'rgba(15, 107, 74, 0.08)';
       
       // Warm Gold/Bronze for warning
       if (latency > 500) {
@@ -553,6 +553,7 @@ onMounted(() => {
 
 <style scoped>
 @import '@/styles/table.css';
+@import '@/styles/modal.css';
 .providers-view {
   max-width: 1400px;
   margin: 0 auto;
@@ -561,10 +562,9 @@ onMounted(() => {
 .page-title {
   font-size: 24px;
   font-weight: 700;
-  color: #1e3932; /* Starbucks House Green */
+  color: var(--color-title);
   margin: 0;
   letter-spacing: -0.01em;
-  font-family: 'SoDo Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
 .page-subtitle {
@@ -590,7 +590,7 @@ onMounted(() => {
   background: #fafafa;
   font-weight: 700;
   font-size: 11px;
-  color: #1e3932; /* House Green */
+  color: var(--color-title);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   border-bottom: 1px solid #d4d4d4;
@@ -607,41 +607,35 @@ onMounted(() => {
 }
 
 .providers-view :deep(.n-button--primary-type) {
-  background-color: #00704A;
-  border-color: #00704A;
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .providers-view :deep(.n-button--primary-type:hover),
 .providers-view :deep(.n-button--primary-type:focus) {
-  background-color: #005c3d;
-  border-color: #005c3d;
+  background-color: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
 }
 
 .providers-view :deep(.n-button--primary-type:pressed) {
-  background-color: #00442e;
-  border-color: #00442e;
+  background-color: var(--color-primary-pressed);
+  border-color: var(--color-primary-pressed);
 }
 
 .providers-view :deep(.n-button:not(.n-button--primary-type):not(.n-button--quaternary-type):hover),
 .providers-view :deep(.n-button:not(.n-button--primary-type):not(.n-button--quaternary-type):focus) {
-  color: #00704A;
-  border-color: #00704A;
+  color: var(--color-primary);
+  border-color: var(--color-primary);
   background-color: #f7fbf9;
 }
 
-.table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape) {
-  width: 28px;
-  height: 28px;
-  transition: all 0.2s ease;
-}
-
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:hover) {
-  background: #d4e9e2; /* Starbucks Light Green */
-  color: #00704A; /* Starbucks Green */
+  background: #d4e9e2;
+  color: var(--color-primary);
 }
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:hover .n-icon) {
-  color: #00704A;
+  color: var(--color-primary);
 }
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape .n-icon) {
@@ -673,26 +667,6 @@ onMounted(() => {
 
 .modal-content-wrapper {
   max-height: calc(90vh - 120px);
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-.modal-content-wrapper::-webkit-scrollbar {
-  width: 6px;
-}
-
-.modal-content-wrapper::-webkit-scrollbar-track {
-  background: #f0f0f0;
-  border-radius: 3px;
-}
-
-.modal-content-wrapper::-webkit-scrollbar-thumb {
-  background: #d0d0d0;
-  border-radius: 3px;
-}
-
-.modal-content-wrapper::-webkit-scrollbar-thumb:hover {
-  background: #b0b0b0;
 }
 
 .provider-modal :deep(.n-card__footer) {

@@ -501,10 +501,11 @@ onMounted(() => {
 </script>
 
 <style scoped>
+@import '@/styles/modal.css';
 .card-title {
   font-size: 20px;
   font-weight: 600;
-  color: #1e3932;
+  color: var(--color-title);
   letter-spacing: -0.015em;
   line-height: 1.3;
   white-space: nowrap;
@@ -602,32 +603,12 @@ onMounted(() => {
 }
 
 .token-line-saving {
-  color: #0f6b4a;
+  color: var(--color-primary);
   font-weight: 600;
 }
 
 .clean-dialog-modal .modal-content-wrapper {
   max-height: calc(85vh - 200px);
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-.modal-content-wrapper::-webkit-scrollbar {
-  width: 6px;
-}
-
-.modal-content-wrapper::-webkit-scrollbar-track {
-  background: #f0f0f0;
-  border-radius: 3px;
-}
-
-.modal-content-wrapper::-webkit-scrollbar-thumb {
-  background: #d0d0d0;
-  border-radius: 3px;
-}
-
-.modal-content-wrapper::-webkit-scrollbar-thumb:hover {
-  background: #b0b0b0;
 }
 
 .api-requests-view :deep(.n-data-table-th) {
@@ -691,7 +672,7 @@ onMounted(() => {
 }
 
 .api-requests-view :deep(.n-card-header__main) {
-  color: #1e3932;
+  color: var(--color-title);
   font-weight: 600;
   letter-spacing: -0.01em;
 }

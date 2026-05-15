@@ -663,16 +663,16 @@ defineExpose({
 }
 
 .preset-card:hover {
-  border-color: #18a058;
+  border-color: var(--color-primary);
   background: #f7fbf9;
   transform: translateY(-1px);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
 }
 
 .preset-card.active {
-  border-color: #18a058;
+  border-color: var(--color-primary);
   background: #eaf7f1;
-  box-shadow: 0 0 0 1px #18a058 inset;
+  box-shadow: 0 0 0 1px var(--color-primary) inset;
 }
 
 .custom-card {
@@ -774,7 +774,7 @@ defineExpose({
 }
 
 .field-icon--success {
-  color: #18a058;
+  color: var(--color-primary);
 }
 
 .field-icon--error {
@@ -788,7 +788,7 @@ defineExpose({
 }
 
 .field-feedback--success {
-  color: #18a058;
+  color: var(--color-primary);
 }
 
 .field-feedback--error {

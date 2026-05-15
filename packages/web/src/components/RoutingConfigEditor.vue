@@ -497,7 +497,7 @@ function handleSave() {
 }
 
 .weight-progress-fill.is-valid {
-  background: #18a058; /* Success color */
+  background: var(--color-primary);
 }
 
 .weight-text {
@@ -507,7 +507,7 @@ function handleSave() {
 }
 
 .text-error { color: #d03050; }
-.text-success { color: #18a058; }
+.text-success { color: var(--color-primary); }
 
 .targets-container {
   flex: 1;
@@ -618,7 +618,7 @@ function handleSave() {
 }
 
 .provider-select :deep(.n-base-selection:hover) {
-  border-color: #18a058;
+  border-color: var(--color-primary);
 }
 
 .model-select { 
@@ -630,7 +630,7 @@ function handleSave() {
 }
 
 .model-select :deep(.n-base-selection:hover) {
-  border-color: #18a058;
+  border-color: var(--color-primary);
 }
 
 .weight-control {

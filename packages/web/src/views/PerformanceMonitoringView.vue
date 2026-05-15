@@ -654,7 +654,7 @@ onMounted(() => {
   margin: 0 0 8px 0;
   font-size: 28px;
   font-weight: 600;
-  color: #1e3932;
+  color: var(--color-title);
 }
 
 .page-subtitle {

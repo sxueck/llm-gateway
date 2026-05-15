@@ -194,13 +194,13 @@ watch(() => props.utterances, (newUtterances) => {
 }
 
 :deep(.model-type-radio .n-radio:hover) {
-  border-color: #18a058;
-  background-color: rgba(24, 160, 88, 0.05);
+  border-color: var(--color-primary);
+  background-color: rgba(15, 107, 74, 0.05);
 }
 
 :deep(.model-type-radio .n-radio.n-radio--checked) {
-  border-color: #18a058;
-  background-color: rgba(24, 160, 88, 0.1);
+  border-color: var(--color-primary);
+  background-color: rgba(15, 107, 74, 0.1);
 }
 
 :deep(.model-type-radio .n-radio__dot) {

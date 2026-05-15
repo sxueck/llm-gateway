@@ -206,6 +206,7 @@
 </template>
 
 <style scoped>
+@import '@/styles/modal.css';
 .expert-routing-modal :deep(.n-card__content) {
   padding: 0;
   overflow: hidden;
@@ -214,8 +215,6 @@
 .modal-content-wrapper {
   /* 估算扣除卡片头部/内边距的高度，确保内容内部滚动而非撑破模态 */
   max-height: calc(90vh - 160px);
-  overflow-y: auto;
-  overflow-x: hidden;
   padding: 16px 20px;
 }
 
@@ -223,7 +222,7 @@
   margin: 0;
   font-size: 20px;
   font-weight: 600;
-  color: #1e3932;
+  color: var(--color-title);
 }
 
 .page-subtitle {
@@ -272,7 +271,7 @@
 }
 
 .visualization-preview:hover {
-  border-color: #18a058;
+  border-color: var(--color-primary);
   background: #f0f9f4;
 }
 
@@ -298,16 +297,16 @@
 .resize-handle:hover .resize-handle-line {
   width: 3px;
   height: 60px;
-  background: #18a058;
+  background: var(--color-primary);
 }
 
 .resize-handle-line {
   width: 2px;
   height: 40px;
-  background: #18a058;
+  background: var(--color-primary);
   border-radius: 2px;
   transition: all 0.2s;
-  box-shadow: 0 0 4px rgba(24, 160, 88, 0.3);
+  box-shadow: 0 0 4px rgba(15, 107, 74, 0.3);
 }
 
 .resize-tooltip {
@@ -315,7 +314,7 @@
   top: 50%;
   right: 20px;
   transform: translateY(-50%);
-  background: #18a058;
+  background: var(--color-primary);
   color: white;
   padding: 4px 8px;
   border-radius: 4px;
@@ -340,27 +339,7 @@
 
   .modal-content-wrapper {
     max-height: calc(90vh - 180px);
-    overflow-y: auto;
-    overflow-x: hidden;
     padding: 16px 20px;
-  }
-
-  .modal-content-wrapper::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .modal-content-wrapper::-webkit-scrollbar-track {
-    background: #f0f0f0;
-    border-radius: 3px;
-  }
-
-  .modal-content-wrapper::-webkit-scrollbar-thumb {
-    background: #d0d0d0;
-    border-radius: 3px;
-  }
-
-  .modal-content-wrapper::-webkit-scrollbar-thumb:hover {
-    background: #b0b0b0;
   }
 
   .expert-routing-modal :deep(.n-card__footer),
