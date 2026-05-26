@@ -6,7 +6,7 @@ import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse, bu
 import { messageCompressor } from '../../services/message-compressor.js';
 import { extractIp } from '../../utils/ip.js';
 import { getRequestUserAgent } from '../../utils/http.js';
-import { makeHttpRequest, makeStreamHttpRequest } from '../proxy/http-client.js';
+import { makeHttpRequest, makeStreamHttpRequest, makeImageGenerationProxyRequest } from '../proxy/http-client.js';
 import { requestHeaderForwardingService } from '../../services/request-header-forwarding.js';
 import { checkCache, setCacheIfNeeded, getCacheStatus } from '../proxy/cache.js';
 import { runProxyPipeline } from '../proxy/pipeline.js';
@@ -15,7 +15,7 @@ import { circuitBreaker } from '../../services/circuit-breaker.js';
 import { shouldLogRequestBody, getModelForLogging } from '../proxy/handlers/shared.js';
 import { logApiRequestToDb } from '../../services/api-request-logger.js';
 import { normalizeUsageCounts } from '../../utils/usage-normalizer.js';
-import { isChatCompletionsPath, isResponsesApiPath, isResponsesCompactPath, isEmbeddingsPath, shouldBypassGatewayCache } from '../../utils/path-detector.js';
+import { isChatCompletionsPath, isResponsesApiPath, isResponsesCompactPath, isEmbeddingsPath, isImagesPath, shouldBypassGatewayCache } from '../../utils/path-detector.js';
 // removed gemini import
 import {
   maskRequestBodyInPlace,
@@ -814,6 +814,158 @@ export async function handleNonStreamRequest(
 
   const virtualKeyValue = virtualKeyValueParam || virtualKey.key_value;
   const circuitBreakerKey = modelResult?.circuitBreakerKey || providerId;
+
+  // Images API non-stream branch (bypasses cache and token counting)
+  if (isImagesPath(path)) {
+    const normalizedPath = path.toLowerCase();
+    const isGenerations = normalizedPath.includes('/images/generations');
+
+    if (!isGenerations) {
+      return reply.code(400).send({
+        error: {
+          message: 'Images edits and variations are not supported in this phase. Only image generation is supported.',
+          type: 'invalid_request_error',
+          param: null,
+          code: 'images_multipart_not_supported'
+        }
+      });
+    }
+
+    const contentType = String(request.headers['content-type'] || '').toLowerCase();
+    if (!contentType.includes('application/json')) {
+      return reply.code(415).send({
+        error: {
+          message: 'Unsupported content type for image generation. Only application/json is supported.',
+          type: 'invalid_request_error',
+          param: 'content-type',
+          code: 'unsupported_images_content_type'
+        }
+      });
+    }
+
+    const abortController = new AbortController();
+    request.raw.on('close', () => {
+      abortController.abort();
+    });
+
+    const acquireResult = await virtualKeyQueueService.acquire(virtualKeyValue, abortController.signal);
+    if (!acquireResult.granted) {
+      if (acquireResult.reason !== 'cancelled') {
+        reply.code(429).send(buildQueue429Error(acquireResult.reason));
+      }
+      return;
+    }
+    const { release } = acquireResult;
+
+    try {
+      const requestBody = { ...(request.body as any) || {} };
+      if (protocolConfig.model) {
+        requestBody.model = protocolConfig.model;
+      }
+
+      const response = await makeImageGenerationProxyRequest(
+        protocolConfig,
+        path,
+        requestBody,
+        forwardedHeaders,
+        abortController.signal
+      );
+
+      const responseHeaders: Record<string, string> = {};
+      Object.entries(response.headers).forEach(([key, value]) => {
+        const lowerKey = key.toLowerCase();
+        if (!lowerKey.startsWith('transfer-encoding') &&
+            !lowerKey.startsWith('connection') &&
+            lowerKey !== 'content-length') {
+          responseHeaders[key] = Array.isArray(value) ? value[0] : value;
+        }
+      });
+      reply.headers(responseHeaders);
+      reply.code(response.statusCode);
+
+      const isSuccess = response.statusCode >= 200 && response.statusCode < 300;
+      const duration = Date.now() - startTime;
+
+      if (!isSuccess) {
+        circuitBreaker.recordFailure(circuitBreakerKey, new Error(`HTTP ${response.statusCode}`));
+      } else {
+        circuitBreaker.recordSuccess(circuitBreakerKey);
+      }
+
+      const shouldLogBody = shouldLogRequestBody(virtualKey);
+      const truncatedRequest = shouldLogBody ? truncateRequestBody(requestBody) : undefined;
+      const truncatedResponse = shouldLogBody ? truncateResponseBody(response.body) : undefined;
+
+      await logApiRequestToDb({
+        virtualKey,
+        providerId,
+        model: protocolConfig.model,
+        tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        status: isSuccess ? 'success' : 'error',
+        responseTime: duration,
+        errorMessage: isSuccess ? undefined : (typeof response.body === 'string' ? response.body : JSON.stringify(response.body)).substring(0, 500),
+        truncatedRequest,
+        truncatedResponse,
+        cacheHit: 0,
+        ip: nonStreamRequestIp,
+        userAgent: nonStreamRequestUserAgent,
+        piiMaskedCount: 0,
+      });
+
+      memoryLogger.info(
+        `Image generation ${isSuccess ? 'complete' : 'failed'}: ${response.statusCode} | ${duration}ms | model: ${protocolConfig.model}`,
+        'Proxy'
+      );
+
+      return reply.send(response.body);
+    } catch (error: any) {
+      release();
+      const duration = Date.now() - startTime;
+
+      if (error.name === 'AbortError' || abortController.signal.aborted) {
+        memoryLogger.info('Image generation request cancelled by client', 'Proxy');
+        return;
+      }
+
+      memoryLogger.error(
+        `Image generation proxy failed: ${error.message}`,
+        'Proxy',
+        { error: error.stack }
+      );
+
+      const shouldLogBody = shouldLogRequestBody(virtualKey);
+      const truncatedRequest = shouldLogBody ? truncateRequestBody(request.body) : undefined;
+
+      await logApiRequestToDb({
+        virtualKey,
+        providerId,
+        model: protocolConfig.model,
+        tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        status: 'error',
+        responseTime: duration,
+        errorMessage: error.message,
+        truncatedRequest,
+        cacheHit: 0,
+        ip: nonStreamRequestIp,
+        userAgent: nonStreamRequestUserAgent,
+        piiMaskedCount: 0,
+      });
+
+      if (!reply.sent) {
+        return reply.code(500).send({
+          error: {
+            message: error.message || 'Image generation proxy failed',
+            type: 'internal_error',
+            param: null,
+            code: 'proxy_error'
+          }
+        });
+      }
+      return;
+    } finally {
+      release();
+    }
+  }
 
   const cacheResult = checkCache(
     virtualKey,
