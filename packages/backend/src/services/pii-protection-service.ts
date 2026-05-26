@@ -12,7 +12,7 @@ import {
   PiiProtectionContext,
   createPiiProtectionContext,
 } from './pii-protection-types.js';
-import { detectPii, mightContainPii } from './pii-detector.js';
+import { detectPii, getPiiHint } from './pii-detector.js';
 import { getOrCreateMaskedValue } from './pii-mask-generator.js';
 
 export interface PiiProtectionResult {
@@ -148,6 +148,8 @@ function collectTextRefs(body: any): TextRef[] {
   // OpenAI chat: messages
   if (Array.isArray(body?.messages)) {
     for (const msg of body.messages) {
+      // Skip trusted system prompts (application-side static config, not end-user input)
+      if (msg && typeof msg === 'object' && msg.role === 'system') continue;
       walkMessageContent(msg);
     }
   }
@@ -190,16 +192,7 @@ function collectTextRefs(body: any): TextRef[] {
     pushStringRef(() => body.instructions, (v) => { body.instructions = v; });
   }
 
-  // Anthropic system field: can be string or content blocks
-  if (typeof body?.system === 'string') {
-    pushStringRef(() => body.system, (v) => { body.system = v; });
-  } else if (Array.isArray(body?.system)) {
-    for (const block of body.system) {
-      if (block && typeof block === 'object' && block.type === 'text' && typeof block.text === 'string') {
-        pushStringRef(() => block.text, (v) => { block.text = v; });
-      }
-    }
-  }
+  // Anthropic system field: intentionally skipped (trusted application-side config)
 
   // Anthropic response content blocks: text and thinking types
   if (Array.isArray(body?.content)) {
@@ -253,13 +246,14 @@ function collectTextRefs(body: any): TextRef[] {
  * Optimized: uses fragment array with single join() to avoid repeated string copies
  */
 function applyMasking(text: string, ctx: PiiProtectionContext): string {
-  // Quick check first
-  if (!mightContainPii(text)) {
+  // Quick check first, reusing hash for detectPii to avoid duplicate SHA-256
+  const hint = getPiiHint(text);
+  if (!hint.result) {
     return text;
   }
 
   // Detect all PII
-  const detections = detectPii(text);
+  const detections = detectPii(text, hint.hash || undefined);
   if (detections.length === 0) {
     return text;
   }
@@ -299,6 +293,8 @@ function applyMasking(text: string, ctx: PiiProtectionContext): string {
  * @param enabled - Whether PII protection is enabled
  * @returns Result with context for restoration
  */
+const PII_SLOW_THRESHOLD_MS = 50;
+
 export function maskRequestBodyInPlace(
   body: any,
   enabled: boolean
@@ -306,6 +302,8 @@ export function maskRequestBodyInPlace(
   if (!enabled) {
     return { applied: false, context: null, maskedCount: 0 };
   }
+
+  const start = process.hrtime.bigint();
 
   const refs = collectTextRefs(body);
 
@@ -323,6 +321,14 @@ export function maskRequestBodyInPlace(
       ref.set(masked);
       maskedCount++;
     }
+  }
+
+  const elapsedMs = Number(process.hrtime.bigint() - start) / 1_000_000;
+  if (elapsedMs > PII_SLOW_THRESHOLD_MS) {
+    memoryLogger.warn(
+      `PII scan slow: ${elapsedMs.toFixed(1)}ms for ${refs.length} fields`,
+      'PII'
+    );
   }
 
   if (ctx.detections.length > 0) {
