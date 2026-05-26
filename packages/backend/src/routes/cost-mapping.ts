@@ -25,7 +25,6 @@ export async function costMappingRoutes(fastify: FastifyInstance) {
 
   fastify.get('/prices', async (request, reply) => {
     try {
-      // 1. Get all configured models and providers from DB
       const [configuredModels, providers] = await Promise.all([
         modelDb.getAll(),
         providerDb.getAll(),
@@ -33,9 +32,9 @@ export async function costMappingRoutes(fastify: FastifyInstance) {
 
       const providerMap = new Map(providers.map((p) => [p.id, p.name]));
 
-      // 2. Resolve cost for each model
       const results = [];
       for (const model of configuredModels) {
+        if (model.is_virtual === 1) continue;
         const modelIdentifier = model.model_identifier;
         const costInfo = await costMappingService.resolveModelCost(modelIdentifier);
         
@@ -49,7 +48,6 @@ export async function costMappingRoutes(fastify: FastifyInstance) {
              source: costInfo.source
            });
         } else {
-           // Model configured but no cost info found
            results.push({
              model: modelIdentifier,
              provider: providerName,
@@ -125,7 +123,6 @@ export async function costMappingRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Resolve cost for a model name
   fastify.post('/resolve', async (request, reply) => {
     try {
       const { model } = request.body as { model: string };
