@@ -2,6 +2,8 @@ import { FastifyReply } from 'fastify';
 import { ProtocolAdapter, type ProtocolConfig } from '../../services/protocol-adapter.js';
 import { stripFieldRecursively } from '../../utils/request-logger.js';
 import { normalizeOpenAIError } from '../../utils/http-error-normalizer.js';
+import { upstreamFetch } from '../../utils/upstream-fetch.js';
+import { sanitizeCustomHeaders, filterForwardedHeaders } from '../../utils/header-sanitizer.js';
 
 export interface HttpResponse {
   statusCode: number;
@@ -95,6 +97,103 @@ export async function makeHttpRequest(
       statusCode,
       headers: { 'content-type': 'application/json' },
       body: errorResponse
+    };
+  }
+}
+
+/**
+ * Build an OpenAI-compatible upstream URL, de-duplicating /v1 when both baseUrl and path contain it.
+ */
+export function buildOpenAICompatibleUrl(baseUrl: string | undefined, path: string): string {
+  const trimmedBase = (baseUrl || '').replace(/\/+$/, '');
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+  if (!trimmedBase) {
+    return normalizedPath;
+  }
+
+  const baseEndsWithV1 = /\/v1$/i.test(trimmedBase);
+  const pathStartsWithV1 = normalizedPath.toLowerCase().startsWith('/v1/');
+
+  if (baseEndsWithV1 && pathStartsWithV1) {
+    return `${trimmedBase}${normalizedPath.slice(3)}`;
+  }
+
+  return `${trimmedBase}${normalizedPath}`;
+}
+
+export async function makeImageGenerationProxyRequest(
+  config: ProtocolConfig,
+  path: string,
+  body: any,
+  forwardedHeaders: Record<string, string>,
+  abortSignal?: AbortSignal
+): Promise<HttpResponse> {
+  const url = buildOpenAICompatibleUrl(config.baseUrl, path);
+
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${config.apiKey}`,
+    'Content-Type': 'application/json',
+  };
+
+  const modelAttributeHeaders = sanitizeCustomHeaders(config.modelAttributes?.headers);
+  if (modelAttributeHeaders) {
+    Object.assign(headers, modelAttributeHeaders);
+  }
+
+  const filteredForwarded = filterForwardedHeaders(config.modelAttributes?.headers, forwardedHeaders);
+  if (filteredForwarded) {
+    Object.assign(headers, filteredForwarded);
+  }
+
+  try {
+    const response = await upstreamFetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: abortSignal,
+    });
+
+    const responseBody = await response.text();
+    const responseHeaders: Record<string, string | string[]> = {};
+    response.headers.forEach((value, key) => {
+      responseHeaders[key] = value;
+    });
+
+    let parsedBody: any;
+    const contentType = String(responseHeaders['content-type'] || '').toLowerCase();
+    if (contentType.includes('application/json') && responseBody) {
+      try {
+        parsedBody = JSON.parse(responseBody);
+      } catch {
+        parsedBody = responseBody;
+      }
+    } else {
+      parsedBody = responseBody;
+    }
+
+    return {
+      statusCode: response.status,
+      headers: responseHeaders,
+      body: parsedBody,
+    };
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      throw error;
+    }
+
+    const norm = normalizeOpenAIError(error);
+    return {
+      statusCode: norm.statusCode,
+      headers: { 'content-type': 'application/json' },
+      body: {
+        error: {
+          message: norm.message,
+          type: norm.errorType,
+          param: null,
+          code: norm.errorCode,
+        },
+      },
     };
   }
 }

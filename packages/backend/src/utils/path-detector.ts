@@ -13,6 +13,7 @@ export enum EndpointType {
   EMBEDDINGS = 'embeddings',
   AUDIO = 'audio',
   COMPLETIONS = 'completions',
+  IMAGES = 'images',
   UNKNOWN = 'unknown'
 }
 
@@ -38,6 +39,9 @@ export function detectEndpointType(path: string): EndpointType {
   }
   if (normalizedPath.includes('/audio')) {
     return EndpointType.AUDIO;
+  }
+  if (normalizedPath.includes('/images')) {
+    return EndpointType.IMAGES;
   }
   if (normalizedPath.includes('/completions') && !normalizedPath.includes('/chat/')) {
     return EndpointType.COMPLETIONS;
@@ -71,7 +75,7 @@ export function isResponsesCompactPath(path: string): boolean {
  * Check whether gateway response cache should be bypassed for this path.
  */
 export function shouldBypassGatewayCache(path: string): boolean {
-  return isEmbeddingsPath(path) || isResponsesCompactPath(path);
+  return isEmbeddingsPath(path) || isResponsesCompactPath(path) || isImagesPath(path);
 }
 
 /**
@@ -93,6 +97,13 @@ export function isEmbeddingsPath(path: string): boolean {
  */
 export function isAudioPath(path: string): boolean {
   return detectEndpointType(path) === EndpointType.AUDIO;
+}
+
+/**
+ * Check if the path is an images endpoint
+ */
+export function isImagesPath(path: string): boolean {
+  return detectEndpointType(path) === EndpointType.IMAGES;
 }
 
 /**
