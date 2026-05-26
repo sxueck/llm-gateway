@@ -68,7 +68,7 @@ const SECRET_PATTERNS: SecretPattern[] = [
   },
   {
     name: 'high_entropy_token',
-    regex: /\b[A-Za-z0-9._-]{24,}\b/g,
+    regex: /\b(?=[A-Za-z0-9._-]*[A-Z])[A-Za-z0-9._-]{24,}\b/g,
     type: 'secret',
   },
 ];
