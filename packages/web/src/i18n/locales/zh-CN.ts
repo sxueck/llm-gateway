@@ -336,6 +336,15 @@ export default {
       forwardClientUserAgent: '透传客户端 User-Agent',
       forwardClientUserAgentDesc: '开启后会将客户端的 User-Agent 透传到上游供应商；Referer/Origin 将始终透传。若模型属性中配置了同名请求头，将以模型属性为准',
     },
+    ssl: {
+      title: 'SSL 证书验证',
+      skipUpstreamSslVerify: '跳过上游 SSL 证书验证',
+      skipUpstreamSslVerifyDesc: '开启后对所有上游 HTTPS 请求不验证证书，可放行自签名或过期证书',
+      warning: {
+        title: '安全警告',
+        content: '该选项会信任任意上游证书，存在中间人攻击风险。仅建议在内网自签名服务场景下临时使用，生产环境请保持关闭。',
+      },
+    },
     antiBot: {
       title: '反爬虫设置',
       enabled: '启用反爬虫功能',

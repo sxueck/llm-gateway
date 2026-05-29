@@ -336,6 +336,15 @@ export default {
       forwardClientUserAgent: 'Forward Client User-Agent',
       forwardClientUserAgentDesc: 'When enabled, the client User-Agent will be forwarded to upstream providers. Referer/Origin are always forwarded. If the same header is set in model attributes, model attributes take precedence.',
     },
+    ssl: {
+      title: 'SSL Certificate Verification',
+      skipUpstreamSslVerify: 'Skip Upstream SSL Certificate Verification',
+      skipUpstreamSslVerifyDesc: 'When enabled, upstream HTTPS requests will not validate certificates, allowing self-signed or expired certificates',
+      warning: {
+        title: 'Security Warning',
+        content: 'This option will trust any upstream certificate, exposing the system to man-in-the-middle attacks. Only recommended for temporary use with internal self-signed services; keep it disabled in production environments.',
+      },
+    },
     antiBot: {
       title: 'Anti-Bot Settings',
       enabled: 'Enable Anti-Bot Protection',

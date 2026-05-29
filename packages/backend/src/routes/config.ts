@@ -12,6 +12,7 @@ import { runtimeSystemConfigCache } from '../services/runtime-system-config-cach
 import { threatIpBlocker } from '../services/threat-ip-blocker.js';
 import { manualIpBlocklist } from '../services/manual-ip-blocklist.js';
 import { requestHeaderForwardingService } from '../services/request-header-forwarding.js';
+import { upstreamSslConfigService } from '../services/upstream-ssl-config.js';
 import { getGeoInfo, normalizeIp } from '../utils/ip.js';
 import { getShanghaiDayStart } from '../db/utils/time-buckets.js';
 import { circuitBreaker } from '../services/circuit-breaker.js';
@@ -119,6 +120,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     const debugExpiresCfg = await systemConfigDb.get('developer_debug_expires_at');
     const dashboardHideRequestSourceCardCfg = await systemConfigDb.get('dashboard_hide_request_source_card');
     const forwardClientUserAgentCfg = await systemConfigDb.get('forward_client_user_agent');
+    const skipUpstreamSslVerifyCfg = await systemConfigDb.get('skip_upstream_ssl_verify');
     const antiBot = await loadAntiBotConfig();
 
     const now = Date.now();
@@ -136,6 +138,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       developerDebugExpiresAt: activeDebug ? rawExpiresAt : null,
       dashboardHideRequestSourceCard: dashboardHideRequestSourceCardCfg ? dashboardHideRequestSourceCardCfg.value === 'true' : false,
       forwardClientUserAgent: forwardClientUserAgentCfg ? forwardClientUserAgentCfg.value === 'true' : false,
+      skipUpstreamSslVerify: skipUpstreamSslVerifyCfg ? skipUpstreamSslVerifyCfg.value === 'true' : false,
       antiBot,
     };
   });
@@ -228,7 +231,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/system-settings', async (request) => {
-    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, dashboardHideRequestSourceCard, forwardClientUserAgent, antiBot } = request.body as {
+    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, dashboardHideRequestSourceCard, forwardClientUserAgent, skipUpstreamSslVerify, antiBot } = request.body as {
       allowRegistration?: boolean;
       corsEnabled?: boolean;
       publicUrl?: string;
@@ -238,6 +241,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       developerDebugEnabled?: boolean;
       dashboardHideRequestSourceCard?: boolean;
       forwardClientUserAgent?: boolean;
+      skipUpstreamSslVerify?: boolean;
       antiBot?: {
         enabled?: boolean;
         blockBots?: boolean;
@@ -356,6 +360,19 @@ export async function configRoutes(fastify: FastifyInstance) {
         await requestHeaderForwardingService.reloadConfig();
         memoryLogger.info(
           `客户端 User-Agent 透传已更新: ${forwardClientUserAgent ? '启用' : '禁用'}`,
+          'Config'
+        );
+      }
+
+      if (skipUpstreamSslVerify !== undefined) {
+        await systemConfigDb.set(
+          'skip_upstream_ssl_verify',
+          skipUpstreamSslVerify ? 'true' : 'false',
+          'Skip upstream SSL certificate verification'
+        );
+        await upstreamSslConfigService.reloadConfig();
+        memoryLogger.info(
+          `Skip upstream SSL verification updated: ${skipUpstreamSslVerify ? 'enabled' : 'disabled'}`,
           'Config'
         );
       }

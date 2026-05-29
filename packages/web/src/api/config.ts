@@ -290,6 +290,7 @@ type SystemSettingsResponse = {
   developerDebugExpiresAt: number | null;
   dashboardHideRequestSourceCard: boolean;
   forwardClientUserAgent: boolean;
+  skipUpstreamSslVerify: boolean;
   antiBot: AntiBotSettings;
 };
 
@@ -309,6 +310,7 @@ type UpdateSystemSettingsRequest = {
   developerDebugEnabled?: boolean;
   dashboardHideRequestSourceCard?: boolean;
   forwardClientUserAgent?: boolean;
+  skipUpstreamSslVerify?: boolean;
   antiBot?: {
     enabled?: boolean;
     blockBots?: boolean;

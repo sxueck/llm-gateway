@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { HttpClientFactory } from './http-client-factory.js';
+import { upstreamSslConfigService } from './upstream-ssl-config.js';
 import type { ProtocolConfig } from './protocol-adapter.js';
 
 function createConfig(overrides: Partial<ProtocolConfig> = {}): ProtocolConfig {
@@ -239,6 +240,75 @@ describe('HttpClientFactory basic behavior', () => {
 
     const keepAliveAgents = (factory as any).keepAliveAgents as Map<string, unknown>;
     expect(keepAliveAgents.size).toBe(1);
-    expect(keepAliveAgents.has('https://upstream-b.example.com')).toBe(true);
+    expect(keepAliveAgents.has('https://upstream-b.example.com|verify')).toBe(true);
+  });
+});
+
+describe('HttpClientFactory SSL skip-verify behavior', () => {
+  let originalSkipVerify: boolean;
+
+  beforeEach(() => {
+    originalSkipVerify = upstreamSslConfigService.isSkipVerify();
+  });
+
+  afterEach(() => {
+    (upstreamSslConfigService as any).skipVerify = originalSkipVerify;
+  });
+
+  it('should create different clients when skipVerify changes', () => {
+    (upstreamSslConfigService as any).skipVerify = false;
+
+    const factory = new HttpClientFactory({
+      keepAliveMaxSockets: 8,
+      maxCachedClients: 10,
+    });
+
+    const clientVerify = factory.getOpenAIClient(
+      createConfig({
+        baseUrl: 'https://api.example.com/v1',
+        apiKey: 'sk-test',
+      })
+    );
+
+    // Change skipVerify to true
+    (upstreamSslConfigService as any).skipVerify = true;
+
+    const clientSkipVerify = factory.getOpenAIClient(
+      createConfig({
+        baseUrl: 'https://api.example.com/v1',
+        apiKey: 'sk-test',
+      })
+    );
+
+    expect(clientSkipVerify).not.toBe(clientVerify);
+  });
+
+  it('should use separate keep-alive agents for skipVerify vs verify', () => {
+    (upstreamSslConfigService as any).skipVerify = false;
+
+    const factory = new HttpClientFactory({
+      keepAliveMaxSockets: 8,
+      maxCachedClients: 10,
+    });
+
+    factory.getOpenAIClient(
+      createConfig({
+        baseUrl: 'https://api.example.com/v1',
+        apiKey: 'sk-a',
+      })
+    );
+
+    (upstreamSslConfigService as any).skipVerify = true;
+
+    factory.getOpenAIClient(
+      createConfig({
+        baseUrl: 'https://api.example.com/v1',
+        apiKey: 'sk-b',
+      })
+    );
+
+    const keepAliveAgents = (factory as any).keepAliveAgents as Map<string, unknown>;
+    // Should have both verify and skip agents (before cache clear)
+    expect(keepAliveAgents.size).toBe(2);
   });
 });
