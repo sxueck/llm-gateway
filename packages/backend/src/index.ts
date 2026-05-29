@@ -29,10 +29,11 @@ import { healthRunDb, systemConfigDb as systemConfigDbForDebug } from './db/inde
 import { debugModeService } from './services/debug-mode.js';
 import { manualIpBlocklist } from './services/manual-ip-blocklist.js';
 import { requestHeaderForwardingService } from './services/request-header-forwarding.js';
+import { upstreamSslConfigService } from './services/upstream-ssl-config.js';
 import { requestCache } from './services/request-cache.js';
 import { runtimeSystemConfigCache } from './services/runtime-system-config-cache.js';
 import { getProxyConfigFromEnv, isProxyConfigured } from './utils/upstream-proxy.js';
-import { upstreamFetch } from './utils/upstream-fetch.js';
+import { upstreamFetch, clearProxyAgentCache } from './utils/upstream-fetch.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -106,6 +107,10 @@ await runtimeSystemConfigCache.initialize();
 
 // Load request header forwarding config before serving traffic.
 await requestHeaderForwardingService.reloadConfig();
+
+// Load upstream SSL verification config before serving traffic.
+await upstreamSslConfigService.reloadConfig();
+upstreamSslConfigService.onChange(() => clearProxyAgentCache());
 
 memoryLogger.info('Database initialized', 'System');
 

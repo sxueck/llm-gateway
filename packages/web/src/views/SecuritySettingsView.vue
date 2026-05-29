@@ -16,6 +16,25 @@
           </n-space>
 
           <n-space vertical :size="16">
+            <div style="font-size: 16px; font-weight: 500;">{{ $t('settings.ssl.title') }}</div>
+
+            <n-space align="center" justify="space-between">
+              <div>
+                <div>{{ $t('settings.ssl.skipUpstreamSslVerify') }}</div>
+                <n-text depth="3" style="font-size: 12px;">{{ $t('settings.ssl.skipUpstreamSslVerifyDesc') }}</n-text>
+              </div>
+              <n-switch :value="skipUpstreamSslVerify" @update:value="onToggleSkipUpstreamSslVerify" />
+            </n-space>
+
+            <n-alert v-if="skipUpstreamSslVerify" type="warning">
+              <template #header>
+                <div style="font-size: 14px; font-weight: 500;">{{ $t('settings.ssl.warning.title') }}</div>
+              </template>
+              <n-text style="font-size: 13px;">{{ $t('settings.ssl.warning.content') }}</n-text>
+            </n-alert>
+          </n-space>
+
+          <n-space vertical :size="16">
             <div style="font-size: 16px; font-weight: 500;">{{ $t('settings.antiBot.title') }}</div>
             
             <n-space align="center" justify="space-between">
@@ -146,6 +165,8 @@ const message = useMessage();
 
 // 上游请求头透传
 const forwardClientUserAgent = ref(false);
+// SSL 验证设置
+const skipUpstreamSslVerify = ref(false);
 // 反爬虫设置
 const antiBotEnabled = ref(false);
 const antiBotBlockBots = ref(true);
@@ -189,6 +210,18 @@ async function onToggleForwardClientUserAgent(val: boolean) {
   );
   if (result) {
     forwardClientUserAgent.value = val;
+  }
+}
+
+async function onToggleSkipUpstreamSslVerify(val: boolean) {
+  const result = await handleAsyncOperation(
+    () => configApi.updateSystemSettings({ skipUpstreamSslVerify: val }),
+    message,
+    t('messages.operationSuccess'),
+    t('messages.operationFailed')
+  );
+  if (result) {
+    skipUpstreamSslVerify.value = val;
   }
 }
 
@@ -282,7 +315,8 @@ onMounted(async () => {
   const s = await configApi.getSystemSettings();
 
   forwardClientUserAgent.value = !!s.forwardClientUserAgent;
-  
+  skipUpstreamSslVerify.value = !!s.skipUpstreamSslVerify;
+
   // 加载反爬虫配置
   if (s.antiBot) {
     antiBotEnabled.value = s.antiBot.enabled;

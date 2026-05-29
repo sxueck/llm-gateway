@@ -4,10 +4,12 @@ import {
   getProxyUrlForTarget,
   isBun,
 } from './upstream-proxy.js';
+import { upstreamSslConfigService } from '../services/upstream-ssl-config.js';
 
 // Lazy-loaded undici for Node.js runtime
 let undici: typeof import('undici') | null = null;
 let proxyAgentCache: Map<string, import('undici').ProxyAgent> = new Map();
+let skipVerifyAgent: import('undici').Agent | null = null;
 
 async function getUndici(): Promise<typeof import('undici')> {
   if (!undici) {
@@ -16,19 +18,42 @@ async function getUndici(): Promise<typeof import('undici')> {
   return undici;
 }
 
-function getProxyAgent(proxyUrl: string): Promise<import('undici').ProxyAgent> {
-  const cached = proxyAgentCache.get(proxyUrl);
+function getProxyAgentCacheKey(proxyUrl: string, skipVerify: boolean): string {
+  return `${proxyUrl}|skipVerify=${skipVerify}`;
+}
+
+function getProxyAgent(proxyUrl: string, skipVerify: boolean): Promise<import('undici').ProxyAgent> {
+  const cacheKey = getProxyAgentCacheKey(proxyUrl, skipVerify);
+  const cached = proxyAgentCache.get(cacheKey);
   if (cached) {
     return Promise.resolve(cached);
   }
 
   return getUndici().then((u) => {
-    const agent = new u.ProxyAgent({
+    const agentOptions: any = {
       uri: proxyUrl,
-    });
-    proxyAgentCache.set(proxyUrl, agent);
+    };
+    if (skipVerify) {
+      agentOptions.connect = { rejectUnauthorized: false };
+    }
+    const agent = new u.ProxyAgent(agentOptions);
+    proxyAgentCache.set(cacheKey, agent);
     return agent;
   });
+}
+
+async function getSkipVerifyAgent(): Promise<import('undici').Agent> {
+  if (!skipVerifyAgent) {
+    const u = await getUndici();
+    skipVerifyAgent = new u.Agent({
+      connect: { rejectUnauthorized: false },
+    });
+  }
+  return skipVerifyAgent;
+}
+
+export function clearProxyAgentCache(): void {
+  proxyAgentCache.clear();
 }
 
 export interface UpstreamFetchOptions extends RequestInit {
@@ -217,6 +242,13 @@ export async function upstreamFetch(
   }
   // If no timeout but has signal, it's already in fetchOptions from the spread above
 
+  const skipVerify = upstreamSslConfigService.isSkipVerify();
+
+  // Inject TLS skip-verify options for Bun runtime
+  if (skipVerify && isBun()) {
+    (fetchOptions as any).tls = { rejectUnauthorized: false };
+  }
+
   try {
     // Runtime-specific proxy handling
     if (proxyUrl) {
@@ -226,9 +258,9 @@ export async function upstreamFetch(
         return await fetch(urlString, fetchOptions);
       } else {
         // Node.js: Use undici with ProxyAgent
-        const agent = await getProxyAgent(proxyUrl);
+        const agent = await getProxyAgent(proxyUrl, skipVerify);
         const u = await getUndici();
-        
+
         // Use undici's fetch with dispatcher
         // Cast to Response to handle type differences between undici and standard fetch
         const undiciOptions: import('undici').RequestInit = {
@@ -243,7 +275,22 @@ export async function upstreamFetch(
       }
     }
 
-    // No proxy: use standard fetch
+    // No proxy
+    if (!isBun() && skipVerify) {
+      // Node.js with skip-verify: use undici fetch with a custom agent
+      const agent = await getSkipVerifyAgent();
+      const u = await getUndici();
+      const undiciOptions: import('undici').RequestInit = {
+        method: fetchOptions.method,
+        headers: fetchOptions.headers as import('undici').HeadersInit,
+        body: fetchOptions.body as import('undici').BodyInit,
+        redirect: fetchOptions.redirect as import('undici').RequestRedirect,
+        signal: fetchOptions.signal,
+        dispatcher: agent,
+      };
+      return await u.fetch(urlString, undiciOptions) as unknown as Response;
+    }
+
     return await fetch(urlString, fetchOptions);
   } finally {
     // Always cleanup timeout/listeners after request completes (success or error)

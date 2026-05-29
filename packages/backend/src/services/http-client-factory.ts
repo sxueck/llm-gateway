@@ -9,6 +9,7 @@ import {
 } from '../utils/upstream-proxy.js';
 import { createKeepAliveAgents, type KeepAliveAgents } from '../utils/proxy-agents.js';
 import { upstreamFetch } from '../utils/upstream-fetch.js';
+import { upstreamSslConfigService } from './upstream-ssl-config.js';
 
 import type { ProtocolConfig } from './protocol-adapter.js';
 
@@ -37,6 +38,7 @@ type ResolvedClientConfig = {
   maxRetries: number;
   sanitizedHeaders?: Record<string, string>;
   proxyUrl: string | null;
+  skipVerify: boolean;
 };
 
 /**
@@ -67,6 +69,19 @@ export class HttpClientFactory {
       logger?: LoggerLike;
     }
   ) {}
+
+  private destroyAgents(): void {
+    for (const agents of this.keepAliveAgents.values()) {
+      agents.httpAgent.destroy();
+      agents.httpsAgent.destroy();
+    }
+    this.keepAliveAgents.clear();
+    this.openaiClients.clear();
+  }
+
+  destroy(): void {
+    this.destroyAgents();
+  }
 
   private getMaxCachedClients(): number {
     const configured = this.options.maxCachedClients;
@@ -108,28 +123,32 @@ export class HttpClientFactory {
     timeout: number;
     maxRetries: number;
     proxyUrl: string | null;
+    skipVerify: boolean;
   }): string {
     const apiKeyFingerprint = this.hashValue(input.apiKey || '');
     const timeoutPart = String(input.timeout);
     const retriesPart = String(input.maxRetries);
     const proxyPart = input.proxyUrl ? this.hashValue(input.proxyUrl) : 'no-proxy';
+    const sslPart = input.skipVerify ? 'skip-verify' : 'verify';
 
-    return `${input.normalizedBaseUrl}|${apiKeyFingerprint}|${input.headersKey}|${timeoutPart}|${retriesPart}|${proxyPart}`;
+    return `${input.normalizedBaseUrl}|${apiKeyFingerprint}|${input.headersKey}|${timeoutPart}|${retriesPart}|${proxyPart}|${sslPart}`;
   }
 
-  private createKeepAliveAgents(): KeepAliveAgents {
+  private createKeepAliveAgents(skipVerify: boolean): KeepAliveAgents {
     return createKeepAliveAgents({
       keepAliveMsecs: KEEP_ALIVE_MSECS,
       maxSockets: this.options.keepAliveMaxSockets,
+      rejectUnauthorized: skipVerify ? false : undefined,
     });
   }
 
-  private getKeepAliveAgents(upstreamKey: string): KeepAliveAgents {
-    if (!this.keepAliveAgents.has(upstreamKey)) {
-      this.keepAliveAgents.set(upstreamKey, this.createKeepAliveAgents());
+  private getKeepAliveAgents(upstreamKey: string, skipVerify: boolean): KeepAliveAgents {
+    const cacheKey = `${upstreamKey}|${skipVerify ? 'skip' : 'verify'}`;
+    if (!this.keepAliveAgents.has(cacheKey)) {
+      this.keepAliveAgents.set(cacheKey, this.createKeepAliveAgents(skipVerify));
     }
 
-    return this.keepAliveAgents.get(upstreamKey)!;
+    return this.keepAliveAgents.get(cacheKey)!;
   }
 
   private getProxyUrlForBaseUrl(baseUrl: string): string | null {
@@ -147,6 +166,7 @@ export class HttpClientFactory {
     const maxRetries = config.modelAttributes?.maxRetries ?? DEFAULT_MAX_RETRIES;
     const headersKey = getSanitizedHeadersCacheKey(sanitizedHeaders) || NO_HEADERS_CACHE_KEY;
     const proxyUrl = this.getProxyUrlForBaseUrl(normalizedBaseUrl === DEFAULT_BASE_URL ? 'https://api.openai.com' : normalizedBaseUrl);
+    const skipVerify = upstreamSslConfigService.isSkipVerify();
 
     const cacheKey = this.buildClientCacheKey({
       normalizedBaseUrl,
@@ -155,6 +175,7 @@ export class HttpClientFactory {
       timeout,
       maxRetries,
       proxyUrl,
+      skipVerify,
     });
 
     return {
@@ -165,6 +186,7 @@ export class HttpClientFactory {
       maxRetries,
       sanitizedHeaders,
       proxyUrl,
+      skipVerify,
     };
   }
 
@@ -185,7 +207,7 @@ export class HttpClientFactory {
     resolvedConfig: ResolvedClientConfig
   ): any {
     // Always use keep-alive agents for connection pooling
-    const agents = this.getKeepAliveAgents(resolvedConfig.upstreamKey);
+    const agents = this.getKeepAliveAgents(resolvedConfig.upstreamKey, resolvedConfig.skipVerify);
 
     const clientConfig: any = {
       apiKey: config.apiKey,
@@ -223,11 +245,19 @@ export class HttpClientFactory {
       }
     }
 
-    const agents = this.keepAliveAgents.get(upstreamKey);
-    if (agents) {
-      agents.httpAgent.destroy();
-      agents.httpsAgent.destroy();
-      this.keepAliveAgents.delete(upstreamKey);
+    const keysToDelete: string[] = [];
+    for (const key of this.keepAliveAgents.keys()) {
+      if (key === upstreamKey || key.startsWith(`${upstreamKey}|`)) {
+        keysToDelete.push(key);
+      }
+    }
+    for (const key of keysToDelete) {
+      const agents = this.keepAliveAgents.get(key);
+      if (agents) {
+        agents.httpAgent.destroy();
+        agents.httpsAgent.destroy();
+        this.keepAliveAgents.delete(key);
+      }
     }
   }
 

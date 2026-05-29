@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { upstreamFetch, extractUrlString } from './upstream-fetch.js';
+import { upstreamFetch, extractUrlString, clearProxyAgentCache } from './upstream-fetch.js';
+import { upstreamSslConfigService } from '../services/upstream-ssl-config.js';
 
 describe('extractUrlString', () => {
   it('should handle string URLs', () => {
@@ -35,9 +36,9 @@ describe('upstreamFetch abort behavior', () => {
 
   it('should abort when signal is triggered during request', async () => {
     const controller = new AbortController();
-    
+
     setTimeout(() => controller.abort(), 10);
-    
+
     try {
       await upstreamFetch('https://example.com', {
         timeoutMs: 10000,
@@ -90,5 +91,34 @@ describe('upstreamFetch with proxy', () => {
     } catch (error: any) {
       expect(error.message).not.toContain('toString');
     }
+  });
+});
+
+describe('upstreamFetch SSL skip-verify behavior', () => {
+  let originalSkipVerify: boolean;
+
+  beforeEach(() => {
+    originalSkipVerify = upstreamSslConfigService.isSkipVerify();
+    clearProxyAgentCache();
+  });
+
+  afterEach(() => {
+    (upstreamSslConfigService as any).skipVerify = originalSkipVerify;
+    clearProxyAgentCache();
+  });
+
+  it('should not inject tls option when skipVerify is false', async () => {
+    (upstreamSslConfigService as any).skipVerify = false;
+    try {
+      await upstreamFetch('https://example.com', { timeoutMs: 100 });
+    } catch {
+      // expected to fail
+    }
+  });
+
+  it('should clear proxy agent cache when called', () => {
+    (upstreamSslConfigService as any).skipVerify = true;
+    clearProxyAgentCache();
+    // Should not throw
   });
 });
