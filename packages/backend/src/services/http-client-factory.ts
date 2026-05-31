@@ -217,9 +217,9 @@ export class HttpClientFactory {
       httpsAgent: agents.httpsAgent,
     };
 
-    // Only use custom fetch when proxy is actually configured
-    // This preserves original keep-alive behavior on the no-proxy path
-    if (resolvedConfig.proxyUrl) {
+    // Use custom fetch when proxy is configured or SSL verification is skipped.
+    // This ensures upstreamFetch handles proxy routing and/or TLS skip correctly.
+    if (resolvedConfig.proxyUrl || resolvedConfig.skipVerify) {
       clientConfig.fetch = createCustomFetch();
     }
 
