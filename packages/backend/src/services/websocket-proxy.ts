@@ -128,10 +128,9 @@ export async function relayWebSocket(options: WebSocketRelayOptions): Promise<vo
     },
   };
   if (skipVerify) {
+    (wsOptions as any).rejectUnauthorized = false;
     if (isBun()) {
       (wsOptions as any).tls = { rejectUnauthorized: false };
-    } else {
-      (wsOptions as any).rejectUnauthorized = false;
     }
   }
   const upstreamSocket = new WebSocket(upstreamUrl, [], wsOptions);

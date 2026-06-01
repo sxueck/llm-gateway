@@ -38,10 +38,9 @@ export async function streamResponsesViaWebSocket(
     headers: { 'Authorization': `Bearer ${apiKey}` },
   };
   if (skipVerify) {
+    (wsOptions as any).rejectUnauthorized = false;
     if (isBun()) {
       (wsOptions as any).tls = { rejectUnauthorized: false };
-    } else {
-      (wsOptions as any).rejectUnauthorized = false;
     }
   }
   const upstreamSocket = new WebSocket(wsUrl, [], wsOptions);
