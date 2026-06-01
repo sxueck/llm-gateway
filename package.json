@@ -41,11 +41,16 @@
   },
   "homepage": "https://github.com/sxueck/llm-gateway#readme",
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "tsx": "^4.21.0",
     "typescript": "^5.7.2"
   },
   "engines": {
     "bun": ">=1.0.0",
     "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@fastify/websocket": "^11.0.0",
+    "ws": "^8.21.0"
   }
 }

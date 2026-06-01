@@ -516,15 +516,32 @@ export async function handleStreamRequest(
         );
       }
 
-      tokenUsage = await makeStreamHttpRequest(
-        protocolConfig,
-        [],
-        options,
-        reply,
-        input,
-        true,
-        abortController.signal
-      );
+      // Phase 2: opt-in upstream WebSocket optimization
+      const useUpstreamWebSocket = modelAttributes?.upstream_websocket_enabled === true;
+
+      if (useUpstreamWebSocket) {
+        memoryLogger.info(
+          `Responses API using upstream WebSocket | model: ${protocolConfig.model} | vk: ${vkDisplay}`,
+          'Proxy'
+        );
+        const { streamResponsesViaWebSocket } = await import('../../services/responses-ws-adapter.js');
+        tokenUsage = await streamResponsesViaWebSocket(
+          protocolConfig,
+          request.body,
+          reply,
+          abortController.signal
+        );
+      } else {
+        tokenUsage = await makeStreamHttpRequest(
+          protocolConfig,
+          [],
+          options,
+          reply,
+          input,
+          true,
+          abortController.signal
+        );
+      }
     } else {
       // Chat Completions API 请求
       const messages = (request.body as any)?.messages || [];

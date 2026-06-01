@@ -25,6 +25,7 @@ export interface ApiLogParams {
   ip?: string;
   userAgent?: string;
   piiMaskedCount?: number;
+  requestType?: string;
 }
 
 function safeParseJson(text: string | undefined): any | null {
@@ -131,6 +132,7 @@ export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
     request_params_json: requestParamsJson,
     response_meta_json: responseMetaJson,
     cache_hit: params.cacheHit ?? 0,
+    request_type: params.requestType,
     compression_original_tokens: params.compressionStats?.originalTokens,
     compression_saved_tokens: params.compressionStats?.savedTokens,
     ip: params.ip,

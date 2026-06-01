@@ -166,6 +166,7 @@ export default {
     batchCreateFailed: 'Failed to batch create models',
     performanceParams: 'Performance Parameters',
     costParams: 'Cost Parameters',
+    protocolParams: 'Protocol Optimization',
     featureSupport: 'Feature Support',
     itemsPerPage: 'Items per page:',
     groupByModelName: 'Group by model name:',
@@ -202,6 +203,10 @@ export default {
         label: 'Interleaved Thinking',
         description: 'Supports Interleaved Thinking friendly format for tool calling scenarios in models like MiniMax',
       },
+    },
+    upstreamWebsocket: {
+      label: 'Upstream WebSocket',
+      description: 'Use upstream WebSocket connections for Responses API streaming requests to reduce latency in multi-turn tool calling. Falls back to HTTP SSE on connection failure.',
     },
   },
   virtualModels: {

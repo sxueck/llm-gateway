@@ -1,29 +1,18 @@
 <template>
   <div class="model-attributes-editor">
-    <n-collapse :default-expanded-names="['cost']">
-      <n-collapse-item name="advanced" title="高级属性">
-        <n-space vertical :size="8">
-          <n-text depth="3" style="font-size: 12px;">自定义请求头 (Headers)</n-text>
-          <n-input
-            v-model:value="headersText"
-            type="textarea"
-            placeholder="User-Agent: MyApp/1.0&#10;X-API-Key: your-key&#10;Authorization: Bearer token"
-            :rows="4"
-            size="small"
-          />
-          <n-text depth="3" style="font-size: 11px; color: #999;">
-            每行一个请求头，格式: Key: Value
-          </n-text>
-        </n-space>
-      </n-collapse-item>
-
-      <n-collapse-item name="cost" :title="t('models.costParams')">
+    <n-collapse :default-expanded-names="['protocol']">
+      <n-collapse-item
+        v-for="cat in categories"
+        :key="cat"
+        :name="cat === '协议优化' ? 'protocol' : 'cost'"
+        :title="cat === '协议优化' ? t('models.protocolParams') : t('models.costParams')"
+      >
         <n-space vertical :size="4">
-          <div v-for="attr in costAttrs" :key="attr.key" class="attr-item">
-            <n-form-item :label="attr.label" :label-width="140" size="small">
+          <div v-for="attr in attrsByCategory(cat)" :key="attr.key" class="attr-item">
+            <n-form-item :label="attr.labelKey ? t(attr.labelKey) : attr.label" :label-width="160" size="small">
               <template #label>
                 <n-space :size="4" align="center">
-                  <span>{{ attr.label }}</span>
+                  <span>{{ attr.labelKey ? t(attr.labelKey) : attr.label }}</span>
                   <n-tooltip>
                     <template #trigger>
                       <n-icon :size="14" style="cursor: help; color: #999;">
@@ -32,11 +21,18 @@
                         </svg>
                       </n-icon>
                     </template>
-                    {{ attr.description }}
+                    {{ attr.descriptionKey ? t(attr.descriptionKey) : attr.description }}
                   </n-tooltip>
                 </n-space>
               </template>
+
+              <n-switch
+                v-if="attr.type === 'boolean'"
+                v-model:value="localAttributes[attr.key] as boolean"
+                size="small"
+              />
               <n-input-number
+                v-else
                 v-model:value="localAttributes[attr.key] as number | null"
                 :min="attr.min"
                 :step="attr.step"
@@ -53,6 +49,22 @@
           </div>
         </n-space>
       </n-collapse-item>
+
+      <n-collapse-item name="advanced" title="高级属性">
+        <n-space vertical :size="8">
+          <n-text depth="3" style="font-size: 12px;">自定义请求头 (Headers)</n-text>
+          <n-input
+            v-model:value="headersText"
+            type="textarea"
+            placeholder="User-Agent: MyApp/1.0&#10;X-API-Key: your-key&#10;Authorization: Bearer token"
+            :rows="4"
+            size="small"
+          />
+          <n-text depth="3" style="font-size: 11px; color: #999;">
+            每行一个请求头，格式: Key: Value
+          </n-text>
+        </n-space>
+      </n-collapse-item>
     </n-collapse>
   </div>
 </template>
@@ -60,8 +72,11 @@
 <script setup lang="ts">
 import { ref, watch, computed, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { NCollapse, NCollapseItem, NSpace, NFormItem, NInputNumber, NTooltip, NIcon, NInput, NText } from 'naive-ui';
-import { getAttributesByCategory } from '@/constants/modelAttributes';
+import {
+  NCollapse, NCollapseItem, NSpace, NFormItem, NInputNumber,
+  NTooltip, NIcon, NInput, NText, NSwitch
+} from 'naive-ui';
+import { getAttributesByCategory, ATTRIBUTE_CATEGORIES } from '@/constants/modelAttributes';
 import { MILLION, COST_PRECISION } from '@/constants/numbers';
 import type { ModelAttributes } from '@/types';
 
@@ -78,7 +93,10 @@ const emit = defineEmits<{
 const localAttributes = ref<ModelAttributes>({});
 const headersText = ref<string>('');
 
-const costAttrs = computed(() => getAttributesByCategory('成本参数'));
+type AttributeCategory = typeof ATTRIBUTE_CATEGORIES[number];
+
+const categories = computed(() => [...ATTRIBUTE_CATEGORIES]);
+const attrsByCategory = (category: AttributeCategory) => getAttributesByCategory(category);
 
 const isUpdatingFromProps = ref(false);
 
@@ -89,41 +107,26 @@ const COST_KEYS: Array<keyof ModelAttributes> = [
   'input_cost_per_token_cache_hit'
 ];
 
-/**
- * 验证数值是否为有效的非负数
- */
 function isValidNumber(value: unknown): value is number {
   return typeof value === 'number' && !isNaN(value) && value >= 0;
 }
 
-/**
- * 将 token 成本转换为每百万 token 成本 (Mtoken)
- */
 function convertToMtoken(value: unknown): number | null {
   if (!isValidNumber(value)) return null;
   return Number((value * MILLION).toFixed(COST_PRECISION));
 }
 
-/**
- * 将每百万 token 成本转换回 token 成本
- */
 function convertToToken(value: unknown): number | null {
   if (!isValidNumber(value)) return null;
   return value / MILLION;
 }
 
-/**
- * 将 headers 对象转换为文本格式
- */
 function headersToText(headers: Record<string, string>): string {
   return Object.entries(headers)
     .map(([key, value]) => `${key}: ${value}`)
     .join('\n');
 }
 
-/**
- * 将文本格式转换为 headers 对象
- */
 function textToHeaders(text: string): Record<string, string> {
   const headers: Record<string, string> = {};
   const lines = text.split('\n').filter(line => line.trim());
@@ -165,9 +168,6 @@ watch(() => props.modelValue, async (newValue) => {
   isUpdatingFromProps.value = false;
 }, { immediate: true, deep: true });
 
-/**
- * 清理单个属性值，处理成本相关的单位转换
- */
 function cleanAttributeValue(key: keyof ModelAttributes, value: any): number | boolean | string | null {
   if (COST_KEYS.includes(key)) {
     return convertToToken(value);
@@ -175,9 +175,6 @@ function cleanAttributeValue(key: keyof ModelAttributes, value: any): number | b
   return value as any;
 }
 
-/**
- * 构建清理后的属性对象
- */
 function buildCleanedAttributes(): ModelAttributes {
   const cleanedValue: ModelAttributes = {};
 
@@ -195,16 +192,11 @@ function buildCleanedAttributes(): ModelAttributes {
   return cleanedValue;
 }
 
-/**
- * 构建 headers 对象
- */
 function buildHeaders(parsedHeaders: Record<string, string>): Record<string, string> | undefined {
-  // 文本框为空，显式设置为 undefined 以清空数据库中的值
   if (headersText.value.trim() === '') {
     return undefined;
   }
 
-  // 文本框有内容，解析后设置
   if (Object.keys(parsedHeaders).length > 0) {
     const cleanedHeaders: Record<string, string> = {};
     Object.entries(parsedHeaders).forEach(([key, value]) => {
@@ -235,7 +227,10 @@ watch(localAttributes, () => {
   emitValue();
 }, { deep: true });
 
-// 暴露方法给父组件，用于在保存前强制更新一次
+watch(headersText, () => {
+  emitValue();
+});
+
 defineExpose({
   syncHeaders: () => {
     emitValue();
@@ -266,4 +261,3 @@ defineExpose({
   border-bottom: none;
 }
 </style>
-
