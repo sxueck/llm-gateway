@@ -206,7 +206,7 @@ export default {
     },
     upstreamWebsocket: {
       label: 'Upstream WebSocket',
-      description: 'Use upstream WebSocket connections for Responses API streaming requests to reduce latency in multi-turn tool calling. Falls back to HTTP SSE on connection failure.',
+      description: 'Use upstream WebSocket connections for Responses API streaming requests to reduce latency in multi-turn tool calling. Requests fail if the upstream WebSocket connection fails.',
     },
   },
   virtualModels: {
