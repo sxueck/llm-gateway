@@ -206,7 +206,7 @@ export default {
     },
     upstreamWebsocket: {
       label: '上游 WebSocket',
-      description: '对 Responses API 流式请求使用上游 WebSocket 连接，可降低多轮工具调用的延迟。连接失败时自动回退到 HTTP SSE。',
+      description: '对 Responses API 流式请求使用上游 WebSocket 连接，可降低多轮工具调用的延迟。连接失败时请求会失败',
     },
   },
   virtualModels: {

@@ -24,6 +24,7 @@ const baseModelAttributesSchema = z.object({
   timeout: z.number().optional(),
   maxRetries: z.number().optional(),
   requestTimeout: z.number().optional(),
+  upstream_websocket_enabled: z.boolean().optional(),
 });
 
 const modelAttributesSchema = baseModelAttributesSchema.transform((val) => {
