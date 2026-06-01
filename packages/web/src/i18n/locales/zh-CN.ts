@@ -166,6 +166,7 @@ export default {
     batchCreateFailed: '批量创建模型失败',
     performanceParams: '性能参数',
     costParams: '成本参数',
+    protocolParams: '协议优化',
     featureSupport: '功能支持',
     itemsPerPage: '每页显示：',
     groupByModelName: '按模型名称分组：',
@@ -202,6 +203,10 @@ export default {
         label: 'Interleaved Thinking',
         description: '支持 Interleaved Thinking 友好格式，适用于 MiniMax 等模型的工具调用场景',
       },
+    },
+    upstreamWebsocket: {
+      label: '上游 WebSocket',
+      description: '对 Responses API 流式请求使用上游 WebSocket 连接，可降低多轮工具调用的延迟。连接失败时自动回退到 HTTP SSE。',
     },
   },
   virtualModels: {

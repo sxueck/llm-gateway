@@ -5,7 +5,7 @@ export interface AttributeConfig {
   description: string;
   descriptionKey?: string; // i18n key for description
   type: 'number' | 'boolean';
-  category: '成本参数';
+  category: '成本参数' | '协议优化';
   unit?: string;
   min?: number;
   max?: number;
@@ -43,9 +43,18 @@ export const MODEL_ATTRIBUTE_CONFIGS: AttributeConfig[] = [
     min: 0,
     step: 0.001,
   },
+  {
+    key: 'upstream_websocket_enabled',
+    label: '上游 WebSocket',
+    labelKey: 'modelAttributes.upstreamWebsocket.label',
+    description: '对 Responses API 流式请求使用上游 WebSocket 连接，可降低多轮工具调用的延迟',
+    descriptionKey: 'modelAttributes.upstreamWebsocket.description',
+    type: 'boolean',
+    category: '协议优化',
+  },
 ];
 
-export const ATTRIBUTE_CATEGORIES = ['成本参数'] as const;
+export const ATTRIBUTE_CATEGORIES = ['协议优化', '成本参数'] as const;
 
 export function getAttributesByCategory(category: typeof ATTRIBUTE_CATEGORIES[number]) {
   return MODEL_ATTRIBUTE_CONFIGS.filter(attr => attr.category === category);

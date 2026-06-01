@@ -27,6 +27,8 @@ export interface ModelAttributes {
   output_cost_per_token?: number;
   input_cost_per_token_cache_hit?: number;
 
+  upstream_websocket_enabled?: boolean;
+
   litellm_provider?: string;
   provider?: string; // deprecated: alias of litellm_provider
   mode?: string;

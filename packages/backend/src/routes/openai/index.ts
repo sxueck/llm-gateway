@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { memoryLogger } from '../../services/logger.js';
 import { createOpenAIProxyHandler } from './proxy-handler.js';
+import { registerResponsesWebSocketRoutes } from './ws-handler.js';
 
 interface RouteConfig {
   path: string;
@@ -18,7 +19,7 @@ const API_GROUPS: Record<string, ApiGroup> = {
     routes: [
       { path: '/chat/completions', method: 'ALL', handler: 'proxy' },
       { path: '/responses/compact', method: 'ALL', handler: 'proxy' },
-      { path: '/responses', method: 'ALL', handler: 'proxy' },
+      { path: '/responses', method: 'POST', handler: 'proxy' },
       { path: '/completions', method: 'ALL', handler: 'proxy' },
       { path: '/embeddings', method: 'ALL', handler: 'proxy' },
       { path: '/audio/*', method: 'ALL', handler: 'proxy' },
@@ -58,4 +59,7 @@ export async function openaiRoutes(fastify: FastifyInstance) {
   };
 
   registerApiGroup(fastify, API_GROUPS.proxy, handlers);
+
+  // Register WebSocket routes for Responses API
+  await fastify.register(registerResponsesWebSocketRoutes);
 }
