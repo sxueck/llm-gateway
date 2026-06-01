@@ -1,4 +1,4 @@
-import WebSocket from 'ws';
+import NodeWebSocket from 'ws';
 import type { FastifyReply } from 'fastify';
 import type { ProtocolConfig } from './protocol-adapter.js';
 import type { StreamTokenUsage } from '../routes/proxy/http-client.js';
@@ -10,6 +10,59 @@ import { normalizeUsageCounts } from '../utils/usage-normalizer.js';
 import { stripFieldRecursively } from '../utils/request-logger.js';
 
 const WS_CONNECT_TIMEOUT_MS = 30000;
+
+type UpstreamWebSocket = NodeWebSocket | {
+  readyState: number;
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+  addEventListener(type: string, listener: (event: any) => void, options?: any): void;
+};
+
+function createUpstreamWebSocket(wsUrl: string, apiKey: string | undefined, skipVerify: boolean): UpstreamWebSocket {
+  const headers = { 'Authorization': `Bearer ${apiKey}` };
+
+  if (isBun()) {
+    const BunWebSocket = (globalThis as any).WebSocket;
+    const options: any = { headers };
+    if (skipVerify) {
+      options.tls = { rejectUnauthorized: false };
+    }
+    return new BunWebSocket(wsUrl, options);
+  }
+
+  const wsOptions: NodeWebSocket.ClientOptions = { headers };
+  if (skipVerify) {
+    (wsOptions as any).rejectUnauthorized = false;
+  }
+  return new NodeWebSocket(wsUrl, [], wsOptions);
+}
+
+function onSocketEvent(socket: UpstreamWebSocket, event: 'open' | 'message' | 'error' | 'close', handler: (...args: any[]) => void) {
+  if (socket instanceof NodeWebSocket) {
+    socket.on(event, handler);
+    return;
+  }
+
+  socket.addEventListener(event, (nativeEvent: any) => {
+    if (event === 'message') {
+      handler(nativeEvent.data, false);
+      return;
+    }
+    if (event === 'error') {
+      handler(nativeEvent.error ?? nativeEvent);
+      return;
+    }
+    if (event === 'close') {
+      handler(nativeEvent.code, nativeEvent.reason);
+      return;
+    }
+    handler();
+  });
+}
+
+function socketErrorMessage(error: any): string {
+  return error?.message || error?.error?.message || String(error);
+}
 
 export async function streamResponsesViaWebSocket(
   config: ProtocolConfig,
@@ -34,16 +87,7 @@ export async function streamResponsesViaWebSocket(
   delete createEvent.background;
 
   const skipVerify = upstreamSslConfigService.isSkipVerify();
-  const wsOptions: WebSocket.ClientOptions = {
-    headers: { 'Authorization': `Bearer ${apiKey}` },
-  };
-  if (skipVerify) {
-    (wsOptions as any).rejectUnauthorized = false;
-    if (isBun()) {
-      (wsOptions as any).tls = { rejectUnauthorized: false };
-    }
-  }
-  const upstreamSocket = new WebSocket(wsUrl, [], wsOptions);
+  const upstreamSocket = createUpstreamWebSocket(wsUrl, apiKey, skipVerify);
 
   const startTime = Date.now();
   let tffbMs: number | undefined;
@@ -104,12 +148,12 @@ export async function streamResponsesViaWebSocket(
       reject(new Error('WebSocket connection timeout'));
     }, WS_CONNECT_TIMEOUT_MS);
 
-    upstreamSocket.on('open', () => {
+    onSocketEvent(upstreamSocket, 'open', () => {
       clearTimeout(connectTimeout);
       upstreamSocket.send(JSON.stringify(createEvent));
     });
 
-    upstreamSocket.on('message', (data, _isBinary) => {
+    onSocketEvent(upstreamSocket, 'message', (data, _isBinary) => {
       if (closed) return;
 
       if (tffbMs === undefined) {
@@ -123,6 +167,8 @@ export async function streamResponsesViaWebSocket(
         messageStr = data;
       } else if (data instanceof ArrayBuffer) {
         messageStr = Buffer.from(data).toString('utf-8');
+      } else if (ArrayBuffer.isView(data)) {
+        messageStr = Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString('utf-8');
       } else {
         messageStr = Buffer.concat(data).toString('utf-8');
       }
@@ -180,13 +226,13 @@ export async function streamResponsesViaWebSocket(
       }
     });
 
-    upstreamSocket.on('error', (err) => {
+    onSocketEvent(upstreamSocket, 'error', (err) => {
       clearTimeout(connectTimeout);
       closeSocket();
-      reject(new Error(`Upstream WebSocket error: ${err.message}`));
+      reject(new Error(`Upstream WebSocket error: ${socketErrorMessage(err)}`));
     });
 
-    upstreamSocket.on('close', (_code, _reason) => {
+    onSocketEvent(upstreamSocket, 'close', (_code, _reason) => {
       clearTimeout(connectTimeout);
       if (!closed) {
         closed = true;
