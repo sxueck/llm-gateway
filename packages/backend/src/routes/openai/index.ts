@@ -60,6 +60,5 @@ export async function openaiRoutes(fastify: FastifyInstance) {
 
   registerApiGroup(fastify, API_GROUPS.proxy, handlers);
 
-  // Register WebSocket routes for Responses API
   await fastify.register(registerResponsesWebSocketRoutes);
 }

@@ -1,7 +1,3 @@
-/**
- * Phase 2 tests: HTTP-to-WebSocket upstream adapter for Responses API.
- */
-
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { FastifyReply } from 'fastify';
@@ -53,7 +49,6 @@ describe('streamResponsesViaWebSocket', () => {
         expect(msg.type).toBe('response.create');
         expect(msg.model).toBe('gpt-test');
 
-        // Simulate upstream events
         socket.send(JSON.stringify({ type: 'response.created', response: { id: 'r1' } }));
         socket.send(JSON.stringify({ type: 'response.output_text.delta', delta: { text: 'Hello' } }));
         socket.send(JSON.stringify({

@@ -1,8 +1,3 @@
-/**
- * Tests for WebSocket proxy utilities.
- * Focus on URL derivation and connection tracking.
- */
-
 import { describe, it, expect } from 'bun:test';
 import { EventEmitter } from 'node:events';
 import type { AddressInfo } from 'node:net';
