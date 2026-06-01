@@ -8,6 +8,9 @@ import { filterForwardedHeaders, sanitizeCustomHeaders } from '../../utils/heade
 import { PiiStreamRestorer } from '../../services/pii-protection-service.js';
 import type { PiiProtectionContext } from '../../services/pii-protection-types.js';
 import { removeV1Suffix } from '../../utils/api-endpoint-builder.js';
+import { upstreamFetch } from '../../utils/upstream-fetch.js';
+import { upstreamSslConfigService } from '../../services/upstream-ssl-config.js';
+import { getProxyConfigFromEnv, getProxyUrlForTarget } from '../../utils/upstream-proxy.js';
 
 export interface HttpResponse {
   statusCode: number;
@@ -22,6 +25,17 @@ export interface StreamTokenUsage {
   streamChunks: string[];
 }
 
+function shouldUseUpstreamFetch(baseUrl: string | undefined): boolean {
+  const skipVerify = upstreamSslConfigService.isSkipVerify();
+  if (skipVerify) return true
+
+  if (!baseUrl) return false
+
+  const proxyConfig = getProxyConfigFromEnv();
+  const proxyUrl = getProxyUrlForTarget(baseUrl, proxyConfig);
+  return !!proxyUrl
+}
+
 function getAnthropicClient(baseUrl: string | undefined, apiKey: string, headers?: Record<string, string>): Anthropic {
   const clientConfig: any = {
     apiKey,
@@ -31,6 +45,10 @@ function getAnthropicClient(baseUrl: string | undefined, apiKey: string, headers
 
   if (baseUrl) {
     clientConfig.baseURL = removeV1Suffix(baseUrl);
+  }
+
+  if (shouldUseUpstreamFetch(baseUrl)) {
+    clientConfig.fetch = upstreamFetch;
   }
 
   // 添加自定义请求头支持
