@@ -1,10 +1,3 @@
-/**
- * Phase 2: HTTP-to-WebSocket upstream adapter for Responses API.
- *
- * Accepts a normal HTTP Responses request, converts it to a `response.create`
- * WebSocket event, and streams upstream WebSocket messages back as SSE.
- */
-
 import WebSocket from 'ws';
 import type { FastifyReply } from 'fastify';
 import type { ProtocolConfig } from './protocol-adapter.js';
@@ -32,7 +25,6 @@ export async function streamResponsesViaWebSocket(
   const wsUrl = deriveWebSocketUrl(baseUrl, '/responses');
   const apiKey = config.apiKey;
 
-  // Build response.create event from HTTP request body
   const createEvent: any = {
     ...requestBody,
     type: 'response.create',
@@ -95,7 +87,6 @@ export async function streamResponsesViaWebSocket(
     reply.raw.write(data);
   }
 
-  // Abort handling
   let abortHandler: (() => void) | undefined;
   if (abortSignal) {
     abortHandler = () => {
@@ -145,14 +136,12 @@ export async function streamResponsesViaWebSocket(
         return;
       }
 
-      // Strip upstream debugging fields
       try {
         stripFieldRecursively(event, 'instructions');
       } catch (_e) {}
 
       writeSse(event);
 
-      // Extract usage
       const usage = event?.usage ?? event?.response?.usage;
       if (usage) {
         const norm = normalizeUsageCounts(usage);
@@ -166,7 +155,6 @@ export async function streamResponsesViaWebSocket(
         if (typeof norm.cachedTokens === 'number' && norm.cachedTokens > 0) cachedTokens = norm.cachedTokens;
       }
 
-      // Check for terminal states: completion, failure, incomplete, or cancellation
       const eventType = event?.type;
       const terminalTypes = new Set([
         'response.completed',

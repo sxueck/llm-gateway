@@ -126,7 +126,6 @@ export async function handleResponsesWebSocket(
 
     const { protocolConfig, path } = configResult;
 
-    // Phase 1: only allow openai protocol providers
     if (protocolConfig.protocol !== 'openai') {
       memoryLogger.error(
         `${logPrefix} | Provider protocol '${protocolConfig.protocol}' does not support WebSocket transport`,
@@ -190,7 +189,6 @@ export async function handleResponsesWebSocket(
       startTime,
     };
 
-    // Max duration: 10 minutes default, idle timeout: 5 minutes default
     const maxDurationMs = 10 * 60 * 1000;
     const idleTimeoutMs = 5 * 60 * 1000;
 

@@ -171,7 +171,6 @@ export async function relayWebSocket(options: WebSocketRelayOptions): Promise<vo
       upstreamSocket.on('error', onError);
       upstreamSocket.on('close', onClose);
 
-      // Safety timeout for connection establishment
       connectTimeout = setTimeout(() => {
         cleanup();
         reject(new Error('Upstream connection timeout'));

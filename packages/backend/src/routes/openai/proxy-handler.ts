@@ -516,7 +516,6 @@ export async function handleStreamRequest(
         );
       }
 
-      // Phase 2: opt-in upstream WebSocket optimization
       const useUpstreamWebSocket = modelAttributes?.upstream_websocket_enabled === true;
 
       if (useUpstreamWebSocket) {
