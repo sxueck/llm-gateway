@@ -1,7 +1,6 @@
 import WebSocket from 'ws';
 import { memoryLogger } from './logger.js';
 import { upstreamSslConfigService } from './upstream-ssl-config.js';
-import { isBun } from '../utils/upstream-proxy.js';
 import { normalizeUsageCounts } from '../utils/usage-normalizer.js';
 
 export interface WebSocketConnectionMetadata {
@@ -129,9 +128,6 @@ export async function relayWebSocket(options: WebSocketRelayOptions): Promise<vo
   };
   if (skipVerify) {
     (wsOptions as any).rejectUnauthorized = false;
-    if (isBun()) {
-      (wsOptions as any).tls = { rejectUnauthorized: false };
-    }
   }
   const upstreamSocket = new WebSocket(upstreamUrl, [], wsOptions);
 

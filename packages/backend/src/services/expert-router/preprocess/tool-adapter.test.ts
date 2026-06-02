@@ -1,5 +1,5 @@
 
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect } from 'vitest';
 import { ToolAdapter } from './tool-adapter.js';
 import { ProxyRequest } from '../types.js';
 

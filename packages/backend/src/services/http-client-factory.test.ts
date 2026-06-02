@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { HttpClientFactory } from './http-client-factory.js';
 import { upstreamSslConfigService } from './upstream-ssl-config.js';
 import type { ProtocolConfig } from './protocol-adapter.js';

@@ -31,17 +31,7 @@ RUN set -eux; \
 RUN ln -sf /opt/bun/bun /usr/local/bin/bun && \
   if [ -f /opt/bun/bunx ]; then ln -sf /opt/bun/bunx /usr/local/bin/bunx; else ln -sf /opt/bun/bun /usr/local/bin/bunx; fi
 
-FROM ubuntu:24.04 AS bun-runtime
-
-ARG DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-  ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
-
-COPY --from=bun-base /opt/bun /opt/bun
-RUN ln -sf /opt/bun/bun /usr/local/bin/bun && \
-  if [ -f /opt/bun/bunx ]; then ln -sf /opt/bun/bunx /usr/local/bin/bunx; else ln -sf /opt/bun/bun /usr/local/bin/bunx; fi
+FROM node:22-slim AS node-runtime
 
 FROM bun-base AS workspace-manifests
 
@@ -89,7 +79,7 @@ COPY packages/backend ./packages/backend
 WORKDIR /app/packages/backend
 RUN bun run build
 
-FROM bun-runtime
+FROM node-runtime
 
 WORKDIR /app
 
@@ -113,7 +103,7 @@ USER nodejs
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD bun --version || exit 1
+  CMD node --version || exit 1
 
 WORKDIR /app/packages/backend
-CMD ["bun", "dist/index.js"]  
+CMD ["node", "dist/index.js"]

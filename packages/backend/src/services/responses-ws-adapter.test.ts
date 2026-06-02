@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { FastifyReply } from 'fastify';
 import { streamResponsesViaWebSocket } from './responses-ws-adapter.js';

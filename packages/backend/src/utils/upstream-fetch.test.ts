@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { upstreamFetch, extractUrlString, clearProxyAgentCache } from './upstream-fetch.js';
 import { upstreamSslConfigService } from '../services/upstream-ssl-config.js';
 
