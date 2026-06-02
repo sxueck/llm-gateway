@@ -102,6 +102,18 @@ export class RequestCache {
   private isEntryTooLarge(entrySize: number): boolean {
     return entrySize > this.maxEntryBytes;
   }
+
+  private cloneCachedValue<T>(value: T): T {
+    if (value === null || value === undefined) return value;
+    if (Buffer.isBuffer(value)) return Buffer.from(value) as T;
+    if (typeof value !== 'object') return value;
+
+    if (typeof structuredClone === 'function') {
+      return structuredClone(value);
+    }
+
+    return JSON.parse(JSON.stringify(value));
+  }
   
   /**
    * 启动主动 TTL 清扫定时器
@@ -161,17 +173,20 @@ export class RequestCache {
     const entrySize = this.calculateEntrySize(response, headers);
 
     // 检查单条是否超过体积上限，超大响应不进入缓存
-    if (this.isEntryTooLarge(entrySize)) {
+    if (this.isEntryTooLarge(entrySize) || entrySize > this.maxBytes) {
+      this.cache.delete(key);
+      this.stats.size = this.cache.size;
+      this.stats.totalBytes = this.cache.totalBytes;
       memoryLogger.debug(
-        `缓存跳过 | key=${key.substring(0, 8)}... | 原因=单条超限(${entrySize} > ${this.maxEntryBytes})`,
+        `缓存跳过 | key=${key.substring(0, 8)}... | 原因=单条超限(${entrySize} > ${Math.min(this.maxEntryBytes, this.maxBytes)})`,
         'RequestCache'
       );
       return;
     }
 
     const newEntry: CacheEntry = {
-      response,
-      headers,
+      response: this.cloneCachedValue(response),
+      headers: { ...headers },
       timestamp: Date.now(),
       ttl: ttl || this.defaultTTL,
       size: entrySize
@@ -216,8 +231,8 @@ export class RequestCache {
     );
 
     return {
-      response: entry.response,
-      headers: entry.headers
+      response: this.cloneCachedValue(entry.response),
+      headers: { ...entry.headers }
     };
   }
 

@@ -33,3 +33,26 @@ test('RequestCache removes stale entry when oversize update cannot fit', () => {
     cache.destroy();
   }
 });
+
+test('RequestCache returns isolated response copies on cache hits', () => {
+  const cache = new RequestCache(10, 60_000);
+
+  try {
+    cache.set('json-key', {
+      id: 'chatcmpl-test',
+      choices: [{ message: { content: 'ok', instructions: 'debug' } }],
+    }, { 'content-type': 'application/json' });
+
+    const firstHit = cache.get('json-key');
+    assert.ok(firstHit);
+    delete firstHit.response.choices[0].message.instructions;
+    firstHit.headers['content-type'] = 'text/plain';
+
+    const secondHit = cache.get('json-key');
+    assert.ok(secondHit);
+    assert.equal(secondHit.response.choices[0].message.instructions, 'debug');
+    assert.equal(secondHit.headers['content-type'], 'application/json');
+  } finally {
+    cache.destroy();
+  }
+});
