@@ -5,59 +5,23 @@ import type { StreamTokenUsage } from '../routes/proxy/http-client.js';
 import { deriveWebSocketUrl } from './websocket-proxy.js';
 import { memoryLogger } from './logger.js';
 import { upstreamSslConfigService } from './upstream-ssl-config.js';
-import { isBun } from '../utils/upstream-proxy.js';
 import { normalizeUsageCounts } from '../utils/usage-normalizer.js';
 import { stripFieldRecursively } from '../utils/request-logger.js';
 
 const WS_CONNECT_TIMEOUT_MS = 30000;
 
-type UpstreamWebSocket = NodeWebSocket | {
-  readyState: number;
-  send(data: string): void;
-  close(code?: number, reason?: string): void;
-  addEventListener(type: string, listener: (event: any) => void, options?: any): void;
-};
-
-function createUpstreamWebSocket(wsUrl: string, apiKey: string | undefined, skipVerify: boolean): UpstreamWebSocket {
-  const headers = { 'Authorization': `Bearer ${apiKey}` };
-
-  if (isBun()) {
-    const BunWebSocket = (globalThis as any).WebSocket;
-    const options: any = { headers };
-    if (skipVerify) {
-      options.tls = { rejectUnauthorized: false };
-    }
-    return new BunWebSocket(wsUrl, options);
-  }
-
-  const wsOptions: NodeWebSocket.ClientOptions = { headers };
+function createUpstreamWebSocket(wsUrl: string, apiKey: string | undefined, skipVerify: boolean): NodeWebSocket {
+  const wsOptions: NodeWebSocket.ClientOptions = {
+    headers: { 'Authorization': `Bearer ${apiKey}` },
+  };
   if (skipVerify) {
     (wsOptions as any).rejectUnauthorized = false;
   }
   return new NodeWebSocket(wsUrl, [], wsOptions);
 }
 
-function onSocketEvent(socket: UpstreamWebSocket, event: 'open' | 'message' | 'error' | 'close', handler: (...args: any[]) => void) {
-  if (socket instanceof NodeWebSocket) {
-    socket.on(event, handler);
-    return;
-  }
-
-  socket.addEventListener(event, (nativeEvent: any) => {
-    if (event === 'message') {
-      handler(nativeEvent.data, false);
-      return;
-    }
-    if (event === 'error') {
-      handler(nativeEvent.error ?? nativeEvent);
-      return;
-    }
-    if (event === 'close') {
-      handler(nativeEvent.code, nativeEvent.reason);
-      return;
-    }
-    handler();
-  });
+function onSocketEvent(socket: NodeWebSocket, event: 'open' | 'message' | 'error' | 'close', handler: (...args: any[]) => void) {
+  socket.on(event, handler);
 }
 
 function socketErrorMessage(error: any): string {

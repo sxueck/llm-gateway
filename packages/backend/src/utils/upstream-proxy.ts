@@ -125,11 +125,4 @@ export function isProxyConfigured(): boolean {
   return !!(config.httpProxyUrl || config.httpsProxyUrl);
 }
 
-/**
- * Determine if we're running in Bun environment.
- * Uses declaration to avoid TS errors when @types/bun isn't available.
- */
-export function isBun(): boolean {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return typeof (globalThis as any).Bun !== 'undefined';
-}
+

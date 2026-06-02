@@ -2,7 +2,6 @@
 import {
   getProxyConfigFromEnv,
   getProxyUrlForTarget,
-  isBun,
 } from './upstream-proxy.js';
 import { upstreamSslConfigService } from '../services/upstream-ssl-config.js';
 
@@ -244,40 +243,22 @@ export async function upstreamFetch(
 
   const skipVerify = upstreamSslConfigService.isSkipVerify();
 
-  // Inject TLS skip-verify options for Bun runtime
-  if (skipVerify && isBun()) {
-    (fetchOptions as any).tls = { rejectUnauthorized: false };
-  }
-
   try {
-    // Runtime-specific proxy handling
     if (proxyUrl) {
-      if (isBun()) {
-        // Bun: Use native proxy option
-        (fetchOptions as any).proxy = proxyUrl;
-        return await fetch(urlString, fetchOptions);
-      } else {
-        // Node.js: Use undici with ProxyAgent
-        const agent = await getProxyAgent(proxyUrl, skipVerify);
-        const u = await getUndici();
-
-        // Use undici's fetch with dispatcher
-        // Cast to Response to handle type differences between undici and standard fetch
-        const undiciOptions: import('undici').RequestInit = {
-          method: fetchOptions.method,
-          headers: fetchOptions.headers as import('undici').HeadersInit,
-          body: fetchOptions.body as import('undici').BodyInit,
-          redirect: fetchOptions.redirect as import('undici').RequestRedirect,
-          signal: fetchOptions.signal,
-          dispatcher: agent,
-        };
-        return await u.fetch(urlString, undiciOptions) as unknown as Response;
-      }
+      const agent = await getProxyAgent(proxyUrl, skipVerify);
+      const u = await getUndici();
+      const undiciOptions: import('undici').RequestInit = {
+        method: fetchOptions.method,
+        headers: fetchOptions.headers as import('undici').HeadersInit,
+        body: fetchOptions.body as import('undici').BodyInit,
+        redirect: fetchOptions.redirect as import('undici').RequestRedirect,
+        signal: fetchOptions.signal,
+        dispatcher: agent,
+      };
+      return await u.fetch(urlString, undiciOptions) as unknown as Response;
     }
 
-    // No proxy
-    if (!isBun() && skipVerify) {
-      // Node.js with skip-verify: use undici fetch with a custom agent
+    if (skipVerify) {
       const agent = await getSkipVerifyAgent();
       const u = await getUndici();
       const undiciOptions: import('undici').RequestInit = {

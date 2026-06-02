@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import WebSocket, { WebSocketServer } from 'ws';

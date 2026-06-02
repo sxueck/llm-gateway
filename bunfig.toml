@@ -2,7 +2,7 @@
 
 # 包管理器配置
 [install]
-registry = "http://mirrors.tencent.com/npm/"
+registry = "https://registry.npmjs.org"
 # 启用 workspace
 auto = "auto"
 

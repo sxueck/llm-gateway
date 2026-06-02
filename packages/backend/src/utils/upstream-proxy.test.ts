@@ -3,7 +3,7 @@
  * Focus on env precedence, NO_PROXY matching, and passthrough behavior.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   getProxyConfigFromEnv,
   isHostInNoProxy,

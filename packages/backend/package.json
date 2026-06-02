@@ -6,12 +6,11 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "bun --watch src/index.ts",
-    "dev:node": "tsx watch src/index.ts",
-    "dev:node-simple": "node --loader tsx src/index.ts",
-    "bench:pii": "node --import tsx scripts/bench-pii.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target node --minify --external @xenova/transformers --external onnxruntime-node --external onnxruntime-web --external onnxruntime-common --external sharp",
-    "start": "bun run dist/index.js",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc -p ../shared/tsconfig.json --emitDeclarationOnly && tsc --noEmit",
     "lint": "tsc -p ../shared/tsconfig.json --emitDeclarationOnly && tsc --noEmit --noUnusedLocals false --noUnusedParameters false --noImplicitReturns false",
     "clean": "rm -rf dist",
@@ -49,6 +48,7 @@
     "@types/node-cron": "^3.0.11",
     "@types/sql.js": "^1.4.9",
     "@types/tar": "^6.1.13",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
   }
 }
