@@ -142,7 +142,11 @@ export async function handleResponsesWebSocket(
       return;
     }
 
-    const upstreamUrl = deriveWebSocketUrl(upstreamBaseUrl, path);
+    const normalizedBaseUrl = upstreamBaseUrl.replace(/\/+$/, '');
+    const upstreamPath = normalizedBaseUrl.endsWith('/v1')
+      ? path.replace(/^\/v1(?=\/|$)/, '')
+      : path;
+    const upstreamUrl = deriveWebSocketUrl(upstreamBaseUrl, upstreamPath);
     const upstreamApiKey = protocolConfig.apiKey;
 
     if (!upstreamApiKey) {
