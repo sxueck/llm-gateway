@@ -31,10 +31,12 @@ describe('streamResponsesViaWebSocket', () => {
   let server: WebSocketServer;
   let serverPort: number;
 
-  beforeAll((done: () => void) => {
-    server = new WebSocketServer({ port: 0 }, () => {
-      serverPort = (server.address() as any).port;
-      done();
+  beforeAll(() => {
+    return new Promise<void>((resolve) => {
+      server = new WebSocketServer({ port: 0 }, () => {
+        serverPort = (server.address() as any).port;
+        resolve();
+      });
     });
   });
 

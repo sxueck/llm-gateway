@@ -33,7 +33,7 @@ function getProxyAgent(proxyUrl: string, skipVerify: boolean): Promise<import('u
       uri: proxyUrl,
     };
     if (skipVerify) {
-      agentOptions.connect = { rejectUnauthorized: false };
+      agentOptions.requestTls = { rejectUnauthorized: false };
     }
     const agent = new u.ProxyAgent(agentOptions);
     proxyAgentCache.set(cacheKey, agent);
@@ -253,6 +253,7 @@ export async function upstreamFetch(
         body: fetchOptions.body as import('undici').BodyInit,
         redirect: fetchOptions.redirect as import('undici').RequestRedirect,
         signal: fetchOptions.signal,
+        ...(fetchOptions as any).duplex !== undefined && { duplex: (fetchOptions as any).duplex },
         dispatcher: agent,
       };
       return await u.fetch(urlString, undiciOptions) as unknown as Response;
@@ -267,6 +268,7 @@ export async function upstreamFetch(
         body: fetchOptions.body as import('undici').BodyInit,
         redirect: fetchOptions.redirect as import('undici').RequestRedirect,
         signal: fetchOptions.signal,
+        ...(fetchOptions as any).duplex !== undefined && { duplex: (fetchOptions as any).duplex },
         dispatcher: agent,
       };
       return await u.fetch(urlString, undiciOptions) as unknown as Response;

@@ -7,18 +7,18 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "bun run --filter \"@llm-gateway/*\" dev",
-    "dev:backend": "bun run --filter @llm-gateway/backend dev",
-    "dev:web": "bun run --filter @llm-gateway/web dev",
-    "dev:all": "bun run scripts/dev-all.js",
-    "build": "bun run --filter \"@llm-gateway/*\" build",
-    "build:backend": "bun run --filter @llm-gateway/backend build",
-    "build:web": "bun run --filter @llm-gateway/web build",
-    "typecheck": "bun run --filter \"@llm-gateway/*\" typecheck",
-    "clean": "bun run --filter \"@llm-gateway/*\" clean",
-    "lint": "bun run --filter \"@llm-gateway/*\" lint",
-    "start": "bun run --filter @llm-gateway/backend start",
-    "fix:db": "bun run scripts/fix-database.js"
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:backend": "npm run dev -w @llm-gateway/backend",
+    "dev:web": "npm run dev -w @llm-gateway/web",
+    "dev:all": "node scripts/dev-all.js",
+    "build": "npm run build --workspaces --if-present",
+    "build:backend": "npm run build -w @llm-gateway/backend",
+    "build:web": "npm run build -w @llm-gateway/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "start": "npm run start -w @llm-gateway/backend",
+    "fix:db": "node scripts/fix-database.js"
   },
   "keywords": [
     "llm",

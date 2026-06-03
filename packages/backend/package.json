@@ -7,14 +7,14 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target node --minify --external @xenova/transformers --external onnxruntime-node --external onnxruntime-web --external onnxruntime-common --external sharp",
+    "build": "esbuild src/index.ts --bundle --outfile=dist/index.js --platform=node --format=esm --minify --external:@xenova/transformers --external:onnxruntime-node --external:onnxruntime-web --external:onnxruntime-common --external:sharp",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p ../shared/tsconfig.json --emitDeclarationOnly && tsc --noEmit",
     "lint": "tsc -p ../shared/tsconfig.json --emitDeclarationOnly && tsc --noEmit --noUnusedLocals false --noUnusedParameters false --noImplicitReturns false",
     "clean": "rm -rf dist",
-    "fix:db": "bun run scripts/fix-database.js"
+    "fix:db": "node scripts/fix-database.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
@@ -48,6 +48,7 @@
     "@types/node-cron": "^3.0.11",
     "@types/sql.js": "^1.4.9",
     "@types/tar": "^6.1.13",
+    "esbuild": "^0.27.2",
     "typescript": "^5.7.2",
     "vitest": "^3.0.0"
   }
