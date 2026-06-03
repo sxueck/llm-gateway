@@ -33,6 +33,18 @@ export interface BridgeOptions {
   logPrefix: string;
   maxDurationMs?: number;
   adapter?: ProtocolAdapter;
+  closeOnTerminal?: boolean;
+}
+
+function normalizeResponseCreateEvent(requestBody: any): any {
+  if (requestBody?.type === 'response.create' && requestBody?.response && typeof requestBody.response === 'object') {
+    return {
+      ...requestBody.response,
+      type: requestBody.type,
+    };
+  }
+
+  return requestBody;
 }
 
 function parseSseEvents(buffer: string): { events: any[]; remainder: string } {
@@ -64,8 +76,10 @@ function parseSseEvents(buffer: string): { events: any[]; remainder: string } {
 export async function bridgeResponsesWebSocket(
   options: BridgeOptions
 ): Promise<StreamTokenUsage> {
-  const { config, requestBody, socket, abortController, logPrefix, maxDurationMs, adapter } = options;
+  const { config, socket, abortController, logPrefix, maxDurationMs, adapter } = options;
   const protocolAdapter = adapter ?? defaultProtocolAdapter;
+  const requestBody = normalizeResponseCreateEvent(options.requestBody);
+  const shouldCloseOnTerminal = options.closeOnTerminal !== false;
 
   const input = requestBody?.input ?? '';
   const bridgeOptions = { ...requestBody };
@@ -127,7 +141,9 @@ export async function bridgeResponsesWebSocket(
 
         if (TERMINAL_EVENT_TYPES.has(event?.type)) {
           memoryLogger.info(`${logPrefix} | Terminal event received: ${event.type}`, 'Bridge');
-          closeSocket(1000, 'stream_complete');
+          if (shouldCloseOnTerminal) {
+            closeSocket(1000, 'stream_complete');
+          }
           // Note: tokenUsage will be resolved by the outer promise
         }
       }
@@ -146,7 +162,9 @@ export async function bridgeResponsesWebSocket(
             }
           }
           if (TERMINAL_EVENT_TYPES.has(event?.type)) {
-            closeSocket(1000, 'stream_complete');
+            if (shouldCloseOnTerminal) {
+              closeSocket(1000, 'stream_complete');
+            }
           }
         }
       }
@@ -162,7 +180,7 @@ export async function bridgeResponsesWebSocket(
     protocolAdapter
       .streamResponse(config, input, bridgeOptions, fakeReply as any, abortController.signal)
       .then((usage: StreamTokenUsage) => {
-        if (!closed) {
+        if (shouldCloseOnTerminal && !closed) {
           closeSocket(1000, 'stream_complete');
         }
         resolve(usage);

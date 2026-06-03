@@ -89,7 +89,6 @@ export async function handleResponsesWebSocket(
   request: FastifyRequest,
   context: any
 ): Promise<void> {
-  const startTime = Date.now();
   const {
     requestIp,
     requestUserAgent,
@@ -108,8 +107,6 @@ export async function handleResponsesWebSocket(
 
   let socketClosedEarly = false;
   socket.once('close', () => { socketClosedEarly = true; });
-
-  let release: (() => void) | undefined;
 
   try {
     const configResult = await buildProviderConfig(provider, virtualKey, virtualKeyValue, providerId, request, currentModel);
@@ -144,147 +141,167 @@ export async function handleResponsesWebSocket(
       return;
     }
 
-    const abortController = new AbortController();
-    const acquireResult = await virtualKeyQueueService.acquire(virtualKeyValue, abortController.signal);
-    if (socketClosedEarly) {
-      if (acquireResult.granted) {
-        acquireResult.release();
-      }
-      return;
-    }
-
-    if (!acquireResult.granted) {
-      memoryLogger.warn(
-        `${logPrefix} | Queue rejected: ${acquireResult.reason}`,
-        'WebSocket'
-      );
-      const errorPayload = buildQueue429Error(acquireResult.reason);
-      try {
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify(errorPayload));
-        }
-      } catch (_e) {}
-      socket.close(1008, 'queue_rejected');
-      return;
-    }
-
-    release = acquireResult.release;
-
     const maxDurationMs = 10 * 60 * 1000;
     const idleTimeoutMs = 5 * 60 * 1000;
+    let inFlight = false;
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
-    // Wait for the first client message (response.create)
-    const requestBody = await new Promise<any>((resolve, reject) => {
-      const idleTimer = setTimeout(() => {
-        cleanup();
-        reject(new Error('idle_timeout'));
-      }, idleTimeoutMs);
-
-      function cleanup() {
-        clearTimeout(idleTimer);
-        socket.off('message', onMessage);
-        socket.off('close', onClose);
-      }
-
-      function onClose() {
-        cleanup();
-        reject(new Error('client_disconnected'));
-      }
-
-      function onMessage(data: WebSocket.RawData, isBinary: boolean) {
-        if (isBinary) {
-          cleanup();
-          reject(new Error('binary_not_supported'));
-          return;
-        }
-
-        let messageStr: string;
-        if (Buffer.isBuffer(data)) {
-          messageStr = data.toString('utf-8');
-        } else if (typeof data === 'string') {
-          messageStr = data;
-        } else if (data instanceof ArrayBuffer) {
-          messageStr = Buffer.from(data).toString('utf-8');
-        } else {
-          messageStr = Buffer.concat(data as any).toString('utf-8');
-        }
-
-        let message: any;
+    function resetIdleTimer() {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
         try {
-          message = JSON.parse(messageStr);
-        } catch {
-          cleanup();
-          reject(new Error('invalid_json'));
-          return;
-        }
-
-        if (message?.type !== 'response.create') {
-          cleanup();
-          reject(new Error('expected_response_create'));
-          return;
-        }
-
-        cleanup();
-        resolve(message);
-      }
-
-      socket.on('message', onMessage);
-      socket.on('close', onClose);
-    });
-
-    if (socketClosedEarly) {
-      release();
-      return;
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.close(1000, 'idle_timeout');
+          }
+        } catch (_e) {}
+      }, idleTimeoutMs);
     }
 
-    const tokenUsage = await bridgeResponsesWebSocket({
-      config: protocolConfig,
-      requestBody,
-      socket,
-      abortController,
-      logPrefix,
-      maxDurationMs,
-    });
-
-    const duration = Date.now() - startTime;
-    release?.();
-
-    if (debugModeService.isActive()) {
+    function sendGatewayError(message: string, code: string) {
+      if (socket.readyState !== WebSocket.OPEN) return;
       try {
-        debugModeService.broadcast({
-          type: 'api_request',
-          id: nanoid(),
-          timestamp: Date.now(),
-          protocol: 'openai-responses-ws',
-          method: 'WS',
-          path,
-          stream: true,
-          success: true,
-          statusCode: 200,
-          fromCache: false,
-          virtualKeyId: virtualKey.id,
-          virtualKeyName: (virtualKey as any).name,
-          providerId,
-          model: protocolConfig.model || 'unknown',
-          durationMs: duration,
-          requestBody: undefined,
-          responseBody: undefined,
-          requestHeaders: request.headers,
-        });
+        socket.send(JSON.stringify({
+          type: 'error',
+          error: {
+            message,
+            type: 'gateway_error',
+            param: null,
+            code,
+          },
+        }));
       } catch (_e) {}
     }
 
-    logApiRequestToDb({
-      virtualKey,
-      providerId,
-      model: protocolConfig.model || 'unknown',
-      tokenCount: tokenUsage,
-      status: 'success',
-      responseTime: duration,
-      requestType: 'openai-responses-ws',
-      ip: requestIp,
-      userAgent: requestUserAgent,
-    }).catch((_e) => {});
+    function parseClientMessage(data: WebSocket.RawData, isBinary: boolean): any {
+      if (isBinary) throw new Error('binary_not_supported');
+
+      let messageStr: string;
+      if (Buffer.isBuffer(data)) {
+        messageStr = data.toString('utf-8');
+      } else if (typeof data === 'string') {
+        messageStr = data;
+      } else if (data instanceof ArrayBuffer) {
+        messageStr = Buffer.from(data).toString('utf-8');
+      } else {
+        messageStr = Buffer.concat(data as any).toString('utf-8');
+      }
+
+      try {
+        return JSON.parse(messageStr);
+      } catch {
+        throw new Error('invalid_json');
+      }
+    }
+
+    async function handleClientMessage(data: WebSocket.RawData, isBinary: boolean) {
+      resetIdleTimer();
+
+      let requestBody: any;
+      try {
+        requestBody = parseClientMessage(data, isBinary);
+      } catch (err: any) {
+        sendGatewayError(err.message, err.message);
+        return;
+      }
+
+      if (requestBody?.type !== 'response.create') {
+        sendGatewayError('Expected response.create event', 'expected_response_create');
+        return;
+      }
+
+      if (inFlight) {
+        sendGatewayError('A response is already in progress on this WebSocket', 'response_in_progress');
+        return;
+      }
+
+      inFlight = true;
+      const turnStartTime = Date.now();
+      const abortController = new AbortController();
+      const closeAbortHandler = () => abortController.abort();
+      socket.once('close', closeAbortHandler);
+
+      const acquireResult = await virtualKeyQueueService.acquire(virtualKeyValue, abortController.signal);
+      if (!acquireResult.granted) {
+        memoryLogger.warn(`${logPrefix} | Queue rejected: ${acquireResult.reason}`, 'WebSocket');
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'error', ...buildQueue429Error(acquireResult.reason) }));
+        }
+        socket.off('close', closeAbortHandler);
+        inFlight = false;
+        return;
+      }
+
+      try {
+        const tokenUsage = await bridgeResponsesWebSocket({
+          config: protocolConfig,
+          requestBody,
+          socket,
+          abortController,
+          logPrefix,
+          maxDurationMs,
+          closeOnTerminal: false,
+        });
+
+        const duration = Date.now() - turnStartTime;
+
+        if (debugModeService.isActive()) {
+          try {
+            debugModeService.broadcast({
+              type: 'api_request',
+              id: nanoid(),
+              timestamp: Date.now(),
+              protocol: 'openai-responses-ws',
+              method: 'WS',
+              path,
+              stream: true,
+              success: true,
+              statusCode: 200,
+              fromCache: false,
+              virtualKeyId: virtualKey.id,
+              virtualKeyName: (virtualKey as any).name,
+              providerId,
+              model: protocolConfig.model || 'unknown',
+              durationMs: duration,
+              requestBody: undefined,
+              responseBody: undefined,
+              requestHeaders: request.headers,
+            });
+          } catch (_e) {}
+        }
+
+        logApiRequestToDb({
+          virtualKey,
+          providerId,
+          model: protocolConfig.model || 'unknown',
+          tokenCount: tokenUsage,
+          status: 'success',
+          responseTime: duration,
+          requestType: 'openai-responses-ws',
+          ip: requestIp,
+          userAgent: requestUserAgent,
+        }).catch((_e) => {});
+      } finally {
+        acquireResult.release();
+        socket.off('close', closeAbortHandler);
+        inFlight = false;
+        resetIdleTimer();
+      }
+    }
+
+    resetIdleTimer();
+    socket.on('message', (data, isBinary) => {
+      handleClientMessage(data, isBinary).catch((err: any) => {
+        memoryLogger.error(`${logPrefix} | ${err?.message || String(err)}`, 'WebSocket');
+        sendGatewayError(err?.message || 'handler_error', 'handler_error');
+      });
+    });
+
+    await new Promise<void>((resolve) => {
+      socket.once('close', () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        resolve();
+      });
+    });
 
   } catch (err: any) {
     const errorMessage = err?.message || String(err);
@@ -320,7 +337,5 @@ export async function handleResponsesWebSocket(
         socket.close(1011, reason);
       } catch (_e) {}
     }
-
-    release?.();
   }
 }

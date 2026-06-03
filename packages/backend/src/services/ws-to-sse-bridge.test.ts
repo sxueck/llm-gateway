@@ -99,6 +99,39 @@ describe('bridgeResponsesWebSocket', () => {
     expect(messages[0].type).toBe('response.failed');
   });
 
+  it('should keep socket open when closeOnTerminal is false', async () => {
+    const mockWs = createMockSocket();
+    const abortController = new AbortController();
+
+    const adapter = createMockAdapter(async (_config, _input, _options, reply, _signal) => {
+      reply.raw.write('event: response.completed\ndata: {"type":"response.completed"}\n\n');
+      reply.raw.end();
+
+      return {
+        promptTokens: 1,
+        completionTokens: 1,
+        totalTokens: 2,
+        cachedTokens: 0,
+        streamChunks: [],
+      };
+    });
+
+    await bridgeResponsesWebSocket({
+      config: { provider: 'test', apiKey: 'key', model: 'gpt-test' } as any,
+      requestBody: { type: 'response.create', input: 'hi' },
+      socket: mockWs as any,
+      abortController,
+      logPrefix: 'test',
+      adapter,
+      closeOnTerminal: false,
+    });
+
+    const messages = mockWs.getSentMessages();
+    expect(messages[0].type).toBe('response.completed');
+    expect(mockWs.close).not.toHaveBeenCalled();
+    expect(mockWs.readyState).toBe(WebSocket.OPEN);
+  });
+
   it('should send error event when upstream fails', async () => {
     const mockWs = createMockSocket();
     const abortController = new AbortController();
