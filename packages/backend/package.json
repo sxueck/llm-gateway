@@ -7,7 +7,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "esbuild src/index.ts --bundle --outfile=dist/index.js --platform=node --format=esm --minify --external:@xenova/transformers --external:onnxruntime-node --external:onnxruntime-web --external:onnxruntime-common --external:sharp",
+    "build": "esbuild src/index.ts --bundle --outfile=dist/index.js --platform=node --format=esm --minify --banner:js=\"import { createRequire } from 'node:module';const require = createRequire(import.meta.url);\" --external:@aws-sdk/client-s3 --external:@xenova/transformers --external:node-cron --external:onnxruntime-node --external:onnxruntime-web --external:onnxruntime-common --external:pino --external:pino-pretty --external:sharp --external:tiktoken",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",

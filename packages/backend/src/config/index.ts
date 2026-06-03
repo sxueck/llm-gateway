@@ -8,6 +8,9 @@ import { virtualKeyQueueService } from '../services/virtual-key-queue.js'
 
 const currentDir = dirname(fileURLToPath(import.meta.url))
 const envCandidates = [
+  resolve(process.cwd(), '.env'),
+  resolve(currentDir, '../../../.env'),
+  resolve(currentDir, '../.env'),
   resolve(currentDir, '../../../../.env'),
   resolve(currentDir, '../../.env')
 ]
