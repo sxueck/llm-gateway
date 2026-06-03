@@ -1,9 +1,9 @@
-
 import {
   getProxyConfigFromEnv,
   getProxyUrlForTarget,
 } from './upstream-proxy.js';
 import { upstreamSslConfigService } from '../services/upstream-ssl-config.js';
+import { memoryLogger } from '../services/logger.js';
 
 // Lazy-loaded undici for Node.js runtime
 let undici: typeof import('undici') | null = null;
@@ -97,7 +97,7 @@ function createComposedAbortSignal(timeoutMs: number, existingSignal?: AbortSign
   const cleanup = () => {
     if (isCleanedUp) return;
     isCleanedUp = true;
-    
+
     if (timeoutId !== null) {
       clearTimeout(timeoutId);
       timeoutId = null;
@@ -127,10 +127,10 @@ function createComposedAbortSignal(timeoutMs: number, existingSignal?: AbortSign
 
   // Return the signal with cleanup attached
   const signal = controller.signal;
-  
+
   // Store cleanup on the signal so it can be called after the request completes
   (signal as any).__upstreamFetchCleanup = cleanup;
-  
+
   return signal;
 }
 
@@ -147,27 +147,41 @@ export function extractUrlString(url: string | URL | Request): string {
   if (typeof url === 'string') {
     return url;
   }
-  
+
   if (url instanceof URL) {
     return url.toString();
   }
-  
+
   // It's a Request object - extract the URL
   if (url instanceof Request) {
     return url.url;
   }
-  
+
   // Fallback for any other object with toString
   return String(url);
 }
 
 /**
- * Convert Request object to RequestInit options.
- * Preserves all relevant request properties.
+ * Extract origin from a URL string for safe logging.
+ * Removes path, query, and fragment to avoid leaking API keys or tokens.
  */
-function requestToInit(request: Request): RequestInit {
-  // Extract properties from Request, using type assertions for non-standard properties
-  return {
+function sanitizeUrlForLog(urlString: string): string {
+  try {
+    const url = new URL(urlString);
+    return url.origin;
+  } catch {
+    // If URL parsing fails, return a scrubbed version
+    return urlString.replace(/\/\/.*@/, '//***@');
+  }
+}
+
+/**
+ * Convert Request object to RequestInit options.
+ * Preserves all relevant request properties, including non-standard ones
+ * used by undici (e.g. duplex) and SDK custom fetch.
+ */
+export function requestToInit(request: Request): RequestInit {
+  const init: RequestInit & Record<string, any> = {
     method: request.method,
     headers: request.headers,
     body: request.body,
@@ -178,10 +192,91 @@ function requestToInit(request: Request): RequestInit {
     referrerPolicy: request.referrerPolicy,
     integrity: request.integrity,
     signal: request.signal,
-    // Include additional properties that may be present
-    ...(request as any).cache !== undefined && { cache: (request as any).cache },
-    ...(request as any).keepalive !== undefined && { keepalive: (request as any).keepalive },
   };
+
+  // Preserve non-standard but important properties used by undici / SDKs
+  const extraProps = ['cache', 'keepalive', 'duplex', 'priority'];
+  for (const prop of extraProps) {
+    if ((request as any)[prop] !== undefined) {
+      init[prop] = (request as any)[prop];
+    }
+  }
+
+  return init;
+}
+
+/**
+ * Convert standard RequestInit to undici RequestInit.
+ * Strips gateway-internal fields (timeoutMs) and injects the dispatcher.
+ * Automatically adds duplex: 'half' when body is a ReadableStream.
+ */
+export function toUndiciRequestInit(
+  fetchOptions: RequestInit,
+  dispatcher: import('undici').Dispatcher
+): import('undici').RequestInit {
+  const { timeoutMs: _timeoutMs, ...requestOptions } = fetchOptions as RequestInit & { timeoutMs?: number };
+  const body = requestOptions.body;
+  const needsDuplex =
+    typeof globalThis.ReadableStream !== 'undefined' &&
+    body instanceof globalThis.ReadableStream &&
+    (requestOptions as any).duplex === undefined;
+
+  return {
+    ...(requestOptions as import('undici').RequestInit),
+    ...(needsDuplex ? { duplex: 'half' as any } : {}),
+    dispatcher,
+  };
+}
+
+/**
+ * Determine the transport branch label for diagnostics.
+ */
+function getTransportBranch(proxyUrl: string | null, skipVerify: boolean): string {
+  if (proxyUrl) return skipVerify ? 'proxy+skipVerify+undici' : 'proxy+undici';
+  if (skipVerify) return 'direct+skipVerify+undici';
+  return 'direct+nativeFetch';
+}
+
+/**
+ * Log upstream connection errors with diagnostic context.
+ * Sanitizes URL and proxy credentials.
+ */
+function logUpstreamConnectionError(
+  error: any,
+  context: {
+    urlString: string;
+    proxyUrl: string | null;
+    skipVerify: boolean;
+    method?: string;
+  }
+): void {
+  const cause = error?.cause;
+  const sanitizedOrigin = sanitizeUrlForLog(context.urlString);
+  const sanitizedProxy = context.proxyUrl
+    ? context.proxyUrl.replace(/\/\/.*@/, '//***@')
+    : null;
+
+  const diagnostic: Record<string, any> = {
+    message: error?.message,
+    causeMessage: cause?.message,
+    causeCode: cause?.code,
+    targetOrigin: sanitizedOrigin,
+    proxyMatched: sanitizedProxy ? 'yes' : 'no',
+    proxyUrl: sanitizedProxy,
+    skipVerify: context.skipVerify,
+    transportBranch: getTransportBranch(context.proxyUrl, context.skipVerify),
+    method: context.method,
+  };
+
+  // Include error name/code if available
+  if (error?.name) diagnostic.errorName = error.name;
+  if (error?.code) diagnostic.errorCode = error.code;
+
+  memoryLogger.error(
+    `Upstream connection failed: ${error?.message || 'Unknown error'}`,
+    'UpstreamFetch',
+    diagnostic
+  );
 }
 
 /**
@@ -193,6 +288,7 @@ function requestToInit(request: Request): RequestInit {
  * - Timeout support
  * - Bun/Node runtime compatibility
  * - Preserves existing signal/headers/body/stream behavior
+ * - Diagnostic logging on connection errors (sanitized)
  *
  * @param url Target URL (string, URL, or Request)
  * @param options Request options including optional timeoutMs
@@ -204,7 +300,7 @@ export async function upstreamFetch(
 ): Promise<Response> {
   // Extract URL string properly
   const urlString = extractUrlString(url);
-  
+
   const proxyConfig = getProxyConfigFromEnv();
   const proxyUrl = getProxyUrlForTarget(urlString, proxyConfig);
 
@@ -247,34 +343,27 @@ export async function upstreamFetch(
     if (proxyUrl) {
       const agent = await getProxyAgent(proxyUrl, skipVerify);
       const u = await getUndici();
-      const undiciOptions: import('undici').RequestInit = {
-        method: fetchOptions.method,
-        headers: fetchOptions.headers as import('undici').HeadersInit,
-        body: fetchOptions.body as import('undici').BodyInit,
-        redirect: fetchOptions.redirect as import('undici').RequestRedirect,
-        signal: fetchOptions.signal,
-        ...(fetchOptions as any).duplex !== undefined && { duplex: (fetchOptions as any).duplex },
-        dispatcher: agent,
-      };
+      const undiciOptions = toUndiciRequestInit(fetchOptions, agent);
       return await u.fetch(urlString, undiciOptions) as unknown as Response;
     }
 
     if (skipVerify) {
       const agent = await getSkipVerifyAgent();
       const u = await getUndici();
-      const undiciOptions: import('undici').RequestInit = {
-        method: fetchOptions.method,
-        headers: fetchOptions.headers as import('undici').HeadersInit,
-        body: fetchOptions.body as import('undici').BodyInit,
-        redirect: fetchOptions.redirect as import('undici').RequestRedirect,
-        signal: fetchOptions.signal,
-        ...(fetchOptions as any).duplex !== undefined && { duplex: (fetchOptions as any).duplex },
-        dispatcher: agent,
-      };
+      const undiciOptions = toUndiciRequestInit(fetchOptions, agent);
       return await u.fetch(urlString, undiciOptions) as unknown as Response;
     }
 
     return await fetch(urlString, fetchOptions);
+  } catch (error: any) {
+    // Log diagnostic info for connection errors, then re-throw
+    logUpstreamConnectionError(error, {
+      urlString,
+      proxyUrl,
+      skipVerify,
+      method: fetchOptions.method,
+    });
+    throw error;
   } finally {
     // Always cleanup timeout/listeners after request completes (success or error)
     cleanupComposedSignal(composedSignal);
