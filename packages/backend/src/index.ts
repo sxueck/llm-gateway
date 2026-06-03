@@ -33,7 +33,6 @@ import { requestHeaderForwardingService } from './services/request-header-forwar
 import { upstreamSslConfigService } from './services/upstream-ssl-config.js';
 import { requestCache } from './services/request-cache.js';
 import { runtimeSystemConfigCache } from './services/runtime-system-config-cache.js';
-import { activeConnectionTracker } from './services/websocket-proxy.js';
 import { getProxyConfigFromEnv, isProxyConfigured } from './utils/upstream-proxy.js';
 import { upstreamFetch, clearProxyAgentCache } from './utils/upstream-fetch.js';
 
@@ -374,9 +373,6 @@ const gracefulShutdown = async (signal: string) => {
 
     requestCache.destroy();
     memoryLogger.info('请求缓存已清理', 'System');
-
-    await activeConnectionTracker.closeAll();
-    memoryLogger.info('活跃 WebSocket 连接已关闭', 'System');
 
     await fastify.close();
     memoryLogger.info('Fastify 服务已关闭', 'System');
