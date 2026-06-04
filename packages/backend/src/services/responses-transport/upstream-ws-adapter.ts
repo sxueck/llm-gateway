@@ -197,7 +197,11 @@ export async function* streamUpstreamWebSocket(
 
   upstreamSocket.on('close', (_code, _reason) => {
     clearTimeout(connectTimeout);
-    finishStream();
+    if (terminalEventReceived || abortSignal.aborted || finishError) {
+      finishStream();
+      return;
+    }
+    failStream(new Error('Upstream WebSocket closed before terminal event'));
   });
 
   try {

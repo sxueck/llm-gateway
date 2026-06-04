@@ -51,10 +51,7 @@ export async function handleChatStreamRequest(params: ChatStreamParams): Promise
   const requestUserAgent = getRequestUserAgent(request);
   const requestIp = extractIp(request);
 
-  // 创建 AbortController 用于取消请求
   const abortController = new AbortController();
-  
-  // 监听客户端断开连接
   reply.raw.on('close', () => {
     if (!reply.raw.writableEnded) {
       abortController.abort();
@@ -121,7 +118,6 @@ export async function handleChatStreamRequest(params: ChatStreamParams): Promise
   } catch (streamError: any) {
     const duration = Date.now() - startTime;
 
-    // 检查是否是用户取消
     if (streamError.name === 'AbortError' || abortController.signal.aborted) {
       memoryLogger.info('流式请求被客户端取消 (Chat)', 'Proxy');
       return;

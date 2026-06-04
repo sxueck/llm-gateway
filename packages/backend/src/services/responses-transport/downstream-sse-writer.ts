@@ -1,10 +1,3 @@
-/**
- * Downstream SSE writer.
- *
- * Consumes an async iterable of `ResponsesServerEvent` and writes
- * `event:` / `data:` frames to a Fastify reply.
- */
-
 import type { FastifyReply } from 'fastify';
 import type { ResponsesServerEvent, ResponsesStreamResult } from './types.js';
 import { serverEventToSseFrame } from './helpers.js';

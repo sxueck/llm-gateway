@@ -155,7 +155,6 @@ export class ProtocolAdapter {
       'Protocol'
     );
 
-    // Google Gemini 已通过 ProviderAdapter 转换为 OpenAI 兼容接口，可以直接复用 OpenAI 逻辑
     return await this.openaiChatCompletion(config, messages, options, abortSignal);
   }
 
@@ -208,7 +207,6 @@ export class ProtocolAdapter {
     if ((options as any).tool_search !== undefined) (requestParams as any).tool_search = (options as any).tool_search;
     if ((options as any).phase !== undefined) (requestParams as any).phase = (options as any).phase;
 
-    // 构建请求选项，支持超时和取消
     const requestOptions: any = {};
     if (options.requestTimeout !== undefined) {
       requestOptions.timeout = options.requestTimeout;
@@ -239,7 +237,6 @@ export class ProtocolAdapter {
       'Protocol'
     );
 
-    // Google Gemini 已通过 ProviderAdapter 转换为 OpenAI 兼容接口，可以直接复用 OpenAI 逻辑
     return await this.openaiStreamChatCompletion(config, messages, options, reply, abortSignal);
   }
 
@@ -299,7 +296,6 @@ export class ProtocolAdapter {
     if ((options as any).tool_search !== undefined) (requestParams as any).tool_search = (options as any).tool_search;
     if ((options as any).phase !== undefined) (requestParams as any).phase = (options as any).phase;
 
-    // 构建请求选项，支持超时和取消
     const requestOptions: any = {};
     if (options.requestTimeout !== undefined) {
       requestOptions.timeout = options.requestTimeout;
@@ -337,7 +333,6 @@ export class ProtocolAdapter {
       'Protocol'
     );
 
-    // Google Gemini 已通过 ProviderAdapter 转换为 OpenAI 兼容接口
     return await this.openaiCreateEmbedding(config, input, options, abortSignal);
   }
 
@@ -366,7 +361,6 @@ export class ProtocolAdapter {
       requestParams.user = options.user;
     }
 
-    // 构建请求选项
     const requestOptions: any = {};
     if (options.requestTimeout !== undefined) {
       requestOptions.timeout = options.requestTimeout;
@@ -391,7 +385,6 @@ export class ProtocolAdapter {
     if ((options as any).background !== undefined) (params as any).background = (options as any).background;
     if ((options as any).conversation !== undefined) (params as any).conversation = (options as any).conversation;
     if ((options as any).context_management !== undefined) (params as any).context_management = (options as any).context_management;
-    // 核心调参字段
     if (options.temperature !== undefined) params.temperature = options.temperature;
     if (options.top_p !== undefined) params.top_p = options.top_p;
     if (options.store !== undefined) params.store = options.store;
@@ -413,9 +406,7 @@ export class ProtocolAdapter {
     if (options.include !== undefined) params.include = options.include;
     if ((options as any).prompt_cache_key !== undefined) (params as any).prompt_cache_key = (options as any).prompt_cache_key;
     if ((options as any).safety_identifier !== undefined) (params as any).safety_identifier = (options as any).safety_identifier;
-    // OpenAI 新特性：Tool Search（工具搜索）- GPT-5.4-mini 支持
     if ((options as any).tool_search !== undefined) (params as any).tool_search = (options as any).tool_search;
-    // OpenAI 新特性：Phase 参数 - 标记消息类型为 commentary 或 final_answer
     if ((options as any).phase !== undefined) (params as any).phase = (options as any).phase;
     return params;
   }
@@ -462,10 +453,8 @@ export class ProtocolAdapter {
       stream: false,
     };
 
-    // 添加 Responses API 支持的参数
     Object.assign(requestParams, this.buildResponsesRequestParams(options, true));
 
-    // 构建请求选项
     const requestOptions: any = {};
     if (options.requestTimeout !== undefined) {
       requestOptions.timeout = options.requestTimeout;
@@ -557,7 +546,6 @@ export class ProtocolAdapter {
     // 添加 Responses API 支持的参数（允许 previous_response_id 以支持多轮衔接）
     Object.assign(requestParams, this.buildResponsesRequestParams(options, true));
 
-    // 构建请求选项
     const requestOptions: any = {};
     const requestTimeoutMs =
       options.requestTimeout !== undefined

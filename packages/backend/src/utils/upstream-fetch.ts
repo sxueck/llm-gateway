@@ -84,7 +84,6 @@ function buildHeaders(
 }
 
 function createComposedAbortSignal(timeoutMs: number, existingSignal?: AbortSignal): AbortSignal | null {
-  // If existing signal is already aborted, return null immediately
   if (existingSignal?.aborted) {
     return null;
   }
@@ -93,7 +92,6 @@ function createComposedAbortSignal(timeoutMs: number, existingSignal?: AbortSign
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let isCleanedUp = false;
 
-  // Cleanup function to prevent memory leaks
   const cleanup = () => {
     if (isCleanedUp) return;
     isCleanedUp = true;
@@ -107,36 +105,28 @@ function createComposedAbortSignal(timeoutMs: number, existingSignal?: AbortSign
     }
   };
 
-  // Handle existing signal abort
   const onExistingAbort = () => {
     cleanup();
     controller.abort();
   };
 
-  // Set up timeout
   timeoutId = setTimeout(() => {
     timeoutId = null;
     controller.abort();
     cleanup();
   }, timeoutMs);
 
-  // Listen to existing signal if provided
   if (existingSignal) {
     existingSignal.addEventListener('abort', onExistingAbort, { once: true });
   }
 
-  // Return the signal with cleanup attached
   const signal = controller.signal;
-
   // Store cleanup on the signal so it can be called after the request completes
   (signal as any).__upstreamFetchCleanup = cleanup;
 
   return signal;
 }
 
-/**
- * Execute cleanup on a composed abort signal if one was created.
- */
 function cleanupComposedSignal(signal: AbortSignal | undefined): void {
   if (signal && (signal as any).__upstreamFetchCleanup) {
     (signal as any).__upstreamFetchCleanup();
@@ -152,12 +142,10 @@ export function extractUrlString(url: string | URL | Request): string {
     return url.toString();
   }
 
-  // It's a Request object - extract the URL
   if (url instanceof Request) {
     return url.url;
   }
 
-  // Fallback for any other object with toString
   return String(url);
 }
 
@@ -170,7 +158,6 @@ function sanitizeUrlForLog(urlString: string): string {
     const url = new URL(urlString);
     return url.origin;
   } catch {
-    // If URL parsing fails, return a scrubbed version
     return urlString.replace(/\/\/.*@/, '//***@');
   }
 }
@@ -268,7 +255,6 @@ function logUpstreamConnectionError(
     method: context.method,
   };
 
-  // Include error name/code if available
   if (error?.name) diagnostic.errorName = error.name;
   if (error?.code) diagnostic.errorCode = error.code;
 
@@ -279,57 +265,34 @@ function logUpstreamConnectionError(
   );
 }
 
-/**
- * Make an upstream HTTP request with automatic proxy support.
- *
- * Features:
- * - Automatic proxy detection from environment variables
- * - NO_PROXY support
- * - Timeout support
- * - Bun/Node runtime compatibility
- * - Preserves existing signal/headers/body/stream behavior
- * - Diagnostic logging on connection errors (sanitized)
- *
- * @param url Target URL (string, URL, or Request)
- * @param options Request options including optional timeoutMs
- * @returns Response from fetch
- */
 export async function upstreamFetch(
   url: string | URL | Request,
   options: UpstreamFetchOptions = {}
 ): Promise<Response> {
-  // Extract URL string properly
   const urlString = extractUrlString(url);
 
   const proxyConfig = getProxyConfigFromEnv();
   const proxyUrl = getProxyUrlForTarget(urlString, proxyConfig);
 
-  // Build fetch options from Request if needed, otherwise use options directly
   let fetchOptions: RequestInit;
   if (url instanceof Request) {
-    // If a Request was passed, extract its properties and merge with options
     const requestInit = requestToInit(url);
     fetchOptions = {
       ...requestInit,
       ...options,
-      // Merge headers carefully
       headers: options.headers || requestInit.headers,
     };
   } else {
-    // Otherwise use options directly
     fetchOptions = { ...options };
   }
 
-  // Handle signal and timeout composition
   let composedSignal: AbortSignal | undefined;
   if (options.timeoutMs && options.timeoutMs > 0) {
     const signal = createComposedAbortSignal(options.timeoutMs, options.signal ?? undefined);
-    // If signal is already aborted, composedSignal will be null
     if (signal) {
       composedSignal = signal;
       fetchOptions.signal = composedSignal;
     } else {
-      // Signal was already aborted - throw AbortError
       const abortError = new Error('The operation was aborted');
       abortError.name = 'AbortError';
       throw abortError;
@@ -356,7 +319,6 @@ export async function upstreamFetch(
 
     return await fetch(urlString, fetchOptions);
   } catch (error: any) {
-    // Log diagnostic info for connection errors, then re-throw
     logUpstreamConnectionError(error, {
       urlString,
       proxyUrl,
@@ -365,20 +327,10 @@ export async function upstreamFetch(
     });
     throw error;
   } finally {
-    // Always cleanup timeout/listeners after request completes (success or error)
     cleanupComposedSignal(composedSignal);
   }
 }
 
-/**
- * Make a JSON POST request with automatic proxy support.
- *
- * @param url Target URL
- * @param body Request body (will be JSON stringified)
- * @param headers Optional additional headers
- * @param options Optional fetch options
- * @returns Parsed JSON response
- */
 export async function upstreamJsonPost<T = any>(
   url: string,
   body: unknown,
@@ -425,9 +377,6 @@ export async function upstreamJsonGet<T = any>(
   return response.json() as Promise<T>;
 }
 
-/**
- * Check if a URL should use a proxy (useful for debugging).
- */
 export function getProxyStatus(url: string): {
   configured: boolean;
   proxyUrl: string | null;

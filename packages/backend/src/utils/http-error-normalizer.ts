@@ -49,7 +49,6 @@ export function normalizeOpenAIError(error: any): NormalizedLlmError {
     statusCode = typeof apiError.status === 'number' ? apiError.status : 500;
     message = apiError.message;
 
-    // 记录 requestID 用于调试（如果存在）
     if (apiError.requestID) {
       message += ` (Request ID: ${apiError.requestID})`;
     }

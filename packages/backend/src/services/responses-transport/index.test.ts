@@ -380,4 +380,28 @@ describe('upstream-ws-adapter', () => {
 
     expect(done).toBe(true);
   });
+
+  it('throws when upstream closes before a terminal event', async () => {
+    server.once('connection', (socket: WebSocket) => {
+      socket.on('message', () => {
+        socket.send(JSON.stringify({ type: 'response.created', response: { id: 'r1' } }));
+        socket.close();
+      });
+    });
+
+    const generator = streamUpstreamWebSocket(
+      { provider: 'test', apiKey: 'key', baseUrl: `http://localhost:${serverPort}`, model: 'm' },
+      { body: { input: 'hi' } },
+      new AbortController().signal
+    );
+
+    await expect(
+      (async () => {
+        while (true) {
+          const next = await generator.next();
+          if (next.done) break;
+        }
+      })()
+    ).rejects.toThrow('Upstream WebSocket closed before terminal event');
+  });
 });
