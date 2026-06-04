@@ -4,27 +4,22 @@ import { WebSocket } from 'ws';
 import { runProxyPipeline } from '../proxy/pipeline.js';
 import { buildProviderConfig } from '../proxy/provider-config-builder.js';
 import { virtualKeyQueueService } from '../../services/virtual-key-queue.js';
-import { bridgeResponsesWebSocket } from '../../services/ws-to-sse-bridge.js';
 import { memoryLogger } from '../../services/logger.js';
 import { debugModeService } from '../../services/debug-mode.js';
 import { logApiRequestToDb } from '../../services/api-request-logger.js';
 import { nanoid } from 'nanoid';
-
-function buildQueue429Error(reason: 'queue_full' | 'timeout' | 'cancelled') {
-  const message = reason === 'queue_full'
-    ? 'Request queue is full for this virtual key. Please try again later.'
-    : reason === 'timeout'
-    ? 'Request timed out waiting in queue. Please try again later.'
-    : 'Request was cancelled while waiting in queue.';
-  return {
-    error: {
-      message,
-      type: 'rate_limit_error',
-      param: null,
-      code: `queue_${reason}`,
-    },
-  };
-}
+import {
+  parseClientWebSocketEvent,
+  normalizeResponseCreate,
+  buildErrorEvent,
+  buildQueueError,
+  ERROR_CODES,
+  WS_CLOSE_CODES,
+} from '../../services/responses-transport/index.js';
+import { resolveTransportMode } from '../../services/responses-transport/mode-resolver.js';
+import { runResponsesTransport } from '../../services/responses-transport/orchestrator.js';
+import { writeEventsToWebSocket } from '../../services/responses-transport/downstream-ws-writer.js';
+import type { ResponsesStreamResult } from '../../services/responses-transport/types.js';
 
 export async function registerResponsesWebSocketRoutes(fastify: FastifyInstance) {
   const preHandler = async (request: FastifyRequest, reply: any) => {
@@ -73,7 +68,7 @@ export async function registerResponsesWebSocketRoutes(fastify: FastifyInstance)
   const wsHandler = async (socket: WsWebSocket, request: FastifyRequest) => {
     const context = (request as any).wsProxyContext;
     if (!context) {
-      socket.close(1011, 'missing_proxy_context');
+      socket.close(WS_CLOSE_CODES.INTERNAL_ERROR, 'missing_proxy_context');
       return;
     }
 
@@ -114,7 +109,7 @@ export async function handleResponsesWebSocket(
 
     if ('code' in configResult) {
       memoryLogger.error(`${logPrefix} | Provider config error: ${configResult.body.error.message}`, 'WebSocket');
-      socket.close(1011, 'provider_config_error');
+      sendErrorAndClose(socket, configResult.body.error.message, ERROR_CODES.PROVIDER_CONFIG_ERROR, WS_CLOSE_CODES.POLICY_VIOLATION);
       return;
     }
 
@@ -125,25 +120,26 @@ export async function handleResponsesWebSocket(
         `${logPrefix} | Provider protocol '${protocolConfig.protocol}' does not support WebSocket transport`,
         'WebSocket'
       );
-      socket.close(1008, 'unsupported_transport');
+      sendErrorAndClose(socket, 'Provider protocol does not support WebSocket transport', ERROR_CODES.UNSUPPORTED_CLIENT_EVENT, WS_CLOSE_CODES.POLICY_VIOLATION);
       return;
     }
 
     if (!protocolConfig.baseUrl) {
       memoryLogger.error(`${logPrefix} | Provider has no base URL configured`, 'WebSocket');
-      socket.close(1008, 'missing_upstream_url');
+      sendErrorAndClose(socket, 'Provider has no base URL configured', ERROR_CODES.MISSING_UPSTREAM, WS_CLOSE_CODES.POLICY_VIOLATION);
       return;
     }
 
     if (!protocolConfig.apiKey) {
       memoryLogger.error(`${logPrefix} | Provider has no API key configured`, 'WebSocket');
-      socket.close(1008, 'missing_upstream_key');
+      sendErrorAndClose(socket, 'Provider has no API key configured', ERROR_CODES.MISSING_UPSTREAM, WS_CLOSE_CODES.POLICY_VIOLATION);
       return;
     }
 
     const maxDurationMs = 10 * 60 * 1000;
     const idleTimeoutMs = 5 * 60 * 1000;
     let inFlight = false;
+    let activeAbortController: AbortController | undefined;
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
     function resetIdleTimer() {
@@ -151,72 +147,36 @@ export async function handleResponsesWebSocket(
       idleTimer = setTimeout(() => {
         try {
           if (socket.readyState === WebSocket.OPEN) {
-            socket.close(1000, 'idle_timeout');
+            sendErrorAndClose(socket, 'Idle timeout', ERROR_CODES.IDLE_TIMEOUT, WS_CLOSE_CODES.INTERNAL_ERROR);
           }
         } catch (_e) {}
       }, idleTimeoutMs);
     }
 
-    function sendGatewayError(message: string, code: string) {
-      if (socket.readyState !== WebSocket.OPEN) return;
-      try {
-        socket.send(JSON.stringify({
-          type: 'error',
-          error: {
-            message,
-            type: 'gateway_error',
-            param: null,
-            code,
-          },
-        }));
-      } catch (_e) {}
-    }
-
-    function parseClientMessage(data: WebSocket.RawData, isBinary: boolean): any {
-      if (isBinary) throw new Error('binary_not_supported');
-
-      let messageStr: string;
-      if (Buffer.isBuffer(data)) {
-        messageStr = data.toString('utf-8');
-      } else if (typeof data === 'string') {
-        messageStr = data;
-      } else if (data instanceof ArrayBuffer) {
-        messageStr = Buffer.from(data).toString('utf-8');
-      } else {
-        messageStr = Buffer.concat(data as any).toString('utf-8');
-      }
-
-      try {
-        return JSON.parse(messageStr);
-      } catch {
-        throw new Error('invalid_json');
-      }
-    }
-
-    async function handleClientMessage(data: WebSocket.RawData, isBinary: boolean) {
-      resetIdleTimer();
-
-      let requestBody: any;
-      try {
-        requestBody = parseClientMessage(data, isBinary);
-      } catch (err: any) {
-        sendGatewayError(err.message, err.message);
+    async function handleCancel() {
+      if (!inFlight) {
+        sendGatewayError(socket, 'No response is in progress', ERROR_CODES.NOTHING_TO_CANCEL);
         return;
       }
 
-      if (requestBody?.type !== 'response.create') {
-        sendGatewayError('Expected response.create event', 'expected_response_create');
-        return;
+      memoryLogger.info(`${logPrefix} | Cancelling in-flight response`, 'WebSocket');
+      if (activeAbortController) {
+        activeAbortController.abort();
       }
+      // The orchestrator will emit response.cancelled or error and return;
+      // queue release happens in the finally block of handleResponseCreate.
+    }
 
+    async function handleResponseCreate(requestBody: any) {
       if (inFlight) {
-        sendGatewayError('A response is already in progress on this WebSocket', 'response_in_progress');
+        sendGatewayError(socket, 'A response is already in progress on this WebSocket', ERROR_CODES.RESPONSE_IN_PROGRESS);
         return;
       }
 
       inFlight = true;
       const turnStartTime = Date.now();
       const abortController = new AbortController();
+      activeAbortController = abortController;
       const closeAbortHandler = () => abortController.abort();
       socket.once('close', closeAbortHandler);
 
@@ -224,23 +184,40 @@ export async function handleResponsesWebSocket(
       if (!acquireResult.granted) {
         memoryLogger.warn(`${logPrefix} | Queue rejected: ${acquireResult.reason}`, 'WebSocket');
         if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: 'error', ...buildQueue429Error(acquireResult.reason) }));
+          socket.send(JSON.stringify(buildQueueError(acquireResult.reason)));
         }
         socket.off('close', closeAbortHandler);
         inFlight = false;
+        activeAbortController = undefined;
         return;
       }
 
+      let result: ResponsesStreamResult | undefined;
+      let success = false;
+
       try {
-        const tokenUsage = await bridgeResponsesWebSocket({
-          config: protocolConfig,
-          requestBody,
-          socket,
-          abortController,
-          logPrefix,
-          maxDurationMs,
-          closeOnTerminal: false,
-        });
+        const normalizedRequest = normalizeResponseCreate(requestBody);
+        const mode = resolveTransportMode(true, protocolConfig.upstreamTransport ?? 'http_sse');
+
+        memoryLogger.info(`${logPrefix} | Transport mode: ${mode}`, 'WebSocket');
+
+        const maxDurationTimer = maxDurationMs > 0
+          ? setTimeout(() => {
+              memoryLogger.info(`${logPrefix} | Max duration reached, aborting`, 'WebSocket');
+              abortController.abort();
+            }, maxDurationMs)
+          : undefined;
+
+        try {
+          const eventStream = runResponsesTransport(mode, protocolConfig, normalizedRequest, abortController.signal);
+          result = await writeEventsToWebSocket(eventStream, {
+            socket,
+            closeOnTerminal: false,
+          });
+          success = result.terminalEventReceived;
+        } finally {
+          if (maxDurationTimer) clearTimeout(maxDurationTimer);
+        }
 
         const duration = Date.now() - turnStartTime;
 
@@ -254,8 +231,8 @@ export async function handleResponsesWebSocket(
               method: 'WS',
               path,
               stream: true,
-              success: true,
-              statusCode: 200,
+              success,
+              statusCode: success ? 200 : 500,
               fromCache: false,
               virtualKeyId: virtualKey.id,
               virtualKeyName: (virtualKey as any).name,
@@ -273,18 +250,67 @@ export async function handleResponsesWebSocket(
           virtualKey,
           providerId,
           model: protocolConfig.model || 'unknown',
-          tokenCount: tokenUsage,
-          status: 'success',
+          tokenCount: result?.tokenUsage
+            ? { promptTokens: result.tokenUsage.promptTokens, completionTokens: result.tokenUsage.completionTokens, totalTokens: result.tokenUsage.totalTokens }
+            : { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+          cachedTokens: result?.tokenUsage.cachedTokens,
+          status: success ? 'success' : 'error',
           responseTime: duration,
           requestType: 'openai-responses-ws',
           ip: requestIp,
           userAgent: requestUserAgent,
         }).catch((_e) => {});
+      } catch (err: any) {
+        memoryLogger.error(`${logPrefix} | Response error: ${err?.message || String(err)}`, 'WebSocket');
+
+        const duration = Date.now() - turnStartTime;
+        logApiRequestToDb({
+          virtualKey,
+          providerId,
+          model: protocolConfig.model || 'unknown',
+          tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+          status: 'error',
+          responseTime: duration,
+          requestType: 'openai-responses-ws',
+          ip: requestIp,
+          userAgent: requestUserAgent,
+        }).catch((_e) => {});
+
+        if (socket.readyState === WebSocket.OPEN) {
+          try {
+            socket.send(JSON.stringify(buildErrorEvent(
+              err?.message || 'Response error',
+              err?.code || ERROR_CODES.HANDLER_ERROR
+            )));
+          } catch (_e) {}
+          socket.close(WS_CLOSE_CODES.INTERNAL_ERROR, 'response_error');
+        }
       } finally {
         acquireResult.release();
         socket.off('close', closeAbortHandler);
         inFlight = false;
+        activeAbortController = undefined;
         resetIdleTimer();
+      }
+    }
+
+    async function handleClientMessage(data: WebSocket.RawData, isBinary: boolean) {
+      resetIdleTimer();
+
+      let clientEvent;
+      try {
+        clientEvent = parseClientWebSocketEvent(data, isBinary);
+      } catch (err: any) {
+        const code = (err as any).code || ERROR_CODES.HANDLER_ERROR;
+        const wsCloseCode = (err as any).wsCloseCode || WS_CLOSE_CODES.INTERNAL_ERROR;
+        sendErrorAndClose(socket, err.message, code, wsCloseCode);
+        return;
+      }
+
+      if (clientEvent.type === 'response.create') {
+        await handleResponseCreate(clientEvent);
+      } else if (clientEvent.type === 'response.cancel') {
+        await handleCancel();
       }
     }
 
@@ -292,7 +318,7 @@ export async function handleResponsesWebSocket(
     socket.on('message', (data, isBinary) => {
       handleClientMessage(data, isBinary).catch((err: any) => {
         memoryLogger.error(`${logPrefix} | ${err?.message || String(err)}`, 'WebSocket');
-        sendGatewayError(err?.message || 'handler_error', 'handler_error');
+        sendErrorAndClose(socket, err?.message || 'Handler error', ERROR_CODES.HANDLER_ERROR, WS_CLOSE_CODES.INTERNAL_ERROR);
       });
     });
 
@@ -307,35 +333,26 @@ export async function handleResponsesWebSocket(
     const errorMessage = err?.message || String(err);
     memoryLogger.error(`${logPrefix} | ${errorMessage}`, 'WebSocket');
 
-    // Send error frame if socket is still open
     if (socket.readyState === WebSocket.OPEN) {
-      const errorCodes: Record<string, string> = {
-        idle_timeout: 'idle_timeout',
-        client_disconnected: 'client_disconnected',
-        binary_not_supported: 'binary_not_supported',
-        invalid_json: 'invalid_json',
-        expected_response_create: 'expected_response_create',
-      };
-      const reason = errorCodes[errorMessage] || 'handler_error';
-
-      if (reason !== 'client_disconnected') {
-        const errorPayload = {
-          type: 'error',
-          error: {
-            message: errorMessage,
-            type: 'gateway_error',
-            param: null,
-            code: reason,
-          },
-        };
-        try {
-          socket.send(JSON.stringify(errorPayload));
-        } catch (_e) {}
-      }
-
-      try {
-        socket.close(1011, reason);
-      } catch (_e) {}
+      sendErrorAndClose(socket, errorMessage, ERROR_CODES.HANDLER_ERROR, WS_CLOSE_CODES.INTERNAL_ERROR);
     }
+  }
+}
+
+function sendGatewayError(socket: WsWebSocket, message: string, code: string) {
+  if (socket.readyState !== WebSocket.OPEN) return;
+  try {
+    socket.send(JSON.stringify(buildErrorEvent(message, code)));
+  } catch (_e) {}
+}
+
+function sendErrorAndClose(socket: WsWebSocket, message: string, code: string, wsCloseCode: number) {
+  if (socket.readyState === WebSocket.OPEN) {
+    try {
+      socket.send(JSON.stringify(buildErrorEvent(message, code)));
+    } catch (_e) {}
+    try {
+      socket.close(wsCloseCode, code);
+    } catch (_e) {}
   }
 }
