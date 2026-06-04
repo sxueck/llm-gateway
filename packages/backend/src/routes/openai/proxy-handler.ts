@@ -516,7 +516,7 @@ export async function handleStreamRequest(
         );
       }
 
-      const useUpstreamWebSocket = modelAttributes?.upstream_websocket_enabled === true;
+      const useUpstreamWebSocket = protocolConfig.upstreamTransport === 'websocket';
 
       if (useUpstreamWebSocket) {
         memoryLogger.info(

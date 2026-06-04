@@ -7,12 +7,16 @@ import { memoryLogger } from './logger.js';
 import { upstreamSslConfigService } from './upstream-ssl-config.js';
 import { normalizeUsageCounts } from '../utils/usage-normalizer.js';
 import { stripFieldRecursively } from '../utils/request-logger.js';
+import { TERMINAL_EVENT_TYPES } from './responses-transport/constants.js';
 
 const WS_CONNECT_TIMEOUT_MS = 30000;
 
 function createUpstreamWebSocket(wsUrl: string, apiKey: string | undefined, skipVerify: boolean): NodeWebSocket {
   const wsOptions: NodeWebSocket.ClientOptions = {
-    headers: { 'Authorization': `Bearer ${apiKey}` },
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'OpenAI-Beta': 'responses_websockets=2026-02-06',
+    },
   };
   if (skipVerify) {
     (wsOptions as any).rejectUnauthorized = false;
@@ -165,15 +169,7 @@ export async function streamResponsesViaWebSocket(
       }
 
       const eventType = event?.type;
-      const terminalTypes = new Set([
-        'response.completed',
-        'response.failed',
-        'response.incomplete',
-        'response.cancelled',
-        'error',
-        'response.error',
-      ]);
-      if (terminalTypes.has(eventType)) {
+      if (TERMINAL_EVENT_TYPES.has(eventType)) {
         closeSocket();
         if (!reply.raw.writableEnded) {
           reply.raw.write('data: [DONE]\n\n');

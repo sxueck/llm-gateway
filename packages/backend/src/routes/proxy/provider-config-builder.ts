@@ -165,6 +165,11 @@ export async function buildProviderConfig(
     ? deriveGoogleNativeBaseUrl(originalBaseUrl || normalized.baseUrl)
     : undefined;
 
+  const upstreamTransport: ProtocolConfig['upstreamTransport'] =
+    modelAttributes?.upstream_transport === 'websocket' || modelAttributes?.upstream_websocket_enabled === true
+      ? 'websocket'
+      : 'http_sse';
+
   const protocolConfig: ProtocolConfig = {
     provider: normalized.provider,
     apiKey: normalized.apiKey,
@@ -173,6 +178,7 @@ export async function buildProviderConfig(
     model,
     protocol: normalized.protocol,
     modelAttributes,
+    upstreamTransport,
   };
 
   const redactedApiKey = decryptedApiKey && decryptedApiKey.length > 10

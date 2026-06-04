@@ -11,6 +11,8 @@ import {
 } from '../utils/responses-stream-processor.js';
 import { filterForwardedHeaders } from '../utils/header-sanitizer.js';
 
+export type UpstreamTransport = 'http_sse' | 'websocket';
+
 export interface ProtocolConfig {
   provider: string;
   apiKey: string;
@@ -19,6 +21,9 @@ export interface ProtocolConfig {
   model: string;
   protocol?: string;
   modelAttributes?: any;
+  /** Preferred upstream transport for Responses API streaming.
+   *  Defaults to 'http_sse' when absent. */
+  upstreamTransport?: UpstreamTransport;
 }
 
 export interface ProtocolResponse {
