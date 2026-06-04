@@ -196,4 +196,24 @@ describe('streamResponsesViaWebSocket', () => {
     expect(reply.raw.writableEnded).toBe(true);
     expect(result.promptTokens).toBe(0);
   });
+
+  it('should reject when upstream closes before a terminal event', async () => {
+    server.once('connection', (socket: WebSocket) => {
+      socket.on('message', () => {
+        socket.send(JSON.stringify({ type: 'response.created', response: { id: 'r-early-close' } }));
+        socket.close();
+      });
+    });
+
+    const reply = createMockReply();
+    await expect(
+      streamResponsesViaWebSocket(
+        { provider: 'test', apiKey: 'test-key', baseUrl: `http://localhost:${serverPort}`, model: 'gpt-test' },
+        { input: 'hi' },
+        reply
+      )
+    ).rejects.toThrow('Upstream WebSocket closed before terminal event');
+
+    expect(reply.raw.writableEnded).toBe(false);
+  });
 });

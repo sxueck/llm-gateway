@@ -186,8 +186,6 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
       }
 
       try {
-        ensureHeadersSent();
-
         for await (const chunk of stream) {
           if (reply.raw.destroyed || reply.raw.writableEnded) {
             logger?.info('客户端已断开连接，停止流式传输', 'Protocol');
@@ -214,6 +212,24 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
           }
 
           if ((chunk as any)?.type === 'response.error' || (chunk as any)?.error) {
+            if (buffering) {
+              // No content has been delivered to the client yet.
+              // Convert the stream error event into a real thrown error so the
+              // caller can return a proper non-200 HTTP status code instead of
+              // committing to HTTP 200 and forwarding the error as an SSE frame.
+              const errorInfo = (chunk as any)?.error;
+              const errorType: string = errorInfo?.type || 'api_error';
+              const errorMessage: string = errorInfo?.message || 'Upstream returned a stream error';
+              const statusCode =
+                errorType === 'rate_limit_error' ? 429
+                : errorType === 'authentication_error' ? 401
+                : errorType === 'permission_error' ? 403
+                : errorType === 'invalid_request_error' ? 400
+                : 500;
+              const err: any = new Error(errorMessage);
+              err.status = statusCode;
+              throw err;
+            }
             bypassEmptyGuard = true;
             await flushPendingChunks();
           }

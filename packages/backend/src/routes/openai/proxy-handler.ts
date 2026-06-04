@@ -16,7 +16,6 @@ import { shouldLogRequestBody, getModelForLogging } from '../proxy/handlers/shar
 import { logApiRequestToDb } from '../../services/api-request-logger.js';
 import { normalizeUsageCounts } from '../../utils/usage-normalizer.js';
 import { isChatCompletionsPath, isResponsesApiPath, isResponsesCompactPath, isEmbeddingsPath, isImagesPath, shouldBypassGatewayCache } from '../../utils/path-detector.js';
-// removed gemini import
 import {
   maskRequestBodyInPlace,
   restoreResponseBodyInPlace,
@@ -227,9 +226,6 @@ export function createOpenAIProxyHandler() {
       parsedModelAttributes = parseModelAttributes(currentModel);
 
       const { protocolConfig, path, vkDisplay, isStreamRequest } = configResult;
-
-      // Gemini native logic moved to separate route
-
 
       if (currentModel && (request.body as any)?.messages && isChatCompletionsPath(path)) {
         const approxTokens = estimateTokensForMessages((request.body as any).messages);
@@ -453,10 +449,7 @@ export async function handleStreamRequest(
     request.headers as any
   );
 
-  // 创建 AbortController 用于取消请求
   const abortController = new AbortController();
-  
-  // 监听客户端断开连接
   reply.raw.on('close', () => {
     if (!reply.raw.writableEnded) {
       abortController.abort();
@@ -497,7 +490,6 @@ export async function handleStreamRequest(
         );
       }
 
-      // 记录最终的 instructions 和 tools（用于调试）
       if (options.instructions) {
         memoryLogger.debug(
           `Responses API instructions (${options.instructions.length} 字符): ${options.instructions.substring(0, 100)}...`,
@@ -682,10 +674,8 @@ export async function handleStreamRequest(
     release();
     const duration = Date.now() - startTime;
 
-    // 检查是否是用户取消
     if (streamError.name === 'AbortError' || abortController.signal.aborted) {
       memoryLogger.info('流式请求被客户端取消', 'Proxy');
-      // 不记录为失败，因为这是正常的取消操作
       return;
     }
 

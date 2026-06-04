@@ -1,10 +1,3 @@
-/**
- * Upstream HTTP SSE adapter.
- *
- * Calls the upstream OpenAI Responses API via the SDK with stream=true
- * and yields each event as a `ResponsesServerEvent`.
- */
-
 import OpenAI from 'openai';
 import type { ProtocolConfig } from '../protocol-adapter.js';
 import type {

@@ -66,6 +66,7 @@ export async function streamResponsesViaWebSocket(
   let cachedTokens = 0;
   let headersSent = false;
   let closed = false;
+  let terminalEventReceived = false;
 
   const logPrefix = `ResponsesWS | model=${config.model}`;
 
@@ -170,6 +171,7 @@ export async function streamResponsesViaWebSocket(
 
       const eventType = event?.type;
       if (TERMINAL_EVENT_TYPES.has(eventType)) {
+        terminalEventReceived = true;
         closeSocket();
         if (!reply.raw.writableEnded) {
           reply.raw.write('data: [DONE]\n\n');
@@ -196,6 +198,10 @@ export async function streamResponsesViaWebSocket(
       clearTimeout(connectTimeout);
       if (!closed) {
         closed = true;
+        if (!terminalEventReceived && !abortSignal?.aborted) {
+          reject(new Error('Upstream WebSocket closed before terminal event'));
+          return;
+        }
         if (!reply.raw.writableEnded) {
           reply.raw.write('data: [DONE]\n\n');
           reply.raw.end();

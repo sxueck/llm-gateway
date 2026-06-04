@@ -1,10 +1,3 @@
-/**
- * Transport orchestrator.
- *
- * Selects the correct upstream and downstream adapters based on the
- * `ResponsesTransportMode`, runs the stream, and returns metadata.
- */
-
 import type { ProtocolConfig } from '../protocol-adapter.js';
 import type {
   ResponsesTransportMode,
