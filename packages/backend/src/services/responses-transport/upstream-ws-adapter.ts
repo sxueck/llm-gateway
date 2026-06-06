@@ -7,6 +7,7 @@
  */
 
 import NodeWebSocket from 'ws';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { ProtocolConfig } from '../protocol-adapter.js';
 import type {
   ResponsesServerEvent,
@@ -18,8 +19,16 @@ import { upstreamSslConfigService } from '../upstream-ssl-config.js';
 import { memoryLogger } from '../logger.js';
 import { isTerminalEvent } from '../responses-transport/helpers.js';
 import { normalizeUsageCounts } from '../../utils/usage-normalizer.js';
+import { getProxyConfigFromEnv, getProxyUrlForTarget } from '../../utils/upstream-proxy.js';
 
 const WS_CONNECT_TIMEOUT_MS = 30000;
+const MAX_QUEUE_DEPTH = 2048;
+
+function resolveWsProxyUrl(wsUrl: string): string | null {
+  // getProxyUrlForTarget understands http:/https: only; convert ws:/wss: first.
+  const httpEquiv = wsUrl.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+  return getProxyUrlForTarget(httpEquiv, getProxyConfigFromEnv());
+}
 
 function createUpstreamWebSocket(
   wsUrl: string,
@@ -34,6 +43,10 @@ function createUpstreamWebSocket(
   };
   if (skipVerify) {
     (wsOptions as any).rejectUnauthorized = false;
+  }
+  const proxyUrl = resolveWsProxyUrl(wsUrl);
+  if (proxyUrl) {
+    wsOptions.agent = new HttpsProxyAgent(proxyUrl, { rejectUnauthorized: !skipVerify });
   }
   return new NodeWebSocket(wsUrl, [], wsOptions);
 }
@@ -102,6 +115,13 @@ export async function* streamUpstreamWebSocket(
   let finishError: Error | null = null;
 
   function pushEvent(event: ResponsesServerEvent) {
+    if (messageQueue.length >= MAX_QUEUE_DEPTH) {
+      failStream(
+        new Error(`Upstream event queue overflow (limit ${MAX_QUEUE_DEPTH}): downstream consumer too slow`)
+      );
+      closeSocket(1001, 'queue_overflow');
+      return;
+    }
     messageQueue.push(event);
     if (queueResolver) {
       queueResolver();

@@ -100,6 +100,17 @@ export async function handleResponsesWebSocket(
 
   const logPrefix = `WS handler | vk=${vkDisplay} | provider=${providerId}`;
 
+  const pendingMessages: Array<{ data: WebSocket.RawData; isBinary: boolean }> = [];
+  let dispatchMessage: ((data: WebSocket.RawData, isBinary: boolean) => void) | null = null;
+
+  socket.on('message', (data: WebSocket.RawData, isBinary: boolean) => {
+    if (dispatchMessage) {
+      dispatchMessage(data, isBinary);
+    } else {
+      pendingMessages.push({ data, isBinary });
+    }
+  });
+
   let socketClosedEarly = false;
   socket.once('close', () => { socketClosedEarly = true; });
 
@@ -315,12 +326,18 @@ export async function handleResponsesWebSocket(
     }
 
     resetIdleTimer();
-    socket.on('message', (data, isBinary) => {
+
+    // Activate the message handler and replay any messages that arrived during
+    // the async initialisation phase.
+    dispatchMessage = (data, isBinary) => {
       handleClientMessage(data, isBinary).catch((err: any) => {
         memoryLogger.error(`${logPrefix} | ${err?.message || String(err)}`, 'WebSocket');
         sendErrorAndClose(socket, err?.message || 'Handler error', ERROR_CODES.HANDLER_ERROR, WS_CLOSE_CODES.INTERNAL_ERROR);
       });
-    });
+    };
+    for (const pending of pendingMessages) {
+      dispatchMessage(pending.data, pending.isBinary);
+    }
 
     await new Promise<void>((resolve) => {
       socket.once('close', () => {
