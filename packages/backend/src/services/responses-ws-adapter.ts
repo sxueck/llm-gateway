@@ -1,4 +1,5 @@
 import NodeWebSocket from 'ws';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { FastifyReply } from 'fastify';
 import type { ProtocolConfig } from './protocol-adapter.js';
 import type { StreamTokenUsage } from '../routes/proxy/http-client.js';
@@ -8,8 +9,14 @@ import { upstreamSslConfigService } from './upstream-ssl-config.js';
 import { normalizeUsageCounts } from '../utils/usage-normalizer.js';
 import { stripFieldRecursively } from '../utils/request-logger.js';
 import { TERMINAL_EVENT_TYPES } from './responses-transport/constants.js';
+import { getProxyConfigFromEnv, getProxyUrlForTarget } from '../utils/upstream-proxy.js';
 
 const WS_CONNECT_TIMEOUT_MS = 30000;
+
+function resolveWsProxyUrl(wsUrl: string): string | null {
+  const httpEquiv = wsUrl.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+  return getProxyUrlForTarget(httpEquiv, getProxyConfigFromEnv());
+}
 
 function createUpstreamWebSocket(wsUrl: string, apiKey: string | undefined, skipVerify: boolean): NodeWebSocket {
   const wsOptions: NodeWebSocket.ClientOptions = {
@@ -20,6 +27,10 @@ function createUpstreamWebSocket(wsUrl: string, apiKey: string | undefined, skip
   };
   if (skipVerify) {
     (wsOptions as any).rejectUnauthorized = false;
+  }
+  const proxyUrl = resolveWsProxyUrl(wsUrl);
+  if (proxyUrl) {
+    wsOptions.agent = new HttpsProxyAgent(proxyUrl, { rejectUnauthorized: !skipVerify });
   }
   return new NodeWebSocket(wsUrl, [], wsOptions);
 }
