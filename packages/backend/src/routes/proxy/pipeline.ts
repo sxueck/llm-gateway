@@ -22,7 +22,15 @@ export interface ProxyPipelineContext {
   configResult: any;
 }
 
-export interface ProxyPipelineHandlers {
+export interface ProxyPreflightContext {
+  requestIp: string;
+  requestUserAgent: string;
+  resolvedAuthHeader?: string;
+  virtualKey: any;
+  virtualKeyValue: string;
+}
+
+export interface ProxyPreflightHandlers {
   onManualBlock: (args: {
     reply: FastifyReply;
     requestIp: string;
@@ -41,6 +49,9 @@ export interface ProxyPipelineHandlers {
     requestUserAgent: string;
     authError: any;
   }) => Promise<void> | void;
+}
+
+export interface ProxyPipelineHandlers extends ProxyPreflightHandlers {
   onModelError: (args: {
     reply: FastifyReply;
     requestIp: string;
@@ -79,22 +90,15 @@ export type ProxyPipelineResult =
   | { ok: true; context: ProxyPipelineContext }
   | { ok: false };
 
-/**
- * Shared pre-check pipeline for all proxy protocols.
- *
- * Order:
- * 1) IP blocklist
- * 2) Anti-bot
- * 3) Auth (virtual key)
- * 4) Protocol-specific hook (optional)
- * 5) Model/provider resolution
- * 6) Provider config build
- */
-export async function runProxyPipeline(
+export type ProxyPreflightResult =
+  | { ok: true; context: ProxyPreflightContext }
+  | { ok: false };
+
+export async function runProxyPreflight(
   request: FastifyRequest,
   reply: FastifyReply,
-  options: ProxyPipelineOptions
-): Promise<ProxyPipelineResult> {
+  handlers: ProxyPreflightHandlers
+): Promise<ProxyPreflightResult> {
   const requestIp = extractIp(request);
   const requestUserAgent = getRequestUserAgent(request);
 
@@ -104,7 +108,7 @@ export async function runProxyPipeline(
       `拦截手动屏蔽 IP 请求 | IP: ${requestIp} | UA: ${requestUserAgent} | 原因: ${manualBlock.reason || '管理员拦截'}`,
       'ManualBlock'
     );
-    await options.handlers.onManualBlock({
+    await handlers.onManualBlock({
       reply,
       requestIp,
       requestUserAgent,
@@ -121,7 +125,7 @@ export async function runProxyPipeline(
       `拦截爬虫/威胁IP请求 | IP: ${requestIp} | UA: ${requestUserAgent} | 原因: ${antiBotResult.reason}`,
       'AntiBot'
     );
-    await options.handlers.onAntiBotBlock({
+    await handlers.onAntiBotBlock({
       reply,
       requestIp,
       requestUserAgent,
@@ -133,7 +137,7 @@ export async function runProxyPipeline(
   const resolvedAuthHeader = extractVirtualKeyAuthHeader(request.headers as any);
   const authResult = await authenticateVirtualKey(resolvedAuthHeader);
   if ('error' in authResult) {
-    await options.handlers.onAuthError({
+    await handlers.onAuthError({
       reply,
       requestIp,
       requestUserAgent,
@@ -142,7 +146,46 @@ export async function runProxyPipeline(
     return { ok: false };
   }
 
-  const { virtualKey, virtualKeyValue } = authResult;
+  return {
+    ok: true,
+    context: {
+      requestIp,
+      requestUserAgent,
+      resolvedAuthHeader,
+      virtualKey: authResult.virtualKey,
+      virtualKeyValue: authResult.virtualKeyValue,
+    },
+  };
+}
+
+/**
+ * Shared pre-check pipeline for all proxy protocols.
+ *
+ * Order:
+ * 1) IP blocklist
+ * 2) Anti-bot
+ * 3) Auth (virtual key)
+ * 4) Protocol-specific hook (optional)
+ * 5) Model/provider resolution
+ * 6) Provider config build
+ */
+export async function runProxyPipeline(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  options: ProxyPipelineOptions
+): Promise<ProxyPipelineResult> {
+  const preflightResult = await runProxyPreflight(request, reply, options.handlers);
+  if (!preflightResult.ok) {
+    return { ok: false };
+  }
+
+  const {
+    requestIp,
+    requestUserAgent,
+    resolvedAuthHeader,
+    virtualKey,
+    virtualKeyValue,
+  } = preflightResult.context;
 
   if (options.afterAuth) {
     const hookResult = await options.afterAuth({
