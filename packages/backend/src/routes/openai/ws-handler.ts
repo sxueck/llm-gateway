@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { WebSocket as WsWebSocket } from '@fastify/websocket';
 import { WebSocket } from 'ws';
-import { runProxyPipeline } from '../proxy/pipeline.js';
+import { runProxyPreflight, type ProxyPreflightContext } from '../proxy/pipeline.js';
+import { resolveModelAndProvider } from '../proxy/model-resolver.js';
 import { buildProviderConfig } from '../proxy/provider-config-builder.js';
 import { virtualKeyQueueService } from '../../services/virtual-key-queue.js';
 import { memoryLogger } from '../../services/logger.js';
@@ -19,42 +20,41 @@ import {
 import { resolveTransportMode } from '../../services/responses-transport/mode-resolver.js';
 import { runResponsesTransport } from '../../services/responses-transport/orchestrator.js';
 import { writeEventsToWebSocket } from '../../services/responses-transport/downstream-ws-writer.js';
-import type { ResponsesStreamResult } from '../../services/responses-transport/types.js';
+import type { NormalizedResponsesRequest, ResponsesStreamResult } from '../../services/responses-transport/types.js';
+
+export interface WsTurnConfig {
+  provider: any;
+  providerId: string;
+  currentModel?: any;
+  protocolConfig: any;
+  path: string;
+}
 
 export async function registerResponsesWebSocketRoutes(fastify: FastifyInstance) {
   const preHandler = async (request: FastifyRequest, reply: any) => {
-    const result = await runProxyPipeline(request, reply, {
-      protocol: 'openai',
-      handlers: {
-        onManualBlock: ({ reply: r }) => {
-          r.code(403).send({
-            error: {
-              message: 'Access denied: IP blocked',
-              type: 'access_denied',
-              param: 'ip',
-              code: 'ip_blocked',
-            },
-          });
-        },
-        onAntiBotBlock: ({ reply: r }) => {
-          r.code(403).send({
-            error: {
-              message: 'Access denied: Bot detected',
-              type: 'access_denied',
-              param: 'user-agent',
-              code: 'bot_detected',
-            },
-          });
-        },
-        onAuthError: ({ reply: r, authError }) => {
-          r.code(authError.code).send(authError.body);
-        },
-        onModelError: ({ reply: r, modelError }) => {
-          r.code(modelError.code).send(modelError.body);
-        },
-        onProviderConfigError: ({ reply: r, providerConfigError }) => {
-          r.code(providerConfigError.code).send(providerConfigError.body);
-        },
+    const result = await runProxyPreflight(request, reply, {
+      onManualBlock: ({ reply: r }) => {
+        r.code(403).send({
+          error: {
+            message: 'Access denied: IP blocked',
+            type: 'access_denied',
+            param: 'ip',
+            code: 'ip_blocked',
+          },
+        });
+      },
+      onAntiBotBlock: ({ reply: r }) => {
+        r.code(403).send({
+          error: {
+            message: 'Access denied: Bot detected',
+            type: 'access_denied',
+            param: 'user-agent',
+            code: 'bot_detected',
+          },
+        });
+      },
+      onAuthError: ({ reply: r, authError }) => {
+        r.code(authError.code).send(authError.body);
       },
     });
 
@@ -82,23 +82,20 @@ export async function registerResponsesWebSocketRoutes(fastify: FastifyInstance)
 export async function handleResponsesWebSocket(
   socket: WsWebSocket,
   request: FastifyRequest,
-  context: any
+  context: ProxyPreflightContext
 ): Promise<void> {
   const {
     requestIp,
     requestUserAgent,
     virtualKey,
     virtualKeyValue,
-    provider,
-    providerId,
-    currentModel,
   } = context;
 
   const vkDisplay = virtualKeyValue && virtualKeyValue.length > 10
     ? `${virtualKeyValue.slice(0, 6)}...${virtualKeyValue.slice(-4)}`
     : virtualKeyValue;
 
-  const logPrefix = `WS handler | vk=${vkDisplay} | provider=${providerId}`;
+  const logPrefix = `WS handler | vk=${vkDisplay}`;
 
   const pendingMessages: Array<{ data: WebSocket.RawData; isBinary: boolean }> = [];
   let dispatchMessage: ((data: WebSocket.RawData, isBinary: boolean) => void) | null = null;
@@ -115,37 +112,7 @@ export async function handleResponsesWebSocket(
   socket.once('close', () => { socketClosedEarly = true; });
 
   try {
-    const configResult = await buildProviderConfig(provider, virtualKey, virtualKeyValue, providerId, request, currentModel);
     if (socketClosedEarly) return;
-
-    if ('code' in configResult) {
-      memoryLogger.error(`${logPrefix} | Provider config error: ${configResult.body.error.message}`, 'WebSocket');
-      sendErrorAndClose(socket, configResult.body.error.message, ERROR_CODES.PROVIDER_CONFIG_ERROR, WS_CLOSE_CODES.POLICY_VIOLATION);
-      return;
-    }
-
-    const { protocolConfig, path } = configResult;
-
-    if (protocolConfig.protocol !== 'openai') {
-      memoryLogger.error(
-        `${logPrefix} | Provider protocol '${protocolConfig.protocol}' does not support WebSocket transport`,
-        'WebSocket'
-      );
-      sendErrorAndClose(socket, 'Provider protocol does not support WebSocket transport', ERROR_CODES.UNSUPPORTED_CLIENT_EVENT, WS_CLOSE_CODES.POLICY_VIOLATION);
-      return;
-    }
-
-    if (!protocolConfig.baseUrl) {
-      memoryLogger.error(`${logPrefix} | Provider has no base URL configured`, 'WebSocket');
-      sendErrorAndClose(socket, 'Provider has no base URL configured', ERROR_CODES.MISSING_UPSTREAM, WS_CLOSE_CODES.POLICY_VIOLATION);
-      return;
-    }
-
-    if (!protocolConfig.apiKey) {
-      memoryLogger.error(`${logPrefix} | Provider has no API key configured`, 'WebSocket');
-      sendErrorAndClose(socket, 'Provider has no API key configured', ERROR_CODES.MISSING_UPSTREAM, WS_CLOSE_CODES.POLICY_VIOLATION);
-      return;
-    }
 
     const maxDurationMs = 10 * 60 * 1000;
     const idleTimeoutMs = 5 * 60 * 1000;
@@ -205,16 +172,25 @@ export async function handleResponsesWebSocket(
 
       let result: ResponsesStreamResult | undefined;
       let success = false;
+      let turnConfig: WsTurnConfig | undefined;
 
       try {
         const normalizedRequest = normalizeResponseCreate(requestBody);
+        turnConfig = await resolveWebSocketTurnConfig(
+          request,
+          virtualKey,
+          virtualKeyValue,
+          normalizedRequest
+        );
+        const { protocolConfig, path, providerId } = turnConfig;
+        const providerLogPrefix = `${logPrefix} | provider=${providerId}`;
         const mode = resolveTransportMode(true, protocolConfig.upstreamTransport ?? 'http_sse');
 
-        memoryLogger.info(`${logPrefix} | Transport mode: ${mode}`, 'WebSocket');
+        memoryLogger.info(`${providerLogPrefix} | Transport mode: ${mode}`, 'WebSocket');
 
         const maxDurationTimer = maxDurationMs > 0
           ? setTimeout(() => {
-              memoryLogger.info(`${logPrefix} | Max duration reached, aborting`, 'WebSocket');
+              memoryLogger.info(`${providerLogPrefix} | Max duration reached, aborting`, 'WebSocket');
               abortController.abort();
             }, maxDurationMs)
           : undefined;
@@ -277,8 +253,8 @@ export async function handleResponsesWebSocket(
         const duration = Date.now() - turnStartTime;
         logApiRequestToDb({
           virtualKey,
-          providerId,
-          model: protocolConfig.model || 'unknown',
+          providerId: turnConfig?.providerId || 'unknown',
+          model: turnConfig?.protocolConfig?.model || normalizedModelFromRequest(requestBody) || 'unknown',
           tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           status: 'error',
           responseTime: duration,
@@ -354,6 +330,72 @@ export async function handleResponsesWebSocket(
       sendErrorAndClose(socket, errorMessage, ERROR_CODES.HANDLER_ERROR, WS_CLOSE_CODES.INTERNAL_ERROR);
     }
   }
+}
+
+export async function resolveWebSocketTurnConfig(
+  request: FastifyRequest,
+  virtualKey: any,
+  virtualKeyValue: string,
+  normalizedRequest: NormalizedResponsesRequest
+): Promise<WsTurnConfig> {
+  const turnRequest = buildTurnRequest(request, normalizedRequest.body);
+  const modelResult = await resolveModelAndProvider(virtualKey, turnRequest, virtualKeyValue);
+
+  if ('code' in modelResult) {
+    throw errorFromGatewayPayload(modelResult.body.error.message, ERROR_CODES.UNSUPPORTED_CLIENT_EVENT);
+  }
+
+  const { provider, providerId, currentModel } = modelResult;
+  const configResult = await buildProviderConfig(provider, virtualKey, virtualKeyValue, providerId, turnRequest, currentModel);
+
+  if ('code' in configResult) {
+    throw errorFromGatewayPayload(configResult.body.error.message, ERROR_CODES.PROVIDER_CONFIG_ERROR);
+  }
+
+  const { protocolConfig, path } = configResult;
+
+  if (protocolConfig.protocol !== 'openai') {
+    throw errorFromGatewayPayload('Provider protocol does not support WebSocket transport', ERROR_CODES.UNSUPPORTED_CLIENT_EVENT);
+  }
+
+  if (!protocolConfig.baseUrl) {
+    throw errorFromGatewayPayload('Provider has no base URL configured', ERROR_CODES.MISSING_UPSTREAM);
+  }
+
+  if (!protocolConfig.apiKey) {
+    throw errorFromGatewayPayload('Provider has no API key configured', ERROR_CODES.MISSING_UPSTREAM);
+  }
+
+  return {
+    provider,
+    providerId,
+    currentModel,
+    protocolConfig,
+    path,
+  };
+}
+
+function buildTurnRequest(request: FastifyRequest, body: any): FastifyRequest {
+  return {
+    body,
+    headers: request.headers,
+    url: request.url,
+    method: request.method,
+    protocol: 'openai',
+  } as any;
+}
+
+function errorFromGatewayPayload(message: string, code: string): Error {
+  const error = new Error(message);
+  (error as any).code = code;
+  return error;
+}
+
+function normalizedModelFromRequest(requestBody: any): string | undefined {
+  if (requestBody?.type === 'response.create' && requestBody?.response && typeof requestBody.response === 'object') {
+    return typeof requestBody.response.model === 'string' ? requestBody.response.model : undefined;
+  }
+  return typeof requestBody?.model === 'string' ? requestBody.model : undefined;
 }
 
 function sendGatewayError(socket: WsWebSocket, message: string, code: string) {
