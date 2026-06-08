@@ -1,12 +1,11 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
+import { test, expect } from 'vitest';
 
 import { CircuitBreaker, CircuitState } from './circuit-breaker.js';
 
 test('CircuitBreaker defaults cooldown timeout to 10 seconds', () => {
   const breaker = new CircuitBreaker();
 
-  assert.equal((breaker as any).config.timeout, 10_000);
+  expect((breaker as any).config.timeout).toBe(10_000);
 });
 
 test('CircuitBreaker isolates different model scopes under same provider', () => {
@@ -22,8 +21,8 @@ test('CircuitBreaker isolates different model scopes under same provider', () =>
 
   breaker.recordFailure(modelAcKey, new Error('upstream failed'));
 
-  assert.equal(breaker.isAvailable(modelAcKey), false);
-  assert.equal(breaker.isAvailable(modelAdKey), true);
+  expect(breaker.isAvailable(modelAcKey)).toBe(false);
+  expect(breaker.isAvailable(modelAdKey)).toBe(true);
 });
 
 test('CircuitBreaker keeps provider-level key behavior unchanged', () => {
@@ -38,7 +37,7 @@ test('CircuitBreaker keeps provider-level key behavior unchanged', () => {
 
   breaker.recordFailure(providerKey, new Error('upstream failed'));
 
-  assert.equal(breaker.isAvailable(providerKey), false);
+  expect(breaker.isAvailable(providerKey)).toBe(false);
 });
 
 test('CircuitBreaker keeps OPEN state unavailable during cooldown', async () => {
@@ -53,12 +52,12 @@ test('CircuitBreaker keeps OPEN state unavailable during cooldown', async () => 
 
   breaker.recordFailure(providerKey, new Error('upstream failed'));
 
-  assert.equal(breaker.getState(providerKey), CircuitState.OPEN);
-  assert.equal(breaker.isAvailable(providerKey), false);
+  expect(breaker.getState(providerKey)).toBe(CircuitState.OPEN);
+  expect(breaker.isAvailable(providerKey)).toBe(false);
 
   await new Promise(resolve => setTimeout(resolve, 25));
 
-  assert.equal(breaker.getState(providerKey), CircuitState.OPEN);
+  expect(breaker.getState(providerKey)).toBe(CircuitState.OPEN);
 });
 
 test('CircuitBreaker limits HALF_OPEN attempts by halfOpenMaxAttempts after cooldown', async () => {
@@ -75,9 +74,9 @@ test('CircuitBreaker limits HALF_OPEN attempts by halfOpenMaxAttempts after cool
 
   await new Promise(resolve => setTimeout(resolve, 50));
 
-  assert.equal(breaker.isAvailable(providerKey), true);
-  assert.equal(breaker.isAvailable(providerKey), true);
-  assert.equal(breaker.isAvailable(providerKey), false);
+  expect(breaker.isAvailable(providerKey)).toBe(true);
+  expect(breaker.isAvailable(providerKey)).toBe(true);
+  expect(breaker.isAvailable(providerKey)).toBe(false);
 });
 
 test('CircuitBreaker closes when HALF_OPEN successes reach successThreshold', async () => {
@@ -94,15 +93,15 @@ test('CircuitBreaker closes when HALF_OPEN successes reach successThreshold', as
 
   await new Promise(resolve => setTimeout(resolve, 50));
 
-  assert.equal(breaker.isAvailable(providerKey), true);
+  expect(breaker.isAvailable(providerKey)).toBe(true);
   breaker.recordSuccess(providerKey);
-  assert.equal(breaker.getState(providerKey), CircuitState.HALF_OPEN);
+  expect(breaker.getState(providerKey)).toBe(CircuitState.HALF_OPEN);
 
-  assert.equal(breaker.isAvailable(providerKey), true);
+  expect(breaker.isAvailable(providerKey)).toBe(true);
   breaker.recordSuccess(providerKey);
 
-  assert.equal(breaker.getState(providerKey), CircuitState.CLOSED);
-  assert.equal(breaker.isAvailable(providerKey), true);
+  expect(breaker.getState(providerKey)).toBe(CircuitState.CLOSED);
+  expect(breaker.isAvailable(providerKey)).toBe(true);
 });
 
 test('CircuitBreaker reopens when HALF_OPEN attempt fails', async () => {
@@ -119,20 +118,18 @@ test('CircuitBreaker reopens when HALF_OPEN attempt fails', async () => {
 
   await new Promise(resolve => setTimeout(resolve, 50));
 
-  assert.equal(breaker.isAvailable(providerKey), true);
+  expect(breaker.isAvailable(providerKey)).toBe(true);
   breaker.recordFailure(providerKey, new Error('half open failed'));
 
-  assert.equal(breaker.getState(providerKey), CircuitState.OPEN);
-  assert.equal(breaker.isAvailable(providerKey), false);
+  expect(breaker.getState(providerKey)).toBe(CircuitState.OPEN);
+  expect(breaker.isAvailable(providerKey)).toBe(false);
 });
 
 test('CircuitBreaker rejects halfOpenMaxAttempts < 1', () => {
-  assert.throws(
-    () => new CircuitBreaker({ halfOpenMaxAttempts: 0 }),
+  expect(() => new CircuitBreaker({ halfOpenMaxAttempts: 0 })).toThrow(
     /halfOpenMaxAttempts must be >= 1/
   );
-  assert.throws(
-    () => new CircuitBreaker({ halfOpenMaxAttempts: -1 }),
+  expect(() => new CircuitBreaker({ halfOpenMaxAttempts: -1 })).toThrow(
     /halfOpenMaxAttempts must be >= 1/
   );
 });

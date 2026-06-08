@@ -1,5 +1,4 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
+import { test, expect } from 'vitest';
 
 import { ProtocolAdapter } from './protocol-adapter.js';
 
@@ -26,8 +25,6 @@ test('ProtocolAdapter.streamResponse passthroughs prompt_cache_key (stream)', as
 
   let capturedRequestParams: any | undefined;
 
-  // Avoid touching the real OpenAI SDK by replacing the internal client getter.
-  // ("private" is compile-time only in TS; we can patch at runtime in tests.)
   (adapter as any).getOpenAIClient = () => ({
     responses: {
       create: async (requestParams: any) => {
@@ -35,7 +32,6 @@ test('ProtocolAdapter.streamResponse passthroughs prompt_cache_key (stream)', as
 
         async function* gen() {
           yield { type: 'response.created', response: { id: 'resp_1' } };
-          // Ensure the stream produces assistant output so the empty-output guard passes.
           yield { type: 'response.output_text.delta', delta: { text: 'ok' } };
           yield {
             type: 'response.completed',
@@ -71,6 +67,6 @@ test('ProtocolAdapter.streamResponse passthroughs prompt_cache_key (stream)', as
     undefined
   );
 
-  assert.ok(capturedRequestParams, 'expected requestParams to be captured');
-  assert.equal(capturedRequestParams.prompt_cache_key, 'ses_42e5e5a87ffeIH340Wl8gLbVJt');
+  expect(capturedRequestParams).toBeTruthy();
+  expect(capturedRequestParams.prompt_cache_key).toBe('ses_42e5e5a87ffeIH340Wl8gLbVJt');
 });

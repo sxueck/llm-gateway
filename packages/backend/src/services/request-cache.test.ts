@@ -1,5 +1,4 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
+import { test, expect } from 'vitest';
 
 import { RequestCache } from './request-cache.js';
 
@@ -9,9 +8,9 @@ test('RequestCache destroy clears timer and cached entries', () => {
 
   cache.destroy();
 
-  assert.equal((cache as any).cleanupInterval, null);
-  assert.equal(cache.getStats().size, 0);
-  assert.equal(cache.get('destroy-key'), null);
+  expect((cache as any).cleanupInterval).toBeNull();
+  expect(cache.getStats().size).toBe(0);
+  expect(cache.get('destroy-key')).toBeNull();
 });
 
 test('RequestCache removes stale entry when oversize update cannot fit', () => {
@@ -26,9 +25,9 @@ test('RequestCache removes stale entry when oversize update cannot fit', () => {
 
     cache.set('same-key', 'x'.repeat(64), {});
 
-    assert.equal(cache.get('same-key'), null);
-    assert.equal(cache.getStats().size, 0);
-    assert.equal(cache.getStats().totalBytes, 0);
+    expect(cache.get('same-key')).toBeNull();
+    expect(cache.getStats().size).toBe(0);
+    expect(cache.getStats().totalBytes).toBe(0);
   } finally {
     cache.destroy();
   }
@@ -44,14 +43,14 @@ test('RequestCache returns isolated response copies on cache hits', () => {
     }, { 'content-type': 'application/json' });
 
     const firstHit = cache.get('json-key');
-    assert.ok(firstHit);
-    delete firstHit.response.choices[0].message.instructions;
-    firstHit.headers['content-type'] = 'text/plain';
+    expect(firstHit).toBeTruthy();
+    delete firstHit!.response.choices[0].message.instructions;
+    firstHit!.headers['content-type'] = 'text/plain';
 
     const secondHit = cache.get('json-key');
-    assert.ok(secondHit);
-    assert.equal(secondHit.response.choices[0].message.instructions, 'debug');
-    assert.equal(secondHit.headers['content-type'], 'application/json');
+    expect(secondHit).toBeTruthy();
+    expect(secondHit!.response.choices[0].message.instructions).toBe('debug');
+    expect(secondHit!.headers['content-type']).toBe('application/json');
   } finally {
     cache.destroy();
   }
