@@ -19,6 +19,11 @@ export interface AnthropicContentBlock {
     | 'server_tool_use'
     | 'web_search_tool_result'
     | 'web_fetch_tool_result'
+    | 'code_execution_tool_result'
+    | 'bash_code_execution_tool_result'
+    | 'text_editor_code_execution_tool_result'
+    | 'tool_search_tool_result'
+    | 'container_upload'
     | 'thinking'
     | 'redacted_thinking'
     | 'compaction'
@@ -114,6 +119,13 @@ export interface AnthropicUsage {
     ephemeral_5m_input_tokens?: number;
     ephemeral_1h_input_tokens?: number;
   };
+  output_tokens_details?: {
+    thinking_tokens: number;
+  };
+  server_tool_use?: {
+    web_search_requests: number;
+    web_fetch_requests: number;
+  };
   iterations?: Array<{
     type: string;
     input_tokens: number;
@@ -139,6 +151,15 @@ export interface AnthropicResponse {
     | 'model_context_window_exceeded'
     | null;
   stop_sequence: string | null;
+  stop_details?: {
+    type: 'refusal';
+    category?: 'cyber' | 'bio' | null;
+    explanation?: string | null;
+  } | null;
+  container?: {
+    id: string;
+    expires_at: string;
+  } | null;
   usage: AnthropicUsage;
 }
 

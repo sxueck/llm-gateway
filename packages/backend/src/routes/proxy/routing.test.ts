@@ -1,5 +1,4 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
+import { test, expect } from 'vitest';
 
 import { circuitBreaker } from '../../services/circuit-breaker.js';
 import { getTargetKey, hasAvailableRoutingTargets, selectRoutingTarget, getAnonymousAffinityTargetKey, countExplicitSessionBindings, type RoutingConfig } from './routing.js';
@@ -23,7 +22,7 @@ test('selectRoutingTarget rotates loadbalance targets without weights', () => {
     selectRoutingTarget(config, 'loadbalance', 'loadbalance-rotation-test-1')?.provider,
   ];
 
-  assert.deepEqual(selectedProviders, ['provider-a', 'provider-b', 'provider-c', 'provider-a']);
+  expect(selectedProviders).toEqual(['provider-a', 'provider-b', 'provider-c', 'provider-a']);
 });
 
 test('selectRoutingTarget excludes only the failed target key under same provider', () => {
@@ -46,8 +45,8 @@ test('selectRoutingTarget excludes only the failed target key under same provide
     new Set([failedTargetKey])
   );
 
-  assert.equal(selectedTarget?.provider, 'provider-a');
-  assert.equal(selectedTarget?.override_params?.model, 'model-2');
+  expect(selectedTarget?.provider).toBe('provider-a');
+  expect(selectedTarget?.override_params?.model).toBe('model-2');
 });
 
 test('selectRoutingTarget prefers highest remaining weight during loadbalance retry', () => {
@@ -70,7 +69,7 @@ test('selectRoutingTarget prefers highest remaining weight during loadbalance re
     new Set([getTargetKey(config.targets[0]!)])
   );
 
-  assert.equal(selectedTarget?.provider, 'provider-b');
+  expect(selectedTarget?.provider).toBe('provider-b');
 });
 
 test('selectRoutingTarget keeps round-robin order when a middle target is excluded', () => {
@@ -97,10 +96,10 @@ test('selectRoutingTarget keeps round-robin order when a middle target is exclud
   );
   const fourthTarget = selectRoutingTarget(config, 'loadbalance', configId);
 
-  assert.equal(firstTarget?.provider, 'provider-a');
-  assert.equal(secondTarget?.provider, 'provider-b');
-  assert.equal(thirdTarget?.provider, 'provider-c');
-  assert.equal(fourthTarget?.provider, 'provider-a');
+  expect(firstTarget?.provider).toBe('provider-a');
+  expect(secondTarget?.provider).toBe('provider-b');
+  expect(thirdTarget?.provider).toBe('provider-c');
+  expect(fourthTarget?.provider).toBe('provider-a');
 });
 
 test('hasAvailableRoutingTargets returns false after all targets are excluded', () => {
@@ -116,8 +115,8 @@ test('hasAvailableRoutingTargets returns false after all targets are excluded', 
 
   const excludedTargetKeys = new Set(config.targets.map(target => getTargetKey(target)));
 
-  assert.equal(hasAvailableRoutingTargets(config, excludedTargetKeys), false);
-  assert.equal(selectRoutingTarget(config, 'loadbalance', 'all-targets-excluded-test-1', undefined, excludedTargetKeys), null);
+  expect(hasAvailableRoutingTargets(config, excludedTargetKeys)).toBe(false);
+  expect(selectRoutingTarget(config, 'loadbalance', 'all-targets-excluded-test-1', undefined, excludedTargetKeys)).toBeNull();
 });
 
 test('affinity reroutes to the next weighted target and keeps affinity there', () => {
@@ -147,9 +146,9 @@ test('affinity reroutes to the next weighted target and keeps affinity there', (
     );
     const stickyTarget = selectRoutingTarget(config, 'affinity', 'affinity-reroute-test-1', affinityKey);
 
-    assert.equal(firstTarget?.provider, 'provider-a');
-    assert.equal(reroutedTarget?.provider, 'provider-b');
-    assert.equal(stickyTarget?.provider, 'provider-b');
+    expect(firstTarget?.provider).toBe('provider-a');
+    expect(reroutedTarget?.provider).toBe('provider-b');
+    expect(stickyTarget?.provider).toBe('provider-b');
   } finally {
     Math.random = originalRandom;
   }
@@ -199,10 +198,10 @@ test('affinity selects each new explicit session independently by weight', () =>
       'session-2'
     );
 
-    assert.equal(firstSessionFirstTarget?.provider, 'provider-a');
-    assert.equal(secondSessionFirstTarget?.provider, 'provider-b');
-    assert.equal(firstSessionStickyTarget?.provider, 'provider-a');
-    assert.equal(secondSessionStickyTarget?.provider, 'provider-b');
+    expect(firstSessionFirstTarget?.provider).toBe('provider-a');
+    expect(secondSessionFirstTarget?.provider).toBe('provider-b');
+    expect(firstSessionStickyTarget?.provider).toBe('provider-a');
+    expect(secondSessionStickyTarget?.provider).toBe('provider-b');
   } finally {
     Math.random = originalRandom;
   }
@@ -235,7 +234,7 @@ test('loadbalance retry can probe a half-open target after all healthy targets a
       new Set([getTargetKey(config.targets[0]!)])
     );
 
-    assert.equal(selectedTarget?.provider, 'provider-b');
+    expect(selectedTarget?.provider).toBe('provider-b');
   } finally {
     (circuitBreaker as any).config.timeout = originalTimeout;
     circuitBreaker.resetAll();
@@ -263,7 +262,7 @@ test('hasAvailableRoutingTargets does not consume half-open attempts during pass
     circuitBreaker.recordFailure(getTargetKey(config.targets[0]!), new Error('provider-a down'));
     await new Promise(resolve => setTimeout(resolve, 20));
 
-    assert.equal(hasAvailableRoutingTargets(config, new Set([getTargetKey(config.targets[1]!)])), true);
+    expect(hasAvailableRoutingTargets(config, new Set([getTargetKey(config.targets[1]!)]))).toBe(true);
 
     const selectedTarget = selectRoutingTarget(
       config,
@@ -273,7 +272,7 @@ test('hasAvailableRoutingTargets does not consume half-open attempts during pass
       new Set([getTargetKey(config.targets[1]!)])
     );
 
-    assert.equal(selectedTarget?.provider, 'provider-a');
+    expect(selectedTarget?.provider).toBe('provider-a');
   } finally {
     (circuitBreaker as any).config.timeout = originalTimeout;
     (circuitBreaker as any).config.halfOpenMaxAttempts = originalHalfOpenMaxAttempts;
@@ -306,9 +305,9 @@ test('selectRoutingTarget does not spend half-open attempts on unselected fallba
     const selectedTarget = selectRoutingTarget(config, 'fallback', 'fallback-half-open-spend-test-1');
     const halfOpenStats = circuitBreaker.getProviderStats(getTargetKey(config.targets[1]!));
 
-    assert.equal(selectedTarget?.provider, 'provider-a');
-    assert.equal(halfOpenStats.state, 'OPEN');
-    assert.equal(halfOpenStats.halfOpenAttempts, 0);
+    expect(selectedTarget?.provider).toBe('provider-a');
+    expect(halfOpenStats.state).toBe('OPEN');
+    expect(halfOpenStats.halfOpenAttempts).toBe(0);
   } finally {
     (circuitBreaker as any).config.timeout = originalTimeout;
     (circuitBreaker as any).config.halfOpenMaxAttempts = originalHalfOpenMaxAttempts;
@@ -345,9 +344,9 @@ test('fallback periodically probes cooled-down targets even when one healthy tar
       selectRoutingTarget(config, 'fallback', 'fallback-half-open-probe-test-1')?.provider
     );
 
-    assert.equal(selectedProviders.filter(provider => provider === 'provider-a').length, 18);
-    assert.equal(selectedProviders.filter(provider => provider === 'provider-b').length, 1);
-    assert.equal(selectedProviders.filter(provider => provider === 'provider-c').length, 1);
+    expect(selectedProviders.filter(provider => provider === 'provider-a').length).toBe(18);
+    expect(selectedProviders.filter(provider => provider === 'provider-b').length).toBe(1);
+    expect(selectedProviders.filter(provider => provider === 'provider-c').length).toBe(1);
   } finally {
     (circuitBreaker as any).config.timeout = originalTimeout;
     (circuitBreaker as any).config.halfOpenMaxAttempts = originalHalfOpenMaxAttempts;
@@ -369,13 +368,13 @@ test('getAnonymousAffinityTargetKey returns the sticky target for anonymous affi
   const selected = selectRoutingTarget(config, 'affinity', 'anonymous-affinity-test-2');
   const stickyKey = getAnonymousAffinityTargetKey('anonymous-affinity-test-2');
 
-  assert.equal(stickyKey, getTargetKey(selected!));
-  assert.equal(countExplicitSessionBindings('anonymous-affinity-test-2', getTargetKey(selected!)), 0);
+  expect(stickyKey).toBe(getTargetKey(selected!));
+  expect(countExplicitSessionBindings('anonymous-affinity-test-2', getTargetKey(selected!))).toBe(0);
 });
 
 test('getAnonymousAffinityTargetKey returns null when no anonymous affinity exists', () => {
   const stickyKey = getAnonymousAffinityTargetKey('nonexistent-config-id');
-  assert.equal(stickyKey, null);
+  expect(stickyKey).toBeNull();
 });
 
 test('countExplicitSessionBindings counts only non-expired explicit sessions for a target', () => {
@@ -393,8 +392,8 @@ test('countExplicitSessionBindings counts only non-expired explicit sessions for
   selectRoutingTarget(config, 'affinity', 'explicit-binding-test-1', 'session-2');
   selectRoutingTarget(config, 'affinity', 'explicit-binding-test-1', 'session-3');
 
-  assert.equal(countExplicitSessionBindings('explicit-binding-test-1', getTargetKey(config.targets[0]!)), 2);
-  assert.equal(countExplicitSessionBindings('explicit-binding-test-1', getTargetKey(config.targets[1]!)), 1);
+  expect(countExplicitSessionBindings('explicit-binding-test-1', getTargetKey(config.targets[0]!))).toBe(2);
+  expect(countExplicitSessionBindings('explicit-binding-test-1', getTargetKey(config.targets[1]!))).toBe(1);
 });
 
 test('hash mode does not drift target when probe mechanism is triggered', async () => {
@@ -429,13 +428,9 @@ test('hash mode does not drift target when probe mechanism is triggered', async 
       selectedProviders.push(selectRoutingTarget(config, 'hash', 'hash-probe-stability-test-1', hashKey)?.provider);
     }
 
-    // 所有请求应该返回同一个 provider，不因 probe 机制而漂移
     const firstProvider = selectedProviders[0];
-    assert.ok(firstProvider, 'First request should select a provider');
-    assert.ok(
-      selectedProviders.every(p => p === firstProvider),
-      `Hash routing should be stable: all 20 requests should return ${firstProvider}, but got variations`
-    );
+    expect(firstProvider).toBeTruthy();
+    expect(selectedProviders.every(p => p === firstProvider)).toBe(true);
   } finally {
     (circuitBreaker as any).config.timeout = originalTimeout;
     (circuitBreaker as any).config.halfOpenMaxAttempts = originalHalfOpenMaxAttempts;
@@ -475,13 +470,9 @@ test('affinity mode does not drift target when probe mechanism is triggered', as
       selectedProviders.push(selectRoutingTarget(config, 'affinity', 'affinity-probe-stability-test-1', sessionId)?.provider);
     }
 
-    // 所有请求应该返回同一个 provider（粘性绑定），不因 probe 机制而漂移
     const firstProvider = selectedProviders[0];
-    assert.ok(firstProvider, 'First request should select a provider');
-    assert.ok(
-      selectedProviders.every(p => p === firstProvider),
-      `Affinity routing should be sticky: all 20 requests should return ${firstProvider}, but got variations`
-    );
+    expect(firstProvider).toBeTruthy();
+    expect(selectedProviders.every(p => p === firstProvider)).toBe(true);
   } finally {
     (circuitBreaker as any).config.timeout = originalTimeout;
     (circuitBreaker as any).config.halfOpenMaxAttempts = originalHalfOpenMaxAttempts;
