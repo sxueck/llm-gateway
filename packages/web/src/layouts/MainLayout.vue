@@ -120,6 +120,7 @@ import {
   CashOutline,
   MenuOutline,
   SpeedometerOutline,
+  TrendingUpOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
@@ -144,6 +145,7 @@ const mainMenuParentByKey: Record<string, string> = {
   'expert-routing': 'experimental-features',
   'cost-analysis': 'experimental-features',
   'performance-monitoring': 'experimental-features',
+  'traffic-analysis': 'experimental-features',
   'api-guide': 'tools',
   logs: 'tools',
   'api-requests': 'tools',
@@ -253,6 +255,11 @@ const menuOptions = computed(() => [
         label: t('menu.performanceMonitoring'),
         key: 'performance-monitoring',
         icon: () => h(NIcon, null, { default: () => h(SpeedometerOutline) }),
+      },
+      {
+        label: t('menu.trafficAnalysis'),
+        key: 'traffic-analysis',
+        icon: () => h(NIcon, null, { default: () => h(TrendingUpOutline) }),
       },
     ],
   },
