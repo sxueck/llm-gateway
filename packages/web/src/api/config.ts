@@ -356,9 +356,11 @@ export interface TrafficAnalysisResponse {
   availableDays: number;
   region: string | null;
   modelInfo: {
-    features: 8;
-    lambda: number;
+    type: 'weekly-empirical';
     trainingSamples: number;
+    priorStrength: number;
+    workdayProfile: number[];
+    nonWorkdayProfile: number[];
   };
   generatedAt: number;
 }
