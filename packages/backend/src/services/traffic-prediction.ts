@@ -184,6 +184,126 @@ export function predict(theta: number[], timestampMs: number, isWorkday: boolean
   return Math.max(0, rawValue);
 }
 
+const DAY_TYPES = 2 as const; // index 0 = 非工作日, 1 = 工作日
+const DAYS_OF_WEEK = 7 as const;
+const HOURS_OF_DAY = 24 as const;
+const DEFAULT_PRIOR_STRENGTH = 3;
+
+export interface WeeklyEmpiricalModel {
+  fineSum: number[][][]; // [dayType][dayOfWeek][hour]
+  fineCount: number[][][];
+  clusterSum: number[][]; // [dayType][hour]
+  clusterCount: number[][];
+  globalSum: number[]; // [hour]
+  globalCount: number[];
+  priorStrength: number;
+  trainingSamples: number;
+}
+
+function zeros3(): number[][][] {
+  return Array.from({ length: DAY_TYPES }, () =>
+    Array.from({ length: DAYS_OF_WEEK }, () => Array(HOURS_OF_DAY).fill(0)));
+}
+
+function zeros2(): number[][] {
+  return Array.from({ length: DAY_TYPES }, () => Array(HOURS_OF_DAY).fill(0));
+}
+
+/**
+ * 收缩估计（经验贝叶斯）：把细粒度样本均值向更粗粒度的先验收缩。
+ * 当样本数 count 较少时偏向先验，count 越大越相信自身均值。
+ */
+function shrink(sum: number, count: number, prior: number, k: number): number {
+  if (count <= 0) {
+    return prior;
+  }
+  return (sum + k * prior) / (count + k);
+}
+
+/**
+ * 周节律经验模型：以 (星期几 × 小时) 为最细粒度直接从网关历史学习周期规律，
+ * 不再硬编码“工作日=白天”这一语义先验——夜间工作者、周末重度、24/7 等节律都由数据自行呈现。
+ *
+ * 采用三层收缩(细→簇→全局)缓解 14 天窗口下每格样本稀疏的问题：
+ *   细粒度 (dayType × 星期几 × 小时) → 簇 (dayType × 小时) → 全局 (小时)。
+ * dayType 由 isWorkday(由地区节假日日历判定)给出，因此：
+ *   - 区域感知天然继承；
+ *   - 法定节假日(工作日历中的非工作日)会落入非工作日簇，按周末规律预测，而不会污染正常工作日的格子；
+ *   - 调休补班日(周末但 isWorkday=true)则落入工作日簇，按工作日规律预测。
+ */
+export function trainWeeklyEmpirical(
+  samples: TrainingData[],
+  priorStrength: number = DEFAULT_PRIOR_STRENGTH
+): WeeklyEmpiricalModel {
+  const fineSum = zeros3();
+  const fineCount = zeros3();
+  const clusterSum = zeros2();
+  const clusterCount = zeros2();
+  const globalSum = Array(HOURS_OF_DAY).fill(0);
+  const globalCount = Array(HOURS_OF_DAY).fill(0);
+  let trainingSamples = 0;
+
+  for (const sample of samples) {
+    if (!Number.isFinite(sample.count) || sample.count < 0) {
+      continue;
+    }
+
+    const hour = getLocalHour(sample.timestampMs);
+    const dayOfWeek = getLocalDayOfWeek(sample.timestampMs);
+    const dayType = sample.isWorkday ? 1 : 0;
+
+    fineSum[dayType][dayOfWeek][hour] += sample.count;
+    fineCount[dayType][dayOfWeek][hour] += 1;
+    clusterSum[dayType][hour] += sample.count;
+    clusterCount[dayType][hour] += 1;
+    globalSum[hour] += sample.count;
+    globalCount[hour] += 1;
+
+    trainingSamples += 1;
+  }
+
+  return {
+    fineSum,
+    fineCount,
+    clusterSum,
+    clusterCount,
+    globalSum,
+    globalCount,
+    priorStrength: Math.max(0, priorStrength),
+    trainingSamples,
+  };
+}
+
+export function predictWeeklyEmpirical(
+  model: WeeklyEmpiricalModel,
+  timestampMs: number,
+  isWorkday: boolean
+): number {
+  const hour = getLocalHour(timestampMs);
+  const dayOfWeek = getLocalDayOfWeek(timestampMs);
+  const dayType = isWorkday ? 1 : 0;
+  const k = model.priorStrength;
+
+  const global = model.globalCount[hour] > 0 ? model.globalSum[hour] / model.globalCount[hour] : 0;
+  const cluster = shrink(model.clusterSum[dayType][hour], model.clusterCount[dayType][hour], global, k);
+  const fine = shrink(model.fineSum[dayType][dayOfWeek][hour], model.fineCount[dayType][dayOfWeek][hour], cluster, k);
+
+  return Math.max(0, fine);
+}
+
+/**
+ * 导出某一 dayType 的簇级小时画像（向全局收缩后），用于展示/调试。
+ */
+export function clusterProfile(model: WeeklyEmpiricalModel, isWorkday: boolean): number[] {
+  const dayType = isWorkday ? 1 : 0;
+  const k = model.priorStrength;
+
+  return Array.from({ length: HOURS_OF_DAY }, (_, hour) => {
+    const global = model.globalCount[hour] > 0 ? model.globalSum[hour] / model.globalCount[hour] : 0;
+    return Math.max(0, shrink(model.clusterSum[dayType][hour], model.clusterCount[dayType][hour], global, k));
+  });
+}
+
 export function detectPeaks(predictions: HourlyPrediction[]): PeakWindow[] {
   if (predictions.length === 0) {
     return [];
@@ -255,5 +375,8 @@ export const trafficPredictionService = {
   buildFeatureVector,
   trainRidge,
   predict,
+  trainWeeklyEmpirical,
+  predictWeeklyEmpirical,
+  clusterProfile,
   detectPeaks,
 };
