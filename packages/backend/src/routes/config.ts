@@ -1252,7 +1252,13 @@ export async function configRoutes(fastify: FastifyInstance) {
       const nextHour = lastHourStart + hourMs;
       let prediction: import('../services/traffic-prediction.js').HourlyPrediction[];
       let peaks: import('../services/traffic-prediction.js').PeakWindow[];
-      let modelInfo: { features: 8; lambda: number; trainingSamples: number };
+      let modelInfo: {
+        type: 'weekly-empirical';
+        trainingSamples: number;
+        priorStrength: number;
+        workdayProfile: number[];
+        nonWorkdayProfile: number[];
+      };
 
       if (availableDays < 3) {
         prediction = Array.from({ length: 24 }, (_, i) => ({
@@ -1263,21 +1269,30 @@ export async function configRoutes(fastify: FastifyInstance) {
           isWorkday: workdayCalendarService.isWorkday(nextHour + i * hourMs, region),
         }));
         peaks = [];
-        modelInfo = { features: 8, lambda: 0.1, trainingSamples: 0 };
+        modelInfo = {
+          type: 'weekly-empirical',
+          trainingSamples: 0,
+          priorStrength: 3,
+          workdayProfile: Array(24).fill(0),
+          nonWorkdayProfile: Array(24).fill(0),
+        };
       } else {
-        const lambda = 0.1;
-        const trainingSamples: import('../services/traffic-prediction.js').TrainingData[] = trainingRaw.map(r => ({
-          timestampMs: r.timestampMs,
-          count: r.count,
-          isWorkday: workdayCalendarService.isWorkday(r.timestampMs, region),
-        }));
+        const trainingMap = new Map(trainingRaw.map(r => [r.timestampMs, r.count]));
+        const trainingSamples: import('../services/traffic-prediction.js').TrainingData[] = [];
+        for (let ts = trainingRaw[0].timestampMs; ts <= lastHourStart; ts += hourMs) {
+          trainingSamples.push({
+            timestampMs: ts,
+            count: trainingMap.get(ts) ?? 0,
+            isWorkday: workdayCalendarService.isWorkday(ts, region),
+          });
+        }
 
-        const theta = trafficPredictionService.trainRidge(trainingSamples, lambda);
+        const model = trafficPredictionService.trainWeeklyEmpirical(trainingSamples);
 
         prediction = Array.from({ length: 24 }, (_, i) => {
           const ts = nextHour + i * hourMs;
           const iwd = workdayCalendarService.isWorkday(ts, region);
-          const predictedCount = trafficPredictionService.predict(theta, ts, iwd);
+          const predictedCount = trafficPredictionService.predictWeeklyEmpirical(model, ts, iwd);
           return { timestamp: ts, predictedCount, isPeak: false, peakScore: 0, isWorkday: iwd };
         });
 
@@ -1295,7 +1310,13 @@ export async function configRoutes(fastify: FastifyInstance) {
           }
         }
 
-        modelInfo = { features: 8, lambda, trainingSamples: trainingSamples.length };
+        modelInfo = {
+          type: 'weekly-empirical',
+          trainingSamples: model.trainingSamples,
+          priorStrength: model.priorStrength,
+          workdayProfile: trafficPredictionService.clusterProfile(model, true),
+          nonWorkdayProfile: trafficPredictionService.clusterProfile(model, false),
+        };
       }
 
       return { actual, prediction, peaks, dataQuality, availableDays, region, modelInfo, generatedAt: now };
