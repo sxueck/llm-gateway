@@ -121,6 +121,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     const dashboardHideRequestSourceCardCfg = await systemConfigDb.get('dashboard_hide_request_source_card');
     const forwardClientUserAgentCfg = await systemConfigDb.get('forward_client_user_agent');
     const skipUpstreamSslVerifyCfg = await systemConfigDb.get('skip_upstream_ssl_verify');
+    const trafficAnalysisRegionCfg = await systemConfigDb.get('traffic_analysis_region');
     const antiBot = await loadAntiBotConfig();
 
     const now = Date.now();
@@ -139,6 +140,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       dashboardHideRequestSourceCard: dashboardHideRequestSourceCardCfg ? dashboardHideRequestSourceCardCfg.value === 'true' : false,
       forwardClientUserAgent: forwardClientUserAgentCfg ? forwardClientUserAgentCfg.value === 'true' : false,
       skipUpstreamSslVerify: skipUpstreamSslVerifyCfg ? skipUpstreamSslVerifyCfg.value === 'true' : false,
+      trafficAnalysisRegion: trafficAnalysisRegionCfg?.value || null,
       antiBot,
     };
   });
@@ -231,7 +233,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/system-settings', async (request) => {
-    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, dashboardHideRequestSourceCard, forwardClientUserAgent, skipUpstreamSslVerify, antiBot } = request.body as {
+    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, dashboardHideRequestSourceCard, forwardClientUserAgent, skipUpstreamSslVerify, trafficAnalysisRegion, antiBot } = request.body as {
       allowRegistration?: boolean;
       corsEnabled?: boolean;
       publicUrl?: string;
@@ -242,6 +244,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       dashboardHideRequestSourceCard?: boolean;
       forwardClientUserAgent?: boolean;
       skipUpstreamSslVerify?: boolean;
+      trafficAnalysisRegion?: string | null;
       antiBot?: {
         enabled?: boolean;
         blockBots?: boolean;
@@ -375,6 +378,15 @@ export async function configRoutes(fastify: FastifyInstance) {
           `Skip upstream SSL verification updated: ${skipUpstreamSslVerify ? 'enabled' : 'disabled'}`,
           'Config'
         );
+      }
+
+      if (trafficAnalysisRegion !== undefined) {
+        await systemConfigDb.set(
+          'traffic_analysis_region',
+          trafficAnalysisRegion || '',
+          '流量分析地区 (ISO 3166-1 alpha-2)'
+        );
+        memoryLogger.info(`流量分析地区已更新: ${trafficAnalysisRegion || '未设置'}`, 'Config');
       }
 
       if (publicUrl !== undefined) {
@@ -1197,6 +1209,115 @@ export async function configRoutes(fastify: FastifyInstance) {
     } catch (error: any) {
       memoryLogger.error(`获取性能监控指标失败: ${error.message}`, 'Config');
       throw error;
+    }
+  });
+
+  fastify.get('/stats/traffic-analysis', async (_request, reply) => {
+    try {
+      const { workdayCalendarService } = await import('../services/workday-calendar.js');
+      const { trafficPredictionService } = await import('../services/traffic-prediction.js');
+
+      // Ensure holiday modules are loaded (idempotent after first call)
+      await workdayCalendarService.initialize();
+
+      const regionCfg = await systemConfigDb.get('traffic_analysis_region');
+      const region = regionCfg?.value || null;
+
+      const now = Date.now();
+      const hourMs = 3600000;
+      const past24Start = now - 24 * hourMs;
+      const maxDays = 14;
+
+      const [actualRaw, trainingRaw] = await Promise.all([
+        apiRequestDb.getHourlyActual({ startTime: past24Start, endTime: now }),
+        apiRequestDb.getHourlyTrainingData({ days: maxDays }),
+      ]);
+
+      const availableDays = trainingRaw.length > 0
+        ? Math.ceil((now - trainingRaw[0].timestampMs) / (24 * hourMs))
+        : 0;
+
+      const lastHourStart = Math.floor(now / hourMs) * hourMs;
+
+      const dataQuality: 'insufficient' | 'low' | 'good' =
+        availableDays < 3 ? 'insufficient' : availableDays < 7 ? 'low' : 'good';
+
+      const actualMap = new Map(actualRaw.map(r => [r.timestampMs, r.count]));
+      const actual: { timestamp: number; count: number }[] = [];
+      for (let i = 23; i >= 0; i--) {
+        const ts = lastHourStart - i * hourMs;
+        actual.push({ timestamp: ts, count: actualMap.get(ts) ?? 0 });
+      }
+
+      const nextHour = lastHourStart + hourMs;
+      let prediction: import('../services/traffic-prediction.js').HourlyPrediction[];
+      let peaks: import('../services/traffic-prediction.js').PeakWindow[];
+      let modelInfo: { features: 8; lambda: number; trainingSamples: number };
+
+      if (availableDays < 3) {
+        prediction = Array.from({ length: 24 }, (_, i) => ({
+          timestamp: nextHour + i * hourMs,
+          predictedCount: 0,
+          isPeak: false,
+          peakScore: 0,
+          isWorkday: workdayCalendarService.isWorkday(nextHour + i * hourMs, region),
+        }));
+        peaks = [];
+        modelInfo = { features: 8, lambda: 0.1, trainingSamples: 0 };
+      } else {
+        const lambda = 0.1;
+        const trainingSamples: import('../services/traffic-prediction.js').TrainingData[] = trainingRaw.map(r => ({
+          timestampMs: r.timestampMs,
+          count: r.count,
+          isWorkday: workdayCalendarService.isWorkday(r.timestampMs, region),
+        }));
+
+        const theta = trafficPredictionService.trainRidge(trainingSamples, lambda);
+
+        prediction = Array.from({ length: 24 }, (_, i) => {
+          const ts = nextHour + i * hourMs;
+          const iwd = workdayCalendarService.isWorkday(ts, region);
+          const predictedCount = trafficPredictionService.predict(theta, ts, iwd);
+          return { timestamp: ts, predictedCount, isPeak: false, peakScore: 0, isWorkday: iwd };
+        });
+
+        peaks = trafficPredictionService.detectPeaks(prediction);
+
+        const mean = prediction.reduce((s, p) => s + p.predictedCount, 0) / 24;
+        for (const p of prediction) {
+          p.peakScore = mean > 0 ? (p.predictedCount - mean) / mean : 0;
+        }
+        for (const peak of peaks) {
+          for (const p of prediction) {
+            if (p.timestamp >= peak.startTimestamp && p.timestamp <= peak.endTimestamp) {
+              p.isPeak = true;
+            }
+          }
+        }
+
+        modelInfo = { features: 8, lambda, trainingSamples: trainingSamples.length };
+      }
+
+      return { actual, prediction, peaks, dataQuality, availableDays, region, modelInfo, generatedAt: now };
+    } catch (error: any) {
+      memoryLogger.error(`流量分析失败: ${error?.message}`, 'TrafficAnalysis');
+      return reply.code(500).send({
+        error: { message: error?.message || '流量分析失败', type: 'internal_error', code: 'traffic_analysis_error' },
+      });
+    }
+  });
+
+  fastify.get('/traffic-analysis-regions', async (_request, reply) => {
+    try {
+      const { workdayCalendarService } = await import('../services/workday-calendar.js');
+      await workdayCalendarService.initialize();
+      const countries = workdayCalendarService.getCountries();
+      const cn = countries.find(c => c.code === 'CN');
+      const rest = countries.filter(c => c.code !== 'CN').sort((a, b) => a.name.localeCompare(b.name));
+      return cn ? [cn, ...rest] : rest;
+    } catch (error: any) {
+      memoryLogger.error(`获取地区列表失败: ${error?.message}`, 'TrafficAnalysis');
+      return reply.code(500).send({ error: { message: '获取地区列表失败' } });
     }
   });
 

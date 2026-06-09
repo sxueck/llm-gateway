@@ -52,6 +52,9 @@ local-test
 ## MCP server files
 .serena
 
+## CodeGraph index
+.codegraph/
+
 ## AI Guidline
 AGENTS.md
 CLAUDE.md

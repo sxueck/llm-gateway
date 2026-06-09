@@ -8,11 +8,13 @@ export async function publicConfigRoutes(fastify: FastifyInstance) {
       const allowRegCfg = await systemConfigDb.get('allow_registration');
       const corsEnabledCfg = await systemConfigDb.get('cors_enabled');
       const dashboardHideRequestSourceCardCfg = await systemConfigDb.get('dashboard_hide_request_source_card');
+      const trafficAnalysisRegionCfg = await systemConfigDb.get('traffic_analysis_region');
 
       return {
         allowRegistration: !(allowRegCfg && allowRegCfg.value === 'false'),
         corsEnabled: corsEnabledCfg ? corsEnabledCfg.value === 'true' : true,
         dashboardHideRequestSourceCard: dashboardHideRequestSourceCardCfg ? dashboardHideRequestSourceCardCfg.value === 'true' : false,
+        trafficAnalysisRegion: trafficAnalysisRegionCfg?.value || null,
       };
     } catch (error: any) {
       memoryLogger.error(`获取系统配置失败: ${error.message}`, 'System');

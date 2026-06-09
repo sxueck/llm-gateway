@@ -999,4 +999,63 @@ export const apiRequestRepository = {
       conn.release();
     }
   },
+
+  async getHourlyTrainingData(options: { days: number }): Promise<{ timestampMs: number; count: number }[]> {
+    if (!Number.isFinite(options.days) || options.days <= 0) {
+      return [];
+    }
+
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const startMs = Date.now() - options.days * 24 * 60 * 60 * 1000;
+      const shanghaiOffset = 8 * 60 * 60 * 1000;
+      const hourMs = 3600000;
+      const loggingCondition = getDisableLoggingCondition();
+      const [rows] = await conn.query(
+        `SELECT
+          FLOOR((ar.created_at + ${shanghaiOffset}) / ${hourMs}) * ${hourMs} - ${shanghaiOffset} AS hour_bucket,
+          COUNT(*) AS cnt
+        FROM api_requests ar
+        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        WHERE ar.created_at >= ? AND ${loggingCondition}
+        GROUP BY hour_bucket
+        ORDER BY hour_bucket ASC`,
+        [startMs]
+      );
+      return (rows as any[]).map(r => ({
+        timestampMs: Number(r.hour_bucket),
+        count: Number(r.cnt),
+      }));
+    } finally {
+      conn.release();
+    }
+  },
+
+  async getHourlyActual(options: { startTime: number; endTime: number }): Promise<{ timestampMs: number; count: number }[]> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const shanghaiOffset = 8 * 60 * 60 * 1000;
+      const hourMs = 3600000;
+      const loggingCondition = getDisableLoggingCondition();
+      const [rows] = await conn.query(
+        `SELECT
+          FLOOR((ar.created_at + ${shanghaiOffset}) / ${hourMs}) * ${hourMs} - ${shanghaiOffset} AS hour_bucket,
+          COUNT(*) AS cnt
+        FROM api_requests ar
+        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        WHERE ar.created_at >= ? AND ar.created_at < ? AND ${loggingCondition}
+        GROUP BY hour_bucket
+        ORDER BY hour_bucket ASC`,
+        [options.startTime, options.endTime]
+      );
+      return (rows as any[]).map(r => ({
+        timestampMs: Number(r.hour_bucket),
+        count: Number(r.cnt),
+      }));
+    } finally {
+      conn.release();
+    }
+  },
 };
