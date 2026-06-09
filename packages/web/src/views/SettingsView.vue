@@ -93,6 +93,22 @@
             </n-text>
           </n-space>
 
+          <n-divider style="margin: 8px 0;" />
+
+          <n-space vertical :size="8" style="width: 100%;">
+            <div>
+              <div>{{ $t('settings.trafficAnalysisRegion') }}</div>
+              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.trafficAnalysisRegionDesc') }}</n-text>
+            </div>
+            <n-select
+              v-model:value="trafficAnalysisRegion"
+              :options="trafficAnalysisRegionOptions"
+              :placeholder="$t('settings.trafficAnalysisRegionPlaceholder')"
+              clearable
+              filterable
+              @update:value="onUpdateTrafficAnalysisRegion"
+            />
+          </n-space>
 
           <n-divider style="margin: 8px 0;" />
 
@@ -331,6 +347,8 @@ const corsEnabled = ref(true);
 const litellmCompatEnabled = ref(false);
 const publicUrl = ref('');
 const publicUrlInput = ref('');
+const trafficAnalysisRegion = ref<string | null>(null);
+const trafficAnalysisRegionOptions = ref<Array<{ label: string; value: string }>>([]);
 const savingPublicUrl = ref(false);
 const allUsers = ref<User[]>([]);
 
@@ -549,6 +567,28 @@ function onResetPublicUrl() {
   publicUrlInput.value = publicUrl.value;
 }
 
+async function onUpdateTrafficAnalysisRegion(value: string | null) {
+  try {
+    await configApi.updateSystemSettings({ trafficAnalysisRegion: value });
+    trafficAnalysisRegion.value = value;
+    message.success(t('messages.operationSuccess'));
+  } catch (error: any) {
+    message.error(error.message || t('messages.operationFailed'));
+  }
+}
+
+async function loadTrafficAnalysisRegions() {
+  try {
+    const regions = await configApi.getTrafficAnalysisRegions();
+    trafficAnalysisRegionOptions.value = regions.map(region => ({
+      label: `${region.code} - ${region.name}`,
+      value: region.code,
+    }));
+  } catch (error: any) {
+    message.error(error.message || t('messages.loadFailed'));
+  }
+}
+
 const enabledKeysCount = computed(() => {
   return virtualKeyStore.virtualKeys.filter(k => k.enabled).length;
 });
@@ -708,6 +748,7 @@ onMounted(async () => {
     litellmCompatEnabled.value = s.litellmCompatEnabled;
     publicUrl.value = s.publicUrl;
     publicUrlInput.value = s.publicUrl;
+    trafficAnalysisRegion.value = s.trafficAnalysisRegion ?? null;
     dashboardHideRequestSourceCard.value = s.dashboardHideRequestSourceCard || false;
     healthMonitoringEnabled.value = s.healthMonitoringEnabled || false;
     persistentMonitoringEnabled.value = s.persistentMonitoringEnabled || false;
@@ -725,6 +766,7 @@ onMounted(async () => {
       virtualKeyStore.fetchVirtualKeys(),
       loadHealthTargets(),
       loadAvailableModels(),
+      loadTrafficAnalysisRegions(),
     ]);
   } catch (error: any) {
     console.error('初始化设置页面失败:', error);

@@ -291,6 +291,7 @@ type SystemSettingsResponse = {
   dashboardHideRequestSourceCard: boolean;
   forwardClientUserAgent: boolean;
   skipUpstreamSslVerify: boolean;
+  trafficAnalysisRegion: string | null;
   antiBot: AntiBotSettings;
 };
 
@@ -298,6 +299,7 @@ type PublicSystemSettingsResponse = {
   allowRegistration: boolean;
   corsEnabled: boolean;
   dashboardHideRequestSourceCard: boolean;
+  trafficAnalysisRegion: string | null;
 };
 
 type UpdateSystemSettingsRequest = {
@@ -311,6 +313,7 @@ type UpdateSystemSettingsRequest = {
   dashboardHideRequestSourceCard?: boolean;
   forwardClientUserAgent?: boolean;
   skipUpstreamSslVerify?: boolean;
+  trafficAnalysisRegion?: string | null;
   antiBot?: {
     enabled?: boolean;
     blockBots?: boolean;
@@ -322,6 +325,45 @@ type UpdateSystemSettingsRequest = {
     blockedUserAgents?: string[];
   };
 };
+
+export interface HourlyActual {
+  timestamp: number;
+  count: number;
+}
+
+export interface HourlyPrediction {
+  timestamp: number;
+  predictedCount: number;
+  isPeak: boolean;
+  peakScore: number;
+  isWorkday: boolean;
+}
+
+export interface PeakWindow {
+  startTimestamp: number;
+  endTimestamp: number;
+  peakTimestamp: number;
+  peakCount: number;
+  avgBaseline: number;
+  surgeRatio: number;
+}
+
+export interface TrafficAnalysisResponse {
+  actual: HourlyActual[];
+  prediction: HourlyPrediction[];
+  peaks: PeakWindow[];
+  dataQuality: 'insufficient' | 'low' | 'good';
+  availableDays: number;
+  region: string | null;
+  modelInfo: {
+    features: 8;
+    lambda: number;
+    trainingSamples: number;
+  };
+  generatedAt: number;
+}
+
+export type TrafficAnalysisRegion = { code: string; name: string };
 
 type HealthTargetsResponse = { targets: any[] };
 
@@ -369,6 +411,8 @@ const ADMIN_SYSTEM_SETTINGS_PATH = adminConfigPath('/system-settings');
 const ADMIN_HEALTH_TARGETS_PATH = adminConfigPath('/health-targets');
 const ADMIN_PERFORMANCE_METRICS_PATH = adminConfigPath('/performance-metrics');
 const ADMIN_ROUTING_STATUS_PATH = adminConfigPath('/routing-status');
+const ADMIN_TRAFFIC_ANALYSIS_PATH = adminConfigPath('/stats/traffic-analysis');
+const ADMIN_TRAFFIC_ANALYSIS_REGIONS_PATH = adminConfigPath('/traffic-analysis-regions');
 
 const PUBLIC_SYSTEM_SETTINGS_PATH = `${PUBLIC_BASE_PATH}/system-settings`;
 
@@ -443,5 +487,13 @@ export const configApi = {
 
   getRoutingStatus(): Promise<RoutingStatusResponse> {
     return request.get(ADMIN_ROUTING_STATUS_PATH);
+  },
+
+  getTrafficAnalysis(): Promise<TrafficAnalysisResponse> {
+    return request.get(ADMIN_TRAFFIC_ANALYSIS_PATH);
+  },
+
+  getTrafficAnalysisRegions(): Promise<TrafficAnalysisRegion[]> {
+    return request.get(ADMIN_TRAFFIC_ANALYSIS_REGIONS_PATH);
   },
 };

@@ -3,6 +3,7 @@ import { configApi } from '@/api/config';
 
 const allowRegistration = ref(true);
 const dashboardHideRequestSourceCard = ref(false);
+const trafficAnalysisRegion = ref<string | null>(null);
 const isLoaded = ref(false);
 
 export function useSystemConfig() {
@@ -17,6 +18,7 @@ export function useSystemConfig() {
       const settings = await configApi.getPublicSystemSettings();
       allowRegistration.value = settings.allowRegistration;
       dashboardHideRequestSourceCard.value = settings.dashboardHideRequestSourceCard;
+      trafficAnalysisRegion.value = settings.trafficAnalysisRegion ?? null;
       isLoaded.value = true;
     } catch (error) {
       console.error('加载系统配置失败:', error);
@@ -26,6 +28,7 @@ export function useSystemConfig() {
   return {
     allowRegistration,
     dashboardHideRequestSourceCard,
+    trafficAnalysisRegion,
     isLoaded,
     loadSystemConfig,
   };
