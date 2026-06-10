@@ -45,15 +45,40 @@
           style="margin-bottom: 16px;"
         >
           <n-gi>
-            <n-statistic :label="t('trafficAnalysis.availableDays')" :value="data.availableDays">
+            <n-statistic :value="data.availableDays">
+              <template #label>
+                <n-tooltip trigger="hover">
+                  <template #trigger>
+                    <span class="stat-label-hint">{{ t('trafficAnalysis.availableDays') }}</span>
+                  </template>
+                  {{ t('trafficAnalysis.availableDaysTip') }}
+                </n-tooltip>
+              </template>
               <template #suffix>{{ t('trafficAnalysis.daysSuffix') }}</template>
             </n-statistic>
           </n-gi>
           <n-gi>
-            <n-statistic :label="t('trafficAnalysis.trainingSamples')" :value="data.modelInfo.trainingSamples" />
+            <n-statistic :value="data.modelInfo.trainingSamples">
+              <template #label>
+                <n-tooltip trigger="hover">
+                  <template #trigger>
+                    <span class="stat-label-hint">{{ t('trafficAnalysis.trainingSamples') }}</span>
+                  </template>
+                  {{ t('trafficAnalysis.trainingSamplesTip') }}
+                </n-tooltip>
+              </template>
+            </n-statistic>
           </n-gi>
           <n-gi>
-            <n-statistic :label="t('trafficAnalysis.predictionAccuracy')">
+            <n-statistic>
+              <template #label>
+                <n-tooltip trigger="hover">
+                  <template #trigger>
+                    <span class="stat-label-hint">{{ t('trafficAnalysis.predictionAccuracy') }}</span>
+                  </template>
+                  {{ t('trafficAnalysis.predictionAccuracyTip') }}
+                </n-tooltip>
+              </template>
               <template #default>
                 <span :style="accuracyColor">
                   {{ accuracyText }}
@@ -62,7 +87,16 @@
             </n-statistic>
           </n-gi>
           <n-gi>
-            <n-statistic :label="t('trafficAnalysis.mape')" :value="mapeText" />
+            <n-statistic :value="mapeText">
+              <template #label>
+                <n-tooltip trigger="hover">
+                  <template #trigger>
+                    <span class="stat-label-hint">{{ t('trafficAnalysis.mape') }}</span>
+                  </template>
+                  {{ t('trafficAnalysis.mapeTip') }}
+                </n-tooltip>
+              </template>
+            </n-statistic>
           </n-gi>
         </n-grid>
 
@@ -115,7 +149,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   NSpace, NCard, NButton, NIcon, NTag, NAlert, NSkeleton, NResult, NEmpty,
-  NGrid, NGi, NStatistic, NSelect, NSpin,
+  NGrid, NGi, NStatistic, NSelect, NSpin, NTooltip,
 } from 'naive-ui';
 import { RefreshOutline } from '@vicons/ionicons5';
 import { use } from 'echarts/core';
@@ -453,6 +487,10 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.stat-label-hint {
+  border-bottom: 1px dashed currentColor;
+  cursor: help;
+}
 .trend-card {
   border-radius: 8px;
 }

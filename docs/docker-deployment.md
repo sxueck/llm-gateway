@@ -74,7 +74,7 @@ docker-compose logs -f
 | `NODE_ENV` | 运行环境 | production |
 | `PORT` | 服务端口 | 3000 |
 | `LOG_LEVEL` | 日志级别 | info |
-| `API_REQUEST_LOG_RETENTION_DAYS` | API 请求日志保留天数 | 3 |
+| `API_REQUEST_LOG_RETENTION_DAYS` | API 请求日志保留天数 | 14 |
 
 
 ## 生产环境部署建议
