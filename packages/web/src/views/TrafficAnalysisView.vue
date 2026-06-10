@@ -37,6 +37,35 @@
           {{ t('trafficAnalysis.dataLow') }}
         </n-alert>
 
+        <n-grid
+          v-if="data && !loading"
+          :cols="windowWidth < 640 ? 2 : 4"
+          :x-gap="12"
+          :y-gap="12"
+          style="margin-bottom: 16px;"
+        >
+          <n-gi>
+            <n-statistic :label="t('trafficAnalysis.availableDays')" :value="data.availableDays">
+              <template #suffix>{{ t('trafficAnalysis.daysSuffix') }}</template>
+            </n-statistic>
+          </n-gi>
+          <n-gi>
+            <n-statistic :label="t('trafficAnalysis.trainingSamples')" :value="data.modelInfo.trainingSamples" />
+          </n-gi>
+          <n-gi>
+            <n-statistic :label="t('trafficAnalysis.predictionAccuracy')">
+              <template #default>
+                <span :style="accuracyColor">
+                  {{ accuracyText }}
+                </span>
+              </template>
+            </n-statistic>
+          </n-gi>
+          <n-gi>
+            <n-statistic :label="t('trafficAnalysis.mape')" :value="mapeText" />
+          </n-gi>
+        </n-grid>
+
         <n-skeleton v-if="loading" :height="chartHeight" />
         <n-result
           v-else-if="error"
@@ -52,30 +81,30 @@
         />
       </n-card>
 
-      <n-card :title="t('trafficAnalysis.peakWindow')">
-        <n-skeleton v-if="loading" :height="80" />
-        <template v-else-if="data">
-          <n-empty
-            v-if="data.peaks.length === 0"
-            :description="t('trafficAnalysis.noPeak')"
-          />
-          <n-grid v-else :cols="windowWidth < 640 ? 1 : 2" :x-gap="16" :y-gap="16">
-            <n-gi v-for="(peak, index) in data.peaks" :key="index">
-              <n-card size="small" style="border-left: 4px solid #C4996C;">
-                <n-space vertical :size="4">
-                  <n-text strong>
-                    {{ formatHour(peak.startTimestamp) }} – {{ formatHour(peak.endTimestamp + 3600000) }}
-                  </n-text>
-                  <n-text depth="3" style="font-size: 12px;">
-                    {{ t('trafficAnalysis.surgeRatio') }}:
-                    <n-text type="warning" strong>+{{ formatPercent(peak.surgeRatio) }}</n-text>
-                    &nbsp;|&nbsp; {{ t('trafficAnalysis.peakCount') }}: {{ Math.round(peak.peakCount) }}
-                  </n-text>
-                </n-space>
-              </n-card>
-            </n-gi>
-          </n-grid>
+      <n-card class="trend-card">
+        <template #header>
+          <n-space justify="space-between" align="center" class="trend-header">
+            <div>
+              <span class="chart-header-title">{{ t('trafficAnalysis.latencyDistribution') }}</span>
+              <span class="chart-header-note">({{ t('trafficAnalysis.latencyNote') }})</span>
+            </div>
+            <n-select
+              v-model:value="selectedLatencyModel"
+              :options="latencyModelOptions"
+              clearable
+              size="small"
+              class="latency-model-select"
+              :placeholder="t('trafficAnalysis.selectModel')"
+            />
+          </n-space>
         </template>
+        <div v-if="latencyLoading" class="trend-loading">
+          <n-spin size="large" />
+        </div>
+        <div v-else-if="filteredLatencyData.length > 0" class="trend-chart-container">
+          <v-chart :option="latencyDistributionOption" :autoresize="true" class="trend-chart" />
+        </div>
+        <n-empty v-else :description="t('trafficAnalysis.noLatencyData')" :show-icon="false" />
       </n-card>
     </n-space>
   </div>
@@ -86,12 +115,12 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   NSpace, NCard, NButton, NIcon, NTag, NAlert, NSkeleton, NResult, NEmpty,
-  NGrid, NGi, NText,
+  NGrid, NGi, NStatistic, NSelect, NSpin,
 } from 'naive-ui';
 import { RefreshOutline } from '@vicons/ionicons5';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
-import { LineChart } from 'echarts/charts';
+import { LineChart, ScatterChart } from 'echarts/charts';
 import {
   TitleComponent,
   TooltipComponent,
@@ -101,11 +130,13 @@ import {
   MarkAreaComponent,
 } from 'echarts/components';
 import VChart from 'vue-echarts';
-import { configApi, type TrafficAnalysisResponse } from '@/api/config';
+import { configApi, type TrafficAnalysisResponse, type ModelResponseTimeStat } from '@/api/config';
+import { formatResponseTime } from '@/utils/format';
 
 use([
   CanvasRenderer,
   LineChart,
+  ScatterChart,
   TitleComponent,
   TooltipComponent,
   LegendComponent,
@@ -123,6 +154,32 @@ const windowWidth = ref(window.innerWidth);
 
 const chartHeight = computed(() => (windowWidth.value < 640 ? 260 : 380));
 
+const latencyLoading = ref(false);
+const latencyData = ref<ModelResponseTimeStat[]>([]);
+const selectedLatencyModel = ref<string | null>(null);
+
+const latencyModelOptions = computed(() => {
+  const seen = new Set<string>();
+  const options: { label: string; value: string }[] = [];
+  for (const item of latencyData.value) {
+    if (!item.model) continue;
+    if (seen.has(item.model)) continue;
+    seen.add(item.model);
+    options.push({ label: item.model, value: item.model });
+  }
+  return options;
+});
+
+const filteredLatencyData = computed(() => {
+  if (!selectedLatencyModel.value) return latencyData.value;
+  return latencyData.value.filter(item => item.model === selectedLatencyModel.value);
+});
+
+const LATENCY_COLORS = [
+  '#006241', '#C4996C', '#1E3932', '#2D8A6D', '#A89F91',
+  '#6CA68D', '#4A4A4A', '#D4E9E2', '#8B5E3C', '#5B8C5A',
+];
+
 function formatHour(ts: number): string {
   return new Date(ts).toLocaleTimeString(locale.value, {
     hour: '2-digit',
@@ -131,11 +188,7 @@ function formatHour(ts: number): string {
   });
 }
 
-function formatPercent(ratio: number): string {
-  return (ratio * 100).toFixed(0) + '%';
-}
-
-function formatTimestamp(ts: number): string {
+function formatTimestampLocal(ts: number): string {
   return new Date(ts).toLocaleString(locale.value, {
     month: '2-digit',
     day: '2-digit',
@@ -144,6 +197,24 @@ function formatTimestamp(ts: number): string {
     timeZone: 'Asia/Shanghai',
   });
 }
+
+const accuracyText = computed(() => {
+  if (!data.value?.accuracy) return '-';
+  return (data.value.accuracy.r2 * 100).toFixed(1) + '%';
+});
+
+const mapeText = computed(() => {
+  if (!data.value?.accuracy) return '-';
+  return data.value.accuracy.mape.toFixed(1) + '%';
+});
+
+const accuracyColor = computed(() => {
+  if (!data.value?.accuracy) return {};
+  const r2 = data.value.accuracy.r2;
+  if (r2 >= 0.8) return { color: '#006241' };
+  if (r2 >= 0.5) return { color: '#C4996C' };
+  return { color: '#d03050' };
+});
 
 const chartOption = computed(() => {
   if (!data.value) return null;
@@ -171,7 +242,7 @@ const chartOption = computed(() => {
           const val = Math.round(p.value?.[1] ?? 0);
           return `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:6px;"></span>${p.seriesName}: <strong>${val}</strong>`;
         });
-        return `<div style="font-size:13px;">${formatTimestamp(ts)}<br>${lines.join('<br>')}</div>`;
+        return `<div style="font-size:13px;">${formatTimestampLocal(ts)}<br>${lines.join('<br>')}</div>`;
       },
     },
     legend: {
@@ -227,15 +298,143 @@ const chartOption = computed(() => {
   };
 });
 
+const latencyDistributionOption = computed(() => {
+  if (!filteredLatencyData.value || filteredLatencyData.value.length === 0) {
+    return {};
+  }
+
+  const isMobile = windowWidth.value < 640;
+
+  const scatterData = filteredLatencyData.value.map(item => [
+    item.created_at,
+    item.response_time,
+    item.model,
+  ]);
+
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+      borderColor: '#e5e7eb',
+      borderWidth: 1,
+      extraCssText: 'backdrop-filter: blur(8px);',
+      textStyle: {
+        color: '#1f2937',
+        fontSize: isMobile ? 11 : 13,
+      },
+      formatter: (params: any) => {
+        const [time, duration, model] = params.data;
+        const date = new Date(time);
+        const timeStr = `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+        return `<div style="font-weight: 600; color: #111827;">${model}</div>
+                <div style="margin-top: 4px; color: #6b7280;">
+                  Time: ${timeStr}<br/>
+                  Latency: ${formatResponseTime(duration)}ms
+                </div>`;
+      },
+    },
+    grid: {
+      left: isMobile ? '2%' : '4%',
+      right: isMobile ? '4%' : '4%',
+      bottom: isMobile ? '3%' : '8%',
+      top: isMobile ? 30 : 40,
+      containLabel: true,
+    },
+    xAxis: {
+      type: 'time',
+      boundaryGap: false,
+      axisLine: {
+        lineStyle: {
+          color: '#e5e7eb',
+          width: 1,
+        },
+      },
+      axisLabel: {
+        color: '#9ca3af',
+        fontSize: isMobile ? 10 : 12,
+        formatter: (value: number) => {
+          const date = new Date(value);
+          return `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
+        },
+      },
+      splitLine: {
+        show: false,
+      },
+    },
+    yAxis: {
+      type: 'value',
+      name: t('trafficAnalysis.latency'),
+      nameTextStyle: {
+        color: '#9ca3af',
+        align: 'right',
+        padding: [0, 0, 0, 6],
+      },
+      axisLine: {
+        show: true,
+      },
+      axisTick: {
+        show: false,
+      },
+      axisLabel: {
+        show: false,
+      },
+      splitLine: {
+        lineStyle: {
+          color: '#f3f4f6',
+          width: 1,
+          type: 'dashed',
+        },
+      },
+    },
+    series: [
+      {
+        name: 'Response Time',
+        type: 'scatter',
+        symbolSize: isMobile ? 5 : 8,
+        itemStyle: {
+          color: (params: any) => {
+            const modelName = params.data[2] as string;
+            let hash = 0;
+            for (let i = 0; i < modelName.length; i++) {
+              hash = modelName.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const index = Math.abs(hash) % LATENCY_COLORS.length;
+            return LATENCY_COLORS[index];
+          },
+          opacity: 0.6,
+          borderColor: '#fff',
+          borderWidth: 1,
+        },
+        emphasis: {
+          focus: 'series',
+          itemStyle: {
+            opacity: 1,
+            borderWidth: 2,
+          },
+        },
+        data: scatterData,
+      },
+    ],
+  };
+});
+
 async function refresh() {
   loading.value = true;
+  latencyLoading.value = true;
   error.value = null;
   try {
-    data.value = await configApi.getTrafficAnalysis();
+    const [trafficResult, statsResult] = await Promise.all([
+      configApi.getTrafficAnalysis(),
+      configApi.getStats('30d'),
+    ]);
+    data.value = trafficResult;
+    latencyData.value = statsResult.modelResponseTimeStats || [];
   } catch (err: any) {
     error.value = err?.message || t('common.error');
   } finally {
     loading.value = false;
+    latencyLoading.value = false;
   }
 }
 
@@ -252,3 +451,47 @@ onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
 });
 </script>
+
+<style scoped>
+.trend-card {
+  border-radius: 8px;
+}
+.trend-header {
+  width: 100%;
+}
+.chart-header-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+}
+.chart-header-note {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-left: 8px;
+}
+.latency-model-select {
+  width: 220px;
+}
+.trend-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 300px;
+}
+.trend-chart-container {
+  width: 100%;
+  height: 340px;
+}
+.trend-chart {
+  width: 100%;
+  height: 100%;
+}
+@media (max-width: 640px) {
+  .latency-model-select {
+    width: 160px;
+  }
+  .trend-chart-container {
+    height: 260px;
+  }
+}
+</style>
