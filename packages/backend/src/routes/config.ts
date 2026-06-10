@@ -1356,6 +1356,64 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
   });
 
+  fastify.get<{ Querystring: { dayOffset?: string } }>('/stats/traffic-analysis/history-day', async (request, reply) => {
+    try {
+      const dayOffset = Math.min(6, Math.max(0, Number(request.query.dayOffset) || 0));
+      const { workdayCalendarService } = await import('../services/workday-calendar.js');
+      const { trafficPredictionService } = await import('../services/traffic-prediction.js');
+
+      await workdayCalendarService.initialize();
+
+      const regionCfg = await systemConfigDb.get('traffic_analysis_region');
+      const region = regionCfg?.value || null;
+
+      const hourMs = 3600000;
+      const shanghaiOffset = 8 * 3600000;
+      const now = Date.now();
+      const todayStartLocal = Math.floor((now + shanghaiOffset) / (24 * hourMs)) * (24 * hourMs) - shanghaiOffset;
+      const dayStart = todayStartLocal - dayOffset * 24 * hourMs;
+      const dayEnd = dayStart + 24 * hourMs;
+
+      if (dayOffset > 0 && dayEnd > now) {
+        return reply.code(400).send({ error: { message: 'dayOffset 超出范围' } });
+      }
+
+      const trainingRaw = await apiRequestDb.getHourlyTrainingData({ days: 14 });
+      if (trainingRaw.length < 72) {
+        return { actual: [], predicted: [], dayStart, isWorkday: workdayCalendarService.isWorkday(dayStart, region) };
+      }
+
+      const trainingSamples: import('../services/traffic-prediction.js').TrainingData[] = [];
+      const trainingMap = new Map(trainingRaw.map(r => [r.timestampMs, r.count]));
+      const lastTrainingTs = trainingRaw[trainingRaw.length - 1].timestampMs;
+      for (let ts = trainingRaw[0].timestampMs; ts <= lastTrainingTs; ts += hourMs) {
+        trainingSamples.push({
+          timestampMs: ts,
+          count: trainingMap.get(ts) ?? 0,
+          isWorkday: workdayCalendarService.isWorkday(ts, region),
+        });
+      }
+
+      const model = trafficPredictionService.trainWeeklyEmpirical(trainingSamples);
+      const isWorkday = workdayCalendarService.isWorkday(dayStart, region);
+      const profile = trafficPredictionService.clusterProfile(model, isWorkday);
+
+      const actual: { timestamp: number; count: number }[] = [];
+      const predicted: { timestamp: number; predictedCount: number }[] = [];
+
+      for (let i = 0; i < 24; i++) {
+        const ts = dayStart + i * hourMs;
+        actual.push({ timestamp: ts, count: trainingMap.get(ts) ?? 0 });
+        predicted.push({ timestamp: ts, predictedCount: Math.round(profile[i] ?? 0) });
+      }
+
+      return { actual, predicted, dayStart, isWorkday };
+    } catch (error: any) {
+      memoryLogger.error(`获取历史叠加数据失败: ${error?.message}`, 'TrafficAnalysis');
+      return reply.code(500).send({ error: { message: error?.message || '获取历史叠加数据失败' } });
+    }
+  });
+
   fastify.get('/traffic-analysis-regions', async (_request, reply) => {
     try {
       const { workdayCalendarService } = await import('../services/workday-calendar.js');

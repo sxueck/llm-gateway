@@ -368,6 +368,13 @@ export interface TrafficAnalysisResponse {
 
 export type TrafficAnalysisRegion = { code: string; name: string };
 
+export interface TrafficAnalysisHistoryDayResponse {
+  actual: HourlyActual[];
+  predicted: { timestamp: number; predictedCount: number }[];
+  dayStart: number;
+  isWorkday: boolean;
+}
+
 type HealthTargetsResponse = { targets: any[] };
 
 export interface RoutingTargetStatus {
@@ -415,6 +422,7 @@ const ADMIN_HEALTH_TARGETS_PATH = adminConfigPath('/health-targets');
 const ADMIN_PERFORMANCE_METRICS_PATH = adminConfigPath('/performance-metrics');
 const ADMIN_ROUTING_STATUS_PATH = adminConfigPath('/routing-status');
 const ADMIN_TRAFFIC_ANALYSIS_PATH = adminConfigPath('/stats/traffic-analysis');
+const ADMIN_TRAFFIC_ANALYSIS_HISTORY_DAY_PATH = adminConfigPath('/stats/traffic-analysis/history-day');
 const ADMIN_TRAFFIC_ANALYSIS_REGIONS_PATH = adminConfigPath('/traffic-analysis-regions');
 
 const PUBLIC_SYSTEM_SETTINGS_PATH = `${PUBLIC_BASE_PATH}/system-settings`;
@@ -494,6 +502,10 @@ export const configApi = {
 
   getTrafficAnalysis(): Promise<TrafficAnalysisResponse> {
     return request.get(ADMIN_TRAFFIC_ANALYSIS_PATH);
+  },
+
+  getTrafficAnalysisHistoryDay(dayOffset: number): Promise<TrafficAnalysisHistoryDayResponse> {
+    return request.get(ADMIN_TRAFFIC_ANALYSIS_HISTORY_DAY_PATH, { params: { dayOffset } });
   },
 
   getTrafficAnalysisRegions(): Promise<TrafficAnalysisRegion[]> {
