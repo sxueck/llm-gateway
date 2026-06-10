@@ -34,7 +34,7 @@ services:
       - LOG_LEVEL=info
       - JWT_SECRET=${JWT_SECRET:-please-change-this-secret-key-to-a-random-string-at-least-32-chars}
       - PUBLIC_URL=${PUBLIC_URL:-http://localhost:3000}
-      - API_REQUEST_LOG_RETENTION_DAYS=${API_REQUEST_LOG_RETENTION_DAYS:-3}
+      - API_REQUEST_LOG_RETENTION_DAYS=${API_REQUEST_LOG_RETENTION_DAYS:-14}
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
       - MYSQL_USER=root
