@@ -692,5 +692,10 @@ export default {
     latencyNote: 'Last 2000 requests',
     selectModel: 'Select Model',
     noLatencyData: 'No data available',
+    overlayMode: 'Overlay',
+    overlayActual: 'D-{day} Actual',
+    overlayPredicted: 'D-{day} Predicted',
+    today: 'Today',
+    daysAgo: '{n}d ago',
   },
 };

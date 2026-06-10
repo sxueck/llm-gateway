@@ -13,12 +13,23 @@
                 {{ t('trafficAnalysis.noRegion') }}
               </n-tag>
             </n-space>
-            <n-button size="small" :loading="loading" @click="refresh">
-              <template #icon>
-                <n-icon><RefreshOutline /></n-icon>
-              </template>
-              {{ t('common.refresh') }}
-            </n-button>
+            <n-space align="center">
+              <n-checkbox v-model:checked="overlayMode">{{ t('trafficAnalysis.overlayMode') }}</n-checkbox>
+              <n-select
+                v-if="overlayMode"
+                v-model:value="overlayDayOffset"
+                :options="overlayDayOptions"
+                size="small"
+                style="width: 100px;"
+                :loading="overlayLoading"
+              />
+              <n-button size="small" :loading="loading" @click="refresh">
+                <template #icon>
+                  <n-icon><RefreshOutline /></n-icon>
+                </template>
+                {{ t('common.refresh') }}
+              </n-button>
+            </n-space>
           </n-space>
         </template>
 
@@ -145,11 +156,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   NSpace, NCard, NButton, NIcon, NTag, NAlert, NSkeleton, NResult, NEmpty,
-  NGrid, NGi, NStatistic, NSelect, NSpin, NTooltip,
+  NGrid, NGi, NStatistic, NSelect, NSpin, NTooltip, NCheckbox,
 } from 'naive-ui';
 import { RefreshOutline } from '@vicons/ionicons5';
 import { use } from 'echarts/core';
@@ -164,7 +175,7 @@ import {
   MarkAreaComponent,
 } from 'echarts/components';
 import VChart from 'vue-echarts';
-import { configApi, type TrafficAnalysisResponse, type ModelResponseTimeStat } from '@/api/config';
+import { configApi, type TrafficAnalysisResponse, type TrafficAnalysisHistoryDayResponse, type ModelResponseTimeStat } from '@/api/config';
 import { formatResponseTime } from '@/utils/format';
 
 use([
@@ -185,6 +196,10 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const data = ref<TrafficAnalysisResponse | null>(null);
 const windowWidth = ref(window.innerWidth);
+const overlayMode = ref(false);
+const overlayDayOffset = ref(0);
+const overlayDayData = ref<TrafficAnalysisHistoryDayResponse | null>(null);
+const overlayLoading = ref(false);
 
 const chartHeight = computed(() => (windowWidth.value < 640 ? 260 : 380));
 
@@ -250,6 +265,32 @@ const accuracyColor = computed(() => {
   return { color: '#d03050' };
 });
 
+const overlayDayOptions = computed(() => {
+  const opts: { label: string; value: number }[] = [];
+  const maxDays = Math.min(6, data.value?.availableDays ?? 0);
+  for (let i = 0; i <= maxDays; i++) {
+    opts.push({ label: i === 0 ? t('trafficAnalysis.today') : t('trafficAnalysis.daysAgo', { n: i }), value: i });
+  }
+  return opts;
+});
+
+async function fetchOverlayDay() {
+  if (!overlayMode.value) return;
+  overlayLoading.value = true;
+  try {
+    overlayDayData.value = await configApi.getTrafficAnalysisHistoryDay(overlayDayOffset.value);
+  } catch {
+    overlayDayData.value = null;
+  } finally {
+    overlayLoading.value = false;
+  }
+}
+
+watch([overlayMode, overlayDayOffset], () => {
+  if (overlayMode.value) fetchOverlayDay();
+  else overlayDayData.value = null;
+});
+
 const chartOption = computed(() => {
   if (!data.value) return null;
 
@@ -266,6 +307,67 @@ const chartOption = computed(() => {
 
   const isSmall = windowWidth.value < 640;
 
+  const legendData = [t('trafficAnalysis.actualSeries'), t('trafficAnalysis.predictedSeries')];
+  const series: any[] = [
+    {
+      name: t('trafficAnalysis.actualSeries'),
+      type: 'line',
+      data: actualData,
+      smooth: true,
+      symbol: 'none',
+      lineStyle: { color: '#006241', width: 2, type: 'solid' },
+      itemStyle: { color: '#006241' },
+      markLine: {
+        silent: true,
+        symbol: 'none',
+        lineStyle: { color: '#999', type: 'dashed', width: 1 },
+        data: [{ xAxis: Math.floor(nowMs / 3600000) * 3600000, name: 'now' }],
+        label: { show: false },
+      },
+    },
+    {
+      name: t('trafficAnalysis.predictedSeries'),
+      type: 'line',
+      data: predData,
+      smooth: true,
+      symbol: 'none',
+      lineStyle: { color: '#C4996C', width: 2, type: 'dashed' },
+      itemStyle: { color: '#C4996C' },
+      markArea: markAreas.length > 0 ? {
+        silent: true,
+        data: markAreas,
+      } : undefined,
+    },
+  ];
+
+  if (overlayMode.value && overlayDayData.value) {
+    const histActual = overlayDayData.value.actual.map(p => [p.timestamp, p.count]);
+    const histPred = overlayDayData.value.predicted.map(p => [p.timestamp, p.predictedCount]);
+    const histActualName = t('trafficAnalysis.overlayActual', { day: overlayDayOffset.value });
+    const histPredName = t('trafficAnalysis.overlayPredicted', { day: overlayDayOffset.value });
+    legendData.push(histActualName, histPredName);
+    series.push(
+      {
+        name: histActualName,
+        type: 'line',
+        data: histActual,
+        smooth: true,
+        symbol: 'none',
+        lineStyle: { color: '#2080F0', width: 2, type: 'solid' },
+        itemStyle: { color: '#2080F0' },
+      },
+      {
+        name: histPredName,
+        type: 'line',
+        data: histPred,
+        smooth: true,
+        symbol: 'none',
+        lineStyle: { color: '#E8833A', width: 2, type: 'dashed' },
+        itemStyle: { color: '#E8833A' },
+      },
+    );
+  }
+
   return {
     tooltip: {
       trigger: 'axis',
@@ -280,7 +382,7 @@ const chartOption = computed(() => {
       },
     },
     legend: {
-      data: [t('trafficAnalysis.actualSeries'), t('trafficAnalysis.predictedSeries')],
+      data: legendData,
       bottom: 4,
       itemWidth: isSmall ? 16 : 20,
       textStyle: { fontSize: isSmall ? 11 : 13 },
@@ -298,37 +400,7 @@ const chartOption = computed(() => {
       minInterval: 1,
       axisLabel: { fontSize: isSmall ? 10 : 12 },
     },
-    series: [
-      {
-        name: t('trafficAnalysis.actualSeries'),
-        type: 'line',
-        data: actualData,
-        smooth: true,
-        symbol: 'none',
-        lineStyle: { color: '#006241', width: 2, type: 'solid' },
-        itemStyle: { color: '#006241' },
-        markLine: {
-          silent: true,
-          symbol: 'none',
-          lineStyle: { color: '#999', type: 'dashed', width: 1 },
-          data: [{ xAxis: Math.floor(nowMs / 3600000) * 3600000, name: 'now' }],
-          label: { show: false },
-        },
-      },
-      {
-        name: t('trafficAnalysis.predictedSeries'),
-        type: 'line',
-        data: predData,
-        smooth: true,
-        symbol: 'none',
-        lineStyle: { color: '#C4996C', width: 2, type: 'dashed' },
-        itemStyle: { color: '#C4996C' },
-        markArea: markAreas.length > 0 ? {
-          silent: true,
-          data: markAreas,
-        } : undefined,
-      },
-    ],
+    series,
   };
 });
 
