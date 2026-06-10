@@ -2,7 +2,7 @@ import request from '@/utils/request';
 
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
 
-type Period = '24h' | '7d' | '30d' | 'all';
+export type Period = '24h' | '7d' | '30d' | 'all';
 
 type AnyRecord = Record<string, any>;
 
@@ -362,6 +362,7 @@ export interface TrafficAnalysisResponse {
     workdayProfile: number[];
     nonWorkdayProfile: number[];
   };
+  accuracy: { r2: number; mape: number } | null;
   generatedAt: number;
 }
 

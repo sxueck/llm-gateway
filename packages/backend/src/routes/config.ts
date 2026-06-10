@@ -1260,6 +1260,8 @@ export async function configRoutes(fastify: FastifyInstance) {
         nonWorkdayProfile: number[];
       };
 
+      const trainingSamples: import('../services/traffic-prediction.js').TrainingData[] = [];
+
       if (availableDays < 3) {
         prediction = Array.from({ length: 24 }, (_, i) => ({
           timestamp: nextHour + i * hourMs,
@@ -1278,7 +1280,6 @@ export async function configRoutes(fastify: FastifyInstance) {
         };
       } else {
         const trainingMap = new Map(trainingRaw.map(r => [r.timestampMs, r.count]));
-        const trainingSamples: import('../services/traffic-prediction.js').TrainingData[] = [];
         for (let ts = trainingRaw[0].timestampMs; ts <= lastHourStart; ts += hourMs) {
           trainingSamples.push({
             timestampMs: ts,
@@ -1319,7 +1320,34 @@ export async function configRoutes(fastify: FastifyInstance) {
         };
       }
 
-      return { actual, prediction, peaks, dataQuality, availableDays, region, modelInfo, generatedAt: now };
+      let accuracy: { r2: number; mape: number } | null = null;
+      if (availableDays >= 4) {
+        if (trainingSamples.length >= 48) {
+          const trainSet = trainingSamples.slice(0, -24);
+          const valSet = trainingSamples.slice(-24);
+          const valModel = trafficPredictionService.trainWeeklyEmpirical(trainSet);
+          const predicted = valSet.map(v =>
+            trafficPredictionService.predictWeeklyEmpirical(valModel, v.timestampMs, v.isWorkday)
+          );
+          const actualValues = valSet.map(v => v.count);
+          const mean = actualValues.reduce((s, v) => s + v, 0) / actualValues.length;
+          const ssTot = actualValues.reduce((sum, y) => sum + (y - mean) ** 2, 0);
+          const ssRes = actualValues.reduce((sum, y, i) => sum + (y - predicted[i]) ** 2, 0);
+          const r2 = ssTot === 0 ? 1 : Math.max(0, 1 - ssRes / ssTot);
+          let mapeSum = 0;
+          let mapeCount = 0;
+          for (let i = 0; i < actualValues.length; i++) {
+            if (actualValues[i] > 0) {
+              mapeSum += Math.abs((actualValues[i] - predicted[i]) / actualValues[i]);
+              mapeCount++;
+            }
+          }
+          const mape = mapeCount > 0 ? (mapeSum / mapeCount) * 100 : 0;
+          accuracy = { r2: Math.round(r2 * 1000) / 1000, mape: Math.round(mape * 10) / 10 };
+        }
+      }
+
+      return { actual, prediction, peaks, dataQuality, availableDays, region, modelInfo, accuracy, generatedAt: now };
     } catch (error: any) {
       memoryLogger.error(`流量分析失败: ${error?.message}`, 'TrafficAnalysis');
       return reply.code(500).send({
