@@ -1333,7 +1333,7 @@ export async function configRoutes(fastify: FastifyInstance) {
           const mean = actualValues.reduce((s, v) => s + v, 0) / actualValues.length;
           const ssTot = actualValues.reduce((sum, y) => sum + (y - mean) ** 2, 0);
           const ssRes = actualValues.reduce((sum, y, i) => sum + (y - predicted[i]) ** 2, 0);
-          const r2 = ssTot === 0 ? 1 : Math.max(0, 1 - ssRes / ssTot);
+          const r2 = ssTot === 0 ? (ssRes === 0 ? 1 : 0) : Math.max(0, 1 - ssRes / ssTot);
           let mapeSum = 0;
           let mapeCount = 0;
           for (let i = 0; i < actualValues.length; i++) {
@@ -1358,7 +1358,7 @@ export async function configRoutes(fastify: FastifyInstance) {
 
   fastify.get<{ Querystring: { dayOffset?: string } }>('/stats/traffic-analysis/history-day', async (request, reply) => {
     try {
-      const dayOffset = Math.min(6, Math.max(0, Number(request.query.dayOffset) || 0));
+      const dayOffset = Math.floor(Math.min(6, Math.max(0, Number(request.query.dayOffset) || 0)));
       const { workdayCalendarService } = await import('../services/workday-calendar.js');
       const { trafficPredictionService } = await import('../services/traffic-prediction.js');
 
