@@ -1,5 +1,7 @@
 import { memoryLogger } from './logger.js';
 
+const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
+
 type HolidaysInstance = {
   isHoliday(date: Date): false | any[];
 };
@@ -32,9 +34,18 @@ async function ensureDateHolidays(): Promise<void> {
   }
 }
 
-function isWeekday(date: Date): boolean {
-  const day = date.getDay();
+function getShanghaiDayOfWeek(timestampMs: number): number {
+  return new Date(timestampMs + SHANGHAI_OFFSET_MS).getUTCDay();
+}
+
+function isWeekday(timestampMs: number): boolean {
+  const day = getShanghaiDayOfWeek(timestampMs);
   return day >= 1 && day <= 5;
+}
+
+function makeShanghaiDate(timestampMs: number): Date {
+  const d = new Date(timestampMs + SHANGHAI_OFFSET_MS);
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 }
 
 function getHolidaysInstance(country: string): HolidaysInstance | null {
@@ -61,16 +72,14 @@ export const workdayCalendarService = {
   },
 
   isWorkday(timestampMs: number, region: string | null): boolean {
-    const date = new Date(timestampMs);
-
     if (!region) {
-      return isWeekday(date);
+      return isWeekday(timestampMs);
     }
 
     if (region === 'CN') {
       if (chineseWorkdayModule) {
         try {
-          const result = chineseWorkdayModule.isWorkday(date);
+          const result = chineseWorkdayModule.isWorkday(makeShanghaiDate(timestampMs));
           if (result === undefined || result === null) {
             throw new Error('chinese-workday returned undefined');
           }
@@ -81,22 +90,22 @@ export const workdayCalendarService = {
       }
       // Fallback to date-holidays CN
       const hd = getHolidaysInstance('CN');
-      if (!hd) return isWeekday(date);
-      const holidays = hd.isHoliday(date);
-      return !holidays && isWeekday(date);
+      if (!hd) return isWeekday(timestampMs);
+      const holidays = hd.isHoliday(makeShanghaiDate(timestampMs));
+      return !holidays && isWeekday(timestampMs);
     }
 
     try {
       const hd = getHolidaysInstance(region);
       if (!hd) {
         memoryLogger.warn(`WorkdayCalendarService: 无法获取 ${region} 节假日实例，降级为纯周末判断`, 'WorkdayCalendar');
-        return isWeekday(date);
+        return isWeekday(timestampMs);
       }
-      const holidays = hd.isHoliday(date);
-      return !holidays && isWeekday(date);
+      const holidays = hd.isHoliday(makeShanghaiDate(timestampMs));
+      return !holidays && isWeekday(timestampMs);
     } catch (error: any) {
       memoryLogger.warn(`WorkdayCalendarService: ${region} 节假日判断出错，降级为纯周末判断: ${error?.message}`, 'WorkdayCalendar');
-      return isWeekday(date);
+      return isWeekday(timestampMs);
     }
   },
 

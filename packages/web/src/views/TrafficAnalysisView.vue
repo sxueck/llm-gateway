@@ -436,7 +436,7 @@ const latencyDistributionOption = computed(() => {
         return `<div style="font-weight: 600; color: #111827;">${model}</div>
                 <div style="margin-top: 4px; color: #6b7280;">
                   Time: ${timeStr}<br/>
-                  Latency: ${formatResponseTime(duration)}ms
+                  Latency: ${duration >= 1000 ? (duration / 1000).toFixed(2) + 's' : formatResponseTime(duration) + 'ms'}
                 </div>`;
       },
     },
