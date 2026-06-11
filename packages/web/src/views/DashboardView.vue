@@ -125,7 +125,7 @@
               <div class="stat-main-value">
                 <n-skeleton v-if="loading" text style="width: 50%; height: 42px" :sharp="false" />
                 <span v-else>
-                  {{ formatResponseTime(avgResponseTime) }}<span class="stat-unit">ms</span>
+                  {{ avgResponseTime >= 1000 ? (avgResponseTime / 1000).toFixed(2) : formatResponseTime(avgResponseTime) }}<span class="stat-unit">{{ avgResponseTime >= 1000 ? 's' : 'ms' }}</span>
                 </span>
               </div>
             </div>
