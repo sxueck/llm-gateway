@@ -16,6 +16,28 @@ interface PiiMatchCandidate extends DetectedPii {
 const MIGHT_CONTAIN_CACHE = new LRUCache<string, boolean>({ maxSize: 5000 });
 const DETECT_PII_CACHE = new LRUCache<string, DetectedPii[]>({ maxSize: 5000 });
 
+/**
+ * Upper bound (in characters) for a single text field that we are willing to scan.
+ *
+ * Large fields are almost always code / file dumps / pasted logs in coding
+ * scenarios. Scanning them is both the dominant CPU cost (and a freeze risk on
+ * pathological inputs) and the main source of model-quality degradation, since
+ * masking corrupts the surrounding code the model needs to reason about.
+ *
+ * We deliberately favour missed detections (漏检) over CPU spikes and quality
+ * loss: oversized fields are skipped entirely. Tunable via env.
+ */
+const MAX_FIELD_SCAN_LENGTH = parseInt(process.env.PII_MAX_FIELD_SCAN_LENGTH || '50000', 10);
+
+/**
+ * Upper bound on the number of raw match candidates collected per field.
+ *
+ * The overlap-resolution step is quadratic in the candidate count, so a field
+ * full of e.g. tens of thousands of IPs/emails (pasted logs) could otherwise
+ * stall the event loop. Once the cap is hit we stop collecting (accept 漏检).
+ */
+const MAX_MATCHES_PER_FIELD = parseInt(process.env.PII_MAX_MATCHES_PER_FIELD || '2000', 10);
+
 function hashText(text: string): string {
   return createHash('sha256').update(text).digest('hex');
 }
@@ -56,19 +78,20 @@ const SECRET_PATTERNS: { name: string; regex: RegExp; type: PiiType }[] = [
     regex: /\b(?:api[_-]?key|apikey)\s*=\s*[a-zA-Z0-9_\-\.]{16,}\b/gi,
     type: 'secret',
   },
-  {
-    name: 'high_entropy_token',
-    regex: /\b(?=[A-Za-z0-9._-]*[A-Z])[A-Za-z0-9._-]{24,}\b/g,
-    type: 'secret',
-  },
 ];
 
 const IPV4_REGEX = /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g;
 const IPV6_REGEX = /\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b/g;
 const IPV6_COMPRESSED_REGEX = /\b(?:[0-9a-fA-F]{1,4}:){1,7}:[0-9a-fA-F]{1,4}\b/g;
-const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}\b/g;
 const QUICK_SECRET_HINT_REGEX = /\b(?:sk-|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|Bearer\s|eyJ)/;
 const QUICK_IPV4_HINT_REGEX = /\b(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\./;
+// Linear, non-global email shape check. Used instead of a bare `includes('@')`
+// so that decorators, scoped npm packages (@scope/pkg), handles, etc. in code
+// don't force the expensive full detection pass. Quantifiers are bounded to RFC
+// limits so separator-heavy code (long kebab-case runs) can't cause O(n^2)
+// backtracking while scanning for a following '@'.
+const QUICK_EMAIL_HINT_REGEX = /[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}/;
 
 function resetRegex(regex: RegExp): RegExp {
   regex.lastIndex = 0;
@@ -99,20 +122,19 @@ function looksLikeFalsePositiveSecret(value: string): boolean {
   return false;
 }
 
-function looksLikeConservativeGenericSecret(value: string): boolean {
-  if (value.length < 24) return false;
-  if (!/[A-Z]/.test(value) || !/[a-z]/.test(value) || !/[0-9]/.test(value)) return false;
-  if (!/[_\-.]/.test(value)) return false;
-  if (/^[a-f0-9._-]+$/i.test(value)) return false;
-  if (/^[A-Za-z]{24,}$/.test(value)) return false;
-  return true;
-}
-
 function _detectPii(text: string): DetectedPii[] {
+  // Skip oversized fields entirely. These are dominated by code/log dumps where
+  // scanning is both the main CPU/freeze risk and the main quality risk
+  // (masking corrupts the code). We accept missed detections here by design.
+  if (text.length > MAX_FIELD_SCAN_LENGTH) {
+    return [];
+  }
+
   const candidates: PiiMatchCandidate[] = [];
 
-  function addCandidate(type: PiiType, value: string, start: number, end: number, priority: number) {
+  function addCandidate(type: PiiType, value: string, start: number, end: number, priority: number): boolean {
     candidates.push({ type, value, start, end, priority });
+    return candidates.length < MAX_MATCHES_PER_FIELD;
   }
 
   for (let priority = 0; priority < SECRET_PATTERNS.length; priority++) {
@@ -121,11 +143,10 @@ function _detectPii(text: string): DetectedPii[] {
     let match;
     while ((match = regex.exec(text)) !== null) {
       const value = match[0];
-      if (pattern.name === 'high_entropy_token' && !looksLikeConservativeGenericSecret(value)) {
-        continue;
-      }
       if (!looksLikeFalsePositiveSecret(value)) {
-        addCandidate(pattern.type, value, match.index, match.index + value.length, priority);
+        if (!addCandidate(pattern.type, value, match.index, match.index + value.length, priority)) {
+          return finalizeCandidates(candidates);
+        }
       }
     }
   }
@@ -135,25 +156,37 @@ function _detectPii(text: string): DetectedPii[] {
   while ((match = ipv4Regex.exec(text)) !== null) {
     const value = match[0];
     if (!looksLikeVersionNumber(value)) {
-      addCandidate('ip', value, match.index, match.index + value.length, SECRET_PATTERNS.length);
+      if (!addCandidate('ip', value, match.index, match.index + value.length, SECRET_PATTERNS.length)) {
+        return finalizeCandidates(candidates);
+      }
     }
   }
 
   const ipv6Regex = resetRegex(IPV6_REGEX);
   while ((match = ipv6Regex.exec(text)) !== null) {
-    addCandidate('ip', match[0], match.index, match.index + match[0].length, SECRET_PATTERNS.length + 1);
+    if (!addCandidate('ip', match[0], match.index, match.index + match[0].length, SECRET_PATTERNS.length + 1)) {
+      return finalizeCandidates(candidates);
+    }
   }
 
   const ipv6CompressedRegex = resetRegex(IPV6_COMPRESSED_REGEX);
   while ((match = ipv6CompressedRegex.exec(text)) !== null) {
-    addCandidate('ip', match[0], match.index, match.index + match[0].length, SECRET_PATTERNS.length + 2);
+    if (!addCandidate('ip', match[0], match.index, match.index + match[0].length, SECRET_PATTERNS.length + 2)) {
+      return finalizeCandidates(candidates);
+    }
   }
 
   const emailRegex = resetRegex(EMAIL_REGEX);
   while ((match = emailRegex.exec(text)) !== null) {
-    addCandidate('email', match[0], match.index, match.index + match[0].length, SECRET_PATTERNS.length + 3);
+    if (!addCandidate('email', match[0], match.index, match.index + match[0].length, SECRET_PATTERNS.length + 3)) {
+      return finalizeCandidates(candidates);
+    }
   }
 
+  return finalizeCandidates(candidates);
+}
+
+function finalizeCandidates(candidates: PiiMatchCandidate[]): DetectedPii[] {
   candidates.sort((a, b) => a.priority - b.priority || a.start - b.start || b.end - a.end);
 
   const accepted: PiiMatchCandidate[] = [];
@@ -189,8 +222,9 @@ function looksLikeVersionNumber(value: string): boolean {
 
 function _mightContainPii(text: string): boolean {
   if (!text || text.length < 3) return false;
+  if (text.length > MAX_FIELD_SCAN_LENGTH) return false;
 
-  if (text.includes('@')) return true;
+  if (text.includes('@') && QUICK_EMAIL_HINT_REGEX.test(text)) return true;
   if (QUICK_SECRET_HINT_REGEX.test(text)) return true;
   if (QUICK_IPV4_HINT_REGEX.test(text)) return true;
 
@@ -204,6 +238,12 @@ export interface PiiHint {
 
 export function getPiiHint(text: string): PiiHint {
   if (!text || text.length < 3) {
+    return { result: false, hash: '' };
+  }
+
+  // Oversized fields are skipped by the detector anyway; avoid hashing huge
+  // (multi-MB) payloads here, which is itself a meaningful CPU cost.
+  if (text.length > MAX_FIELD_SCAN_LENGTH) {
     return { result: false, hash: '' };
   }
 
@@ -228,6 +268,8 @@ export function mightContainPii(text: string): boolean {
 
 export function detectPii(text: string, hash?: string): DetectedPii[] {
   if (!text) return [];
+  // Skip oversized fields before hashing to keep the hot path bounded.
+  if (text.length > MAX_FIELD_SCAN_LENGTH) return [];
 
   const resolvedHash = hash && hash.length > 0 ? hash : hashText(text);
   const cached = DETECT_PII_CACHE.get(resolvedHash);

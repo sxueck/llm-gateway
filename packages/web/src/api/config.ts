@@ -362,7 +362,7 @@ export interface TrafficAnalysisResponse {
     workdayProfile: number[];
     nonWorkdayProfile: number[];
   };
-  accuracy: { r2: number; mape: number } | null;
+  accuracy: { r2: number; wape: number } | null;
   generatedAt: number;
 }
 

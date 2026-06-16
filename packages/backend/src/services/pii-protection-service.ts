@@ -295,6 +295,17 @@ function applyMasking(text: string, ctx: PiiProtectionContext): string {
  */
 const PII_SLOW_THRESHOLD_MS = 50;
 
+/**
+ * Aggregate per-request character budget for PII scanning.
+ *
+ * Each field is already capped individually by the detector, but a single
+ * request can carry a long conversation history with many fields. This bounds
+ * the total work per request so enabling PII protection can never stall the
+ * event loop on large coding sessions. Once exhausted, remaining fields are
+ * left unmasked (accept 漏检). Tunable via env.
+ */
+const MAX_TOTAL_SCAN_CHARS = parseInt(process.env.PII_MAX_TOTAL_SCAN_CHARS || '500000', 10);
+
 export function maskRequestBodyInPlace(
   body: any,
   enabled: boolean
@@ -313,14 +324,28 @@ export function maskRequestBodyInPlace(
 
   const ctx = createPiiProtectionContext(enabled);
   let maskedCount = 0;
+  let scannedChars = 0;
+  let budgetExhausted = false;
 
   for (const ref of refs) {
     const original = ref.get();
+    if (scannedChars >= MAX_TOTAL_SCAN_CHARS) {
+      budgetExhausted = true;
+      break;
+    }
+    scannedChars += original.length;
     const masked = applyMasking(original, ctx);
     if (masked !== original) {
       ref.set(masked);
       maskedCount++;
     }
+  }
+
+  if (budgetExhausted) {
+    memoryLogger.warn(
+      `PII scan budget (${MAX_TOTAL_SCAN_CHARS} chars) exhausted; remaining fields left unmasked`,
+      'PII'
+    );
   }
 
   const elapsedMs = Number(process.hrtime.bigint() - start) / 1_000_000;
