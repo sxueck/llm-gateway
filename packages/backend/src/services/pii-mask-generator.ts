@@ -49,9 +49,37 @@ function classifyChar(char: string): CharClass {
   return { isUpper, isLower, isDigit, isHex, isBase64, isUrlSafe, isSymbol, char };
 }
 
-function generateMaskedChar(original: CharClass, position: number, type: PiiType, variant = 0): string {
-  // Use position and type to create deterministic but varied output
-  const seed = position * 31 + type.length + variant * 17;
+/**
+ * Stable, fast content hash (FNV-1a 32-bit) used to seed surrogate generation.
+ *
+ * Keying surrogates on the *content* of the original value (not just position)
+ * makes the masked output a deterministic pure function of the input: the same
+ * original always yields the same surrogate, and two different originals of the
+ * same shape (e.g. two 5+2 letter emails) get different surrogates instead of
+ * colliding. This is essential for upstream prompt / KV-cache stability — in a
+ * multi-turn conversation the masked prefix must be byte-identical across
+ * requests, regardless of what other PII appears later or in what order.
+ */
+function hashSeed(value: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  // Force unsigned 32-bit
+  return hash >>> 0;
+}
+
+function generateMaskedChar(
+  original: CharClass,
+  position: number,
+  type: PiiType,
+  variant = 0,
+  valueSeed = 0
+): string {
+  // Seed on content hash + position + type so surrogates are deterministic per
+  // original value and don't collide across same-shaped inputs.
+  const seed = (valueSeed + position * 31 + type.length + variant * 17) >>> 0;
 
   if (original.isDigit) {
     return DIGITS[seed % DIGITS.length];
@@ -80,6 +108,7 @@ function generateMaskedChar(original: CharClass, position: number, type: PiiType
 }
 
 function maskSecret(value: string, variant = 0): string {
+  const valueSeed = hashSeed(value);
   let result = '';
 
   for (let i = 0; i < value.length; i++) {
@@ -90,7 +119,7 @@ function maskSecret(value: string, variant = 0): string {
       // Keep structural separators
       result += char;
     } else {
-      result += generateMaskedChar(classified, i, 'secret', variant);
+      result += generateMaskedChar(classified, i, 'secret', variant, valueSeed);
     }
   }
 
@@ -110,21 +139,23 @@ function maskIpv4(value: string, variant = 0): string {
   const parts = value.split('.');
   if (parts.length !== 4) return maskSecret(value, variant);
 
+  const valueSeed = hashSeed(value);
   const threeDigitPool = ['203', '117', '241', '154', '208', '132'];
   const twoDigitPool = ['42', '58', '73', '84', '96', '31'];
   const oneDigitPool = ['6', '7', '8', '4', '5', '3'];
+  const pick = (idx: number) => (idx + variant + valueSeed) >>> 0;
 
   return parts
     .map((part, idx) => {
       if (!/^\d+$/.test(part)) return part;
-      if (part.length === 3) return threeDigitPool[(idx + variant) % threeDigitPool.length];
+      if (part.length === 3) return threeDigitPool[pick(idx) % threeDigitPool.length];
       if (part.length === 2) {
         if (part.startsWith('0')) {
-          return `0${oneDigitPool[(idx + variant) % oneDigitPool.length]}`;
+          return `0${oneDigitPool[pick(idx) % oneDigitPool.length]}`;
         }
-        return twoDigitPool[(idx + variant) % twoDigitPool.length];
+        return twoDigitPool[pick(idx) % twoDigitPool.length];
       }
-      return oneDigitPool[(idx + variant) % oneDigitPool.length];
+      return oneDigitPool[pick(idx) % oneDigitPool.length];
     })
     .join('.');
 }
@@ -132,12 +163,13 @@ function maskIpv4(value: string, variant = 0): string {
 function maskIpv6(value: string, variant = 0): string {
   // For IPv6, replace with a deterministic fake address in documentation range
   // 2001:db8::/32 is reserved for documentation
+  const valueSeed = hashSeed(value);
   const segments = value.split(':');
   const maskedSegments = segments.map((seg, idx) => {
     if (!seg) return seg; // Keep empty segments for ::
     const masked = seg.split('').map((c, i) => {
         if (/[0-9a-fA-F]/.test(c)) {
-          const seed = idx * 16 + i + variant * 11;
+          const seed = (valueSeed + idx * 16 + i + variant * 11) >>> 0;
           return HEX_LOWER[seed % HEX_LOWER.length];
         }
       return c;
@@ -154,6 +186,7 @@ function maskEmail(value: string, variant = 0): string {
     return maskSecret(value, variant);
   }
 
+  const valueSeed = hashSeed(value);
   let result = '';
   for (let i = 0; i < value.length; i++) {
     const c = value[i];
@@ -162,7 +195,7 @@ function maskEmail(value: string, variant = 0): string {
       continue;
     }
 
-    result += generateMaskedChar(classifyChar(c), i, 'email', variant);
+    result += generateMaskedChar(classifyChar(c), i, 'email', variant, valueSeed);
   }
 
   return result;

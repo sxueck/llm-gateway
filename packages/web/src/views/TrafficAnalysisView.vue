@@ -98,13 +98,13 @@
             </n-statistic>
           </n-gi>
           <n-gi>
-            <n-statistic :value="mapeText">
+            <n-statistic :value="wapeText">
               <template #label>
                 <n-tooltip trigger="hover">
                   <template #trigger>
-                    <span class="stat-label-hint">{{ t('trafficAnalysis.mape') }}</span>
+                    <span class="stat-label-hint">{{ t('trafficAnalysis.wape') }}</span>
                   </template>
-                  {{ t('trafficAnalysis.mapeTip') }}
+                  {{ t('trafficAnalysis.wapeTip') }}
                 </n-tooltip>
               </template>
             </n-statistic>
@@ -252,9 +252,9 @@ const accuracyText = computed(() => {
   return (data.value.accuracy.r2 * 100).toFixed(1) + '%';
 });
 
-const mapeText = computed(() => {
+const wapeText = computed(() => {
   if (!data.value?.accuracy) return '-';
-  return data.value.accuracy.mape.toFixed(1) + '%';
+  return data.value.accuracy.wape.toFixed(1) + '%';
 });
 
 const accuracyColor = computed(() => {
