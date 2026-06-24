@@ -19,11 +19,11 @@ type LoggerLike = {
 
 const DEFAULT_MAX_CACHED_CLIENTS = 200;
 const DEFAULT_TIMEOUT_MS = 60_000;
-const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_BASE_URL = 'default';
 const DEFAULT_UPSTREAM_KEY = 'openai-default';
 const KEEP_ALIVE_MSECS = 1_000;
 const NO_HEADERS_CACHE_KEY = 'no-headers';
+const SDK_MAX_RETRIES = 0;
 
 type CachedOpenAIClient = {
   client: OpenAI;
@@ -35,7 +35,6 @@ type ResolvedClientConfig = {
   upstreamKey: string;
   cacheKey: string;
   timeout: number;
-  maxRetries: number;
   sanitizedHeaders?: Record<string, string>;
   proxyUrl: string | null;
   skipVerify: boolean;
@@ -121,17 +120,15 @@ export class HttpClientFactory {
     apiKey: string;
     headersKey: string;
     timeout: number;
-    maxRetries: number;
     proxyUrl: string | null;
     skipVerify: boolean;
   }): string {
     const apiKeyFingerprint = this.hashValue(input.apiKey || '');
     const timeoutPart = String(input.timeout);
-    const retriesPart = String(input.maxRetries);
     const proxyPart = input.proxyUrl ? this.hashValue(input.proxyUrl) : 'no-proxy';
     const sslPart = input.skipVerify ? 'skip-verify' : 'verify';
 
-    return `${input.normalizedBaseUrl}|${apiKeyFingerprint}|${input.headersKey}|${timeoutPart}|${retriesPart}|${proxyPart}|${sslPart}`;
+    return `${input.normalizedBaseUrl}|${apiKeyFingerprint}|${input.headersKey}|${timeoutPart}|${proxyPart}|${sslPart}`;
   }
 
   private createKeepAliveAgents(skipVerify: boolean): KeepAliveAgents {
@@ -163,7 +160,6 @@ export class HttpClientFactory {
     const normalizedBaseUrl = this.normalizeBaseUrl(config.baseUrl);
     const upstreamKey = this.getUpstreamKey(config.baseUrl);
     const timeout = config.modelAttributes?.timeout ?? DEFAULT_TIMEOUT_MS;
-    const maxRetries = config.modelAttributes?.maxRetries ?? DEFAULT_MAX_RETRIES;
     const headersKey = getSanitizedHeadersCacheKey(sanitizedHeaders) || NO_HEADERS_CACHE_KEY;
     const proxyUrl = this.getProxyUrlForBaseUrl(normalizedBaseUrl === DEFAULT_BASE_URL ? 'https://api.openai.com' : normalizedBaseUrl);
     const skipVerify = upstreamSslConfigService.isSkipVerify();
@@ -173,7 +169,6 @@ export class HttpClientFactory {
       apiKey: config.apiKey,
       headersKey,
       timeout,
-      maxRetries,
       proxyUrl,
       skipVerify,
     });
@@ -183,7 +178,6 @@ export class HttpClientFactory {
       upstreamKey,
       cacheKey,
       timeout,
-      maxRetries,
       sanitizedHeaders,
       proxyUrl,
       skipVerify,
@@ -211,7 +205,7 @@ export class HttpClientFactory {
 
     const clientConfig: any = {
       apiKey: config.apiKey,
-      maxRetries: resolvedConfig.maxRetries,
+      maxRetries: SDK_MAX_RETRIES,
       timeout: resolvedConfig.timeout,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
@@ -292,7 +286,7 @@ export class HttpClientFactory {
     const client = new OpenAI(clientConfig);
     this.openaiClients.set(resolvedConfig.cacheKey, { client, upstreamKey: resolvedConfig.upstreamKey });
     this.options.logger?.debug(
-      `创建 OpenAI 客户端 | baseUrl: ${resolvedConfig.normalizedBaseUrl} | upstream: ${resolvedConfig.upstreamKey} | maxRetries: ${resolvedConfig.maxRetries} | proxy: ${resolvedConfig.proxyUrl ? 'enabled' : 'disabled'}`,
+      `创建 OpenAI 客户端 | baseUrl: ${resolvedConfig.normalizedBaseUrl} | upstream: ${resolvedConfig.upstreamKey} | sdkMaxRetries: ${SDK_MAX_RETRIES} | proxy: ${resolvedConfig.proxyUrl ? 'enabled' : 'disabled'}`,
       'Protocol'
     );
 

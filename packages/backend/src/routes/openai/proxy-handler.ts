@@ -671,7 +671,6 @@ export async function handleStreamRequest(
  
     return;
   } catch (streamError: any) {
-    release();
     const duration = Date.now() - startTime;
 
     if (streamError.name === 'AbortError' || abortController.signal.aborted) {
