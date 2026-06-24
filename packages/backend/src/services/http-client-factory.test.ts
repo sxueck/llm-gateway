@@ -202,6 +202,46 @@ describe('HttpClientFactory basic behavior', () => {
     expect((factory as any).openaiClients.size).toBe(1);
   });
 
+  it('should disable OpenAI SDK retries regardless of model attributes', () => {
+    const factory = new HttpClientFactory({
+      keepAliveMaxSockets: 8,
+      maxCachedClients: 4,
+    });
+
+    const client = factory.getOpenAIClient(
+      createConfig({
+        modelAttributes: {
+          maxRetries: 5,
+        },
+      })
+    );
+
+    expect((client as any).maxRetries).toBe(0);
+  });
+
+  it('should reuse client when only model maxRetries differs', () => {
+    const factory = new HttpClientFactory({
+      keepAliveMaxSockets: 8,
+      maxCachedClients: 4,
+    });
+
+    const first = factory.getOpenAIClient(
+      createConfig({
+        baseUrl: 'https://api.example.com/v1',
+        modelAttributes: { maxRetries: 1 },
+      })
+    );
+    const second = factory.getOpenAIClient(
+      createConfig({
+        baseUrl: 'https://api.example.com/v1',
+        modelAttributes: { maxRetries: 5 },
+      })
+    );
+
+    expect(second).toBe(first);
+    expect((factory as any).openaiClients.size).toBe(1);
+  });
+
   it('should keep most recently used client during eviction', () => {
     const factory = new HttpClientFactory({
       keepAliveMaxSockets: 8,
