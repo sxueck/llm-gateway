@@ -51,48 +51,12 @@ const preprocessingSchema = z
   })
   .optional();
 
-const routingSchema = z
-  .object({
-    // Backend runtime currently supports 'llm' | 'semantic' | 'hybrid'.
-    // The UI may use 'pipeline' to represent the same hybrid flow.
-    mode: z.enum(['llm', 'semantic', 'hybrid', 'pipeline']).optional(),
-    semantic: z
-        .object({
-        model: z.enum(['bge-small-zh-v1.5', 'all-MiniLM-L6-v2', 'bge-m3']).optional(),
-        threshold: z.number().optional(),
-        margin: z.number().optional(),
-        routes: z
-          .array(
-            z.object({
-              category: z.string(),
-              utterances: z.array(z.string()),
-            })
-          )
-          .optional(),
-      })
-      .optional(),
-    heuristics: z
-      .object({
-        rules: z.array(
-          z.object({
-            id: z.string(),
-            type: z.enum(['keyword', 'regex', 'header']),
-            pattern: z.string(),
-            target_expert: z.string(),
-          })
-        ),
-      })
-      .optional(),
-  })
-  .optional();
-
 const createExpertRoutingSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   enabled: z.boolean().optional(),
   classifier: classifierConfigSchema,
   preprocessing: preprocessingSchema,
-  routing: routingSchema,
   experts: z.array(expertTargetSchema),
   fallback: fallbackConfigSchema,
   createVirtualModel: z.boolean().optional(),
@@ -106,7 +70,6 @@ const updateExpertRoutingSchema = z.object({
   enabled: z.boolean().optional(),
   classifier: classifierConfigSchema.optional(),
   preprocessing: preprocessingSchema,
-  routing: routingSchema,
   experts: z.array(expertTargetSchema).optional(),
   fallback: fallbackConfigSchema,
 });
@@ -307,7 +270,6 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       const configData = {
         classifier: body.classifier,
         preprocessing: body.preprocessing,
-        routing: body.routing,
         experts: body.experts,
         fallback: body.fallback,
       };
@@ -384,7 +346,6 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         body.classifier ||
         body.experts ||
         body.fallback !== undefined ||
-        body.routing !== undefined ||
         body.preprocessing !== undefined
       ) {
         const currentConfig = JSON.parse(existingConfig.config);
@@ -392,7 +353,6 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         configData = {
           classifier: body.classifier || currentConfig.classifier,
           preprocessing: body.preprocessing !== undefined ? body.preprocessing : currentConfig.preprocessing,
-          routing: body.routing !== undefined ? body.routing : currentConfig.routing,
           experts: body.experts || currentConfig.experts,
           fallback: body.fallback !== undefined ? body.fallback : currentConfig.fallback,
         };
