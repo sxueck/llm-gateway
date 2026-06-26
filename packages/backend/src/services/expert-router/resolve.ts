@@ -154,10 +154,12 @@ export function matchExpert(category: string, experts: ExpertTarget[]): ExpertTa
     if (exactMatch) return exactMatch;
 
     const partialMatch = experts.find(
-      e => {
-        const expertCategory = e.category.trim().toLowerCase();
-        return normalizedCategory.includes(expertCategory) || expertCategory.includes(normalizedCategory);
-      }
+        e => {
+            const expertCategory = e.category.trim().toLowerCase();
+            return expertCategory.length >= 2 && normalizedCategory.length >= 2 && (
+                normalizedCategory.includes(expertCategory) || expertCategory.includes(normalizedCategory)
+            );
+        }
     );
 
     return partialMatch || null;

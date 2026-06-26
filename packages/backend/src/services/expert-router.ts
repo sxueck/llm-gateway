@@ -10,6 +10,7 @@ import { SignalBuilder } from './expert-router/preprocess/index.js';
 import { LLMJudge } from './expert-router/decision/llm-judge.js';
 import { resolveModelConfig, matchExpert } from './expert-router/resolve.js';
 import { RouteDecision, ProxyRequest } from './expert-router/types.js';
+import { expertRoutingSessionBindings, extractExpertRoutingSessionId } from './expert-router/session-binding.js';
 
 interface RoutingContext {
   modelId?: string;
@@ -44,6 +45,7 @@ export class ExpertRouter {
     }
 
     const config: ExpertRoutingConfig = JSON.parse(expertRoutingConfig.config);
+    const sessionId = extractExpertRoutingSessionId(request);
 
     // 记录所有可用的专家配置
     if (config.experts && config.experts.length > 0) {
@@ -52,6 +54,45 @@ export class ExpertRouter {
       ).join('; ');
       memoryLogger.info(
         `Expert routing experts config | total=${config.experts.length} | experts=[${expertsInfo}]`,
+        'ExpertRouter'
+      );
+    }
+
+    const cachedCategory = sessionId
+      ? expertRoutingSessionBindings.get(expertRoutingId, context.virtualKeyId, sessionId)
+      : undefined;
+    if (sessionId && cachedCategory) {
+      const cachedExpert = matchExpert(cachedCategory, config.experts);
+      if (cachedExpert) {
+        memoryLogger.info(
+          `Expert routing session binding hit | session=${sessionId} | category=${cachedCategory} | expertId=${cachedExpert.id}`,
+          'ExpertRouter'
+        );
+
+        try {
+          return await this.resolveExpert(
+            cachedExpert,
+            {
+              category: cachedCategory,
+              confidence: 1,
+              source: 'session',
+              metadata: { sessionId }
+            },
+            0,
+            expertRoutingId,
+            context,
+            request,
+            config.classifier
+          );
+        } catch (e) {
+          expertRoutingSessionBindings.delete(expertRoutingId, context.virtualKeyId, sessionId);
+          throw e;
+        }
+      }
+
+      expertRoutingSessionBindings.delete(expertRoutingId, context.virtualKeyId, sessionId);
+      memoryLogger.info(
+        `Expert routing session binding invalidated | session=${sessionId} | category=${cachedCategory}`,
         'ExpertRouter'
       );
     }
@@ -75,20 +116,20 @@ export class ExpertRouter {
         }
     }
 
-    if (!signal.intentText && signal.toolSignals.length === 0) {
-        throw new Error('No valid intent text or signals found in request');
-    }
-
     let decision: RouteDecision | null = null;
     let llmJudgeFailedRequest: any = null;
 
-    // 2. LLM Judge Classification
-    try {
+    if (!signal.intentText && signal.toolSignals.length === 0) {
+      memoryLogger.warn('No valid intent text or signals found in request', 'ExpertRouter');
+    } else {
+      // 2. LLM Judge Classification
+      try {
         decision = await LLMJudge.decide(signal, config.classifier, config.experts);
         memoryLogger.debug(`LLM classified: ${decision.category}`, 'ExpertRouter');
-    } catch (e: any) {
+      } catch (e: any) {
         memoryLogger.error(`LLM Judge failed: ${e.message}`, 'ExpertRouter');
         llmJudgeFailedRequest = (e as any).classifierRequest || null;
+      }
     }
 
     if (!decision) {
@@ -131,7 +172,7 @@ export class ExpertRouter {
     const classificationTime = Date.now() - startTime;
 
     // 4. Resolve Expert
-    return await this.resolveExpert(
+    const result = await this.resolveExpert(
       expert,
       decision,
       classificationTime,
@@ -141,6 +182,16 @@ export class ExpertRouter {
       config.classifier,
       signal.stats
     );
+
+    if (sessionId) {
+      expertRoutingSessionBindings.set(expertRoutingId, context.virtualKeyId, sessionId, decision.category);
+      memoryLogger.info(
+        `Expert routing session binding stored | session=${sessionId} | category=${decision.category} | expertId=${expert.id}`,
+        'ExpertRouter'
+      );
+    }
+
+    return result;
   }
 
   private async resolveExpert(

@@ -105,23 +105,6 @@ export interface ExpertRoutingConfig {
     enable_structured_output?: boolean;
     enable_adaptive_thinking?: boolean;
   };
-  routing?: {
-    mode?: 'llm' | 'semantic' | 'hybrid' | 'pipeline';
-    semantic?: {
-      model?: 'bge-small-zh-v1.5' | 'all-MiniLM-L6-v2' | 'bge-m3';
-      threshold?: number;
-      margin?: number;
-      routes?: { category: string; utterances: string[] }[];
-    };
-    heuristics?: {
-      rules: {
-        id: string;
-        type: 'keyword' | 'regex' | 'header';
-        pattern: string;
-        target_expert: string;
-      }[];
-    };
-  };
   experts: import('./expert-routing.js').ExpertTarget[];
   fallback?: {
     type: 'virtual' | 'real';
