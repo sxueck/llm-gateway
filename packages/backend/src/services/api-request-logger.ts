@@ -2,12 +2,8 @@ import { nanoid } from 'nanoid';
 import { apiRequestDb } from '../db/index.js';
 import type { VirtualKey } from '../types/index.js';
 import type { TokenCalculationResult } from '../routes/proxy/token-calculator.js';
+import { memoryLogger } from './logger.js';
 
-/**
- * 统一的 API 请求日志写库工具
- *
- * 所有写入 api_requests 表的逻辑都应该通过这里进行，避免在各个 handler 中手动拼字段。
- */
 export interface ApiLogParams {
   virtualKey: VirtualKey;
   providerId: string;
@@ -137,5 +133,11 @@ export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
     compression_saved_tokens: params.compressionStats?.savedTokens,
     ip: params.ip,
     user_agent: params.userAgent,
+  });
+}
+
+export function logApiRequestAsync(params: ApiLogParams): void {
+  logApiRequestToDb(params).catch((e) => {
+    memoryLogger.error(`API log write failed: ${e instanceof Error ? e.message : String(e)}`, 'ApiRequestLogger');
   });
 }

@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { modelDb, providerDb, virtualKeyDb } from '../db/index.js';
+import { hotConfigCache } from '../services/hot-config-cache.js';
 import { decryptApiKey } from '../utils/crypto.js';
 import { probeService } from '../services/probe-service.js';
 import { parseSupportedProtocols, resolveProbeProtocol } from '../utils/protocol-utils.js';
@@ -255,6 +256,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
     }
 
     await modelDb.update(id, updates);
+    hotConfigCache.invalidateModel(id);
 
     const updated = await modelDb.getById(id);
     if (!updated) {
@@ -305,6 +307,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
     }
 
     await modelDb.delete(id);
+    hotConfigCache.invalidateModel(id);
     return { success: true };
   });
 

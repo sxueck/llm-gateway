@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { expertRoutingConfigDb, expertRoutingLogDb, modelDb, systemConfigDb } from '../db/index.js';
+import { hotConfigCache } from '../services/hot-config-cache.js';
 import { memoryLogger } from '../services/logger.js';
 import { expertTemplates } from '../data/expert-templates.js';
 
@@ -372,6 +373,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         const associatedModels = (await modelDb.getAll() as any[]).filter((m: any) => m.expert_routing_id === id);
         for (const model of associatedModels) {
           await modelDb.update(model.id, { name: body.name });
+          hotConfigCache.invalidateModel(model.id);
         }
         memoryLogger.info(`同步更新专家路由关联模型名称: ${associatedModels.length} 个`, 'ExpertRouting');
       }
@@ -411,9 +413,11 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         const shouldDelete = model.is_virtual === 1 && model.model_identifier === `expert-${id}`;
         if (shouldDelete) {
           await modelDb.delete(model.id);
+          hotConfigCache.invalidateModel(model.id);
           deletedModels++;
         } else {
           await modelDb.update(model.id, { expert_routing_id: null });
+          hotConfigCache.invalidateModel(model.id);
           detachedModels++;
         }
       }
@@ -616,6 +620,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
           await modelDb.update(modelId, {
             expert_routing_id: id,
           });
+          hotConfigCache.invalidateModel(modelId);
         }
       }
 
@@ -644,6 +649,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       await modelDb.update(modelId, {
         expert_routing_id: null,
       });
+      hotConfigCache.invalidateModel(modelId);
 
       memoryLogger.info(`取消模型关联: ${modelId} | 专家路由: ${id}`, 'ExpertRouting');
 

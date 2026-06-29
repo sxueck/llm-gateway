@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { modelDb, systemConfigDb } from '../../db/index.js';
+import { systemConfigDb } from '../../db/index.js';
+import { hotConfigCache } from '../../services/hot-config-cache.js';
 import { memoryLogger } from '../../services/logger.js';
 import { authenticateVirtualKey, extractVirtualKeyAuthHeader, getModelIdsFromVirtualKey } from './auth.js';
 
@@ -51,7 +52,7 @@ export async function getModelsHandler(request: FastifyRequest, reply: FastifyRe
 
     const { virtualKey, virtualKeyValue } = authResult;
     const uniqueModelIds = getModelIdsFromVirtualKey(virtualKey);
-    const modelPromises = uniqueModelIds.map(id => modelDb.getById(id));
+    const modelPromises = uniqueModelIds.map(id => hotConfigCache.getModelById(id));
     const modelResults = await Promise.all(modelPromises);
     const models = modelResults.filter(model => model?.enabled);
 
@@ -113,7 +114,7 @@ export async function getModelInfoHandler(request: FastifyRequest, reply: Fastif
 
     const { virtualKey, virtualKeyValue } = authResult;
     const uniqueModelIds = getModelIdsFromVirtualKey(virtualKey);
-    const modelPromises = uniqueModelIds.map(id => modelDb.getById(id));
+    const modelPromises = uniqueModelIds.map(id => hotConfigCache.getModelById(id));
     const modelResults = await Promise.all(modelPromises);
     const models = modelResults.filter(model => model?.enabled);
 

@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { virtualKeyDb, providerDb, modelDb } from '../db/index.js';
+import { hotConfigCache } from '../services/hot-config-cache.js';
 import { hashKey } from '../utils/crypto.js';
 import { validateCustomKey } from '../utils/validation.js';
 
@@ -292,6 +293,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     if (body.piiProtectionEnabled !== undefined) updates.pii_protection_enabled = body.piiProtectionEnabled ? 1 : 0;
 
     await virtualKeyDb.update(id, updates);
+    hotConfigCache.invalidateVirtualKey(vk.key_value);
 
     const updated = await virtualKeyDb.getById(id);
     if (!updated) {
@@ -330,6 +332,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     }
 
     await virtualKeyDb.delete(id);
+    hotConfigCache.invalidateVirtualKey(vk.key_value);
 
     return { success: true };
   });

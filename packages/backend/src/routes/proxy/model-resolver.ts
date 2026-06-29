@@ -1,5 +1,6 @@
 import { FastifyRequest } from 'fastify';
-import { providerDb, modelDb, systemConfigDb } from '../../db/index.js';
+import { systemConfigDb } from '../../db/index.js';
+import { hotConfigCache } from '../../services/hot-config-cache.js';
 import { memoryLogger } from '../../services/logger.js';
 import { resolveProviderFromModel } from './routing.js';
 
@@ -97,7 +98,7 @@ export async function resolveModelAndProvider(
         const candidateModels: Array<{ id: string; model: any }> = [];
         for (const id of uniqueCandidateIds) {
           try {
-            const m = await modelDb.getById(id);
+            const m = await hotConfigCache.getModelById(id);
             if (m && m.enabled) {
               candidateModels.push({ id, model: m });
             }
@@ -197,7 +198,7 @@ export async function resolveModelAndProvider(
   }
 
   if (virtualKey.model_id) {
-    const model = await modelDb.getById(virtualKey.model_id);
+    const model = await hotConfigCache.getModelById(virtualKey.model_id);
     if (!model) {
       memoryLogger.error(`Model not found: ${virtualKey.model_id}`, 'Proxy');
       return {
@@ -277,7 +278,7 @@ export async function resolveModelAndProvider(
         const matchedModels: Array<{ modelId: string; model: any; provider?: any }> = [];
 
         for (const modelId of parsedModelIds) {
-          const model = await modelDb.getById(modelId);
+          const model = await hotConfigCache.getModelById(modelId);
           if (!model) continue;
 
           // 检查模型名称是否匹配
@@ -291,7 +292,7 @@ export async function resolveModelAndProvider(
             matchedModels.push({ modelId, model });
           } else if (model.provider_id) {
             // 普通模型
-            const provider = await providerDb.getById(model.provider_id);
+            const provider = await hotConfigCache.getProviderById(model.provider_id);
             if (provider) {
               matchedModels.push({ modelId, model, provider });
             } else {
@@ -366,7 +367,7 @@ export async function resolveModelAndProvider(
       if (!selectedModel) {
         const missingModels: string[] = [];
         for (const candidateId of parsedModelIds) {
-          const candidateModel = await modelDb.getById(candidateId);
+          const candidateModel = await hotConfigCache.getModelById(candidateId);
           if (!candidateModel) {
             memoryLogger.warn(
               `虚拟密钥 ${virtualKeyValue} 引用了不存在的模型: ${candidateId}，已跳过`,
@@ -464,7 +465,7 @@ export async function resolveModelAndProvider(
       };
     }
   } else if (virtualKey.provider_id) {
-    provider = await providerDb.getById(virtualKey.provider_id);
+    provider = await hotConfigCache.getProviderById(virtualKey.provider_id);
     if (!provider) {
       memoryLogger.error(`Provider not found: ${virtualKey.provider_id}`, 'Proxy');
       return {
@@ -519,16 +520,13 @@ export async function resolveModelAndProvider(
   };
 }
 
-/**
- * 智能路由重试：使用 excludeTargetKeys 重新解析目标
- */
 export async function retrySmartRouting(
   virtualKey: any,
   request: FastifyRequest,
   modelId: string,
   excludeTargetKeys: Set<string>
 ): Promise<ModelResolutionResult | ModelResolutionError> {
-  const model = await modelDb.getById(modelId);
+  const model = await hotConfigCache.getModelById(modelId);
   if (!model) {
     memoryLogger.error(`Model not found for retry: ${modelId}`, 'Proxy');
     return {

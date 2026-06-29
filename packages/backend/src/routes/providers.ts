@@ -3,6 +3,7 @@ import { lookup } from 'node:dns/promises';
 import { createConnection } from 'node:net';
 import { z } from 'zod';
 import { providerDb } from '../db/index.js';
+import { hotConfigCache } from '../services/hot-config-cache.js';
 import { encryptApiKey, decryptApiKey } from '../utils/crypto.js';
 import { buildModelsEndpoint } from '../utils/api-endpoint-builder.js';
 import { upstreamFetch } from '../utils/upstream-fetch.js';
@@ -237,6 +238,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
     fastify.log.info({ updates }, '[Providers] Final updates to apply');
 
     await providerDb.update(id, updates);
+    hotConfigCache.invalidateProvider(id);
 
     const updated = await providerDb.getById(id);
     if (!updated) {
@@ -265,6 +267,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
     }
 
     await providerDb.delete(id);
+    hotConfigCache.invalidateProvider(id);
 
     return { success: true };
   });

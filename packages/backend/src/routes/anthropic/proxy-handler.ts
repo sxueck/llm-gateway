@@ -8,7 +8,7 @@ import { isAnthropicProtocolConfig } from '../../utils/protocol-utils.js';
 import type { VirtualKey } from '../../types/index.js';
 import type { AnthropicRequest, AnthropicError } from '../../types/anthropic.js';
 import { makeAnthropicRequest, makeAnthropicStreamRequest } from './http-client.js';
-import { logApiRequestToDb } from '../../services/api-request-logger.js';
+import { logApiRequestToDb, logApiRequestAsync } from '../../services/api-request-logger.js';
 import { calculateTokensIfNeeded } from '../proxy/token-calculator.js';
 import { maybeCompressImagesInAnthropicRequestBodyInPlace, logImageCompressionStats } from '../../services/image-compression.js';
 import { requestHeaderForwardingService } from '../../services/request-header-forwarding.js';
@@ -314,7 +314,8 @@ async function handleAnthropicNonStreamRequest(
 
       const tokenCount = await calculateTokensIfNeeded(0, requestBody, responseData);
 
-      await logApiRequestToDb({
+      release();
+      logApiRequestAsync({
         virtualKey,
         providerId,
         model: modelForLogging,
@@ -344,7 +345,8 @@ async function handleAnthropicNonStreamRequest(
 
       const tokenCount = await calculateTokensIfNeeded(0, requestBody, errorData);
 
-      await logApiRequestToDb({
+      release();
+      logApiRequestAsync({
         virtualKey,
         providerId,
         model: modelForLogging,
@@ -376,7 +378,7 @@ async function handleAnthropicNonStreamRequest(
 
     const tokenCount = await calculateTokensIfNeeded(0, requestBody);
 
-    await logApiRequestToDb({
+    logApiRequestAsync({
       virtualKey,
       providerId,
       model: modelForLogging,
@@ -467,7 +469,8 @@ async function handleAnthropicStreamRequest(
 
     const tokenCount = await calculateAnthropicStreamTokenCount(requestBody, tokenUsage);
 
-    await logApiRequestToDb({
+    release();
+    logApiRequestAsync({
       virtualKey,
       providerId,
       model: modelForLogging,
@@ -503,7 +506,7 @@ async function handleAnthropicStreamRequest(
 
     const tokenCount = await calculateTokensIfNeeded(0, requestBody);
 
-    await logApiRequestToDb({
+    logApiRequestAsync({
       virtualKey,
       providerId,
       model: requestBody.model,

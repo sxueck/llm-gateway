@@ -7,7 +7,7 @@ import { buildProviderConfig } from '../proxy/provider-config-builder.js';
 import { virtualKeyQueueService } from '../../services/virtual-key-queue.js';
 import { memoryLogger } from '../../services/logger.js';
 import { debugModeService } from '../../services/debug-mode.js';
-import { logApiRequestToDb } from '../../services/api-request-logger.js';
+import { logApiRequestAsync } from '../../services/api-request-logger.js';
 import { nanoid } from 'nanoid';
 import {
   parseClientWebSocketEvent,
@@ -233,7 +233,7 @@ export async function handleResponsesWebSocket(
           } catch (_e) {}
         }
 
-        logApiRequestToDb({
+        logApiRequestAsync({
           virtualKey,
           providerId,
           model: protocolConfig.model || 'unknown',
@@ -246,12 +246,12 @@ export async function handleResponsesWebSocket(
           requestType: 'openai-responses-ws',
           ip: requestIp,
           userAgent: requestUserAgent,
-        }).catch((_e) => {});
+        });
       } catch (err: any) {
         memoryLogger.error(`${logPrefix} | Response error: ${err?.message || String(err)}`, 'WebSocket');
 
         const duration = Date.now() - turnStartTime;
-        logApiRequestToDb({
+        logApiRequestAsync({
           virtualKey,
           providerId: turnConfig?.providerId || 'unknown',
           model: turnConfig?.protocolConfig?.model || normalizedModelFromRequest(requestBody) || 'unknown',
@@ -261,7 +261,7 @@ export async function handleResponsesWebSocket(
           requestType: 'openai-responses-ws',
           ip: requestIp,
           userAgent: requestUserAgent,
-        }).catch((_e) => {});
+        });
 
         if (socket.readyState === WebSocket.OPEN) {
           try {
@@ -303,8 +303,6 @@ export async function handleResponsesWebSocket(
 
     resetIdleTimer();
 
-    // Activate the message handler and replay any messages that arrived during
-    // the async initialisation phase.
     dispatchMessage = (data, isBinary) => {
       handleClientMessage(data, isBinary).catch((err: any) => {
         memoryLogger.error(`${logPrefix} | ${err?.message || String(err)}`, 'WebSocket');

@@ -1,4 +1,4 @@
-import { virtualKeyDb } from '../../db/index.js';
+import { hotConfigCache } from '../../services/hot-config-cache.js';
 import { memoryLogger } from '../../services/logger.js';
 
 export interface VirtualKeyAuthResult {
@@ -20,15 +20,6 @@ export interface AuthError {
   };
 }
 
-/**
- * 从请求头中提取用于虚拟密钥认证的 header
- * 支持：
- * - Authorization: Bearer <virtual_key>
- * - x-google-api-key: <virtual_key>
- * - x-goog-api-key: <virtual_key>
- * - x-api-key: <virtual_key>
- * 这些头通常由标准 SDK（如 Gemini、Claude）发送，这里将它们映射为虚拟密钥认证。
- */
 export function extractVirtualKeyAuthHeader(headers: Record<string, any> | undefined): string | undefined {
   if (!headers) return undefined;
 
@@ -79,7 +70,7 @@ export async function authenticateVirtualKey(authHeader: string | undefined): Pr
 
   const token = authHeader.substring(7).trim();
   const virtualKeyValue = token;
-  const virtualKey = await virtualKeyDb.getByKeyValue(virtualKeyValue);
+  const virtualKey = await hotConfigCache.getVirtualKeyByKeyValue(virtualKeyValue);
   if (!virtualKey) {
     memoryLogger.warn(`Virtual key not found: ${virtualKeyValue}`, 'Proxy');
     return {

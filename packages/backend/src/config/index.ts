@@ -34,6 +34,7 @@ const envSchema = z.object({
   MYSQL_USER: z.string().default('root'),
   MYSQL_PASSWORD: z.string(),
   MYSQL_DATABASE: z.string().default('llm_gateway'),
+  MYSQL_CONNECTION_LIMIT: z.string().default('30'),
   GEO_IP_ENABLED: z.string().optional(),
   QUEUE_MAX_CONCURRENCY: z.string().default('20'),
   QUEUE_MAX_SIZE: z.string().default('200'),
@@ -44,6 +45,13 @@ const env = envSchema.parse(process.env)
 
 const port = parseInt(env.PORT, 10)
 const defaultPublicUrl = env.PUBLIC_URL || `http://localhost:${port}`
+
+function parsePositiveInt(value: string, defaultValue: number): number {
+  const parsed = parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultValue
+}
+
+const connectionLimit = parsePositiveInt(env.MYSQL_CONNECTION_LIMIT, 30)
 
 export const appConfig = {
   port,
@@ -59,7 +67,8 @@ export const appConfig = {
     port: parseInt(env.MYSQL_PORT, 10),
     user: env.MYSQL_USER,
     password: env.MYSQL_PASSWORD,
-    database: env.MYSQL_DATABASE
+    database: env.MYSQL_DATABASE,
+    connectionLimit,
   },
   queue: {
     maxConcurrency: parseInt(env.QUEUE_MAX_CONCURRENCY, 10),
