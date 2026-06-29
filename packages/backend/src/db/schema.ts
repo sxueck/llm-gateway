@@ -41,7 +41,8 @@ export async function createTables() {
         name VARCHAR(255) NOT NULL,
         provider_id VARCHAR(255),
         model_identifier VARCHAR(255) NOT NULL,
-        protocol VARCHAR(50),
+        supported_protocols TEXT,
+        health_check_protocol VARCHAR(50),
         is_virtual TINYINT DEFAULT 0,
         routing_config_id VARCHAR(255),
         expert_routing_id VARCHAR(255),
@@ -56,8 +57,7 @@ export async function createTables() {
         INDEX idx_models_is_virtual (is_virtual),
         INDEX idx_models_routing_config (routing_config_id),
         INDEX idx_models_compression_config (compression_config(255)),
-        INDEX idx_models_expert_routing (expert_routing_id),
-        INDEX idx_models_protocol (protocol)
+        INDEX idx_models_expert_routing (expert_routing_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 

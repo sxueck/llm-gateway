@@ -346,17 +346,13 @@ export async function resolveWebSocketTurnConfig(
   }
 
   const { provider, providerId, currentModel } = modelResult;
-  const configResult = await buildProviderConfig(provider, virtualKey, virtualKeyValue, providerId, turnRequest, currentModel);
+  const configResult = await buildProviderConfig(provider, virtualKey, virtualKeyValue, providerId, turnRequest, currentModel, 'openai');
 
   if ('code' in configResult) {
     throw errorFromGatewayPayload(configResult.body.error.message, ERROR_CODES.PROVIDER_CONFIG_ERROR);
   }
 
   const { protocolConfig, path } = configResult;
-
-  if (protocolConfig.protocol !== 'openai') {
-    throw errorFromGatewayPayload('Provider protocol does not support WebSocket transport', ERROR_CODES.UNSUPPORTED_CLIENT_EVENT);
-  }
 
   if (!protocolConfig.baseUrl) {
     throw errorFromGatewayPayload('Provider has no base URL configured', ERROR_CODES.MISSING_UPSTREAM);

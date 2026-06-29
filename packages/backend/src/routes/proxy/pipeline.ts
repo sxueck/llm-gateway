@@ -233,7 +233,8 @@ export async function runProxyPipeline(
     virtualKeyValue,
     providerId,
     request,
-    currentModel
+    currentModel,
+    options.protocol
   );
   if ('code' in configResult) {
     await options.handlers.onProviderConfigError({

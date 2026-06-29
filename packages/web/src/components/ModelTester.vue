@@ -143,7 +143,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   NSpace,
@@ -161,7 +161,6 @@ import {
   FlashOutline,
 } from '@vicons/ionicons5';
 import { modelApi } from '@/api/model';
-import { isAnthropicProtocol as checkIsAnthropicProtocol } from '@/utils/protocol-utils';
 import type { Model } from '@/types';
 
 const { t } = useI18n();
@@ -259,16 +258,18 @@ function getResponseTimeType(responseTime: number): 'default' | 'success' | 'war
   return 'error';
 }
 
+const effectiveProtocol = computed(() => props.model.healthCheckProtocol || props.model.supportedProtocols?.[0] || 'openai');
+
 function isAnthropicProtocol(): boolean {
-  return checkIsAnthropicProtocol(props.model);
+  return effectiveProtocol.value === 'anthropic';
 }
 
 function isGoogleProtocol(): boolean {
-  return props.model.protocol === 'google';
+  return effectiveProtocol.value === 'google';
 }
 
 function getChatEndpointName(): string {
-  const protocol = props.model.protocol;
+  const protocol = effectiveProtocol.value;
   if (protocol === 'anthropic') {
     return 'Messages API (Anthropic)';
   } else if (protocol === 'google') {

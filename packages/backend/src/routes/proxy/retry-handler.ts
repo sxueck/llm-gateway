@@ -13,6 +13,7 @@ export interface RetryContext {
   compressionStats?: { originalTokens: number; savedTokens: number };
   startTime: number;
   isResponsesApi?: boolean;
+  entrypointProtocol?: 'openai' | 'anthropic' | 'gemini';
 }
 
 const SMART_ROUTING_RETRY_WINDOW_MS = 10_000;
@@ -98,7 +99,8 @@ async function handleSmartRoutingRetry(
     context.virtualKeyValue,
     retryResult.providerId,
     request,
-    retryResult.currentModel
+    retryResult.currentModel,
+    context.entrypointProtocol
   );
 
   if ('code' in configResult) {
