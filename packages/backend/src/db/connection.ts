@@ -12,7 +12,7 @@ export async function initDatabase() {
       password: appConfig.mysql.password,
       database: appConfig.mysql.database,
       waitForConnections: true,
-      connectionLimit: 10,
+      connectionLimit: appConfig.mysql.connectionLimit,
       queueLimit: 0,
       enableKeepAlive: true,
       keepAliveInitialDelay: 0,

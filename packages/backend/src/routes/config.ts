@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { appConfig, setPublicUrl, validatePublicUrl } from '../config/index.js';
 import { memoryLogger } from '../services/logger.js';
 import { apiRequestDb, routingConfigDb, modelDb, systemConfigDb, expertRoutingLogDb, healthTargetDb, virtualKeyDb } from '../db/index.js';
+import { hotConfigCache } from '../services/hot-config-cache.js';
 import { nanoid } from 'nanoid';
 import { loadAntiBotConfig, validateUserAgentList } from '../utils/anti-bot-config.js';
 import { hashKey } from '../utils/crypto.js';
@@ -480,7 +481,6 @@ export async function configRoutes(fastify: FastifyInstance) {
     };
   });
 
-  // 计算成本的辅助函数
   async function calculateCostStats(startTime: number, endTime: number) {
       const pool = await import('../db/connection.js').then(m => m.getDatabase());
     const conn = await pool.getConnection();
@@ -496,7 +496,6 @@ export async function configRoutes(fastify: FastifyInstance) {
         cachedTokens: number;
       }>();
 
-      // 从历史汇总表查询历史数据
       if (needsSummary) {
         const lastSummaryDay = new Date(detailStart - 1);
         const [summaryRows] = await conn.query(
@@ -524,7 +523,6 @@ export async function configRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // 从明细表查询近期数据
       if (needsDetail) {
         const detailStartTime = Math.max(startTime, detailStart);
         const [detailRows] = await conn.query(
@@ -556,19 +554,16 @@ export async function configRoutes(fastify: FastifyInstance) {
       const modelCosts: any[] = [];
 
       for (const [model, usage] of modelUsageMap.entries()) {
-        // 尝试解析模型成本
         const costInfo = await costMappingService.resolveModelCost(model);
 
         if (costInfo && costInfo.info) {
           const info = costInfo.info;
           let modelCost = 0;
 
-          // 计算输入成本
           if (info.input_cost_per_token && usage.promptTokens) {
             modelCost += usage.promptTokens * Number(info.input_cost_per_token);
           }
 
-          // 计算输出成本
           if (info.output_cost_per_token && usage.completionTokens) {
             modelCost += usage.completionTokens * Number(info.output_cost_per_token);
           }
@@ -595,7 +590,6 @@ export async function configRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // 按成本排序
       modelCosts.sort((a, b) => b.cost - a.cost);
 
       return {
@@ -713,7 +707,6 @@ export async function configRoutes(fastify: FastifyInstance) {
       recentSources,
     };
 
-    // 计算成本统计
     let costStats = null;
     try {
       costStats = await calculateCostStats(startTime, now);
@@ -933,6 +926,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         await modelDb.update(virtualModel.id, {
           name: body.virtualModelName
         });
+        hotConfigCache.invalidateModel(virtualModel.id);
       }
 
       memoryLogger.info(`更新路由配置: ${id}`, 'Config');
@@ -970,9 +964,11 @@ export async function configRoutes(fastify: FastifyInstance) {
       for (const model of associatedModels) {
         if (model.is_virtual === 1) {
           await modelDb.delete(model.id);
+          hotConfigCache.invalidateModel(model.id);
           deletedModels++;
         } else {
           await modelDb.update(model.id, { routing_config_id: null });
+          hotConfigCache.invalidateModel(model.id);
           detachedModels++;
         }
       }
@@ -1029,7 +1025,6 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // 健康监控目标管理
   fastify.get('/health-targets', async () => {
     try {
       const targets = await healthTargetDb.getAll();
@@ -1193,7 +1188,6 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // 性能监控指标接口
   fastify.get('/performance-metrics', async () => {
     try {
       const now = Date.now();

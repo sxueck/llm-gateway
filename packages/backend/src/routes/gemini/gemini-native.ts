@@ -1,7 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { memoryLogger } from '../../services/logger.js';
 import { calculateTokensIfNeeded } from '../proxy/token-calculator.js';
-import { logApiRequestToDb } from '../../services/api-request-logger.js';
+import { logApiRequestAsync } from '../../services/api-request-logger.js';
 import { shouldLogRequestBody, getModelForLogging } from '../proxy/handlers/shared.js';
 import { truncateRequestBody } from '../../utils/request-logger.js';
 import { EmptyOutputError } from '../../errors/empty-output-error.js';
@@ -173,9 +173,6 @@ interface GeminiStreamAttemptResult {
   bypassGuard: boolean;
 }
 
-/**
- * 构建上游请求头
- */
 function buildUpstreamHeaders(
   requestHeaders: Record<string, string | string[] | undefined>,
   apiKey: string,
@@ -200,9 +197,6 @@ function buildUpstreamHeaders(
   return headers;
 }
 
-/**
- * Gemini 原生协议透传 - 非流式请求
- */
 export async function handleGeminiNativeNonStreamRequest(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -223,7 +217,6 @@ export async function handleGeminiNativeNonStreamRequest(
     'GeminiNative'
   );
 
-  // 构造上游 URL
   const baseForNative = protocolConfig.nativeBaseUrl || protocolConfig.baseUrl || '';
   const upstreamBase = baseForNative.replace(/\/+$/, '');
   if (!upstreamBase) {
@@ -239,14 +232,12 @@ export async function handleGeminiNativeNonStreamRequest(
     'GeminiNative'
   );
 
-  // 构造请求头
   const upstreamHeaders = buildUpstreamHeaders(
     request.headers as Record<string, string | string[] | undefined>,
     protocolConfig.apiKey,
     false
   );
 
-  // 准备请求体
   let requestBody: string | undefined;
   if (method !== 'GET' && method !== 'HEAD') {
     requestBody = JSON.stringify(request.body || {});
@@ -277,7 +268,6 @@ export async function handleGeminiNativeNonStreamRequest(
     const responseText = await upstreamResponse.text();
     const duration = Date.now() - startTime;
 
-    // 转发响应头（排除某些头）
     const excludedResponseHeaders = ['content-length', 'transfer-encoding', 'connection'];
     upstreamResponse.headers.forEach((value, key) => {
       if (!excludedResponseHeaders.includes(key.toLowerCase())) {
@@ -287,7 +277,6 @@ export async function handleGeminiNativeNonStreamRequest(
 
     reply.code(upstreamResponse.status);
 
-    // 解析响应体用于日志和统计
     let responseData: any;
     let tokenCount: any = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
@@ -305,15 +294,14 @@ export async function handleGeminiNativeNonStreamRequest(
         );
       }
     } catch {
-      // 非 JSON 响应，直接透传
     }
 
-    // 记录日志
     const shouldLogBody = shouldLogRequestBody(virtualKey);
     const truncatedRequest = shouldLogBody && requestBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
     const isSuccess = upstreamResponse.status >= 200 && upstreamResponse.status < 300;
 
-    await logApiRequestToDb({
+    release();
+    logApiRequestAsync({
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),
@@ -345,7 +333,7 @@ export async function handleGeminiNativeNonStreamRequest(
     const shouldLogBody = shouldLogRequestBody(virtualKey);
     const truncatedRequest = shouldLogBody && requestBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
 
-    await logApiRequestToDb({
+    logApiRequestAsync({
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),
@@ -374,9 +362,6 @@ export async function handleGeminiNativeNonStreamRequest(
   }
 }
 
-/**
- * Gemini 原生协议透传 - 流式请求
- */
 export async function handleGeminiNativeStreamRequest(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -416,7 +401,6 @@ export async function handleGeminiNativeStreamRequest(
     'GeminiNative'
   );
 
-  // 构造上游 URL
   const baseForNative = protocolConfig.nativeBaseUrl || protocolConfig.baseUrl || '';
   const upstreamBase = baseForNative.replace(/\/+$/, '');
   if (!upstreamBase) {
@@ -433,7 +417,6 @@ export async function handleGeminiNativeStreamRequest(
     'GeminiNative'
   );
 
-  // 构造请求头
   const upstreamHeaders = buildUpstreamHeaders(
     request.headers as Record<string, string | string[] | undefined>,
     protocolConfig.apiKey,
@@ -507,7 +490,8 @@ export async function handleGeminiNativeStreamRequest(
         const duration = Date.now() - startTime;
         const truncatedRequest = shouldLogBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
 
-        await logApiRequestToDb({
+        release();
+        logApiRequestAsync({
           virtualKey,
           providerId,
           model: getModelForLogging(request.body, currentModel),
@@ -553,7 +537,8 @@ export async function handleGeminiNativeStreamRequest(
         const duration = Date.now() - startTime;
         const truncatedRequest = shouldLogBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
 
-        await logApiRequestToDb({
+        release();
+        logApiRequestAsync({
           virtualKey,
           providerId,
           model: getModelForLogging(request.body, currentModel),
@@ -654,7 +639,8 @@ export async function handleGeminiNativeStreamRequest(
 
     const truncatedRequest = shouldLogBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
 
-    await logApiRequestToDb({
+    release();
+    logApiRequestAsync({
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),
@@ -684,7 +670,7 @@ export async function handleGeminiNativeStreamRequest(
 
     const truncatedRequest = shouldLogBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
 
-    await logApiRequestToDb({
+    logApiRequestAsync({
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),
@@ -698,7 +684,6 @@ export async function handleGeminiNativeStreamRequest(
       userAgent: requestUserAgent,
     });
 
-    // 如果还没发送响应头，返回错误
     if (!reply.raw.headersSent) {
       reply.raw.writeHead(500, { 'Content-Type': 'application/json' });
       reply.raw.write(JSON.stringify({
@@ -797,17 +782,14 @@ async function streamGeminiAttempt(
       await flushPendingChunks();
     }
 
-    // 检查是否需要提前终止空返回
     if (!hasAssistantContent && !bypassGuard && !earlyEmptyDetectionTimeout) {
       earlyEmptyDetectionTimeout = setTimeout(() => {
         if (!hasAssistantContent && !bypassGuard) {
           memoryLogger.warn('Gemini 流式响应在早期检测超时时间内未返回内容，提前终止并重试', 'GeminiNative');
-          // 清除定时器
           if (earlyEmptyDetectionTimeout) {
             clearTimeout(earlyEmptyDetectionTimeout);
             earlyEmptyDetectionTimeout = null;
           }
-          // 主动终止流
           reader.cancel();
         }
       }, EARLY_EMPTY_DETECTION_TIMEOUT_MS);
@@ -853,7 +835,6 @@ async function streamGeminiAttempt(
     reader.releaseLock();
   }
 
-  // 清理早期检测定时器
   if (earlyEmptyDetectionTimeout) {
     clearTimeout(earlyEmptyDetectionTimeout);
     earlyEmptyDetectionTimeout = null;

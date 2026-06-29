@@ -7,6 +7,16 @@ export interface LRUCacheOptions<K, V> {
   getSize?: (value: V, key: K) => number;
   /** 条目因容量限制或过期被淘汰时的回调 */
   onEvict?: (key: K, value: V, reason: 'size' | 'bytes' | 'ttl' | 'delete') => void;
+  /** 条目 TTL（毫秒），未设置则不过期 */
+  ttl?: number;
+  /**
+   * TTL 过期策略：
+   * - 'absolute'（默认）：自 set 起经过 ttl 毫秒后固定过期，get 不刷新。
+   *   适合配置类缓存，保证最终一致性的时间上界。
+   * - 'sliding'：每次 get 命中都会刷新过期时间点。
+   *   适合会话等"活跃即续期"的缓存。
+   */
+  ttlPolicy?: 'absolute' | 'sliding';
 }
 
 /**
@@ -17,6 +27,7 @@ export interface LRUCacheOptions<K, V> {
 export class LRUCache<K, V> {
   protected cache = new Map<K, V>();
   protected _totalBytes = 0;
+  protected timestamps = new Map<K, number>();
   
   constructor(protected options: LRUCacheOptions<K, V>) {
     if (options.maxBytes !== undefined && typeof options.getSize !== 'function') {
@@ -27,33 +38,57 @@ export class LRUCache<K, V> {
   get size(): number { return this.cache.size; }
   get totalBytes(): number { return this._totalBytes; }
 
-  has(key: K): boolean {
-    return this.cache.has(key);
+  private isExpired(key: K): boolean {
+    if (!this.options.ttl) return false;
+    const ts = this.timestamps.get(key);
+    if (ts === undefined) return false;
+    return Date.now() > ts + this.options.ttl;
   }
 
-  /**
-   * 获取条目，同时将该条目移动到 LRU 队列最前（最新访问）
-   */
+  private evictExpired(key: K): boolean {
+    if (this.isExpired(key)) {
+      const val = this.cache.get(key);
+      if (val !== undefined) {
+        if (this.options.getSize) {
+          this._totalBytes -= this.options.getSize(val, key);
+        }
+        this.cache.delete(key);
+        this.timestamps.delete(key);
+        if (this.options.onEvict) {
+          this.options.onEvict(key, val, 'ttl');
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+
+  has(key: K): boolean {
+    if (!this.cache.has(key)) return false;
+    if (this.evictExpired(key)) return false;
+    return true;
+  }
+
   get(key: K): V | undefined {
-    const value = this.cache.get(key);
-    if (value !== undefined) {
-      // 保证 O(1) 更新访问顺序
-      this.cache.delete(key);
-      this.cache.set(key, value);
+    if (!this.cache.has(key)) return undefined;
+    if (this.evictExpired(key)) return undefined;
+    const value = this.cache.get(key)!;
+    // 保证 O(1) 更新访问顺序
+    this.cache.delete(key);
+    this.cache.set(key, value);
+    if (this.options.ttlPolicy === 'sliding') {
+      this.timestamps.delete(key);
+      this.timestamps.set(key, Date.now());
     }
     return value;
   }
   
-  /**
-   * 不更新访问顺序获取条目
-   */
   peek(key: K): V | undefined {
+    if (!this.cache.has(key)) return undefined;
+    if (this.evictExpired(key)) return undefined;
     return this.cache.get(key);
   }
 
-  /**
-   * 设置条目。如果超限会触发淘汰（同步）。
-   */
   set(key: K, value: V): void {
     const existing = this.cache.get(key);
     let newSizeBytes = 0;
@@ -75,9 +110,11 @@ export class LRUCache<K, V> {
 
     if (existing !== undefined) {
       this.cache.delete(key);
+      this.timestamps.delete(key);
     }
 
     this.cache.set(key, value);
+    this.timestamps.set(key, Date.now());
     this._totalBytes += netBytes;
 
     // 执行基于条目数量的淘汰
@@ -86,9 +123,6 @@ export class LRUCache<K, V> {
     }
   }
 
-  /**
-   * 删除指定的 key
-   */
   delete(key: K): boolean {
     const existing = this.cache.get(key);
     if (existing !== undefined) {
@@ -96,6 +130,7 @@ export class LRUCache<K, V> {
         this._totalBytes -= this.options.getSize(existing, key);
       }
       this.cache.delete(key);
+      this.timestamps.delete(key);
       if (this.options.onEvict) {
         this.options.onEvict(key, existing, 'delete');
       }
@@ -104,12 +139,10 @@ export class LRUCache<K, V> {
     return false;
   }
 
-  /**
-   * 清空缓存
-   */
   clear(): void {
     const entries = Array.from(this.cache.entries());
     this.cache.clear();
+    this.timestamps.clear();
     this._totalBytes = 0;
     
     if (this.options.onEvict) {
@@ -119,9 +152,6 @@ export class LRUCache<K, V> {
     }
   }
 
-  /**
-   * 淘汰最老的一个条目
-   */
   protected evictOne(reason: 'size' | 'bytes', excludeKey?: K): void {
     for (const key of this.cache.keys()) {
       if (excludeKey !== undefined && key === excludeKey) {
@@ -132,6 +162,7 @@ export class LRUCache<K, V> {
         this._totalBytes -= this.options.getSize(val, key);
       }
       this.cache.delete(key);
+      this.timestamps.delete(key);
       if (this.options.onEvict) {
         this.options.onEvict(key, val, reason);
       }
@@ -139,9 +170,6 @@ export class LRUCache<K, V> {
     }
   }
 
-  /**
-   * 连续淘汰最老的条目直到能容纳指定的净增字节数
-   */
   protected evictToFitBytes(netBytesNeeded: number, excludeKey?: K): void {
     if (this.options.maxBytes === undefined) return;
     

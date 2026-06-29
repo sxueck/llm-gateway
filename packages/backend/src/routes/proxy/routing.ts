@@ -1,4 +1,5 @@
-import { providerDb, modelDb, routingConfigDb, expertRoutingConfigDb } from '../../db/index.js';
+import { modelDb, routingConfigDb, expertRoutingConfigDb } from '../../db/index.js';
+import { hotConfigCache } from '../../services/hot-config-cache.js';
 import { memoryLogger } from '../../services/logger.js';
 import { expertRouter } from '../../services/expert-router.js';
 import { CircuitState, circuitBreaker } from '../../services/circuit-breaker.js';
@@ -687,7 +688,7 @@ export async function resolveSmartRouting(
     throw error;
   }
 
-  const provider = await providerDb.getById(selectedTarget.provider);
+  const provider = await hotConfigCache.getProviderById(selectedTarget.provider);
   if (!provider) {
     memoryLogger.error(`Smart routing target provider not found: ${selectedTarget.provider}`, 'Proxy');
     throw new Error('Smart routing target provider not found');
@@ -777,7 +778,7 @@ export async function resolveExpertRouting(
     );
 
     if (result.expertType === 'virtual') {
-      const virtualModel = await modelDb.getById(result.expertModelId!);
+      const virtualModel = await hotConfigCache.getModelById(result.expertModelId!);
       if (!virtualModel) {
         throw new Error(`Virtual model not found: ${result.expertModelId}`);
       }
@@ -828,7 +829,7 @@ export async function resolveExpertRouting(
         );
       }
     } else if (result.expert.model_id) {
-      resolvedModel = await modelDb.getById(result.expert.model_id);
+      resolvedModel = await hotConfigCache.getModelById(result.expert.model_id);
     }
 
     if (result.enable_adaptive_thinking === true && result.thinking_enabled !== undefined) {
@@ -912,7 +913,7 @@ export async function resolveProviderFromModel(
     throw new Error('Model has no provider configured');
   }
 
-  const provider = await providerDb.getById(model.provider_id);
+  const provider = await hotConfigCache.getProviderById(model.provider_id);
   if (!provider) {
     memoryLogger.error(`Provider not found: ${model.provider_id}`, 'Proxy');
     throw new Error('Provider config not found');
