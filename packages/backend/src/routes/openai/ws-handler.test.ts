@@ -35,13 +35,14 @@ describe('resolveWebSocketTurnConfig', () => {
       return {
         provider: { id: 'gpt-provider' },
         providerId: 'gpt-provider',
-        currentModel: { name: 'gpt-5.5', protocol: 'openai' },
+        currentModel: { name: 'gpt-5.5', supported_protocols: JSON.stringify(['openai']), health_check_protocol: 'openai' },
       } as any;
     });
 
-    vi.mocked(buildProviderConfig).mockImplementation(async (_provider, _virtualKey, _virtualKeyValue, providerId, request) => {
+    vi.mocked(buildProviderConfig).mockImplementation(async (_provider, _virtualKey, _virtualKeyValue, providerId, request, _currentModel, entrypointProtocol) => {
       expect(providerId).toBe('gpt-provider');
       expect((request.body as any).model).toBe('gpt-5.5');
+      expect(entrypointProtocol).toBe('openai');
       return {
         protocolConfig: {
           protocol: 'openai',

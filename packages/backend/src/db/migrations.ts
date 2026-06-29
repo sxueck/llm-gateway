@@ -81,6 +81,137 @@ export const migrations: Migration[] = [
         console.warn('[迁移] 删除 prompt_cache_hit_count 字段失败:', e.message);
       }
     }
+  },
+  {
+    version: 33,
+    name: 'replace_model_protocol_with_supported_protocols',
+    up: async (conn: Connection) => {
+      const hasColumn = async (columnName: string) => {
+        const [rows] = await conn.query(
+          `SELECT COUNT(*) AS cnt
+           FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = 'models'
+             AND COLUMN_NAME = ?`,
+          [columnName]
+        );
+        const result = rows as any[];
+        return Number(result?.[0]?.cnt || 0) > 0;
+      };
+
+      const hasIndex = async (indexName: string) => {
+        const [rows] = await conn.query(
+          `SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.STATISTICS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = 'models'
+             AND INDEX_NAME = ?`,
+          [indexName]
+        );
+        const result = rows as any[];
+        return Number(result?.[0]?.cnt || 0) > 0;
+      };
+
+      if (!(await hasColumn('supported_protocols'))) {
+        await conn.query(`ALTER TABLE models ADD COLUMN supported_protocols TEXT`);
+        console.log('[迁移] 已添加 models.supported_protocols 字段');
+      }
+
+      if (!(await hasColumn('health_check_protocol'))) {
+        await conn.query(`ALTER TABLE models ADD COLUMN health_check_protocol VARCHAR(50)`);
+        console.log('[迁移] 已添加 models.health_check_protocol 字段');
+      }
+
+      if (await hasColumn('protocol')) {
+        // Migrate existing protocol values into supported_protocols JSON array
+        await conn.query(`
+          UPDATE models
+          SET supported_protocols = CASE
+            WHEN protocol IS NULL OR protocol = '' THEN '["openai"]'
+            ELSE CONCAT('["', protocol, '"]')
+          END,
+          health_check_protocol = CASE
+            WHEN protocol IS NULL OR protocol = '' THEN 'openai'
+            ELSE protocol
+          END
+        `);
+        console.log('[迁移] 已迁移 models.protocol 到 supported_protocols 和 health_check_protocol');
+
+        if (await hasIndex('idx_models_protocol')) {
+          await conn.query(`DROP INDEX idx_models_protocol ON models`);
+          console.log('[迁移] 已删除 idx_models_protocol 索引');
+        }
+
+        await conn.query(`ALTER TABLE models DROP COLUMN protocol`);
+        console.log('[迁移] 已删除 models.protocol 字段');
+      } else {
+        // Backfill defaults when protocol column is already absent (partial/fresh state)
+        await conn.query(`
+          UPDATE models
+          SET supported_protocols = '["openai"]'
+          WHERE supported_protocols IS NULL OR supported_protocols = ''
+        `);
+        await conn.query(`
+          UPDATE models
+          SET health_check_protocol = COALESCE(JSON_UNQUOTE(JSON_EXTRACT(supported_protocols, '$[0]')), 'openai')
+          WHERE health_check_protocol IS NULL OR health_check_protocol = ''
+        `);
+        console.log('[迁移] 已回填 models.supported_protocols 和 health_check_protocol 默认值');
+      }
+    },
+    down: async (conn: Connection) => {
+      const hasColumn = async (columnName: string) => {
+        const [rows] = await conn.query(
+          `SELECT COUNT(*) AS cnt
+           FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = 'models'
+             AND COLUMN_NAME = ?`,
+          [columnName]
+        );
+        const result = rows as any[];
+        return Number(result?.[0]?.cnt || 0) > 0;
+      };
+
+      const hasIndex = async (indexName: string) => {
+        const [rows] = await conn.query(
+          `SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.STATISTICS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = 'models'
+             AND INDEX_NAME = ?`,
+          [indexName]
+        );
+        const result = rows as any[];
+        return Number(result?.[0]?.cnt || 0) > 0;
+      };
+
+      if (!(await hasColumn('protocol'))) {
+        await conn.query(`ALTER TABLE models ADD COLUMN protocol VARCHAR(50)`);
+        console.log('[迁移] 已恢复 models.protocol 字段');
+      }
+
+      // Backfill protocol from the first entry of supported_protocols
+      await conn.query(`
+        UPDATE models
+        SET protocol = CASE
+          WHEN supported_protocols IS NULL OR supported_protocols = '' THEN 'openai'
+          ELSE JSON_UNQUOTE(JSON_EXTRACT(supported_protocols, '$[0]'))
+        END
+      `);
+      console.log('[迁移] 已从 supported_protocols 回填充 protocol 字段');
+
+      if (!(await hasIndex('idx_models_protocol'))) {
+        await conn.query(`CREATE INDEX idx_models_protocol ON models(protocol)`);
+        console.log('[迁移] 已重建 idx_models_protocol 索引');
+      }
+
+      if (await hasColumn('supported_protocols')) {
+        await conn.query(`ALTER TABLE models DROP COLUMN supported_protocols`);
+      }
+      if (await hasColumn('health_check_protocol')) {
+        await conn.query(`ALTER TABLE models DROP COLUMN health_check_protocol`);
+      }
+      console.log('[迁移] 已删除 supported_protocols 和 health_check_protocol 字段');
+    }
   }
 ];
 

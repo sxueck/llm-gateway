@@ -3,6 +3,7 @@ import { memoryLogger } from './logger.js';
 import { nanoid } from 'nanoid';
 import { appConfig } from '../config/index.js';
 import { probeService } from './probe-service.js';
+import { resolveProbeProtocol } from '../utils/protocol-utils.js';
 
 interface CheckConfig {
   timeout?: number;
@@ -183,7 +184,7 @@ class HealthCheckerService {
         };
       }
 
-      let effectiveProtocol = model.protocol || 'openai';
+      let effectiveProtocol = resolveProbeProtocol(model);
 
       if (model.is_virtual === 1 && (model.routing_config_id || model.expert_routing_id)) {
         try {
@@ -195,7 +196,7 @@ class HealthCheckerService {
           );
 
           if (resolved.resolvedModel) {
-            effectiveProtocol = resolved.resolvedModel.protocol || 'openai';
+            effectiveProtocol = resolveProbeProtocol(resolved.resolvedModel);
             memoryLogger.debug(
               `健康检查: 虚拟模型 ${model.name} 解析协议 | protocol: ${effectiveProtocol}`,
               'HealthChecker'

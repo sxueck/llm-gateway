@@ -705,7 +705,7 @@ export async function resolveSmartRouting(
     canRetry: hasAvailableRoutingTargets(config, updatedExcludeTargetKeys)
   };
 
-  // 查找真实模型配置（用于获取 protocol）
+  // 查找真实模型配置
   let resolvedModel: any = null;
   if (selectedTarget.override_params?.model) {
     result.modelOverride = selectedTarget.override_params.model;
@@ -719,13 +719,13 @@ export async function resolveSmartRouting(
       )
     );
 
-    if (resolvedModel) {
-      result.resolvedModel = resolvedModel;
-      memoryLogger.debug(
-        `Smart routing resolved real model: ${resolvedModel.name} | protocol: ${resolvedModel.protocol || 'auto'}`,
-        'Routing'
-      );
-    } else {
+      if (resolvedModel) {
+        result.resolvedModel = resolvedModel;
+        memoryLogger.debug(
+          `Smart routing resolved real model: ${resolvedModel.name}`,
+          'Routing'
+        );
+      } else {
       memoryLogger.warn(
         `Smart routing could not find real model for: ${selectedTarget.override_params.model} in provider: ${provider.name}`,
         'Routing'
@@ -739,7 +739,7 @@ export async function resolveSmartRouting(
   }
 
   memoryLogger.info(
-    `Smart routing target selected: provider=${provider.name} | providerId=${selectedTarget.provider} | model=${selectedTarget.override_params?.model || 'default'} | weight=${selectedTarget.weight || 0} | protocol=${resolvedModel?.protocol || 'auto'}${resolvedModel ? ` | resolvedModelId=${resolvedModel.id}` : ''}`,
+    `Smart routing target selected: provider=${provider.name} | providerId=${selectedTarget.provider} | model=${selectedTarget.override_params?.model || 'default'} | weight=${selectedTarget.weight || 0}${resolvedModel ? ` | resolvedModelId=${resolvedModel.id}` : ''}`,
     'Routing'
   );
 
@@ -791,7 +791,7 @@ export async function resolveExpertRouting(
 
       if (resolvedResult.resolvedModel) {
         memoryLogger.debug(
-          `专家路由最终解析模型: ${resolvedResult.resolvedModel.name} | protocol: ${resolvedResult.resolvedModel.protocol || 'auto'}`,
+          `专家路由最终解析模型: ${resolvedResult.resolvedModel.name}`,
           'ExpertRouter'
         );
       }
@@ -818,7 +818,7 @@ export async function resolveExpertRouting(
 
       if (resolvedModel) {
         memoryLogger.debug(
-          `专家路由解析真实模型: ${resolvedModel.name} | protocol: ${resolvedModel.protocol || 'auto'}`,
+          `专家路由解析真实模型: ${resolvedModel.name}`,
           'ExpertRouter'
         );
       } else {
@@ -839,7 +839,7 @@ export async function resolveExpertRouting(
       const hasExplicitReasoningEffort = body.reasoning_effort !== undefined;
 
       if (!hasExplicitThinking && !hasExplicitReasoning && !hasExplicitReasoningEffort) {
-        const protocol = resolvedModel?.protocol || result.provider?.protocol;
+        const protocol = request.protocol || 'openai';
         if (result.thinking_enabled === true) {
           if (protocol === 'anthropic') {
             body.thinking = { type: 'enabled', budget_tokens: 1024 };

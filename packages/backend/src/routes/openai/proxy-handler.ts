@@ -700,7 +700,8 @@ export async function handleStreamRequest(
           currentModel,
           compressionStats,
           startTime,
-          isResponsesApi
+          isResponsesApi,
+          entrypointProtocol: 'openai'
         });
         if (retried) {
           return;
@@ -1309,7 +1310,8 @@ export async function handleNonStreamRequest(
         modelResult,
         currentModel,
         compressionStats,
-        startTime
+        startTime,
+        entrypointProtocol: 'openai'
       });
 
       if (retried) {

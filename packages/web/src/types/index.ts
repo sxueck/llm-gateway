@@ -44,7 +44,8 @@ export interface Model {
   providerId: string;
   providerName?: string;
   modelIdentifier: string;
-  protocol?: string | null; // 'openai' | 'anthropic' | 'google'
+  supportedProtocols?: string[];
+  healthCheckProtocol?: string | null;
   isVirtual?: boolean;
   routingConfigId?: string | null;
   expertRoutingId?: string | null;
@@ -123,7 +124,8 @@ export interface CreateModelRequest {
   name: string;
   providerId: string;
   modelIdentifier: string;
-  protocol?: string; // 'openai' | 'anthropic' | 'google'
+  supportedProtocols?: string[];
+  healthCheckProtocol?: string;
   isVirtual?: boolean;
   routingConfigId?: string;
   enabled?: boolean;
@@ -133,7 +135,8 @@ export interface CreateModelRequest {
 export interface UpdateModelRequest {
   name?: string;
   modelIdentifier?: string;
-  protocol?: string; // 'openai' | 'anthropic' | 'google'
+  supportedProtocols?: string[];
+  healthCheckProtocol?: string;
   enabled?: boolean;
   modelAttributes?: ModelAttributes;
 }

@@ -117,11 +117,20 @@
               size="small"
             />
           </n-form-item>
-          <n-form-item label="协议类型">
+          <n-form-item label="支持协议">
             <n-select
-              v-model:value="formValue.protocol"
+              v-model:value="formValue.supportedProtocols"
               :options="protocolOptions"
-              placeholder="选择协议（可选，默认使用 OpenAI 协议）"
+              placeholder="选择支持的协议"
+              size="small"
+              multiple
+            />
+          </n-form-item>
+          <n-form-item label="探测协议">
+            <n-select
+              v-model:value="formValue.healthCheckProtocol"
+              :options="healthCheckProtocolOptions"
+              placeholder="选择健康检查协议"
               size="small"
               clearable
             />
@@ -357,14 +366,16 @@ const formValue = ref<{
   name: string;
   providerId: string;
   modelIdentifier: string;
-  protocol?: string | null;
+  supportedProtocols: string[];
+  healthCheckProtocol: string | null;
   enabled: boolean;
   modelAttributes?: ModelAttributes;
 }>({
   name: '',
   providerId: '',
   modelIdentifier: '',
-  protocol: null,
+  supportedProtocols: ['openai'],
+  healthCheckProtocol: 'openai',
   enabled: true,
   modelAttributes: undefined,
 });
@@ -385,6 +396,20 @@ const providerOptions = computed(() => {
 });
 
 const protocolOptions = PROTOCOL_OPTIONS;
+
+const healthCheckProtocolOptions = computed(() => {
+  return (formValue.value.supportedProtocols || []).map((p) => {
+    const info = getProtocolInfo(p);
+    return { label: info.label, value: p };
+  });
+});
+
+watch(() => formValue.value.supportedProtocols, (newVal) => {
+  if (!newVal || newVal.length === 0) return;
+  if (formValue.value.healthCheckProtocol && !newVal.includes(formValue.value.healthCheckProtocol)) {
+    formValue.value.healthCheckProtocol = newVal[0];
+  }
+}, { deep: true });
 
 const columns = computed(() => [
   {
@@ -427,10 +452,19 @@ const columns = computed(() => [
   },
   {
     title: t('models.protocol'),
-    key: 'protocol',
+    key: 'supportedProtocols',
     render: (row: Model) => {
-      const protocolInfo = getProtocolInfo(row.protocol);
-      return h(NTag, { type: protocolInfo.type, size: 'small' }, { default: () => protocolInfo.label });
+      const protocols = row.supportedProtocols || [];
+      if (protocols.length === 0) {
+        const protocolInfo = getProtocolInfo('openai');
+        return h(NTag, { type: protocolInfo.type, size: 'small' }, { default: () => protocolInfo.label });
+      }
+      return h(NSpace, { size: 4 }, {
+        default: () => protocols.map((p) => {
+          const protocolInfo = getProtocolInfo(p);
+          return h(NTag, { type: protocolInfo.type, size: 'small' }, { default: () => protocolInfo.label });
+        }),
+      });
     },
   },
   {
@@ -529,7 +563,8 @@ function handleEdit(model: Model) {
     name: model.name,
     providerId: model.providerId,
     modelIdentifier: model.modelIdentifier,
-    protocol: model.protocol || null,
+    supportedProtocols: model.supportedProtocols || ['openai'],
+    healthCheckProtocol: model.healthCheckProtocol || null,
     enabled: model.enabled,
     modelAttributes: model.modelAttributes || undefined,
   };
@@ -558,7 +593,8 @@ async function handleSubmit() {
     const payload = {
       name: formValue.value.name,
       modelIdentifier: formValue.value.modelIdentifier,
-      protocol: formValue.value.protocol || undefined,
+      supportedProtocols: formValue.value.supportedProtocols,
+      healthCheckProtocol: formValue.value.healthCheckProtocol || undefined,
       enabled: formValue.value.enabled,
       modelAttributes: formValue.value.modelAttributes,
     };
@@ -592,7 +628,8 @@ function resetForm() {
     name: '',
     providerId: '',
     modelIdentifier: '',
-    protocol: null,
+    supportedProtocols: ['openai'],
+    healthCheckProtocol: 'openai',
     enabled: true,
     modelAttributes: undefined,
   };
