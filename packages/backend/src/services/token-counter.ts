@@ -202,7 +202,6 @@ export async function countStreamResponseTokens(
             try {
               const parsed = JSON.parse(data);
 
-              // Chat Completions SSE 解析
               if (parsed.choices && parsed.choices[0]?.delta?.content) {
                 contentParts.push(parsed.choices[0].delta.content);
               }

@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 
-import { detectPii, mightContainPii } from './pii-detector.js';
+import { detectPii, getPiiHint } from './pii-detector.js';
 
 describe('pii-detector detection', () => {
   test('detects real high-precision secrets and PII', () => {
@@ -24,7 +24,7 @@ describe('pii-detector detection', () => {
 describe('pii-detector performance guards', () => {
   test('skips oversized fields (accepts 漏检 to protect CPU and quality)', () => {
     const huge = 'alice@example.com '.repeat(20000); // > 50k chars
-    expect(mightContainPii(huge)).toBe(false);
+    expect(getPiiHint(huge).result).toBe(false);
     expect(detectPii(huge)).toEqual([]);
   });
 
@@ -33,7 +33,7 @@ describe('pii-detector performance guards', () => {
     // Previously this caused O(n^2) backtracking (multi-second freeze).
     const text = 'a-'.repeat(24000) + ' a@b.io';
     const start = performance.now();
-    if (mightContainPii(text)) detectPii(text);
+    if (getPiiHint(text).result) detectPii(text);
     const elapsed = performance.now() - start;
     expect(elapsed).toBeLessThan(500);
   });

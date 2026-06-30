@@ -157,10 +157,8 @@ class HealthAggregatorService {
     // 获取最近100次检查记录用于可视化时间轴
     const recentRuns = await healthRunDb.getByTargetId(targetId, 100);
 
-    // 计算1小时统计
     const stats1h = this.calculateStats(runs1h);
 
-    // 计算24小时统计
     const stats24h = this.calculateStats(runs24h);
 
     // 获取最近一次检查
@@ -218,13 +216,11 @@ class HealthAggregatorService {
     const degradedTargets = summaries.filter(s => s.currentStatus === 'degraded').length;
     const downTargets = summaries.filter(s => s.currentStatus === 'down').length;
 
-    // 计算整体24小时可用率（所有目标的平均）
     const overall24hAvailability =
       summaries.length > 0
         ? summaries.reduce((sum, s) => sum + s.stats24h.availability, 0) / summaries.length
         : 0;
 
-    // 计算整体24小时平均延迟
     const overall24hAvgLatency =
       summaries.length > 0
         ? summaries.reduce((sum, s) => sum + s.stats24h.avgLatency, 0) / summaries.length

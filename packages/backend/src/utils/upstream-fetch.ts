@@ -376,18 +376,3 @@ export async function upstreamJsonGet<T = any>(
 
   return response.json() as Promise<T>;
 }
-
-export function getProxyStatus(url: string): {
-  configured: boolean;
-  proxyUrl: string | null;
-  noProxyMatch: boolean;
-} {
-  const proxyConfig = getProxyConfigFromEnv();
-  const proxyUrl = getProxyUrlForTarget(url, proxyConfig);
-
-  return {
-    configured: !!(proxyConfig.httpProxyUrl || proxyConfig.httpsProxyUrl),
-    proxyUrl,
-    noProxyMatch: !!(proxyConfig.httpProxyUrl || proxyConfig.httpsProxyUrl) && !proxyUrl,
-  };
-}

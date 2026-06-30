@@ -262,10 +262,6 @@ export function getPiiHint(text: string): PiiHint {
   return { result, hash };
 }
 
-export function mightContainPii(text: string): boolean {
-  return getPiiHint(text).result;
-}
-
 export function detectPii(text: string, hash?: string): DetectedPii[] {
   if (!text) return [];
   // Skip oversized fields before hashing to keep the hot path bounded.
