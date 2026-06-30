@@ -47,7 +47,6 @@ export class ExpertRouter {
     const config: ExpertRoutingConfig = JSON.parse(expertRoutingConfig.config);
     const sessionId = extractExpertRoutingSessionId(request);
 
-    // 记录所有可用的专家配置
     if (config.experts && config.experts.length > 0) {
       const expertsInfo = config.experts.map((e, idx) =>
         `[${idx}] id=${e.id}, category=${e.category}, type=${e.type}, providerId=${e.provider_id}, modelId=${e.model_id || 'none'}, model=${e.model || 'default'}`

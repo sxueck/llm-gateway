@@ -120,7 +120,6 @@ class HealthCheckerService {
     } catch (error: any) {
       memoryLogger.error(`目标 ${target.name} 检查异常: ${error.message}`, 'HealthChecker');
 
-      // 记录异常结果
       await healthRunDb.create({
         id: nanoid(),
         target_id: target.id,

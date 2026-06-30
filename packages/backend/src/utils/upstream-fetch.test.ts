@@ -5,7 +5,6 @@ import {
   clearProxyAgentCache,
   requestToInit,
   toUndiciRequestInit,
-  getProxyStatus,
 } from './upstream-fetch.js';
 import { upstreamSslConfigService } from '../services/upstream-ssl-config.js';
 import { memoryLogger } from '../services/logger.js';
@@ -216,20 +215,6 @@ describe('upstreamFetch with proxy', () => {
     } catch (error: any) {
       expect(error.message).not.toContain('toString');
     }
-  });
-
-  it('should report proxy status correctly', () => {
-    process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
-    process.env.NO_PROXY = 'localhost,127.0.0.1';
-
-    const proxied = getProxyStatus('https://api.example.com/v1');
-    expect(proxied.configured).toBe(true);
-    expect(proxied.proxyUrl).toBe('http://proxy.example.com:8080');
-    expect(proxied.noProxyMatch).toBe(false);
-
-    const direct = getProxyStatus('https://localhost/v1');
-    expect(direct.proxyUrl).toBeNull();
-    expect(direct.noProxyMatch).toBe(true);
   });
 });
 

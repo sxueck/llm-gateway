@@ -220,12 +220,10 @@ export async function resolveModelAndProvider(
       const result = await resolveProviderFromModel(model, request as any, virtualKey.id);
       provider = result.provider;
       providerId = result.providerId;
-      // 如果路由返回了 resolvedModel，使用它覆盖 currentModel
       if (result.resolvedModel) {
         currentModel = result.resolvedModel;
       }
 
-      // 检查是否是智能路由（loadbalance/hash/affinity），如果是则支持重试
       const canRetry = !!(model.is_virtual && model.routing_config_id && result.canRetry);
 
       return {
@@ -287,11 +285,9 @@ export async function resolveModelAndProvider(
 
           if (!modelNameMatch) continue;
 
-          // 虚拟模型（智能路由）
           if (model.is_virtual === 1 && (model.routing_config_id || model.expert_routing_id)) {
             matchedModels.push({ modelId, model });
           } else if (model.provider_id) {
-            // 普通模型
             const provider = await hotConfigCache.getProviderById(model.provider_id);
             if (provider) {
               matchedModels.push({ modelId, model, provider });
@@ -419,12 +415,10 @@ export async function resolveModelAndProvider(
         const result = await resolveProviderFromModel(model, request as any, virtualKey.id);
         provider = result.provider;
         providerId = result.providerId;
-        // 如果路由返回了 resolvedModel，使用它覆盖 currentModel
         if (result.resolvedModel) {
           currentModel = result.resolvedModel;
         }
 
-        // 检查是否是智能路由（loadbalance/hash/affinity），如果是则支持重试
         const canRetry = !!(model.is_virtual && model.routing_config_id && result.canRetry);
 
         return {

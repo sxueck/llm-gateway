@@ -69,8 +69,7 @@ export class RequestCache {
    */
   private calculateEntrySize(response: any, headers: Record<string, string>): number {
     let size = 0;
-    
-    // 计算响应体大小
+
     if (typeof response === 'string') {
       size += Buffer.byteLength(response, 'utf8');
     } else if (Buffer.isBuffer(response)) {
@@ -83,8 +82,7 @@ export class RequestCache {
         size += 1024; // 无法序列化时估算
       }
     }
-    
-    // 计算 headers 大小
+
     for (const [key, value] of Object.entries(headers)) {
       size += Buffer.byteLength(key, 'utf8');
       size += Buffer.byteLength(value, 'utf8');
@@ -169,7 +167,6 @@ export class RequestCache {
   }
 
   set(key: string, response: any, headers: Record<string, string>, ttl?: number): void {
-    // 计算条目大小
     const entrySize = this.calculateEntrySize(response, headers);
 
     // 检查单条是否超过体积上限，超大响应不进入缓存

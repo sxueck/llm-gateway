@@ -103,12 +103,6 @@ function parseModelAttributes(currentModel?: any): any | undefined {
     return undefined;
   }
 }
-/**
- * 构建 Responses API 的 options 参数
- *
- * @param body 请求体
- * @param includePrevId 是否包含 previous_response_id
- */
 function buildResponsesOptions(body: any, includePrevId: boolean) {
   const options: any = {
     instructions: body?.instructions,
@@ -262,7 +256,6 @@ export function createOpenAIProxyHandler() {
           );
         }
       }
-      // 拦截Zero温度功能
       if (virtualKey.intercept_zero_temperature === 1 &&
           virtualKey.zero_temperature_replacement !== null &&
           (request.body as any)?.temperature === 0) {
@@ -315,7 +308,6 @@ export function createOpenAIProxyHandler() {
         'Proxy'
       );
 
-      // 检测是否为 Responses API 请求
       const isResponsesApi = isResponsesApiPath(path);
       const isResponsesCompactRequest = isResponsesCompactPath(path);
 
@@ -470,8 +462,6 @@ export async function handleStreamRequest(
     let tokenUsage: any;
 
     if (isResponsesApi) {
-      // Responses API 请求
-      // PII protection for Responses API
       const piiEnabled = shouldApplyPiiProtection(path, protocolConfig, true, false, virtualKey);
       const piiResult = piiEnabled
         ? maskRequestBodyInPlace(request.body, true)
@@ -534,7 +524,6 @@ export async function handleStreamRequest(
         );
       }
     } else {
-      // Chat Completions API 请求
       const messages = (request.body as any)?.messages || [];
 
       const piiEnabled = shouldApplyPiiProtection(path, protocolConfig, false, false, virtualKey);
@@ -686,7 +675,6 @@ export async function handleStreamRequest(
       { error: streamError.stack }
     );
 
-    // 智能路由重试（在未发送任何响应的情况下）
     const statusForRetry = (streamError?.statusCode || streamError?.status || 500) as number;
     try {
       const { shouldRetrySmartRouting } = await import('../proxy/routing.js');
@@ -707,11 +695,9 @@ export async function handleStreamRequest(
           return;
         }
       }
-    } catch (_e) {
-      // 忽略重试流程中的异常，继续走错误返回
+    } catch {
     }
 
-    // 记录失败请求
     const shouldLogBody = shouldLogRequestBody(virtualKey);
 
     const fullRequestBody = buildRequestBodyForLogging(request.body, modelAttributes, shouldLogBody);
@@ -1057,7 +1043,6 @@ export async function handleNonStreamRequest(
   let piiResult: { applied: boolean; context: any; maskedCount: number } = { applied: false, context: null, maskedCount: 0 };
 
   if (isResponsesCompactRequest) {
-    // PII protection for Responses compact (non-stream)
     const piiEnabled = shouldApplyPiiProtection(path, protocolConfig, true, false, virtualKey);
     piiResult = piiEnabled
       ? maskRequestBodyInPlace(request.body, true)
@@ -1091,13 +1076,10 @@ export async function handleNonStreamRequest(
       true
     );
 
-    // Store piiResult for response restoration later
     if (piiResult.context) {
-      // We'll restore after receiving the response
       (response as any).__piiContext = piiResult.context;
     }
   } else if (isEmbeddingsRequest) {
-    // Embeddings API 请求
     const messages = (request.body as any)?.messages || [];
     const options = {
       encoding_format: (request.body as any)?.encoding_format,
@@ -1115,7 +1097,6 @@ export async function handleNonStreamRequest(
       input
     );
   } else {
-    // Chat Completions API 请求
     const messages = (request.body as any)?.messages || [];
 
     // PII protection: only apply after cache miss so cache key is derived from the original request.
@@ -1248,13 +1229,10 @@ export async function handleNonStreamRequest(
   }
 
   try {
-    // 移除上游调试字段（例如 instructions）
     try {
       stripFieldRecursively(responseData, 'instructions');
     } catch (_e) {}
 
-    // Restore PII masked values back to original for client.
-    // Handle both chat completions piiResult and Responses compact __piiContext
     const piiContext = piiResult?.context || (response as any)?.__piiContext;
     if (piiContext) {
       try {
@@ -1292,7 +1270,6 @@ export async function handleNonStreamRequest(
   const duration = Date.now() - startTime;
   const isSuccess = response.statusCode >= 200 && response.statusCode < 300;
 
-  // 智能路由重试逻辑
   if (!isSuccess && modelResult && virtualKeyValue) {
     release();
     const { shouldRetrySmartRouting } = await import('../proxy/routing.js');
@@ -1315,11 +1292,9 @@ export async function handleNonStreamRequest(
       });
 
       if (retried) {
-        // 重试成功，已经发送新的响应，直接返回
         return;
       }
 
-      // 重试失败，继续发送原始错误响应
       memoryLogger.warn(
         `智能路由重试失败: 没有更多可用目标`,
         'Proxy'
