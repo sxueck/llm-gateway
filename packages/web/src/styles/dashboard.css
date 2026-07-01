@@ -318,7 +318,7 @@
 
 .trend-card :deep(.n-card__header) {
   padding: 24px 28px 20px;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 @media (max-width: 639px) {
@@ -437,7 +437,7 @@
 
 .overview-card :deep(.n-card__header) {
   padding: 24px 28px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 @media (max-width: 639px) {

@@ -13,6 +13,9 @@ packages/*/dist/
 web/dist/
 **/tsconfig.tsbuildinfo
 
+# Generated font subset
+packages/web/public/assets/font/
+
 # Database
 *.db
 *.db-shm

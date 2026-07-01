@@ -12,6 +12,21 @@ export default defineConfig({
       '@shared': resolve(__dirname, '../src'),
     },
   },
+  build: {
+    modulePreload: true,
+    chunkSizeWarningLimit: 500,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('echarts') || id.includes('vue-echarts')) {
+              return 'charts';
+            }
+          }
+        },
+      },
+    },
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,

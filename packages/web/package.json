@@ -5,12 +5,13 @@
   "description": "LLM Gateway Web UI",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc && vite build",
+    "dev": "bun run subset:font && vite",
+    "build": "npm run subset:font && vue-tsc && vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
     "lint": "vue-tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "subset:font": "node scripts/subset-font.cjs"
   },
   "dependencies": {
     "@llm-gateway/shared": "workspace:*",
@@ -31,6 +32,7 @@
   "devDependencies": {
     "@types/numeral": "^2.0.5",
     "@vitejs/plugin-vue": "^5.2.1",
+    "subset-font": "^2.5.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
     "vue-tsc": "^2.1.10"

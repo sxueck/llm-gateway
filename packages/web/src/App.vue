@@ -1,15 +1,34 @@
 <template>
-  <n-config-provider :theme-overrides="themeOverrides">
+  <n-config-provider
+    :theme-overrides="themeOverrides"
+    inline-theme-disabled
+    preflight-style-disabled
+  >
     <n-message-provider>
       <n-dialog-provider>
-        <router-view />
+        <n-spin
+          :show="loadingStore.routeLoading"
+          size="large"
+          class="route-loading"
+          :stroke-width="18"
+        >
+          <router-view />
+        </n-spin>
       </n-dialog-provider>
     </n-message-provider>
   </n-config-provider>
 </template>
 
 <script setup lang="ts">
-import { NConfigProvider, NMessageProvider, NDialogProvider } from 'naive-ui';
+import {
+  NConfigProvider,
+  NMessageProvider,
+  NDialogProvider,
+  NSpin,
+} from 'naive-ui';
+import { useLoadingStore } from '@/stores/loading';
+
+const loadingStore = useLoadingStore();
 
 const themeOverrides = {
   common: {
@@ -51,9 +70,20 @@ const themeOverrides = {
   Input: {
     borderRadius: '10px',
   },
-  Button: {
-    borderRadius: '10px',
-  },
-};
+    Button: {
+      borderRadius: '10px',
+    },
+  };
 </script>
+
+<style scoped>
+.route-loading :deep(.n-spin-content) {
+  opacity: 1;
+}
+
+.route-loading :deep(.n-spin-mask) {
+  background-color: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(2px);
+}
+</style>
 
