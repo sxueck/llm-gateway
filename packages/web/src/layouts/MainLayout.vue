@@ -370,18 +370,18 @@ onUnmounted(() => {
 .app-layout {
   height: 100vh;
   overflow: hidden; /* 布局容器本身不滚动，滚动统一交给内容区域 */
-  background-color: #f5f5f5;
+  background-color: transparent;
 }
 
 .app-sider {
   border-right: none;
-  background-color: rgba(248, 248, 248, 0.85);
+  background-color: rgba(255, 255, 255, 0.7);
   padding: 16px 12px;
   margin: 16px;
   border-radius: 20px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
   z-index: 100;
   height: calc(100vh - 32px);
   overflow-y: auto;
@@ -407,7 +407,7 @@ onUnmounted(() => {
 }
 
 .app-main-layout {
-  background-color: #f5f5f5;
+  background-color: transparent;
   height: 100vh;
 }
 

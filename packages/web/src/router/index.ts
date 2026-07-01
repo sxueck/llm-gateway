@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { useLoadingStore } from '@/stores/loading';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -121,6 +122,9 @@ const router = createRouter({
 });
 
 router.beforeEach((to, _from, next) => {
+  const loadingStore = useLoadingStore();
+  loadingStore.startRouteLoading();
+
   const authStore = useAuthStore();
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth !== false);
 
@@ -131,6 +135,16 @@ router.beforeEach((to, _from, next) => {
   } else {
     next();
   }
+});
+
+router.afterEach(() => {
+  const loadingStore = useLoadingStore();
+  loadingStore.stopRouteLoading();
+});
+
+router.onError(() => {
+  const loadingStore = useLoadingStore();
+  loadingStore.stopRouteLoading();
 });
 
 export default router;
