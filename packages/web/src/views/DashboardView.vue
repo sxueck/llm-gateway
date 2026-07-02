@@ -7,7 +7,7 @@
           <p class="page-subtitle">{{ t('dashboard.subtitle') }}</p>
         </div>
         <n-space :size="12" class="dashboard-controls">
-          <n-button secondary round @click="loadData">
+          <n-button secondary round @click="refreshDashboard">
             <template #icon>
               <n-icon><RefreshOutline /></n-icon>
             </template>
@@ -1155,12 +1155,40 @@ const modelDistributionOption = computed(() => {
   };
 });
 
-async function loadData() {
+async function loadInitialData() {
+  await Promise.all([
+    providerStore.fetchProviders(),
+    virtualKeyStore.fetchVirtualKeys(),
+    loadStatsSummary(),
+  ]);
+}
+
+async function refreshDashboard() {
   await Promise.all([
     providerStore.fetchProviders(),
     virtualKeyStore.fetchVirtualKeys(),
     loadStats(),
   ]);
+}
+
+async function loadStatsSummary() {
+  loading.value = true;
+  loadError.value = null;
+  try {
+    const result = await configApi.getStatsSummary(selectedPeriod.value);
+
+    if (!result || !result.stats) {
+      throw new Error('获取统计概览失败');
+    }
+
+    stats.value = result.stats;
+  } catch (error: any) {
+    const errorMsg = error.message || '加载数据失败';
+    loadError.value = errorMsg;
+    message.error(errorMsg);
+  } finally {
+    loading.value = false;
+  }
 }
 
 async function loadStats() {
@@ -1216,7 +1244,7 @@ const formatGeoLocation = (geo: RequestSourceEntry['geo'] | undefined) => {
 
 
 onMounted(async () => {
-  loadData();
+  loadInitialData();
   window.addEventListener('resize', handleResize);
   // When cost mapping rules change, refresh dashboard stats so cost analysis updates in real time
   window.addEventListener('cost-mapping-updated', loadStats as any);
