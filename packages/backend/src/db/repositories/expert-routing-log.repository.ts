@@ -61,14 +61,12 @@ export const expertRoutingLogRepository = {
         );
         return;
       } catch (e: any) {
-        // MySQL: ER_BAD_FIELD_ERROR; SQLite: SQLITE_ERROR (when using sqlite driver)
-        // We only fallback on schema mismatch errors.
+        // MySQL schema-mismatch fallback (ER_BAD_FIELD_ERROR / "Unknown column").
         const message = String(e?.message || '');
         const code = String(e?.code || '');
         const isMissingColumn =
           code === 'ER_BAD_FIELD_ERROR' ||
-          /Unknown column\s+'(route_source|prompt_tokens|cleaned_content_length)'/i.test(message) ||
-          /no such column:\s*(route_source|prompt_tokens|cleaned_content_length)/i.test(message);
+          /Unknown column\s+'(route_source|prompt_tokens|cleaned_content_length)'/i.test(message);
         if (!isMissingColumn) throw e;
       }
 
