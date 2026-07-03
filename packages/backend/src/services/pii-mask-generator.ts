@@ -139,11 +139,14 @@ function maskIpv4(value: string, variant = 0): string {
   const parts = value.split('.');
   if (parts.length !== 4) return maskSecret(value, variant);
 
-  const valueSeed = hashSeed(value);
+  // Fold variant into the seed so each retry samples independently from the
+  // 6^4 surrogate space rather than shifting all octets in lockstep.
+  const valueSeed = variant === 0 ? hashSeed(value) : hashSeed(`${value}#${variant}`);
   const threeDigitPool = ['203', '117', '241', '154', '208', '132'];
   const twoDigitPool = ['42', '58', '73', '84', '96', '31'];
   const oneDigitPool = ['6', '7', '8', '4', '5', '3'];
-  const pick = (idx: number) => (idx + variant + valueSeed) >>> 0;
+  // Each octet reads a different bit slice of the seed so they vary independently.
+  const pick = (idx: number) => ((valueSeed >>> (idx * 7)) + idx * 0x9e3779b1) >>> 0;
 
   return parts
     .map((part, idx) => {
@@ -163,13 +166,15 @@ function maskIpv4(value: string, variant = 0): string {
 function maskIpv6(value: string, variant = 0): string {
   // For IPv6, replace with a deterministic fake address in documentation range
   // 2001:db8::/32 is reserved for documentation
-  const valueSeed = hashSeed(value);
+  const valueSeed = variant === 0 ? hashSeed(value) : hashSeed(`${value}#${variant}`);
   const segments = value.split(':');
   const maskedSegments = segments.map((seg, idx) => {
     if (!seg) return seg; // Keep empty segments for ::
     const masked = seg.split('').map((c, i) => {
         if (/[0-9a-fA-F]/.test(c)) {
-          const seed = (valueSeed + idx * 16 + i + variant * 11) >>> 0;
+          // Per-position bit rotation so hex digits vary independently across
+          // retry variants instead of cycling through a single 16-step period.
+          const seed = ((valueSeed >>> ((i + idx) % 16)) + idx * 16 + i) >>> 0;
           return HEX_LOWER[seed % HEX_LOWER.length];
         }
       return c;
@@ -214,6 +219,11 @@ export function generateMaskedValue(value: string, type: PiiType, variant = 0): 
   }
 }
 
+// Upper bound on collision-retry attempts. The surrogate space is large but
+// finite, so a pathological request (e.g. thousands of same-shape values) could
+// still exhaust it. This cap guarantees the retry loop always terminates.
+const MAX_MASK_VARIANTS = 1000;
+
 export function getOrCreateMaskedValue(
   ctx: PiiProtectionContext,
   original: string,
@@ -230,6 +240,16 @@ export function getOrCreateMaskedValue(
   let masked = generateMaskedValue(original, type, variant);
   while (ctx.reverseReplacements.has(masked) && ctx.reverseReplacements.get(masked) !== original) {
     variant += 1;
+    if (variant > MAX_MASK_VARIANTS) {
+      // Last resort: append a unique counter so the result can never collide and
+      // the loop can never spin. The suffix breaks the original shape, but
+      // restoration still works via the exact reverseReplacements lookup.
+      const fallbackBase = generateMaskedValue(original, type, 0);
+      do {
+        masked = `${fallbackBase}#${variant++}`;
+      } while (ctx.reverseReplacements.has(masked));
+      break;
+    }
     masked = generateMaskedValue(original, type, variant);
   }
 

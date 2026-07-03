@@ -40,3 +40,38 @@ describe('pii surrogate determinism (KV-cache stability)', () => {
     expect(masked.indexOf('@')).toBe('alice@example.com'.indexOf('@'));
   });
 });
+
+describe('pii mask variant space (collision / death-loop regression)', () => {
+  // Regression: IPv4 pools are only 6 wide and `variant` used to be a
+  // synchronized global offset, so 7+ same-shape IPs exhausted the space.
+  test('IPv4 mask produces many distinct surrogates across variants', () => {
+    const seen = new Set<string>();
+    for (let v = 0; v < 40; v++) seen.add(generateMaskedValue('10.0.8.56', 'ip', v));
+    expect(seen.size).toBeGreaterThan(20);
+  });
+
+  test('IPv6 mask produces many distinct surrogates across variants', () => {
+    const seen = new Set<string>();
+    for (let v = 0; v < 40; v++) seen.add(generateMaskedValue('2001:db8::1', 'ip', v));
+    expect(seen.size).toBeGreaterThan(20);
+  });
+
+  test('masking many same-shape IPs never loops and keeps surrogates unique', () => {
+    const ctx = createPiiProtectionContext(true);
+    const masked = new Set<string>();
+    for (let i = 0; i < 200; i++) {
+      const m = getOrCreateMaskedValue(ctx, `10.20.${i % 100}.${i}`, 'ip');
+      // Every distinct original must map to a distinct surrogate.
+      expect(masked.has(m)).toBe(false);
+      masked.add(m);
+    }
+    expect(masked.size).toBe(200);
+  });
+
+  test('repeated masking of the same original is idempotent', () => {
+    const ctx = createPiiProtectionContext(true);
+    const first = getOrCreateMaskedValue(ctx, '203.0.113.42', 'ip');
+    const second = getOrCreateMaskedValue(ctx, '203.0.113.42', 'ip');
+    expect(second).toBe(first);
+  });
+});
