@@ -11,7 +11,6 @@ import { extractIp } from '../../utils/ip.js';
 import { getRequestUserAgent } from '../../utils/http.js';
 import { requestHeaderForwardingService } from '../../services/request-header-forwarding.js';
 import { upstreamFetch } from '../../utils/upstream-fetch.js';
-import { virtualKeyQueueService } from '../../services/virtual-key-queue.js';
 
 const DEFAULT_GEMINI_EMPTY_RETRY_LIMIT = Math.max(
   parseInt(process.env.GEMINI_STREAM_EMPTY_RETRY_LIMIT || '1', 10),
@@ -24,22 +23,6 @@ function getGeminiEmptyRetryLimit(protocolConfig: ProtocolConfig): number {
     return Math.max(0, Math.floor(configured));
   }
   return DEFAULT_GEMINI_EMPTY_RETRY_LIMIT;
-}
-
-function buildQueue429Error(reason: 'queue_full' | 'timeout' | 'cancelled') {
-  const message = reason === 'queue_full'
-    ? 'Request queue is full for this virtual key. Please try again later.'
-    : reason === 'timeout'
-    ? 'Request timed out waiting in queue. Please try again later.'
-    : 'Request was cancelled while waiting in queue.';
-  return {
-    error: {
-      message,
-      type: 'rate_limit_error',
-      param: null,
-      code: 'rate_limit_error',
-    }
-  };
 }
 
 function hasAssistantSignalInParts(parts: any[] | undefined | null): boolean {
@@ -248,15 +231,6 @@ export async function handleGeminiNativeNonStreamRequest(
     abortController.abort();
   });
 
-  const acquireResult = await virtualKeyQueueService.acquire(virtualKey.key_value, abortController.signal);
-  if (!acquireResult.granted) {
-    if (acquireResult.reason !== 'cancelled') {
-      reply.code(429).send(buildQueue429Error(acquireResult.reason));
-    }
-    return;
-  }
-  const { release } = acquireResult;
-
   try {
     const upstreamResponse = await upstreamFetch(url.toString(), {
       method,
@@ -300,7 +274,6 @@ export async function handleGeminiNativeNonStreamRequest(
     const truncatedRequest = shouldLogBody && requestBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
     const isSuccess = upstreamResponse.status >= 200 && upstreamResponse.status < 300;
 
-    release();
     logApiRequestAsync({
       virtualKey,
       providerId,
@@ -322,7 +295,6 @@ export async function handleGeminiNativeNonStreamRequest(
 
     return reply.send(responseText);
   } catch (error: any) {
-    release();
     const duration = Date.now() - startTime;
 
     memoryLogger.error(
@@ -357,8 +329,6 @@ export async function handleGeminiNativeNonStreamRequest(
         }
       });
     }
-  } finally {
-    release();
   }
 }
 
@@ -383,15 +353,6 @@ export async function handleGeminiNativeStreamRequest(
       abortController.abort();
     }
   });
-
-  const acquireResult = await virtualKeyQueueService.acquire(virtualKey.key_value, abortController.signal);
-  if (!acquireResult.granted) {
-    if (acquireResult.reason !== 'cancelled') {
-      reply.code(429).send(buildQueue429Error(acquireResult.reason));
-    }
-    return;
-  }
-  const { release } = acquireResult;
 
   // 立即劫持 Fastify 的响应控制，直接操作原始 socket
   reply.hijack();
@@ -490,7 +451,6 @@ export async function handleGeminiNativeStreamRequest(
         const duration = Date.now() - startTime;
         const truncatedRequest = shouldLogBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
 
-        release();
         logApiRequestAsync({
           virtualKey,
           providerId,
@@ -537,7 +497,6 @@ export async function handleGeminiNativeStreamRequest(
         const duration = Date.now() - startTime;
         const truncatedRequest = shouldLogBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
 
-        release();
         logApiRequestAsync({
           virtualKey,
           providerId,
@@ -636,10 +595,8 @@ export async function handleGeminiNativeStreamRequest(
       }
       if (tokenCount.totalTokens > 0) break;
     }
-
     const truncatedRequest = shouldLogBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
 
-    release();
     logApiRequestAsync({
       virtualKey,
       providerId,
@@ -652,9 +609,7 @@ export async function handleGeminiNativeStreamRequest(
       ip: requestIp,
       userAgent: requestUserAgent,
     });
-
   } catch (error: any) {
-    release();
     clearAttemptTimeout();
     const duration = Date.now() - startTime;
 
@@ -696,8 +651,6 @@ export async function handleGeminiNativeStreamRequest(
       }));
       reply.raw.end();
     }
-  } finally {
-    release();
   }
 }
 

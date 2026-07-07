@@ -16,16 +16,6 @@ import {
   maskRequestBodyInPlace,
   restoreResponseBodyInPlace,
 } from '../../services/pii-protection-service.js';
-import { virtualKeyQueueService } from '../../services/virtual-key-queue.js';
-
-function buildQueue429Error(reason: 'queue_full' | 'timeout' | 'cancelled'): AnthropicError {
-  const message = reason === 'queue_full'
-    ? 'Request queue is full for this virtual key. Please try again later.'
-    : reason === 'timeout'
-    ? 'Request timed out waiting in queue. Please try again later.'
-    : 'Request was cancelled while waiting in queue.';
-  return createAnthropicError(message, 'rate_limit_error');
-}
 
 function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
   return !virtualKey.disable_logging;
@@ -281,15 +271,6 @@ async function handleAnthropicNonStreamRequest(
     abortController.abort();
   });
 
-  const acquireResult = await virtualKeyQueueService.acquire(virtualKey.key_value, abortController.signal);
-  if (!acquireResult.granted) {
-    if (acquireResult.reason !== 'cancelled') {
-      reply.code(429).send(buildQueue429Error(acquireResult.reason));
-    }
-    return;
-  }
-  const { release } = acquireResult;
-
   try {
     const response = await makeAnthropicRequest(protocolConfig, requestBody, forwardedHeaders);
 
@@ -311,10 +292,8 @@ async function handleAnthropicNonStreamRequest(
       }
 
       const shouldLogBody = shouldLogRequestBody(virtualKey);
-
       const tokenCount = await calculateTokensIfNeeded(0, requestBody, responseData);
 
-      release();
       logApiRequestAsync({
         virtualKey,
         providerId,
@@ -342,10 +321,8 @@ async function handleAnthropicNonStreamRequest(
 
       const errorData = JSON.parse(response.body);
       const shouldLogBody = shouldLogRequestBody(virtualKey);
-
       const tokenCount = await calculateTokensIfNeeded(0, requestBody, errorData);
 
-      release();
       logApiRequestAsync({
         virtualKey,
         providerId,
@@ -370,7 +347,6 @@ async function handleAnthropicNonStreamRequest(
       return reply.code(response.statusCode).send(errorData);
     }
   } catch (error: any) {
-    release();
     const duration = Date.now() - startTime;
     circuitBreaker.recordFailure(circuitBreakerKey, error);
 
@@ -394,8 +370,6 @@ async function handleAnthropicNonStreamRequest(
     });
 
     throw error;
-  } finally {
-    release();
   }
 }
 
@@ -444,15 +418,6 @@ async function handleAnthropicStreamRequest(
     }
   });
 
-  const acquireResult = await virtualKeyQueueService.acquire(virtualKey.key_value, abortController.signal);
-  if (!acquireResult.granted) {
-    if (acquireResult.reason !== 'cancelled') {
-      reply.code(429).send(buildQueue429Error(acquireResult.reason));
-    }
-    return;
-  }
-  const { release } = acquireResult;
-
   try {
     const tokenUsage = await makeAnthropicStreamRequest(
       protocolConfig,
@@ -466,10 +431,8 @@ async function handleAnthropicStreamRequest(
     circuitBreaker.recordSuccess(circuitBreakerKey);
 
     const shouldLogBody = shouldLogRequestBody(virtualKey);
-
     const tokenCount = await calculateAnthropicStreamTokenCount(requestBody, tokenUsage);
 
-    release();
     logApiRequestAsync({
       virtualKey,
       providerId,
@@ -489,10 +452,8 @@ async function handleAnthropicStreamRequest(
       `Anthropic 流式请求完成: ${duration}ms | tokens: ${tokenUsage.totalTokens}`,
       'Anthropic'
     );
-
     return;
   } catch (streamError: any) {
-    release();
     const duration = Date.now() - startTime;
     circuitBreaker.recordFailure(circuitBreakerKey, streamError);
 
@@ -522,7 +483,5 @@ async function handleAnthropicStreamRequest(
     });
 
     return;
-  } finally {
-    release();
   }
 }
