@@ -4,7 +4,6 @@ import { WebSocket } from 'ws';
 import { runProxyPreflight, type ProxyPreflightContext } from '../proxy/pipeline.js';
 import { resolveModelAndProvider } from '../proxy/model-resolver.js';
 import { buildProviderConfig } from '../proxy/provider-config-builder.js';
-import { virtualKeyQueueService } from '../../services/virtual-key-queue.js';
 import { memoryLogger } from '../../services/logger.js';
 import { debugModeService } from '../../services/debug-mode.js';
 import { logApiRequestAsync } from '../../services/api-request-logger.js';
@@ -13,7 +12,6 @@ import {
   parseClientWebSocketEvent,
   normalizeResponseCreate,
   buildErrorEvent,
-  buildQueueError,
   ERROR_CODES,
   WS_CLOSE_CODES,
 } from '../../services/responses-transport/index.js';
@@ -141,8 +139,7 @@ export async function handleResponsesWebSocket(
       if (activeAbortController) {
         activeAbortController.abort();
       }
-      // The orchestrator will emit response.cancelled or error and return;
-      // queue release happens in the finally block of handleResponseCreate.
+      // The orchestrator will emit response.cancelled or error and return.
     }
 
     async function handleResponseCreate(requestBody: any) {
@@ -157,18 +154,6 @@ export async function handleResponsesWebSocket(
       activeAbortController = abortController;
       const closeAbortHandler = () => abortController.abort();
       socket.once('close', closeAbortHandler);
-
-      const acquireResult = await virtualKeyQueueService.acquire(virtualKeyValue, abortController.signal);
-      if (!acquireResult.granted) {
-        memoryLogger.warn(`${logPrefix} | Queue rejected: ${acquireResult.reason}`, 'WebSocket');
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify(buildQueueError(acquireResult.reason)));
-        }
-        socket.off('close', closeAbortHandler);
-        inFlight = false;
-        activeAbortController = undefined;
-        return;
-      }
 
       let result: ResponsesStreamResult | undefined;
       let success = false;
@@ -273,7 +258,6 @@ export async function handleResponsesWebSocket(
           socket.close(WS_CLOSE_CODES.INTERNAL_ERROR, 'response_error');
         }
       } finally {
-        acquireResult.release();
         socket.off('close', closeAbortHandler);
         inFlight = false;
         activeAbortController = undefined;

@@ -117,28 +117,6 @@ export function parseClientWebSocketEvent(data: any, isBinary: boolean): Respons
   throw err;
 }
 
-/** Build a queue-429 error payload compatible with OpenAI error shape. */
-export function buildQueueError(
-  reason: 'queue_full' | 'timeout' | 'cancelled'
-): ResponsesServerEventError {
-  const message =
-    reason === 'queue_full'
-      ? 'Request queue is full for this virtual key. Please try again later.'
-      : reason === 'timeout'
-      ? 'Request timed out waiting in queue. Please try again later.'
-      : 'Request was cancelled while waiting in queue.';
-
-  return {
-    type: 'error',
-    error: {
-      message,
-      type: ERROR_TYPES.RATE_LIMIT_ERROR,
-      param: null,
-      code: `queue_${reason}`,
-    },
-  };
-}
-
 /** Convert a parsed SSE event line into a `ResponsesServerEvent`.
  *  Returns `undefined` for `[DONE]` markers or unparseable lines. */
 export function parseSseEventLine(line: string): ResponsesServerEvent | undefined {

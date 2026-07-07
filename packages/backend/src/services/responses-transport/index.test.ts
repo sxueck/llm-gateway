@@ -8,7 +8,6 @@ import {
   parseClientWebSocketEvent,
   serverEventToSseFrame,
   serverEventToWsFrame,
-  buildQueueError,
   parseSseEventLine,
 } from './helpers.js';
 import {
@@ -142,14 +141,6 @@ describe('responses-transport contracts', () => {
     it('serialises an event to JSON', () => {
       const frame = serverEventToWsFrame({ type: 'response.completed' } as any);
       expect(JSON.parse(frame).type).toBe('response.completed');
-    });
-  });
-
-  describe('buildQueueError', () => {
-    it('builds queue_full error', () => {
-      const err = buildQueueError('queue_full');
-      expect(err.error.code).toBe('queue_queue_full');
-      expect(err.error.type).toBe(ERROR_TYPES.RATE_LIMIT_ERROR);
     });
   });
 
