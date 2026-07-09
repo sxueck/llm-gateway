@@ -23,6 +23,19 @@ export interface OpenAIChatStreamProcessorOptions {
   logger?: {
     info: (msg: string, tag?: string) => void;
   };
+
+  // When true, usage-only chunks (usage present, no meaningful choices) are
+  // suppressed from the downstream SSE stream. Usage is still extracted for
+  // gateway-internal accounting. Used when the downstream client did not
+  // request stream_options.include_usage.
+  skipUsageChunks?: boolean;
+}
+
+function isUsageOnlyChunk(chunk: any): boolean {
+  if (!chunk || typeof chunk !== 'object') return false;
+  if (!chunk.usage) return false;
+  const choices = chunk.choices;
+  return !Array.isArray(choices) || choices.length === 0;
 }
 
 export async function processOpenAIChatCompletionStreamToSse(
@@ -36,6 +49,7 @@ export async function processOpenAIChatCompletionStreamToSse(
     upstreamRequestStartedAt,
     streamRestorer,
     logger,
+    skipUsageChunks,
   } = options;
 
   const bufferedKeys = new Set<string>();
@@ -107,19 +121,23 @@ export async function processOpenAIChatCompletionStreamToSse(
       if ((chunk as any)?.id) lastChunkId = String((chunk as any).id);
       if ((chunk as any)?.model) lastChunkModel = String((chunk as any).model);
 
-      const chunkData = JSON.stringify(chunk);
-      const sseData = `data: ${chunkData}\n\n`;
-      streamChunks.push(sseData);
-
       // Record TFFB on first upstream stream event observed
       if (tffbMs === undefined && upstreamRequestStartedAt) {
         tffbMs = Date.now() - upstreamRequestStartedAt;
       }
 
-      if (!reply.raw.write(sseData)) {
-        await new Promise<void>((resolve) => {
-          reply.raw.once('drain', resolve);
-        });
+      // Suppress usage-only chunks when the downstream client did not request
+      // include_usage. Usage extraction for billing still runs unconditionally below.
+      if (!(skipUsageChunks && isUsageOnlyChunk(chunk))) {
+        const chunkData = JSON.stringify(chunk);
+        const sseData = `data: ${chunkData}\n\n`;
+        streamChunks.push(sseData);
+
+        if (!reply.raw.write(sseData)) {
+          await new Promise<void>((resolve) => {
+            reply.raw.once('drain', resolve);
+          });
+        }
       }
 
       if ((chunk as any).usage) {

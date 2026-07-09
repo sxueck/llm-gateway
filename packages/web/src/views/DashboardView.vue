@@ -18,7 +18,7 @@
             :options="periodOptions"
             size="medium"
             :style="{ width: windowWidth < 640 ? '140px' : '160px' }"
-            @update:value="loadStats"
+            @update:value="() => loadStats()"
           />
         </n-space>
       </div>
@@ -358,7 +358,7 @@
             <div v-else-if="loadError" class="trend-error">
               <n-result status="error" :title="loadError" description="请稍后重试">
                 <template #footer>
-                  <n-button @click="loadStats">重新加载</n-button>
+                  <n-button @click="() => loadStats()">重新加载</n-button>
                 </template>
               </n-result>
             </div>
@@ -1161,6 +1161,8 @@ async function loadInitialData() {
     virtualKeyStore.fetchVirtualKeys(),
     loadStatsSummary(),
   ]);
+  // 摘要加载完成后，后台静默加载完整统计（趋势、模型、成本、熔断器、请求来源等）
+  await loadStats({ silent: true });
 }
 
 async function refreshDashboard() {
@@ -1191,8 +1193,10 @@ async function loadStatsSummary() {
   }
 }
 
-async function loadStats() {
-  loading.value = true;
+async function loadStats(opts: { silent?: boolean } = {}) {
+  if (!opts.silent) {
+    loading.value = true;
+  }
   loadError.value = null;
   try {
     const result = await configApi.getStats(selectedPeriod.value);
@@ -1213,9 +1217,13 @@ async function loadStats() {
   } catch (error: any) {
     const errorMsg = error.message || '加载数据失败';
     loadError.value = errorMsg;
-    message.error(errorMsg);
+    if (!opts.silent) {
+      message.error(errorMsg);
+    }
   } finally {
-    loading.value = false;
+    if (!opts.silent) {
+      loading.value = false;
+    }
   }
 }
 
