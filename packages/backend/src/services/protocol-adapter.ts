@@ -318,6 +318,7 @@ export class ProtocolAdapter {
       abortSignal,
       upstreamRequestStartedAt,
       streamRestorer,
+      skipUsageChunks: (options as any)?.stream_options?.include_usage !== true,
       logger: memoryLogger,
     });
   }
