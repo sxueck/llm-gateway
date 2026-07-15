@@ -5,7 +5,7 @@ export interface AnthropicMessage {
 
 export type AnthropicThinkingConfig =
   | { type: 'enabled'; budget_tokens: number }
-  | { type: 'adaptive' }
+  | { type: 'adaptive'; display?: 'summarized' | 'omitted' }
   | { type: 'disabled' };
 
 export interface AnthropicContentBlock {

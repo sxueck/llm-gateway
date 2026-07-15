@@ -72,3 +72,4 @@ packages/backend/tsconfig.tsbuildinfo
 data/*
 packages/backend/data/model-presets.json
 .opencode
+.agents/skills/ego-browser/
