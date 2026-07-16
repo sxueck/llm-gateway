@@ -11,7 +11,7 @@ import { removeV1Suffix } from '../../utils/api-endpoint-builder.js';
 import { upstreamFetch } from '../../utils/upstream-fetch.js';
 import { upstreamSslConfigService } from '../../services/upstream-ssl-config.js';
 import { getProxyConfigFromEnv, getProxyUrlForTarget } from '../../utils/upstream-proxy.js';
-import { applyAnthropicThinkingDefaults } from '../../utils/anthropic-thinking.js';
+import { normalizeAnthropicRequest } from '../../utils/anthropic-request-normalizer.js';
 
 export interface HttpResponse {
   statusCode: number;
@@ -76,7 +76,7 @@ function buildRequestParams(config: any, requestBody: AnthropicRequest, stream: 
   // OpenAI-style chat/tooling. When `thinking` is enabled, they may require
   // `reasoning_content` to exist on assistant tool-call messages.
   const thinking = requestBody.thinking;
-  const thinkingEnabled = thinking && thinking.type === 'enabled';
+  const thinkingEnabled = !!thinking && (thinking.type === 'enabled' || thinking.type === 'adaptive');
   if (thinkingEnabled) {
     try {
       if (Array.isArray(requestParams.messages)) {
@@ -485,7 +485,7 @@ export async function makeAnthropicRequest(
   try {
     const headers = config.modelAttributes?.headers;
     const client = getAnthropicClient(config.baseUrl, config.apiKey, headers);
-    const normalizedRequest = applyAnthropicThinkingDefaults(config.model, requestBody);
+    const normalizedRequest = normalizeAnthropicRequest(config.model, requestBody);
     const requestParams = buildRequestParams(config, normalizedRequest);
     const requestOpts = buildAnthropicRequestOptions(config?.modelAttributes?.headers, forwardedHeaders, normalizedRequest);
     const response = await createAnthropicMessage(client, requestParams, normalizedRequest, requestOpts);
@@ -521,7 +521,7 @@ export async function makeAnthropicStreamRequest(
 
   for (let attempt = 1; attempt <= totalAttempts; attempt++) {
     const client = getAnthropicClient(config.baseUrl, config.apiKey, headers);
-    const normalizedRequest = applyAnthropicThinkingDefaults(config.model, requestBody);
+    const normalizedRequest = normalizeAnthropicRequest(config.model, requestBody);
     const requestParams = buildRequestParams(config, normalizedRequest, true);
 
     try {
