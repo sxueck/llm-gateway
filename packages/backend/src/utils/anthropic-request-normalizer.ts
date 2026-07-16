@@ -19,6 +19,24 @@ function isAdaptiveOnlyModel(model: string): boolean {
   return ADAPTIVE_ONLY_MODEL_PATTERNS.some(pattern => lower.includes(pattern));
 }
 
+/**
+ * Models on which adaptive thinking is always on and applies ONLY when the
+ * `thinking` parameter is unset. Any `thinking` object carrying a `type`
+ * (enabled/adaptive/disabled) is rejected by the API with HTTP 400, and
+ * `thinking: {type: "disabled"}` is explicitly unsupported. Thinking depth is
+ * controlled via `output_config.effort` instead.
+ * See: introducing-claude-fable-5-and-claude-mythos-5.
+ */
+const THINKING_UNSET_ONLY_MODEL_PATTERNS = [
+  'claude-fable-5',
+  'claude-mythos-5',
+];
+
+function isThinkingUnsetOnlyModel(model: string): boolean {
+  const lower = model.toLowerCase();
+  return THINKING_UNSET_ONLY_MODEL_PATTERNS.some(pattern => lower.includes(pattern));
+}
+
 function isSonnet5(model: string): boolean {
   return model.toLowerCase().includes('claude-sonnet-5');
 }
@@ -39,6 +57,11 @@ export function normalizeAnthropicRequest(
   }
 
   let normalized: AnthropicRequest = request;
+
+  if (isThinkingUnsetOnlyModel(model) && normalized.thinking !== undefined) {
+    const { thinking, ...rest } = normalized;
+    normalized = rest;
+  }
 
   if (normalized.thinking?.type === 'enabled') {
     normalized = { ...normalized, thinking: { type: 'adaptive' } };
