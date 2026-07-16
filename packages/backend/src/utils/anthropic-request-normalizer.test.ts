@@ -144,4 +144,67 @@ describe('normalizeAnthropicRequest', () => {
       expect(normalizeAnthropicRequest('claude-sonnet-4-6', request)).toEqual(request);
     });
   });
+
+  describe('Fable 5 / Mythos 5 thinking-unset-only models', () => {
+    it('strips an adaptive thinking object (sending type causes HTTP 400 upstream)', () => {
+      const result = normalizeAnthropicRequest('claude-fable-5', {
+        ...baseRequest,
+        model: 'claude-fable-5',
+        thinking: { type: 'adaptive', display: 'summarized' },
+      });
+      expect(result.thinking).toBeUndefined();
+    });
+
+    it('strips an enabled thinking object instead of converting it to adaptive', () => {
+      const result = normalizeAnthropicRequest('claude-fable-5', {
+        ...baseRequest,
+        model: 'claude-fable-5',
+        thinking: { type: 'enabled', budget_tokens: 32000 },
+      });
+      expect(result.thinking).toBeUndefined();
+    });
+
+    it('strips a disabled thinking object (disabled is unsupported on these models)', () => {
+      const result = normalizeAnthropicRequest('claude-mythos-5', {
+        ...baseRequest,
+        model: 'claude-mythos-5',
+        thinking: { type: 'disabled' },
+      });
+      expect(result.thinking).toBeUndefined();
+    });
+
+    it('leaves thinking unset when the client omits it', () => {
+      const result = normalizeAnthropicRequest('claude-fable-5', {
+        ...baseRequest,
+        model: 'claude-fable-5',
+      });
+      expect(result.thinking).toBeUndefined();
+    });
+
+    it('strips thinking and sampling parameters together', () => {
+      const result = normalizeAnthropicRequest('claude-fable-5', {
+        ...baseRequest,
+        model: 'claude-fable-5',
+        temperature: 0.7,
+        top_p: 0.9,
+        top_k: 40,
+        thinking: { type: 'adaptive', display: 'summarized' },
+      });
+      expect(result.thinking).toBeUndefined();
+      expect(result.temperature).toBeUndefined();
+      expect(result.top_p).toBeUndefined();
+      expect(result.top_k).toBeUndefined();
+    });
+
+    it('preserves output_config so effort-based depth control still reaches the upstream', () => {
+      const result = normalizeAnthropicRequest('claude-fable-5', {
+        ...baseRequest,
+        model: 'claude-fable-5',
+        thinking: { type: 'adaptive', display: 'summarized' },
+        output_config: { effort: 'medium' },
+      });
+      expect(result.thinking).toBeUndefined();
+      expect(result.output_config).toEqual({ effort: 'medium' });
+    });
+  });
 });
