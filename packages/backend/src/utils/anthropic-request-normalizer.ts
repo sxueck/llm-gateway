@@ -37,10 +37,6 @@ function isThinkingUnsetOnlyModel(model: string): boolean {
   return THINKING_UNSET_ONLY_MODEL_PATTERNS.some(pattern => lower.includes(pattern));
 }
 
-function isSonnet5(model: string): boolean {
-  return model.toLowerCase().includes('claude-sonnet-5');
-}
-
 function isSonnetWithAdaptiveThinking(model: string): boolean {
   const lower = model.toLowerCase();
   return lower.includes('claude-sonnet-5') || lower.includes('claude-sonnet-4-6');
@@ -74,12 +70,6 @@ export function normalizeAnthropicRequest(
   )) {
     const { temperature, top_p, top_k, ...rest } = normalized;
     normalized = rest;
-  }
-
-  if (isSonnet5(model)) {
-    if (normalized.thinking === undefined) {
-      normalized = { ...normalized, thinking: { type: 'adaptive', display: 'summarized' } };
-    }
   }
 
   if (sonnetWithAdaptiveThinking && normalized.thinking?.type === 'adaptive' && normalized.thinking.display === undefined) {
