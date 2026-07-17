@@ -8,12 +8,9 @@ const baseRequest = {
 };
 
 describe('normalizeAnthropicRequest', () => {
-  describe('adaptive thinking defaults (Sonnet 5)', () => {
-    it('enables summarized adaptive thinking when omitted', () => {
-      expect(normalizeAnthropicRequest('claude-sonnet-5', baseRequest).thinking).toEqual({
-        type: 'adaptive',
-        display: 'summarized',
-      });
+  describe('adaptive thinking handling (Sonnet 5)', () => {
+    it('does not inject thinking when the client omits it', () => {
+      expect(normalizeAnthropicRequest('claude-sonnet-5', baseRequest).thinking).toBeUndefined();
     });
 
     it('adds summarized display to an explicit adaptive configuration', () => {
