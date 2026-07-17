@@ -226,6 +226,7 @@ import { useI18n } from 'vue-i18n';
 import { useModelStore } from '@/stores/model';
 import { useProviderStore } from '@/stores/provider';
 import { modelApi } from '@/api/model';
+import type { DataTableColumns } from 'naive-ui';
 import { modelPresetsApi } from '@/api/model-presets';
 import ModelAttributesEditor from '@/components/ModelAttributesEditor.vue';
 import ModelPresetSelector from '@/components/ModelPresetSelector.vue';
@@ -411,9 +412,9 @@ watch(() => formValue.value.supportedProtocols, (newVal) => {
   }
 }, { deep: true });
 
-const columns = computed(() => [
+const columns: DataTableColumns<Model> = [
   {
-    title: t('models.modelName'),
+    title: () => t('models.modelName'),
     key: 'name',
     render: (row: Model) => {
       if (row.isVirtual) {
@@ -433,9 +434,9 @@ const columns = computed(() => [
       return row.name;
     },
   },
-  { title: t('models.provider'), key: 'providerName' },
+  { title: () => t('models.provider'), key: 'providerName' },
   { 
-    title: t('models.modelId'), 
+    title: () => t('models.modelId'),
     key: 'modelIdentifier',
     render: (row: Model) => h(NTooltip, { trigger: 'hover', placement: 'top' }, {
       trigger: () => h(NText, {
@@ -451,7 +452,7 @@ const columns = computed(() => [
     })
   },
   {
-    title: t('models.protocol'),
+    title: () => t('models.protocol'),
     key: 'supportedProtocols',
     render: (row: Model) => {
       const protocols = row.supportedProtocols || [];
@@ -468,7 +469,7 @@ const columns = computed(() => [
     },
   },
   {
-    title: t('common.status'),
+    title: () => t('common.status'),
     key: 'enabled',
     render: (row: Model) => h(NSwitch, {
       value: row.enabled,
@@ -478,12 +479,12 @@ const columns = computed(() => [
     }),
   },
   {
-    title: t('models.virtualKeyCount'),
+    title: () => t('models.virtualKeyCount'),
     key: 'virtualKeyCount',
     render: (row: Model) => row.virtualKeyCount || 0,
   },
   {
-    title: t('common.actions'),
+    title: () => t('common.actions'),
     key: 'actions',
     width: 150,
     render: (row: Model) => h(NSpace, { size: 6 }, {
@@ -493,6 +494,7 @@ const columns = computed(() => [
             size: 'small',
             quaternary: true,
             circle: true,
+            'aria-label': t('models.testModel'),
             onClick: () => handleTest(row),
             disabled: row.isVirtual,
           }, {
@@ -505,6 +507,7 @@ const columns = computed(() => [
             size: 'small',
             quaternary: true,
             circle: true,
+            'aria-label': t('common.edit'),
             onClick: () => handleEdit(row),
             disabled: row.isVirtual,
           }, {
@@ -520,6 +523,7 @@ const columns = computed(() => [
                 size: 'small',
                 quaternary: true,
                 circle: true,
+                'aria-label': t('common.delete'),
               }, {
                 icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) }),
               }),
@@ -530,7 +534,7 @@ const columns = computed(() => [
       ],
     }),
   },
-]);
+];
 
 function toggleGroup(groupKey: string) {
   if (collapsedGroups.value.has(groupKey)) {
@@ -714,21 +718,6 @@ onMounted(async () => {
 .models-view {
   max-width: 1400px;
   margin: 0 auto;
-}
-
-.page-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--color-title);
-  margin: 0;
-  letter-spacing: -0.02em;
-}
-
-.page-subtitle {
-  font-size: 14px;
-  color: #8c8c8c;
-  margin: 4px 0 0 0;
-  font-weight: 400;
 }
 
 .table-card {

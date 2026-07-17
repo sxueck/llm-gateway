@@ -486,31 +486,8 @@ import { useVirtualKeyStore } from '@/stores/virtual-key';
 import { configApi, type ApiStats, type VirtualKeyTrend, type ExpertRoutingStats, type ModelStat, type CostStats, type RequestSourceEntry, type RequestSourceStats, type ThreatIpStats } from '@/api/config';
 import { formatNumber, formatTokenNumber, formatPercentage, formatResponseTime, formatTimestamp, formatUptime } from '@/utils/format';
 import { useSystemConfig } from '@/composables/useSystemConfig';
-import { use } from 'echarts/core';
-import { CanvasRenderer } from 'echarts/renderers';
-import { LineChart, PieChart } from 'echarts/charts';
-import { LegacyGridContainLabel } from 'echarts/features';
-import {
-  TitleComponent,
-  TooltipComponent,
-  LegendComponent,
-  GridComponent,
-  DataZoomComponent,
-} from 'echarts/components';
+import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize';
 import VChart from 'vue-echarts';
-
-use([
-  CanvasRenderer,
-  LineChart,
-  PieChart,
-
-  TitleComponent,
-  TooltipComponent,
-  LegendComponent,
-  GridComponent,
-  DataZoomComponent,
-  LegacyGridContainLabel,
-]);
 
 const { t } = useI18n();
 const message = useMessage();
@@ -537,7 +514,7 @@ const piiProtectionCount = ref<number>(0);
 const requestSourceTableData = computed<RequestSourceEntry[]>(() => requestSourceStats.value?.recentSources || []);
 const lookupLoadingIp = ref<string | null>(null);
 const blockLoadingIp = ref<string | null>(null);
-const requestSourceColumns = computed<DataTableColumns<RequestSourceEntry>>(() => [
+const requestSourceColumns: DataTableColumns<RequestSourceEntry> = [
   {
     title: 'IP 地址',
     key: 'ip',
@@ -647,7 +624,7 @@ const requestSourceColumns = computed<DataTableColumns<RequestSourceEntry>>(() =
       ]);
     }
   }
-]);
+];
 
 function ensureRequestSourceState() {
   if (!requestSourceStats.value) {
@@ -734,7 +711,7 @@ const selectedPeriod = ref<'24h' | '7d' | '30d'>('24h');
 const chartMetric = ref<'requests' | 'tokens'>('requests');
 const loading = ref(false);
 const loadError = ref<string | null>(null);
-const windowWidth = ref(window.innerWidth);
+const { windowWidth } = useDebouncedWindowSize();
 
 async function toggleTokenCard() {
   isTokenCardFlipped.value = !isTokenCardFlipped.value;
@@ -1227,10 +1204,6 @@ async function loadStats(opts: { silent?: boolean } = {}) {
   }
 }
 
-const handleResize = () => {
-  windowWidth.value = window.innerWidth;
-};
-
 const formatProviderName = (name: string | undefined) => {
   if (!name || name === '-') return '-';
   return name.length > 15 ? name.slice(0, 15) + '...' : name;
@@ -1253,13 +1226,11 @@ const formatGeoLocation = (geo: RequestSourceEntry['geo'] | undefined) => {
 
 onMounted(async () => {
   loadInitialData();
-  window.addEventListener('resize', handleResize);
   // When cost mapping rules change, refresh dashboard stats so cost analysis updates in real time
   window.addEventListener('cost-mapping-updated', loadStats as any);
 });
- 
+
 onUnmounted(() => {
-  window.removeEventListener('resize', handleResize);
   window.removeEventListener('cost-mapping-updated', loadStats as any);
 });
 </script>

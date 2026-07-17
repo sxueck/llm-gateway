@@ -218,19 +218,6 @@
   padding: 16px 20px;
 }
 
-.page-title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--color-title);
-}
-
-.page-subtitle {
-  margin: 4px 0 0 0;
-  font-size: 13px;
-  color: var(--n-text-color-3);
-}
-
 .config-grid {
   display: flex;
   flex-wrap: wrap;

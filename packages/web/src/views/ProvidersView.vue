@@ -204,6 +204,7 @@ const columns = [
           quaternary: true,
           circle: true,
           disabled: !!testingStates.value[row.id],
+          'aria-label': '测速',
           onClick: () => handleTest(row.id),
         }, {
           icon: () => h(NIcon, null, { default: () => h(KeyboardCommandKeyOutlined) }),
@@ -212,6 +213,7 @@ const columns = [
           size: 'small',
           quaternary: true,
           circle: true,
+          'aria-label': '编辑',
           onClick: () => handleEdit(row),
         }, {
           icon: () => h(NIcon, null, { default: () => h(EditOutlined) }),
@@ -223,6 +225,7 @@ const columns = [
             size: 'small',
             quaternary: true,
             circle: true,
+            'aria-label': '删除',
             onClick: () => {},
           }, {
             icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) }),
@@ -557,21 +560,6 @@ onMounted(() => {
 .providers-view {
   max-width: 1400px;
   margin: 0 auto;
-}
-
-.page-title {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--color-title);
-  margin: 0;
-  letter-spacing: -0.01em;
-}
-
-.page-subtitle {
-  font-size: 14px;
-  color: #555;
-  margin: 6px 0 0 0;
-  font-weight: 400;
 }
 
 .table-card {

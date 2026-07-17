@@ -142,9 +142,7 @@
               <div class="card-header" @click="toggleOriginalRequest">
                 <n-text>{{ t('expertRouting.originalRequest') }}</n-text>
                 <n-icon :class="{ 'rotate-icon': !showOriginalRequest }">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
-                  </svg>
+                  <SvgIcon :path="CHEVRON_DOWN_PATH" :size="20" />
                 </n-icon>
               </div>
             </template>
@@ -165,9 +163,7 @@
               <div class="card-header" @click="toggleClassifierRequest">
                 <n-text>{{ t('expertRouting.classifierRequest') }}</n-text>
                 <n-icon :class="{ 'rotate-icon': !showClassifierRequest }">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
-                  </svg>
+                  <SvgIcon :path="CHEVRON_DOWN_PATH" :size="20" />
                 </n-icon>
               </div>
             </template>
@@ -188,9 +184,7 @@
               <div class="card-header" @click="toggleClassifierResponse">
                 <n-text>{{ t('expertRouting.classifierResponse') }}</n-text>
                 <n-icon :class="{ 'rotate-icon': !showClassifierResponse }">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
-                  </svg>
+                  <SvgIcon :path="CHEVRON_DOWN_PATH" :size="20" />
                 </n-icon>
               </div>
             </template>
@@ -234,6 +228,9 @@ import {
   type DataTableColumns,
 } from 'naive-ui';
 import { expertRoutingApi, type ExpertRoutingStatistics, type ExpertRoutingLog, type ExpertRoutingLogDetail } from '@/api/expert-routing';
+import SvgIcon from '@/components/SvgIcon.vue';
+
+const CHEVRON_DOWN_PATH = 'M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z';
 
 const { t } = useI18n();
 
@@ -318,14 +315,14 @@ function formatRouteSource(source?: string) {
   return source.replace(/_/g, ' ');
 }
 
-const logColumns = computed<DataTableColumns<ExpertRoutingLog>>(() => [
+const logColumns: DataTableColumns<ExpertRoutingLog> = [
   {
-    title: t('expertRouting.classificationResult'),
+    title: () => t('expertRouting.classificationResult'),
     key: 'classification_result',
     ellipsis: { tooltip: true },
   },
   {
-    title: 'Source',
+    title: () => 'Source',
     key: 'route_source',
     width: 110,
     render: (row) => {
@@ -341,18 +338,18 @@ const logColumns = computed<DataTableColumns<ExpertRoutingLog>>(() => [
     }
   },
   {
-    title: t('expertRouting.selectedExpert'),
+    title: () => t('expertRouting.selectedExpert'),
     key: 'selected_expert_name',
     ellipsis: { tooltip: true },
   },
   {
-    title: t('expertRouting.classificationTime'),
+    title: () => t('expertRouting.classificationTime'),
     key: 'classification_time',
     width: 100,
     render: (row) => `${row.classification_time}ms`,
   },
   {
-    title: t('common.actions'),
+    title: () => t('common.actions'),
     key: 'actions',
     width: 80,
     render: (row) => {
@@ -366,34 +363,34 @@ const logColumns = computed<DataTableColumns<ExpertRoutingLog>>(() => [
       );
     },
   },
-]);
+];
 
-const categoryLogColumns = computed<DataTableColumns<ExpertRoutingLog>>(() => [
+const categoryLogColumns: DataTableColumns<ExpertRoutingLog> = [
   {
-    title: t('expertRouting.selectedExpert'),
+    title: () => t('expertRouting.selectedExpert'),
     key: 'selected_expert_name',
     ellipsis: { tooltip: true },
   },
   {
-    title: 'Source',
+    title: () => 'Source',
     key: 'route_source',
     width: 100,
     render: (row) => row.route_source || '-'
   },
   {
-    title: t('expertRouting.classificationTime'),
+    title: () => t('expertRouting.classificationTime'),
     key: 'classification_time',
     width: 100,
     render: (row) => `${row.classification_time}ms`,
   },
   {
-    title: t('common.time'),
+    title: () => t('common.time'),
     key: 'created_at',
     width: 180,
     render: (row) => new Date(row.created_at).toLocaleString('zh-CN'),
   },
   {
-    title: t('common.actions'),
+    title: () => t('common.actions'),
     key: 'actions',
     width: 80,
     render: (row) => {
@@ -407,7 +404,7 @@ const categoryLogColumns = computed<DataTableColumns<ExpertRoutingLog>>(() => [
       );
     },
   },
-]);
+];
 
 function getPercentage(count: number): number {
   if (statistics.value.totalRequests === 0) return 0;

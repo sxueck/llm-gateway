@@ -22,6 +22,9 @@ export default defineConfig({
             if (id.includes('echarts') || id.includes('vue-echarts')) {
               return 'charts';
             }
+            if (id.includes('axios') || id.includes('dayjs')) {
+              return 'utils';
+            }
           }
         },
       },
@@ -38,4 +41,3 @@ export default defineConfig({
     },
   },
 });
-
