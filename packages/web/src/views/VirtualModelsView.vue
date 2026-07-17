@@ -454,21 +454,6 @@ onUnmounted(() => {
   margin: 0 auto;
 }
 
-.page-title {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--color-title);
-  letter-spacing: -0.02em;
-}
-
-.page-subtitle {
-  font-size: 14px;
-  color: #8c8c8c;
-  margin: 4px 0 0 0;
-  font-weight: 400;
-}
-
 .loading-state,
 .empty-state {
   padding: 40px;

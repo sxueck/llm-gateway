@@ -85,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, h, onMounted, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import {
@@ -124,6 +124,7 @@ import {
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
+import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize';
 
 const router = useRouter();
 const route = useRoute();
@@ -131,8 +132,6 @@ const authStore = useAuthStore();
 const { t } = useI18n();
 
 const collapsed = ref(false);
-const windowWidth = ref(window.innerWidth);
-const windowHeight = ref(window.innerHeight);
 const mainMenuExpandedKeys = ref<string[]>([]);
 const generalMenuExpandedKeys = ref<string[]>([]);
 
@@ -192,16 +191,10 @@ function syncMenuExpandedKeys() {
   generalMenuExpandedKeys.value = getDefaultGeneralMenuExpandedKeys();
 }
 
-const handleResize = () => {
-  windowWidth.value = window.innerWidth;
-  windowHeight.value = window.innerHeight;
-  if (windowWidth.value < 768) {
-    collapsed.value = true;
-  } else {
-    collapsed.value = false;
-  }
+const { windowHeight } = useDebouncedWindowSize(200, (width) => {
+  collapsed.value = width < 768;
   syncMenuExpandedKeys();
-};
+});
 
 const menuOptions = computed(() => [
   {
@@ -357,12 +350,6 @@ onMounted(async () => {
   if (authStore.token && !authStore.user) {
     await authStore.fetchProfile();
   }
-  window.addEventListener('resize', handleResize);
-  handleResize(); // Initial check
-});
-
-onUnmounted(() => {
-  window.removeEventListener('resize', handleResize);
 });
 </script>
 

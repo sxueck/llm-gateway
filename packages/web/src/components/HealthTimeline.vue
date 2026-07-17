@@ -3,11 +3,16 @@
     <div v-if="history && history.length > 0" class="timeline-blocks">
       <div
         v-for="(check, idx) in history"
-        :key="idx"
+        :key="`${check.timestamp}-${idx}`"
         class="timeline-block"
         :class="getCheckStatusClass(check.status)"
         :title="formatCheckTooltip(check)"
+        role="button"
+        tabindex="0"
+        :aria-label="formatCheckTooltip(check)"
         @click="handleClick(check)"
+        @keydown.enter.prevent="handleClick(check)"
+        @keydown.space.prevent="handleClick(check)"
       />
     </div>
     <div v-else class="no-data">

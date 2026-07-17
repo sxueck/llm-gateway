@@ -297,6 +297,7 @@ const columns = [
           size: 'small',
           quaternary: true,
           circle: true,
+          'aria-label': '复制密钥',
           onClick: () => copyKeyValue(row.keyValue),
         }, {
           icon: () => h(NIcon, null, { default: () => h(ContentCopyOutlined) }),
@@ -305,6 +306,7 @@ const columns = [
           size: 'small',
           quaternary: true,
           circle: true,
+          'aria-label': '编辑',
           onClick: () => handleEdit(row),
         }, {
           icon: () => h(NIcon, null, { default: () => h(EditOutlined) }),
@@ -316,6 +318,7 @@ const columns = [
             size: 'small',
             quaternary: true,
             circle: true,
+            'aria-label': '删除',
           }, {
             icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) }),
           }),
@@ -441,21 +444,6 @@ watch(showModal, async (val) => {
 .virtual-keys-view {
   max-width: 1400px;
   margin: 0 auto;
-}
-
-.page-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--color-title);
-  margin: 0;
-  letter-spacing: -0.02em;
-}
-
-.page-subtitle {
-  font-size: 14px;
-  color: #8c8c8c;
-  margin: 4px 0 0 0;
-  font-weight: 400;
 }
 
 .table-card {

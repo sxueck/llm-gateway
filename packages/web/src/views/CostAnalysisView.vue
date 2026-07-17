@@ -1,8 +1,8 @@
 <template>
   <div class="cost-analysis-container">
     <div class="page-header">
-      <div class="page-title">
-        <h1>{{ t('costAnalysis.title') }}</h1>
+      <div class="page-title-section">
+        <h1 class="page-title">{{ t('costAnalysis.title') }}</h1>
         <div class="subtitle">{{ t('costAnalysis.subtitle') }}</div>
       </div>
       <div class="page-actions">
@@ -481,13 +481,6 @@ onMounted(() => {
   align-items: center;
   margin-bottom: 24px;
   flex-shrink: 0;
-}
-
-.page-title h1 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--color-title);
 }
 
 .subtitle {

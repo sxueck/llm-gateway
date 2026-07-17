@@ -214,15 +214,6 @@ import {
   NEmpty,
   NDataTable,
 } from 'naive-ui';
-import { use } from 'echarts/core';
-import { CanvasRenderer } from 'echarts/renderers';
-import { BarChart } from 'echarts/charts';
-import {
-  GridComponent,
-  TooltipComponent,
-  LegendComponent,
-  TitleComponent,
-} from 'echarts/components';
 import VChart from 'vue-echarts';
 import {
   RefreshOutline,
@@ -232,16 +223,6 @@ import {
   FilterOutline,
 } from '@vicons/ionicons5';
 import { configApi, type PerformanceMetricsResponse, type PerformanceMetricItem } from '@/api/config';
-
-// Register ECharts components
-use([
-  CanvasRenderer,
-  BarChart,
-  GridComponent,
-  TooltipComponent,
-  LegendComponent,
-  TitleComponent,
-]);
 
 const { t } = useI18n();
 const message = useMessage();
@@ -648,18 +629,6 @@ onMounted(() => {
   margin-bottom: 24px;
   flex-wrap: wrap;
   gap: 16px;
-}
-
-.page-title {
-  margin: 0 0 8px 0;
-  font-size: 28px;
-  font-weight: 600;
-  color: var(--color-title);
-}
-
-.page-subtitle {
-  color: #666;
-  font-size: 14px;
 }
 
 .page-actions {

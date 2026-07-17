@@ -156,46 +156,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   NSpace, NCard, NButton, NIcon, NTag, NAlert, NSkeleton, NResult, NEmpty,
   NGrid, NGi, NStatistic, NSelect, NSpin, NTooltip, NCheckbox,
 } from 'naive-ui';
 import { RefreshOutline } from '@vicons/ionicons5';
-import { use } from 'echarts/core';
-import { CanvasRenderer } from 'echarts/renderers';
-import { LineChart, ScatterChart } from 'echarts/charts';
-import {
-  TitleComponent,
-  TooltipComponent,
-  LegendComponent,
-  GridComponent,
-  MarkLineComponent,
-  MarkAreaComponent,
-} from 'echarts/components';
 import VChart from 'vue-echarts';
 import { configApi, type TrafficAnalysisResponse, type TrafficAnalysisHistoryDayResponse, type ModelResponseTimeStat } from '@/api/config';
 import { formatResponseTime } from '@/utils/format';
-
-use([
-  CanvasRenderer,
-  LineChart,
-  ScatterChart,
-  TitleComponent,
-  TooltipComponent,
-  LegendComponent,
-  GridComponent,
-  MarkLineComponent,
-  MarkAreaComponent,
-]);
+import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize';
 
 const { t, locale } = useI18n();
 
 const loading = ref(false);
 const error = ref<string | null>(null);
 const data = ref<TrafficAnalysisResponse | null>(null);
-const windowWidth = ref(window.innerWidth);
+const { windowWidth } = useDebouncedWindowSize();
 const overlayMode = ref(false);
 const overlayDayOffset = ref(0);
 const overlayDayData = ref<TrafficAnalysisHistoryDayResponse | null>(null);
@@ -544,17 +522,8 @@ async function refresh() {
   }
 }
 
-function handleResize() {
-  windowWidth.value = window.innerWidth;
-}
-
 onMounted(() => {
-  window.addEventListener('resize', handleResize);
   refresh();
-});
-
-onUnmounted(() => {
-  window.removeEventListener('resize', handleResize);
 });
 </script>
 
