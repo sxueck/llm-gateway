@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+packages/*/node_modules/
+web/node_modules/
+
+# Build output
+dist/
+packages/*/dist/
+web/dist/
+**/tsconfig.tsbuildinfo
+
+# Test artifacts
+coverage/
+packages/*/coverage/
+*.junit.xml
+test-results.junit.xml
+
+# Lockfiles (high noise)
+bun.lock
+bun.lockb
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Generated/vendored
+packages/web/public/assets/font/
+packages/web/locales/
+**/__mocks__/
+data/
+
+# Configs & env
+.env
+.env.*
+bunfig.toml
+
+# Docs
+docs/
+*.md
+LICENSE

@@ -11,6 +11,7 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage --reporter=junit --outputFile=test-results.junit.xml",
     "typecheck": "tsc -p ../shared/tsconfig.json --emitDeclarationOnly && tsc --noEmit",
     "lint": "tsc -p ../shared/tsconfig.json --emitDeclarationOnly && tsc --noEmit --noUnusedLocals false --noUnusedParameters false --noImplicitReturns false",
     "clean": "rm -rf dist",
@@ -49,6 +50,7 @@
     "@types/node": "^22.10.2",
     "@types/node-cron": "^3.0.11",
     "@types/tar": "^6.1.13",
+    "@vitest/coverage-v8": "3.2.6",
     "esbuild": "^0.27.2",
     "typescript": "^5.7.2",
     "vitest": "^3.0.0"

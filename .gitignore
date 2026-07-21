@@ -13,6 +13,16 @@ packages/*/dist/
 web/dist/
 **/tsconfig.tsbuildinfo
 
+# Test artifacts
+coverage/
+packages/*/coverage/
+*.junit.xml
+test-results.junit.xml
+
+# Scan artifacts
+*.sarif
+semgrep.sarif
+
 # Generated font subset
 packages/web/public/assets/font/
 
