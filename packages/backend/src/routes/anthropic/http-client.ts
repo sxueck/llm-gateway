@@ -13,6 +13,8 @@ import { upstreamSslConfigService } from '../../services/upstream-ssl-config.js'
 import { getProxyConfigFromEnv, getProxyUrlForTarget } from '../../utils/upstream-proxy.js';
 import { normalizeAnthropicRequest } from '../../utils/anthropic-request-normalizer.js';
 
+const DEFAULT_TIMEOUT_MS = 300_000;
+
 export interface HttpResponse {
   statusCode: number;
   headers: Record<string, string | string[]>;
@@ -41,7 +43,7 @@ function getAnthropicClient(baseUrl: string | undefined, apiKey: string, headers
   const clientConfig: any = {
     apiKey,
     maxRetries: 0,
-    timeout: 60000,
+    timeout: DEFAULT_TIMEOUT_MS,
   };
 
   if (baseUrl) {

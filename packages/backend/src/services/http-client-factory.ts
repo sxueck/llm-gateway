@@ -18,7 +18,7 @@ type LoggerLike = {
 };
 
 const DEFAULT_MAX_CACHED_CLIENTS = 200;
-const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_BASE_URL = 'default';
 const DEFAULT_UPSTREAM_KEY = 'openai-default';
 const KEEP_ALIVE_MSECS = 1_000;
