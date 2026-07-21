@@ -4,24 +4,100 @@ on:
   push:
     branches:
       - main
+  pull_request:
 
+permissions:
+  contents: read
+  security-events: write  # required for SARIF upload to GitHub Security tab
 
 jobs:
   build:
     name: Build and analyze
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 20
+
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
-      - uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Stage 1/4 — Typecheck (advisory, non-blocking)
+      # Mirrors analyze.sh's lint stage: surface issues but never block the pipeline.
+      - name: Typecheck (advisory)
+        continue-on-error: true
+        run: npm run typecheck
+
+      # Stage 2/4 — Semgrep security scan (advisory, non-blocking)
+      # Security-focused ruleset: secrets leakage, Node.js pitfalls, OWASP Top 10.
+      # Produces semgrep.sarif consumed by both SonarQube and GitHub Security tab.
+      - name: Setup Python for Semgrep
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Run Semgrep scan
+        continue-on-error: true
+        run: |
+          semgrep scan \
+            --config p/security-audit \
+            --config p/secrets \
+            --config p/nodejs \
+            --config p/owasp-top-ten \
+            --metrics off \
+            --sarif --output semgrep.sarif
+
+      - name: Upload Semgrep SARIF to GitHub Security tab
+        if: always() && hashFiles('semgrep.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Upload Semgrep artifacts
+        if: always() && hashFiles('semgrep.sarif') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-sarif
+          path: semgrep.sarif
+          retention-days: 14
+
+      # Stage 3/4 — Tests with coverage (blocking)
+      # Produces packages/backend/coverage/lcov.info and test-results.junit.xml
+      - name: Test with coverage
+        run: npm run test:coverage -w @llm-gateway/backend
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            packages/backend/coverage/
+            packages/backend/test-results.junit.xml
+          retention-days: 14
+
+      # Stage 4/4 — SonarQube scan + Quality Gate (imports coverage + Semgrep SARIF)
+      - name: SonarQube Scan
+        if: github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
+        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-      # If you wish to fail your job when the Quality Gate is red, uncomment the
-      # following lines. This would typically be used to fail a deployment.
-      # - uses: SonarSource/sonarqube-quality-gate-action@cf038b0e0cdecfa9e56c198bbb7d21d751d62c3b # v1.2.0
-      #   timeout-minutes: 5
-      #   env:
-      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: SonarQube Quality Gate
+        if: github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
+        uses: SonarSource/sonarqube-quality-gate-action@cf038b0e0cdecfa9e56c198bbb7d21d751d62c3b # v1.2.0
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
