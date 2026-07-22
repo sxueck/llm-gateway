@@ -320,9 +320,7 @@ export const apiRequestRepository = {
         const bucketExpression = isDayInterval
           ? `FLOOR((ar.created_at + ${8 * 60 * 60 * 1000}) / ?) * ? - ${8 * 60 * 60 * 1000}`
           : 'FLOOR(ar.created_at / ?) * ?';
-        const queryParams = isDayInterval
-          ? [intervalMs, intervalMs, detailStartTime, endTime]
-          : [intervalMs, intervalMs, detailStartTime, endTime];
+        const queryParams = [intervalMs, intervalMs, detailStartTime, endTime];
 
         const [detailRows] = await conn.query(
           `SELECT

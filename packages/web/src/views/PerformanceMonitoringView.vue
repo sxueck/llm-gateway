@@ -31,7 +31,6 @@
             :placeholder="t('performanceMonitoring.filters.allProviders')"
             clearable
             :style="{ width: '200px' }"
-            @update:value="handleFilterChange"
           />
         </div>
         <div class="filter-item">
@@ -42,7 +41,6 @@
             :placeholder="t('performanceMonitoring.filters.allModels')"
             clearable
             :style="{ width: '200px' }"
-            @update:value="handleFilterChange"
           />
         </div>
         <n-button @click="clearFilters" :disabled="!hasActiveFilter">
@@ -588,9 +586,6 @@ function formatNumber(num: number): string {
 
 function formatPercentage(value: number): string {
   return (value * 100).toFixed(1);
-}
-
-function handleFilterChange() {
 }
 
 function clearFilters() {
