@@ -110,39 +110,36 @@ async function handleSmartRoutingRetry(
 
   if (isStream) {
     const { handleStreamRequest } = await import('../openai/proxy-handler.js');
-    await handleStreamRequest(
+    await handleStreamRequest({
       request,
       reply,
-      configResult.protocolConfig,
-      configResult.path,
-      context.vkDisplay,
-      context.virtualKey,
-      retryResult.providerId,
-      context.startTime,
-      context.compressionStats,
-      retryResult.currentModel,
-      !!context.isResponsesApi,
-      retryResult,
-      context.virtualKeyValue
-    );
+      protocolConfig: configResult.protocolConfig,
+      path: configResult.path,
+      virtualKey: context.virtualKey,
+      providerId: retryResult.providerId,
+      startTime: context.startTime,
+      compressionStats: context.compressionStats,
+      currentModel: retryResult.currentModel,
+      modelResult: retryResult,
+      virtualKeyValue: context.virtualKeyValue,
+    });
     return true;
   }
 
   const { handleNonStreamRequest } = await import('../openai/proxy-handler.js');
-  await handleNonStreamRequest(
+  await handleNonStreamRequest({
     request,
     reply,
-    configResult.protocolConfig,
-    context.virtualKey,
-    retryResult.providerId,
-    configResult.isStreamRequest,
-    configResult.path,
-    context.startTime,
-    context.compressionStats,
-    retryResult.currentModel,
-    retryResult,
-    context.virtualKeyValue
-  );
+    protocolConfig: configResult.protocolConfig,
+    path: configResult.path,
+    virtualKey: context.virtualKey,
+    providerId: retryResult.providerId,
+    startTime: context.startTime,
+    compressionStats: context.compressionStats,
+    currentModel: retryResult.currentModel,
+    modelResult: retryResult,
+    virtualKeyValue: context.virtualKeyValue,
+  });
   return true;
 }
 

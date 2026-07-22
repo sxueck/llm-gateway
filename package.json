@@ -18,7 +18,8 @@
     "clean": "npm run clean --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "start": "npm run start -w @llm-gateway/backend",
-    "fix:db": "node scripts/fix-database.js"
+    "fix:db": "node scripts/fix-database.js",
+    "prepare": "bash scripts/install-hooks.sh"
   },
   "keywords": [
     "llm",

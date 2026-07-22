@@ -118,6 +118,118 @@ function buildResponsesOptions(body: any, includePrevId: boolean) {
   return options;
 }
 
+// ─── ProxyRequestContext: aggregates shared request state ─────────────────
+// Replaces the 13-14 positional parameters passed to handle{Stream,NonStream}Request.
+
+export interface ProxyRequestContext {
+  request: FastifyRequest;
+  reply: FastifyReply;
+  protocolConfig: any;
+  path: string;
+  virtualKey: any;
+  providerId: string;
+  startTime: number;
+  compressionStats?: { originalTokens: number; savedTokens: number };
+  currentModel?: any;
+  modelResult?: any;
+  virtualKeyValue: string;
+  modelAttributes?: any;
+}
+
+// ─── Shared helpers ───────────────────────────────────────────────────────
+
+function computeVkDisplay(virtualKey: any): string {
+  const kv = virtualKey?.key_value;
+  if (!kv) return '';
+  return kv.length > 10 ? `${kv.slice(0, 6)}...${kv.slice(-4)}` : kv;
+}
+
+/** Build the common options object for Chat Completions (stream + non-stream).
+ *  Call sites add protocol-specific extras (stream_options for stream, user for non-stream). */
+function buildChatCompletionBaseOptions(body: any): any {
+  return {
+    temperature: body?.temperature,
+    max_tokens: body?.max_tokens,
+    max_completion_tokens: body?.max_completion_tokens,
+    top_p: body?.top_p,
+    frequency_penalty: body?.frequency_penalty,
+    presence_penalty: body?.presence_penalty,
+    stop: body?.stop,
+    response_format: body?.response_format,
+    store: body?.store,
+    service_tier: body?.service_tier,
+    prompt_cache_key: body?.prompt_cache_key,
+    safety_identifier: body?.safety_identifier,
+    reasoning_effort: body?.reasoning_effort,
+    verbosity: body?.verbosity,
+    thinking: body?.thinking,
+    tools: body?.tools,
+    tool_choice: body?.tool_choice,
+    parallel_tool_calls: body?.parallel_tool_calls,
+  };
+}
+
+/** Add Gemini-native fields (contents, systemInstruction, generationConfig) to options. */
+function applyGeminiNativeFields(options: any, body: any): void {
+  if (body?.contents) options.contents = body.contents;
+  if (body?.systemInstruction) options.systemInstruction = body.systemInstruction;
+  if (body?.generationConfig) Object.assign(options, body.generationConfig);
+}
+
+/** Filter upstream response headers (strip hop-by-hop + content-length/type). */
+function filterResponseHeaders(
+  headers: Record<string, any>,
+  stripContentType = false
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  Object.entries(headers).forEach(([key, value]) => {
+    const lowerKey = key.toLowerCase();
+    if (!lowerKey.startsWith('transfer-encoding') &&
+        !lowerKey.startsWith('connection') &&
+        lowerKey !== 'content-length' &&
+        (!stripContentType || lowerKey !== 'content-type')) {
+      result[key] = Array.isArray(value) ? value[0] : value;
+    }
+  });
+  return result;
+}
+
+/** Parse a string response body into a data object, handling JSON and non-JSON. */
+function parseResponseBody(
+  responseBody: string,
+  contentType: string
+): any | { __raw: string; __send: true } {
+  const isJsonResponse = contentType.includes('application/json') || contentType.includes('json');
+
+  if (responseBody.length > 500) {
+    memoryLogger.debug(
+      `Raw response body: ${responseBody.substring(0, 500)}... (total length: ${responseBody.length} chars)`,
+      'Proxy'
+    );
+  } else {
+    memoryLogger.debug(`Raw response body: ${responseBody}`, 'Proxy');
+  }
+
+  if (!isJsonResponse && responseBody) {
+    memoryLogger.warn(`Upstream returned non-JSON response: Content-Type=${contentType}`, 'Proxy');
+    return { __raw: responseBody, __send: true };
+  }
+
+  try {
+    return responseBody ? JSON.parse(responseBody) : { error: { message: 'Empty response body' } };
+  } catch (parseError) {
+    memoryLogger.error(`JSON parse failed: ${parseError} | response: ${responseBody.substring(0, 200)}`, 'Proxy');
+    return {
+      error: {
+        message: 'Invalid JSON response from upstream',
+        type: 'api_error',
+        param: null,
+        code: 'invalid_response'
+      }
+    };
+  }
+}
+
 export function createOpenAIProxyHandler() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const startTime = Date.now();
@@ -306,40 +418,26 @@ export function createOpenAIProxyHandler() {
         });
       }
 
-      if (isStreamRequest) {
-        return await handleStreamRequest(
-          request,
-          reply,
-          protocolConfig,
-          path,
-          vkDisplay,
-          virtualKey,
-          resolvedProviderId,
-          startTime,
-          compressionStats,
-          currentModel,
-          isResponsesApi,
-          modelResult,
-          virtualKeyValue!,
-          parsedModelAttributes
-        );
-      }
-
-      return await handleNonStreamRequest(
+      const proxyCtx: ProxyRequestContext = {
         request,
         reply,
         protocolConfig,
-        virtualKey,
-        resolvedProviderId,
-        isStreamRequest,
         path,
+        virtualKey,
+        providerId: resolvedProviderId,
         startTime,
         compressionStats,
         currentModel,
         modelResult,
-        virtualKeyValue!,
-        parsedModelAttributes
-      );
+        virtualKeyValue: virtualKeyValue!,
+        modelAttributes: parsedModelAttributes,
+      };
+
+      if (isStreamRequest) {
+        return await handleStreamRequest(proxyCtx);
+      }
+
+      return await handleNonStreamRequest(proxyCtx);
     } catch (error: any) {
       const duration = Date.now() - startTime;
 
@@ -393,22 +491,15 @@ export function createOpenAIProxyHandler() {
   };
 }
 
-export async function handleStreamRequest(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  protocolConfig: any,
-  path: string,
-  vkDisplay: string,
-  virtualKey: any,
-  providerId: string,
-  startTime: number,
-  compressionStats?: { originalTokens: number; savedTokens: number },
-  currentModel?: any,
-  isResponsesApi: boolean = false,
-  modelResult?: any,
-  virtualKeyValueParam?: string,
-  modelAttributesParam?: any
-) {
+export async function handleStreamRequest(ctx: ProxyRequestContext) {
+  const {
+    request, reply, protocolConfig, path, virtualKey, providerId,
+    startTime, compressionStats, currentModel, modelResult,
+    virtualKeyValue: virtualKeyValueParam, modelAttributes: modelAttributesParam,
+  } = ctx;
+
+  const vkDisplay = computeVkDisplay(virtualKey);
+  const isResponsesApi = isResponsesApiPath(path);
   const circuitBreakerKey = modelResult?.circuitBreakerKey || providerId;
   const modelAttributes = modelAttributesParam ?? parseModelAttributes(currentModel);
   let piiMaskedCount = 0;
@@ -507,25 +598,8 @@ export async function handleStreamRequest(
       piiMaskedCount = piiResult.maskedCount;
 
       const options: any = {
-        temperature: (request.body as any)?.temperature,
-        max_tokens: (request.body as any)?.max_tokens,
-        max_completion_tokens: (request.body as any)?.max_completion_tokens,
-        top_p: (request.body as any)?.top_p,
-        frequency_penalty: (request.body as any)?.frequency_penalty,
-        presence_penalty: (request.body as any)?.presence_penalty,
-        stop: (request.body as any)?.stop,
-        response_format: (request.body as any)?.response_format,
-        store: (request.body as any)?.store,
+        ...buildChatCompletionBaseOptions(request.body as any),
         stream_options: (request.body as any)?.stream_options,
-        service_tier: (request.body as any)?.service_tier,
-        prompt_cache_key: (request.body as any)?.prompt_cache_key,
-        safety_identifier: (request.body as any)?.safety_identifier,
-        reasoning_effort: (request.body as any)?.reasoning_effort,
-        verbosity: (request.body as any)?.verbosity,
-        thinking: (request.body as any)?.thinking,
-        tools: (request.body as any)?.tools,
-        tool_choice: (request.body as any)?.tool_choice,
-        parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
       };
 
       options.__forwardedHeaders = forwardedHeaders;
@@ -538,17 +612,7 @@ export async function handleStreamRequest(
         );
       }
 
-      // 支持 Gemini 原生格式：如果请求体包含 contents 字段，传递给 options
-      if ((request.body as any)?.contents) {
-        options.contents = (request.body as any).contents;
-      }
-      if ((request.body as any)?.systemInstruction) {
-        options.systemInstruction = (request.body as any).systemInstruction;
-      }
-      if ((request.body as any)?.generationConfig) {
-        // 合并 generationConfig 到 options
-        Object.assign(options, (request.body as any).generationConfig);
-      }
+      applyGeminiNativeFields(options, request.body as any);
 
       tokenUsage = await makeStreamHttpRequest(
         protocolConfig,
@@ -746,21 +810,13 @@ export async function handleStreamRequest(
   }
 }
 
-export async function handleNonStreamRequest(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  protocolConfig: any,
-  virtualKey: any,
-  providerId: string,
-  isStreamRequest: boolean,
-  path: string,
-  startTime: number,
-  compressionStats?: { originalTokens: number; savedTokens: number },
-  currentModel?: any,
-  modelResult?: any,
-  virtualKeyValueParam?: string,
-  modelAttributesParam?: any
-) {
+export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
+  const {
+    request, reply, protocolConfig, path, virtualKey, providerId,
+    startTime, compressionStats, currentModel, modelResult,
+    virtualKeyValue: virtualKeyValueParam, modelAttributes: modelAttributesParam,
+  } = ctx;
+
   let fromCache = false;
   const modelAttributes = modelAttributesParam ?? parseModelAttributes(currentModel);
   const isEmbeddingsRequest = isEmbeddingsPath(path);
@@ -772,10 +828,7 @@ export async function handleNonStreamRequest(
     request.headers as any
   );
 
-  const vkDisplay = virtualKey.key_value && virtualKey.key_value.length > 10
-    ? `${virtualKey.key_value.slice(0, 6)}...${virtualKey.key_value.slice(-4)}`
-    : virtualKey.key_value;
-
+  const vkDisplay = computeVkDisplay(virtualKey);
   const virtualKeyValue = virtualKeyValueParam || virtualKey.key_value;
   const circuitBreakerKey = modelResult?.circuitBreakerKey || providerId;
 
@@ -826,15 +879,7 @@ export async function handleNonStreamRequest(
         abortController.signal
       );
 
-      const responseHeaders: Record<string, string> = {};
-      Object.entries(response.headers).forEach(([key, value]) => {
-        const lowerKey = key.toLowerCase();
-        if (!lowerKey.startsWith('transfer-encoding') &&
-            !lowerKey.startsWith('connection') &&
-            lowerKey !== 'content-length') {
-          responseHeaders[key] = Array.isArray(value) ? value[0] : value;
-        }
-      });
+      const responseHeaders = filterResponseHeaders(response.headers);
       reply.headers(responseHeaders);
       reply.code(response.statusCode);
 
@@ -921,7 +966,7 @@ export async function handleNonStreamRequest(
 
   const cacheResult = checkCache(
     virtualKey,
-    isStreamRequest,
+    false, // isStreamRequest — always false in the non-stream path
     bypassGatewayCache,
     request.body,
     vkDisplay
@@ -1056,25 +1101,8 @@ export async function handleNonStreamRequest(
       : { applied: false, context: null, maskedCount: 0 };
 
     const options: any = {
-      temperature: (request.body as any)?.temperature,
-      max_tokens: (request.body as any)?.max_tokens,
-      max_completion_tokens: (request.body as any)?.max_completion_tokens,
-      top_p: (request.body as any)?.top_p,
-      frequency_penalty: (request.body as any)?.frequency_penalty,
-      presence_penalty: (request.body as any)?.presence_penalty,
-      stop: (request.body as any)?.stop,
+      ...buildChatCompletionBaseOptions(request.body as any),
       user: (request.body as any)?.user,
-      response_format: (request.body as any)?.response_format,
-      store: (request.body as any)?.store,
-      service_tier: (request.body as any)?.service_tier,
-      prompt_cache_key: (request.body as any)?.prompt_cache_key,
-      safety_identifier: (request.body as any)?.safety_identifier,
-      reasoning_effort: (request.body as any)?.reasoning_effort,
-      verbosity: (request.body as any)?.verbosity,
-      thinking: (request.body as any)?.thinking,
-      tools: (request.body as any)?.tools,
-      tool_choice: (request.body as any)?.tool_choice,
-      parallel_tool_calls: (request.body as any)?.parallel_tool_calls,
     };
 
     options.__forwardedHeaders = forwardedHeaders;
@@ -1087,17 +1115,7 @@ export async function handleNonStreamRequest(
       );
     }
 
-    // 支持 Gemini 原生格式：如果请求体包含 contents 字段，传递给 options
-    if ((request.body as any)?.contents) {
-      options.contents = (request.body as any).contents;
-    }
-    if ((request.body as any)?.systemInstruction) {
-      options.systemInstruction = (request.body as any).systemInstruction;
-    }
-    if ((request.body as any)?.generationConfig) {
-      // 合并 generationConfig 到 options
-      Object.assign(options, (request.body as any).generationConfig);
-    }
+    applyGeminiNativeFields(options, request.body as any);
 
     response = await makeHttpRequest(
       protocolConfig,
@@ -1107,16 +1125,7 @@ export async function handleNonStreamRequest(
     );
   }
 
-  const responseHeaders: Record<string, string> = {};
-  Object.entries(response.headers).forEach(([key, value]) => {
-    const lowerKey = key.toLowerCase();
-    if (!lowerKey.startsWith('transfer-encoding') &&
-        !lowerKey.startsWith('connection') &&
-        lowerKey !== 'content-length' &&
-        lowerKey !== 'content-type') {
-      responseHeaders[key] = Array.isArray(value) ? value[0] : value;
-    }
-  });
+  const responseHeaders = filterResponseHeaders(response.headers, true);
 
   reply.headers(responseHeaders);
   reply.code(response.statusCode);
@@ -1125,46 +1134,14 @@ export async function handleNonStreamRequest(
   const responseBody = response.body;
 
   const contentType = String(response.headers['content-type'] || '').toLowerCase();
-  const isJsonResponse = contentType.includes('application/json') || contentType.includes('json');
 
   if (typeof responseBody === 'string') {
-    const truncatedResponseText = responseBody.length > 500
-      ? `${responseBody.substring(0, 500)}... (total length: ${responseBody.length} chars)`
-      : responseBody;
-
-    memoryLogger.debug(
-      `Raw response body: ${truncatedResponseText}`,
-      'Proxy'
-    );
-
-    if (!isJsonResponse && responseBody) {
-      memoryLogger.warn(
-        `Upstream returned non-JSON response: Content-Type=${contentType}`,
-        'Proxy'
-      );
+    const parsed = parseResponseBody(responseBody, contentType);
+    if (parsed && typeof parsed === 'object' && (parsed as any).__send === true && typeof (parsed as any).__raw === 'string') {
       reply.header('Content-Type', contentType || 'text/plain');
-      return reply.send(responseBody);
+      return reply.send(parsed.__raw);
     }
-
-    try {
-      responseData = responseBody ? JSON.parse(responseBody) : { error: { message: 'Empty response body' } };
-    } catch (parseError) {
-      const truncatedResponse = responseBody.length > 200
-        ? `${responseBody.substring(0, 200)}... (total length: ${responseBody.length})`
-        : responseBody;
-      memoryLogger.error(
-        `JSON parse failed: ${parseError} | response: ${truncatedResponse}`,
-        'Proxy'
-      );
-      responseData = {
-        error: {
-          message: 'Invalid JSON response from upstream',
-          type: 'api_error',
-          param: null,
-          code: 'invalid_response'
-        }
-      };
-    }
+    responseData = parsed;
   } else {
     responseData = responseBody ?? { error: { message: 'Empty response body' } };
     const rawResponseBody = JSON.stringify(responseData);

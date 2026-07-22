@@ -53,6 +53,7 @@ async function getSkipVerifyAgent(): Promise<import('undici').Agent> {
 
 export function clearProxyAgentCache(): void {
   proxyAgentCache.clear();
+  skipVerifyAgent = null;
 }
 
 export interface UpstreamFetchOptions extends RequestInit {
