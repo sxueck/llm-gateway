@@ -354,6 +354,10 @@ export default {
     trafficAnalysisRegion: '流量分析地区',
     trafficAnalysisRegionDesc: '选择地区后，流量预测将感知该国家的节假日与调休数据（CN 使用专用数据源）；留空则仅基于工作日判断',
     trafficAnalysisRegionPlaceholder: '请选择地区（可清空）',
+    reasoningEffortSuffixes: '模型名后缀 reasoning_effort 白名单',
+    reasoningEffortSuffixesDesc: '客户端可通过 <模型名>-<后缀> 强制 OpenAI Chat 思考深度（如 gpt-5-high）。每行一个后缀，留空则禁用后缀解析',
+    reasoningEffortSuffixesPlaceholder: 'minimal\nlow\nmedium\nhigh',
+    reasoningEffortSuffixesDefault: '默认值: minimal, low, medium, high',
     antiBot: {
       title: '反爬虫设置',
       enabled: '启用反爬虫功能',

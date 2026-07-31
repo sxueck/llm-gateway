@@ -14,6 +14,12 @@ import { threatIpBlocker } from '../services/threat-ip-blocker.js';
 import { manualIpBlocklist } from '../services/manual-ip-blocklist.js';
 import { requestHeaderForwardingService } from '../services/request-header-forwarding.js';
 import { upstreamSslConfigService } from '../services/upstream-ssl-config.js';
+import {
+  reasoningEffortSuffixesCache,
+  normalizeSuffixes,
+  DEFAULT_REASONING_EFFORT_MODEL_SUFFIXES,
+  REASONING_EFFORT_SUFFIXES_CONFIG_KEY,
+} from '../services/reasoning-effort-suffixes.js';
 import { getGeoInfo, normalizeIp } from '../utils/ip.js';
 import { getShanghaiDayStart } from '../db/utils/time-buckets.js';
 import { circuitBreaker } from '../services/circuit-breaker.js';
@@ -125,6 +131,11 @@ export async function configRoutes(fastify: FastifyInstance) {
     const trafficAnalysisRegionCfg = await systemConfigDb.get('traffic_analysis_region');
     const antiBot = await loadAntiBotConfig();
 
+    const reasoningSuffixesCfg = await systemConfigDb.get(REASONING_EFFORT_SUFFIXES_CONFIG_KEY);
+    const reasoningEffortModelSuffixes = reasoningSuffixesCfg
+      ? normalizeSuffixes(reasoningSuffixesCfg.value)
+      : [...DEFAULT_REASONING_EFFORT_MODEL_SUFFIXES];
+
     const now = Date.now();
     const rawExpiresAt = debugExpiresCfg ? Number(debugExpiresCfg.value) : 0;
     const activeDebug = debugEnabledCfg?.value === 'true' && rawExpiresAt > now;
@@ -143,6 +154,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       skipUpstreamSslVerify: skipUpstreamSslVerifyCfg ? skipUpstreamSslVerifyCfg.value === 'true' : false,
       trafficAnalysisRegion: trafficAnalysisRegionCfg?.value || null,
       antiBot,
+      reasoningEffortModelSuffixes,
     };
   });
 
@@ -234,7 +246,7 @@ export async function configRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/system-settings', async (request) => {
-    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, dashboardHideRequestSourceCard, forwardClientUserAgent, skipUpstreamSslVerify, trafficAnalysisRegion, antiBot } = request.body as {
+    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, dashboardHideRequestSourceCard, forwardClientUserAgent, skipUpstreamSslVerify, trafficAnalysisRegion, antiBot, reasoningEffortModelSuffixes } = request.body as {
       allowRegistration?: boolean;
       corsEnabled?: boolean;
       publicUrl?: string;
@@ -256,6 +268,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         allowedUserAgents?: string[];
         blockedUserAgents?: string[];
       };
+      reasoningEffortModelSuffixes?: string[];
     };
 
     try {
@@ -455,6 +468,20 @@ export async function configRoutes(fastify: FastifyInstance) {
         throw new Error('反爬虫配置保存验证失败');
       }
     }
+
+      if (reasoningEffortModelSuffixes !== undefined) {
+        const normalized = normalizeSuffixes(reasoningEffortModelSuffixes);
+        await systemConfigDb.set(
+          REASONING_EFFORT_SUFFIXES_CONFIG_KEY,
+          JSON.stringify(normalized),
+          '模型名后缀 reasoning_effort 白名单（JSON 数组）'
+        );
+        await reasoningEffortSuffixesCache.reload();
+        memoryLogger.info(
+          `reasoning_effort 后缀白名单已更新: [${normalized.join(', ')}]`,
+          'Config'
+        );
+      }
 
       return { success: true };
     } catch (error: any) {

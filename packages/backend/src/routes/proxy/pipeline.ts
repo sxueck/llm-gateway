@@ -206,6 +206,7 @@ export async function runProxyPipeline(
     body: request.body,
     headers: request.headers,
     protocol: options.protocol,
+    url: request.url,
   };
 
   const modelResult = await resolveModelAndProvider(

@@ -56,6 +56,32 @@ function normalizeError(error: any): { statusCode: number; errorResponse: any } 
   };
 }
 
+/**
+ * 提取上游 SDK 错误的原始 HTTP status 与 body，绕过 normalizeOpenAIError 的改写。
+ * 用于模型后缀强制 reasoning_effort 场景下的错误原样透传。
+ */
+function extractRawUpstreamError(error: any): { statusCode: number; errorResponse: any } {
+  const statusCode = typeof error?.status === 'number'
+    ? error.status
+    : typeof error?.statusCode === 'number'
+      ? error.statusCode
+      : 500;
+
+  const rawBody = error?.error ?? error?.errorResponse ?? null;
+  const errorResponse = rawBody && typeof rawBody === 'object'
+    ? rawBody
+    : {
+        error: {
+          message: error?.message || 'Upstream request failed',
+          type: 'api_error',
+          param: null,
+          code: 'upstream_error',
+        },
+      };
+
+  return { statusCode, errorResponse };
+}
+
 export async function makeHttpRequest(
   config: ProtocolConfig,
   messages: any[],
@@ -91,7 +117,9 @@ export async function makeHttpRequest(
       body: response
     };
   } catch (error: any) {
-    const { statusCode, errorResponse } = normalizeError(error);
+    const { statusCode, errorResponse } = (options as any)?.__skipErrorNormalization
+      ? extractRawUpstreamError(error)
+      : normalizeError(error);
 
     return {
       statusCode,
@@ -213,7 +241,9 @@ export async function makeStreamHttpRequest(
     }
     return await protocolAdapter.streamChatCompletion(config, messages, options, reply, abortSignal);
   } catch (error: any) {
-    const { statusCode, errorResponse } = normalizeError(error);
+    const { statusCode, errorResponse } = (options as any)?.__skipErrorNormalization
+      ? extractRawUpstreamError(error)
+      : normalizeError(error);
     // 不直接向客户端写入错误，交由上层决定是否重试或返回
     const enriched = new Error(errorResponse?.error?.message || 'Stream request failed');
     (enriched as any).statusCode = statusCode;

@@ -84,6 +84,11 @@ async function handleSmartRoutingRetry(
     return false;
   }
 
+  const retriedModelResult = {
+    ...retryResult,
+    forcedReasoningEffort: context.modelResult.forcedReasoningEffort,
+  };
+
   memoryLogger.info(
     `${logPrefix}: 切换到新目标 provider=${retryResult.provider.name}`,
     'Proxy'
@@ -120,7 +125,7 @@ async function handleSmartRoutingRetry(
       startTime: context.startTime,
       compressionStats: context.compressionStats,
       currentModel: retryResult.currentModel,
-      modelResult: retryResult,
+      modelResult: retriedModelResult,
       virtualKeyValue: context.virtualKeyValue,
     });
     return true;
@@ -137,7 +142,7 @@ async function handleSmartRoutingRetry(
     startTime: context.startTime,
     compressionStats: context.compressionStats,
     currentModel: retryResult.currentModel,
-    modelResult: retryResult,
+    modelResult: retriedModelResult,
     virtualKeyValue: context.virtualKeyValue,
   });
   return true;
