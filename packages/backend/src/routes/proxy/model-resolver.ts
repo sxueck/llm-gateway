@@ -2,6 +2,8 @@ import { FastifyRequest } from 'fastify';
 import { systemConfigDb } from '../../db/index.js';
 import { hotConfigCache } from '../../services/hot-config-cache.js';
 import { memoryLogger } from '../../services/logger.js';
+import { reasoningEffortSuffixesCache } from '../../services/reasoning-effort-suffixes.js';
+import { isChatCompletionsPath } from '../../utils/path-detector.js';
 import { resolveProviderFromModel } from './routing.js';
 
 export interface ModelResolutionResult {
@@ -12,6 +14,31 @@ export interface ModelResolutionResult {
   excludeTargetKeys?: Set<string>;
   canRetry?: boolean; // 是否支持重试（仅智能路由模式）
   modelId?: string; // 用于重试时重新解析
+  forcedReasoningEffort?: string; // 由模型名后缀解析得到的强制 reasoning_effort
+}
+
+/**
+ * 纯函数：按最后一个 `-` 分割模型名，检查后缀是否在白名单中。
+ * 仅当前缀非空且后缀精确匹配白名单时返回解析结果。
+ */
+export function parseModelSuffix(
+  requestedModel: string,
+  allowedSuffixes: string[]
+): { baseModel: string; reasoningEffort: string } | null {
+  if (!requestedModel || !allowedSuffixes || allowedSuffixes.length === 0) {
+    return null;
+  }
+
+  const lastDashIndex = requestedModel.lastIndexOf('-');
+  if (lastDashIndex <= 0) return null;
+
+  const suffix = requestedModel.slice(lastDashIndex + 1);
+  const baseModel = requestedModel.slice(0, lastDashIndex);
+
+  if (!baseModel || !suffix) return null;
+  if (!allowedSuffixes.includes(suffix)) return null;
+
+  return { baseModel, reasoningEffort: suffix };
 }
 
 export interface ModelResolutionError {
@@ -24,6 +51,47 @@ export interface ModelResolutionError {
       code: string;
     };
   };
+}
+
+/**
+ * 在多模型虚拟密钥中按模型名收集匹配的模型候选。
+ * 仅返回有有效供应商或启用了智能路由的模型。
+ */
+async function collectModelMatches(
+  parsedModelIds: string[],
+  modelName: string
+): Promise<Array<{ modelId: string; model: any; provider?: any }>> {
+  const matches: Array<{ modelId: string; model: any; provider?: any }> = [];
+
+  for (const modelId of parsedModelIds) {
+    const model = await hotConfigCache.getModelById(modelId);
+    if (!model) continue;
+
+    const modelNameMatch =
+      model.model_identifier === modelName || model.name === modelName;
+    if (!modelNameMatch) continue;
+
+    if (model.is_virtual === 1 && (model.routing_config_id || model.expert_routing_id)) {
+      matches.push({ modelId, model });
+    } else if (model.provider_id) {
+      const provider = await hotConfigCache.getProviderById(model.provider_id);
+      if (provider) {
+        matches.push({ modelId, model, provider });
+      } else {
+        memoryLogger.warn(
+          `模型 ${model.name} (${modelId}) 的供应商 ${model.provider_id} 不存在`,
+          'ModelResolver'
+        );
+      }
+    } else {
+      memoryLogger.warn(
+        `模型 ${model.name} (${modelId}) 没有关联供应商且不是虚拟模型`,
+        'ModelResolver'
+      );
+    }
+  }
+
+  return matches;
 }
 
 export async function resolveModelAndProvider(
@@ -270,54 +338,82 @@ export async function resolveModelAndProvider(
       const requestedModel = (request.body as any)?.model;
       let targetModelId: string | undefined;
       let selectedModel: any | undefined;
+      let forcedReasoningEffort: string | undefined;
 
       if (requestedModel) {
         // 收集所有匹配的模型
-        const matchedModels: Array<{ modelId: string; model: any; provider?: any }> = [];
-
-        for (const modelId of parsedModelIds) {
-          const model = await hotConfigCache.getModelById(modelId);
-          if (!model) continue;
-
-          // 检查模型名称是否匹配
-          const modelNameMatch = model.model_identifier === requestedModel ||
-                                 model.name === requestedModel;
-
-          if (!modelNameMatch) continue;
-
-          if (model.is_virtual === 1 && (model.routing_config_id || model.expert_routing_id)) {
-            matchedModels.push({ modelId, model });
-          } else if (model.provider_id) {
-            const provider = await hotConfigCache.getProviderById(model.provider_id);
-            if (provider) {
-              matchedModels.push({ modelId, model, provider });
-            } else {
-              memoryLogger.warn(
-                `模型 ${model.name} (${modelId}) 的供应商 ${model.provider_id} 不存在`,
-                'ModelResolver'
-              );
-            }
-          } else {
-            memoryLogger.warn(
-              `模型 ${model.name} (${modelId}) 没有关联供应商且不是虚拟模型`,
-              'ModelResolver'
-            );
-          }
-        }
+        const matchedModels = await collectModelMatches(parsedModelIds, requestedModel);
 
         if (matchedModels.length === 0) {
-          memoryLogger.error(`未找到匹配的模型: ${requestedModel}`, 'ModelResolver');
-          return {
-            code: 404,
-            body: {
-              error: {
-                message: `Model not found: ${requestedModel}. Please check your virtual key configuration.`,
-                type: 'invalid_request_error',
-                param: null,
-                code: 'model_not_found'
-              }
+          // FR-1: 仅当入口协议为 OpenAI 且请求目标为 Chat Completions 时，才尝试模型名后缀解析
+          const isOpenAiChatCompletions =
+            (request as any).protocol === 'openai' &&
+            isChatCompletionsPath((request as any).url || '');
+
+          const parsed = isOpenAiChatCompletions
+            ? parseModelSuffix(requestedModel, reasoningEffortSuffixesCache.getSuffixes())
+            : null;
+
+          if (parsed) {
+            const baseMatched = await collectModelMatches(parsedModelIds, parsed.baseModel);
+
+            if (baseMatched.length === 1) {
+              forcedReasoningEffort = parsed.reasoningEffort;
+              const matched = baseMatched[0];
+              targetModelId = matched.modelId;
+              selectedModel = matched.model;
+              // 保留实际生效的模型和 effort，确保上游、缓存与重试使用同一请求语义。
+              (request.body as any).model = parsed.baseModel;
+              (request.body as any).reasoning_effort = parsed.reasoningEffort;
+              const providerInfo = matched.provider ? matched.provider.name : '智能路由';
+              memoryLogger.debug(
+                `模型后缀解析: ${requestedModel} -> 基础模型 ${matched.model.name} (${providerInfo}) + reasoning_effort=${parsed.reasoningEffort}`,
+                'ModelResolver'
+              );
+            } else if (baseMatched.length > 1) {
+              // 基础模型名仍有多个候选，维持既有歧义行为，不通过后缀规避
+              const availableOptions = baseMatched.map(m => {
+                if (m.provider) {
+                  return `${m.model.name} (${m.provider.name})`;
+                } else {
+                  return `${m.model.name} (智能路由)`;
+                }
+              });
+
+              memoryLogger.error(
+                `基础模型名称 "${parsed.baseModel}" 存在歧义，虚拟密钥中配置了多个同名模型。匹配到: ${availableOptions.join(', ')}`,
+                'ModelResolver'
+              );
+
+              return {
+                code: 400,
+                body: {
+                  error: {
+                    message: `Ambiguous model name: "${parsed.baseModel}". This virtual key has multiple models with the same name from different providers: ${availableOptions.join(', ')}. Please contact administrator to fix the virtual key configuration.`,
+                    type: 'invalid_request_error',
+                    param: null,
+                    code: 'ambiguous_model_configuration'
+                  }
+                }
+              };
             }
-          };
+            // baseMatched.length === 0 → 后缀解析未找到基础模型，继续返回 model_not_found
+          }
+
+          if (!selectedModel) {
+            memoryLogger.error(`未找到匹配的模型: ${requestedModel}`, 'ModelResolver');
+            return {
+              code: 404,
+              body: {
+                error: {
+                  message: `Model not found: ${requestedModel}. Please check your virtual key configuration.`,
+                  type: 'invalid_request_error',
+                  param: null,
+                  code: 'model_not_found'
+                }
+              }
+            };
+          }
         } else if (matchedModels.length === 1) {
           // 只有一个匹配，使用它
           const matched = matchedModels[0];
@@ -428,7 +524,8 @@ export async function resolveModelAndProvider(
           currentModel,
           excludeTargetKeys: result.excludeTargetKeys,
           canRetry,
-          modelId: targetModelId
+          modelId: targetModelId,
+          forcedReasoningEffort,
         };
       } catch (routingError: any) {
         memoryLogger.error(`Smart routing failed: ${routingError.message}`, 'Proxy');

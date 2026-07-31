@@ -33,6 +33,7 @@ import { requestHeaderForwardingService } from './services/request-header-forwar
 import { upstreamSslConfigService } from './services/upstream-ssl-config.js';
 import { requestCache } from './services/request-cache.js';
 import { runtimeSystemConfigCache } from './services/runtime-system-config-cache.js';
+import { reasoningEffortSuffixesCache } from './services/reasoning-effort-suffixes.js';
 import { getProxyConfigFromEnv, isProxyConfigured } from './utils/upstream-proxy.js';
 import { upstreamFetch, clearProxyAgentCache } from './utils/upstream-fetch.js';
 
@@ -107,6 +108,7 @@ fastify.get('/api/admin/config/debug-stream', (_request, reply) => {
 await initDatabase();
 await manualIpBlocklist.init();
 await runtimeSystemConfigCache.initialize();
+await reasoningEffortSuffixesCache.initialize();
 
 // Load request header forwarding config before serving traffic.
 await requestHeaderForwardingService.reloadConfig();

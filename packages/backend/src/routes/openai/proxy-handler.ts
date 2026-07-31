@@ -602,6 +602,12 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
         stream_options: (request.body as any)?.stream_options,
       };
 
+      // 模型名后缀解析的强制 reasoning_effort，覆盖客户端传入的值
+      if (modelResult?.forcedReasoningEffort) {
+        options.reasoning_effort = modelResult.forcedReasoningEffort;
+        options.__skipErrorNormalization = true;
+      }
+
       options.__forwardedHeaders = forwardedHeaders;
 
       if (piiResult.context) {
@@ -1104,6 +1110,12 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       ...buildChatCompletionBaseOptions(request.body as any),
       user: (request.body as any)?.user,
     };
+
+    // 模型名后缀解析的强制 reasoning_effort，覆盖客户端传入的值
+    if (modelResult?.forcedReasoningEffort) {
+      options.reasoning_effort = modelResult.forcedReasoningEffort;
+      options.__skipErrorNormalization = true;
+    }
 
     options.__forwardedHeaders = forwardedHeaders;
 

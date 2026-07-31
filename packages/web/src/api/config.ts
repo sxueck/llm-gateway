@@ -293,6 +293,7 @@ type SystemSettingsResponse = {
   skipUpstreamSslVerify: boolean;
   trafficAnalysisRegion: string | null;
   antiBot: AntiBotSettings;
+  reasoningEffortModelSuffixes: string[];
 };
 
 type PublicSystemSettingsResponse = {
@@ -324,6 +325,7 @@ type UpdateSystemSettingsRequest = {
     allowedUserAgents?: string[];
     blockedUserAgents?: string[];
   };
+  reasoningEffortModelSuffixes?: string[];
 };
 
 export interface HourlyActual {

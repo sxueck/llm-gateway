@@ -19,6 +19,7 @@ interface NormalizedRequestBody {
   presence_penalty?: number;
   stop?: string | string[];
   n?: number;
+  reasoning_effort?: string;
 }
 
 function normalizeFloat(value: number | undefined, precision: number = 3): number | undefined {
@@ -97,6 +98,7 @@ export function generateCacheKey(
     presence_penalty: normalizeFloat(requestBody.presence_penalty),
     stop: normalizeStop(requestBody.stop),
     n: requestBody.n,
+    reasoning_effort: normalizeString(requestBody.reasoning_effort),
   };
 
   const sortedKeys = Object.keys(normalized).sort();
@@ -130,6 +132,7 @@ export function generateCacheKeyWithDebug(
     presence_penalty: normalizeFloat(requestBody.presence_penalty),
     stop: normalizeStop(requestBody.stop),
     n: requestBody.n,
+    reasoning_effort: normalizeString(requestBody.reasoning_effort),
   };
 
   const sortedKeys = Object.keys(normalized).sort();
@@ -151,4 +154,3 @@ export function generateCacheKeyWithDebug(
     json: jsonString,
   };
 }
-

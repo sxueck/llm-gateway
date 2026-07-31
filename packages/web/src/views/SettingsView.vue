@@ -112,10 +112,45 @@
 
           <n-divider style="margin: 8px 0;" />
 
+          <n-space vertical :size="8" style="width: 100%;">
+            <div>
+              <div>{{ $t('settings.reasoningEffortSuffixes') }}</div>
+              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.reasoningEffortSuffixesDesc') }}</n-text>
+            </div>
+            <n-input
+              v-model:value="reasoningEffortSuffixesInput"
+              type="textarea"
+              :placeholder="$t('settings.reasoningEffortSuffixesPlaceholder')"
+              :rows="4"
+            />
+            <n-space :size="8">
+              <n-button
+                type="primary"
+                size="small"
+                :disabled="!isReasoningEffortSuffixesChanged"
+                :loading="savingReasoningEffortSuffixes"
+                @click="onSaveReasoningEffortSuffixes"
+              >
+                {{ $t('common.save') }}
+              </n-button>
+              <n-button
+                size="small"
+                :disabled="!isReasoningEffortSuffixesChanged"
+                @click="onResetReasoningEffortSuffixes"
+              >
+                {{ $t('common.reset') }}
+              </n-button>
+            </n-space>
+            <n-text depth="3" style="font-size: 12px;">
+              {{ $t('settings.reasoningEffortSuffixesDefault') }}
+            </n-text>
+          </n-space>
+
+          <n-divider style="margin: 8px 0;" />
+
           <n-space vertical :size="16">
             <div style="font-size: 14px; font-weight: 500;">
-              {{ $t('healthMonitoring.title') }}
-            </div>
+              {{ $t('healthMonitoring.title') }}            </div>
 
             <n-space align="center" justify="space-between">
               <div>
@@ -351,6 +386,11 @@ const trafficAnalysisRegion = ref<string | null>(null);
 const trafficAnalysisRegionOptions = ref<Array<{ label: string; value: string }>>([]);
 const savingPublicUrl = ref(false);
 const allUsers = ref<User[]>([]);
+
+const reasoningEffortSuffixesInput = ref('');
+const reasoningEffortSuffixesOriginal = ref('');
+const savingReasoningEffortSuffixes = ref(false);
+const isReasoningEffortSuffixesChanged = computed(() => reasoningEffortSuffixesInput.value !== reasoningEffortSuffixesOriginal.value);
 
 // Health monitoring state moved from HealthMonitoringSettingsView
 const healthMonitoringEnabled = ref(false);
@@ -589,6 +629,27 @@ async function loadTrafficAnalysisRegions() {
   }
 }
 
+async function onSaveReasoningEffortSuffixes() {
+  const list = reasoningEffortSuffixesInput.value
+    .split('\n')
+    .map(s => s.trim())
+    .filter(s => s);
+  try {
+    savingReasoningEffortSuffixes.value = true;
+    await configApi.updateSystemSettings({ reasoningEffortModelSuffixes: list });
+    reasoningEffortSuffixesOriginal.value = reasoningEffortSuffixesInput.value;
+    message.success(t('messages.operationSuccess'));
+  } catch (e: any) {
+    message.error(e.message || t('messages.operationFailed'));
+  } finally {
+    savingReasoningEffortSuffixes.value = false;
+  }
+}
+
+function onResetReasoningEffortSuffixes() {
+  reasoningEffortSuffixesInput.value = reasoningEffortSuffixesOriginal.value;
+}
+
 const enabledKeysCount = computed(() => {
   return virtualKeyStore.virtualKeys.filter(k => k.enabled).length;
 });
@@ -752,6 +813,10 @@ onMounted(async () => {
     dashboardHideRequestSourceCard.value = s.dashboardHideRequestSourceCard || false;
     healthMonitoringEnabled.value = s.healthMonitoringEnabled || false;
     persistentMonitoringEnabled.value = s.persistentMonitoringEnabled || false;
+
+    const suffixesText = (s.reasoningEffortModelSuffixes || []).join('\n');
+    reasoningEffortSuffixesInput.value = suffixesText;
+    reasoningEffortSuffixesOriginal.value = suffixesText;
 
     // 加载用户列表
     try {

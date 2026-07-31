@@ -354,6 +354,10 @@ export default {
     trafficAnalysisRegion: 'Traffic Analysis Region',
     trafficAnalysisRegionDesc: 'Select a region to make traffic predictions aware of national holidays and schedule adjustments (CN uses a dedicated data source); leave empty to use weekday-only logic',
     trafficAnalysisRegionPlaceholder: 'Select region (clearable)',
+    reasoningEffortSuffixes: 'Reasoning Effort Model Suffix Whitelist',
+    reasoningEffortSuffixesDesc: 'Clients can force OpenAI Chat thinking depth via <model>-<suffix> (e.g. gpt-5-high). One suffix per line; leave empty to disable suffix parsing',
+    reasoningEffortSuffixesPlaceholder: 'minimal\nlow\nmedium\nhigh',
+    reasoningEffortSuffixesDefault: 'Default: minimal, low, medium, high',
     antiBot: {
       title: 'Anti-Bot Settings',
       enabled: 'Enable Anti-Bot Protection',
