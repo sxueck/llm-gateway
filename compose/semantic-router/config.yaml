@@ -1,0 +1,502 @@
+version: v0.3
+
+# Intent-brain mode:
+# - Accept prompts (optionally multi-turn agent messages)
+# - Extract intent signals without requiring embedding hard-candidate precompute
+# - Return routing category + matched signals via Management API
+
+# No Envoy ingress is generated for this classification-only deployment.
+listeners: []
+
+providers:
+  defaults:
+    default_model: intent-signal
+  models:
+    - name: intent-signal
+      provider_model_id: intent-signal
+
+routing:
+  modelCards:
+    - name: intent-signal
+      modality: text
+      capabilities: [chat]
+      description: Logical placeholder returned with intent-brain routing decisions.
+
+  signals:
+    # Fast lexical signals (no embedding model required)
+    keywords:
+      - name: code_intent
+        operator: OR
+        method: bm25
+        keywords: ["code", "debug", "algorithm", "refactor", "kubectl", "kubernetes", "stack trace", "typescript", "python", "golang", "rust", "sql", "exception", "compile error", "unit test", "编程", "代码", "报错", "异常", "编译失败", "单元测试"]
+        case_sensitive: false
+        bm25_threshold: 0.1
+      - name: agent_tool_markers
+        operator: OR
+        method: bm25
+        keywords: ["tool_calls", "function_call", "tool_call", "assistant to=", "tool response", "arguments", "name\":", "\"tools\""]
+        case_sensitive: false
+        bm25_threshold: 0.05
+      - name: system_instruction_markers
+        operator: OR
+        method: bm25
+        keywords: ["you are a", "system prompt", "developer message", "follow these instructions", "ignore previous instructions", "你是一个", "系统提示", "忽略之前"]
+        case_sensitive: false
+        bm25_threshold: 0.08
+      - name: urgent_keywords
+        operator: OR
+        method: ngram
+        keywords: ["urgent", "immediate", "asap", "emergency", "立刻", "马上", "紧急"]
+        case_sensitive: false
+        ngram_threshold: 0.4
+        ngram_arity: 3
+
+    # Domain/intent classifier (mmBERT intent model already present on disk)
+    domains:
+      - name: biology
+        description: Biology and life sciences.
+        mmlu_categories: [biology]
+      - name: business
+        description: Business and management.
+        mmlu_categories: [business]
+      - name: chemistry
+        description: Chemistry.
+        mmlu_categories: [chemistry]
+      - name: "computer science"
+        description: Computer science, software, systems, and engineering prompts.
+        mmlu_categories: ["computer science"]
+      - name: economics
+        description: Economics and finance.
+        mmlu_categories: [economics]
+      - name: engineering
+        description: Engineering topics.
+        mmlu_categories: [engineering]
+      - name: health
+        description: Health and medical information.
+        mmlu_categories: [health]
+      - name: history
+        description: History and cultural topics.
+        mmlu_categories: [history]
+      - name: law
+        description: Legal questions and policy.
+        mmlu_categories: [law]
+      - name: math
+        description: Mathematics and quantitative reasoning.
+        mmlu_categories: [math]
+      - name: philosophy
+        description: Philosophy and ethics.
+        mmlu_categories: [philosophy]
+      - name: physics
+        description: Physics.
+        mmlu_categories: [physics]
+      - name: psychology
+        description: Psychology and mental health.
+        mmlu_categories: [psychology]
+      - name: other
+        description: General / fallback intent.
+        mmlu_categories: [other]
+
+    fact_check:
+      - name: needs_fact_check
+        description: Prompts with factual claims that should be verified.
+      - name: no_fact_check_needed
+        description: Creative prompts that do not need factual verification.
+
+    user_feedbacks:
+      - name: satisfied
+        description: The user indicates the previous answer was satisfactory.
+      - name: wrong_answer
+        description: The user indicates the previous answer was incorrect.
+      - name: need_clarification
+        description: The user asks for a clearer or more detailed answer.
+      - name: want_different
+        description: The user asks for a different answer or approach.
+
+    language:
+      - name: zh
+        description: Chinese-language requests.
+        threshold: 0.0
+      - name: en
+        description: English-language requests.
+        threshold: 0.0
+
+    structure:
+      - name: many_questions
+        description: Prompts with multiple explicit questions.
+        feature:
+          type: count
+          source:
+            type: regex
+            pattern: '[?？]'
+        predicate:
+          gte: 3
+      - name: numbered_steps
+        description: Prompts with numbered list items.
+        feature:
+          type: exists
+          source:
+            type: regex
+            pattern: '(?m)^\s*\d+\.\s+'
+      - name: has_json_blob
+        description: Prompt contains JSON-like object markers often used by agent tool payloads.
+        feature:
+          type: exists
+          source:
+            type: regex
+            pattern: '\{[^{}]*"(name|arguments|tool_calls|function)"[^{}]*\}'
+
+    conversation:
+      - name: multi_turn_user
+        description: At least two user messages.
+        feature:
+          type: count
+          source:
+            type: message
+            role: user
+        predicate:
+          gte: 2
+      - name: has_tools
+        description: Request defines at least one tool.
+        feature:
+          type: count
+          source:
+            type: tool_definition
+        predicate:
+          gte: 1
+      - name: active_tool_use
+        description: Tool-result continuation inside an agent loop.
+        feature:
+          type: exists
+          source:
+            type: active_tool_loop
+      - name: has_developer_msg
+        description: Request contains a developer message.
+        feature:
+          type: exists
+          source:
+            type: message
+            role: developer
+
+    jailbreak:
+      - name: prompt_injection
+        method: hybrid
+        threshold: 0.7
+        include_history: true
+        description: Detect prompt-injection / jailbreak attempts.
+        jailbreak_patterns:
+          - ignore previous instructions
+          - reveal the hidden prompt
+          - jailbreak mode
+          - 忽略之前的指令
+          - 泄露系统提示
+        benign_patterns:
+          - explain the policy
+          - summarize the safety rules
+
+    pii:
+      - name: restricted_pii
+        threshold: 0.85
+        include_history: true
+        pii_types_allowed:
+          - EMAIL_ADDRESS
+        description: Detect sensitive PII entities in prompts.
+
+  decisions:
+    # Primary intent decisions. Risk signals remain parallel outputs in matched_signals.
+    - name: biology-intent
+      description: Biology and life-sciences intent.
+      priority: 100
+      rules:
+        operator: AND
+        conditions:
+          - type: domain
+            name: biology
+      modelRefs:
+        - model: intent-signal
+
+    - name: business-intent
+      description: Business and management intent.
+      priority: 100
+      rules:
+        operator: AND
+        conditions:
+          - type: domain
+            name: business
+      modelRefs:
+        - model: intent-signal
+
+    - name: chemistry-intent
+      description: Chemistry intent.
+      priority: 100
+      rules:
+        operator: AND
+        conditions:
+          - type: domain
+            name: chemistry
+      modelRefs:
+        - model: intent-signal
+
+    - name: computer-science-intent
+      description: Computer science / software engineering intent.
+      priority: 100
+      rules:
+        operator: AND
+        conditions:
+          - type: domain
+            name: "computer science"
+      modelRefs:
+        - model: intent-signal
+
+    - name: economics-intent
+      description: Economics and finance intent.
+      priority: 100
+      rules:
+        operator: AND
+        conditions:
+          - type: domain
+            name: economics
+      modelRefs:
+        - model: intent-signal
+
+    - name: engineering-intent
+      description: Engineering intent.
+      priority: 100
+      rules:
+        operator: AND
+        conditions:
+          - type: domain
+            name: engineering
+      modelRefs:
+        - model: intent-signal
+
+    - name: health-intent
+      description: Health intent.
+      priority: 100
+      rules:
+        operator: AND
+        conditions:
+          - type: domain
+            name: health
+      modelRefs:
+        - model: intent-signal
+
+    - name: history-intent
+      description: History and cultural intent.
+      priority: 100
+      rules:
+        operator: AND
+        conditions:
+          - type: domain
+            name: history
+      modelRefs:
+        - model: intent-signal
+
+    - name: law-intent
+      description: Legal intent.
+      priority: 100
+      rules:
+        operator: AND
+        conditions:
+          - type: domain
+            name: law
+      modelRefs:
+        - model: intent-signal
+
+    - name: math-intent
+      description: Mathematics intent.
+      priority: 100
+      rules:
+        operator: AND
+        conditions:
+          - type: domain
+            name: math
+      modelRefs:
+        - model: intent-signal
+
+    - name: philosophy-intent
+      description: Philosophy and ethics intent.
+      priority: 100
+      rules:
+        operator: AND
+        conditions:
+          - type: domain
+            name: philosophy
+      modelRefs:
+        - model: intent-signal
+
+    - name: physics-intent
+      description: Physics intent.
+      priority: 100
+      rules:
+        operator: AND
+        conditions:
+          - type: domain
+            name: physics
+      modelRefs:
+        - model: intent-signal
+
+    - name: psychology-intent
+      description: Psychology and mental-health intent.
+      priority: 100
+      rules:
+        operator: AND
+        conditions:
+          - type: domain
+            name: psychology
+      modelRefs:
+        - model: intent-signal
+
+    - name: general-intent
+      description: General intent explicitly classified as other.
+      priority: 100
+      rules:
+        operator: AND
+        conditions:
+          - type: domain
+            name: other
+      modelRefs:
+        - model: intent-signal
+
+    - name: code-keyword-intent
+      description: Lexical code/tooling intent when domain is weak.
+      priority: 50
+      rules:
+        operator: AND
+        conditions:
+          - type: keyword
+            name: code_intent
+      modelRefs:
+        - model: intent-signal
+
+    - name: default-route
+      description: Fallback when no reliable primary intent signal matches.
+      priority: 1
+      rules:
+        operator: AND
+        conditions: []
+      modelRefs:
+        - model: intent-signal
+
+global:
+  router:
+    config_source: file
+    strategy: priority
+    auto_model_name: auto
+    auto_model_names: [vllm-sr/auto, auto, MoM]
+    include_config_models_in_list: true
+    model_selection:
+      enabled: false
+
+  services:
+    management_api:
+      bind_address: 0.0.0.0
+      port: 8080
+      remote_exposure: true
+      auth:
+        mode: bearer
+        tokens:
+          - env: VSR_GATEWAY_TOKEN
+            role: viewer
+          - env: VSR_ADMIN_TOKEN
+            role: admin
+        roles:
+          viewer:
+            - health.read
+            - ready.read
+            - classify.invoke
+          admin:
+            - "*"
+    startup_status:
+      store_backend: file
+    router_replay:
+      enabled: false
+    # Keep optional stores disabled so startup does not depend on redis/postgres
+    response_api:
+      enabled: false
+    observability:
+      metrics:
+        enabled: true
+      tracing:
+        enabled: false
+
+  stores:
+    semantic_cache:
+      enabled: false
+    memory:
+      enabled: false
+
+  integrations:
+    tools:
+      enabled: false
+
+  model_catalog:
+    # No embedding hard-candidate preload (avoids mmBERT sans_pos startup crash).
+    # Classification models: domain + jailbreak + pii + fact-check + feedback.
+    embeddings:
+      semantic:
+        bert_model_path: models/mom-embedding-light
+        qwen3_model_path: models/mom-embedding-pro
+        # EmbeddingGemma is gated; path reserved after HF license approval.
+        gemma_model_path: models/mom-embedding-flash
+        use_cpu: true
+        embedding_config:
+          backend: candle
+          model_type: bert
+          preload_embeddings: false
+          target_dimension: 384
+          enable_soft_matching: false
+    system:
+      prompt_guard: models/mmbert32k-jailbreak-detector-merged
+      domain_classifier: models/mmbert32k-intent-classifier-merged
+      pii_classifier: models/mmbert32k-pii-detector-merged
+      fact_check_classifier: models/mmbert32k-factcheck-classifier-merged
+      feedback_detector: models/mmbert32k-feedback-detector-merged
+    modules:
+      prompt_guard:
+        enabled: true
+        model_ref: prompt_guard
+        model_id: models/mmbert32k-jailbreak-detector-merged
+        threshold: 0.7
+        use_cpu: true
+        use_modernbert: false
+        use_mmbert_32k: true
+        jailbreak_mapping_path: models/mmbert32k-jailbreak-detector-merged/jailbreak_type_mapping.json
+        use_vllm: false
+      classifier:
+        domain:
+          model_ref: domain_classifier
+          model_id: models/mmbert32k-intent-classifier-merged
+          threshold: 0.5
+          use_cpu: true
+          use_modernbert: false
+          use_mmbert_32k: true
+          category_mapping_path: models/mmbert32k-intent-classifier-merged/category_mapping.json
+          fallback_category: other
+        pii:
+          model_ref: pii_classifier
+          model_id: models/mmbert32k-pii-detector-merged
+          threshold: 0.85
+          use_cpu: true
+          use_mmbert_32k: true
+          pii_mapping_path: models/mmbert32k-pii-detector-merged/pii_type_mapping.json
+        mcp:
+          enabled: false
+      hallucination_mitigation:
+        enabled: true
+        on_hallucination_detected: annotate
+        fact_check:
+          model_ref: fact_check_classifier
+          model_id: models/mmbert32k-factcheck-classifier-merged
+          threshold: 0.65
+          use_cpu: true
+          use_mmbert_32k: true
+        # detector/explainer remain optional; leave unset to avoid NLI dependency
+      feedback_detector:
+        enabled: true
+        model_ref: feedback_detector
+        model_id: models/mmbert32k-feedback-detector-merged
+        threshold: 0.6
+        use_cpu: true
+        use_mmbert_32k: true
+      prompt_compression:
+        enabled: false
