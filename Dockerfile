@@ -1,4 +1,6 @@
-FROM ubuntu:24.04 AS bun-base
+FROM node:22-slim AS node-runtime
+
+FROM node-runtime AS bun-base
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG BUN_VERSION=1.3.5
@@ -31,8 +33,6 @@ RUN set -eux; \
 RUN ln -sf /opt/bun/bun /usr/local/bin/bun && \
   if [ -f /opt/bun/bunx ]; then ln -sf /opt/bun/bunx /usr/local/bin/bunx; else ln -sf /opt/bun/bun /usr/local/bin/bunx; fi
 
-FROM node:22-slim AS node-runtime
-
 FROM bun-base AS workspace-manifests
 
 WORKDIR /app
@@ -55,6 +55,7 @@ RUN bun install --frozen-lockfile --production --filter @llm-gateway/backend
 FROM bun-base AS web-builder
 
 WORKDIR /app
+ENV PATH=/app/node_modules/.bin:$PATH
 
 COPY --from=deps /app/node_modules ./node_modules
 
@@ -68,6 +69,7 @@ RUN bun run --cwd=packages/web build
 FROM bun-base AS backend-builder
 
 WORKDIR /app
+ENV PATH=/app/node_modules/.bin:$PATH
 
 COPY --from=deps /app/node_modules ./node_modules
 

@@ -54,6 +54,7 @@
     "ws": "^8.21.0"
   },
   "trustedDependencies": [
-    "onnxruntime-node"
+    "onnxruntime-node",
+    "sharp"
   ]
 }
