@@ -58,6 +58,7 @@ WORKDIR /app
 ENV PATH=/app/node_modules/.bin:$PATH
 
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/web/node_modules ./packages/web/node_modules
 
 COPY package.json bunfig.toml ./
 COPY packages/tsconfig ./packages/tsconfig
@@ -72,6 +73,7 @@ WORKDIR /app
 ENV PATH=/app/node_modules/.bin:$PATH
 
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/backend/node_modules ./packages/backend/node_modules
 
 COPY package.json bunfig.toml ./
 COPY packages/tsconfig ./packages/tsconfig
@@ -102,6 +104,7 @@ RUN groupadd --gid 1001 --system nodejs && \
   install -d -o nodejs -g nodejs /app/data
 
 COPY --from=backend-prod-deps --chown=nodejs:nodejs /app/node_modules ./node_modules
+COPY --from=backend-prod-deps --chown=nodejs:nodejs /app/packages/backend/node_modules ./packages/backend/node_modules
 
 COPY --from=backend-builder --chown=nodejs:nodejs /app/packages/backend/dist ./packages/backend/dist
 COPY --from=web-builder --chown=nodejs:nodejs /app/packages/web/dist ./packages/backend/public
