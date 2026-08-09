@@ -270,25 +270,33 @@ const cleaningEfficiency = computed(() => {
   return Math.max(0, Math.round((reduction / estimatedOriginalChars) * 100));
 });
 
-type RouteSource = 'llm' | 'fallback';
+type RouteSource = 'session' | 'local_onnx' | 'llm_second_pass' | 'fallback';
+type NaiveTagType = 'info' | 'success' | 'warning' | 'error' | 'default' | 'primary';
+
+const ROUTE_SOURCE_META: Record<RouteSource, { label: string; color: string; tag: NaiveTagType }> = {
+  session: { label: 'Session Reuse', color: '#8a2be2', tag: 'info' },
+  local_onnx: { label: 'Local ONNX', color: '#2080f0', tag: 'info' },
+  llm_second_pass: { label: 'LLM Second Pass', color: '#18a058', tag: 'success' },
+  fallback: { label: 'Fallback', color: '#d03050', tag: 'error' },
+};
 
 const distributionBars = computed(() => {
   const dist = statistics.value.routeSourceDistribution || {};
   const count = (source: RouteSource) => dist[source] || 0;
 
-  // Only show LLM classification and Fallback
+  // Report each route source distinctly; do NOT collapse local ONNX and LLM
+  // second pass into a single bucket (FR-14/AC-8).
+  const order: RouteSource[] = ['session', 'local_onnx', 'llm_second_pass', 'fallback'];
   const bars: Array<{ source: RouteSource; label: string; color: string }> = [];
-
-  if (count('llm') > 0 || dist['llm'] !== undefined) {
-    bars.push({ source: 'llm', label: 'LLM Classification', color: '#18a058' });
-  }
-  if (count('fallback') > 0) {
-    bars.push({ source: 'fallback', label: 'Fallback', color: '#d03050' });
+  for (const source of order) {
+    if (count(source) > 0 || dist[source] !== undefined) {
+      bars.push({ source, label: ROUTE_SOURCE_META[source].label, color: ROUTE_SOURCE_META[source].color });
+    }
   }
 
-  // Always show at least LLM if empty
+  // Always show at least local_onnx if empty
   if (bars.length === 0) {
-    bars.push({ source: 'llm', label: 'LLM Classification', color: '#18a058' });
+    bars.push({ source: 'local_onnx', label: ROUTE_SOURCE_META.local_onnx.label, color: ROUTE_SOURCE_META.local_onnx.color });
   }
 
   return bars;
@@ -300,18 +308,15 @@ function getSourcePercentage(source: string): number {
   return Math.round((count / statistics.value.totalRequests) * 100);
 }
 
-function getSourceTagType(source?: string) {
-  switch (source) {
-    case 'llm': return 'success';
-    case 'fallback': return 'error';
-    default: return 'default';
-  }
+function getSourceTagType(source?: string): NaiveTagType {
+  if (source && source in ROUTE_SOURCE_META) return ROUTE_SOURCE_META[source as RouteSource].tag;
+  return 'default';
 }
 
 function formatRouteSource(source?: string) {
   if (!source) return '-';
-  if (source === 'fallback') return 'Fallback';
-  if (source === 'llm') return 'LLM Classification';
+  if (source in ROUTE_SOURCE_META) return ROUTE_SOURCE_META[source as RouteSource].label;
+  // Legacy layer sources roll up to LLM second pass.
   return source.replace(/_/g, ' ');
 }
 

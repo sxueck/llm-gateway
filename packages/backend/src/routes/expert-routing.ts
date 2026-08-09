@@ -1,10 +1,18 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import { expertRoutingConfigDb, expertRoutingLogDb, modelDb, systemConfigDb } from '../db/index.js';
+import { expertRoutingConfigDb, expertRoutingLogDb, expertRoutingSessionBindingDb, modelDb, systemConfigDb } from '../db/index.js';
 import { hotConfigCache } from '../services/hot-config-cache.js';
 import { memoryLogger } from '../services/logger.js';
 import { expertTemplates } from '../data/expert-templates.js';
+import {
+  isEligibleExpertRoutingLabel,
+  EXPERT_ROUTING_MODEL_REPO,
+  EXPERT_ROUTING_MODEL_REVISION,
+  EXPERT_ROUTING_ONNX_FILE,
+  DEFAULT_SESSION_IDLE_TTL_SECONDS,
+  DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
+} from '@llm-gateway/shared';
 
 const expertTargetSchema = z.object({
   id: z.string(),
@@ -18,7 +26,8 @@ const expertTargetSchema = z.object({
   system_prompt: z.string().optional(),
 });
 
-const classifierConfigSchema = z.object({
+// LLM second-pass model wiring (replaces the legacy primary classifier).
+const llmSecondPassSchema = z.object({
   type: z.enum(['virtual', 'real']),
   model_id: z.string().optional(),
   provider_id: z.string().optional(),
@@ -34,6 +43,19 @@ const classifierConfigSchema = z.object({
   ignored_tags: z.array(z.string()).optional(),
   enable_structured_output: z.boolean().optional(),
   enable_adaptive_thinking: z.boolean().optional(),
+});
+
+// Local ONNX policy metadata (pin info; rejection policy is loaded from artifacts).
+const localClassifierSchema = z.object({
+  model_repo: z.string().default(EXPERT_ROUTING_MODEL_REPO),
+  revision: z.string().default(EXPERT_ROUTING_MODEL_REVISION),
+  onnx_file: z.string().default(EXPERT_ROUTING_ONNX_FILE),
+  max_tokens: z.number().int().positive().max(1024).default(1024),
+});
+
+const sessionBindingPolicySchema = z.object({
+  idle_ttl_seconds: z.number().int().positive().default(DEFAULT_SESSION_IDLE_TTL_SECONDS),
+  absolute_ttl_seconds: z.number().int().positive().default(DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS),
 });
 
 const fallbackConfigSchema = z.object({
@@ -56,10 +78,12 @@ const createExpertRoutingSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   enabled: z.boolean().optional(),
-  classifier: classifierConfigSchema,
+  local_classifier: localClassifierSchema.optional(),
+  llm_second_pass: llmSecondPassSchema,
   preprocessing: preprocessingSchema,
   experts: z.array(expertTargetSchema),
   fallback: fallbackConfigSchema,
+  session_binding_policy: sessionBindingPolicySchema.optional(),
   createVirtualModel: z.boolean().optional(),
   virtualModelName: z.string().optional(),
   modelAttributes: z.any().optional(),
@@ -69,10 +93,12 @@ const updateExpertRoutingSchema = z.object({
   name: z.string().optional(),
   description: z.string().nullable().optional(),
   enabled: z.boolean().optional(),
-  classifier: classifierConfigSchema.optional(),
+  local_classifier: localClassifierSchema.optional(),
+  llm_second_pass: llmSecondPassSchema.optional(),
   preprocessing: preprocessingSchema,
   experts: z.array(expertTargetSchema).optional(),
   fallback: fallbackConfigSchema,
+  session_binding_policy: sessionBindingPolicySchema.optional(),
 });
 
 async function validateModelConfig(config: any, configType: string): Promise<void> {
@@ -99,29 +125,53 @@ async function validateModelConfig(config: any, configType: string): Promise<voi
   }
 }
 
-async function validateClassifierConfig(classifier: any): Promise<void> {
-  await validateModelConfig(classifier, '分类器');
+async function validateLlmSecondPassConfig(secondPass: any): Promise<void> {
+  await validateModelConfig(secondPass, 'LLM 二次分类');
 
-  if (classifier.type === 'virtual') {
-    const virtualModel = await modelDb.getById(classifier.model_id);
+  if (secondPass.type === 'virtual') {
+    const virtualModel = await modelDb.getById(secondPass.model_id);
 
     if (virtualModel!.expert_routing_id) {
       throw new Error(
-        `分类器不能使用专家路由虚拟模型 "${virtualModel!.name}"。` +
-        `分类器需要直接调用 LLM API,请使用真实模型或智能路由虚拟模型。`
+        `LLM 二次分类不能使用专家路由虚拟模型 "${virtualModel!.name}"。` +
+        `二次分类需要直接调用 LLM API,请使用真实模型或智能路由虚拟模型。`
       );
     }
 
     if (!virtualModel!.routing_config_id && !virtualModel!.provider_id) {
       throw new Error(
-        `分类器虚拟模型 "${virtualModel!.name}" 没有配置智能路由或供应商。` +
+        `LLM 二次分类虚拟模型 "${virtualModel!.name}" 没有配置智能路由或供应商。` +
         `请为该模型配置供应商或智能路由。`
       );
     }
   }
 }
 
+function validateSessionBindingPolicy(policy: any): void {
+  const idle = Number(policy?.idle_ttl_seconds);
+  const absolute = Number(policy?.absolute_ttl_seconds);
+  if (!Number.isFinite(idle) || idle <= 0) {
+    throw new Error('session_binding_policy.idle_ttl_seconds 必须为正整数');
+  }
+  if (!Number.isFinite(absolute) || absolute <= 0) {
+    throw new Error('session_binding_policy.absolute_ttl_seconds 必须为正整数');
+  }
+  if (idle > absolute) {
+    throw new Error(
+      'session_binding_policy.idle_ttl_seconds 不能大于 absolute_ttl_seconds'
+    );
+  }
+}
+
 async function validateExpertConfig(expert: any, currentExpertRoutingId?: string): Promise<void> {
+  // FR-2: expert categories must map to a production-eligible intent label.
+  // ops labels and out_of_scope MUST be rejected.
+  if (!isEligibleExpertRoutingLabel(String(expert.category))) {
+    throw new Error(
+      `专家分类 "${expert.category}" 不是受支持的意图标签。仅允许 coding 和 general_control 域的 12 个标签。`
+    );
+  }
+
   await validateModelConfig(expert, `专家 "${expert.category}"`);
 
   if (expert.type === 'virtual') {
@@ -156,7 +206,11 @@ async function validateFallbackConfig(fallback: any, currentExpertRoutingId?: st
 }
 
 async function validateExpertRoutingConfig(config: any, currentExpertRoutingId?: string): Promise<void> {
-  await validateClassifierConfig(config.classifier);
+  await validateLlmSecondPassConfig(config.llm_second_pass);
+
+  if (!Array.isArray(config.experts) || config.experts.length === 0) {
+    throw new Error('至少需要配置一个专家映射');
+  }
 
   for (const expert of config.experts) {
     await validateExpertConfig(expert, currentExpertRoutingId);
@@ -164,6 +218,85 @@ async function validateExpertRoutingConfig(config: any, currentExpertRoutingId?:
 
   if (config.fallback) {
     await validateFallbackConfig(config.fallback, currentExpertRoutingId);
+  }
+
+  validateSessionBindingPolicy(config.session_binding_policy);
+}
+
+/**
+ * Map a stored route_source value to the canonical 4-value vocabulary. Legacy
+ * layer sources (llm, l1_/l2_/l3_*) roll up to llm_second_pass.
+ */
+function normalizeRouteSource(raw: string | null): string | null {
+  if (!raw) return null;
+  if (raw === 'session' || raw === 'local_onnx' || raw === 'llm_second_pass' || raw === 'fallback') {
+    return raw;
+  }
+  return 'llm_second_pass';
+}
+
+/**
+ * Assemble the persisted config object, applying defaults for local_classifier
+ * and session_binding_policy when omitted. When `current` is provided (update),
+ * unspecified fields fall back to the existing stored values.
+ */
+function buildConfigData(body: any, current?: any): any {
+  const local =
+    body.local_classifier ||
+    current?.local_classifier || {
+      model_repo: EXPERT_ROUTING_MODEL_REPO,
+      revision: EXPERT_ROUTING_MODEL_REVISION,
+      onnx_file: EXPERT_ROUTING_ONNX_FILE,
+      max_tokens: 1024,
+    };
+  const sessionBindingPolicy =
+    body.session_binding_policy ||
+    current?.session_binding_policy || {
+      idle_ttl_seconds: DEFAULT_SESSION_IDLE_TTL_SECONDS,
+      absolute_ttl_seconds: DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
+    };
+  return {
+    local_classifier: local,
+    llm_second_pass: body.llm_second_pass || current?.llm_second_pass,
+    preprocessing:
+      body.preprocessing !== undefined ? body.preprocessing : current?.preprocessing,
+    experts: body.experts || current?.experts || [],
+    fallback: body.fallback !== undefined ? body.fallback : current?.fallback,
+    session_binding_policy: sessionBindingPolicy,
+  };
+}
+
+/**
+ * AC-6: when an expert mapping is removed or its target changes, invalidate any
+ * durable session bindings pointing at it so a stale route cannot be used.
+ */
+async function invalidateBindingsForExpertChanges(
+  expertRoutingId: string,
+  prevExperts: any[],
+  nextExperts: any[]
+): Promise<void> {
+  const prevById = new Map(prevExperts.map((e) => [e.id, e]));
+  const nextById = new Map(nextExperts.map((e) => [e.id, e]));
+  const changedOrRemoved: string[] = [];
+  for (const [id, prev] of prevById) {
+    const next = nextById.get(id);
+    if (!next) {
+      changedOrRemoved.push(id);
+    } else if (
+      prev.category !== next.category ||
+      prev.type !== next.type ||
+      prev.model_id !== next.model_id ||
+      prev.provider_id !== next.provider_id ||
+      prev.model !== next.model
+    ) {
+      changedOrRemoved.push(id);
+    }
+  }
+  for (const expertId of changedOrRemoved) {
+    const n = await expertRoutingSessionBindingDb.deleteByExpert(expertRoutingId, expertId);
+    if (n > 0) {
+      memoryLogger.info(`专家映射变更失效会话绑定 | expert=${expertId} | 清除=${n}`, 'ExpertRouting');
+    }
   }
 }
 
@@ -268,12 +401,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     try {
       const body = createExpertRoutingSchema.parse(request.body);
 
-      const configData = {
-        classifier: body.classifier,
-        preprocessing: body.preprocessing,
-        experts: body.experts,
-        fallback: body.fallback,
-      };
+      const configData = buildConfigData(body, undefined);
 
       await validateExpertRoutingConfig(configData);
 
@@ -344,22 +472,23 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       }
 
       let configData;
+      const currentConfig = JSON.parse(existingConfig.config);
       if (
-        body.classifier ||
+        body.llm_second_pass ||
+        body.local_classifier ||
         body.experts ||
         body.fallback !== undefined ||
-        body.preprocessing !== undefined
+        body.preprocessing !== undefined ||
+        body.session_binding_policy !== undefined
       ) {
-        const currentConfig = JSON.parse(existingConfig.config);
-
-        configData = {
-          classifier: body.classifier || currentConfig.classifier,
-          preprocessing: body.preprocessing !== undefined ? body.preprocessing : currentConfig.preprocessing,
-          experts: body.experts || currentConfig.experts,
-          fallback: body.fallback !== undefined ? body.fallback : currentConfig.fallback,
-        };
+        configData = buildConfigData(body, currentConfig);
 
         await validateExpertRoutingConfig(configData, id);
+
+        // AC-6: invalidate bindings for experts removed or changed by this update.
+        if (body.experts) {
+          await invalidateBindingsForExpertChanges(id, currentConfig.experts || [], configData.experts);
+        }
       }
 
       await expertRoutingConfigDb.update(id, {
@@ -423,8 +552,9 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       }
 
       await expertRoutingConfigDb.delete(id);
+      const clearedBindings = await expertRoutingSessionBindingDb.deleteByConfig(id);
       memoryLogger.info(
-        `删除专家路由配置: ${id} | 删除专家模型: ${deletedModels} 个 | 解绑模型: ${detachedModels} 个`,
+        `删除专家路由配置: ${id} | 删除专家模型: ${deletedModels} 个 | 解绑模型: ${detachedModels} 个 | 清除会话绑定: ${clearedBindings} 个`,
         'ExpertRouting'
       );
       return { success: true };
@@ -466,8 +596,10 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       if ((routeStats as any[]).length > 0) {
         for (const row of routeStats as any[]) {
           const raw = row.route_source ? String(row.route_source) : null;
-          // UI/metrics are now simplified to llm vs fallback; keep legacy sources collapsible.
-          const normalized = raw ? (raw === 'fallback' ? 'fallback' : 'llm') : null;
+          // FR-14/AC-8: report distinct route sources; do NOT collapse local
+          // ONNX and LLM second-pass into a single bucket. Legacy layer sources
+          // (l1_/l2_/l3_/llm) roll up to llm_second_pass.
+          const normalized = normalizeRouteSource(raw);
           if (normalized) {
             routeSourceDistribution[normalized] = (routeSourceDistribution[normalized] || 0) + Number(row.count);
           }
@@ -482,7 +614,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         for (const row of modelStats as any[]) {
           const model = String(row.classifier_model || '');
           const count = Number(row.count);
-          const source = model === 'fallback' ? 'fallback' : 'llm';
+          const source = model === 'fallback' ? 'fallback' : 'llm_second_pass';
           routeSourceDistribution[source] = (routeSourceDistribution[source] || 0) + count;
         }
       }

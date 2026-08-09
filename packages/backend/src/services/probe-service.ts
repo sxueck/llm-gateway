@@ -1,4 +1,3 @@
-// Using global fetch (Node 18+)
 import {
   buildChatCompletionsEndpoint,
   buildResponsesEndpoint,
@@ -89,8 +88,6 @@ function startAbortTimer(ms: number): { controller: AbortController; clear: () =
   };
 }
 
-// ---------- Body builders ----------
-
 function buildChatBody(modelIdentifier: string, prompt: string) {
   return {
     model: modelIdentifier,
@@ -139,8 +136,6 @@ function buildGeminiNativeBody(prompt: string) {
     },
   };
 }
-
-// ---------- Parsers ----------
 
 function parseChatResponse(json: any): ParsedProbeResponse {
   const content = json?.choices?.[0]?.message?.content ?? '';
@@ -206,8 +201,6 @@ function parseGeminiNativeResponse(json: any): ParsedProbeResponse {
   return { content: '无响应内容', usage: json?.usageMetadata, ...extractSessionInfo(json) };
 }
 
-// ---------- Low-level fetch helper ----------
-
 async function doJsonRequest(url: string, opts: CommonRequestOptions): Promise<{ ok: boolean; status: number; json?: any; text?: string }> {
   const res = await upstreamFetch(url, {
     method: opts.method,
@@ -233,8 +226,6 @@ async function doJsonRequest(url: string, opts: CommonRequestOptions): Promise<{
   }
 }
 
-// ---------- Public API: Probe via Provider (direct) ----------
-
 /**
  * Probe a concrete model via its Provider baseUrl + apiKey.
  * Returns details for:
@@ -257,10 +248,7 @@ export async function probeModelViaProvider(args: {
   const base = getBaseUrlForProtocol(provider as any, protocol || null);
   let baseUrl = normalizeBaseUrl(base);
 
-  // Google Gemini 原生协议
   if (protocol === 'google') {
-    // Gemini 原生 API 端点: /v1beta/models/{model}:generateContent
-    // 从 baseUrl 中提取模型名称（如果存在）或使用默认的 gemini-1.5-pro
     const url = buildEndpointUrl(baseUrl, `v1beta/models/${modelIdentifier}:generateContent`);
     const started = Date.now();
     const { controller, clear } = startAbortTimer(timeoutMs);
@@ -388,7 +376,6 @@ export async function probeModelViaProvider(args: {
   }
 
   // OpenAI/Google-like
-  // Chat
   const chatUrl = buildChatCompletionsEndpoint(baseUrl);
   const chatStarted = Date.now();
   const chatTimer = startAbortTimer(timeoutMs);
@@ -434,7 +421,6 @@ export async function probeModelViaProvider(args: {
     chatTimer.clear();
   }
 
-  // Responses
   const responsesUrl = buildResponsesEndpoint(baseUrl);
   const respStarted = Date.now();
   const respTimer = startAbortTimer(timeoutMs);
@@ -483,8 +469,6 @@ export async function probeModelViaProvider(args: {
   return { chat, responses };
 }
 
-// ---------- Public API: Probe via Gateway (/v1 + Bearer VK) ----------
-
 /**
  * Probe a model via Gateway base URL using a Virtual Key, for health checks.
  * - If endpoint is specified, use that endpoint directly
@@ -516,11 +500,9 @@ export async function probeModelViaGateway(args: {
     ...(args.extraHeaders || {}),
   };
 
-  // If a specific endpoint is provided, use it directly
   if (args.endpoint) {
     const url = normalizeBaseUrl(args.gatewayUrl) + args.endpoint;
 
-    // Determine the body format and parser based on the endpoint path
     let body: string;
     let parser: (json: any) => { content: string; usage?: any };
 
@@ -528,14 +510,12 @@ export async function probeModelViaGateway(args: {
       body = JSON.stringify(buildAnthropicBody(args.modelName, prompt));
       parser = parseAnthropicResponse;
     } else if (args.endpoint.includes(':generateContent') || args.endpoint.includes(':streamGenerateContent')) {
-      // Gemini 原生端点：使用 contents 格式
       body = JSON.stringify(buildGeminiNativeBody(prompt));
       parser = parseGeminiNativeResponse;
     } else if (args.endpoint.includes('/responses')) {
       body = JSON.stringify(buildResponsesBody(args.modelName, prompt));
       parser = parseResponsesResponse;
     } else {
-      // Default to chat completions format
       body = JSON.stringify(buildChatBody(args.modelName, prompt));
       parser = parseChatResponse;
     }
@@ -589,7 +569,6 @@ export async function probeModelViaGateway(args: {
         signal: timer.controller.signal,
       });
       
-      // 请求完成后立即清除超时定时器
       timer.clear();
       
       const latencyMs = Date.now() - started;
@@ -616,7 +595,6 @@ export async function probeModelViaGateway(args: {
       timer.clear();
       const latencyMs = Date.now() - started;
       
-      // 特别处理 terminated 错误
       if (error.message && error.message.includes('terminated')) {
         return {
           success: false,
@@ -654,8 +632,7 @@ export async function probeModelViaGateway(args: {
           errorMessage: errText.substring(0, 200),
         };
       }
-      
-      // 确保 res.json 存在且是对象
+
       if (!res.json || typeof res.json !== 'object') {
         return {
           success: false,
@@ -679,7 +656,6 @@ export async function probeModelViaGateway(args: {
       timer.clear();
       const latencyMs = Date.now() - started;
       
-      // 特别处理 terminated 错误
       if (error.message && error.message.includes('terminated')) {
         return {
           success: false,
@@ -708,7 +684,6 @@ export async function probeModelViaGateway(args: {
         signal: timer.controller.signal,
       });
       
-      // 请求完成后立即清除超时定时器
       timer.clear();
       
       const latencyMs = Date.now() - started;
@@ -727,7 +702,6 @@ export async function probeModelViaGateway(args: {
       timer.clear();
       const latencyMs = Date.now() - started;
       
-      // 特别处理 terminated 错误
       if (error.message && error.message.includes('terminated')) {
         lastErrorType = 'terminated';
         lastErrorMessage = '请求被提前终止';
@@ -759,7 +733,6 @@ export async function probeModelViaGateway(args: {
         signal: timer.controller.signal,
       });
 
-      // 请求完成后立即清除超时定时器
       timer.clear();
 
       const latencyMs = Date.now() - started;
@@ -782,7 +755,6 @@ export async function probeModelViaGateway(args: {
       timer.clear();
       const latencyMs = Date.now() - started;
       
-      // 特别处理 terminated 错误
       if (error.message && error.message.includes('terminated')) {
         lastErrorType = 'terminated';
         lastErrorMessage = '请求被提前终止';

@@ -7,6 +7,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { appConfig, setPublicUrl } from './config/index.js';
 import { initDatabase, apiRequestDb, systemConfigDb, shutdownDatabase } from './db/index.js';
+import { initLocalClassifier, startSessionBindingCleanup } from './services/expert-router.js';
 import { authRoutes } from './routes/auth.js';
 import { providerRoutes } from './routes/providers.js';
 import { modelRoutes } from './routes/models.js';
@@ -109,6 +110,12 @@ await initDatabase();
 await manualIpBlocklist.init();
 await runtimeSystemConfigCache.initialize();
 await reasoningEffortSuffixesCache.initialize();
+
+// Best-effort preload of local ONNX classifier assets (FR-15). Failures degrade
+// Expert Routing to LLM second pass / fallback rather than blocking startup.
+initLocalClassifier();
+// Periodic cleanup of expired durable session bindings (NFR-4).
+startSessionBindingCleanup();
 
 // Load request header forwarding config before serving traffic.
 await requestHeaderForwardingService.reloadConfig();

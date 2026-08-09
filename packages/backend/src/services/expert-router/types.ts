@@ -58,7 +58,7 @@ export interface ToolPolicy {
 export interface RouteDecision {
   category: string;
   confidence: number;
-  source: 'llm' | 'session';
+  source: 'local_onnx' | 'llm_second_pass' | 'session' | 'fallback' | 'llm';
   expertId?: string;
   toolPolicy?: ToolPolicy;
   isToolCall?: boolean;

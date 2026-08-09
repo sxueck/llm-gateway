@@ -39,7 +39,7 @@
         
         <ExpertRoutingVisualization
           v-model:experts="formValue.experts"
-          :classifier-config="formValue.classifier"
+          :classifier-config="formValue.llm_second_pass"
           :provider-options="providerOptions"
           :virtual-model-options="virtualModelOptions"
           editable
@@ -53,12 +53,33 @@
         </div>
 
         <RoutingPipelineConfig
-          v-model:classifier="formValue.classifier"
-          v-model:preprocessing="formValue.preprocessing"
+          v-model:llm-second-pass="formValue.llm_second_pass"
+          :local-classifier="formValue.local_classifier"
+          :preprocessing="formValue.preprocessing"
           :experts="formValue.experts"
           :provider-options="providerOptions"
           :virtual-model-options="virtualModelOptions"
         />
+
+        <n-divider />
+
+        <div class="step-header-text">
+          <h3>{{ t('expertRouting.sessionBindingPolicy', '会话绑定策略') }}</h3>
+          <p class="step-sub-text">{{ t('expertRouting.sessionBindingPolicyHint', '首个可路由请求选定专家后会话即绑定；到达空闲或绝对过期时间后失效。') }}</p>
+        </div>
+        <n-form :model="formValue" label-placement="left" :label-width="160">
+          <n-form-item :label="t('expertRouting.idleTtl', '空闲过期 (秒)')">
+            <n-input-number v-model:value="formValue.session_binding_policy!.idle_ttl_seconds" :min="1" />
+          </n-form-item>
+          <n-form-item :label="t('expertRouting.absoluteTtl', '绝对过期 (秒)')">
+            <n-input-number v-model:value="formValue.session_binding_policy!.absolute_ttl_seconds" :min="1" />
+            <template #feedback>
+              <n-text depth="3" style="font-size: 12px">
+                {{ t('expertRouting.ttlConstraint', '空闲过期不得大于绝对过期。') }}
+              </n-text>
+            </template>
+          </n-form-item>
+        </n-form>
       </div>
 
       <div v-show="currentStep === 3">
@@ -67,7 +88,7 @@
             <h3>{{ t('expertRouting.fallbackStrategy') }}</h3>
             <p class="step-sub-text">{{ t('expertRouting.fallbackDesc') }}</p>
           </div>
-          
+
           <n-card :bordered="true" style="margin-bottom: 20px;">
              <n-form-item :label="t('expertRouting.enableFallback')">
               <n-switch v-model:value="enableFallback" />
@@ -88,7 +109,7 @@
           <div class="step-header-text">
             <h3>{{ t('expertRouting.reviewConfig') }}</h3>
           </div>
-          
+
           <n-descriptions bordered :column="1">
             <n-descriptions-item :label="t('expertRouting.configName')">
               {{ formValue.name }}
@@ -97,7 +118,7 @@
               {{ formValue.experts.length }}
             </n-descriptions-item>
             <n-descriptions-item :label="t('expertRouting.classifierModel')">
-              {{ getModelLabel(formValue.classifier) }}
+              {{ getModelLabel(formValue.llm_second_pass) }}
             </n-descriptions-item>
           </n-descriptions>
         </n-form>
@@ -140,16 +161,22 @@ import {
   NForm,
   NFormItem,
   NInput,
+  NInputNumber,
   NSwitch,
   NButton,
   NDivider,
   NCard,
   NDescriptions,
   NDescriptionsItem,
+  NText,
 } from 'naive-ui';
 import { useProviderStore } from '@/stores/provider';
 import { useModelStore } from '@/stores/model';
-import type { CreateExpertRoutingRequest, ClassifierConfig } from '@/api/expert-routing';
+import type { CreateExpertRoutingRequest, LlmSecondPassConfig } from '@/api/expert-routing';
+import {
+  createDefaultLocalClassifier,
+  createDefaultSessionBindingPolicy,
+} from '@/utils/expert-routing';
 import ExpertRoutingVisualization from './ExpertRoutingVisualization.vue';
 import RoutingPipelineConfig from './RoutingPipelineConfig.vue';
 import ModelSelector from './ModelSelector.vue';
@@ -185,6 +212,13 @@ function normalizeForm(target: CreateExpertRoutingRequest) {
       strip_system_prompt: false,
     };
   }
+  // Ensure local classifier pin metadata + session binding policy exist.
+  if (!target.local_classifier) {
+    target.local_classifier = createDefaultLocalClassifier();
+  }
+  if (!target.session_binding_policy) {
+    target.session_binding_policy = createDefaultSessionBindingPolicy();
+  }
 }
 
 normalizeForm(formValue.value);
@@ -211,7 +245,7 @@ const virtualModelOptions = computed(() =>
     }))
 );
 
-function getModelLabel(config: ClassifierConfig) {
+function getModelLabel(config: LlmSecondPassConfig) {
   if (config.type === 'virtual') {
      const m = virtualModelOptions.value.find(v => v.value === config.model_id);
      return m ? `Virtual: ${m.label}` : config.model_id;

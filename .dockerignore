@@ -14,3 +14,6 @@ compose
 
 packages/*/node_modules
 packages/*/dist
+# Model artifacts are downloaded fresh inside the model-assets build stage;
+# never send the local ~615MB copy as build context.
+packages/backend/model-assets

@@ -3,6 +3,9 @@ node_modules/
 packages/*/node_modules/
 web/node_modules/
 
+# Local ONNX classifier artifacts (pinned via download-onnx-model.ts; ~615MB)
+packages/backend/model-assets/
+
 # Bun
 bun.lockb
 .bun-cache/

@@ -21,9 +21,6 @@ type StreamLogger = {
   error: (msg: string, tag?: string) => void;
 };
 
-// ─── Pure helpers (exported for unit testing) ─────────────────────────────
-
-/** Serialize a Responses stream event into an SSE frame. */
 export function serializeChunkToSse(chunk: any): string {
   const chunkData = JSON.stringify(chunk);
   const eventName = typeof chunk?.type === 'string' ? chunk.type : undefined;
@@ -31,7 +28,6 @@ export function serializeChunkToSse(chunk: any): string {
   return `${eventPrefix}data: ${chunkData}\n\n`;
 }
 
-/** Extract and normalize usage from a stream event, or null if absent. */
 export function extractUsageFromChunk(chunk: any): ReturnType<typeof normalizeUsageCounts> | null {
   const usageInChunk: any =
     chunk?.usage ?? (chunk?.response && (chunk.response as any).usage) ?? null;
@@ -39,7 +35,6 @@ export function extractUsageFromChunk(chunk: any): ReturnType<typeof normalizeUs
   return normalizeUsageCounts(usageInChunk);
 }
 
-/** Classify a response.error / error event into an HTTP status + message. */
 export function classifyStreamErrorEvent(chunk: any): { statusCode: number; message: string } | null {
   if (!chunk || (chunk as any)?.type !== 'response.error' && !(chunk as any)?.error) return null;
   const errorInfo = (chunk as any)?.error;
@@ -54,7 +49,6 @@ export function classifyStreamErrorEvent(chunk: any): { statusCode: number; mess
   return { statusCode, message: errorMessage };
 }
 
-/** Detect whether a stream event carries assistant-generated content. */
 function responsesEventHasAssistantContent(event: any): boolean {
   if (!event || typeof event !== 'object') return false;
 
@@ -70,8 +64,6 @@ function responsesEventHasAssistantContent(event: any): boolean {
 
   return false;
 }
-
-// ─── Types ────────────────────────────────────────────────────────────────
 
 export interface OpenAIResponsesStreamProcessorOptions {
   client: any;
@@ -104,8 +96,6 @@ interface AttemptResult {
   streamChunks: string[];
   tffbMs?: number;
 }
-
-// ─── Output writer: decouples SSE I/O from stream parsing ─────────────────
 
 class SseWriter {
   private readonly chunks: string[] = [];
@@ -168,8 +158,6 @@ class SseWriter {
   }
 }
 
-// ─── Single attempt runner ────────────────────────────────────────────────
-
 async function runStreamAttempt(
   attempt: number,
   totalAttempts: number,
@@ -211,7 +199,6 @@ async function runStreamAttempt(
   let totalTokens = 0;
   let cachedTokens = 0;
 
-  // --- Create upstream stream with init timeout + abort linking ---
   const attemptAbortController = new AbortController();
   let initTimeoutId: ReturnType<typeof setTimeout> | undefined;
   if (initTimeoutMs > 0) {
@@ -244,7 +231,6 @@ async function runStreamAttempt(
     }
   }
 
-  // --- Consume the stream ---
   try {
     for await (const chunk of stream) {
       if (reply.raw.destroyed || reply.raw.writableEnded) {
@@ -328,7 +314,6 @@ async function runStreamAttempt(
 
   writer.markCompleted();
 
-  // --- Evaluate attempt result ---
   if (!hasAssistantOutput && !bypassEmptyGuard) {
     logger?.warn(
       `[Responses API] 未检测到 assistant 输出，准备重试 | attempt ${attempt}/${totalAttempts} | ` +
@@ -366,8 +351,6 @@ async function runStreamAttempt(
     tffbMs: attemptTffbMs,
   };
 }
-
-// ─── Main entry point: retry loop + final cleanup ─────────────────────────
 
 export async function processOpenAIResponsesStreamToSseWithRetry(
   options: OpenAIResponsesStreamProcessorOptions

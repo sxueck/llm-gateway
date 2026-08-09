@@ -89,22 +89,8 @@ export interface ExpertRoutingConfig {
     strip_code_blocks?: boolean;
     strip_system_prompt?: boolean;
   };
-  classifier: {
-    type: 'virtual' | 'real';
-    model_id?: string;
-    provider_id?: string;
-    model?: string;
-    prompt_template: string;
-    system_prompt?: string;
-    max_tokens?: number;
-    temperature?: number;
-    timeout?: number;
-    ignore_system_messages?: boolean;
-    max_messages_to_classify?: number;
-    ignored_tags?: string[];
-    enable_structured_output?: boolean;
-    enable_adaptive_thinking?: boolean;
-  };
+  local_classifier: import('./expert-routing.js').LocalClassifierPolicy;
+  llm_second_pass: import('./expert-routing.js').LlmSecondPassConfig;
   experts: import('./expert-routing.js').ExpertTarget[];
   fallback?: {
     type: 'virtual' | 'real';
@@ -112,6 +98,7 @@ export interface ExpertRoutingConfig {
     provider_id?: string;
     model?: string;
   };
+  session_binding_policy: import('./expert-routing.js').SessionBindingPolicy;
 }
 
 export interface ExpertRoutingLog {

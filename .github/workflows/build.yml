@@ -105,3 +105,43 @@ jobs:
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # NFR-2: prove the local ONNX classifier (native ORT, external .data loading,
+  # head weights, Qwen tokenizer, v3 policy) works end-to-end on the published
+  # production architecture (linux/amd64, Node 22). The 615MB artifact download
+  # is cached by pinned revision so this stays fast.
+  onnx-smoke:
+    name: Local ONNX classifier smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ONNX_MODEL_REVISION: ce71b323aff00e2d591cf75cfa607c5478bf9154
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.2.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # onnxruntime-node ships a postinstall that downloads the native binary;
+      # bun blocks lifecycle scripts by default, so trust it explicitly.
+      - name: Enable onnxruntime-node native binary
+        run: bun pm trust onnxruntime-node
+
+      - name: Restore pinned model artifacts
+        id: cache
+        uses: actions/cache@5a3ec84eff408d86c8b8ce44ac2f7aab75f2f938 # v4.2.3
+        with:
+          path: packages/backend/model-assets/intent-router-zh-setfit-v1
+          key: onnx-intent-router-${{ env.ONNX_MODEL_REVISION }}
+
+      - name: Download pinned model artifacts
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: bun run download:onnx-model -w @llm-gateway/backend
+
+      - name: Run classifier smoke test
+        run: bun run test:onnx-smoke -w @llm-gateway/backend

@@ -52,5 +52,8 @@
   "dependencies": {
     "@fastify/websocket": "^11.0.0",
     "ws": "^8.21.0"
-  }
+  },
+  "trustedDependencies": [
+    "onnxruntime-node"
+  ]
 }
