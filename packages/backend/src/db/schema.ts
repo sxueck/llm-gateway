@@ -222,6 +222,27 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    // 专家路由会话绑定表（持久化，跨重启/副本可用）
+    // 复合主键 (expert_routing_id, virtual_key_scope, session_id)；
+    // virtual_key_scope 为虚拟密钥 ID 或非空匿名哨兵，避免 MySQL 可空唯一键产生重复匿名绑定。
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS expert_routing_session_bindings (
+        expert_routing_id VARCHAR(255) NOT NULL,
+        virtual_key_scope VARCHAR(255) NOT NULL,
+        session_id VARCHAR(256) NOT NULL,
+        expert_id VARCHAR(255) NOT NULL,
+        route_source VARCHAR(50) NOT NULL,
+        created_at BIGINT NOT NULL,
+        last_seen_at BIGINT NOT NULL,
+        idle_expires_at BIGINT NOT NULL,
+        absolute_expires_at BIGINT NOT NULL,
+        PRIMARY KEY (expert_routing_id, virtual_key_scope, session_id),
+        INDEX idx_bindings_idle_expires (idle_expires_at),
+        INDEX idx_bindings_absolute_expires (absolute_expires_at),
+        INDEX idx_bindings_expert (expert_routing_id, expert_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
     // 健康检查目标表
     await conn.query(`
       CREATE TABLE IF NOT EXISTS health_targets (

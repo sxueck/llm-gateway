@@ -52,34 +52,74 @@
       <template #header>
         <div class="stage-header">
           <n-tag type="info" round size="small">Step 2</n-tag>
-          <span class="stage-title">{{ tr('expertRouting.classificationTitle', '智能分类 (LLM)') }}</span>
+          <span class="stage-title">{{ tr('expertRouting.localClassifierTitle', '本地 ONNX 分类 (Primary)') }}</span>
           <n-tooltip trigger="hover">
             <template #trigger>
               <n-icon size="16" class="info-icon"><InformationCircleOutline /></n-icon>
             </template>
-            {{ tr('expertRouting.classificationTooltip', '使用大模型智能识别用户意图并分类') }}
+            {{ tr('expertRouting.localClassifierTooltip', '本地 ONNX 意图分类器作为主分类；无需调用 LLM。模型与版本由部署固定。') }}
           </n-tooltip>
         </div>
       </template>
-      
+
       <div class="stage-content">
         <n-text depth="3" class="stage-desc">
-          {{ tr('expertRouting.classificationDesc', '配置分类器模型和提示词，以实现精准分类。') }}
+          {{ tr('expertRouting.localClassifierDesc', '主分类由本地 ONNX 模型完成。低置信度、ops 或 out_of_scope 结果将进入下方 LLM 二次分类。') }}
         </n-text>
-        
         <n-divider style="margin: 12px 0" />
-        
+        <n-descriptions label-placement="left" :column="1" size="small" bordered>
+          <n-descriptions-item label="Repo">
+            {{ localClassifier?.model_repo }}
+          </n-descriptions-item>
+          <n-descriptions-item label="Revision">
+            <n-text depth="3" code style="font-size: 12px">{{ localClassifier?.revision }}</n-text>
+          </n-descriptions-item>
+          <n-descriptions-item label="ONNX">
+            {{ localClassifier?.onnx_file }}
+          </n-descriptions-item>
+          <n-descriptions-item :label="tr('expertRouting.maxTokens', '最大 Tokens')">
+            {{ localClassifier?.max_tokens }}
+          </n-descriptions-item>
+        </n-descriptions>
+      </div>
+    </n-card>
+
+    <div class="pipeline-arrow">
+      <n-icon size="24"><ArrowDownOutline /></n-icon>
+    </div>
+
+    <n-card class="pipeline-stage" :bordered="false">
+      <template #header>
+        <div class="stage-header">
+          <n-tag type="success" round size="small">Step 3</n-tag>
+          <span class="stage-title">{{ tr('expertRouting.llmSecondPassTitle', 'LLM 二次分类 (Second Pass)') }}</span>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-icon size="16" class="info-icon"><InformationCircleOutline /></n-icon>
+            </template>
+            {{ tr('expertRouting.classificationTooltip', '当本地分类被拒判、返回不支持的 ops/out_of_scope 标签或缺少专家映射时调用') }}
+          </n-tooltip>
+        </div>
+      </template>
+
+      <div class="stage-content">
+        <n-text depth="3" class="stage-desc">
+          {{ tr('expertRouting.classificationDesc', '配置二次分类器模型和提示词，以处理本地分类无法决策的请求。') }}
+        </n-text>
+
+        <n-divider style="margin: 12px 0" />
+
         <ModelSelector
-          v-model:type="classifier.type"
-          v-model:model-id="classifier.model_id"
-          v-model:provider-id="classifier.provider_id"
-          v-model:model="classifier.model"
+          v-model:type="llmSecondPass.type"
+          v-model:model-id="llmSecondPass.model_id"
+          v-model:provider-id="llmSecondPass.provider_id"
+          v-model:model="llmSecondPass.model"
           :provider-options="providerOptions"
           :virtual-model-options="virtualModelOptions"
         />
 
         <n-form-item style="margin-top: 12px; margin-bottom: 0">
-          <n-checkbox v-model:checked="classifier.enable_adaptive_thinking">
+          <n-checkbox v-model:checked="llmSecondPass.enable_adaptive_thinking">
             {{ t('expertRouting.enableAdaptiveThinking') }}
           </n-checkbox>
           <n-tooltip trigger="hover">
@@ -96,7 +136,7 @@
           <n-collapse-item :title="t('expertRouting.advancedLLMConfig')">
             <n-form-item :label="t('expertRouting.systemPrompt')">
               <n-input
-                v-model:value="classifier.system_prompt"
+                v-model:value="llmSecondPass.system_prompt"
                 type="textarea"
                 :rows="3"
                 :placeholder="t('expertRouting.systemPromptPlaceholder')"
@@ -112,13 +152,18 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
 import {
-  NCard, NTag, NIcon, NText, NDivider, NGrid, NGi, NFormItem, 
-  NTooltip, NCollapse, NCollapseItem, NInput,
+  NCard, NTag, NIcon, NText, NDivider, NGrid, NGi, NFormItem,
+  NTooltip, NCollapse, NCollapseItem, NInput, NDescriptions, NDescriptionsItem,
   NCheckbox
 } from 'naive-ui';
 import { InformationCircleOutline, ArrowDownOutline } from '@vicons/ionicons5';
 import ModelSelector from './ModelSelector.vue';
-import type { ExpertRoutingConfig, ExpertTarget } from '@/api/expert-routing';
+import type {
+  ExpertTarget,
+  LlmSecondPassConfig,
+  LocalClassifierPolicy,
+  PreprocessingConfig,
+} from '@/api/expert-routing';
 
 const { t, te } = useI18n();
 
@@ -127,15 +172,16 @@ function tr(key: string, fallback: string) {
 }
 
 interface Props {
-  classifier: ExpertRoutingConfig['classifier'];
-  preprocessing: NonNullable<ExpertRoutingConfig['preprocessing']>;
+  llmSecondPass: LlmSecondPassConfig;
+  localClassifier?: LocalClassifierPolicy;
+  preprocessing: PreprocessingConfig;
   experts: ExpertTarget[];
   providerOptions: any[];
   virtualModelOptions: any[];
 }
 
 defineProps<Props>();
-defineEmits(['update:classifier', 'update:preprocessing']);
+defineEmits(['update:llmSecondPass', 'update:preprocessing']);
 </script>
 
 <style scoped>

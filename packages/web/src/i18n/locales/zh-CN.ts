@@ -461,6 +461,17 @@ export default {
 
     advancedLLMConfig: '高级 LLM 配置',
     llmClassifierConfig: 'LLM 分类器配置',
+
+    localClassifierTitle: '本地 ONNX 分类 (主分类)',
+    localClassifierTooltip: '本地 ONNX 意图分类器作为主分类；无需调用 LLM。模型与版本由部署固定。',
+    localClassifierDesc: '主分类由本地 ONNX 模型完成。低置信度、ops 或 out_of_scope 结果将进入下方 LLM 二次分类。',
+    llmSecondPassTitle: 'LLM 二次分类 (Second Pass)',
+    sessionBindingPolicy: '会话绑定策略',
+    sessionBindingPolicyHint: '首个可路由请求选定专家后会话即绑定；到达空闲或绝对过期时间后失效。',
+    idleTtl: '空闲过期 (秒)',
+    absoluteTtl: '绝对过期 (秒)',
+    ttlConstraint: '空闲过期不得大于绝对过期。',
+    eligibleLabelsHint: '仅支持 coding 与 general_control 域的 12 个意图标签；ops/out_of_scope 不可直接映射。',
     semanticUtterances: '语义示例 (Utterances)',
     semanticUtterancesPlaceholder: '输入该类别的典型用户指令，每行一条...',
     semanticUtterancesHint: '这些示例将被转换为向量，用于与用户输入进行相似度匹配',

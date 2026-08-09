@@ -1,9 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import {
-  ExpertRoutingSessionBindingStore,
-  extractExpertRoutingSessionId,
-} from './session-binding.js';
+import { extractExpertRoutingSessionId } from './session-binding.js';
 
 describe('extractExpertRoutingSessionId', () => {
   test('uses explicit session id from headers before body fields', () => {
@@ -41,30 +38,13 @@ describe('extractExpertRoutingSessionId', () => {
 
     expect(sessionId).toBeUndefined();
   });
-});
 
-describe('ExpertRoutingSessionBindingStore', () => {
-  test('binds categories per expert routing config, virtual key, and session', () => {
-    const store = new ExpertRoutingSessionBindingStore();
+  test('truncates overlong session ids to the VARCHAR(256) column width', () => {
+    const sessionId = extractExpertRoutingSessionId({
+      headers: { 'x-session-id': 'x'.repeat(300) },
+    });
 
-    store.set('routing-a', 'vk-a', 'session-1', 'coding');
-    store.set('routing-a', 'vk-b', 'session-1', 'writing');
-    store.set('routing-b', 'vk-a', 'session-1', 'analysis');
-
-    expect(store.get('routing-a', 'vk-a', 'session-1')).toBe('coding');
-    expect(store.get('routing-a', 'vk-b', 'session-1')).toBe('writing');
-    expect(store.get('routing-b', 'vk-a', 'session-1')).toBe('analysis');
-  });
-
-  test('evicts oldest bindings when capacity is exceeded', () => {
-    const store = new ExpertRoutingSessionBindingStore(2);
-
-    store.set('routing-a', 'vk-a', 'session-1', 'coding');
-    store.set('routing-a', 'vk-a', 'session-2', 'writing');
-    store.set('routing-a', 'vk-a', 'session-3', 'analysis');
-
-    expect(store.get('routing-a', 'vk-a', 'session-1')).toBeUndefined();
-    expect(store.get('routing-a', 'vk-a', 'session-2')).toBe('writing');
-    expect(store.get('routing-a', 'vk-a', 'session-3')).toBe('analysis');
+    expect(sessionId).toHaveLength(256);
   });
 });
+

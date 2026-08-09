@@ -1,7 +1,6 @@
 <template>
   <div class="routing-editor">
     <div class="editor-layout">
-      <!-- 左侧：控制台 -->
       <div class="editor-sidebar">
         <div class="sidebar-section">
           <div class="section-title">基础配置</div>
@@ -59,7 +58,6 @@
         </div>
       </div>
 
-      <!-- 右侧：可视化编排 -->
       <div class="editor-main">
         <div class="main-header">
           <div class="header-left">

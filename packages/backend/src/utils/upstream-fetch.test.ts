@@ -9,7 +9,6 @@ import {
 import { upstreamSslConfigService } from '../services/upstream-ssl-config.js';
 import { memoryLogger } from '../services/logger.js';
 
-// --- undici mock: lets us assert on Agent/ProxyAgent construction params ---
 const undiciMocks = vi.hoisted(() => ({
   Agent: vi.fn((opts?: any) => ({ __dispatcher: true, opts })),
   ProxyAgent: vi.fn((opts?: any) => ({ __dispatcher: true, opts })),
@@ -151,10 +150,6 @@ describe('toUndiciRequestInit', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Abort behavior — uses rejects semantics, mocks global fetch to verify
-// that the abort signal truly interrupts the in-flight request.
-// ---------------------------------------------------------------------------
 describe('upstreamFetch abort behavior', () => {
   let fetchSpy: MockInstance | undefined;
 
@@ -218,12 +213,7 @@ describe('upstreamFetch abort behavior', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// TLS / dispatcher configuration — verifies which dispatcher and which TLS
-// options reach undici under each skipVerify × proxy combination.
-// Any change that flips the production default to rejectUnauthorized:false
-// will fail these tests.
-// ---------------------------------------------------------------------------
+// Guardrail: any change that flips the production default to rejectUnauthorized:false will fail these tests.
 describe('upstreamFetch TLS configuration', () => {
   let originalSkipVerify: boolean;
   let fetchSpy: MockInstance | undefined;

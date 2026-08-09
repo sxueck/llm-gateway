@@ -36,11 +36,9 @@
         </div>
         <div class="node-body">
           <n-text depth="3" style="font-size: 12px">
-            {{ classifierLabel }}
+            本地 ONNX 意图分类
           </n-text>
-          <n-tag size="tiny" :type="classifierConfig.type === 'virtual' ? 'info' : 'success'">
-            {{ classifierConfig.type === 'virtual' ? t('expertRouting.virtualModel') : t('expertRouting.realModel') }}
-          </n-tag>
+          <n-tag size="tiny" type="success">intent-router</n-tag>
         </div>
       </div>
 
@@ -127,7 +125,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   NSpace,
@@ -149,7 +147,7 @@ import {
   FilterOutline,
   CubeOutline,
 } from '@vicons/ionicons5';
-import type { ExpertTarget, ClassifierConfig, ExpertTemplate } from '@/api/expert-routing';
+import type { ExpertTarget, LlmSecondPassConfig, ExpertTemplate } from '@/api/expert-routing';
 import ExpertForm from './ExpertForm.vue';
 import ExpertTemplateSelector from './ExpertTemplateSelector.vue';
 
@@ -163,7 +161,7 @@ const dialog = useDialog();
 interface Props {
   experts?: ExpertTarget[];
   routes?: { category: string; utterances: string[] }[];
-  classifierConfig: ClassifierConfig;
+  classifierConfig?: LlmSecondPassConfig;
   providerOptions?: Array<{ label: string; value: string }>;
   virtualModelOptions?: Array<{ label: string; value: string }>;
   config?: any;
@@ -193,15 +191,6 @@ const editingExpert = ref<ExpertTarget>({
   type: 'real',
 });
 const editingUtterances = ref<string[]>([]);
-
-const classifierLabel = computed(() => {
-  if (props.classifierConfig.type === 'virtual') {
-    const option = props.virtualModelOptions?.find(o => o.value === props.classifierConfig.model_id);
-    return option?.label || props.classifierConfig.model_id || '';
-  } else {
-    return props.classifierConfig.model || '';
-  }
-});
 
 function getExpertLabel(expert: ExpertTarget): string {
   if (expert.type === 'virtual') {

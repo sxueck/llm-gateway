@@ -1,7 +1,6 @@
 
 import { providerDb, modelDb, routingConfigDb } from '../../db/index.js';
-import { ExpertRoutingConfig } from '../../types/index.js';
-import { ExpertTarget } from '../../types/expert-routing.js';
+import type { ExpertTarget, LlmSecondPassConfig } from '../../types/expert-routing.js';
 
 export interface ClassifierModelResult {
   provider: any;
@@ -21,7 +20,7 @@ export interface ResolvedModel {
  * 解析分类器模型配置，获取 provider 和 model
  */
 export async function resolveClassifierModel(
-  classifierConfig: ExpertRoutingConfig['classifier']
+  classifierConfig: LlmSecondPassConfig
 ): Promise<ClassifierModelResult> {
   let provider;
   let model: string;

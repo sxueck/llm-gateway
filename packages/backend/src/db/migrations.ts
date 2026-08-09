@@ -212,6 +212,62 @@ export const migrations: Migration[] = [
       }
       console.log('[迁移] 已删除 supported_protocols 和 health_check_protocol 字段');
     }
+  },
+  {
+    version: 34,
+    name: 'local_onnx_expert_routing_reset',
+    up: async (conn: Connection) => {
+      // 1. Durable session bindings table (idempotent with schema.ts).
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS expert_routing_session_bindings (
+          expert_routing_id VARCHAR(255) NOT NULL,
+          virtual_key_scope VARCHAR(255) NOT NULL,
+          session_id VARCHAR(256) NOT NULL,
+          expert_id VARCHAR(255) NOT NULL,
+          route_source VARCHAR(50) NOT NULL,
+          created_at BIGINT NOT NULL,
+          last_seen_at BIGINT NOT NULL,
+          idle_expires_at BIGINT NOT NULL,
+          absolute_expires_at BIGINT NOT NULL,
+          PRIMARY KEY (expert_routing_id, virtual_key_scope, session_id),
+          INDEX idx_bindings_idle_expires (idle_expires_at),
+          INDEX idx_bindings_absolute_expires (absolute_expires_at),
+          INDEX idx_bindings_expert (expert_routing_id, expert_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      console.log('[迁移] 已确保 expert_routing_session_bindings 表存在');
+
+      // 2. Destructive reset of legacy LLM-primary Expert Routing data (AC-7, FR-12).
+      //    The local-ONNX classifier config is incompatible with the legacy
+      //    `classifier`-based configs, so all prior configs/logs/generated models
+      //    are removed. This is a one-time, intentional, irreversible migration.
+
+      // 2a. Detach (non-generated) models that referenced legacy configs, then
+      //     drop the generated virtual models (model_identifier = expert-<configId>).
+      await conn.query(`
+        UPDATE models
+        SET expert_routing_id = NULL
+        WHERE expert_routing_id IS NOT NULL
+      `);
+      console.log('[迁移] 已解绑所有引用旧专家路由配置的模型');
+
+      await conn.query(`
+        DELETE FROM models
+        WHERE is_virtual = 1 AND model_identifier LIKE 'expert-%'
+      `);
+      console.log('[迁移] 已删除旧专家路由生成的虚拟模型');
+
+      // 2b. Remove legacy Expert Routing logs and configs.
+      await conn.query(`DELETE FROM expert_routing_logs`);
+      console.log('[迁移] 已清空旧专家路由日志');
+
+      await conn.query(`DELETE FROM expert_routing_configs`);
+      console.log('[迁移] 已清空旧专家路由配置');
+
+      // 2c. Drop any pre-existing session bindings table from earlier iterations.
+      await conn.query(`DROP TABLE IF EXISTS expert_routing_session_bindings_legacy`);
+      console.log('[迁移] 本地 ONNX 专家路由重置完成');
+    }
   }
 ];
 

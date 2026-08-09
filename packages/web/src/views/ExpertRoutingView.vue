@@ -82,7 +82,6 @@
               >
                 <ExpertRoutingVisualization
                   :experts="config.config.experts"
-                  :classifier-config="config.config.classifier"
                   :virtual-model-options="virtualModelOptions"
                   :editable="false"
                 />
@@ -104,7 +103,7 @@
                     <n-icon size="14" style="vertical-align: -2px; margin-right: 4px">
                       <FilterOutline />
                     </n-icon>
-                    {{ t('expertRouting.classifier') }}: {{ getClassifierLabel(config.config.classifier) }}
+                    {{ t('expertRouting.classifier') }}: {{ getClassifierLabel(config.config.llm_second_pass) }}
                   </n-text>
                   <n-text depth="3" style="font-size: 12px">
                     <n-icon size="14" style="vertical-align: -2px; margin-right: 4px">
@@ -482,12 +481,13 @@ async function savePreviewWidthToServer(width: number) {
   }
 }
 
-function getClassifierLabel(classifier: any): string {
-  if (classifier.type === 'virtual') {
-    const virtualModel = modelStore.models.find(m => m.id === classifier.model_id);
-    return virtualModel?.name || classifier.model_id || t('expertRouting.virtualModel');
+function getClassifierLabel(secondPass: any): string {
+  if (!secondPass) return t('expertRouting.realModel');
+  if (secondPass.type === 'virtual') {
+    const virtualModel = modelStore.models.find(m => m.id === secondPass.model_id);
+    return virtualModel?.name || secondPass.model_id || t('expertRouting.virtualModel');
   } else {
-    return classifier.model || t('expertRouting.realModel');
+    return secondPass.model || t('expertRouting.realModel');
   }
 }
 
@@ -517,7 +517,8 @@ function handleEdit(config: ExpertRouting) {
     name: config.name,
     description: config.description,
     enabled: config.enabled,
-    classifier: config.config.classifier,
+    local_classifier: config.config.local_classifier,
+    llm_second_pass: config.config.llm_second_pass,
     preprocessing: config.config.preprocessing ?? {
       strip_tools: false,
       strip_files: false,
@@ -526,6 +527,7 @@ function handleEdit(config: ExpertRouting) {
     },
     experts: config.config.experts,
     fallback: config.config.fallback,
+    session_binding_policy: config.config.session_binding_policy,
   };
   showEditorModal.value = true;
 }

@@ -1,6 +1,5 @@
 
-import { ExpertRoutingConfig } from '../../../types/index.js';
-import type { ExpertTarget } from '../../../types/expert-routing.js';
+import type { ExpertTarget, LlmSecondPassConfig } from '../../../types/expert-routing.js';
 import { RoutingSignal, RouteDecision } from '../types.js';
 import { resolveClassifierModel } from '../resolve.js';
 import { memoryLogger } from '../../logger.js';
@@ -15,7 +14,7 @@ const DEFAULT_MAX_TOKENS = 512;
 export class LLMJudge {
   static async decide(
     signal: RoutingSignal,
-    classifierConfig: ExpertRoutingConfig['classifier'],
+    classifierConfig: LlmSecondPassConfig,
     experts?: ExpertTarget[]
   ): Promise<RouteDecision> {
     const startTime = Date.now();

@@ -12,9 +12,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage --reporter=junit --outputFile=test-results.junit.xml",
+    "test:onnx-smoke": "tsx scripts/smoke-test-classifier.ts",
     "typecheck": "tsc -p ../shared/tsconfig.json --emitDeclarationOnly && tsc --noEmit",
     "lint": "tsc -p ../shared/tsconfig.json --emitDeclarationOnly && tsc --noEmit --noUnusedLocals false --noUnusedParameters false --noImplicitReturns false",
     "clean": "rm -rf dist",
+    "download:onnx-model": "tsx scripts/download-onnx-model.ts",
     "fix:db": "node scripts/fix-database.js"
   },
   "dependencies": {
@@ -35,6 +37,7 @@
     "mysql2": "^3.15.3",
     "nanoid": "^5.0.9",
     "node-cron": "^4.2.1",
+    "onnxruntime-node": "^1.21.1",
     "openai": "^6.47.0",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",

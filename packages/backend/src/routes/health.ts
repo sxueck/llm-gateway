@@ -433,10 +433,6 @@ export async function healthRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // ========================================
-  // Admin API Endpoints (Require Authentication)
-  // ========================================
-
   const updateTargetSchema = z.object({
     display_title: z.string().nullable().optional(),
     check_interval_seconds: z.coerce.number().int().min(30).optional(),
@@ -573,11 +569,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // ================================
-  // Admin API Aliases with /api prefix
-  // 兼容前端 axios baseURL '/api' 的请求路径
-  // ================================
-
+  // /api 前缀别名：兼容前端 axios baseURL '/api'
   // GET /api/admin/health/targets
   fastify.get('/api/admin/health/targets', {
     preHandler: fastify.authenticate,

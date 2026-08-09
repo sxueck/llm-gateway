@@ -20,7 +20,12 @@ export interface ExpertTemplate {
   system_prompt?: string;
 }
 
-export interface ClassifierConfig {
+/**
+ * LLM second-pass classifier configuration. Invoked only when the local ONNX
+ * classifier rejects, returns an ineligible label (ops/out_of_scope), or lacks
+ * a mapped expert. Same shape as the former primary `classifier`.
+ */
+export interface LlmSecondPassConfig {
   type: 'virtual' | 'real';
   model_id?: string;
   provider_id?: string;
@@ -38,6 +43,23 @@ export interface ClassifierConfig {
   enable_adaptive_thinking?: boolean;
 }
 
+/** Deprecated alias kept for transition; prefer LlmSecondPassConfig. */
+export type ClassifierConfig = LlmSecondPassConfig;
+
+/** Pin metadata for the local ONNX classifier (auditable, not user-editable). */
+export interface LocalClassifierPolicy {
+  model_repo: string;
+  revision: string;
+  onnx_file: string;
+  max_tokens: number;
+}
+
+/** Session binding TTL policy (NFR-4). */
+export interface SessionBindingPolicy {
+  idle_ttl_seconds: number;
+  absolute_ttl_seconds: number;
+}
+
 export interface FallbackConfig {
   type: 'virtual' | 'real';
   model_id?: string;
@@ -52,9 +74,11 @@ export interface ExpertRoutingConfig {
     strip_code_blocks?: boolean;
     strip_system_prompt?: boolean;
   };
-  classifier: ClassifierConfig;
+  local_classifier: LocalClassifierPolicy;
+  llm_second_pass: LlmSecondPassConfig;
   experts: ExpertTarget[];
   fallback?: FallbackConfig;
+  session_binding_policy: SessionBindingPolicy;
 }
 
 export type PreprocessingConfig = NonNullable<ExpertRoutingConfig['preprocessing']>;
@@ -81,11 +105,13 @@ export interface CreateExpertRoutingRequest {
   name: string;
   description?: string;
   enabled?: boolean;
-  classifier: ClassifierConfig;
+  local_classifier?: LocalClassifierPolicy;
+  llm_second_pass: LlmSecondPassConfig;
   // Editor always normalizes this; make it required to simplify v-model usage.
   preprocessing: PreprocessingConfig;
   experts: ExpertTarget[];
   fallback?: FallbackConfig;
+  session_binding_policy?: SessionBindingPolicy;
   createVirtualModel?: boolean;
   virtualModelName?: string;
   modelAttributes?: any;
@@ -95,10 +121,12 @@ export interface UpdateExpertRoutingRequest {
   name?: string;
   description?: string;
   enabled?: boolean;
-  classifier?: ClassifierConfig;
+  local_classifier?: LocalClassifierPolicy;
+  llm_second_pass?: LlmSecondPassConfig;
   preprocessing?: ExpertRoutingConfig['preprocessing'];
   experts?: ExpertTarget[];
   fallback?: FallbackConfig;
+  session_binding_policy?: SessionBindingPolicy;
 }
 
 export interface ExpertRoutingStatistics {
