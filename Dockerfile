@@ -52,11 +52,6 @@ FROM workspace-manifests AS backend-prod-deps
 
 RUN bun install --frozen-lockfile --production --filter @llm-gateway/backend
 
-# onnxruntime-node ships a postinstall that downloads the platform native
-# binary; bun blocks lifecycle scripts, so trust it explicitly so the linux/x64
-# binding is present in node_modules for the final image.
-RUN bun pm trust onnxruntime-node
-
 FROM bun-base AS web-builder
 
 WORKDIR /app
@@ -68,8 +63,7 @@ COPY packages/tsconfig ./packages/tsconfig
 COPY packages/shared ./packages/shared
 COPY packages/web ./packages/web
 
-WORKDIR /app/packages/web
-RUN bun run build
+RUN bun run --cwd=packages/web build
 
 FROM bun-base AS backend-builder
 
@@ -82,8 +76,7 @@ COPY packages/tsconfig ./packages/tsconfig
 COPY packages/shared ./packages/shared
 COPY packages/backend ./packages/backend
 
-WORKDIR /app/packages/backend
-RUN bun run build
+RUN bun run --cwd=packages/backend build
 
 # Pinned local ONNX classifier artifacts (~615MB). Downloaded from the exact HF
 # revision at image build time so the production container is self-contained —

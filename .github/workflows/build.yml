@@ -127,21 +127,18 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # onnxruntime-node ships a postinstall that downloads the native binary;
-      # bun blocks lifecycle scripts by default, so trust it explicitly.
-      - name: Enable onnxruntime-node native binary
-        run: bun pm trust onnxruntime-node
-
       - name: Restore pinned model artifacts
         id: cache
-        uses: actions/cache@5a3ec84eff408d86c8b8ce44ac2f7aab75f2f938 # v4.2.3
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: packages/backend/model-assets/intent-router-zh-setfit-v1
           key: onnx-intent-router-${{ env.ONNX_MODEL_REVISION }}
 
       - name: Download pinned model artifacts
         if: steps.cache.outputs.cache-hit != 'true'
-        run: bun run download:onnx-model -w @llm-gateway/backend
+        working-directory: packages/backend
+        run: bun run download:onnx-model
 
       - name: Run classifier smoke test
-        run: bun run test:onnx-smoke -w @llm-gateway/backend
+        working-directory: packages/backend
+        run: bun run test:onnx-smoke
