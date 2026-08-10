@@ -210,15 +210,18 @@ function handleTemplateSelect(template: ExpertTemplate | null) {
   
   // Use color from template or default blue
   const colorMap: Record<string, string> = {
-    'debug': '#d03050',
-    'explain': '#2080f0',
-    'feature': '#18a058',
-    'plan': '#f0a020',
-    'refactor': '#8a2be2',
-    'review': '#f5222d',
-    'setup': '#707070',
-    'test': '#10b981',
-    'utility': '#0ea5e9'
+    code_authoring: '#18a058',
+    code_modification: '#8a2be2',
+    code_repair: '#d03050',
+    code_review: '#f5222d',
+    code_explanation: '#2080f0',
+    test_generation: '#10b981',
+    code_search: '#0ea5e9',
+    architecture_consultation: '#f0a020',
+    dependency_management: '#707070',
+    context_specification: '#7c3aed',
+    workflow_control: '#0891b2',
+    general_inquiry: '#64748b',
   };
 
   const defaultColor = template && colorMap[template.value] ? colorMap[template.value] : '#1890ff';
@@ -229,7 +232,6 @@ function handleTemplateSelect(template: ExpertTemplate | null) {
     type: 'real',
     description: template ? template.description : '',
     color: defaultColor,
-    system_prompt: template?.system_prompt,
   };
   
   editingUtterances.value = template ? [...template.utterances] : [];

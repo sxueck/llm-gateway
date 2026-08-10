@@ -31,14 +31,14 @@
           <div class="card-content">
             <div class="card-header-row">
               <div class="card-title">{{ tpl.label }}</div>
-              <n-tag size="small" :bordered="false" round class="template-tag">
+              <n-tag v-if="tpl.utterances.length" size="small" :bordered="false" round class="template-tag">
                 {{ tpl.utterances.length }} {{ t('expertRouting.examples') }}
               </n-tag>
             </div>
 
             <div class="card-desc" :title="tpl.description">{{ tpl.description }}</div>
 
-            <div class="examples-preview">
+            <div v-if="tpl.utterances.length" class="examples-preview">
               <div class="examples-title">{{ t('expertRouting.examples') }}</div>
               <div class="examples-list">
                 <div v-for="(ex, idx) in tpl.utterances.slice(0, 3)" :key="idx" class="example-item">
@@ -89,15 +89,18 @@ onMounted(async () => {
 
 function getTemplateColor(type: string) {
   switch (type) {
-    case 'debug': return '#d03050'; // Red
-    case 'explain': return '#2080f0'; // Blue
-    case 'feature': return '#18a058'; // Green
-    case 'plan': return '#f0a020'; // Orange
-    case 'refactor': return '#8a2be2'; // Purple
-    case 'review': return '#f5222d'; // Red
-    case 'setup': return '#707070'; // Grey
-    case 'test': return '#10b981'; // Emerald
-    case 'utility': return '#0ea5e9'; // Sky
+    case 'code_authoring': return '#18a058';
+    case 'code_modification': return '#8a2be2';
+    case 'code_repair': return '#d03050';
+    case 'code_review': return '#f5222d';
+    case 'code_explanation': return '#2080f0';
+    case 'test_generation': return '#10b981';
+    case 'code_search': return '#0ea5e9';
+    case 'architecture_consultation': return '#f0a020';
+    case 'dependency_management': return '#707070';
+    case 'context_specification': return '#7c3aed';
+    case 'workflow_control': return '#0891b2';
+    case 'general_inquiry': return '#64748b';
     default: return '#888888';
   }
 }

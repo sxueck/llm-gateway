@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   expertRoutingConfigDb: { getById: vi.fn() },
   expertRoutingLogDb: { create: vi.fn() },
+  expertRoutingTrainingRecordDb: { createOrIncrement: vi.fn() },
   expertRoutingSessionBindingDb: {
     getActiveBinding: vi.fn(),
     createOrSelectBinding: vi.fn(),
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../db/index.js', () => ({
   expertRoutingConfigDb: mocks.expertRoutingConfigDb,
   expertRoutingLogDb: mocks.expertRoutingLogDb,
+  expertRoutingTrainingRecordDb: mocks.expertRoutingTrainingRecordDb,
   expertRoutingSessionBindingDb: mocks.expertRoutingSessionBindingDb,
   providerDb: mocks.providerDb,
   modelDb: mocks.modelDb,
@@ -62,7 +64,6 @@ function baseConfig(overrides: Record<string, any> = {}) {
       type: 'real',
       provider_id: 'classifier-provider',
       model: 'classifier-model',
-      prompt_template: '{{USER_PROMPT}}',
     },
     experts: [
       {
@@ -88,6 +89,7 @@ describe('ExpertRouter route flow', () => {
     vi.clearAllMocks();
     mocks.isReady.mockReturnValue(false);
     mocks.expertRoutingSessionBindingDb.getActiveBinding.mockResolvedValue(null);
+    mocks.expertRoutingTrainingRecordDb.createOrIncrement.mockResolvedValue(undefined);
     mocks.expertRoutingSessionBindingDb.createOrSelectBinding.mockResolvedValue({
       row: { expert_id: 'expert-review', route_source: 'llm_second_pass' },
       winner: true,
@@ -124,6 +126,14 @@ describe('ExpertRouter route flow', () => {
     expect(mocks.expertRoutingLogDb.create).toHaveBeenCalledOnce();
     const log = (mocks.expertRoutingLogDb.create as any).mock.calls[0][0];
     expect(log.route_source).toBe('llm_second_pass');
+    expect(mocks.expertRoutingTrainingRecordDb.createOrIncrement).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expert_routing_id: 'routing-a',
+        judge_intent_label: 'code_review',
+        final_intent_label: 'code_review',
+        status: 'pending_review',
+      })
+    );
   });
 
   test('fallback path does NOT persist a session binding (FR-8)', async () => {
@@ -149,6 +159,32 @@ describe('ExpertRouter route flow', () => {
     expect(mocks.expertRoutingSessionBindingDb.createOrSelectBinding).not.toHaveBeenCalled();
     const log = (mocks.expertRoutingLogDb.create as any).mock.calls.at(-1)![0];
     expect(log.route_source).toBe('fallback');
+  });
+
+  test('LLM second pass does not route an ineligible label to an expert', async () => {
+    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+      id: 'routing-a',
+      enabled: 1,
+      config: JSON.stringify(baseConfig({
+        experts: [{
+          id: 'expert-deployment',
+          category: 'deployment',
+          type: 'real',
+          provider_id: 'deployment-provider',
+          model: 'deployment-model',
+        }],
+      })),
+    });
+    mocks.decide.mockResolvedValue({ category: 'deployment', confidence: 1, source: 'llm', metadata: {} });
+
+    const router = new ExpertRouter();
+    const result = await router.route(
+      { body: { messages: [{ role: 'user', content: 'deploy it' }] } },
+      'routing-a',
+      {}
+    );
+
+    expect(result.expert.id).toBe('fallback');
   });
 
   test('local ONNX eligible label selects expert without LLM second pass (FR-4)', async () => {

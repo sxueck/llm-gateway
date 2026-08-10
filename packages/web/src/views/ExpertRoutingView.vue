@@ -130,6 +130,16 @@
                 <n-button
                   text
                   size="small"
+                  @click.stop="handleShowTrainingRecords(config.id)"
+                >
+                  <template #icon>
+                    <n-icon><DocumentTextOutline /></n-icon>
+                  </template>
+                  {{ t('expertRouting.trainingRecords') }}
+                </n-button>
+                <n-button
+                  text
+                  size="small"
                   @click.stop="handleEdit(config)"
                 >
                   <template #icon>
@@ -187,6 +197,22 @@
     </n-modal>
 
     <n-modal
+      v-model:show="showTrainingRecordsModal"
+      preset="card"
+      :title="t('expertRouting.trainingRecordsReview')"
+      class="training-records-modal"
+      :style="{ width: '960px', maxWidth: '95%', maxHeight: '85vh' }"
+      :segmented="{ content: 'soft' }"
+    >
+      <div class="modal-content-wrapper">
+        <ExpertRoutingTrainingRecords
+          v-if="showTrainingRecordsModal"
+          :config-id="selectedTrainingConfigId"
+        />
+      </div>
+    </n-modal>
+
+    <n-modal
       v-model:show="showStatisticsModal"
       preset="card"
       :title="t('expertRouting.statistics')"
@@ -209,6 +235,15 @@
 .expert-routing-modal :deep(.n-card__content) {
   padding: 0;
   overflow: hidden;
+}
+
+.training-records-modal :deep(.n-card__content) {
+  padding: 0;
+  overflow: hidden;
+}
+
+.training-records-modal .modal-content-wrapper {
+  overflow-y: auto;
 }
 
 .modal-content-wrapper {
@@ -318,7 +353,8 @@
 
 @media (max-width: 768px) {
   .expert-routing-modal :deep(.n-card__content),
-  .statistics-modal :deep(.n-card__content) {
+  .statistics-modal :deep(.n-card__content),
+  .training-records-modal :deep(.n-card__content) {
     padding: 0;
     overflow: hidden;
   }
@@ -329,7 +365,7 @@
   }
 
   .expert-routing-modal :deep(.n-card__footer),
-  .statistics-modal :deep(.n-card__footer) {
+   .statistics-modal :deep(.n-card__footer) {
     padding: 12px 20px;
     border-top: 1px solid #e8e8e8;
     background: #ffffff;
@@ -371,6 +407,7 @@ import {
   RefreshOutline,
   FilterOutline,
   CubeOutline,
+  DocumentTextOutline,
 } from '@vicons/ionicons5';
 import {
   EditOutlined,
@@ -381,6 +418,7 @@ import { expertRoutingApi, type ExpertRouting, type CreateExpertRoutingRequest }
 import ExpertRoutingEditor from '@/components/ExpertRoutingEditor.vue';
 import ExpertRoutingVisualization from '@/components/ExpertRoutingVisualization.vue';
 import ExpertRoutingStatistics from '@/components/ExpertRoutingStatistics.vue';
+import ExpertRoutingTrainingRecords from '@/components/ExpertRoutingTrainingRecords.vue';
 import { useProviderStore } from '@/stores/provider';
 import { useModelStore } from '@/stores/model';
 import { createDefaultExpertRoutingConfig } from '@/utils/expert-routing';
@@ -409,9 +447,11 @@ const showEditorModal = ref(false);
 // Delay mounting the editor until after modal is visible to avoid jank during transition.
 const renderEditor = ref(false);
 const showStatisticsModal = ref(false);
+const showTrainingRecordsModal = ref(false);
 const editingId = ref<string | null>(null);
 const editingConfig = ref<CreateExpertRoutingRequest>(createDefaultExpertRoutingConfig());
 const selectedConfigId = ref<string>('');
+const selectedTrainingConfigId = ref<string>('');
 const saving = ref(false);
 const showExperimentalAlert = ref(localStorage.getItem(EXPERIMENTAL_ALERT_KEY) !== 'true');
 
@@ -536,6 +576,12 @@ function handleShowStatistics(configId: string) {
   blurActiveElement();
   selectedConfigId.value = configId;
   showStatisticsModal.value = true;
+}
+
+function handleShowTrainingRecords(configId: string) {
+  blurActiveElement();
+  selectedTrainingConfigId.value = configId;
+  showTrainingRecordsModal.value = true;
 }
 
 async function handleSave(data: CreateExpertRoutingRequest) {

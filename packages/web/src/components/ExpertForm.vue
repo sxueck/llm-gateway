@@ -17,20 +17,6 @@
             </template>
           </n-form-item>
 
-          <n-form-item :label="t('expertRouting.expertCriteria')">
-            <n-input
-              v-model:value="formValue.system_prompt"
-              type="textarea"
-              :rows="4"
-              :placeholder="t('expertRouting.expertCriteriaPlaceholder')"
-            />
-            <template #feedback>
-              <n-text depth="3" style="font-size: 12px">
-                {{ t('expertRouting.expertCriteriaHint') }}
-              </n-text>
-            </template>
-          </n-form-item>
-
           <n-form-item :label="t('expertRouting.modelType')" required>
             <n-radio-group v-model:value="formValue.type" class="model-type-radio">
               <n-space :size="16">
