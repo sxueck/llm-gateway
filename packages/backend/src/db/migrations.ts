@@ -7,6 +7,49 @@ export interface Migration {
   down?: (conn: Connection) => Promise<void>;
 }
 
+const legacyExpertRoutingLabels: Record<string, string> = {
+  debug: 'code_repair',
+  explain: 'code_explanation',
+  feature: 'code_authoring',
+  plan: 'architecture_consultation',
+  refactor: 'code_modification',
+  review: 'code_review',
+  setup: 'dependency_management',
+  test: 'test_generation',
+  utility: 'general_inquiry',
+  other: 'general_inquiry',
+};
+
+export function normalizeExpertRoutingConfig(configText: string): { config: string; changed: boolean } {
+  const config = JSON.parse(configText);
+  let changed = false;
+
+  if (Array.isArray(config?.experts)) {
+    for (const expert of config.experts) {
+      const label = legacyExpertRoutingLabels[expert?.category];
+      if (label) {
+        expert.category = label;
+        changed = true;
+      }
+      if (expert && 'system_prompt' in expert) {
+        delete expert.system_prompt;
+        changed = true;
+      }
+    }
+  }
+
+  if (config?.llm_second_pass) {
+    for (const field of ['prompt_template', 'system_prompt', 'user_prompt_marker']) {
+      if (field in config.llm_second_pass) {
+        delete config.llm_second_pass[field];
+        changed = true;
+      }
+    }
+  }
+
+  return { config: JSON.stringify(config), changed };
+}
+
 export const migrations: Migration[] = [
   {
     version: 31,
@@ -267,6 +310,65 @@ export const migrations: Migration[] = [
       // 2c. Drop any pre-existing session bindings table from earlier iterations.
       await conn.query(`DROP TABLE IF EXISTS expert_routing_session_bindings_legacy`);
       console.log('[迁移] 本地 ONNX 专家路由重置完成');
+    }
+  },
+  {
+    version: 35,
+    name: 'add_expert_routing_training_records',
+    up: async (conn: Connection) => {
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS expert_routing_training_records (
+          id VARCHAR(255) PRIMARY KEY,
+          expert_routing_id VARCHAR(255) NOT NULL,
+          input_hash CHAR(64) NOT NULL,
+          input_text MEDIUMTEXT NOT NULL,
+          local_result JSON DEFAULT NULL,
+          classifier_revision VARCHAR(255) DEFAULT NULL,
+          judge_prompt_version VARCHAR(100) NOT NULL,
+          judge_model VARCHAR(255) DEFAULT NULL,
+          judge_intent_label VARCHAR(255) NOT NULL,
+          judge_confidence DECIMAL(5,4) NOT NULL,
+          judge_reason TEXT DEFAULT NULL,
+          final_intent_label VARCHAR(255) NOT NULL,
+          final_expert_id VARCHAR(255) DEFAULT NULL,
+          status ENUM('pending_review', 'accepted', 'rejected') NOT NULL DEFAULT 'pending_review',
+          occurrence_count INT NOT NULL DEFAULT 1,
+          created_at BIGINT NOT NULL,
+          updated_at BIGINT NOT NULL,
+          reviewed_at BIGINT DEFAULT NULL,
+          UNIQUE KEY uk_training_record_input (expert_routing_id, input_hash),
+          INDEX idx_training_records_status (expert_routing_id, status, updated_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      console.log('[迁移] 已创建 expert_routing_training_records 表');
+    },
+    down: async (conn: Connection) => {
+      await conn.query('DROP TABLE IF EXISTS expert_routing_training_records');
+      console.log('[迁移] 已删除 expert_routing_training_records 表');
+    }
+  },
+  {
+    version: 36,
+    name: 'normalize_expert_routing_labels_and_prompt_config',
+    up: async (conn: Connection) => {
+      const [rows] = await conn.query('SELECT id, config FROM expert_routing_configs');
+      let updated = 0;
+
+      for (const row of rows as Array<{ id: string; config: string }>) {
+        try {
+          const normalized = normalizeExpertRoutingConfig(row.config);
+          if (!normalized.changed) continue;
+          await conn.query(
+            'UPDATE expert_routing_configs SET config = ?, updated_at = ? WHERE id = ?',
+            [normalized.config, Date.now(), row.id]
+          );
+          updated += 1;
+        } catch (error: any) {
+          console.warn(`[迁移] 跳过无法解析的专家路由配置 ${row.id}: ${error.message}`);
+        }
+      }
+
+      console.log(`[迁移] 已规范化 ${updated} 个专家路由配置`);
     }
   }
 ];

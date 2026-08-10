@@ -7,7 +7,6 @@ export interface ExpertTarget {
   model?: string;
   description?: string;
   color?: string;
-  system_prompt?: string;
 }
 
 /**
@@ -41,9 +40,6 @@ export interface LlmSecondPassConfig {
   model_id?: string;
   provider_id?: string;
   model?: string;
-  prompt_template: string;
-  system_prompt?: string;
-  user_prompt_marker?: string;
   max_tokens?: number;
   temperature?: number;
   timeout?: number;

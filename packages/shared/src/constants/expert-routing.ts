@@ -72,6 +72,10 @@ export function isEligibleExpertRoutingLabel(label: string): boolean {
   return EXPERT_ROUTING_ELIGIBLE_LABELS.some((l) => l.label === label);
 }
 
+export function isExpertRoutingLabel(label: string): boolean {
+  return EXPERT_ROUTING_LABELS.some((l) => l.label === label);
+}
+
 export function getExpertRoutingLabelMeta(label: string): IntentLabelMeta | undefined {
   return EXPERT_ROUTING_LABELS.find((l) => l.label === label);
 }

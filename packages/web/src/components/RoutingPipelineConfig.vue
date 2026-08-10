@@ -132,18 +132,9 @@
           </n-tooltip>
         </n-form-item>
 
-        <n-collapse style="margin-top: 12px">
-          <n-collapse-item :title="t('expertRouting.advancedLLMConfig')">
-            <n-form-item :label="t('expertRouting.systemPrompt')">
-              <n-input
-                v-model:value="llmSecondPass.system_prompt"
-                type="textarea"
-                :rows="3"
-                :placeholder="t('expertRouting.systemPromptPlaceholder')"
-              />
-            </n-form-item>
-          </n-collapse-item>
-        </n-collapse>
+        <n-alert type="info" :show-icon="false" style="margin-top: 12px">
+          {{ t('expertRouting.stableLabelPromptHint') }}
+        </n-alert>
       </div>
     </n-card>
   </div>
@@ -153,7 +144,7 @@
 import { useI18n } from 'vue-i18n';
 import {
   NCard, NTag, NIcon, NText, NDivider, NGrid, NGi, NFormItem,
-  NTooltip, NCollapse, NCollapseItem, NInput, NDescriptions, NDescriptionsItem,
+  NTooltip, NAlert, NDescriptions, NDescriptionsItem,
   NCheckbox
 } from 'naive-ui';
 import { InformationCircleOutline, ArrowDownOutline } from '@vicons/ionicons5';

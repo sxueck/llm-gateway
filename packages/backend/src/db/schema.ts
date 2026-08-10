@@ -243,6 +243,31 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS expert_routing_training_records (
+        id VARCHAR(255) PRIMARY KEY,
+        expert_routing_id VARCHAR(255) NOT NULL,
+        input_hash CHAR(64) NOT NULL,
+        input_text MEDIUMTEXT NOT NULL,
+        local_result JSON DEFAULT NULL,
+        classifier_revision VARCHAR(255) DEFAULT NULL,
+        judge_prompt_version VARCHAR(100) NOT NULL,
+        judge_model VARCHAR(255) DEFAULT NULL,
+        judge_intent_label VARCHAR(255) NOT NULL,
+        judge_confidence DECIMAL(5,4) NOT NULL,
+        judge_reason TEXT DEFAULT NULL,
+        final_intent_label VARCHAR(255) NOT NULL,
+        final_expert_id VARCHAR(255) DEFAULT NULL,
+        status ENUM('pending_review', 'accepted', 'rejected') NOT NULL DEFAULT 'pending_review',
+        occurrence_count INT NOT NULL DEFAULT 1,
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL,
+        reviewed_at BIGINT DEFAULT NULL,
+        UNIQUE KEY uk_training_record_input (expert_routing_id, input_hash),
+        INDEX idx_training_records_status (expert_routing_id, status, updated_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
     // 健康检查目标表
     await conn.query(`
       CREATE TABLE IF NOT EXISTS health_targets (

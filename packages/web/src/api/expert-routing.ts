@@ -9,7 +9,6 @@ export interface ExpertTarget {
   model?: string;
   description?: string;
   color?: string;
-  system_prompt?: string;
 }
 
 export interface ExpertTemplate {
@@ -17,7 +16,6 @@ export interface ExpertTemplate {
   value: string;
   description: string;
   utterances: string[];
-  system_prompt?: string;
 }
 
 /**
@@ -30,9 +28,6 @@ export interface LlmSecondPassConfig {
   model_id?: string;
   provider_id?: string;
   model?: string;
-  prompt_template: string;
-  system_prompt?: string;
-  user_prompt_marker?: string;
   max_tokens?: number;
   temperature?: number;
   timeout?: number;
@@ -180,6 +175,23 @@ export interface ExpertRoutingLogDetail {
   semantic_score?: number;
 }
 
+export type TrainingRecordStatus = 'pending_review' | 'accepted' | 'rejected';
+
+export interface ExpertRoutingTrainingRecord {
+  id: string;
+  expert_routing_id: string;
+  input_text: string;
+  judge_intent_label: string;
+  judge_confidence: number;
+  judge_reason?: string;
+  final_intent_label: string;
+  final_expert_id?: string;
+  status: TrainingRecordStatus;
+  occurrence_count: number;
+  created_at: number;
+  updated_at: number;
+}
+
 export const expertRoutingApi = {
   getAll(): Promise<{ configs: ExpertRouting[] }> {
     return request.get('/admin/expert-routing');
@@ -238,5 +250,20 @@ export const expertRoutingApi = {
 
   getTemplates(): Promise<{ templates: ExpertTemplate[] }> {
     return request.get('/admin/expert-routing/templates');
+  },
+
+  getTrainingRecords(id: string, status?: TrainingRecordStatus): Promise<{ records: ExpertRoutingTrainingRecord[] }> {
+    return request.get(`/admin/expert-routing/${id}/training-records`, { params: status ? { status } : {} });
+  },
+
+  reviewTrainingRecord(id: string, recordId: string, data: Pick<ExpertRoutingTrainingRecord, 'status' | 'final_intent_label'>): Promise<{ success: boolean }> {
+    return request.patch(`/admin/expert-routing/${id}/training-records/${recordId}`, data);
+  },
+
+  exportTrainingRecords(id: string): Promise<string> {
+    return request.get(`/admin/expert-routing/${id}/training-records/export`, {
+      headers: { Accept: 'application/x-ndjson' },
+      responseType: 'text',
+    });
   },
 };

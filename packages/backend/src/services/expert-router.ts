@@ -1,6 +1,6 @@
 
 import { nanoid } from 'nanoid';
-import { expertRoutingConfigDb, expertRoutingLogDb, expertRoutingSessionBindingDb } from '../db/index.js';
+import { expertRoutingConfigDb, expertRoutingLogDb, expertRoutingSessionBindingDb, expertRoutingTrainingRecordDb } from '../db/index.js';
 import { memoryLogger } from './logger.js';
 import { ExpertRoutingConfig } from '../types/index.js';
 import { ExpertTarget } from '../types/expert-routing.js';
@@ -192,9 +192,18 @@ export class ExpertRouter {
     if (!candidateExpert) {
       if (signal.intentText && signal.intentText.trim().length > 0) {
         try {
-          const decision = await LLMJudge.decide(signal, config.llm_second_pass, config.experts);
+          const decision = await LLMJudge.decide(signal, config.llm_second_pass);
           candidateMeta.llm = decision.metadata;
-          const expert = matchExpert(decision.category, config.experts);
+          const expert = isEligibleExpertRoutingLabel(decision.category)
+            ? matchExpert(decision.category, config.experts)
+            : null;
+          await this.archiveLlmDecision(
+            expertRoutingId,
+            signal.intentText,
+            localResult,
+            decision,
+            expert?.id
+          );
           if (expert) {
             candidateExpert = expert;
             candidateSource = 'llm_second_pass';
@@ -446,6 +455,41 @@ export class ExpertRouter {
     const cfg = config.llm_second_pass;
     if (cfg.type === 'virtual') return cfg.model_id || 'llm_second_pass';
     return `${cfg.provider_id}/${cfg.model}`;
+  }
+
+  private async archiveLlmDecision(
+    expertRoutingId: string,
+    inputText: string,
+    localResult: LocalClassifyResult | null,
+    decision: RouteDecision,
+    expertId?: string
+  ): Promise<void> {
+    try {
+      await expertRoutingTrainingRecordDb.createOrIncrement({
+        id: nanoid(),
+        expert_routing_id: expertRoutingId,
+        input_hash: crypto.createHash('sha256').update(inputText).digest('hex'),
+        input_text: inputText,
+        local_result: localResult ? JSON.stringify({
+          top1: localResult.policy.top1,
+          top2: localResult.policy.top2,
+          rejected: localResult.policy.rejected,
+          rejectionReason: localResult.policy.rejectionReason,
+          chosenLabel: localResult.policy.chosenLabel,
+        }) : undefined,
+        classifier_revision: localResult?.revision,
+        judge_prompt_version: String(decision.metadata?.promptVersion || 'unknown'),
+        judge_model: decision.metadata?.classifierModel,
+        judge_intent_label: decision.category,
+        judge_confidence: decision.confidence,
+        judge_reason: decision.metadata?.reason,
+        final_intent_label: decision.category,
+        final_expert_id: expertId,
+        status: 'pending_review',
+      });
+    } catch (e: any) {
+      memoryLogger.warn(`Failed to archive LLM routing decision: ${e?.message || e}`, 'ExpertRouter');
+    }
   }
 
   private generateRequestHash(request: ProxyRequest): string {

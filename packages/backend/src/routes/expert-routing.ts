@@ -1,12 +1,13 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import { expertRoutingConfigDb, expertRoutingLogDb, expertRoutingSessionBindingDb, modelDb, systemConfigDb } from '../db/index.js';
+import { expertRoutingConfigDb, expertRoutingLogDb, expertRoutingSessionBindingDb, expertRoutingTrainingRecordDb, modelDb, systemConfigDb } from '../db/index.js';
 import { hotConfigCache } from '../services/hot-config-cache.js';
 import { memoryLogger } from '../services/logger.js';
 import { expertTemplates } from '../data/expert-templates.js';
 import {
   isEligibleExpertRoutingLabel,
+  isExpertRoutingLabel,
   EXPERT_ROUTING_MODEL_REPO,
   EXPERT_ROUTING_MODEL_REVISION,
   EXPERT_ROUTING_ONNX_FILE,
@@ -16,14 +17,13 @@ import {
 
 const expertTargetSchema = z.object({
   id: z.string(),
-  category: z.string(),
+  category: z.string().refine(isEligibleExpertRoutingLabel, '必须是可直接路由的稳定意图标签'),
   type: z.enum(['virtual', 'real']),
   model_id: z.string().optional(),
   provider_id: z.string().optional(),
   model: z.string().optional(),
   description: z.string().optional(),
   color: z.string().optional(),
-  system_prompt: z.string().optional(),
 });
 
 // LLM second-pass model wiring (replaces the legacy primary classifier).
@@ -32,9 +32,6 @@ const llmSecondPassSchema = z.object({
   model_id: z.string().optional(),
   provider_id: z.string().optional(),
   model: z.string().optional(),
-  prompt_template: z.string(),
-  system_prompt: z.string().optional(),
-  user_prompt_marker: z.string().optional(),
   max_tokens: z.number().optional(),
   temperature: z.number().optional(),
   timeout: z.number().optional(),
@@ -73,6 +70,8 @@ const preprocessingSchema = z
     strip_system_prompt: z.boolean().optional(),
   })
   .optional();
+
+const trainingRecordStatusSchema = z.enum(['pending_review', 'accepted', 'rejected']);
 
 const createExpertRoutingSchema = z.object({
   name: z.string(),
@@ -664,6 +663,49 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       memoryLogger.error(`获取专家路由日志失败: ${error.message}`, 'ExpertRouting');
       throw error;
     }
+  });
+
+  fastify.get('/:id/training-records', async (request) => {
+    const { id } = request.params as { id: string };
+    const query = z.object({
+      status: trainingRecordStatusSchema.optional(),
+      limit: z.coerce.number().int().min(1).max(500).default(100),
+    }).parse(request.query);
+    const config = await expertRoutingConfigDb.getById(id);
+    if (!config) throw new Error('专家路由配置不存在');
+    return { records: await expertRoutingTrainingRecordDb.getByConfigId(id, query.status, query.limit) };
+  });
+
+  fastify.patch('/:id/training-records/:recordId', async (request) => {
+    const { id, recordId } = request.params as { id: string; recordId: string };
+    const body = z.object({
+      status: trainingRecordStatusSchema,
+      final_intent_label: z.string().refine(isExpertRoutingLabel, '必须是稳定意图标签'),
+    }).parse(request.body);
+    const updated = await expertRoutingTrainingRecordDb.updateReview(
+      id,
+      recordId,
+      body.status,
+      body.final_intent_label
+    );
+    if (!updated) throw new Error('训练样本不存在');
+    return { success: true };
+  });
+
+  fastify.get('/:id/training-records/export', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const config = await expertRoutingConfigDb.getById(id);
+    if (!config) throw new Error('专家路由配置不存在');
+    const records = await expertRoutingTrainingRecordDb.getByConfigId(id, 'accepted');
+    const jsonl = records.map((record) => JSON.stringify({
+      text: record.input_text,
+      label: record.final_intent_label,
+      source: 'llm_judge_reviewed',
+      judge_prompt_version: record.judge_prompt_version,
+    })).join('\n');
+    reply.header('Content-Type', 'application/x-ndjson; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="expert-routing-${id}-accepted.jsonl"`);
+    return jsonl ? `${jsonl}\n` : '';
   });
 
   fastify.get('/:id/logs/category/:category', async (request) => {
