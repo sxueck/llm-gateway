@@ -46,6 +46,7 @@ export interface RoutingSignal {
     cleanedTokens?: number;
     removedTokens?: number;
     removedTokensPct?: number;
+    intentTruncated?: boolean;
     tokenizer?: string;
   };
 }

@@ -3,7 +3,7 @@ import { ProxyRequest, RoutingSignal, HardHint } from '../types.js';
 import { ToolAdapter } from './tool-adapter.js';
 import { extractResponsesInputForClassification, extractUserMessagesForClassification } from '../../../utils/message-extractor.js';
 import { extractUserIntentFromMixedText } from '../../../utils/mixed-intent-extractor.js';
-import { countRequestTokens, countTokensForText } from '../../token-counter.js';
+import { countRequestTokens, countTokensForText, truncateToTokenLimit } from '../../token-counter.js';
 
 export interface PreprocessOptions {
   strip_tools?: boolean;
@@ -11,6 +11,9 @@ export interface PreprocessOptions {
   strip_code_blocks?: boolean;
   strip_system_prompt?: boolean;
 }
+
+/** Hard cap on intent text length fed to classifiers (matches local ONNX max_tokens default). */
+const INTENT_TEXT_TOKEN_LIMIT = 1024;
 
 export class SignalBuilder {
   static async buildRoutingSignal(request: ProxyRequest, options?: PreprocessOptions): Promise<RoutingSignal> {
@@ -48,7 +51,15 @@ export class SignalBuilder {
       intentText = SignalBuilder.summarizeToolCalls(request, toolSignals);
     }
 
-    // Calculate stats
+    // Progressive compression preserves the user's actual intent (typically at
+    // the end) instead of a blunt head truncation.
+    let intentTruncated = false;
+    if (countTokensForText(intentText) > INTENT_TEXT_TOKEN_LIMIT) {
+      const compressed = SignalBuilder.compressIntentToTokenLimit(intentText, INTENT_TEXT_TOKEN_LIMIT);
+      intentText = compressed.text;
+      intentTruncated = true;
+    }
+
     const tokenCounterResult = await countRequestTokens(request.body || {});
     const promptTokens = tokenCounterResult.promptTokens;
 
@@ -67,6 +78,7 @@ export class SignalBuilder {
       cleanedTokens,
       removedTokens,
       removedTokensPct,
+      intentTruncated,
       tokenizer: 'tiktoken/cl100k_base'
     };
 
@@ -359,5 +371,41 @@ export class SignalBuilder {
     const joined = lines.join('\n').trim();
     // Keep it bounded to avoid overwhelming the classifier.
     return joined.length > 8000 ? `${joined.slice(0, 7997)}...` : joined;
+  }
+
+  /**
+   * 渐进式压缩意图文本到 token 限制内。
+   *
+   * 策略：优先牺牲低信号内容，保留用户真实意图（通常在末尾）。
+   *  Level 1 — 更激进地压缩代码块（>3 行的替换为摘要占位符）
+   *  Level 2 — 移除工具定义/调用/结果段落（低信号上下文）
+   *  Level 3 — 头尾保留截断（尾部占 65%，因为最新意图在末尾）
+   */
+  private static compressIntentToTokenLimit(text: string, maxTokens: number): { text: string } {
+    let level1 = text.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code: string) => {
+      const lines = code.split('\n');
+      if (lines.length > 3) {
+        return `\`\`\`${lang}\n[CODE_BLOCK_SUMMARY: ${lines.length} lines]\n\`\`\``;
+      }
+      return match;
+    });
+    if (countTokensForText(level1) <= maxTokens) {
+      return { text: level1 };
+    }
+
+    const paragraphs = level1.split(/\n\n+/);
+    const filtered = paragraphs.filter(p => {
+      const trimmed = p.trim();
+      return !trimmed.startsWith('工具定义:') &&
+             !trimmed.startsWith('工具调用:') &&
+             !trimmed.startsWith('工具结果:');
+    });
+    const level2 = filtered.join('\n\n').trim();
+    if (countTokensForText(level2) <= maxTokens) {
+      return { text: level2 + '\n[...工具上下文已省略]' };
+    }
+
+    const result = truncateToTokenLimit(level2, maxTokens, 'headAndTail');
+    return { text: result.text };
   }
 }

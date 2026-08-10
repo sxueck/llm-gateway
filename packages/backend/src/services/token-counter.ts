@@ -26,6 +26,90 @@ export function countTokensForText(text: string): number {
   }
 }
 
+export type TruncationStrategy = 'head' | 'headAndTail';
+
+/**
+ * Truncate text to at most `maxTokens` tokens.
+ *
+ * - `'head'`: preserve content from the start (simple head truncation).
+ * - `'headAndTail'`: keep both the opening context (~35%) and the closing
+ *   intent (~65%), dropping the middle. Useful when the real user intent
+ *   sits at the end of a long prompt.
+ *
+ * Falls back to character-based truncation on encoder errors.
+ */
+export function truncateToTokenLimit(
+  text: string,
+  maxTokens: number,
+  strategy: TruncationStrategy = 'head',
+): { text: string; truncated: boolean; originalTokens: number } {
+  if (!text || typeof text !== 'string' || maxTokens <= 0) {
+    return { text: text || '', truncated: false, originalTokens: 0 };
+  }
+
+  try {
+    const encoding = acquireEncoding();
+    const tokens = encoding.encode(text);
+
+    if (tokens.length <= maxTokens) {
+      return { text, truncated: false, originalTokens: tokens.length };
+    }
+
+    const decodeSlice = (slice: Uint32Array): string => {
+      const bytes = encoding.decode(slice);
+      let s = new TextDecoder().decode(bytes);
+      // Strip trailing replacement chars from broken multi-byte boundaries.
+      while (s.endsWith('\uFFFD')) s = s.slice(0, -1);
+      return s;
+    };
+
+    let truncatedText: string;
+
+    if (strategy === 'headAndTail') {
+      const separator = '\n[...中段内容省略...]\n';
+      const separatorTokens = encoding.encode(separator).length;
+      const budget = Math.max(maxTokens - separatorTokens, Math.floor(maxTokens * 0.5));
+      const headTokens = Math.floor(budget * 0.35);
+      const tailTokens = budget - headTokens;
+      const head = decodeSlice(tokens.slice(0, headTokens)).trimEnd();
+      const tail = decodeSlice(tokens.slice(-tailTokens)).trimStart();
+      truncatedText = head + separator + tail;
+    } else {
+      truncatedText = decodeSlice(tokens.slice(0, maxTokens)).trimEnd() + '\n[...truncated]';
+    }
+
+    return {
+      text: truncatedText,
+      truncated: true,
+      originalTokens: tokens.length,
+    };
+  } catch (error: any) {
+    sharedEncoding = null;
+    const charLimit = maxTokens * 4;
+    if (text.length <= charLimit) {
+      return { text, truncated: false, originalTokens: Math.ceil(text.length / 4) };
+    }
+
+    if (strategy === 'headAndTail') {
+      const separator = '\n[...中段内容省略...]\n';
+      const budget = charLimit - separator.length;
+      const headChars = Math.floor(budget * 0.35);
+      const tailChars = budget - headChars;
+      return {
+        text: text.slice(0, headChars) + separator + text.slice(-tailChars),
+        truncated: true,
+        originalTokens: Math.ceil(text.length / 4),
+      };
+    }
+
+    return {
+      text: text.slice(0, charLimit).trimEnd() + '\n[...truncated]',
+      truncated: true,
+      originalTokens: Math.ceil(text.length / 4),
+    };
+  }
+}
+
 export function countTokensForMessages(messages: any[]): number {
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return 0;
