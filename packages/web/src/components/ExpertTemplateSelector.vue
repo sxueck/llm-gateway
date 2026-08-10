@@ -12,7 +12,7 @@
         @click="handleSelect('custom')"
       >
         <div class="card-icon custom-icon">
-          <n-icon size="32"><AddOutline /></n-icon>
+          <n-icon size="28"><AddOutline /></n-icon>
         </div>
         <div class="card-content">
           <div class="card-title">{{ t('expertRouting.customTemplate') }}</div>
@@ -27,6 +27,7 @@
         :style="{ '--accent-color': getTemplateColor(tpl.value) }"
         @click="handleSelect(tpl.value)"
       >
+        <div class="card-accent-bar" />
         <div class="card-body">
           <div class="card-content">
             <div class="card-header-row">
@@ -39,12 +40,13 @@
             <div class="card-desc" :title="tpl.description">{{ tpl.description }}</div>
 
             <div v-if="tpl.utterances.length" class="examples-preview">
-              <div class="examples-title">{{ t('expertRouting.examples') }}</div>
               <div class="examples-list">
-                <div v-for="(ex, idx) in tpl.utterances.slice(0, 3)" :key="idx" class="example-item">
-                  - {{ ex }}
+                <div v-for="(ex, idx) in tpl.utterances.slice(0, 2)" :key="idx" class="example-item">
+                  {{ ex }}
                 </div>
-                <div v-if="tpl.utterances.length > 3" class="example-more">...</div>
+                <div v-if="tpl.utterances.length > 2" class="example-more">
+                  +{{ tpl.utterances.length - 2 }} more
+                </div>
               </div>
             </div>
           </div>
@@ -117,18 +119,18 @@ function handleSelect(type: string) {
 
 <style scoped>
 .template-selector {
-  padding: 14px 16px;
+  padding: 16px 20px;
   padding-bottom: 32px;
 }
 
 .section-header {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
   text-align: center;
 }
 
 .section-header h3 {
-  margin: 0 0 8px 0;
-  font-size: 1.25rem;
+  margin: 0 0 6px 0;
+  font-size: 1.2rem;
   font-weight: 600;
   color: var(--n-text-color);
 }
@@ -136,65 +138,73 @@ function handleSelect(type: string) {
 .section-desc {
   margin: 0;
   color: var(--n-text-color-3);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 .templates-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
 }
 
 .template-card {
   position: relative;
-  border-radius: 12px;
+  border-radius: 10px;
   background-color: var(--n-card-color, #fff);
   border: 1px solid var(--n-border-color, #efeff5);
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
-  min-height: 176px;
+  min-height: 160px;
   display: flex;
   flex-direction: column;
 }
 
 .template-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
   border-color: var(--accent-color, var(--n-primary-color));
 }
 
-/* Custom Card Style */
+/* Accent bar at top of preset cards */
+.card-accent-bar {
+  height: 3px;
+  background: var(--accent-color, var(--n-primary-color));
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.preset-card:hover .card-accent-bar {
+  opacity: 1;
+}
+
 .custom-card {
   border: 2px dashed var(--n-border-color, #e0e0e0);
   background-color: transparent;
   align-items: center;
   justify-content: center;
   text-align: center;
+  padding: 20px;
 }
 
 .custom-card:hover {
   border-color: var(--n-primary-color);
-  background-color: rgba(var(--n-primary-color-rgb), 0.02);
+  background-color: rgba(var(--n-primary-color-rgb, 15, 107, 74), 0.02);
 }
 
 .custom-icon {
   color: var(--n-text-color-3);
-  margin-bottom: 12px;
-  transition: color 0.3s;
+  margin-bottom: 10px;
+  transition: color 0.2s;
 }
 
 .custom-card:hover .custom-icon {
   color: var(--n-primary-color);
 }
 
-/* Preset Card Style */
-.card-header-accent {
-  display: none;
-}
-
 .card-body {
-  padding: 14px;
+  padding: 14px 16px;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -212,30 +222,32 @@ function handleSelect(type: string) {
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 6px;
+  gap: 8px;
 }
 
 .card-title {
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 0.92rem;
   color: var(--n-text-color);
-  margin-right: 8px;
+  line-height: 1.4;
 }
 
-/* Preset titles are intentionally de-emphasized */
 .preset-card .card-title {
-  color: var(--n-text-color-3);
+  color: var(--n-text-color);
 }
 
 .template-tag {
-  background-color: var(--n-action-color);
-  color: var(--n-text-color-2);
+  background-color: var(--accent-color, var(--n-action-color));
+  color: #fff;
   flex-shrink: 0;
+  font-size: 0.7rem;
+  opacity: 0.8;
 }
 
 .card-desc {
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   color: var(--n-text-color-3);
-  line-height: 1.4;
+  line-height: 1.45;
   margin-bottom: 10px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -245,23 +257,14 @@ function handleSelect(type: string) {
 
 .examples-preview {
   margin-top: auto;
-  background-color: var(--n-action-color); /* Light grey usually */
-  padding: 10px;
-  border-radius: 8px;
-  border-left: 3px solid var(--n-divider-color, var(--n-border-color, #e8e8e8));
-}
-
-.examples-title {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--n-text-color-2);
-  margin-bottom: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background-color: var(--n-action-color, rgba(0, 0, 0, 0.02));
+  border-left: 2px solid var(--accent-color, var(--n-divider-color, #e8e8e8));
 }
 
 .examples-list {
-  font-size: 0.8rem;
+  font-size: 0.76rem;
   color: var(--n-text-color-2);
   line-height: 1.5;
 }
@@ -270,10 +273,12 @@ function handleSelect(type: string) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 
 .example-more {
   color: var(--n-text-color-3);
+  font-size: 0.74rem;
+  margin-top: 2px;
 }
 </style>

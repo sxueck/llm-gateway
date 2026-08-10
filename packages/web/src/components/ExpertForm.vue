@@ -53,6 +53,7 @@
                 :options="providerModelOptions"
                 :placeholder="t('expertRouting.selectModel')"
                 :disabled="!formValue.provider_id"
+                :loading="loadingModels"
                 filterable
               />
             </n-form-item>
@@ -102,7 +103,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   NForm,
@@ -118,12 +119,11 @@ import {
   NTabs,
   NTabPane,
 } from 'naive-ui';
-import { useModelStore } from '@/stores/model';
 import { EXPERT_ROUTING_ELIGIBLE_LABELS } from '@llm-gateway/shared';
 import type { ExpertTarget } from '@/api/expert-routing';
+import { useProviderModels } from '@/composables/useProviderModels';
 
 const { t } = useI18n();
-const modelStore = useModelStore();
 
 const eligibleLabelOptions = EXPERT_ROUTING_ELIGIBLE_LABELS.map((l) => ({
   label: `${l.displayName} (${l.label})`,
@@ -147,17 +147,9 @@ const emit = defineEmits<{
 const formValue = ref<ExpertTarget>({ ...props.expert });
 const utterancesText = ref(props.utterances?.join('\n') || '');
 
-const providerModelOptions = computed(() => {
-  if (!formValue.value.provider_id) {
-    return [];
-  }
-  return modelStore.models
-    .filter((m) => m.providerId === formValue.value.provider_id && m.isVirtual !== true)
-    .map((m) => ({
-      label: m.name,
-      value: m.modelIdentifier,
-    }));
-});
+const { options: providerModelOptions, loading: loadingModels } = useProviderModels(
+  () => formValue.value.provider_id,
+);
 
 function handleProviderChange() {
   formValue.value.model = '';

@@ -321,6 +321,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
         name: m.name,
         providerId: m.provider_id,
         modelIdentifier: m.model_identifier,
+        isVirtual: m.is_virtual === 1,
         enabled: m.enabled === 1,
         createdAt: m.created_at,
         updatedAt: m.updated_at,

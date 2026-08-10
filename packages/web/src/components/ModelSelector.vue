@@ -36,6 +36,7 @@
           :options="providerModelOptions"
           :placeholder="t('expertRouting.selectModel')"
           :disabled="!localProviderId"
+          :loading="loadingModels"
           filterable
         />
       </n-form-item>
@@ -53,10 +54,9 @@ import {
   NSelect,
   NSpace,
 } from 'naive-ui';
-import { useModelStore } from '@/stores/model';
+import { useProviderModels } from '@/composables/useProviderModels';
 
 const { t } = useI18n();
-const modelStore = useModelStore();
 
 interface Props {
   type: 'virtual' | 'real';
@@ -75,7 +75,6 @@ const emit = defineEmits<{
   'update:model': [value: string];
 }>();
 
-// 使用 computed 的 getter/setter 来简化双向绑定
 const localType = computed({
   get: () => props.type,
   set: (val) => emit('update:type', val)
@@ -96,17 +95,9 @@ const localModel = computed({
   set: (val) => emit('update:model', val)
 });
 
-const providerModelOptions = computed(() => {
-  if (!localProviderId.value) {
-    return [];
-  }
-  return modelStore.models
-    .filter((m) => m.providerId === localProviderId.value && m.isVirtual !== true)
-    .map((m) => ({
-      label: m.name,
-      value: m.modelIdentifier,
-    }));
-});
+const { options: providerModelOptions, loading: loadingModels } = useProviderModels(
+  () => props.providerId,
+);
 
 function handleProviderChange() {
   localModel.value = '';
