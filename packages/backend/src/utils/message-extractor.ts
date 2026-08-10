@@ -30,6 +30,11 @@ export interface MessageExtractOptions {
 
 /**
  * 从 Anthropic ContentBlock 或字符串中提取纯文本
+ *
+ * 支持 OpenAI / Anthropic / OpenAI Responses 等常见内容格式：
+ * - 字符串原样返回
+ * - 数组中的文本块提取 text/content 字段（兼容 'text'、'input_text' 等类型）
+ * - 单对象内容块优先提取 text/content 字段
  */
 export function extractTextFromContent(
   content: string | ContentBlock[] | any,
@@ -42,16 +47,41 @@ export function extractTextFromContent(
   if (typeof content === 'string') {
     return content;
   }
-  
+
+  if (typeof content === 'object' && !Array.isArray(content)) {
+    if (typeof content.text === 'string') {
+      return content.text;
+    }
+    if (typeof content.content === 'string') {
+      return content.content;
+    }
+    if (options?.strip_files) {
+      return '';
+    }
+    return JSON.stringify(content);
+  }
+
   if (!Array.isArray(content)) {
     return options?.strip_files ? '' : JSON.stringify(content);
   }
-  
-  // ContentBlock[] → 提取 type='text' 的文本
-  return content
-    .filter(block => block && block.type === 'text' && block.text)
-    .map(block => block.text)
-    .join('\n');
+
+  // ContentBlock[] — 提取任何包含文本的块，兼容 OpenAI ('text')、Responses ('input_text')
+  // 以及使用 'content' 字段的自定义格式，确保 role=user 的文本内容不会被漏掉。
+  const texts: string[] = [];
+  for (const block of content) {
+    if (!block || typeof block !== 'object') continue;
+
+    if (typeof block.text === 'string') {
+      texts.push(block.text);
+      continue;
+    }
+
+    if (typeof block.content === 'string') {
+      texts.push(block.content);
+    }
+  }
+
+  return texts.join('\n');
 }
 
 /**
@@ -107,20 +137,7 @@ export function extractUserMessagesForClassification(
 }
 
 function extractTextFromResponsesItemContent(content: any): string {
-  if (content === null || content === undefined) return '';
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
-
-  const texts: string[] = [];
-  for (const part of content) {
-    if (!part || typeof part !== 'object') continue;
-    if (typeof (part as any).text === 'string') {
-      texts.push((part as any).text);
-    } else if (typeof (part as any).content === 'string') {
-      texts.push((part as any).content);
-    }
-  }
-  return texts.join('\n').trim();
+  return extractTextFromContent(content).trim();
 }
 
 export function extractResponsesInputForClassification(

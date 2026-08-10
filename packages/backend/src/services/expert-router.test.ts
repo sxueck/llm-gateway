@@ -219,6 +219,9 @@ describe('ExpertRouter route flow', () => {
     expect(mocks.decide).not.toHaveBeenCalled();
     const log = (mocks.expertRoutingLogDb.create as any).mock.calls[0][0];
     expect(log.route_source).toBe('local_onnx');
+    const classifierRequest = JSON.parse(log.classifier_request);
+    expect(classifierRequest.model).toContain('onnx/');
+    expect(classifierRequest.input).toBe('review my PR');
   });
 
   test('eligible local label that is rejected routes to LLM second pass (FR-5)', async () => {

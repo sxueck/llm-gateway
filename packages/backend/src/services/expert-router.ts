@@ -156,6 +156,12 @@ export class ExpertRouter {
           appliedFlip: localResult.policy.appliedFlip,
           chosenLabel: localResult.policy.chosenLabel,
         };
+        // Make the local classifier request auditable; otherwise the log field renders as '{}'.
+        candidateMeta.classifierRequest = {
+          model: LOCAL_CLASSIFIER_MODEL_NAME,
+          input: signal.intentText,
+          max_tokens: config.local_classifier.max_tokens,
+        };
 
         const chosen = localResult.policy.chosenLabel;
         const eligible = !localResult.policy.rejected && isEligibleExpertRoutingLabel(chosen);
