@@ -109,7 +109,7 @@ export class RestoreService {
       const pool = getPool();
 
       for (const table of tablesToRestore) {
-        const isLogTable = ['api_requests', 'expert_routing_logs', 'health_runs', 'health_summaries'].includes(table);
+        const isLogTable = ['api_requests', 'expert_routing_logs', 'health_runs', 'health_summaries', 'prompt_samples'].includes(table);
         const dataDir = isLogTable ? 'logs' : 'data';
         const dataPath = join(backupDir, dataDir, `${table}.json`);
 

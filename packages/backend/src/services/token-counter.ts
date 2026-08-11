@@ -201,6 +201,13 @@ export async function countRequestTokens(
 
         if (requestBody.messages && Array.isArray(requestBody.messages)) {
           promptTokens = countTokensForMessages(requestBody.messages);
+        } else if (Array.isArray(requestBody.contents)) {
+          const text = requestBody.contents
+            .flatMap((content: any) => Array.isArray(content?.parts) ? content.parts : [])
+            .map((part: any) => typeof part?.text === 'string' ? part.text : '')
+            .filter(Boolean)
+            .join('\n');
+          promptTokens = countTokensForText(text);
         } else if (requestBody.input) {
           const inputText = Array.isArray(requestBody.input)
             ? requestBody.input.join(' ')

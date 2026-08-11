@@ -14,6 +14,7 @@ export interface VirtualKeyFormValue {
   interceptZeroTemperature: boolean;
   zeroTemperatureReplacement: number | undefined;
   piiProtectionEnabled: boolean;
+  promptCaptureEnabled: boolean;
 }
 
 export function createDefaultVirtualKeyForm(): VirtualKeyFormValue {
@@ -31,5 +32,6 @@ export function createDefaultVirtualKeyForm(): VirtualKeyFormValue {
     interceptZeroTemperature: false,
     zeroTemperatureReplacement: 0.7,
     piiProtectionEnabled: false,
+    promptCaptureEnabled: false,
   };
 }

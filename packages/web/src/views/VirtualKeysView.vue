@@ -106,6 +106,12 @@
             <span style="font-size: 12px; color: #999;">开启后,将检测并替换请求中的敏感信息(secret、IP、邮箱)</span>
           </n-space>
         </n-form-item>
+        <n-form-item label="Prompt 捕获">
+          <n-space vertical :size="4">
+            <n-switch v-model:value="formValue.promptCaptureEnabled" size="small" />
+            <span style="font-size: 12px; color: #999;">捕获清洗后的用户提问样本，可在 Prompt 样本中下载</span>
+          </n-space>
+        </n-form-item>
         <n-form-item label="启用">
           <n-switch v-model:value="formValue.enabled" size="small" />
         </n-form-item>
@@ -351,6 +357,7 @@ function handleEdit(vk: VirtualKey) {
     interceptZeroTemperature: vk.interceptZeroTemperature,
     zeroTemperatureReplacement: vk.zeroTemperatureReplacement || 0.7,
     piiProtectionEnabled: vk.piiProtectionEnabled,
+    promptCaptureEnabled: vk.promptCaptureEnabled,
   };
   showModal.value = true;
 }
@@ -385,6 +392,7 @@ async function handleSubmit() {
         dynamicCompressionEnabled: formValue.value.dynamicCompressionEnabled,
         imageCompressionEnabled: formValue.value.imageCompressionEnabled,
         piiProtectionEnabled: formValue.value.piiProtectionEnabled,
+        promptCaptureEnabled: formValue.value.promptCaptureEnabled,
       });
       message.success('更新成功');
       showModal.value = false;

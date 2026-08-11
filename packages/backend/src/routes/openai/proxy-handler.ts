@@ -21,6 +21,7 @@ import {
   restoreResponseBodyInPlace,
 } from '../../services/pii-protection-service.js';
 import { maybeCompressImagesInOpenAIRequestBodyInPlace, logImageCompressionStats } from '../../services/image-compression.js';
+import { capturePromptSampleAsync } from '../../services/prompt-capture-service.js';
 
 const MESSAGE_COMPRESSION_MIN_TOKENS = parseInt(process.env.MESSAGE_COMPRESSION_MIN_TOKENS || '2048', 10);
 
@@ -290,6 +291,7 @@ export function createOpenAIProxyHandler() {
           } catch (e: any) {
             memoryLogger.warn(`图像压缩预处理失败(已跳过): ${e?.message || e}`, 'Proxy');
           }
+          capturePromptSampleAsync(virtualKey, request, 'openai');
         }
       });
       if (!pipelineResult.ok) {

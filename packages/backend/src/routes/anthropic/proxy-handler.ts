@@ -16,6 +16,7 @@ import {
   maskRequestBodyInPlace,
   restoreResponseBodyInPlace,
 } from '../../services/pii-protection-service.js';
+import { capturePromptSampleAsync } from '../../services/prompt-capture-service.js';
 
 function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
   return !virtualKey.disable_logging;
@@ -123,6 +124,7 @@ export function createAnthropicProxyHandler() {
             return false;
           }
 
+          capturePromptSampleAsync(virtualKey, request, 'anthropic');
           return true;
         },
       });

@@ -100,6 +100,17 @@ export class SignalBuilder {
   ): Promise<{ lastUserMessage: string; conversationHistory: string }> {
     const body: any = request.body || {};
 
+    // Gemini native API uses contents[].parts[].text instead of messages.
+    if (Array.isArray(body.contents)) {
+      const messages = body.contents.map((content: any) => ({
+        role: content?.role === 'model' ? 'assistant' : 'user',
+        content: Array.isArray(content?.parts)
+          ? content.parts.map((part: any) => ({ text: part?.text, content: part?.text }))
+          : content?.parts,
+      }));
+      return extractUserMessagesForClassification(messages, body.systemInstruction, options);
+    }
+
     // Responses API
     if (body.input !== undefined || typeof body.text === 'string') {
       const input = body.input ?? body.text;

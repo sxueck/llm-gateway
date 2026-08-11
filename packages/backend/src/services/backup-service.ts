@@ -24,7 +24,8 @@ const LOG_TABLES = [
   'api_requests',
   'expert_routing_logs',
   'health_runs',
-  'health_summaries'
+  'health_summaries',
+  'prompt_samples'
 ];
 
 export class BackupService {

@@ -74,6 +74,7 @@ export interface VirtualKey {
   interceptZeroTemperature: boolean;
   zeroTemperatureReplacement?: number | null;
   piiProtectionEnabled: boolean;
+  promptCaptureEnabled: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -159,6 +160,7 @@ export interface CreateVirtualKeyRequest {
   interceptZeroTemperature?: boolean;
   zeroTemperatureReplacement?: number;
   piiProtectionEnabled?: boolean;
+  promptCaptureEnabled?: boolean;
 }
 
 export interface UpdateVirtualKeyRequest {
@@ -177,4 +179,5 @@ export interface UpdateVirtualKeyRequest {
   interceptZeroTemperature?: boolean;
   zeroTemperatureReplacement?: number;
   piiProtectionEnabled?: boolean;
+  promptCaptureEnabled?: boolean;
 }
