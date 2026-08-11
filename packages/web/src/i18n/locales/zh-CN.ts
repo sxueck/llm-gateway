@@ -77,6 +77,7 @@ export default {
     apiGuide: 'API 使用说明',
     logs: '日志查看',
     apiRequests: 'API 请求日志',
+    promptSamples: 'Prompt 样本',
     settings: '系统设置',
     securitySettings: '安全设置',
   },

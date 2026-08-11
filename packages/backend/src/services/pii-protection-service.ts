@@ -154,6 +154,18 @@ function collectTextRefs(body: any): TextRef[] {
     }
   }
 
+  // Gemini native API: contents[].parts[].text
+  if (Array.isArray(body?.contents)) {
+    for (const content of body.contents) {
+      if (!content || typeof content !== 'object' || !Array.isArray(content.parts)) continue;
+      for (const part of content.parts) {
+        if (part && typeof part === 'object' && typeof part.text === 'string') {
+          pushStringRef(() => part.text, (v) => { part.text = v; });
+        }
+      }
+    }
+  }
+
   // Chat completion response: choices[].message.content
   if (Array.isArray(body?.choices)) {
     for (const choice of body.choices) {

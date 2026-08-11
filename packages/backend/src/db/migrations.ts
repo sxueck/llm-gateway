@@ -370,6 +370,41 @@ export const migrations: Migration[] = [
 
       console.log(`[迁移] 已规范化 ${updated} 个专家路由配置`);
     }
+  },
+  {
+    version: 37,
+    name: 'add_prompt_capture_samples',
+    up: async (conn: Connection) => {
+      const [columns] = await conn.query(`
+        SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'virtual_keys'
+          AND COLUMN_NAME = 'prompt_capture_enabled'
+      `);
+      if ((columns as any[]).length === 0) {
+        await conn.query('ALTER TABLE virtual_keys ADD COLUMN prompt_capture_enabled TINYINT DEFAULT 0');
+      }
+
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS prompt_samples (
+          id VARCHAR(255) PRIMARY KEY,
+          virtual_key_id VARCHAR(255) NOT NULL,
+          model VARCHAR(255) NOT NULL DEFAULT 'unknown',
+          protocol VARCHAR(50) NOT NULL,
+          intent_text MEDIUMTEXT NOT NULL,
+          prompt_tokens INT NOT NULL DEFAULT 0,
+          intent_truncated TINYINT NOT NULL DEFAULT 0,
+          created_at BIGINT NOT NULL,
+          INDEX idx_prompt_samples_virtual_key (virtual_key_id, created_at),
+          INDEX idx_prompt_samples_created_at (created_at),
+          FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+    },
+    down: async (conn: Connection) => {
+      await conn.query('DROP TABLE IF EXISTS prompt_samples');
+      await conn.query('ALTER TABLE virtual_keys DROP COLUMN IF EXISTS prompt_capture_enabled');
+    }
   }
 ];
 

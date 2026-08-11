@@ -15,7 +15,7 @@ export interface ProxyRequest {
     system?: string | any[];
     [key: string]: any;
   };
-  protocol?: 'openai' | 'anthropic';
+  protocol?: 'openai' | 'anthropic' | 'gemini';
   [key: string]: any;
 }
 

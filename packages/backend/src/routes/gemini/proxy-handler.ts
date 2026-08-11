@@ -4,6 +4,7 @@ import { runProxyPipeline } from '../proxy/pipeline.js';
 import { logApiRequestToDb } from '../../services/api-request-logger.js';
 import { handleGeminiNativeNonStreamRequest, handleGeminiNativeStreamRequest } from './gemini-native.js';
 import { shouldLogRequestBody } from '../proxy/handlers/shared.js';
+import { capturePromptSampleAsync } from '../../services/prompt-capture-service.js';
 
 export function createGeminiProxyHandler() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
@@ -35,7 +36,7 @@ export function createGeminiProxyHandler() {
             reply.code(providerConfigError.code).send(providerConfigError.body);
           },
         },
-        afterAuth: ({ virtualKeyValue: vkValue }) => {
+        afterAuth: ({ virtualKey, virtualKeyValue: vkValue }) => {
           virtualKeyValue = vkValue;
 
           // Extract model from URL for Gemini Native (e.g. /v1beta/models/gemini-pro:generateContent)
@@ -52,6 +53,8 @@ export function createGeminiProxyHandler() {
           if (modelFromUrl && !(request.body as any).model) {
             (request.body as any).model = modelFromUrl;
           }
+
+          capturePromptSampleAsync(virtualKey, request, 'gemini');
 
           return true;
         },

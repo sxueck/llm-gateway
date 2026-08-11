@@ -22,6 +22,7 @@ import { modelPresetsRoutes } from './routes/model-presets.js';
 import { expertRoutingRoutes } from './routes/expert-routing.js';
 import { healthRoutes } from './routes/health.js';
 import { costMappingRoutes } from './routes/cost-mapping.js';
+import { promptSampleRoutes } from './routes/prompt-samples.js';
 import backupRoutes from './routes/backup.js';
 import { memoryLogger } from './services/logger.js';
 import { modelPresetsService } from './services/model-presets.js';
@@ -179,6 +180,7 @@ await fastify.register(configRoutes, { prefix: '/api/admin/config' });
 await fastify.register(modelPresetsRoutes, { prefix: '/api/admin/model-presets' });
 await fastify.register(expertRoutingRoutes, { prefix: '/api/admin/expert-routing' });
 await fastify.register(costMappingRoutes, { prefix: '/api/admin/cost-mappings' });
+await fastify.register(promptSampleRoutes, { prefix: '/api/admin/prompt-samples' });
 await fastify.register(healthRoutes);
 await fastify.register(backupRoutes);
 

@@ -24,6 +24,7 @@ const createVirtualKeySchema = z.object({
   interceptZeroTemperature: z.boolean().optional(),
   zeroTemperatureReplacement: z.number().min(0).max(2).optional(),
   piiProtectionEnabled: z.boolean().optional(),
+  promptCaptureEnabled: z.boolean().optional(),
 });
 
 const updateVirtualKeySchema = z.object({
@@ -42,6 +43,7 @@ const updateVirtualKeySchema = z.object({
   interceptZeroTemperature: z.boolean().optional(),
   zeroTemperatureReplacement: z.number().min(0).max(2).optional(),
   piiProtectionEnabled: z.boolean().optional(),
+  promptCaptureEnabled: z.boolean().optional(),
 });
 
 const validateKeySchema = z.object({
@@ -72,6 +74,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
         interceptZeroTemperature: vk.intercept_zero_temperature === 1,
         zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
         piiProtectionEnabled: vk.pii_protection_enabled === 1,
+        promptCaptureEnabled: vk.prompt_capture_enabled === 1,
         createdAt: vk.created_at,
         updatedAt: vk.updated_at,
       })),
@@ -104,6 +107,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       interceptZeroTemperature: vk.intercept_zero_temperature === 1,
       zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
       piiProtectionEnabled: vk.pii_protection_enabled === 1,
+      promptCaptureEnabled: vk.prompt_capture_enabled === 1,
       createdAt: vk.created_at,
       updatedAt: vk.updated_at,
     };
@@ -195,6 +199,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       intercept_zero_temperature: body.interceptZeroTemperature ? 1 : 0,
       zero_temperature_replacement: body.zeroTemperatureReplacement || null,
       pii_protection_enabled: body.piiProtectionEnabled ? 1 : 0,
+      prompt_capture_enabled: body.promptCaptureEnabled ? 1 : 0,
     });
 
     return {
@@ -216,6 +221,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
         interceptZeroTemperature: vk.intercept_zero_temperature === 1,
         zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
         piiProtectionEnabled: vk.pii_protection_enabled === 1,
+        promptCaptureEnabled: vk.prompt_capture_enabled === 1,
         createdAt: vk.created_at,
         updatedAt: vk.updated_at,
       },
@@ -291,6 +297,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     if (body.interceptZeroTemperature !== undefined) updates.intercept_zero_temperature = body.interceptZeroTemperature ? 1 : 0;
     if (body.zeroTemperatureReplacement !== undefined) updates.zero_temperature_replacement = body.zeroTemperatureReplacement;
     if (body.piiProtectionEnabled !== undefined) updates.pii_protection_enabled = body.piiProtectionEnabled ? 1 : 0;
+    if (body.promptCaptureEnabled !== undefined) updates.prompt_capture_enabled = body.promptCaptureEnabled ? 1 : 0;
 
     await virtualKeyDb.update(id, updates);
     hotConfigCache.invalidateVirtualKey(vk.key_value);
@@ -318,6 +325,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       interceptZeroTemperature: updated.intercept_zero_temperature === 1,
       zeroTemperatureReplacement: updated.zero_temperature_replacement ? Number(updated.zero_temperature_replacement) : null,
       piiProtectionEnabled: updated.pii_protection_enabled === 1,
+      promptCaptureEnabled: updated.prompt_capture_enabled === 1,
       createdAt: updated.created_at,
       updatedAt: updated.updated_at,
     };

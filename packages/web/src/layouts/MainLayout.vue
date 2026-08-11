@@ -148,6 +148,7 @@ const mainMenuParentByKey: Record<string, string> = {
   'api-guide': 'tools',
   logs: 'tools',
   'api-requests': 'tools',
+  'prompt-samples': 'tools',
 };
 const generalMenuParentByKey: Record<string, string> = {
   settings: 'settings',
@@ -275,6 +276,11 @@ const menuOptions = computed(() => [
         label: t('menu.apiRequests'),
         key: 'api-requests',
         icon: () => h(NIcon, null, { default: () => h(ListOutline) }),
+      },
+      {
+        label: t('menu.promptSamples'),
+        key: 'prompt-samples',
+        icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }),
       },
     ],
   },

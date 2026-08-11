@@ -77,6 +77,7 @@ export default {
     apiGuide: 'API Guide',
     logs: 'Logs',
     apiRequests: 'API Requests',
+    promptSamples: 'Prompt Samples',
     settings: 'Settings',
     securitySettings: 'Security Settings',
   },

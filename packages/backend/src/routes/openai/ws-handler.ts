@@ -7,6 +7,7 @@ import { buildProviderConfig } from '../proxy/provider-config-builder.js';
 import { memoryLogger } from '../../services/logger.js';
 import { debugModeService } from '../../services/debug-mode.js';
 import { logApiRequestAsync } from '../../services/api-request-logger.js';
+import { capturePromptSampleAsync } from '../../services/prompt-capture-service.js';
 import { nanoid } from 'nanoid';
 import {
   parseClientWebSocketEvent,
@@ -161,6 +162,7 @@ export async function handleResponsesWebSocket(
 
       try {
         const normalizedRequest = normalizeResponseCreate(requestBody);
+        capturePromptSampleAsync(virtualKey, { body: normalizedRequest.body }, 'openai');
         turnConfig = await resolveWebSocketTurnConfig(
           request,
           virtualKey,
