@@ -33,6 +33,7 @@
 - [特性](#特性)
 - [快速开始](#快速开始)
 - [健康监控](#健康监控)
+- [意图路由分类器](#意图路由分类器)
 - [贡献](#贡献)
 - [许可证](#许可证)
 - [致谢](#致谢)
@@ -218,6 +219,24 @@ VALUES ('target-1', 'DeepSeek Chat', 'model', 'model-id-here', 1, 300, 'Say "OK"
 健康监控 API 默认启用限流保护：
 - 每个 IP 每分钟最多 60 个请求
 - 超过限制将返回 429 错误
+
+---
+
+## 意图路由分类器
+
+LLM Gateway 的专家路由（Expert Routing）功能内置了一个本地 ONNX 意图分类器，作为请求的第一级路由决策器。它将用户意图分类到 21 个标签（coding 9 类 + ops 8 类 + general_control 3 类 + out_of_scope），仅当本地分类器置信度不足或结果不可用时，才回退到 LLM 二次分类。
+
+### 模型信息
+
+| 项目 | 详情 |
+|------|------|
+| **模型仓库** | [`snival/intent-router-zh-setfit-v1`](https://huggingface.co/snival/intent-router-zh-setfit-v1) |
+| **基座模型** | `Qwen/Qwen3-Embedding-0.6B` |
+| **训练方法** | SetFit（对比学习 body 微调 + 加权线性 head） |
+| **量化格式** | ONNX `encoder-woq8`（权重仅量化，~615MB artifacts） |
+| **运行时** | `onnxruntime-node`（本地 CPU 推理，无需 GPU） |
+| **标签数** | 21（coding 9 + ops 8 + general_control 3 + out_of_scope） |
+| **拒绝策略** | v3（`rejection_policy.json`），`max_probability = 0.15` |
 
 ---
 

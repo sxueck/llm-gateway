@@ -178,7 +178,15 @@ export const expertRoutingLogRepository = {
     const conn = await pool.getConnection();
     try {
       const [rows] = await conn.query(
-        'SELECT * FROM expert_routing_logs WHERE expert_routing_id = ? ORDER BY created_at DESC LIMIT ?',
+        `SELECT
+          id, virtual_key_id, expert_routing_id, request_hash,
+          classifier_model, classification_result, selected_expert_id,
+          selected_expert_type, selected_expert_name, classification_time,
+          route_source, created_at
+        FROM expert_routing_logs
+        WHERE expert_routing_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?`,
         [configId, limit]
       );
       return rows;
@@ -221,7 +229,15 @@ export const expertRoutingLogRepository = {
     const conn = await pool.getConnection();
     try {
       const [rows] = await conn.query(
-        'SELECT * FROM expert_routing_logs WHERE expert_routing_id = ? AND classification_result = ? ORDER BY created_at DESC LIMIT ?',
+        `SELECT
+          id, virtual_key_id, expert_routing_id, request_hash,
+          classifier_model, classification_result, selected_expert_id,
+          selected_expert_type, selected_expert_name, classification_time,
+          route_source, created_at
+        FROM expert_routing_logs
+        WHERE expert_routing_id = ? AND classification_result = ?
+        ORDER BY created_at DESC
+        LIMIT ?`,
         [configId, category, limit]
       );
       return rows;
