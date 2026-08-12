@@ -107,7 +107,7 @@ export const EXPERT_ROUTING_ANONYMOUS_SCOPE = '__anonymous__';
  * mutable `main` are prohibited; deployments must resolve exactly this revision.
  */
 export const EXPERT_ROUTING_MODEL_REPO = 'snival/intent-router-zh-setfit-v1';
-export const EXPERT_ROUTING_MODEL_REVISION = 'ce71b323aff00e2d591cf75cfa607c5478bf9154';
+export const EXPERT_ROUTING_MODEL_REVISION = 'e2cc76b77de09cdc46ac7877ec779a914d466660';
 export const EXPERT_ROUTING_ONNX_FILE = 'encoder-woq8.onnx';
 
 /** Default session-binding TTLs (NFR-4). */
