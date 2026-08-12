@@ -107,7 +107,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   # NFR-2: prove the local ONNX classifier (native ORT, external .data loading,
-  # head weights, Qwen tokenizer, v3 policy) works end-to-end on the published
+  # head weights, Qwen tokenizer, v4 policy) works end-to-end on the published
   # production architecture (linux/amd64, Node 22). The 615MB artifact download
   # is cached by pinned revision so this stays fast.
   onnx-smoke:
@@ -115,7 +115,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      ONNX_MODEL_REVISION: ce71b323aff00e2d591cf75cfa607c5478bf9154
+      ONNX_MODEL_REVISION: e2cc76b77de09cdc46ac7877ec779a914d466660
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 

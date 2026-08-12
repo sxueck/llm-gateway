@@ -82,4 +82,84 @@ describe('capturePromptSample', () => {
 
     expect(promptSampleDb.create).not.toHaveBeenCalled();
   });
+
+  it('strips assistant turns when client pastes full conversation into a single user message', async () => {
+    const { SignalBuilder } = await import('./expert-router/preprocess/index.js');
+    const mixedConversation = [
+      'User: 帮我看看这段代码',
+      'Assistant: 这段代码有 bug，建议这样改……',
+      'User: 还是报错，怎么办？',
+    ].join('\n');
+    vi.mocked(SignalBuilder.buildRoutingSignal).mockResolvedValue({
+      intentText: mixedConversation,
+      stats: { promptTokens: 12, intentTruncated: false },
+    } as any);
+
+    await capturePromptSample({ id: 'vk-1', prompt_capture_enabled: 1, pii_protection_enabled: 0 } as any, {
+      body: { model: 'gpt-5', messages: [{ role: 'user', content: mixedConversation }] },
+    } as any, 'openai');
+
+    expect(promptSampleDb.create).toHaveBeenCalledWith(expect.objectContaining({
+      intent_text: '还是报错，怎么办？',
+    }));
+  });
+
+  it('keeps the original intent when a single-turn prompt has no assistant turns', async () => {
+    const { SignalBuilder } = await import('./expert-router/preprocess/index.js');
+    const singleTurn = '请用 TypeScript 实现一个 LRU 缓存';
+    vi.mocked(SignalBuilder.buildRoutingSignal).mockResolvedValue({
+      intentText: singleTurn,
+      stats: { promptTokens: 8, intentTruncated: false },
+    } as any);
+
+    await capturePromptSample({ id: 'vk-1', prompt_capture_enabled: 1, pii_protection_enabled: 0 } as any, {
+      body: { model: 'gpt-5', messages: [{ role: 'user', content: singleTurn }] },
+    } as any, 'openai');
+
+    expect(promptSampleDb.create).toHaveBeenCalledWith(expect.objectContaining({
+      intent_text: singleTurn,
+    }));
+  });
+
+  it('keeps a leading instruction that quotes an assistant exchange', async () => {
+    const { SignalBuilder } = await import('./expert-router/preprocess/index.js');
+    const quotedConversation = [
+      '我该怎么回复下面这段对话？',
+      'Assistant: 我需要帮助',
+      'User: 帮什么？',
+    ].join('\n');
+    vi.mocked(SignalBuilder.buildRoutingSignal).mockResolvedValue({
+      intentText: quotedConversation,
+      stats: { promptTokens: 12, intentTruncated: false },
+    } as any);
+
+    await capturePromptSample({ id: 'vk-1', prompt_capture_enabled: 1, pii_protection_enabled: 0 } as any, {
+      body: { model: 'gpt-5', messages: [{ role: 'user', content: quotedConversation }] },
+    } as any, 'openai');
+
+    expect(promptSampleDb.create).toHaveBeenCalledWith(expect.objectContaining({
+      intent_text: quotedConversation,
+    }));
+  });
+
+  it('strips assistant turns marked with full-width colons', async () => {
+    const { SignalBuilder } = await import('./expert-router/preprocess/index.js');
+    const mixedConversation = [
+      'User：帮我看看这段代码',
+      'Assistant：这段代码有 bug，建议这样改。',
+      'User：还是报错，怎么办？',
+    ].join('\n');
+    vi.mocked(SignalBuilder.buildRoutingSignal).mockResolvedValue({
+      intentText: mixedConversation,
+      stats: { promptTokens: 12, intentTruncated: false },
+    } as any);
+
+    await capturePromptSample({ id: 'vk-1', prompt_capture_enabled: 1, pii_protection_enabled: 0 } as any, {
+      body: { model: 'gpt-5', messages: [{ role: 'user', content: mixedConversation }] },
+    } as any, 'openai');
+
+    expect(promptSampleDb.create).toHaveBeenCalledWith(expect.objectContaining({
+      intent_text: '还是报错，怎么办？',
+    }));
+  });
 });
