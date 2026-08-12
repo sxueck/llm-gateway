@@ -33,7 +33,11 @@ export const promptSampleApi = {
   },
 
   exportCsv(params?: PromptSampleQuery): Promise<Blob> {
-    return request.get('/admin/prompt-samples/export', { params, responseType: 'blob' });
+    return request.get('/admin/prompt-samples/export', { params: { ...params, format: 'csv' }, responseType: 'blob' });
+  },
+
+  exportJson(params?: PromptSampleQuery): Promise<Blob> {
+    return request.get('/admin/prompt-samples/export', { params: { ...params, format: 'json' }, responseType: 'blob' });
   },
 
   delete(id: string): Promise<{ success: boolean }> {

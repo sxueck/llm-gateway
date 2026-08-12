@@ -8,7 +8,7 @@ import { formatTimestamp } from '@/utils/common';
 
 const message = useMessage();
 const loading = ref(false);
-const downloading = ref(false);
+const downloading = ref<'' | 'csv' | 'json'>('');
 const cleaning = ref(false);
 const samples = ref<PromptSample[]>([]);
 const timeRange = ref<[number, number] | null>(null);
@@ -84,24 +84,26 @@ async function cleanSamples() {
   }
 }
 
-async function downloadSamples() {
+async function downloadSamples(format: 'csv' | 'json') {
   if ((pagination.itemCount || 0) > 10_000) {
-    message.warning('CSV 最多导出最新 10000 条匹配样本');
+    message.warning(`${format.toUpperCase()} 最多导出最新 10000 条匹配样本`);
   }
-  downloading.value = true;
+  downloading.value = format;
   try {
     const { page: _page, pageSize: _pageSize, ...filters } = queryParams();
-    const blob = await promptSampleApi.exportCsv(filters);
+    const blob = format === 'json'
+      ? await promptSampleApi.exportJson(filters)
+      : await promptSampleApi.exportCsv(filters);
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'prompt-samples.csv';
+    anchor.download = `prompt-samples.${format}`;
     anchor.click();
     URL.revokeObjectURL(url);
   } catch (error: any) {
     message.error(error.message);
   } finally {
-    downloading.value = false;
+    downloading.value = '';
   }
 }
 
@@ -173,11 +175,12 @@ onMounted(async () => {
             </template>
             确定删除超过 30 天的 Prompt 样本吗？
           </n-popconfirm>
-          <n-button type="primary" :loading="downloading" @click="downloadSamples">下载 CSV</n-button>
+          <n-button type="primary" :loading="downloading === 'csv'" @click="downloadSamples('csv')">下载 CSV</n-button>
+          <n-button type="primary" :loading="downloading === 'json'" @click="downloadSamples('json')">下载 JSON</n-button>
         </n-space>
       </template>
       <n-alert type="info" :bordered="false" class="notice">
-        仅捕获在虚拟密钥中明确开启此功能后的请求；已启用 PII 保护的密钥会存储脱敏后的文本。CSV 最多导出最新 10000 条匹配样本。
+        仅捕获在虚拟密钥中明确开启此功能后的请求；已启用 PII 保护的密钥会存储脱敏后的文本。CSV / JSON 最多导出最新 10000 条匹配样本，仅包含提问意图（不含模型回复）。
       </n-alert>
       <n-data-table
         :columns="columns"

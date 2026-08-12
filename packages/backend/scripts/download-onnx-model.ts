@@ -19,7 +19,7 @@ import { resolve } from 'path';
 // test (scripts/download-onnx-model.test.ts) asserts these stay in sync with
 // the shared constants — update both together when bumping the pin.
 const REPO = 'snival/intent-router-zh-setfit-v1';
-const REVISION = 'ce71b323aff00e2d591cf75cfa607c5478bf9154';
+const REVISION = 'e2cc76b77de09cdc46ac7877ec779a914d466660';
 
 const TARGET_DIR = process.env.EXPERT_ROUTING_MODEL_DIR
   ? resolve(process.env.EXPERT_ROUTING_MODEL_DIR)

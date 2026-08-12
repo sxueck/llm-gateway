@@ -8,6 +8,7 @@ const listQuerySchema = z.object({
   endTime: z.coerce.number().int().optional(),
   page: z.coerce.number().int().min(1).optional(),
   pageSize: z.coerce.number().int().min(1).max(100).optional(),
+  format: z.enum(['csv', 'json']).optional(),
 });
 
 const cleanQuerySchema = z.object({
@@ -41,6 +42,31 @@ export async function promptSampleRoutes(fastify: FastifyInstance) {
   fastify.get('/export', async (request, reply) => {
     const query = listQuerySchema.parse(request.query);
     const samples = await promptSampleDb.getForExport(query);
+    const format = query.format === 'json' ? 'json' : 'csv';
+
+    if (format === 'json') {
+      const payload = {
+        version: '1.0.0',
+        exportTime: new Date().toISOString(),
+        total: samples.length,
+        samples: samples.map(sample => ({
+          id: sample.id,
+          virtualKeyId: sample.virtual_key_id,
+          model: sample.model,
+          protocol: sample.protocol,
+          promptTokens: sample.prompt_tokens,
+          intentTruncated: Boolean(sample.intent_truncated),
+          createdAt: sample.created_at,
+          intentText: sample.intent_text,
+        })),
+      };
+      reply
+        .type('application/json; charset=utf-8')
+        .header('Content-Disposition', 'attachment; filename="prompt-samples.json"')
+        .send(JSON.stringify(payload, null, 2));
+      return;
+    }
+
     const rows = [
       ['id', 'virtual_key_id', 'model', 'protocol', 'prompt_tokens', 'intent_truncated', 'created_at', 'intent_text'],
       ...samples.map(sample => [
