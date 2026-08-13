@@ -405,8 +405,83 @@ export const migrations: Migration[] = [
       await conn.query('DROP TABLE IF EXISTS prompt_samples');
       await conn.query('ALTER TABLE virtual_keys DROP COLUMN IF EXISTS prompt_capture_enabled');
     }
+  },
+  {
+    version: 38,
+    name: 'add_circuit_breaker_fk_cascade',
+    up: async (conn: Connection) => {
+      if (!(await hasProviderForeignKey(conn, 'circuit_breaker_stats', 'provider_id'))) {
+        // 清理已删除供应商的残留统计记录
+        await conn.query(`
+          DELETE FROM circuit_breaker_stats
+          WHERE provider_id NOT IN (SELECT id FROM providers)
+        `);
+        await conn.query(`
+          ALTER TABLE circuit_breaker_stats
+          ADD CONSTRAINT fk_circuit_breaker_stats_provider
+          FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
+        `);
+        console.log('[迁移] 已添加 circuit_breaker_stats.provider_id FK (ON DELETE CASCADE)');
+      }
+
+      if (!(await hasProviderForeignKey(conn, 'circuit_breaker_events', 'provider_id'))) {
+        // 清理已删除供应商的残留事件记录
+        await conn.query(`
+          DELETE FROM circuit_breaker_events
+          WHERE provider_id NOT IN (SELECT id FROM providers)
+        `);
+        await conn.query(`
+          ALTER TABLE circuit_breaker_events
+          ADD CONSTRAINT fk_circuit_breaker_events_provider
+          FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
+        `);
+        console.log('[迁移] 已添加 circuit_breaker_events.provider_id FK (ON DELETE CASCADE)');
+      }
+    },
+    down: async (conn: Connection) => {
+      const fkStats = await getProviderForeignKeyName(conn, 'circuit_breaker_stats', 'provider_id');
+      if (fkStats) {
+        await conn.query(`ALTER TABLE circuit_breaker_stats DROP FOREIGN KEY \`${fkStats}\``);
+        console.log('[迁移] 已删除 circuit_breaker_stats FK');
+      }
+
+      const fkEvents = await getProviderForeignKeyName(conn, 'circuit_breaker_events', 'provider_id');
+      if (fkEvents) {
+        await conn.query(`ALTER TABLE circuit_breaker_events DROP FOREIGN KEY \`${fkEvents}\``);
+        console.log('[迁移] 已删除 circuit_breaker_events FK');
+      }
+    }
   }
 ];
+
+async function hasProviderForeignKey(conn: Connection, tableName: string, columnName: string): Promise<boolean> {
+  const [rows] = await conn.query(
+    `SELECT COUNT(*) AS cnt
+     FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?
+       AND COLUMN_NAME = ?
+       AND REFERENCED_TABLE_NAME = 'providers'`,
+    [tableName, columnName]
+  );
+  const result = rows as any[];
+  return Number(result?.[0]?.cnt || 0) > 0;
+}
+
+async function getProviderForeignKeyName(conn: Connection, tableName: string, columnName: string): Promise<string | null> {
+  const [rows] = await conn.query(
+    `SELECT CONSTRAINT_NAME
+     FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?
+       AND COLUMN_NAME = ?
+       AND REFERENCED_TABLE_NAME = 'providers'
+     LIMIT 1`,
+    [tableName, columnName]
+  );
+  const result = rows as any[];
+  return result?.[0]?.CONSTRAINT_NAME || null;
+}
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {
   try {

@@ -367,6 +367,7 @@ export async function createTables() {
         last_trigger_at BIGINT NOT NULL,
         created_at BIGINT NOT NULL,
         updated_at BIGINT NOT NULL,
+        FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE,
         INDEX idx_circuit_breaker_trigger_count (trigger_count)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
@@ -377,6 +378,7 @@ export async function createTables() {
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         provider_id VARCHAR(255) NOT NULL,
         triggered_at BIGINT NOT NULL,
+        FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE,
         INDEX idx_circuit_breaker_events_provider (provider_id),
         INDEX idx_circuit_breaker_events_time (triggered_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
