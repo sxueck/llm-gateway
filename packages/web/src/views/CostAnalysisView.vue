@@ -206,7 +206,6 @@ const testing = ref(false);
 const testResult = ref<CostResolution | null>(null);
 const testResultError = ref(false);
 
-// Rules
 const rules = {
   pattern: { required: true, message: t('validation.required'), trigger: 'blur' },
   target_model: { required: true, message: t('validation.required'), trigger: 'blur' }

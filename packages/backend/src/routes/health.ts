@@ -24,7 +24,6 @@ class RateLimiter {
     const now = Date.now();
     const timestamps = this.requests.get(key) || [];
 
-    // 清除过期的时间戳
     const validTimestamps = timestamps.filter(t => now - t < this.windowMs);
 
     if (validTimestamps.length >= this.maxRequests) {
@@ -249,7 +248,6 @@ export async function healthRoutes(fastify: FastifyInstance) {
         limit: 1000, // 最多查询1000条
       });
 
-      // 分页
       const total = allRuns.length;
       const start = (pageNum - 1) * pageSize;
       const end = start + pageSize;
@@ -478,7 +476,6 @@ export async function healthRoutes(fastify: FastifyInstance) {
       const { id } = request.params;
       const updates = updateTargetSchema.parse(request.body);
 
-      // 检查目标是否存在
       const target = await healthTargetDb.getById(id);
       if (!target) {
         reply.code(404).send({
@@ -539,7 +536,6 @@ export async function healthRoutes(fastify: FastifyInstance) {
     try {
       const { id } = request.params;
 
-      // 检查目标是否存在
       const target = await healthTargetDb.getById(id);
       if (!target) {
         reply.code(404).send({
@@ -570,7 +566,6 @@ export async function healthRoutes(fastify: FastifyInstance) {
   });
 
   // /api 前缀别名：兼容前端 axios baseURL '/api'
-  // GET /api/admin/health/targets
   fastify.get('/api/admin/health/targets', {
     preHandler: fastify.authenticate,
   }, async (_request, reply) => {
@@ -591,7 +586,6 @@ export async function healthRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // PATCH /api/admin/health/targets/:id
   fastify.patch<{
     Params: { id: string };
     Body: z.infer<typeof updateTargetSchema>;
@@ -602,7 +596,6 @@ export async function healthRoutes(fastify: FastifyInstance) {
       const { id } = request.params;
       const updates = updateTargetSchema.parse(request.body);
 
-      // 检查目标是否存在
       const target = await healthTargetDb.getById(id);
       if (!target) {
         reply.code(404).send({
@@ -651,7 +644,6 @@ export async function healthRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // DELETE /api/admin/health/targets/:id
   fastify.delete<{
     Params: { id: string };
   }>('/api/admin/health/targets/:id', {
@@ -660,7 +652,6 @@ export async function healthRoutes(fastify: FastifyInstance) {
     try {
       const { id } = request.params;
 
-      // 检查目标是否存在
       const target = await healthTargetDb.getById(id);
       if (!target) {
         reply.code(404).send({

@@ -149,7 +149,6 @@ export class AntiBotService {
       };
     }
     
-    // 检查白名单
     if (this.isAllowed(normalizedUA)) {
       return {
         isBot: false,
@@ -160,7 +159,6 @@ export class AntiBotService {
       };
     }
 
-    // 检查黑名单
     if (this.isBlocked(normalizedUA)) {
       return {
         isBot: true,
@@ -171,7 +169,6 @@ export class AntiBotService {
       };
     }
 
-    // 检查是否为爬虫
     const isBot = this.isBot(normalizedUA);
     if (isBot && this.config.blockBots) {
       return {
@@ -183,7 +180,6 @@ export class AntiBotService {
       };
     }
 
-    // 检查是否可疑
     const isSuspicious = this.isSuspicious(normalizedUA);
     if (isSuspicious && this.config.blockSuspicious) {
       return {

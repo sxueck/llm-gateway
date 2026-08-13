@@ -163,11 +163,8 @@ const { t } = useI18n();
 
 const message = useMessage();
 
-// 上游请求头透传
 const forwardClientUserAgent = ref(false);
-// SSL 验证设置
 const skipUpstreamSslVerify = ref(false);
-// 反爬虫设置
 const antiBotEnabled = ref(false);
 const antiBotBlockBots = ref(true);
 const antiBotBlockSuspicious = ref(false);

@@ -230,7 +230,6 @@ const data = ref<PerformanceMetricsResponse | null>(null);
 const selectedProvider = ref<string | null>(null);
 const selectedModel = ref<string | null>(null);
 
-// Filter options
 const providerOptions = computed(() => {
   if (!data.value) return [];
   return data.value.filters.providers;
@@ -245,7 +244,7 @@ const hasActiveFilter = computed(() => {
   return selectedProvider.value !== null || selectedModel.value !== null;
 });
 
-// Token summaries computed from filteredItems to follow provider/model filters
+// Token summaries follow provider/model filters
 const tokenSummaries = computed(() => {
   const items = filteredItems.value;
   if (items.length === 0) {
@@ -290,7 +289,6 @@ const filteredItems = computed(() => {
   });
 });
 
-// Chart titles based on filter state
 const chart1Title = computed(() => {
   if (selectedModel.value) {
     return t('performanceMonitoring.charts.modelComparison', { model: selectedModel.value });
@@ -411,12 +409,10 @@ const chartOption1 = computed(() => {
   };
 });
 
-// Chart 2: Model ranking within provider OR overall performance
 const chartOption2 = computed(() => {
   const items = filteredItems.value;
   if (items.length === 0) return {};
 
-  // Sort by availability descending, take top 10
   const sortedItems = [...items]
     .sort((a, b) => b.availability - a.availability)
     .slice(0, 10);
@@ -487,7 +483,6 @@ const chartOption2 = computed(() => {
   };
 });
 
-// Table columns
 const tableColumns = [
   {
     title: t('performanceMonitoring.table.provider'),

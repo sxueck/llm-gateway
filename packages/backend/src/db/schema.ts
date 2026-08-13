@@ -83,6 +83,7 @@ export async function createTables() {
          zero_temperature_replacement DECIMAL(3,2) DEFAULT NULL,
          pii_protection_enabled TINYINT DEFAULT 0,
          prompt_capture_enabled TINYINT DEFAULT 0,
+         context_normalization_enabled TINYINT DEFAULT 0,
         created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
 	        updated_at BIGINT NOT NULL,
 	        FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE SET NULL,
@@ -257,6 +258,45 @@ export async function createTables() {
         INDEX idx_bindings_idle_expires (idle_expires_at),
         INDEX idx_bindings_absolute_expires (absolute_expires_at),
         INDEX idx_bindings_expert (expert_routing_id, expert_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // 模型切换上下文规范化：每 (virtual_key_scope, session_id) 最近一次上下文指纹
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS session_context_bindings (
+        virtual_key_scope VARCHAR(255) NOT NULL,
+        session_id VARCHAR(256) NOT NULL,
+        fingerprint CHAR(64) NOT NULL,
+        protocol VARCHAR(50) NOT NULL,
+        context_version INT NOT NULL DEFAULT 1,
+        created_at BIGINT NOT NULL,
+        last_seen_at BIGINT NOT NULL,
+        idle_expires_at BIGINT NOT NULL,
+        absolute_expires_at BIGINT NOT NULL,
+        PRIMARY KEY (virtual_key_scope, session_id),
+        INDEX idx_ctx_bindings_idle_expires (idle_expires_at),
+        INDEX idx_ctx_bindings_absolute_expires (absolute_expires_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // 模型切换上下文规范化：切换审计事件（不含清洗掉的 reasoning 原文）
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS context_switch_events (
+        id VARCHAR(255) PRIMARY KEY,
+        virtual_key_id VARCHAR(255) DEFAULT NULL,
+        session_id VARCHAR(256) NOT NULL,
+        protocol VARCHAR(50) NOT NULL,
+        source_fingerprint CHAR(64) DEFAULT NULL,
+        target_fingerprint CHAR(64) NOT NULL,
+        source_context_version INT DEFAULT NULL,
+        target_context_version INT NOT NULL,
+        strategy VARCHAR(50) NOT NULL,
+        cleaned_blocks INT NOT NULL DEFAULT 0,
+        cleaned_chars INT NOT NULL DEFAULT 0,
+        reason VARCHAR(500) DEFAULT NULL,
+        created_at BIGINT NOT NULL,
+        INDEX idx_ctx_switch_events_vk_session (virtual_key_id, session_id, created_at),
+        INDEX idx_ctx_switch_events_created_at (created_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 

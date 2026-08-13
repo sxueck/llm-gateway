@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import { appConfig, setPublicUrl } from './config/index.js';
 import { initDatabase, apiRequestDb, systemConfigDb, shutdownDatabase } from './db/index.js';
 import { initLocalClassifier, startSessionBindingCleanup } from './services/expert-router.js';
+import { startContextNormalizationCleanup } from './services/context-normalization/index.js';
 import { authRoutes } from './routes/auth.js';
 import { providerRoutes } from './routes/providers.js';
 import { modelRoutes } from './routes/models.js';
@@ -117,6 +118,7 @@ await reasoningEffortSuffixesCache.initialize();
 initLocalClassifier();
 // Periodic cleanup of expired durable session bindings (NFR-4).
 startSessionBindingCleanup();
+startContextNormalizationCleanup();
 
 // Load request header forwarding config before serving traffic.
 await requestHeaderForwardingService.reloadConfig();

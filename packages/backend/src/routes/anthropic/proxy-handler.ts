@@ -17,6 +17,7 @@ import {
   restoreResponseBodyInPlace,
 } from '../../services/pii-protection-service.js';
 import { capturePromptSampleAsync } from '../../services/prompt-capture-service.js';
+import { applyContextNormalization } from '../../services/context-normalization/index.js';
 
 function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
   return !virtualKey.disable_logging;
@@ -149,6 +150,18 @@ export function createAnthropicProxyHandler() {
       virtualKeyValue = vkValue;
       providerId = resolvedProviderId;
       currentModel = resolvedModel;
+
+      const normalization = await applyContextNormalization({
+        protocol: 'anthropic',
+        request,
+        body: request.body,
+        providerId: resolvedProviderId,
+        model: (request.body as any)?.model,
+        virtualKey,
+      });
+      if (normalization.blocked) {
+        return reply.code(normalization.status).send(normalization.body);
+      }
 
       const { protocolConfig, vkDisplay } = configResult;
 

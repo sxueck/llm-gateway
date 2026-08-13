@@ -184,15 +184,12 @@ export class MessageCompressor {
     const len = text.length;
     
     while (i < len) {
-      // 查找代码块开始标记
       const startIdx = text.indexOf('```', i);
       if (startIdx === -1) break;
-      
-      // 查找代码块结束标记
+
       const endIdx = text.indexOf('```', startIdx + 3);
       if (endIdx === -1) break;
-      
-      // 提取代码块（包含标记）
+
       const codeBlock = text.substring(startIdx, endIdx + 3);
       codeBlocks.push(codeBlock);
       
@@ -261,7 +258,6 @@ export class MessageCompressor {
       }
     }
 
-    // 提取 environment_details 中的文件列表部分
     const envDetailsBlocks = this.extractEnvironmentDetailsFileList(text);
     blocks.push(...envDetailsBlocks);
 
@@ -288,10 +284,8 @@ export class MessageCompressor {
 
       const envContent = text.substring(envStartIdx, envEndIdx + '</environment_details>'.length);
 
-      // 提取所有以 # 开头的部分
       const sections = this.extractSectionsByHash(envContent);
-      
-      // 对每个部分进行去重并添加到结果中
+
       for (const section of sections) {
         if (section.length >= this.MIN_TEXT_LENGTH) {
           const hash = this.generateHash(section);

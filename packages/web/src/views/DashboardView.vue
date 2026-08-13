@@ -1057,7 +1057,6 @@ const modelDistributionOption = computed(() => {
 
   if (data.length === 0) return {};
   
-  // Sort data
   data.sort((a, b) => b.value - a.value);
 
   const isMobile = windowWidth.value < 640;

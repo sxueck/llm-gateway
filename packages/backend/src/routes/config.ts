@@ -91,6 +91,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         zero_temperature_replacement: null,
         pii_protection_enabled: 0,
         prompt_capture_enabled: 0,
+        context_normalization_enabled: 0,
       });
       await systemConfigDb.set('monitoring_virtual_key_id', monitoringKey.id, '监控专用虚拟密钥ID');
       memoryLogger.info(`已创建监控专用虚拟密钥: ${monitoringKey.id}`, 'Config');

@@ -22,6 +22,7 @@ import {
 } from '../../services/pii-protection-service.js';
 import { maybeCompressImagesInOpenAIRequestBodyInPlace, logImageCompressionStats } from '../../services/image-compression.js';
 import { capturePromptSampleAsync } from '../../services/prompt-capture-service.js';
+import { applyContextNormalization } from '../../services/context-normalization/index.js';
 
 const MESSAGE_COMPRESSION_MIN_TOKENS = parseInt(process.env.MESSAGE_COMPRESSION_MIN_TOKENS || '2048', 10);
 
@@ -314,6 +315,20 @@ export function createOpenAIProxyHandler() {
       virtualKeyValue = vkValue;
       providerId = resolvedProviderId;
       currentModel = resolvedModel;
+
+      const normalization = await applyContextNormalization({
+        protocol: 'openai',
+        request,
+        body: request.body,
+        providerId: resolvedProviderId,
+        model: (request.body as any)?.model,
+        forcedReasoningEffort: modelResult?.forcedReasoningEffort,
+        virtualKey,
+      });
+      if (normalization.blocked) {
+        return reply.code(normalization.status).send(normalization.body);
+      }
+
       parsedModelAttributes = parseModelAttributes(currentModel);
 
       const { protocolConfig, path, vkDisplay, isStreamRequest } = configResult;

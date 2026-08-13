@@ -295,7 +295,6 @@ const visibleModels = computed(() => {
   const query = searchQuery.value.toLowerCase().trim();
   
   return modelStore.models.filter((m) => {
-    // 搜索过滤
     if (query) {
       const matchName = m.name.toLowerCase().includes(query);
       const matchId = m.modelIdentifier.toLowerCase().includes(query);
@@ -306,7 +305,6 @@ const visibleModels = computed(() => {
     if ((m as any).isVirtual) return true;
     // 无 providerId 的模型（理论上不存在）保留显示
     if (!m.providerId) return true;
-    // 仅显示启用供应商下的模型
     return enabledProviderIds.has(m.providerId);
   });
 });
@@ -549,7 +547,6 @@ async function handleStatusChange(row: Model, value: boolean) {
     statusLoadingMap.value[row.id] = true;
     await modelApi.update(row.id, { enabled: value });
     message.success(t('models.updateSuccess'));
-    // 更新本地状态
     const model = modelStore.models.find(m => m.id === row.id);
     if (model) {
       model.enabled = value;
@@ -589,7 +586,6 @@ async function handleSubmit() {
   try {
     await formRef.value?.validate();
 
-    // 在保存前同步 headers
     modelAttributesEditorRef.value?.syncHeaders();
 
     submitting.value = true;

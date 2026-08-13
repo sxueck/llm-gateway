@@ -208,7 +208,6 @@ function handleAddExpert() {
 function handleTemplateSelect(template: ExpertTemplate | null) {
   showTemplateSelector.value = false;
   
-  // Use color from template or default blue
   const colorMap: Record<string, string> = {
     code_authoring: '#18a058',
     code_modification: '#8a2be2',
@@ -259,7 +258,6 @@ function handleDeleteExpert(expertId: string) {
       localExperts.value = localExperts.value.filter(e => e.id !== expertId);
       emit('update:experts', localExperts.value);
 
-      // Cleanup route if orphan
       const isUsed = localExperts.value.some(e => e.category === category);
       if (!isUsed) {
         const routes = localRoutes.value.filter(r => r.category !== category);
@@ -281,7 +279,6 @@ function handleSaveExpert(expert: ExpertTarget, utterances: string[]) {
   }
   emit('update:experts', localExperts.value);
 
-  // Update Routes
   let routes = [...localRoutes.value];
   
   // Clean up old route if category changed and no other expert uses it
