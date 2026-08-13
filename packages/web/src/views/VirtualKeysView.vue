@@ -28,7 +28,7 @@
       preset="card"
       :title="editingId ? '编辑虚拟密钥' : '创建虚拟密钥'"
       class="key-modal"
-      :style="{ width: '600px', maxHeight: '85vh' }"
+      :style="{ width: '760px', maxHeight: '85vh' }"
       :segmented="{
         content: 'soft',
         footer: 'soft'
