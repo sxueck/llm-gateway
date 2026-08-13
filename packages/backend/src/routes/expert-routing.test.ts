@@ -101,6 +101,35 @@ describe('expertRoutingRoutes', () => {
     });
   });
 
+  it('infers route_source from legacy classifier_request when route_source is absent', async () => {
+    mocks.expertRoutingConfigDb.getById.mockResolvedValue({ id: 'routing-1' });
+    mocks.expertRoutingLogDb.getByConfigId.mockResolvedValue([{
+      id: 'log-legacy',
+      expert_routing_id: 'routing-1',
+      classifier_model: 'classifier-model',
+      classifier_request: 'l1_semantic',
+    }]);
+
+    const { routes, fastify } = createFastifyStub();
+    await expertRoutingRoutes(fastify);
+
+    const response = await routes.get('/:id/logs')!({
+      params: { id: 'routing-1' },
+      query: {},
+    });
+
+    expect(response).toEqual({
+      logs: [{
+        id: 'log-legacy',
+        expert_routing_id: 'routing-1',
+        classifier_model: 'classifier-model',
+        classifier_request: 'l1_semantic',
+        route_source: 'l1_semantic',
+        semantic_score: undefined,
+      }],
+    });
+  });
+
   it('returns logs by category with route_source passthrough', async () => {
     mocks.expertRoutingConfigDb.getById.mockResolvedValue({ id: 'routing-1' });
     mocks.expertRoutingLogDb.getByCategory.mockResolvedValue([{

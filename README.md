@@ -236,7 +236,7 @@ LLM Gateway 的专家路由（Expert Routing）功能内置了一个本地 ONNX 
 | **量化格式** | ONNX `encoder-woq8`（权重仅量化，~615MB artifacts） |
 | **运行时** | `onnxruntime-node`（本地 CPU 推理，无需 GPU） |
 | **标签数** | 21（coding 9 + ops 8 + general_control 3 + out_of_scope） |
-| **拒绝策略** | v3（`rejection_policy.json`），`max_probability = 0.15` |
+| **拒绝策略** | v4（`rejection_policy.json`），`max_probability = 0.15` |
 
 ---
 
