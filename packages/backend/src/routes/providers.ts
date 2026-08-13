@@ -268,6 +268,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
 
     await providerDb.delete(id);
     hotConfigCache.invalidateProvider(id);
+    hotConfigCache.invalidateModelsByProviderId(id);
 
     return { success: true };
   });

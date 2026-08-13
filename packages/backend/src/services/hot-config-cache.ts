@@ -81,6 +81,18 @@ class HotConfigCacheService {
     this.providerCache.delete(id);
   }
 
+  invalidateModelsByProviderId(providerId: string): void {
+    const toDelete: string[] = [];
+    for (const [id, model] of this.modelCache.entries()) {
+      if (model.provider_id === providerId) {
+        toDelete.push(id);
+      }
+    }
+    for (const id of toDelete) {
+      this.modelCache.delete(id);
+    }
+  }
+
   clear(): void {
     this.virtualKeyCache.clear();
     this.modelCache.clear();
