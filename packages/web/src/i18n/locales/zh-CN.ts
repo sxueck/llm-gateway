@@ -438,7 +438,6 @@ export default {
     modelIdRequired: '请输入模型标识符',
   },
   expertRouting: {
-    // New Steps
     stepDefineExperts: '定义专家',
     stepDefineExpertsDesc: '配置有哪些专家以及他们的典型意图',
     stepConfigurePipeline: '配置流水线',

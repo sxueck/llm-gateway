@@ -92,8 +92,6 @@ export class SignalBuilder {
     };
   }
 
-  // ... (extractText stays same)
-
   private static async extractText(
     request: ProxyRequest,
     options?: PreprocessOptions

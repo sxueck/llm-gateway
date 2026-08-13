@@ -78,7 +78,6 @@
       </n-card>
     </n-space>
 
-    <!-- Modals (Category Detail & Log Detail) ... -->
     <n-modal
       v-model:show="showCategoryDetailModal"
       preset="card"
@@ -136,7 +135,6 @@
             </n-grid>
           </n-card>
 
-          <!-- ... Existing Request/Response Cards ... -->
           <n-card size="small" class="log-detail-card collapsible-card">
             <template #header>
               <div class="card-header" @click="toggleOriginalRequest">

@@ -705,7 +705,6 @@ async function loadAvailableModels() {
     const data = await modelApi.getAll();
     const allModels = data.models || [];
 
-    // 过滤出真实模型和虚拟模型
     availableModels.value = allModels.filter((m: any) => !m.isVirtual);
     availableVirtualModels.value = allModels.filter((m: any) => m.isVirtual);
   } catch (error: any) {
@@ -734,7 +733,6 @@ async function handleAddTarget() {
     message.success(t('messages.operationSuccess'));
     showAddTargetModal.value = false;
     await loadHealthTargets();
-    // 重置表单
     addTargetForm.value = {
       type: 'model',
       target_id: null,
@@ -818,7 +816,6 @@ onMounted(async () => {
     reasoningEffortSuffixesInput.value = suffixesText;
     reasoningEffortSuffixesOriginal.value = suffixesText;
 
-    // 加载用户列表
     try {
       allUsers.value = await authApi.getAllUsers();
     } catch (error) {

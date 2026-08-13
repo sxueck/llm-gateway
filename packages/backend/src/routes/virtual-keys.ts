@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import { virtualKeyDb, providerDb, modelDb } from '../db/index.js';
+import { virtualKeyDb, providerDb, modelDb, contextNormalizationDb } from '../db/index.js';
 import { hotConfigCache } from '../services/hot-config-cache.js';
 import { hashKey } from '../utils/crypto.js';
 import { validateCustomKey } from '../utils/validation.js';
@@ -25,6 +25,7 @@ const createVirtualKeySchema = z.object({
   zeroTemperatureReplacement: z.number().min(0).max(2).optional(),
   piiProtectionEnabled: z.boolean().optional(),
   promptCaptureEnabled: z.boolean().optional(),
+  contextNormalizationEnabled: z.boolean().optional(),
 });
 
 const updateVirtualKeySchema = z.object({
@@ -44,6 +45,7 @@ const updateVirtualKeySchema = z.object({
   zeroTemperatureReplacement: z.number().min(0).max(2).optional(),
   piiProtectionEnabled: z.boolean().optional(),
   promptCaptureEnabled: z.boolean().optional(),
+  contextNormalizationEnabled: z.boolean().optional(),
 });
 
 const validateKeySchema = z.object({
@@ -75,6 +77,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
         zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
         piiProtectionEnabled: vk.pii_protection_enabled === 1,
         promptCaptureEnabled: vk.prompt_capture_enabled === 1,
+        contextNormalizationEnabled: vk.context_normalization_enabled === 1,
         createdAt: vk.created_at,
         updatedAt: vk.updated_at,
       })),
@@ -108,6 +111,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
       piiProtectionEnabled: vk.pii_protection_enabled === 1,
       promptCaptureEnabled: vk.prompt_capture_enabled === 1,
+      contextNormalizationEnabled: vk.context_normalization_enabled === 1,
       createdAt: vk.created_at,
       updatedAt: vk.updated_at,
     };
@@ -200,6 +204,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       zero_temperature_replacement: body.zeroTemperatureReplacement || null,
       pii_protection_enabled: body.piiProtectionEnabled ? 1 : 0,
       prompt_capture_enabled: body.promptCaptureEnabled ? 1 : 0,
+      context_normalization_enabled: body.contextNormalizationEnabled ? 1 : 0,
     });
 
     return {
@@ -222,6 +227,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
         zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
         piiProtectionEnabled: vk.pii_protection_enabled === 1,
         promptCaptureEnabled: vk.prompt_capture_enabled === 1,
+        contextNormalizationEnabled: vk.context_normalization_enabled === 1,
         createdAt: vk.created_at,
         updatedAt: vk.updated_at,
       },
@@ -298,6 +304,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     if (body.zeroTemperatureReplacement !== undefined) updates.zero_temperature_replacement = body.zeroTemperatureReplacement;
     if (body.piiProtectionEnabled !== undefined) updates.pii_protection_enabled = body.piiProtectionEnabled ? 1 : 0;
     if (body.promptCaptureEnabled !== undefined) updates.prompt_capture_enabled = body.promptCaptureEnabled ? 1 : 0;
+    if (body.contextNormalizationEnabled !== undefined) updates.context_normalization_enabled = body.contextNormalizationEnabled ? 1 : 0;
 
     await virtualKeyDb.update(id, updates);
     hotConfigCache.invalidateVirtualKey(vk.key_value);
@@ -326,6 +333,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       zeroTemperatureReplacement: updated.zero_temperature_replacement ? Number(updated.zero_temperature_replacement) : null,
       piiProtectionEnabled: updated.pii_protection_enabled === 1,
       promptCaptureEnabled: updated.prompt_capture_enabled === 1,
+      contextNormalizationEnabled: updated.context_normalization_enabled === 1,
       createdAt: updated.created_at,
       updatedAt: updated.updated_at,
     };
@@ -340,6 +348,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     }
 
     await virtualKeyDb.delete(id);
+    await contextNormalizationDb.deleteBindingsByScope(id);
     hotConfigCache.invalidateVirtualKey(vk.key_value);
 
     return { success: true };

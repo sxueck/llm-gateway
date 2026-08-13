@@ -282,7 +282,6 @@ const enrichedTargets = computed(() => {
   return props.config.config.targets.map((t: any) => {
     const provider = props.providers.find(p => p.id === t.provider);
     const modelId = t.override_params?.model;
-    // Attempt to find model name, fallback to ID
     const model = props.models.find(m => m.modelIdentifier === modelId && m.providerId === t.provider);
 
     return {

@@ -45,6 +45,7 @@ export interface VirtualKey {
   zero_temperature_replacement: number | null;
   pii_protection_enabled: number;
   prompt_capture_enabled: number;
+  context_normalization_enabled: number;
   created_at: number;
   updated_at: number;
 }

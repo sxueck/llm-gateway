@@ -34,6 +34,7 @@ import { costMappingRepository } from './repositories/cost-mapping.repository.js
 import { circuitBreakerStatsRepository } from './repositories/circuit-breaker-stats.repository.js';
 import { blockedIpRepository } from './repositories/blocked-ip.repository.js';
 import { promptSampleRepository } from './repositories/prompt-sample.repository.js';
+import { contextNormalizationRepository } from './repositories/context-normalization.repository.js';
 
 // Export repositories with backward-compatible names
 export const userDb = userRepository;
@@ -53,6 +54,7 @@ export const costMappingDb = costMappingRepository;
 export const circuitBreakerStatsDb = circuitBreakerStatsRepository;
 export const blockedIpDb = blockedIpRepository;
 export const promptSampleDb = promptSampleRepository;
+export const contextNormalizationDb = contextNormalizationRepository;
 
 // Enhanced initDatabase that also creates tables and runs migrations
 export async function initDatabase() {

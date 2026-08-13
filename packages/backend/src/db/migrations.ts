@@ -451,6 +451,79 @@ export const migrations: Migration[] = [
         console.log('[迁移] 已删除 circuit_breaker_events FK');
       }
     }
+  },
+  {
+    version: 39,
+    name: 'add_context_normalization_enabled_to_virtual_keys',
+    up: async (conn: Connection) => {
+      const [columns] = await conn.query(`
+        SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'virtual_keys'
+          AND COLUMN_NAME = 'context_normalization_enabled'
+      `);
+      if ((columns as any[]).length === 0) {
+        await conn.query(
+          `ALTER TABLE virtual_keys
+           ADD COLUMN context_normalization_enabled TINYINT DEFAULT 0
+           COMMENT '模型切换上下文规范化开关（0 关闭，1 开启）'
+           AFTER prompt_capture_enabled`
+        );
+        console.log('[迁移] 已添加 virtual_keys.context_normalization_enabled 字段');
+      }
+    },
+    down: async (conn: Connection) => {
+      await conn.query(
+        'ALTER TABLE virtual_keys DROP COLUMN IF EXISTS context_normalization_enabled'
+      );
+    }
+  },
+  {
+    version: 40,
+    name: 'add_context_normalization_tables',
+    up: async (conn: Connection) => {
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS session_context_bindings (
+          virtual_key_scope VARCHAR(255) NOT NULL,
+          session_id VARCHAR(256) NOT NULL,
+          fingerprint CHAR(64) NOT NULL,
+          protocol VARCHAR(50) NOT NULL,
+          context_version INT NOT NULL DEFAULT 1,
+          created_at BIGINT NOT NULL,
+          last_seen_at BIGINT NOT NULL,
+          idle_expires_at BIGINT NOT NULL,
+          absolute_expires_at BIGINT NOT NULL,
+          PRIMARY KEY (virtual_key_scope, session_id),
+          INDEX idx_ctx_bindings_idle_expires (idle_expires_at),
+          INDEX idx_ctx_bindings_absolute_expires (absolute_expires_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS context_switch_events (
+          id VARCHAR(255) PRIMARY KEY,
+          virtual_key_id VARCHAR(255) DEFAULT NULL,
+          session_id VARCHAR(256) NOT NULL,
+          protocol VARCHAR(50) NOT NULL,
+          source_fingerprint CHAR(64) DEFAULT NULL,
+          target_fingerprint CHAR(64) NOT NULL,
+          source_context_version INT DEFAULT NULL,
+          target_context_version INT NOT NULL,
+          strategy VARCHAR(50) NOT NULL,
+          cleaned_blocks INT NOT NULL DEFAULT 0,
+          cleaned_chars INT NOT NULL DEFAULT 0,
+          reason VARCHAR(500) DEFAULT NULL,
+          created_at BIGINT NOT NULL,
+          INDEX idx_ctx_switch_events_vk_session (virtual_key_id, session_id, created_at),
+          INDEX idx_ctx_switch_events_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      console.log('[迁移] 已创建 session_context_bindings 与 context_switch_events 表');
+    },
+    down: async (conn: Connection) => {
+      await conn.query('DROP TABLE IF EXISTS context_switch_events');
+      await conn.query('DROP TABLE IF EXISTS session_context_bindings');
+    }
   }
 ];
 

@@ -15,19 +15,16 @@ import type {
   ResponsesServerEventError,
 } from './types.js';
 
-/** Returns true if the given server event type is terminal. */
 export function isTerminalEventType(type: string | undefined): boolean {
   if (!type) return false;
   return TERMINAL_EVENT_TYPES.has(type);
 }
 
-/** Returns true if the event object itself represents a terminal condition. */
 export function isTerminalEvent(event: ResponsesServerEvent | undefined): boolean {
   if (!event) return false;
   return isTerminalEventType(event.type);
 }
 
-/** Build a standardised gateway error event. */
 export function buildErrorEvent(
   message: string,
   code: string,
@@ -47,8 +44,7 @@ export function buildErrorEvent(
 
 /** Normalise a downstream `response.create` payload.
  *  OpenAI Responses WebSocket events wrap the body under `.response`;
- *  HTTP POST bodies send the params directly. */
-export function normalizeResponseCreate(requestBody: any): NormalizedResponsesRequest {
+ *  HTTP POST bodies send the params directly. */export function normalizeResponseCreate(requestBody: any): NormalizedResponsesRequest {
   const body =
     requestBody?.type === 'response.create' &&
     requestBody?.response &&
@@ -117,8 +113,6 @@ export function parseClientWebSocketEvent(data: any, isBinary: boolean): Respons
   throw err;
 }
 
-/** Convert a parsed SSE event line into a `ResponsesServerEvent`.
- *  Returns `undefined` for `[DONE]` markers or unparseable lines. */
 export function parseSseEventLine(line: string): ResponsesServerEvent | undefined {
   const trimmed = line.trim();
   if (!trimmed || trimmed === '[DONE]') return undefined;
@@ -134,14 +128,12 @@ export function parseSseEventLine(line: string): ResponsesServerEvent | undefine
   return undefined;
 }
 
-/** Convert a `ResponsesServerEvent` into an SSE frame string. */
 export function serverEventToSseFrame(event: ResponsesServerEvent): string {
   const eventName = event.type;
   const data = JSON.stringify(event);
   return `event: ${eventName}\ndata: ${data}\n\n`;
 }
 
-/** Convert a `ResponsesServerEvent` into a WebSocket JSON text frame string. */
 export function serverEventToWsFrame(event: ResponsesServerEvent): string {
   return JSON.stringify(event);
 }

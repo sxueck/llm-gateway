@@ -5,6 +5,7 @@ import { logApiRequestToDb } from '../../services/api-request-logger.js';
 import { handleGeminiNativeNonStreamRequest, handleGeminiNativeStreamRequest } from './gemini-native.js';
 import { shouldLogRequestBody } from '../proxy/handlers/shared.js';
 import { capturePromptSampleAsync } from '../../services/prompt-capture-service.js';
+import { applyContextNormalization } from '../../services/context-normalization/index.js';
 
 export function createGeminiProxyHandler() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
@@ -79,6 +80,18 @@ export function createGeminiProxyHandler() {
       virtualKeyValue = vkValue;
       providerId = resolvedProviderId;
       currentModel = resolvedModel;
+
+      const normalization = await applyContextNormalization({
+        protocol: 'gemini',
+        request,
+        body: request.body,
+        providerId: resolvedProviderId,
+        model: (request.body as any)?.model || modelFromUrl,
+        virtualKey,
+      });
+      if (normalization.blocked) {
+        return reply.code(normalization.status).send(normalization.body);
+      }
 
       const { protocolConfig, vkDisplay, isStreamRequest } = configResult;
 

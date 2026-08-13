@@ -17,19 +17,16 @@ function truncateStringsRecursively(obj: any, maxLength: number = MAX_STRING_LEN
     return obj;
   }
 
-  // 如果是字符串，直接截断
   if (typeof obj === 'string') {
     return obj.length > maxLength
       ? obj.substring(0, maxLength) + '...[truncated]'
       : obj;
   }
 
-  // 如果是数组，递归处理每个元素
   if (Array.isArray(obj)) {
     return obj.map(item => truncateStringsRecursively(item, maxLength));
   }
 
-  // 如果是对象，递归处理每个属性
   if (typeof obj === 'object') {
     const result: any = {};
     for (const key in obj) {
@@ -40,7 +37,6 @@ function truncateStringsRecursively(obj: any, maxLength: number = MAX_STRING_LEN
     return result;
   }
 
-  // 其他类型（number, boolean 等）直接返回
   return obj;
 }
 

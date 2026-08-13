@@ -241,7 +241,6 @@ function generateRoutingConfig() {
 
   // Affinity 模式的特殊配置
   if (configType.value === 'affinity') {
-    // 将秒转换为毫秒
     strategy.affinityTTL = (formValue.value.affinityTTLSeconds || 300) * 1000;
   }
 

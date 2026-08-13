@@ -555,7 +555,6 @@ async function testS3Connection() {
     if (data.connected) {
       message.success('S3 连接测试成功');
     } else {
-      // Show detailed error message from backend
       const errorMsg = data.error || '未知错误';
       message.error(`S3 连接测试失败: ${errorMsg}`);
     }

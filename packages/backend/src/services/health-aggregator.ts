@@ -103,7 +103,6 @@ class HealthAggregatorService {
   async getAllTargetsSummary(useCache = true): Promise<TargetSummary[]> {
     const now = Date.now();
 
-    // 检查缓存
     if (useCache && this.summaryCache.data && now - this.summaryCache.timestamp < this.CACHE_TTL_MS) {
       return this.summaryCache.data;
     }
@@ -116,7 +115,6 @@ class HealthAggregatorService {
       summaries.push(summary);
     }
 
-    // 更新缓存
     this.summaryCache.data = summaries;
     this.summaryCache.timestamp = now;
 
@@ -141,7 +139,7 @@ class HealthAggregatorService {
     const runs24h = await healthRunDb.getByTimeWindow(targetId, now - window24h, now);
     const runs1h = runs24h.filter(r => r.created_at >= now - window1h);
 
-    // 获取7天统计数据 (使用聚合查询以提高性能)
+    // 聚合查询，避免逐条统计
     const stats7dRaw = await healthRunDb.getStats(targetId, now - window7d, now);
     const stats7d = {
       totalChecks: stats7dRaw.totalChecks,
@@ -161,13 +159,11 @@ class HealthAggregatorService {
 
     const stats24h = this.calculateStats(runs24h);
 
-    // 获取最近一次检查
     const latestRun = runs24h.length > 0 ? runs24h[runs24h.length - 1] : null;
 
-    // 确定当前状态（基于最近1小时的数据）
+    // 基于最近1小时的数据确定当前状态
     const currentStatus = determineStatus(runs1h, window1h);
 
-    // 转换最近的检查记录为历史数据
     const healthHistory = recentRuns.map(run => ({
       status: run.status,
       timestamp: run.created_at,
@@ -203,7 +199,6 @@ class HealthAggregatorService {
   async getGlobalSummary(useCache = true): Promise<GlobalSummary> {
     const now = Date.now();
 
-    // 检查缓存
     if (useCache && this.globalCache.data && now - this.globalCache.timestamp < this.CACHE_TTL_MS) {
       return this.globalCache.data;
     }
@@ -236,7 +231,6 @@ class HealthAggregatorService {
       overall24hAvgLatency: Math.round(overall24hAvgLatency),
     };
 
-    // 更新缓存
     this.globalCache.data = globalSummary;
     this.globalCache.timestamp = now;
 

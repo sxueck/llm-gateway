@@ -142,7 +142,6 @@ export async function resolveModelConfig(
   };
 }
 
-// Helper to match experts (from expert-router.ts selectExpert)
 export function matchExpert(category: string, experts: ExpertTarget[]): ExpertTarget | null {
     const normalizedCategory = category.trim().toLowerCase();
 
