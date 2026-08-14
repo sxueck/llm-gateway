@@ -2,7 +2,7 @@
   <div>
     <n-space vertical :size="24">
       <n-card title="S3 存储配置">
-        <n-alert type="info" style="margin-bottom: 16px;">
+        <n-alert type="info" style="margin-bottom: 16px">
           支持所有 S3 兼容存储服务：AWS S3、MinIO、Cloudflare R2、阿里云 OSS 等
         </n-alert>
 
@@ -10,17 +10,14 @@
           <n-grid :cols="2" :x-gap="24">
             <n-gi>
               <n-form-item label="端点地址" required>
-                <n-input
-                  v-model:value="s3Config.endpoint"
-                  placeholder="http://localhost:9000"
-                >
+                <n-input v-model:value="s3Config.endpoint" placeholder="http://localhost:9000">
                   <template #suffix>
                     <n-popover trigger="hover">
-                  <template #trigger>
-                    <n-icon size="18" style="cursor: help;">
-                      <SvgIcon :path="HELP_CIRCLE_PATH" viewBox="0 0 512 512" :size="18" />
-                    </n-icon>
-                  </template>
+                      <template #trigger>
+                        <n-icon size="18" style="cursor: help">
+                          <SvgIcon :path="HELP_CIRCLE_PATH" viewBox="0 0 512 512" :size="18" />
+                        </n-icon>
+                      </template>
                       AWS S3 留空，其他服务填写完整 URL
                     </n-popover>
                   </template>
@@ -44,7 +41,7 @@
                     <template #checked>启用</template>
                     <template #unchecked>禁用</template>
                   </n-switch>
-                  <n-text depth="3" style="font-size: 12px;">
+                  <n-text depth="3" style="font-size: 12px">
                     MinIO 需要启用，阿里云 OSS 需要禁用
                   </n-text>
                 </n-space>
@@ -68,13 +65,11 @@
           </n-grid>
         </n-form>
 
-        <n-space style="margin-top: 16px;">
+        <n-space style="margin-top: 16px">
           <n-button type="primary" @click="saveS3Config" :loading="savingS3Config">
             保存配置
           </n-button>
-          <n-button @click="testS3Connection" :loading="testingConnection">
-            测试连接
-          </n-button>
+          <n-button @click="testS3Connection" :loading="testingConnection">测试连接</n-button>
           <n-button @click="loadS3Config">刷新配置</n-button>
         </n-space>
       </n-card>
@@ -91,7 +86,7 @@
               v-model:value="backupConfig.schedule"
               size="small"
               placeholder="0 2 * * *"
-              style="width: 150px;"
+              style="width: 150px"
             />
           </n-descriptions-item>
           <n-descriptions-item label="保留天数">
@@ -100,7 +95,7 @@
               :min="1"
               :max="365"
               size="small"
-              style="width: 100px;"
+              style="width: 100px"
             />
           </n-descriptions-item>
           <n-descriptions-item label="最大数量">
@@ -109,14 +104,19 @@
               :min="1"
               :max="100"
               size="small"
-              style="width: 100px;"
+              style="width: 100px"
             />
           </n-descriptions-item>
           <n-descriptions-item label="包含日志">
             <n-switch v-model:value="backupConfig.includeLogs" size="small" />
           </n-descriptions-item>
           <n-descriptions-item>
-            <n-button type="primary" size="small" @click="updateBackupConfig" :loading="updatingConfig">
+            <n-button
+              type="primary"
+              size="small"
+              @click="updateBackupConfig"
+              :loading="updatingConfig"
+            >
               更新配置
             </n-button>
           </n-descriptions-item>
@@ -126,9 +126,7 @@
       <n-card title="备份列表">
         <template #header-extra>
           <n-space>
-            <n-button type="primary" @click="showCreateBackupModal = true">
-              创建备份
-            </n-button>
+            <n-button type="primary" @click="showCreateBackupModal = true">创建备份</n-button>
             <n-button type="info" @click="syncBackupsFromS3" :loading="syncingBackups">
               <template #icon>
                 <n-icon>
@@ -181,14 +179,19 @@
       </n-card>
     </n-space>
 
-    <n-modal v-model:show="showCreateBackupModal" preset="dialog" title="创建备份" :trap-focus="true">
+    <n-modal
+      v-model:show="showCreateBackupModal"
+      preset="dialog"
+      title="创建备份"
+      :trap-focus="true"
+    >
       <n-form :model="createBackupForm" label-placement="left" label-width="100">
         <n-form-item label="包含日志">
           <n-switch v-model:value="createBackupForm.includeLogs" />
         </n-form-item>
       </n-form>
 
-      <n-alert type="info" style="margin-top: 16px;">
+      <n-alert type="info" style="margin-top: 16px">
         完整备份将包含所有配置数据(提供商、模型、虚拟密钥等),并上传到 S3 存储。
       </n-alert>
 
@@ -202,15 +205,19 @@
       </template>
     </n-modal>
 
-    <n-modal v-model:show="showRestoreModal" preset="dialog" title="恢复备份" style="width: 600px;" :trap-focus="true">
+    <n-modal
+      v-model:show="showRestoreModal"
+      preset="dialog"
+      title="恢复备份"
+      style="width: 600px; max-width: 92vw"
+      :trap-focus="true"
+    >
       <n-descriptions bordered :column="1" size="small">
         <n-descriptions-item label="备份文件">
           {{ selectedBackup?.backup_key }}
         </n-descriptions-item>
         <n-descriptions-item label="备份类型">
-          <n-tag type="success" size="small">
-            完整备份
-          </n-tag>
+          <n-tag type="success" size="small">完整备份</n-tag>
         </n-descriptions-item>
         <n-descriptions-item label="创建时间">
           {{ formatTimestamp(selectedBackup?.created_at) }}
@@ -250,20 +257,16 @@
 
         <n-form-item label="恢复前备份当前数据">
           <n-switch v-model:value="restoreForm.createBackupBeforeRestore" />
-          <n-text depth="3" style="font-size: 12px; margin-left: 12px;">
-            强烈建议启用
-          </n-text>
+          <n-text depth="3" style="font-size: 12px; margin-left: 12px">强烈建议启用</n-text>
         </n-form-item>
       </n-form>
 
-      <n-alert type="warning" style="margin-top: 16px;">
+      <n-alert type="warning" style="margin-top: 16px">
         <template #header>⚠️ 警告</template>
         <template v-if="restoreForm.restoreType === 'full'">
           此操作将覆盖当前所有配置数据！请确认您了解此操作的后果。
         </template>
-        <template v-else>
-          此操作将覆盖选中表的数据！请确认您了解此操作的后果。
-        </template>
+        <template v-else>此操作将覆盖选中表的数据！请确认您了解此操作的后果。</template>
       </n-alert>
 
       <template #action>
@@ -279,7 +282,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, h } from 'vue';
+import { ref, onMounted, h } from 'vue'
 import {
   useMessage,
   NButton,
@@ -306,16 +309,19 @@ import {
   NDivider,
   NCheckboxGroup,
   NCheckbox,
-  NText,
-} from 'naive-ui';
-import request from '@/utils/request';
-import SvgIcon from '@/components/SvgIcon.vue';
+  NText
+} from 'naive-ui'
+import request from '@/utils/request'
+import SvgIcon from '@/components/SvgIcon.vue'
 
-const HELP_CIRCLE_PATH = 'M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z';
-const CLOUD_DOWNLOAD_PATH = 'M144 480C64.5 480 0 415.5 0 336c0-62.8 40.2-116.2 96.2-135.9c-.1-2.7-.2-5.4-.2-8.1c0-88.4 71.6-160 160-160c59.3 0 111 32.2 138.7 80.2C409.9 102 428.3 96 448 96c53 0 96 43 96 96c0 12.2-2.3 23.8-6.4 34.6C596 238.4 640 290.1 640 352c0 70.7-57.3 128-128 128H144zm79-167l80 80c9.4 9.4 24.6 9.4 33.9 0l80-80c9.4-9.4 9.4-24.6 0-33.9s-24.6-9.4-33.9 0l-39 39V184c0-13.3-10.7-24-24-24s-24 10.7-24 24V318.1l-39-39c-9.4-9.4-24.6-9.4-33.9 0s-9.4 24.6 0 33.9z';
-const REFRESH_PATH = 'M105.1 202.6c7.7-21.8 20.2-42.3 37.8-59.8c62.5-62.5 163.8-62.5 226.3 0L386.3 160H336c-17.7 0-32 14.3-32 32s14.3 32 32 32H463.5c0 0 0 0 0 0h.4c17.7 0 32-14.3 32-32V64c0-17.7-14.3-32-32-32s-32 14.3-32 32v51.2L414.4 97.6c-87.5-87.5-229.3-87.5-316.8 0C73.2 122 55.6 150.7 44.8 181.4c-5.9 16.7 2.9 34.9 19.5 40.8s34.9-2.9 40.8-19.5zM39 289.3c-5 1.5-9.8 4.2-13.7 8.2c-4 4-6.7 8.8-8.1 14c-.3 1.2-.6 2.5-.8 3.8c-.3 1.7-.4 3.4-.4 5.1V448c0 17.7 14.3 32 32 32s32-14.3 32-32V396.9l17.6 17.5 0 0c87.5 87.4 229.3 87.4 316.7 0c24.4-24.4 42.1-53.1 52.9-83.7c5.9-16.7-2.9-34.9-19.5-40.8s-34.9 2.9-40.8 19.5c-7.7 21.8-20.2 42.3-37.8 59.8c-62.5 62.5-163.8 62.5-226.3 0l-.1-.1L125.6 352H176c17.7 0 32-14.3 32-32s-14.3-32-32-32H48.4c-1.6 0-3.2 .1-4.8 .3s-3.1 .5-4.6 1z';
+const HELP_CIRCLE_PATH =
+  'M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z'
+const CLOUD_DOWNLOAD_PATH =
+  'M144 480C64.5 480 0 415.5 0 336c0-62.8 40.2-116.2 96.2-135.9c-.1-2.7-.2-5.4-.2-8.1c0-88.4 71.6-160 160-160c59.3 0 111 32.2 138.7 80.2C409.9 102 428.3 96 448 96c53 0 96 43 96 96c0 12.2-2.3 23.8-6.4 34.6C596 238.4 640 290.1 640 352c0 70.7-57.3 128-128 128H144zm79-167l80 80c9.4 9.4 24.6 9.4 33.9 0l80-80c9.4-9.4 9.4-24.6 0-33.9s-24.6-9.4-33.9 0l-39 39V184c0-13.3-10.7-24-24-24s-24 10.7-24 24V318.1l-39-39c-9.4-9.4-24.6-9.4-33.9 0s-9.4 24.6 0 33.9z'
+const REFRESH_PATH =
+  'M105.1 202.6c7.7-21.8 20.2-42.3 37.8-59.8c62.5-62.5 163.8-62.5 226.3 0L386.3 160H336c-17.7 0-32 14.3-32 32s14.3 32 32 32H463.5c0 0 0 0 0 0h.4c17.7 0 32-14.3 32-32V64c0-17.7-14.3-32-32-32s-32 14.3-32 32v51.2L414.4 97.6c-87.5-87.5-229.3-87.5-316.8 0C73.2 122 55.6 150.7 44.8 181.4c-5.9 16.7 2.9 34.9 19.5 40.8s34.9-2.9 40.8-19.5zM39 289.3c-5 1.5-9.8 4.2-13.7 8.2c-4 4-6.7 8.8-8.1 14c-.3 1.2-.6 2.5-.8 3.8c-.3 1.7-.4 3.4-.4 5.1V448c0 17.7 14.3 32 32 32s32-14.3 32-32V396.9l17.6 17.5 0 0c87.5 87.4 229.3 87.4 316.7 0c24.4-24.4 42.1-53.1 52.9-83.7c5.9-16.7-2.9-34.9-19.5-40.8s-34.9 2.9-40.8 19.5c-7.7 21.8-20.2 42.3-37.8 59.8c-62.5 62.5-163.8 62.5-226.3 0l-.1-.1L125.6 352H176c17.7 0 32-14.3 32-32s-14.3-32-32-32H48.4c-1.6 0-3.2 .1-4.8 .3s-3.1 .5-4.6 1z'
 
-const message = useMessage();
+const message = useMessage()
 
 const s3Config = ref({
   endpoint: 'http://localhost:9000',
@@ -324,7 +330,7 @@ const s3Config = ref({
   accessKeyId: '',
   secretAccessKey: '',
   forcePathStyle: true
-});
+})
 
 const backupConfig = ref({
   schedule: '0 2 * * *',
@@ -332,33 +338,33 @@ const backupConfig = ref({
   maxBackupCount: 50,
   includeLogs: false,
   schedulerRunning: false
-});
+})
 
-const testingConnection = ref(false);
-const savingS3Config = ref(false);
-const updatingConfig = ref(false);
-const loadingBackups = ref(false);
-const loadingRestores = ref(false);
-const creatingBackup = ref(false);
-const restoringBackup = ref(false);
-const syncingBackups = ref(false);
+const testingConnection = ref(false)
+const savingS3Config = ref(false)
+const updatingConfig = ref(false)
+const loadingBackups = ref(false)
+const loadingRestores = ref(false)
+const creatingBackup = ref(false)
+const restoringBackup = ref(false)
+const syncingBackups = ref(false)
 
-const showCreateBackupModal = ref(false);
-const showRestoreModal = ref(false);
+const showCreateBackupModal = ref(false)
+const showRestoreModal = ref(false)
 
 const createBackupForm = ref({
   includeLogs: false
-});
+})
 
 const restoreForm = ref({
   restoreType: 'full',
   createBackupBeforeRestore: true,
   tablesToRestore: [] as string[]
-});
+})
 
-const backupList = ref<any[]>([]);
-const restoreList = ref<any[]>([]);
-const selectedBackup = ref<any>(null);
+const backupList = ref<any[]>([])
+const restoreList = ref<any[]>([])
+const selectedBackup = ref<any>(null)
 
 const backupPagination = ref({
   page: 1,
@@ -367,15 +373,15 @@ const backupPagination = ref({
   pageSizes: [10, 20, 50],
   itemCount: 0,
   onChange: (page: number) => {
-    backupPagination.value.page = page;
-    loadBackupList();
+    backupPagination.value.page = page
+    loadBackupList()
   },
   onUpdatePageSize: (pageSize: number) => {
-    backupPagination.value.pageSize = pageSize;
-    backupPagination.value.page = 1;
-    loadBackupList();
+    backupPagination.value.pageSize = pageSize
+    backupPagination.value.page = 1
+    loadBackupList()
   }
-});
+})
 
 const restorePagination = ref({
   page: 1,
@@ -384,15 +390,15 @@ const restorePagination = ref({
   pageSizes: [10, 20, 50],
   itemCount: 0,
   onChange: (page: number) => {
-    restorePagination.value.page = page;
-    loadRestoreList();
+    restorePagination.value.page = page
+    loadRestoreList()
   },
   onUpdatePageSize: (pageSize: number) => {
-    restorePagination.value.pageSize = pageSize;
-    restorePagination.value.page = 1;
-    loadRestoreList();
+    restorePagination.value.pageSize = pageSize
+    restorePagination.value.page = 1
+    loadRestoreList()
   }
-});
+})
 
 const backupColumns = [
   {
@@ -411,9 +417,9 @@ const backupColumns = [
         running: { type: 'info', text: '运行中' },
         completed: { type: 'success', text: '已完成' },
         failed: { type: 'error', text: '失败' }
-      };
-      const status = statusMap[row.status] || { type: 'default', text: row.status };
-      return h(NTag, { type: status.type, size: 'small' }, () => status.text);
+      }
+      const status = statusMap[row.status] || { type: 'default', text: row.status }
+      return h(NTag, { type: status.type, size: 'small' }, () => status.text)
     }
   },
   {
@@ -421,7 +427,7 @@ const backupColumns = [
     key: 'file_size',
     width: 120,
     render(row: any) {
-      return formatFileSize(row.file_size);
+      return formatFileSize(row.file_size)
     }
   },
   {
@@ -434,7 +440,7 @@ const backupColumns = [
     key: 'created_at',
     width: 180,
     render(row: any) {
-      return formatTimestamp(row.created_at);
+      return formatTimestamp(row.created_at)
     }
   },
   {
@@ -463,10 +469,10 @@ const backupColumns = [
             default: () => '确定删除此备份吗？'
           }
         )
-      ]);
+      ])
     }
   }
-];
+]
 
 const restoreColumns = [
   {
@@ -486,9 +492,9 @@ const restoreColumns = [
         completed: { type: 'success', text: '已完成' },
         failed: { type: 'error', text: '失败' },
         rollback: { type: 'warning', text: '已回滚' }
-      };
-      const status = statusMap[row.status] || { type: 'default', text: row.status };
-      return h(NTag, { type: status.type, size: 'small' }, () => status.text);
+      }
+      const status = statusMap[row.status] || { type: 'default', text: row.status }
+      return h(NTag, { type: status.type, size: 'small' }, () => status.text)
     }
   },
   {
@@ -502,7 +508,7 @@ const restoreColumns = [
     key: 'created_at',
     width: 180,
     render(row: any) {
-      return formatTimestamp(row.created_at);
+      return formatTimestamp(row.created_at)
     }
   },
   {
@@ -510,16 +516,16 @@ const restoreColumns = [
     key: 'duration',
     width: 100,
     render(row: any) {
-      if (!row.started_at || !row.completed_at) return '-';
-      const duration = row.completed_at - row.started_at;
-      return `${Math.round(duration / 1000)}秒`;
+      if (!row.started_at || !row.completed_at) return '-'
+      const duration = row.completed_at - row.started_at
+      return `${Math.round(duration / 1000)}秒`
     }
   }
-];
+]
 
 async function loadS3Config() {
   try {
-    const data = await request.get('/admin/backup/s3-config');
+    const data = await request.get('/admin/backup/s3-config')
 
     s3Config.value = {
       endpoint: data.endpoint,
@@ -528,46 +534,46 @@ async function loadS3Config() {
       accessKeyId: data.accessKeyId,
       secretAccessKey: data.secretAccessKey, // Already '******' from backend
       forcePathStyle: data.forcePathStyle
-    };
+    }
   } catch (error: any) {
-    message.error(`加载S3配置失败: ${error.message}`);
+    message.error(`加载S3配置失败: ${error.message}`)
   }
 }
 
 async function saveS3Config() {
-  savingS3Config.value = true;
+  savingS3Config.value = true
   try {
-    await request.put('/admin/backup/s3-config', s3Config.value);
+    await request.put('/admin/backup/s3-config', s3Config.value)
 
-    message.success('S3配置保存成功');
+    message.success('S3配置保存成功')
   } catch (error: any) {
-    message.error(`保存S3配置失败: ${error.message}`);
+    message.error(`保存S3配置失败: ${error.message}`)
   } finally {
-    savingS3Config.value = false;
+    savingS3Config.value = false
   }
 }
 
 async function testS3Connection() {
-  testingConnection.value = true;
+  testingConnection.value = true
   try {
-    const data = await request.post('/admin/backup/test-s3', s3Config.value);
+    const data = await request.post('/admin/backup/test-s3', s3Config.value)
 
     if (data.connected) {
-      message.success('S3 连接测试成功');
+      message.success('S3 连接测试成功')
     } else {
-      const errorMsg = data.error || '未知错误';
-      message.error(`S3 连接测试失败: ${errorMsg}`);
+      const errorMsg = data.error || '未知错误'
+      message.error(`S3 连接测试失败: ${errorMsg}`)
     }
   } catch (error: any) {
-    message.error(`S3 连接测试失败: ${error.response?.data?.error?.message || error.message}`);
+    message.error(`S3 连接测试失败: ${error.response?.data?.error?.message || error.message}`)
   } finally {
-    testingConnection.value = false;
+    testingConnection.value = false
   }
 }
 
 async function loadBackupConfig() {
   try {
-    const data = await request.get('/admin/backup/config');
+    const data = await request.get('/admin/backup/config')
 
     backupConfig.value = {
       schedule: data.schedule,
@@ -575,33 +581,33 @@ async function loadBackupConfig() {
       maxBackupCount: data.max_backup_count,
       includeLogs: data.include_logs,
       schedulerRunning: data.scheduler_running
-    };
+    }
   } catch (error: any) {
-    message.error(`加载配置失败: ${error.message}`);
+    message.error(`加载配置失败: ${error.message}`)
   }
 }
 
 async function updateBackupConfig() {
-  updatingConfig.value = true;
+  updatingConfig.value = true
   try {
     await request.put('/admin/backup/config', {
       schedule: backupConfig.value.schedule,
       retention_days: backupConfig.value.retentionDays,
       max_backup_count: backupConfig.value.maxBackupCount,
       include_logs: backupConfig.value.includeLogs
-    });
+    })
 
-    message.success('配置更新成功');
-    await loadBackupConfig();
+    message.success('配置更新成功')
+    await loadBackupConfig()
   } catch (error: any) {
-    message.error(`配置更新失败: ${error.message}`);
+    message.error(`配置更新失败: ${error.message}`)
   } finally {
-    updatingConfig.value = false;
+    updatingConfig.value = false
   }
 }
 
 async function loadBackupList() {
-  loadingBackups.value = true;
+  loadingBackups.value = true
   try {
     const data = await request.get('/admin/backup/list', {
       params: {
@@ -609,19 +615,19 @@ async function loadBackupList() {
         limit: backupPagination.value.pageSize,
         status: 'all'
       }
-    });
+    })
 
-    backupList.value = data.backups;
-    backupPagination.value.itemCount = data.total;
+    backupList.value = data.backups
+    backupPagination.value.itemCount = data.total
   } catch (error: any) {
-    message.error(`加载备份列表失败: ${error.message}`);
+    message.error(`加载备份列表失败: ${error.message}`)
   } finally {
-    loadingBackups.value = false;
+    loadingBackups.value = false
   }
 }
 
 async function loadRestoreList() {
-  loadingRestores.value = true;
+  loadingRestores.value = true
   try {
     const data = await request.get('/admin/restore/list', {
       params: {
@@ -629,135 +635,138 @@ async function loadRestoreList() {
         limit: restorePagination.value.pageSize,
         status: 'all'
       }
-    });
+    })
 
-    restoreList.value = data.restores;
-    restorePagination.value.itemCount = data.total;
+    restoreList.value = data.restores
+    restorePagination.value.itemCount = data.total
   } catch (error: any) {
-    message.error(`加载恢复列表失败: ${error.message}`);
+    message.error(`加载恢复列表失败: ${error.message}`)
   } finally {
-    loadingRestores.value = false;
+    loadingRestores.value = false
   }
 }
 
 async function confirmCreateBackup() {
-  await createBackup();
+  await createBackup()
 }
 
 async function createBackup() {
-  creatingBackup.value = true;
+  creatingBackup.value = true
   try {
     await request.post('/admin/backup/create', {
       includes_logs: createBackupForm.value.includeLogs
-    });
+    })
 
-    message.success('备份任务已启动，请稍后刷新列表查看进度');
-    showCreateBackupModal.value = false;
+    message.success('备份任务已启动，请稍后刷新列表查看进度')
+    showCreateBackupModal.value = false
 
     setTimeout(() => {
-      loadBackupList();
-    }, 2000);
+      loadBackupList()
+    }, 2000)
   } catch (error: any) {
-    message.error(`创建备份失败: ${error.response?.data?.error?.message || error.message}`);
+    message.error(`创建备份失败: ${error.response?.data?.error?.message || error.message}`)
   } finally {
-    creatingBackup.value = false;
+    creatingBackup.value = false
   }
 }
 
 async function syncBackupsFromS3() {
-  syncingBackups.value = true;
+  syncingBackups.value = true
   try {
-    const data = await request.post('/admin/backup/sync', {});
+    const data = await request.post('/admin/backup/sync', {})
 
-    message.success(data.message);
-    await loadBackupList();
+    message.success(data.message)
+    await loadBackupList()
   } catch (error: any) {
-    message.error(`同步备份失败: ${error.message}`);
+    message.error(`同步备份失败: ${error.message}`)
   } finally {
-    syncingBackups.value = false;
+    syncingBackups.value = false
   }
 }
 
 function openRestoreModal(backup: any) {
-  selectedBackup.value = backup;
+  selectedBackup.value = backup
   restoreForm.value = {
     restoreType: 'full',
     createBackupBeforeRestore: true,
     tablesToRestore: []
-  };
-  showRestoreModal.value = true;
+  }
+  showRestoreModal.value = true
 }
 
 async function confirmRestoreBackup() {
-  if (!selectedBackup.value) return;
+  if (!selectedBackup.value) return
 
-  if (restoreForm.value.restoreType === 'partial' && restoreForm.value.tablesToRestore.length === 0) {
-    message.error('请至少选择一个要恢复的表');
-    return;
+  if (
+    restoreForm.value.restoreType === 'partial' &&
+    restoreForm.value.tablesToRestore.length === 0
+  ) {
+    message.error('请至少选择一个要恢复的表')
+    return
   }
 
-  await restoreBackup();
+  await restoreBackup()
 }
 
 async function restoreBackup() {
-  if (!selectedBackup.value) return;
+  if (!selectedBackup.value) return
 
-  restoringBackup.value = true;
+  restoringBackup.value = true
   try {
     const payload: any = {
       backup_id: selectedBackup.value.id,
       restore_type: restoreForm.value.restoreType,
       create_backup_before_restore: restoreForm.value.createBackupBeforeRestore
-    };
-
-    if (restoreForm.value.restoreType === 'partial') {
-      payload.tables_to_restore = restoreForm.value.tablesToRestore;
     }
 
-    await request.post('/admin/restore', payload);
+    if (restoreForm.value.restoreType === 'partial') {
+      payload.tables_to_restore = restoreForm.value.tablesToRestore
+    }
 
-    message.success('恢复任务已启动，请稍后刷新列表查看进度');
-    showRestoreModal.value = false;
+    await request.post('/admin/restore', payload)
+
+    message.success('恢复任务已启动，请稍后刷新列表查看进度')
+    showRestoreModal.value = false
 
     setTimeout(() => {
-      loadRestoreList();
-    }, 2000);
+      loadRestoreList()
+    }, 2000)
   } catch (error: any) {
-    message.error(`恢复失败: ${error.message}`);
+    message.error(`恢复失败: ${error.message}`)
   } finally {
-    restoringBackup.value = false;
+    restoringBackup.value = false
   }
 }
 
 async function deleteBackup(id: string) {
   try {
-    await request.delete(`/admin/backup/${id}`);
+    await request.delete(`/admin/backup/${id}`)
 
-    message.success('备份已删除');
-    await loadBackupList();
+    message.success('备份已删除')
+    await loadBackupList()
   } catch (error: any) {
-    message.error(`删除备份失败: ${error.message}`);
+    message.error(`删除备份失败: ${error.message}`)
   }
 }
 
 function formatTimestamp(timestamp?: number): string {
-  if (!timestamp) return '-';
-  return new Date(timestamp).toLocaleString('zh-CN');
+  if (!timestamp) return '-'
+  return new Date(timestamp).toLocaleString('zh-CN')
 }
 
 function formatFileSize(bytes?: number): string {
-  if (!bytes) return '-';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  if (!bytes) return '-'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`
 }
 
 onMounted(() => {
-  loadS3Config();
-  loadBackupConfig();
-  loadBackupList();
-  loadRestoreList();
-});
+  loadS3Config()
+  loadBackupConfig()
+  loadBackupList()
+  loadRestoreList()
+})
 </script>
 
 <style scoped>

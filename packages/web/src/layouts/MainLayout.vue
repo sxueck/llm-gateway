@@ -193,7 +193,7 @@ function syncMenuExpandedKeys() {
 }
 
 const { windowHeight } = useDebouncedWindowSize(200, (width) => {
-  collapsed.value = width < 768;
+  collapsed.value = width < 1024;
   syncMenuExpandedKeys();
 });
 

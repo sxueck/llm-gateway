@@ -217,7 +217,7 @@
       preset="card"
       :title="t('expertRouting.statistics')"
       class="statistics-modal"
-      :style="{ width: '800px', maxHeight: '85vh' }"
+      :style="{ width: '800px', maxWidth: '92vw', maxHeight: '85vh' }"
       :segmented="{
         content: 'soft',
         footer: 'soft'
@@ -231,7 +231,6 @@
 </template>
 
 <style scoped>
-@import '@/styles/modal.css';
 .expert-routing-modal :deep(.n-card__content) {
   padding: 0;
   overflow: hidden;

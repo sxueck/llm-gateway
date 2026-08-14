@@ -35,9 +35,7 @@
           <span>{{ t('expertRouting.classifier') }}</span>
         </div>
         <div class="node-body">
-          <n-text depth="3" style="font-size: 12px">
-            本地 ONNX 意图分类
-          </n-text>
+          <n-text depth="3" style="font-size: 12px">本地 ONNX 意图分类</n-text>
           <n-tag size="tiny" type="success">intent-router</n-tag>
         </div>
       </div>
@@ -45,11 +43,7 @@
       <div class="arrow">→</div>
 
       <div class="experts-container">
-        <div
-          v-for="(expert, index) in localExperts"
-          :key="expert.id"
-          class="expert-item"
-        >
+        <div v-for="(expert, index) in localExperts" :key="expert.id" class="expert-item">
           <div class="node expert-node" @click="editable ? handleEditExpert(expert) : undefined">
             <div class="node-header" :style="{ backgroundColor: expert.color || '#f0f0f0' }">
               <n-icon size="18"><CubeOutline /></n-icon>
@@ -70,7 +64,11 @@
                 {{ getExpertLabel(expert) }}
               </n-text>
               <n-tag size="tiny" :type="expert.type === 'virtual' ? 'info' : 'success'">
-                {{ expert.type === 'virtual' ? t('expertRouting.virtualModel') : t('expertRouting.realModel') }}
+                {{
+                  expert.type === 'virtual'
+                    ? t('expertRouting.virtualModel')
+                    : t('expertRouting.realModel')
+                }}
               </n-tag>
             </div>
           </div>
@@ -95,7 +93,7 @@
       </div>
     </div>
 
-    <n-drawer v-model:show="showExpertDrawer" :width="640">
+    <n-drawer v-model:show="showExpertDrawer" :width="expertDrawerWidth">
       <n-drawer-content :title="t('expertRouting.editExpert')">
         <ExpertForm
           v-if="showExpertDrawer"
@@ -116,6 +114,7 @@
       :title="t('expertRouting.selectExpertTemplate')"
       class="template-selector-modal"
       :style="{ width: '1200px', maxWidth: '95vw', height: '85vh' }"
+      :content-style="{ flex: 1, overflowY: 'auto', padding: '0' }"
       :bordered="false"
       size="huge"
     >
@@ -125,8 +124,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
-import { useI18n } from 'vue-i18n';
+import { ref, watch, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   NSpace,
   NButton,
@@ -138,76 +137,82 @@ import {
   NDrawer,
   NDrawerContent,
   NModal,
-  useDialog,
-} from 'naive-ui';
+  useDialog
+} from 'naive-ui'
 import {
   AddOutline,
   CloseOutline,
   EnterOutline,
   FilterOutline,
-  CubeOutline,
-} from '@vicons/ionicons5';
-import type { ExpertTarget, LlmSecondPassConfig, ExpertTemplate } from '@/api/expert-routing';
-import ExpertForm from './ExpertForm.vue';
-import ExpertTemplateSelector from './ExpertTemplateSelector.vue';
+  CubeOutline
+} from '@vicons/ionicons5'
+import type { ExpertTarget, LlmSecondPassConfig, ExpertTemplate } from '@/api/expert-routing'
+import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize'
+import ExpertForm from './ExpertForm.vue'
+import ExpertTemplateSelector from './ExpertTemplateSelector.vue'
 
 function generateId(): string {
-  return `expert_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  return `expert_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
 }
 
-const { t } = useI18n();
-const dialog = useDialog();
+const { t } = useI18n()
+const dialog = useDialog()
 
 interface Props {
-  experts?: ExpertTarget[];
-  routes?: { category: string; utterances: string[] }[];
-  classifierConfig?: LlmSecondPassConfig;
-  providerOptions?: Array<{ label: string; value: string }>;
-  virtualModelOptions?: Array<{ label: string; value: string }>;
-  config?: any;
-  editable?: boolean;
-  showUtterances?: boolean;
+  experts?: ExpertTarget[]
+  routes?: { category: string; utterances: string[] }[]
+  classifierConfig?: LlmSecondPassConfig
+  providerOptions?: Array<{ label: string; value: string }>
+  virtualModelOptions?: Array<{ label: string; value: string }>
+  config?: any
+  editable?: boolean
+  showUtterances?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   experts: () => [],
   routes: () => [],
   editable: false,
-  showUtterances: false,
-});
+  showUtterances: false
+})
 
 const emit = defineEmits<{
-  'update:experts': [experts: ExpertTarget[]];
-  'update:routes': [routes: { category: string; utterances: string[] }[]];
-}>();
+  'update:experts': [experts: ExpertTarget[]]
+  'update:routes': [routes: { category: string; utterances: string[] }[]]
+}>()
 
-const localExperts = ref<ExpertTarget[]>([...props.experts]);
-const localRoutes = ref<{ category: string; utterances: string[] }[]>([...(props.routes || [])]);
-const showExpertDrawer = ref(false);
-const showTemplateSelector = ref(false);
+const localExperts = ref<ExpertTarget[]>([...props.experts])
+const localRoutes = ref<{ category: string; utterances: string[] }[]>([...(props.routes || [])])
+const showExpertDrawer = ref(false)
+
+const { windowWidth: expertDrawerWindowWidth } = useDebouncedWindowSize(200)
+const expertDrawerWidth = computed(() =>
+  Math.min(640, Math.max(320, expertDrawerWindowWidth.value - 24))
+)
+const showTemplateSelector = ref(false)
 const editingExpert = ref<ExpertTarget>({
   id: '',
   category: '',
-  type: 'real',
-});
-const editingUtterances = ref<string[]>([]);
+  type: 'real'
+})
+const editingUtterances = ref<string[]>([])
 
 function getExpertLabel(expert: ExpertTarget): string {
   if (expert.type === 'virtual') {
-    const option = props.virtualModelOptions?.find(o => o.value === expert.model_id);
-    return option?.label || expert.model_id || '';
+    const option = props.virtualModelOptions?.find(o => o.value === expert.model_id)
+    return option?.label || expert.model_id || ''
   } else {
-    return expert.model || '';
+    return expert.model || ''
   }
 }
 
 function handleAddExpert() {
-  showTemplateSelector.value = true;
+  showTemplateSelector.value = true
 }
 
 function handleTemplateSelect(template: ExpertTemplate | null) {
-  showTemplateSelector.value = false;
-  
+  showTemplateSelector.value = false
+
   const colorMap: Record<string, string> = {
     code_authoring: '#18a058',
     code_modification: '#8a2be2',
@@ -220,28 +225,28 @@ function handleTemplateSelect(template: ExpertTemplate | null) {
     dependency_management: '#707070',
     context_specification: '#7c3aed',
     workflow_control: '#0891b2',
-    general_inquiry: '#64748b',
-  };
+    general_inquiry: '#64748b'
+  }
 
-  const defaultColor = template && colorMap[template.value] ? colorMap[template.value] : '#1890ff';
+  const defaultColor = template && colorMap[template.value] ? colorMap[template.value] : '#1890ff'
 
   editingExpert.value = {
     id: generateId(),
     category: template ? template.value : '',
     type: 'real',
     description: template ? template.description : '',
-    color: defaultColor,
-  };
-  
-  editingUtterances.value = template ? [...template.utterances] : [];
-  showExpertDrawer.value = true;
+    color: defaultColor
+  }
+
+  editingUtterances.value = template ? [...template.utterances] : []
+  showExpertDrawer.value = true
 }
 
 function handleEditExpert(expert: ExpertTarget) {
-  editingExpert.value = { ...expert };
-  const route = localRoutes.value.find(r => r.category === expert.category);
-  editingUtterances.value = route ? [...route.utterances] : [];
-  showExpertDrawer.value = true;
+  editingExpert.value = { ...expert }
+  const route = localRoutes.value.find(r => r.category === expert.category)
+  editingUtterances.value = route ? [...route.utterances] : []
+  showExpertDrawer.value = true
 }
 
 function handleDeleteExpert(expertId: string) {
@@ -251,77 +256,83 @@ function handleDeleteExpert(expertId: string) {
     positiveText: t('common.confirm'),
     negativeText: t('common.cancel'),
     onPositiveClick: () => {
-      const expert = localExperts.value.find(e => e.id === expertId);
-      if (!expert) return;
-      const category = expert.category;
+      const expert = localExperts.value.find(e => e.id === expertId)
+      if (!expert) return
+      const category = expert.category
 
-      localExperts.value = localExperts.value.filter(e => e.id !== expertId);
-      emit('update:experts', localExperts.value);
+      localExperts.value = localExperts.value.filter(e => e.id !== expertId)
+      emit('update:experts', localExperts.value)
 
-      const isUsed = localExperts.value.some(e => e.category === category);
+      const isUsed = localExperts.value.some(e => e.category === category)
       if (!isUsed) {
-        const routes = localRoutes.value.filter(r => r.category !== category);
-        localRoutes.value = routes;
-        emit('update:routes', routes);
+        const routes = localRoutes.value.filter(r => r.category !== category)
+        localRoutes.value = routes
+        emit('update:routes', routes)
       }
-    },
-  });
+    }
+  })
 }
 
 function handleSaveExpert(expert: ExpertTarget, utterances: string[]) {
-  const index = localExperts.value.findIndex(e => e.id === expert.id);
-  const oldCategory = index >= 0 ? localExperts.value[index].category : null;
-  
-  if (index >= 0) {
-    localExperts.value[index] = expert;
-  } else {
-    localExperts.value.push(expert);
-  }
-  emit('update:experts', localExperts.value);
+  const index = localExperts.value.findIndex(e => e.id === expert.id)
+  const oldCategory = index >= 0 ? localExperts.value[index].category : null
 
-  let routes = [...localRoutes.value];
-  
+  if (index >= 0) {
+    localExperts.value[index] = expert
+  } else {
+    localExperts.value.push(expert)
+  }
+  emit('update:experts', localExperts.value)
+
+  let routes = [...localRoutes.value]
+
   // Clean up old route if category changed and no other expert uses it
   if (oldCategory && oldCategory !== expert.category) {
-    const isUsed = localExperts.value.some(e => e.category === oldCategory);
+    const isUsed = localExperts.value.some(e => e.category === oldCategory)
     if (!isUsed) {
-      routes = routes.filter(r => r.category !== oldCategory);
+      routes = routes.filter(r => r.category !== oldCategory)
     }
   }
 
-  const routeIndex = routes.findIndex(r => r.category === expert.category);
-  
-  if (routeIndex >= 0) {
-    routes[routeIndex] = { ...routes[routeIndex], utterances };
-  } else {
-    routes.push({ category: expert.category, utterances });
-  }
-  
-  localRoutes.value = routes;
-  emit('update:routes', routes);
+  const routeIndex = routes.findIndex(r => r.category === expert.category)
 
-  showExpertDrawer.value = false;
+  if (routeIndex >= 0) {
+    routes[routeIndex] = { ...routes[routeIndex], utterances }
+  } else {
+    routes.push({ category: expert.category, utterances })
+  }
+
+  localRoutes.value = routes
+  emit('update:routes', routes)
+
+  showExpertDrawer.value = false
 }
 
 // Deep watch forces Vue to traverse the whole experts/routes tree on each render,
 // which can be very expensive when utterances/rules grow.
-watch(() => props.experts, (newExperts) => {
-  localExperts.value = [...newExperts];
-});
+watch(
+  () => props.experts,
+  newExperts => {
+    localExperts.value = [...newExperts]
+  }
+)
 
-watch(() => props.routes, (newRoutes) => {
-  localRoutes.value = [...(newRoutes || [])];
-});
+watch(
+  () => props.routes,
+  newRoutes => {
+    localRoutes.value = [...(newRoutes || [])]
+  }
+)
 
 watch(
   () => props.config,
-  (newConfig) => {
+  newConfig => {
     if (newConfig?.config?.experts) {
-      localExperts.value = [...newConfig.config.experts];
+      localExperts.value = [...newConfig.config.experts]
     }
   },
   { immediate: true }
-);
+)
 </script>
 
 <style scoped>
@@ -469,19 +480,5 @@ watch(
 
 .expert-divider {
   width: 100%;
-}
-
-</style>
-
-<style>
-.template-selector-modal {
-  display: flex !important;
-  flex-direction: column;
-}
-
-.template-selector-modal .n-card__content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 !important;
 }
 </style>

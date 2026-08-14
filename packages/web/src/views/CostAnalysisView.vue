@@ -51,7 +51,13 @@
               </n-input-group>
 
               <div v-if="testResult" class="test-result">
-                <n-alert :type="testResult.source === 'direct' || testResult.source === 'mapping' ? 'success' : 'warning'">
+                <n-alert
+                  :type="
+                    testResult.source === 'direct' || testResult.source === 'mapping'
+                      ? 'success'
+                      : 'warning'
+                  "
+                >
                   <template #header>
                     {{ t('costAnalysis.matchSuccess') }}
                   </template>
@@ -62,20 +68,28 @@
                     <div v-else-if="testResult.source === 'mapping'">
                       {{ t('costAnalysis.mappingMatch', { pattern: testResult.mapping_pattern }) }}
                     </div>
-                    
+
                     <div class="cost-info">
-                      <strong>{{ t('costAnalysis.targetInfo', { model: testResult.model || testResult.target_model }) }}</strong>
+                      <strong>
+                        {{
+                          t('costAnalysis.targetInfo', {
+                            model: testResult.model || testResult.target_model
+                          })
+                        }}
+                      </strong>
                       <br />
-                      {{ t('costAnalysis.costInfo', {
-                        input: testResult.info.input_cost_per_token * 1000000,
-                        output: testResult.info.output_cost_per_token * 1000000
-                      }) }}
+                      {{
+                        t('costAnalysis.costInfo', {
+                          input: testResult.info.input_cost_per_token * 1000000,
+                          output: testResult.info.output_cost_per_token * 1000000
+                        })
+                      }}
                     </div>
                   </div>
                 </n-alert>
               </div>
               <div v-else-if="testResultError">
-                 <n-alert type="error">
+                <n-alert type="error">
                   {{ t('costAnalysis.matchFail') }}
                 </n-alert>
               </div>
@@ -107,31 +121,37 @@
       </n-tabs>
     </div>
 
-    <n-modal v-model:show="showModal" preset="card" :title="editingId ? t('costAnalysis.editMapping') : t('costAnalysis.addMapping')" style="width: 600px">
+    <n-modal
+      v-model:show="showModal"
+      preset="card"
+      :title="editingId ? t('costAnalysis.editMapping') : t('costAnalysis.addMapping')"
+      style="width: 600px; max-width: 92vw"
+    >
       <n-form ref="formRef" :model="formModel" :rules="rules">
         <n-form-item :label="t('costAnalysis.pattern')" path="pattern">
-          <n-input v-model:value="formModel.pattern" :placeholder="t('costAnalysis.patternPlaceholder')" />
+          <n-input
+            v-model:value="formModel.pattern"
+            :placeholder="t('costAnalysis.patternPlaceholder')"
+          />
           <template #feedback>
             {{ t('costAnalysis.patternHint') }}
           </template>
         </n-form-item>
-        
+
         <n-form-item :label="t('costAnalysis.targetModel')" path="target_model">
-          <model-preset-selector
-            @select="handleModelSelect"
-          />
+          <model-preset-selector @select="handleModelSelect" />
           <template #feedback v-if="formModel.target_model">
             已选择: {{ formModel.target_model }}
           </template>
         </n-form-item>
-        
+
         <n-form-item :label="t('costAnalysis.priority')" path="priority">
           <n-input-number v-model:value="formModel.priority" />
           <template #feedback>
             {{ t('costAnalysis.priorityHint') }}
           </template>
         </n-form-item>
-        
+
         <n-form-item :label="t('costAnalysis.enabled')" path="enabled">
           <n-switch v-model:value="formModel.enabled" />
         </n-form-item>
@@ -139,7 +159,9 @@
       <template #footer>
         <n-space justify="end">
           <n-button @click="showModal = false">{{ t('common.cancel') }}</n-button>
-          <n-button type="primary" @click="handleSave" :loading="saving">{{ t('common.save') }}</n-button>
+          <n-button type="primary" @click="handleSave" :loading="saving">
+            {{ t('common.save') }}
+          </n-button>
         </n-space>
       </template>
     </n-modal>
@@ -147,17 +169,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, h, watch } from 'vue';
-import { useI18n } from 'vue-i18n';
-import { useMessage } from 'naive-ui';
+import { ref, computed, onMounted, h, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useMessage } from 'naive-ui'
+import { AddOutline, SearchOutline, CreateOutline, TrashOutline } from '@vicons/ionicons5'
 import {
-  AddOutline,
-  SearchOutline, 
-  CreateOutline, 
-  TrashOutline 
-} from '@vicons/ionicons5';
-import { 
-  NButton, 
+  NButton,
   NIcon,
   NTag,
   NSpace,
@@ -174,71 +191,71 @@ import {
   NAlert,
   NTabs,
   NTabPane
-} from 'naive-ui';
-import { costMappingApi, CostMapping, CostResolution, ModelPrice } from '@/api/cost-mapping';
-import ModelPresetSelector from '@/components/ModelPresetSelector.vue';
+} from 'naive-ui'
+import { costMappingApi, CostMapping, CostResolution, ModelPrice } from '@/api/cost-mapping'
+import ModelPresetSelector from '@/components/ModelPresetSelector.vue'
 
-const { t } = useI18n();
-const message = useMessage();
+const { t } = useI18n()
+const message = useMessage()
 
-const activeTab = ref('mappings');
-const mappings = ref<CostMapping[]>([]);
-const loading = ref(false);
-const searchQuery = ref('');
-const showModal = ref(false);
-const saving = ref(false);
-const editingId = ref<string | null>(null);
-const formRef = ref<any>(null);
+const activeTab = ref('mappings')
+const mappings = ref<CostMapping[]>([])
+const loading = ref(false)
+const searchQuery = ref('')
+const showModal = ref(false)
+const saving = ref(false)
+const editingId = ref<string | null>(null)
+const formRef = ref<any>(null)
 
-const prices = ref<ModelPrice[]>([]);
-const pricesLoading = ref(false);
-const pricesSearchQuery = ref('');
+const prices = ref<ModelPrice[]>([])
+const pricesLoading = ref(false)
+const pricesSearchQuery = ref('')
 
 const formModel = ref({
   pattern: '',
   target_model: '',
   priority: 0,
   enabled: true
-});
+})
 
-const testModelName = ref('');
-const testing = ref(false);
-const testResult = ref<CostResolution | null>(null);
-const testResultError = ref(false);
+const testModelName = ref('')
+const testing = ref(false)
+const testResult = ref<CostResolution | null>(null)
+const testResultError = ref(false)
 
 const rules = {
   pattern: { required: true, message: t('validation.required'), trigger: 'blur' },
   target_model: { required: true, message: t('validation.required'), trigger: 'blur' }
-};
+}
 
 const pagination = {
   pageSize: 10
-};
+}
 
 const filteredMappings = computed(() => {
-  if (!searchQuery.value) return mappings.value;
-  const query = searchQuery.value.toLowerCase();
-  return mappings.value.filter(m =>
-    m.pattern.toLowerCase().includes(query) ||
-    m.target_model.toLowerCase().includes(query)
-  );
-});
+  if (!searchQuery.value) return mappings.value
+  const query = searchQuery.value.toLowerCase()
+  return mappings.value.filter(
+    m => m.pattern.toLowerCase().includes(query) || m.target_model.toLowerCase().includes(query)
+  )
+})
 
 const filteredPrices = computed(() => {
-  if (!pricesSearchQuery.value) return prices.value;
-  const query = pricesSearchQuery.value.toLowerCase();
-  return prices.value.filter(p =>
-    p.model.toLowerCase().includes(query) ||
-    (p.provider && p.provider.toLowerCase().includes(query))
-  );
-});
+  if (!pricesSearchQuery.value) return prices.value
+  const query = pricesSearchQuery.value.toLowerCase()
+  return prices.value.filter(
+    p =>
+      p.model.toLowerCase().includes(query) ||
+      (p.provider && p.provider.toLowerCase().includes(query))
+  )
+})
 
 const columns = [
   {
     title: t('costAnalysis.pattern'),
     key: 'pattern',
     render(row: CostMapping) {
-      return h('code', null, row.pattern);
+      return h('code', null, row.pattern)
     }
   },
   {
@@ -261,9 +278,9 @@ const columns = [
           bordered: false
         },
         {
-          default: () => row.enabled ? t('common.enabled') : t('common.disabled')
+          default: () => (row.enabled ? t('common.enabled') : t('common.disabled'))
         }
-      );
+      )
     }
   },
   {
@@ -288,25 +305,26 @@ const columns = [
               onPositiveClick: () => handleDelete(row)
             },
             {
-              trigger: () => h(
-                NButton,
-                {
-                  size: 'small',
-                  type: 'error',
-                  quaternary: true
-                },
-                {
-                  icon: () => h(NIcon, null, { default: () => h(TrashOutline) })
-                }
-              ),
+              trigger: () =>
+                h(
+                  NButton,
+                  {
+                    size: 'small',
+                    type: 'error',
+                    quaternary: true
+                  },
+                  {
+                    icon: () => h(NIcon, null, { default: () => h(TrashOutline) })
+                  }
+                ),
               default: () => t('costAnalysis.deleteConfirm')
             }
           )
         ]
-      });
+      })
     }
   }
-];
+]
 
 const priceColumns = [
   {
@@ -323,146 +341,147 @@ const priceColumns = [
     title: t('costAnalysis.prices.inputCost'),
     key: 'input_cost_per_token',
     render(row: ModelPrice) {
-      const val = row.input_cost_per_token;
-      return val ? `$${(val * 1000000).toFixed(4)}` : '-';
+      const val = row.input_cost_per_token
+      return val ? `$${(val * 1000000).toFixed(4)}` : '-'
     },
-    sorter: (a: ModelPrice, b: ModelPrice) => (a.input_cost_per_token || 0) - (b.input_cost_per_token || 0)
+    sorter: (a: ModelPrice, b: ModelPrice) =>
+      (a.input_cost_per_token || 0) - (b.input_cost_per_token || 0)
   },
   {
     title: t('costAnalysis.prices.outputCost'),
     key: 'output_cost_per_token',
     render(row: ModelPrice) {
-      const val = row.output_cost_per_token;
-      return val ? `$${(val * 1000000).toFixed(4)}` : '-';
+      const val = row.output_cost_per_token
+      return val ? `$${(val * 1000000).toFixed(4)}` : '-'
     },
-    sorter: (a: ModelPrice, b: ModelPrice) => (a.output_cost_per_token || 0) - (b.output_cost_per_token || 0)
+    sorter: (a: ModelPrice, b: ModelPrice) =>
+      (a.output_cost_per_token || 0) - (b.output_cost_per_token || 0)
   },
   {
     title: t('costAnalysis.prices.contextWindow'),
     key: 'max_tokens',
     render(row: ModelPrice) {
-      return row.max_tokens?.toLocaleString() || '-';
+      return row.max_tokens?.toLocaleString() || '-'
     },
     sorter: (a: ModelPrice, b: ModelPrice) => (a.max_tokens || 0) - (b.max_tokens || 0)
-  },
-];
+  }
+]
 
 async function fetchPrices() {
-  if (prices.value.length > 0) return;
-  pricesLoading.value = true;
+  if (prices.value.length > 0) return
+  pricesLoading.value = true
   try {
-    prices.value = await costMappingApi.getPrices();
+    prices.value = await costMappingApi.getPrices()
   } catch (error) {
-    message.error(t('messages.loadFailed'));
+    message.error(t('messages.loadFailed'))
   } finally {
-    pricesLoading.value = false;
+    pricesLoading.value = false
   }
 }
 
-watch(activeTab, (val) => {
+watch(activeTab, val => {
   if (val === 'prices') {
-    fetchPrices();
+    fetchPrices()
   }
-});
+})
 
 async function fetchMappings() {
-  loading.value = true;
+  loading.value = true
   try {
-    mappings.value = await costMappingApi.getAll();
+    mappings.value = await costMappingApi.getAll()
   } catch (error) {
-    message.error(t('messages.loadFailed'));
+    message.error(t('messages.loadFailed'))
   } finally {
-    loading.value = false;
+    loading.value = false
   }
 }
 
 function showAddModal() {
-  editingId.value = null;
+  editingId.value = null
   formModel.value = {
     pattern: '',
     target_model: '',
     priority: 0,
     enabled: true
-  };
-  showModal.value = true;
+  }
+  showModal.value = true
 }
 
 function handleEdit(row: CostMapping) {
-  editingId.value = row.id;
+  editingId.value = row.id
   formModel.value = {
     pattern: row.pattern,
     target_model: row.target_model,
     priority: row.priority,
     enabled: !!row.enabled
-  };
-  showModal.value = true;
+  }
+  showModal.value = true
 }
 
 function handleModelSelect(result: any) {
-  formModel.value.target_model = result.modelName;
+  formModel.value.target_model = result.modelName
 }
 
 function notifyCostMappingUpdated() {
   try {
     // Broadcast an event so the dashboard can refresh its cost statistics in real time
-    window.dispatchEvent(new CustomEvent('cost-mapping-updated'));
-  } catch (e) {
-  }
+    window.dispatchEvent(new CustomEvent('cost-mapping-updated'))
+  } catch (e) {}
 }
- 
+
 async function handleSave() {
   try {
-    await formRef.value?.validate();
-    saving.value = true;
+    await formRef.value?.validate()
+    saving.value = true
     try {
       if (editingId.value) {
-        await costMappingApi.update(editingId.value, formModel.value);
-        message.success(t('costAnalysis.updateSuccess'));
+        await costMappingApi.update(editingId.value, formModel.value)
+        message.success(t('costAnalysis.updateSuccess'))
       } else {
-        await costMappingApi.create(formModel.value);
-        message.success(t('costAnalysis.createSuccess'));
+        await costMappingApi.create(formModel.value)
+        message.success(t('costAnalysis.createSuccess'))
       }
-      showModal.value = false;
-      fetchMappings();
-      notifyCostMappingUpdated();
+      showModal.value = false
+      fetchMappings()
+      notifyCostMappingUpdated()
     } catch (error) {
-      message.error(t('common.operationFailed'));
+      message.error(t('common.operationFailed'))
     } finally {
-      saving.value = false;
+      saving.value = false
     }
   } catch (validationError) {
     // 验证失败，不执行保存操作
   }
 }
- 
+
 async function handleDelete(row: CostMapping) {
   try {
-    await costMappingApi.delete(row.id);
-    message.success(t('costAnalysis.deleteSuccess'));
-    fetchMappings();
-    notifyCostMappingUpdated();
+    await costMappingApi.delete(row.id)
+    message.success(t('costAnalysis.deleteSuccess'))
+    fetchMappings()
+    notifyCostMappingUpdated()
   } catch (error) {
-    message.error(t('common.operationFailed'));
+    message.error(t('common.operationFailed'))
   }
 }
- 
+
 async function testMapping() {
-  if (!testModelName.value) return;
-  testing.value = true;
-  testResult.value = null;
-  testResultError.value = false;
+  if (!testModelName.value) return
+  testing.value = true
+  testResult.value = null
+  testResultError.value = false
   try {
-    testResult.value = await costMappingApi.resolve(testModelName.value);
+    testResult.value = await costMappingApi.resolve(testModelName.value)
   } catch (error) {
-    testResultError.value = true;
+    testResultError.value = true
   } finally {
-    testing.value = false;
+    testing.value = false
   }
 }
 
 onMounted(() => {
-  fetchMappings();
-});
+  fetchMappings()
+})
 </script>
 
 <style scoped>

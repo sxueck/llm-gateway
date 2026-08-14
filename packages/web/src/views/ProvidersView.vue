@@ -4,7 +4,9 @@
       <n-space justify="space-between" align="center">
         <div>
           <h2 class="page-title">提供商管理</h2>
-          <p class="page-subtitle">配置和管理 AI 模型提供商,包括 API 密钥、Base URL 等信息。支持导入导出配置</p>
+          <p class="page-subtitle">
+            配置和管理 AI 模型提供商,包括 API 密钥、Base URL 等信息。支持导入导出配置
+          </p>
         </div>
         <n-space :size="8">
           <n-button size="small" @click="testAllProviders" :loading="isTestingAll">
@@ -21,11 +23,7 @@
               导出
             </n-button>
           </n-dropdown>
-          <n-upload
-            :show-file-list="false"
-            accept=".json"
-            @change="handleImportFile"
-          >
+          <n-upload :show-file-list="false" accept=".json" @change="handleImportFile">
             <n-button size="small">
               <template #icon>
                 <n-icon><UploadIcon /></n-icon>
@@ -33,9 +31,7 @@
               导入
             </n-button>
           </n-upload>
-          <n-button type="primary" size="small" @click="showModal = true">
-            添加提供商
-          </n-button>
+          <n-button type="primary" size="small" @click="showModal = true">添加提供商</n-button>
         </n-space>
       </n-space>
 
@@ -47,6 +43,7 @@
           :data="providerStore.providers"
           :loading="providerStore.loading"
           :pagination="{ pageSize: 10 }"
+          :scroll-x="900"
           :bordered="false"
           size="small"
           :single-line="false"
@@ -59,7 +56,7 @@
       preset="card"
       :title="editingId ? '编辑提供商' : '添加提供商'"
       class="provider-modal"
-      :style="{ width: '800px', maxHeight: '90vh' }"
+      :style="{ width: '800px', maxWidth: '92vw', maxHeight: '90vh' }"
       :segmented="{
         content: 'soft',
         footer: 'soft'
@@ -73,12 +70,7 @@
       <template #footer>
         <n-space justify="end" :size="8">
           <n-button @click="showModal = false" size="small">取消</n-button>
-          <n-button
-            type="primary"
-            size="small"
-            :loading="submitting"
-            @click="handleSubmit"
-          >
+          <n-button type="primary" size="small" :loading="submitting" @click="handleSubmit">
             {{ editingId ? '更新' : '创建' }}
           </n-button>
         </n-space>
@@ -88,162 +80,212 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted, watch } from 'vue';
-import { useMessage, useDialog, NSpace, NButton, NDataTable, NCard, NModal, NTag, NPopconfirm, NDropdown, NUpload, NIcon, type UploadFileInfo } from 'naive-ui';
-import { Download as DownloadIcon, CloudUpload as UploadIcon, FlashOutline as SpeedTestIcon } from '@vicons/ionicons5';
-import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined } from '@vicons/material';
-import { useProviderStore } from '@/stores/provider';
-import { useModelStore } from '@/stores/model';
-import { providerApi } from '@/api/provider';
-import { modelApi } from '@/api/model';
-import type { Provider } from '@/types';
-import type { ProviderFormValue } from '@/types/provider';
-import { createDefaultProviderForm } from '@/types/provider';
-import ProviderForm from '@/components/ProviderForm.vue';
-import ProviderOverview from '@/components/ProviderOverview.vue';
-import { downloadProvidersConfig, parseImportFile } from '@/utils/provider-export';
+import { ref, h, onMounted, watch } from 'vue'
+import {
+  useMessage,
+  useDialog,
+  NSpace,
+  NButton,
+  NDataTable,
+  NCard,
+  NModal,
+  NTag,
+  NPopconfirm,
+  NDropdown,
+  NUpload,
+  NIcon,
+  type UploadFileInfo
+} from 'naive-ui'
+import {
+  Download as DownloadIcon,
+  CloudUpload as UploadIcon,
+  FlashOutline as SpeedTestIcon
+} from '@vicons/ionicons5'
+import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined } from '@vicons/material'
+import { useProviderStore } from '@/stores/provider'
+import { useModelStore } from '@/stores/model'
+import { providerApi } from '@/api/provider'
+import { modelApi } from '@/api/model'
+import type { Provider } from '@/types'
+import type { ProviderFormValue } from '@/types/provider'
+import { createDefaultProviderForm } from '@/types/provider'
+import ProviderForm from '@/components/ProviderForm.vue'
+import ProviderOverview from '@/components/ProviderOverview.vue'
+import { downloadProvidersConfig, parseImportFile } from '@/utils/provider-export'
 
-const message = useMessage();
-const dialog = useDialog();
-const providerStore = useProviderStore();
-const modelStore = useModelStore();
+const message = useMessage()
+const dialog = useDialog()
+const providerStore = useProviderStore()
+const modelStore = useModelStore()
 
-const showModal = ref(false);
-const formRef = ref();
-const submitting = ref(false);
-const editingId = ref<string | null>(null);
+const showModal = ref(false)
+const formRef = ref()
+const submitting = ref(false)
+const editingId = ref<string | null>(null)
 
 const exportOptions = [
   {
     label: '导出所有提供商',
-    key: 'all',
+    key: 'all'
   },
   {
     label: '仅导出已启用的提供商',
-    key: 'enabled',
-  },
-];
+    key: 'enabled'
+  }
+]
 
-const formValue = ref<ProviderFormValue>(createDefaultProviderForm());
+const formValue = ref<ProviderFormValue>(createDefaultProviderForm())
 
-const originalApiKey = ref('');
-const apiKeyChanged = ref(false);
+const originalApiKey = ref('')
+const apiKeyChanged = ref(false)
 
-const latencies = ref<Record<string, number | null>>({});
-const testingStates = ref<Record<string, boolean>>({});
-const isTestingAll = ref(false);
-const inFlightTests = new Map<string, Promise<void>>();
+const latencies = ref<Record<string, number | null>>({})
+const testingStates = ref<Record<string, boolean>>({})
+const isTestingAll = ref(false)
+const inFlightTests = new Map<string, Promise<void>>()
 
 const columns = [
-  { title: 'ID', key: 'id' },
-  { title: '名称', key: 'name' },
+  { title: 'ID', key: 'id', width: 100, ellipsis: { tooltip: true } },
+  { title: '名称', key: 'name', width: 150, ellipsis: { tooltip: true } },
   { title: '描述', key: 'description', ellipsis: { tooltip: true } },
-  { title: 'Base URL', key: 'baseUrl' },
+  { title: 'Base URL', key: 'baseUrl', width: 220, ellipsis: { tooltip: true } },
   {
     title: '延迟',
     key: 'latency',
     width: 120,
     render: (row: Provider) => {
-      const isTesting = testingStates.value[row.id];
-      const latency = latencies.value[row.id];
+      const isTesting = testingStates.value[row.id]
+      const latency = latencies.value[row.id]
 
       if (isTesting) {
-        return h('span', { style: 'color: #999; font-size: 12px' }, '测速中...');
+        return h('span', { style: 'color: #999; font-size: 12px' }, '测速中...')
       }
 
       if (latency === undefined || latency === null) {
-        return h('span', { style: 'color: #ccc' }, '-');
+        return h('span', { style: 'color: #ccc' }, '-')
       }
 
       // Primary green for good
-      let color = '#0f6b4a';
-      let bgColor = 'rgba(15, 107, 74, 0.08)';
-      
+      let color = '#0f6b4a'
+      let bgColor = 'rgba(15, 107, 74, 0.08)'
+
       // Warm Gold/Bronze for warning
       if (latency > 500) {
-        color = '#B89D6A';
-        bgColor = 'rgba(184, 157, 106, 0.12)';
-      }
-      
-      // Muted Red for error/slow
-      if (latency > 1500) {
-        color = '#D62F2F';
-        bgColor = 'rgba(214, 47, 47, 0.08)';
+        color = '#B89D6A'
+        bgColor = 'rgba(184, 157, 106, 0.12)'
       }
 
-      return h('span', {
-        style: {
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minWidth: '64px',
-          padding: '2px 8px',
-          borderRadius: '999px',
-          backgroundColor: bgColor,
-          color,
-          fontFamily: 'MiSans, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-          fontSize: '12px',
-          fontWeight: 500,
+      // Muted Red for error/slow
+      if (latency > 1500) {
+        color = '#D62F2F'
+        bgColor = 'rgba(214, 47, 47, 0.08)'
+      }
+
+      return h(
+        'span',
+        {
+          style: {
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minWidth: '64px',
+            padding: '2px 8px',
+            borderRadius: '999px',
+            backgroundColor: bgColor,
+            color,
+            fontFamily:
+              'MiSans, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            fontSize: '12px',
+            fontWeight: 500
+          }
         },
-      }, `${latency}ms`);
+        `${latency}ms`
+      )
     }
   },
   {
     title: '状态',
     key: 'enabled',
-    render: (row: Provider) => h(NTag, { type: row.enabled ? 'success' : 'default' }, { default: () => row.enabled ? '启用' : '禁用' }),
+    render: (row: Provider) =>
+      h(
+        NTag,
+        { type: row.enabled ? 'success' : 'default' },
+        { default: () => (row.enabled ? '启用' : '禁用') }
+      )
   },
   {
     title: '操作',
     key: 'actions',
     width: 150,
-    render: (row: Provider) => h(NSpace, { size: 6 }, {
-      default: () => [
-        h(NButton, {
-          size: 'small',
-          quaternary: true,
-          circle: true,
-          disabled: !!testingStates.value[row.id],
-          'aria-label': '测速',
-          onClick: () => handleTest(row.id),
-        }, {
-          icon: () => h(NIcon, null, { default: () => h(KeyboardCommandKeyOutlined) }),
-        }),
-        h(NButton, {
-          size: 'small',
-          quaternary: true,
-          circle: true,
-          'aria-label': '编辑',
-          onClick: () => handleEdit(row),
-        }, {
-          icon: () => h(NIcon, null, { default: () => h(EditOutlined) }),
-        }),
-        h(NPopconfirm, {
-          onPositiveClick: () => handleDelete(row.id),
-        }, {
-          trigger: () => h(NButton, {
-            size: 'small',
-            quaternary: true,
-            circle: true,
-            'aria-label': '删除',
-            onClick: () => {},
-          }, {
-            icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) }),
-          }),
-          default: () => '确定删除此提供商吗？',
-        }),
-      ],
-    }),
-  },
-];
+    render: (row: Provider) =>
+      h(
+        NSpace,
+        { size: 6 },
+        {
+          default: () => [
+            h(
+              NButton,
+              {
+                'size': 'small',
+                'quaternary': true,
+                'circle': true,
+                'disabled': !!testingStates.value[row.id],
+                'aria-label': '测速',
+                'onClick': () => handleTest(row.id)
+              },
+              {
+                icon: () => h(NIcon, null, { default: () => h(KeyboardCommandKeyOutlined) })
+              }
+            ),
+            h(
+              NButton,
+              {
+                'size': 'small',
+                'quaternary': true,
+                'circle': true,
+                'aria-label': '编辑',
+                'onClick': () => handleEdit(row)
+              },
+              {
+                icon: () => h(NIcon, null, { default: () => h(EditOutlined) })
+              }
+            ),
+            h(
+              NPopconfirm,
+              {
+                onPositiveClick: () => handleDelete(row.id)
+              },
+              {
+                trigger: () =>
+                  h(
+                    NButton,
+                    {
+                      'size': 'small',
+                      'quaternary': true,
+                      'circle': true,
+                      'aria-label': '删除',
+                      'onClick': () => {}
+                    },
+                    {
+                      icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) })
+                    }
+                  ),
+                default: () => '确定删除此提供商吗？'
+              }
+            )
+          ]
+        }
+      )
+  }
+]
 
 async function handleEdit(provider: Provider) {
-  editingId.value = provider.id;
-  apiKeyChanged.value = false;
+  editingId.value = provider.id
+  apiKeyChanged.value = false
 
   try {
-    const fullProvider = await providerApi.getById(provider.id, true);
-    originalApiKey.value = fullProvider.apiKey || '';
+    const fullProvider = await providerApi.getById(provider.id, true)
+    originalApiKey.value = fullProvider.apiKey || ''
 
     formValue.value = {
       id: fullProvider.id,
@@ -252,117 +294,115 @@ async function handleEdit(provider: Provider) {
       baseUrl: fullProvider.baseUrl,
       protocolMappings: fullProvider.protocolMappings || null,
       apiKey: fullProvider.apiKey || '',
-      enabled: fullProvider.enabled,
-    };
+      enabled: fullProvider.enabled
+    }
   } catch (error: any) {
-    message.error('获取提供商信息失败: ' + error.message);
-    return;
+    message.error('获取提供商信息失败: ' + error.message)
+    return
   }
 
-  showModal.value = true;
+  showModal.value = true
 }
 
 async function handleTest(id: string, showToast = true) {
-  const inFlight = inFlightTests.get(id);
+  const inFlight = inFlightTests.get(id)
   if (inFlight) {
-    return inFlight;
+    return inFlight
   }
 
-  testingStates.value[id] = true;
+  testingStates.value[id] = true
   const task = (async () => {
     try {
-      const result = await providerApi.test(id);
-      const latency = typeof result.latencyMs === 'number'
-        ? Math.round(result.latencyMs)
-        : null;
+      const result = await providerApi.test(id)
+      const latency = typeof result.latencyMs === 'number' ? Math.round(result.latencyMs) : null
 
       if (result.success) {
-        latencies.value[id] = latency;
+        latencies.value[id] = latency
         if (showToast) {
-          const latencyText = latency !== null ? ` (延迟: ${latency}ms)` : '';
-          message.success(`${result.message}${latencyText}`);
+          const latencyText = latency !== null ? ` (延迟: ${latency}ms)` : ''
+          message.success(`${result.message}${latencyText}`)
         }
       } else {
-        latencies.value[id] = null;
+        latencies.value[id] = null
         if (showToast) {
-          message.error(result.message);
+          message.error(result.message)
         }
       }
     } catch (error: any) {
-      latencies.value[id] = null;
+      latencies.value[id] = null
       if (showToast) {
-        message.error(error.message);
+        message.error(error.message)
       }
     } finally {
-      testingStates.value[id] = false;
-      inFlightTests.delete(id);
+      testingStates.value[id] = false
+      inFlightTests.delete(id)
     }
-  })();
+  })()
 
-  inFlightTests.set(id, task);
-  return task;
+  inFlightTests.set(id, task)
+  return task
 }
 
 async function testAllProviders() {
-  const providers = providerStore.providers.filter(p => p.enabled);
+  const providers = providerStore.providers.filter(p => p.enabled)
   if (providers.length === 0) {
-    message.warning('没有已启用的提供商');
-    return;
+    message.warning('没有已启用的提供商')
+    return
   }
-  
-  isTestingAll.value = true;
-  message.loading('正在测试所有提供商连接...', { duration: 2000 });
-  
+
+  isTestingAll.value = true
+  message.loading('正在测试所有提供商连接...', { duration: 2000 })
+
   try {
-    await Promise.all(providers.map(p => handleTest(p.id, false)));
-    message.success('测试完成');
+    await Promise.all(providers.map(p => handleTest(p.id, false)))
+    message.success('测试完成')
   } finally {
-    isTestingAll.value = false;
+    isTestingAll.value = false
   }
 }
 
 async function handleDelete(id: string) {
   try {
-    await providerApi.delete(id);
-    message.success('删除成功');
-    await providerStore.fetchProviders();
+    await providerApi.delete(id)
+    message.success('删除成功')
+    await providerStore.fetchProviders()
   } catch (error: any) {
-    message.error(error.message);
+    message.error(error.message)
   }
 }
 
 async function handleSubmit() {
   try {
-    formRef.value?.syncProtocolMappings?.();
+    formRef.value?.syncProtocolMappings?.()
 
-    await formRef.value?.validate();
+    await formRef.value?.validate()
 
     if (editingId.value && formValue.value.apiKey !== originalApiKey.value) {
-      apiKeyChanged.value = true;
-      const confirmed = await new Promise<boolean>((resolve) => {
+      apiKeyChanged.value = true
+      const confirmed = await new Promise<boolean>(resolve => {
         dialog.warning({
           title: 'API Key 已变更',
           content: '检测到您修改了 API Key，确定要保存新的密钥吗？',
           positiveText: '确定保存',
           negativeText: '取消',
           onPositiveClick: () => {
-            resolve(true);
+            resolve(true)
           },
           onNegativeClick: () => {
-            resolve(false);
+            resolve(false)
           },
           onClose: () => {
-            resolve(false);
-          },
-        });
-      });
+            resolve(false)
+          }
+        })
+      })
 
       if (!confirmed) {
-        return;
+        return
       }
     }
 
-    submitting.value = true;
+    submitting.value = true
 
     if (editingId.value) {
       const updateData: any = {
@@ -370,126 +410,129 @@ async function handleSubmit() {
         description: formValue.value.description,
         baseUrl: formValue.value.baseUrl,
         protocolMappings: formValue.value.protocolMappings,
-        enabled: formValue.value.enabled,
-      };
-      if (formValue.value.apiKey !== originalApiKey.value) {
-        updateData.apiKey = formValue.value.apiKey;
+        enabled: formValue.value.enabled
       }
-      await providerApi.update(editingId.value, updateData);
+      if (formValue.value.apiKey !== originalApiKey.value) {
+        updateData.apiKey = formValue.value.apiKey
+      }
+      await providerApi.update(editingId.value, updateData)
 
-      const selectedModelsInfo = formRef.value?.getSelectedModelsInfo?.() || [];
+      const selectedModelsInfo = formRef.value?.getSelectedModelsInfo?.() || []
       if (selectedModelsInfo.length > 0) {
-        const existing = modelStore.models.filter(m => m.providerId === formValue.value.id);
+        const existing = modelStore.models.filter(m => m.providerId === formValue.value.id)
         const modelsToCreate = selectedModelsInfo
           .filter((model: any) => !existing.some(e => e.modelIdentifier === model.id))
           .map((model: any) => ({
             name: model.name || model.id,
             providerId: formValue.value.id,
             modelIdentifier: model.id,
-            enabled: true,
-          }));
+            enabled: true
+          }))
 
         if (modelsToCreate.length > 0) {
           try {
-            await modelApi.batchCreate(modelsToCreate);
-            await modelStore.fetchModels();
-            message.success(`更新成功，新增 ${modelsToCreate.length} 个模型`);
+            await modelApi.batchCreate(modelsToCreate)
+            await modelStore.fetchModels()
+            message.success(`更新成功，新增 ${modelsToCreate.length} 个模型`)
           } catch (error: any) {
-            message.warning(`提供商更新成功，但部分模型创建失败: ${error.message}`);
+            message.warning(`提供商更新成功，但部分模型创建失败: ${error.message}`)
           }
         } else {
-          message.success('更新成功');
+          message.success('更新成功')
         }
       } else {
-        message.success('更新成功');
+        message.success('更新成功')
       }
     } else {
-      const selectedModelsInfo = formRef.value?.getSelectedModelsInfo?.() || [];
+      const selectedModelsInfo = formRef.value?.getSelectedModelsInfo?.() || []
 
       await providerApi.create({
         ...formValue.value,
-        protocolMappings: formValue.value.protocolMappings || undefined,
-      });
+        protocolMappings: formValue.value.protocolMappings || undefined
+      })
 
       if (selectedModelsInfo.length > 0) {
         const modelsToCreate = selectedModelsInfo.map((model: any) => ({
           name: model.name || model.id,
           providerId: formValue.value.id,
           modelIdentifier: model.id,
-          enabled: true,
-        }));
+          enabled: true
+        }))
 
         try {
-          await modelApi.batchCreate(modelsToCreate);
-          await modelStore.fetchModels();
-          message.success(`创建成功，已添加 ${selectedModelsInfo.length} 个模型`);
+          await modelApi.batchCreate(modelsToCreate)
+          await modelStore.fetchModels()
+          message.success(`创建成功，已添加 ${selectedModelsInfo.length} 个模型`)
         } catch (error: any) {
-          message.warning(`提供商创建成功，但部分模型创建失败: ${error.message}`);
+          message.warning(`提供商创建成功，但部分模型创建失败: ${error.message}`)
         }
       } else {
-        message.success('创建成功，您可以在模型管理页面使用"批量添加"功能手动添加模型');
+        message.success('创建成功，您可以在模型管理页面使用"批量添加"功能手动添加模型')
       }
     }
 
-    showModal.value = false;
-    resetForm();
-    await providerStore.fetchProviders();
+    showModal.value = false
+    resetForm()
+    await providerStore.fetchProviders()
   } catch (error: any) {
     if (error.message) {
-      message.error(error.message);
+      message.error(error.message)
     }
   } finally {
-    submitting.value = false;
+    submitting.value = false
   }
 }
 
 function resetForm() {
-  editingId.value = null;
-  originalApiKey.value = '';
-  apiKeyChanged.value = false;
-  formValue.value = createDefaultProviderForm();
+  editingId.value = null
+  originalApiKey.value = ''
+  apiKeyChanged.value = false
+  formValue.value = createDefaultProviderForm()
 }
 
 function handleExportSelect(key: string) {
-  const providers = key === 'enabled'
-    ? providerStore.providers.filter(p => p.enabled)
-    : providerStore.providers;
+  const providers =
+    key === 'enabled' ? providerStore.providers.filter(p => p.enabled) : providerStore.providers
 
   if (providers.length === 0) {
-    message.warning('没有可导出的提供商');
-    return;
+    message.warning('没有可导出的提供商')
+    return
   }
 
-  downloadProvidersConfig(providers);
-  message.success(`已导出 ${providers.length} 个提供商配置`);
+  downloadProvidersConfig(providers)
+  message.success(`已导出 ${providers.length} 个提供商配置`)
 }
 
-async function handleImportFile(data: { file: Required<UploadFileInfo>; fileList: Required<UploadFileInfo>[]; event?: Event | ProgressEvent<EventTarget> }) {
-  const file = data.file.file;
+async function handleImportFile(data: {
+  file: Required<UploadFileInfo>
+  fileList: Required<UploadFileInfo>[]
+  event?: Event | ProgressEvent<EventTarget>
+}) {
+  const file = data.file.file
 
   if (!file) {
-    message.error('文件为空，无法导入');
-    return;
+    message.error('文件为空，无法导入')
+    return
   }
 
   try {
-    const { data: importData, validation } = await parseImportFile(file);
+    const { data: importData, validation } = await parseImportFile(file)
 
     if (!validation.isValid) {
-      message.error(`导入失败: ${validation.errors.join(', ')}`);
-      return;
+      message.error(`导入失败: ${validation.errors.join(', ')}`)
+      return
     }
 
     if (validation.warnings.length > 0) {
-      message.warning(`导入警告: ${validation.warnings.join(', ')}`);
+      message.warning(`导入警告: ${validation.warnings.join(', ')}`)
     }
 
     if (!importData) {
-      message.error('导入数据为空');
-      return;
+      message.error('导入数据为空')
+      return
     }
 
-    const providersToImport = importData.providers;
+    const providersToImport = importData.providers
 
     dialog.warning({
       title: '确认导入',
@@ -497,66 +540,72 @@ async function handleImportFile(data: { file: Required<UploadFileInfo>; fileList
       positiveText: '确认导入',
       negativeText: '取消',
       onPositiveClick: async () => {
-        await executeImport(providersToImport);
-      },
-    });
+        await executeImport(providersToImport)
+      }
+    })
   } catch (error: any) {
-    message.error(`导入失败: ${error.message}`);
+    message.error(`导入失败: ${error.message}`)
   }
 }
 
-async function executeImport(providers: Array<{ id: string; name: string; description?: string; baseUrl: string; enabled?: boolean }>) {
+async function executeImport(
+  providers: Array<{
+    id: string
+    name: string
+    description?: string
+    baseUrl: string
+    enabled?: boolean
+  }>
+) {
   try {
     const providersWithDummyKey = providers.map(p => ({
       ...p,
       apiKey: 'PLEASE_SET_YOUR_API_KEY',
-      enabled: false,
-    }));
+      enabled: false
+    }))
 
-    const result = await providerApi.batchImport(providersWithDummyKey, true);
+    const result = await providerApi.batchImport(providersWithDummyKey, true)
 
     if (result.success) {
-      message.success(result.message);
+      message.success(result.message)
 
       if (result.results.errors.length > 0) {
-        const errorMessages = result.results.errors.map(e => `${e.id}: ${e.error}`).join('\n');
+        const errorMessages = result.results.errors.map(e => `${e.id}: ${e.error}`).join('\n')
         dialog.error({
           title: '部分导入失败',
-          content: errorMessages,
-        });
+          content: errorMessages
+        })
       }
     } else {
-      message.error(result.message);
+      message.error(result.message)
 
       if (result.results.errors.length > 0) {
-        const errorMessages = result.results.errors.map(e => `${e.id}: ${e.error}`).join('\n');
+        const errorMessages = result.results.errors.map(e => `${e.id}: ${e.error}`).join('\n')
         dialog.error({
           title: '导入错误详情',
-          content: errorMessages,
-        });
+          content: errorMessages
+        })
       }
     }
 
-    await providerStore.fetchProviders();
+    await providerStore.fetchProviders()
   } catch (error: any) {
-    message.error(`导入失败: ${error.message}`);
+    message.error(`导入失败: ${error.message}`)
   }
 }
 
-watch(showModal, (visible) => {
+watch(showModal, visible => {
   if (!visible) {
-    resetForm();
+    resetForm()
   }
-});
+})
 
 onMounted(() => {
-  providerStore.fetchProviders();
-});
+  providerStore.fetchProviders()
+})
 </script>
 
 <style scoped>
-@import '@/styles/table.css';
-@import '@/styles/modal.css';
 .providers-view {
   max-width: 1400px;
   margin: 0 auto;
@@ -585,7 +634,6 @@ onMounted(() => {
   padding: 12px 14px;
 }
 
-
 .table-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
   border-bottom: none;
 }
@@ -611,7 +659,8 @@ onMounted(() => {
 }
 
 .providers-view :deep(.n-button:not(.n-button--primary-type):not(.n-button--quaternary-type):hover),
-.providers-view :deep(.n-button:not(.n-button--primary-type):not(.n-button--quaternary-type):focus) {
+.providers-view
+  :deep(.n-button:not(.n-button--primary-type):not(.n-button--quaternary-type):focus) {
   color: var(--color-primary);
   border-color: var(--color-primary);
   background-color: #f7fbf9;
@@ -655,6 +704,8 @@ onMounted(() => {
 
 .modal-content-wrapper {
   max-height: calc(90vh - 120px);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .provider-modal :deep(.n-card__footer) {
