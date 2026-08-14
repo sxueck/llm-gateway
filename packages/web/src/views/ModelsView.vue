@@ -71,6 +71,7 @@
                 :data="group.models"
                 :loading="modelStore.loading"
                 :pagination="false"
+                :scroll-x="900"
                 :bordered="false"
                 size="small"
               />
@@ -84,6 +85,7 @@
           :data="visibleModels"
           :loading="modelStore.loading"
           :pagination="paginationConfig"
+          :scroll-x="900"
           :bordered="false"
           size="small"
         />
@@ -95,7 +97,7 @@
       preset="card"
       :title="editingId ? t('models.editModel') : t('models.addModel')"
       class="model-modal"
-      :style="{ width: '750px', maxHeight: '85vh' }"
+      :style="{ width: '750px', maxWidth: '92vw', maxHeight: '85vh' }"
       :segmented="{
         content: 'soft',
         footer: 'soft'
@@ -168,7 +170,7 @@
       v-model:show="showModelPresetSelector"
       preset="card"
       :title="t('models.searchFromModelPresetsTitle')"
-      :style="{ width: '800px' }"
+      :style="{ width: '800px', maxWidth: '92vw' }"
       to="body"
     >
       <ModelPresetSelector @select="handleModelPresetSelect" />
@@ -178,7 +180,7 @@
       v-model:show="showBatchModal"
       preset="card"
       :title="t('models.batchAddTitle')"
-      :style="{ width: '900px' }"
+      :style="{ width: '900px', maxWidth: '92vw' }"
       to="body"
     >
       <n-space vertical :size="16">
@@ -210,7 +212,7 @@
       v-model:show="showTestModal"
       preset="card"
       :title="t('models.testModel')"
-      :style="{ width: '700px' }"
+      :style="{ width: '700px', maxWidth: '92vw' }"
       to="body"
     >
       <ModelTester v-if="testingModel" :model="testingModel" />
@@ -414,6 +416,8 @@ const columns: DataTableColumns<Model> = [
   {
     title: () => t('models.modelName'),
     key: 'name',
+    width: 220,
+    ellipsis: { tooltip: true },
     render: (row: Model) => {
       if (row.isVirtual) {
         const tags: any[] = [];
@@ -710,7 +714,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-@import '@/styles/modal.css';
 .models-view {
   max-width: 1400px;
   margin: 0 auto;

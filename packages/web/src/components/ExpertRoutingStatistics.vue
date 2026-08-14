@@ -4,12 +4,18 @@
       <n-grid :cols="3" :x-gap="12">
         <n-gi>
           <n-card size="small">
-            <n-statistic :label="t('expertRouting.totalRequests')" :value="statistics.totalRequests" />
+            <n-statistic
+              :label="t('expertRouting.totalRequests')"
+              :value="statistics.totalRequests"
+            />
           </n-card>
         </n-gi>
         <n-gi>
           <n-card size="small">
-            <n-statistic :label="t('expertRouting.avgClassificationTime')" :value="statistics.avgClassificationTime">
+            <n-statistic
+              :label="t('expertRouting.avgClassificationTime')"
+              :value="statistics.avgClassificationTime"
+            >
               <template #suffix>ms</template>
             </n-statistic>
           </n-card>
@@ -25,11 +31,7 @@
 
       <n-card :title="t('expertRouting.routingDistribution')" size="small">
         <n-space vertical :size="12">
-          <div
-            v-for="bar in distributionBars"
-            :key="bar.source"
-            class="distribution-bar"
-          >
+          <div v-for="bar in distributionBars" :key="bar.source" class="distribution-bar">
             <div class="dist-label">{{ bar.label }}</div>
             <n-progress
               type="line"
@@ -63,7 +65,11 @@
               <n-text>{{ count }}</n-text>
             </n-space>
           </div>
-          <n-empty v-if="Object.keys(statistics.categoryDistribution).length === 0" :description="t('common.noData')" :show-icon="false" />
+          <n-empty
+            v-if="Object.keys(statistics.categoryDistribution).length === 0"
+            :description="t('common.noData')"
+            :show-icon="false"
+          />
         </n-space>
       </n-card>
 
@@ -82,7 +88,7 @@
       v-model:show="showCategoryDetailModal"
       preset="card"
       :title="t('expertRouting.categoryDetails', { category: selectedCategory })"
-      style="width: 900px"
+      style="width: 900px; max-width: 92vw"
     >
       <n-spin :show="categoryLogsLoading">
         <n-data-table
@@ -98,105 +104,120 @@
       v-model:show="showLogDetailModal"
       preset="card"
       :title="t('expertRouting.logDetails')"
-      style="width: 1000px; max-height: 90vh"
+      style="width: 1000px; max-width: 92vw; max-height: 90vh"
     >
       <div class="log-detail-scroll-container">
         <n-spin :show="logDetailLoading">
           <n-space v-if="selectedLogDetail" vertical :size="16">
-          <n-card :title="t('expertRouting.basicInfo')" size="small">
-            <n-grid :cols="2" :x-gap="24">
-              <n-gi>
-                <n-space vertical :size="8">
-                  <div><n-text strong>{{ t('expertRouting.classificationResult') }}:</n-text> {{ selectedLogDetail.classification_result }}</div>
-                  <div><n-text strong>{{ t('expertRouting.selectedExpert') }}:</n-text> {{ selectedLogDetail.selected_expert_name }}</div>
-                  <div><n-text strong>{{ t('expertRouting.classifierModel') }}:</n-text> {{ selectedLogDetail.classifier_model }}</div>
-                  <div><n-text strong>{{ t('expertRouting.classificationTime') }}:</n-text> {{ selectedLogDetail.classification_time }}ms</div>
-                  <div><n-text strong>{{ t('common.time') }}:</n-text> {{ new Date(selectedLogDetail.created_at).toLocaleString('zh-CN') }}</div>
-                </n-space>
-              </n-gi>
-              <n-gi>
-                <n-space vertical :size="8">
-                  <div>
-                    <n-text strong>Route Source:</n-text>
-                    <n-tag size="small" :type="getSourceTagType(selectedLogDetail.route_source)">
-                      {{ selectedLogDetail.route_source || 'N/A' }}
-                    </n-tag>
-                  </div>
-                  <div>
-                    <n-text strong>Prompt Tokens (Est):</n-text>
-                    {{ selectedLogDetail.prompt_tokens ?? '-' }}
-                  </div>
-                  <div>
-                    <n-text strong>Cleaned Length:</n-text>
-                    {{ selectedLogDetail.cleaned_content_length ?? '-' }} chars
-                  </div>
-                </n-space>
-              </n-gi>
-            </n-grid>
-          </n-card>
+            <n-card :title="t('expertRouting.basicInfo')" size="small">
+              <n-grid :cols="2" :x-gap="24">
+                <n-gi>
+                  <n-space vertical :size="8">
+                    <div>
+                      <n-text strong>{{ t('expertRouting.classificationResult') }}:</n-text>
+                      {{ selectedLogDetail.classification_result }}
+                    </div>
+                    <div>
+                      <n-text strong>{{ t('expertRouting.selectedExpert') }}:</n-text>
+                      {{ selectedLogDetail.selected_expert_name }}
+                    </div>
+                    <div>
+                      <n-text strong>{{ t('expertRouting.classifierModel') }}:</n-text>
+                      {{ selectedLogDetail.classifier_model }}
+                    </div>
+                    <div>
+                      <n-text strong>{{ t('expertRouting.classificationTime') }}:</n-text>
+                      {{ selectedLogDetail.classification_time }}ms
+                    </div>
+                    <div>
+                      <n-text strong>{{ t('common.time') }}:</n-text>
+                      {{ new Date(selectedLogDetail.created_at).toLocaleString('zh-CN') }}
+                    </div>
+                  </n-space>
+                </n-gi>
+                <n-gi>
+                  <n-space vertical :size="8">
+                    <div>
+                      <n-text strong>Route Source:</n-text>
+                      <n-tag size="small" :type="getSourceTagType(selectedLogDetail.route_source)">
+                        {{ selectedLogDetail.route_source || 'N/A' }}
+                      </n-tag>
+                    </div>
+                    <div>
+                      <n-text strong>Prompt Tokens (Est):</n-text>
+                      {{ selectedLogDetail.prompt_tokens ?? '-' }}
+                    </div>
+                    <div>
+                      <n-text strong>Cleaned Length:</n-text>
+                      {{ selectedLogDetail.cleaned_content_length ?? '-' }} chars
+                    </div>
+                  </n-space>
+                </n-gi>
+              </n-grid>
+            </n-card>
 
-          <n-card size="small" class="log-detail-card collapsible-card">
-            <template #header>
-              <div class="card-header" @click="toggleOriginalRequest">
-                <n-text>{{ t('expertRouting.originalRequest') }}</n-text>
-                <n-icon :class="{ 'rotate-icon': !showOriginalRequest }">
-                  <SvgIcon :path="CHEVRON_DOWN_PATH" :size="20" />
-                </n-icon>
+            <n-card size="small" class="log-detail-card collapsible-card">
+              <template #header>
+                <div class="card-header" @click="toggleOriginalRequest">
+                  <n-text>{{ t('expertRouting.originalRequest') }}</n-text>
+                  <n-icon :class="{ 'rotate-icon': !showOriginalRequest }">
+                    <SvgIcon :path="CHEVRON_DOWN_PATH" :size="20" />
+                  </n-icon>
+                </div>
+              </template>
+              <div v-show="showOriginalRequest">
+                <n-code
+                  v-if="selectedLogDetail.original_request"
+                  :code="JSON.stringify(selectedLogDetail.original_request, null, 2)"
+                  language="json"
+                  class="log-detail-code"
+                  word-wrap
+                />
+                <n-empty v-else :description="t('common.noData')" />
               </div>
-            </template>
-            <div v-show="showOriginalRequest">
-              <n-code
-                v-if="selectedLogDetail.original_request"
-                :code="JSON.stringify(selectedLogDetail.original_request, null, 2)"
-                language="json"
-                class="log-detail-code"
-                word-wrap
-              />
-              <n-empty v-else :description="t('common.noData')" />
-            </div>
-          </n-card>
+            </n-card>
 
-          <n-card size="small" class="log-detail-card collapsible-card">
-            <template #header>
-              <div class="card-header" @click="toggleClassifierRequest">
-                <n-text>{{ t('expertRouting.classifierRequest') }}</n-text>
-                <n-icon :class="{ 'rotate-icon': !showClassifierRequest }">
-                  <SvgIcon :path="CHEVRON_DOWN_PATH" :size="20" />
-                </n-icon>
+            <n-card size="small" class="log-detail-card collapsible-card">
+              <template #header>
+                <div class="card-header" @click="toggleClassifierRequest">
+                  <n-text>{{ t('expertRouting.classifierRequest') }}</n-text>
+                  <n-icon :class="{ 'rotate-icon': !showClassifierRequest }">
+                    <SvgIcon :path="CHEVRON_DOWN_PATH" :size="20" />
+                  </n-icon>
+                </div>
+              </template>
+              <div v-show="showClassifierRequest">
+                <n-code
+                  v-if="selectedLogDetail.classifier_request"
+                  :code="JSON.stringify(selectedLogDetail.classifier_request, null, 2)"
+                  language="json"
+                  class="log-detail-code"
+                  word-wrap
+                />
+                <n-empty v-else :description="t('common.noData')" :show-icon="false" />
               </div>
-            </template>
-            <div v-show="showClassifierRequest">
-              <n-code
-                v-if="selectedLogDetail.classifier_request"
-                :code="JSON.stringify(selectedLogDetail.classifier_request, null, 2)"
-                language="json"
-                class="log-detail-code"
-                word-wrap
-              />
-              <n-empty v-else :description="t('common.noData')" :show-icon="false" />
-            </div>
-          </n-card>
+            </n-card>
 
-          <n-card size="small" class="log-detail-card collapsible-card">
-            <template #header>
-              <div class="card-header" @click="toggleClassifierResponse">
-                <n-text>{{ t('expertRouting.classifierResponse') }}</n-text>
-                <n-icon :class="{ 'rotate-icon': !showClassifierResponse }">
-                  <SvgIcon :path="CHEVRON_DOWN_PATH" :size="20" />
-                </n-icon>
+            <n-card size="small" class="log-detail-card collapsible-card">
+              <template #header>
+                <div class="card-header" @click="toggleClassifierResponse">
+                  <n-text>{{ t('expertRouting.classifierResponse') }}</n-text>
+                  <n-icon :class="{ 'rotate-icon': !showClassifierResponse }">
+                    <SvgIcon :path="CHEVRON_DOWN_PATH" :size="20" />
+                  </n-icon>
+                </div>
+              </template>
+              <div v-show="showClassifierResponse">
+                <n-code
+                  v-if="selectedLogDetail.classifier_response"
+                  :code="JSON.stringify(selectedLogDetail.classifier_response, null, 2)"
+                  language="json"
+                  class="log-detail-code"
+                  word-wrap
+                />
+                <n-empty v-else :description="t('common.noData')" :show-icon="false" />
               </div>
-            </template>
-            <div v-show="showClassifierResponse">
-              <n-code
-                v-if="selectedLogDetail.classifier_response"
-                :code="JSON.stringify(selectedLogDetail.classifier_response, null, 2)"
-                language="json"
-                class="log-detail-code"
-                word-wrap
-              />
-              <n-empty v-else :description="t('common.noData')" :show-icon="false" />
-            </div>
-          </n-card>
+            </n-card>
           </n-space>
         </n-spin>
       </div>
@@ -205,8 +226,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, h } from 'vue';
-import { useI18n } from 'vue-i18n';
+import { ref, computed, onMounted, h } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   NSpace,
   NCard,
@@ -223,20 +244,25 @@ import {
   NIcon,
   NGrid,
   NGi,
-  type DataTableColumns,
-} from 'naive-ui';
-import { expertRoutingApi, type ExpertRoutingStatistics, type ExpertRoutingLog, type ExpertRoutingLogDetail } from '@/api/expert-routing';
-import SvgIcon from '@/components/SvgIcon.vue';
+  type DataTableColumns
+} from 'naive-ui'
+import {
+  expertRoutingApi,
+  type ExpertRoutingStatistics,
+  type ExpertRoutingLog,
+  type ExpertRoutingLogDetail
+} from '@/api/expert-routing'
+import SvgIcon from '@/components/SvgIcon.vue'
 
-const CHEVRON_DOWN_PATH = 'M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z';
+const CHEVRON_DOWN_PATH = 'M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z'
 
-const { t } = useI18n();
+const { t } = useI18n()
 
 interface Props {
-  configId: string;
+  configId: string
 }
 
-const props = defineProps<Props>();
+const props = defineProps<Props>()
 
 const statistics = ref<ExpertRoutingStatistics>({
   totalRequests: 0,
@@ -244,91 +270,100 @@ const statistics = ref<ExpertRoutingStatistics>({
   categoryDistribution: {},
   routeSourceDistribution: {},
   cleaningStats: { avgPromptTokens: 0, avgCleanedLength: 0, totalRequests: 0 }
-});
-const logs = ref<ExpertRoutingLog[]>([]);
-const loading = ref(false);
-const showCategoryDetailModal = ref(false);
-const selectedCategory = ref('');
-const categoryLogs = ref<ExpertRoutingLog[]>([]);
-const categoryLogsLoading = ref(false);
-const showLogDetailModal = ref(false);
-const selectedLogDetail = ref<ExpertRoutingLogDetail | null>(null);
-const logDetailLoading = ref(false);
-const showOriginalRequest = ref(false);
-const showClassifierRequest = ref(false);
-const showClassifierResponse = ref(false);
+})
+const logs = ref<ExpertRoutingLog[]>([])
+const loading = ref(false)
+const showCategoryDetailModal = ref(false)
+const selectedCategory = ref('')
+const categoryLogs = ref<ExpertRoutingLog[]>([])
+const categoryLogsLoading = ref(false)
+const showLogDetailModal = ref(false)
+const selectedLogDetail = ref<ExpertRoutingLogDetail | null>(null)
+const logDetailLoading = ref(false)
+const showOriginalRequest = ref(false)
+const showClassifierRequest = ref(false)
+const showClassifierResponse = ref(false)
 
 const cleaningEfficiency = computed(() => {
-  const stats = statistics.value.cleaningStats;
-  if (!stats || stats.avgPromptTokens === 0) return 0;
+  const stats = statistics.value.cleaningStats
+  if (!stats || stats.avgPromptTokens === 0) return 0
   // 1 token approx 4 chars.
-  const estimatedOriginalChars = stats.avgPromptTokens * 4;
-  if (estimatedOriginalChars <= 0) return 0;
-  const reduction = estimatedOriginalChars - stats.avgCleanedLength;
-  return Math.max(0, Math.round((reduction / estimatedOriginalChars) * 100));
-});
+  const estimatedOriginalChars = stats.avgPromptTokens * 4
+  if (estimatedOriginalChars <= 0) return 0
+  const reduction = estimatedOriginalChars - stats.avgCleanedLength
+  return Math.max(0, Math.round((reduction / estimatedOriginalChars) * 100))
+})
 
-type RouteSource = 'session' | 'local_onnx' | 'llm_second_pass' | 'fallback';
-type NaiveTagType = 'info' | 'success' | 'warning' | 'error' | 'default' | 'primary';
+type RouteSource = 'session' | 'local_onnx' | 'llm_second_pass' | 'fallback'
+type NaiveTagType = 'info' | 'success' | 'warning' | 'error' | 'default' | 'primary'
 
-const ROUTE_SOURCE_META: Record<RouteSource, { label: string; color: string; tag: NaiveTagType }> = {
-  session: { label: 'Session Reuse', color: '#8a2be2', tag: 'info' },
-  local_onnx: { label: 'Local ONNX', color: '#2080f0', tag: 'info' },
-  llm_second_pass: { label: 'LLM Second Pass', color: '#18a058', tag: 'success' },
-  fallback: { label: 'Fallback', color: '#d03050', tag: 'error' },
-};
+const ROUTE_SOURCE_META: Record<RouteSource, { label: string; color: string; tag: NaiveTagType }> =
+  {
+    session: { label: 'Session Reuse', color: '#8a2be2', tag: 'info' },
+    local_onnx: { label: 'Local ONNX', color: '#2080f0', tag: 'info' },
+    llm_second_pass: { label: 'LLM Second Pass', color: '#18a058', tag: 'success' },
+    fallback: { label: 'Fallback', color: '#d03050', tag: 'error' }
+  }
 
 const distributionBars = computed(() => {
-  const dist = statistics.value.routeSourceDistribution || {};
-  const count = (source: RouteSource) => dist[source] || 0;
+  const dist = statistics.value.routeSourceDistribution || {}
+  const count = (source: RouteSource) => dist[source] || 0
 
   // Report each route source distinctly; do NOT collapse local ONNX and LLM
   // second pass into a single bucket (FR-14/AC-8).
-  const order: RouteSource[] = ['session', 'local_onnx', 'llm_second_pass', 'fallback'];
-  const bars: Array<{ source: RouteSource; label: string; color: string }> = [];
+  const order: RouteSource[] = ['session', 'local_onnx', 'llm_second_pass', 'fallback']
+  const bars: Array<{ source: RouteSource; label: string; color: string }> = []
   for (const source of order) {
     if (count(source) > 0 || dist[source] !== undefined) {
-      bars.push({ source, label: ROUTE_SOURCE_META[source].label, color: ROUTE_SOURCE_META[source].color });
+      bars.push({
+        source,
+        label: ROUTE_SOURCE_META[source].label,
+        color: ROUTE_SOURCE_META[source].color
+      })
     }
   }
 
   // Always show at least local_onnx if empty
   if (bars.length === 0) {
-    bars.push({ source: 'local_onnx', label: ROUTE_SOURCE_META.local_onnx.label, color: ROUTE_SOURCE_META.local_onnx.color });
+    bars.push({
+      source: 'local_onnx',
+      label: ROUTE_SOURCE_META.local_onnx.label,
+      color: ROUTE_SOURCE_META.local_onnx.color
+    })
   }
 
-  return bars;
-});
+  return bars
+})
 
 function getSourcePercentage(source: string): number {
-  if (statistics.value.totalRequests === 0) return 0;
-  const count = statistics.value.routeSourceDistribution?.[source] || 0;
-  return Math.round((count / statistics.value.totalRequests) * 100);
+  if (statistics.value.totalRequests === 0) return 0
+  const count = statistics.value.routeSourceDistribution?.[source] || 0
+  return Math.round((count / statistics.value.totalRequests) * 100)
 }
 
 function getSourceTagType(source?: string): NaiveTagType {
-  if (source && source in ROUTE_SOURCE_META) return ROUTE_SOURCE_META[source as RouteSource].tag;
-  return 'default';
+  if (source && source in ROUTE_SOURCE_META) return ROUTE_SOURCE_META[source as RouteSource].tag
+  return 'default'
 }
 
 function formatRouteSource(source?: string) {
-  if (!source) return '-';
-  if (source in ROUTE_SOURCE_META) return ROUTE_SOURCE_META[source as RouteSource].label;
+  if (!source) return '-'
+  if (source in ROUTE_SOURCE_META) return ROUTE_SOURCE_META[source as RouteSource].label
   // Legacy layer sources roll up to LLM second pass.
-  return source.replace(/_/g, ' ');
+  return source.replace(/_/g, ' ')
 }
 
 const logColumns: DataTableColumns<ExpertRoutingLog> = [
   {
     title: () => t('expertRouting.classificationResult'),
     key: 'classification_result',
-    ellipsis: { tooltip: true },
+    ellipsis: { tooltip: true }
   },
   {
     title: () => 'Source',
     key: 'route_source',
     width: 110,
-    render: (row) => {
+    render: row => {
       return h(
         NTag,
         {
@@ -337,150 +372,150 @@ const logColumns: DataTableColumns<ExpertRoutingLog> = [
           bordered: false
         },
         () => formatRouteSource(row.route_source)
-      );
+      )
     }
   },
   {
     title: () => t('expertRouting.selectedExpert'),
     key: 'selected_expert_name',
-    ellipsis: { tooltip: true },
+    ellipsis: { tooltip: true }
   },
   {
     title: () => t('expertRouting.classificationTime'),
     key: 'classification_time',
     width: 100,
-    render: (row) => `${row.classification_time}ms`,
+    render: row => `${row.classification_time}ms`
   },
   {
     title: () => t('common.actions'),
     key: 'actions',
     width: 80,
-    render: (row) => {
+    render: row => {
       return h(
         NButton,
         {
           size: 'tiny',
-          onClick: () => handleLogClick(row),
+          onClick: () => handleLogClick(row)
         },
         () => t('common.details')
-      );
-    },
-  },
-];
+      )
+    }
+  }
+]
 
 const categoryLogColumns: DataTableColumns<ExpertRoutingLog> = [
   {
     title: () => t('expertRouting.selectedExpert'),
     key: 'selected_expert_name',
-    ellipsis: { tooltip: true },
+    ellipsis: { tooltip: true }
   },
   {
     title: () => 'Source',
     key: 'route_source',
     width: 100,
-    render: (row) => row.route_source || '-'
+    render: row => row.route_source || '-'
   },
   {
     title: () => t('expertRouting.classificationTime'),
     key: 'classification_time',
     width: 100,
-    render: (row) => `${row.classification_time}ms`,
+    render: row => `${row.classification_time}ms`
   },
   {
     title: () => t('common.time'),
     key: 'created_at',
     width: 180,
-    render: (row) => new Date(row.created_at).toLocaleString('zh-CN'),
+    render: row => new Date(row.created_at).toLocaleString('zh-CN')
   },
   {
     title: () => t('common.actions'),
     key: 'actions',
     width: 80,
-    render: (row) => {
+    render: row => {
       return h(
         NButton,
         {
           size: 'tiny',
-          onClick: () => handleLogClick(row),
+          onClick: () => handleLogClick(row)
         },
         () => t('common.details')
-      );
-    },
-  },
-];
+      )
+    }
+  }
+]
 
 function getPercentage(count: number): number {
-  if (statistics.value.totalRequests === 0) return 0;
-  return Math.round((count / statistics.value.totalRequests) * 100);
+  if (statistics.value.totalRequests === 0) return 0
+  return Math.round((count / statistics.value.totalRequests) * 100)
 }
 
 async function loadStatistics() {
   try {
-    statistics.value = await expertRoutingApi.getStatistics(props.configId);
+    statistics.value = await expertRoutingApi.getStatistics(props.configId)
   } catch (error) {
-    console.error('Failed to load statistics:', error);
+    console.error('Failed to load statistics:', error)
   }
 }
 
 async function loadLogs() {
-  loading.value = true;
+  loading.value = true
   try {
-    const response = await expertRoutingApi.getLogs(props.configId, 50);
-    logs.value = response.logs;
+    const response = await expertRoutingApi.getLogs(props.configId, 50)
+    logs.value = response.logs
   } catch (error) {
-    console.error('Failed to load logs:', error);
+    console.error('Failed to load logs:', error)
   } finally {
-    loading.value = false;
+    loading.value = false
   }
 }
 
 async function handleCategoryClick(category: string) {
-  selectedCategory.value = category;
-  showCategoryDetailModal.value = true;
-  categoryLogsLoading.value = true;
+  selectedCategory.value = category
+  showCategoryDetailModal.value = true
+  categoryLogsLoading.value = true
   try {
-    const response = await expertRoutingApi.getLogsByCategory(props.configId, category, 100);
-    categoryLogs.value = response.logs;
+    const response = await expertRoutingApi.getLogsByCategory(props.configId, category, 100)
+    categoryLogs.value = response.logs
   } catch (error) {
-    console.error('Failed to load category logs:', error);
+    console.error('Failed to load category logs:', error)
   } finally {
-    categoryLogsLoading.value = false;
+    categoryLogsLoading.value = false
   }
 }
 
 async function handleLogClick(log: ExpertRoutingLog) {
-  showLogDetailModal.value = true;
-  logDetailLoading.value = true;
-  selectedLogDetail.value = null;
-  showOriginalRequest.value = false;
-  showClassifierRequest.value = false;
-  showClassifierResponse.value = false;
+  showLogDetailModal.value = true
+  logDetailLoading.value = true
+  selectedLogDetail.value = null
+  showOriginalRequest.value = false
+  showClassifierRequest.value = false
+  showClassifierResponse.value = false
   try {
-    const detail = await expertRoutingApi.getLogDetails(props.configId, log.id);
-    selectedLogDetail.value = detail;
+    const detail = await expertRoutingApi.getLogDetails(props.configId, log.id)
+    selectedLogDetail.value = detail
   } catch (error) {
-    console.error('Failed to load log details:', error);
+    console.error('Failed to load log details:', error)
   } finally {
-    logDetailLoading.value = false;
+    logDetailLoading.value = false
   }
 }
 
 function toggleOriginalRequest() {
-  showOriginalRequest.value = !showOriginalRequest.value;
+  showOriginalRequest.value = !showOriginalRequest.value
 }
 
 function toggleClassifierRequest() {
-  showClassifierRequest.value = !showClassifierRequest.value;
+  showClassifierRequest.value = !showClassifierRequest.value
 }
 
 function toggleClassifierResponse() {
-  showClassifierResponse.value = !showClassifierResponse.value;
+  showClassifierResponse.value = !showClassifierResponse.value
 }
 
 onMounted(() => {
-  loadStatistics();
-  loadLogs();
-});
+  loadStatistics()
+  loadLogs()
+})
 </script>
 
 <style scoped>

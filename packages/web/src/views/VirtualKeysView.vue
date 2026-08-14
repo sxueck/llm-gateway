@@ -4,11 +4,11 @@
       <n-space justify="space-between" align="center">
         <div>
           <h2 class="page-title">虚拟密钥管理</h2>
-          <p class="page-subtitle">创建和管理虚拟 API 密钥,用于访问 LLM Gateway。可以设置过期时间和使用限制</p>
+          <p class="page-subtitle">
+            创建和管理虚拟 API 密钥,用于访问 LLM Gateway。可以设置过期时间和使用限制
+          </p>
         </div>
-        <n-button type="primary" size="small" @click="showModal = true">
-          创建虚拟密钥
-        </n-button>
+        <n-button type="primary" size="small" @click="showModal = true">创建虚拟密钥</n-button>
       </n-space>
 
       <n-card class="table-card">
@@ -17,6 +17,7 @@
           :data="virtualKeyStore.virtualKeys"
           :loading="virtualKeyStore.loading"
           :pagination="{ pageSize: 10 }"
+          :scroll-x="1100"
           :bordered="false"
           size="small"
         />
@@ -28,94 +29,125 @@
       preset="card"
       :title="editingId ? '编辑虚拟密钥' : '创建虚拟密钥'"
       class="key-modal"
-      :style="{ width: '760px', maxHeight: '85vh' }"
+      :style="{ width: '760px', maxWidth: '92vw', maxHeight: '85vh' }"
       :segmented="{
         content: 'soft',
         footer: 'soft'
       }"
     >
       <div class="modal-form-wrapper">
-        <n-form ref="formRef" :model="formValue" :rules="rules" label-placement="left" label-width="90" size="small">
-        <n-form-item label="密钥名称" path="name">
-          <n-input v-model:value="formValue.name" placeholder="如: 生产环境密钥" size="small" />
-        </n-form-item>
-        <n-form-item label="关联模型" path="modelIds">
-          <n-select
-            v-model:value="formValue.modelIds"
-            :options="modelOptions"
-            placeholder="选择一个或多个模型"
-            filterable
-            multiple
-            clearable
-            size="small"
-          />
-        </n-form-item>
-        <n-form-item v-if="!editingId" label="生成方式" path="keyType">
-          <n-radio-group v-model:value="formValue.keyType" size="small">
-            <n-space :size="12">
-              <n-radio value="auto">自动生成</n-radio>
-              <n-radio value="custom">自定义</n-radio>
+        <n-form
+          ref="formRef"
+          :model="formValue"
+          :rules="rules"
+          label-placement="left"
+          label-width="90"
+          size="small"
+        >
+          <n-form-item label="密钥名称" path="name">
+            <n-input v-model:value="formValue.name" placeholder="如: 生产环境密钥" size="small" />
+          </n-form-item>
+          <n-form-item label="关联模型" path="modelIds">
+            <n-select
+              v-model:value="formValue.modelIds"
+              :options="modelOptions"
+              placeholder="选择一个或多个模型"
+              filterable
+              multiple
+              clearable
+              size="small"
+            />
+          </n-form-item>
+          <n-form-item v-if="!editingId" label="生成方式" path="keyType">
+            <n-radio-group v-model:value="formValue.keyType" size="small">
+              <n-space :size="12">
+                <n-radio value="auto">自动生成</n-radio>
+                <n-radio value="custom">自定义</n-radio>
+              </n-space>
+            </n-radio-group>
+          </n-form-item>
+          <n-form-item
+            v-if="!editingId && formValue.keyType === 'custom'"
+            label="自定义密钥"
+            path="customKey"
+          >
+            <n-input
+              v-model:value="formValue.customKey"
+              placeholder="8-64字符,仅支持字母、数字、下划线、连字符"
+              size="small"
+            />
+          </n-form-item>
+          <n-form-item label="速率限制" path="rateLimit">
+            <n-input-number
+              v-model:value="formValue.rateLimit"
+              placeholder="请求/分钟"
+              :min="0"
+              style="width: 100%"
+              size="small"
+            />
+          </n-form-item>
+          <n-form-item label="启用缓存">
+            <n-switch v-model:value="formValue.cacheEnabled" size="small" />
+          </n-form-item>
+          <n-form-item label="禁用日志">
+            <n-switch v-model:value="formValue.disableLogging" size="small" />
+          </n-form-item>
+          <n-form-item label="动态压缩">
+            <n-space vertical :size="4">
+              <n-switch v-model:value="formValue.dynamicCompressionEnabled" size="small" />
+              <span style="font-size: 12px; color: #999">
+                自动压缩历史消息中的重复内容,节省 Token
+              </span>
             </n-space>
-          </n-radio-group>
-        </n-form-item>
-        <n-form-item v-if="!editingId && formValue.keyType === 'custom'" label="自定义密钥" path="customKey">
-          <n-input v-model:value="formValue.customKey" placeholder="8-64字符,仅支持字母、数字、下划线、连字符" size="small" />
-        </n-form-item>
-        <n-form-item label="速率限制" path="rateLimit">
-          <n-input-number v-model:value="formValue.rateLimit" placeholder="请求/分钟" :min="0" style="width: 100%" size="small" />
-        </n-form-item>
-        <n-form-item label="启用缓存">
-          <n-switch v-model:value="formValue.cacheEnabled" size="small" />
-        </n-form-item>
-        <n-form-item label="禁用日志">
-          <n-switch v-model:value="formValue.disableLogging" size="small" />
-        </n-form-item>
-        <n-form-item label="动态压缩">
-          <n-space vertical :size="4">
-            <n-switch v-model:value="formValue.dynamicCompressionEnabled" size="small" />
-            <span style="font-size: 12px; color: #999;">自动压缩历史消息中的重复内容,节省 Token</span>
-          </n-space>
-        </n-form-item>
-        <n-form-item label="图像压缩">
-          <n-space vertical :size="4">
-            <n-switch v-model:value="formValue.imageCompressionEnabled" size="small" />
-            <span style="font-size: 12px; color: #999;">仅处理 base64 图片,自动缩放最长边到 768px（png/jpeg/webp）</span>
-          </n-space>
-        </n-form-item>
-			<n-form-item label="拦截空温度">
-			  <n-space vertical :size="4">
-				  <n-space :size="12" align="center">
-					  <n-switch v-model:value="formValue.interceptZeroTemperature" size="small" />
-					  <n-input-number
-						v-model:value="formValue.zeroTemperatureReplacement"
-                :disabled="!formValue.interceptZeroTemperature"
-                :min="0"
-                :max="2"
-                :step="0.1"
-                placeholder="例如: 0.7"
-                style="width: 150px"
-                size="small"
-              />
+          </n-form-item>
+          <n-form-item label="图像压缩">
+            <n-space vertical :size="4">
+              <n-switch v-model:value="formValue.imageCompressionEnabled" size="small" />
+              <span style="font-size: 12px; color: #999">
+                仅处理 base64 图片,自动缩放最长边到 768px（png/jpeg/webp）
+              </span>
             </n-space>
-            <span style="font-size: 12px; color: #999;">开启后,将传入的 temperature=0 替换为指定值</span>
-          </n-space>
-        </n-form-item>
-        <n-form-item label="PII 保护">
-          <n-space vertical :size="4">
-            <n-switch v-model:value="formValue.piiProtectionEnabled" size="small" />
-            <span style="font-size: 12px; color: #999;">开启后,将检测并替换请求中的敏感信息(secret、IP、邮箱)</span>
-          </n-space>
-        </n-form-item>
-        <n-form-item label="Prompt 捕获">
-          <n-space vertical :size="4">
-            <n-switch v-model:value="formValue.promptCaptureEnabled" size="small" />
-            <span style="font-size: 12px; color: #999;">捕获清洗后的用户提问样本，可在 Prompt 样本中下载</span>
-          </n-space>
-        </n-form-item>
-        <n-form-item label="启用">
-          <n-switch v-model:value="formValue.enabled" size="small" />
-        </n-form-item>
-      </n-form>
+          </n-form-item>
+          <n-form-item label="拦截空温度">
+            <n-space vertical :size="4">
+              <n-space :size="12" align="center">
+                <n-switch v-model:value="formValue.interceptZeroTemperature" size="small" />
+                <n-input-number
+                  v-model:value="formValue.zeroTemperatureReplacement"
+                  :disabled="!formValue.interceptZeroTemperature"
+                  :min="0"
+                  :max="2"
+                  :step="0.1"
+                  placeholder="例如: 0.7"
+                  style="width: 150px"
+                  size="small"
+                />
+              </n-space>
+              <span style="font-size: 12px; color: #999">
+                开启后,将传入的 temperature=0 替换为指定值
+              </span>
+            </n-space>
+          </n-form-item>
+          <n-form-item label="PII 保护">
+            <n-space vertical :size="4">
+              <n-switch v-model:value="formValue.piiProtectionEnabled" size="small" />
+              <span style="font-size: 12px; color: #999">
+                开启后,将检测并替换请求中的敏感信息(secret、IP、邮箱)
+              </span>
+            </n-space>
+          </n-form-item>
+          <n-form-item label="Prompt 捕获">
+            <n-space vertical :size="4">
+              <n-switch v-model:value="formValue.promptCaptureEnabled" size="small" />
+              <span style="font-size: 12px; color: #999">
+                捕获清洗后的用户提问样本，可在 Prompt 样本中下载
+              </span>
+            </n-space>
+          </n-form-item>
+          <n-form-item label="启用">
+            <n-switch v-model:value="formValue.enabled" size="small" />
+          </n-form-item>
+        </n-form>
       </div>
       <template #footer>
         <n-space justify="end" :size="8">
@@ -127,11 +159,14 @@
       </template>
     </n-modal>
 
-    <n-modal v-model:show="showKeyModal" preset="card" title="虚拟密钥已创建" style="width: 500px">
+    <n-modal
+      v-model:show="showKeyModal"
+      preset="card"
+      title="虚拟密钥已创建"
+      style="width: 500px; max-width: 92vw"
+    >
       <n-space vertical>
-        <n-alert type="success">
-          密钥创建成功！请妥善保管密钥值。
-        </n-alert>
+        <n-alert type="success">密钥创建成功！请妥善保管密钥值。</n-alert>
         <n-input-group>
           <n-input :value="createdKeyValue" readonly />
           <n-button @click="copyKey">复制</n-button>
@@ -147,7 +182,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted, watch } from 'vue';
+import { ref, h, onMounted, watch } from 'vue'
 import {
   useMessage,
   NSpace,
@@ -167,35 +202,35 @@ import {
   NRadio,
   NAlert,
   NInputGroup,
-  NIcon,
-} from 'naive-ui';
-import { EditOutlined, DeleteOutlined, ContentCopyOutlined } from '@vicons/material';
-import { useVirtualKeyStore } from '@/stores/virtual-key';
-import { useModelStore } from '@/stores/model';
-import { useModelOptions } from '@/composables/useModelOptions';
-import { virtualKeyApi } from '@/api/virtual-key';
-import type { VirtualKey } from '@/types';
-import { copyToClipboard } from '@/utils/common';
-import { createDefaultVirtualKeyForm } from '@/types/virtual-key';
+  NIcon
+} from 'naive-ui'
+import { EditOutlined, DeleteOutlined, ContentCopyOutlined } from '@vicons/material'
+import { useVirtualKeyStore } from '@/stores/virtual-key'
+import { useModelStore } from '@/stores/model'
+import { useModelOptions } from '@/composables/useModelOptions'
+import { virtualKeyApi } from '@/api/virtual-key'
+import type { VirtualKey } from '@/types'
+import { copyToClipboard } from '@/utils/common'
+import { createDefaultVirtualKeyForm } from '@/types/virtual-key'
 
-const message = useMessage();
-const virtualKeyStore = useVirtualKeyStore();
-const modelStore = useModelStore();
+const message = useMessage()
+const virtualKeyStore = useVirtualKeyStore()
+const modelStore = useModelStore()
 
-const showModal = ref(false);
-const showKeyModal = ref(false);
-const formRef = ref();
-const submitting = ref(false);
-const editingId = ref<string | null>(null);
-const createdKeyValue = ref('');
+const showModal = ref(false)
+const showKeyModal = ref(false)
+const formRef = ref()
+const submitting = ref(false)
+const editingId = ref<string | null>(null)
+const createdKeyValue = ref('')
 
-const formValue = ref(createDefaultVirtualKeyForm());
+const formValue = ref(createDefaultVirtualKeyForm())
 
 const { modelOptions } = useModelOptions({
   uniqueByIdentifier: false,
   labelStyle: 'nameWithProvider',
-  valueField: 'id',
-});
+  valueField: 'id'
+})
 
 const rules = {
   name: [{ required: true, message: '请输入密钥名称', trigger: 'blur' }],
@@ -204,143 +239,185 @@ const rules = {
       required: true,
       validator: (_rule: any, value: string[]) => {
         if (!value || value.length === 0) {
-          return new Error('请至少选择一个模型');
+          return new Error('请至少选择一个模型')
         }
-        return true;
+        return true
       },
-      trigger: 'change',
-    },
+      trigger: 'change'
+    }
   ],
   customKey: [
     {
       required: true,
       validator: (_rule: any, value: string) => {
         if (formValue.value.keyType === 'custom' && !value) {
-          return new Error('请输入自定义密钥');
+          return new Error('请输入自定义密钥')
         }
-        return true;
+        return true
       },
-      trigger: 'blur',
-    },
-  ],
-};
+      trigger: 'blur'
+    }
+  ]
+}
 
 const columns = [
-  { title: '名称', key: 'name' },
-  { title: '密钥值', key: 'keyValue', ellipsis: { tooltip: true } },
+  { title: '名称', key: 'name', width: 180, ellipsis: { tooltip: true } },
+  { title: '密钥值', key: 'keyValue', width: 160, ellipsis: { tooltip: true } },
   {
     title: '关联模型',
     key: 'modelIds',
     width: 280,
     render: (row: VirtualKey) => {
-      const modelIds: string[] = [];
-      if (row.modelId) modelIds.push(row.modelId);
+      const modelIds: string[] = []
+      if (row.modelId) modelIds.push(row.modelId)
       if (row.modelIds && Array.isArray(row.modelIds)) {
-        modelIds.push(...row.modelIds);
+        modelIds.push(...row.modelIds)
       }
 
-      const uniqueModelIds = [...new Set(modelIds)];
-      if (uniqueModelIds.length === 0) return '-';
+      const uniqueModelIds = [...new Set(modelIds)]
+      if (uniqueModelIds.length === 0) return '-'
 
-      const models = uniqueModelIds.map(id => modelStore.models.find(m => m.id === id)).filter(Boolean);
+      const models = uniqueModelIds
+        .map(id => modelStore.models.find(m => m.id === id))
+        .filter(Boolean)
 
-      return h(NSpace, { size: 4, wrap: true }, {
-        default: () => {
-          const max = 5;
-          const tags = models.slice(0, max).map(model => {
-            if (!model) return null;
-            if (model.isVirtual) {
-              return h(NTag, { type: 'info', size: 'small', round: true }, { default: () => model.name });
+      return h(
+        NSpace,
+        { size: 4, wrap: true },
+        {
+          default: () => {
+            const max = 5
+            const tags = models
+              .slice(0, max)
+              .map(model => {
+                if (!model) return null
+                if (model.isVirtual) {
+                  return h(
+                    NTag,
+                    { type: 'info', size: 'small', round: true },
+                    { default: () => model.name }
+                  )
+                }
+                return h(NTag, { type: 'default', size: 'small' }, { default: () => model.name })
+              })
+              .filter(Boolean)
+            const remaining = models.length - max
+            if (remaining > 0) {
+              tags.push(
+                h(NTag, { type: 'default', size: 'small' }, { default: () => `+${remaining}` })
+              )
             }
-            return h(NTag, { type: 'default', size: 'small' }, { default: () => model.name });
-          }).filter(Boolean);
-          const remaining = models.length - max;
-          if (remaining > 0) {
-            tags.push(h(NTag, { type: 'default', size: 'small' }, { default: () => `+${remaining}` }));
+            return tags
           }
-          return tags;
-        },
-      });
-    },
+        }
+      )
+    }
   },
   {
     title: '状态',
     key: 'enabled',
-    render: (row: VirtualKey) => h(NTag, { type: row.enabled ? 'success' : 'default' }, { default: () => row.enabled ? '启用' : '禁用' }),
+    render: (row: VirtualKey) =>
+      h(
+        NTag,
+        { type: row.enabled ? 'success' : 'default' },
+        { default: () => (row.enabled ? '启用' : '禁用') }
+      )
   },
   {
     title: '缓存',
     key: 'cacheEnabled',
     render: (row: VirtualKey) => {
       if (!row.cacheEnabled) {
-        return h(NTag, { type: 'default', size: 'small' }, { default: () => '未启用' });
+        return h(NTag, { type: 'default', size: 'small' }, { default: () => '未启用' })
       }
-      return h(NTag, { type: 'success', size: 'small' }, { default: () => '已启用' });
-    },
+      return h(NTag, { type: 'success', size: 'small' }, { default: () => '已启用' })
+    }
   },
   {
     title: '日志记录',
     key: 'disableLogging',
     render: (row: VirtualKey) => {
       if (row.disableLogging) {
-        return h(NTag, { type: 'warning', size: 'small' }, { default: () => '已禁用' });
+        return h(NTag, { type: 'warning', size: 'small' }, { default: () => '已禁用' })
       }
-      return h(NTag, { type: 'success', size: 'small' }, { default: () => '已启用' });
-    },
+      return h(NTag, { type: 'success', size: 'small' }, { default: () => '已启用' })
+    }
   },
   {
     title: '速率限制',
     key: 'rateLimit',
-    render: (row: VirtualKey) => row.rateLimit ? `${row.rateLimit} 请求/分钟` : '-',
+    render: (row: VirtualKey) => (row.rateLimit ? `${row.rateLimit} 请求/分钟` : '-')
   },
   {
     title: '操作',
     key: 'actions',
     width: 150,
-    render: (row: VirtualKey) => h(NSpace, { size: 6 }, {
-      default: () => [
-        h(NButton, {
-          size: 'small',
-          quaternary: true,
-          circle: true,
-          'aria-label': '复制密钥',
-          onClick: () => copyKeyValue(row.keyValue),
-        }, {
-          icon: () => h(NIcon, null, { default: () => h(ContentCopyOutlined) }),
-        }),
-        h(NButton, {
-          size: 'small',
-          quaternary: true,
-          circle: true,
-          'aria-label': '编辑',
-          onClick: () => handleEdit(row),
-        }, {
-          icon: () => h(NIcon, null, { default: () => h(EditOutlined) }),
-        }),
-        h(NPopconfirm, {
-          onPositiveClick: () => handleDelete(row.id),
-        }, {
-          trigger: () => h(NButton, {
-            size: 'small',
-            quaternary: true,
-            circle: true,
-            'aria-label': '删除',
-          }, {
-            icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) }),
-          }),
-          default: () => '确定删除此虚拟密钥吗？',
-        }),
-      ],
-    }),
-  },
-];
+    render: (row: VirtualKey) =>
+      h(
+        NSpace,
+        { size: 6 },
+        {
+          default: () => [
+            h(
+              NButton,
+              {
+                'size': 'small',
+                'quaternary': true,
+                'circle': true,
+                'aria-label': '复制密钥',
+                'onClick': () => copyKeyValue(row.keyValue)
+              },
+              {
+                icon: () => h(NIcon, null, { default: () => h(ContentCopyOutlined) })
+              }
+            ),
+            h(
+              NButton,
+              {
+                'size': 'small',
+                'quaternary': true,
+                'circle': true,
+                'aria-label': '编辑',
+                'onClick': () => handleEdit(row)
+              },
+              {
+                icon: () => h(NIcon, null, { default: () => h(EditOutlined) })
+              }
+            ),
+            h(
+              NPopconfirm,
+              {
+                onPositiveClick: () => handleDelete(row.id)
+              },
+              {
+                trigger: () =>
+                  h(
+                    NButton,
+                    {
+                      'size': 'small',
+                      'quaternary': true,
+                      'circle': true,
+                      'aria-label': '删除'
+                    },
+                    {
+                      icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) })
+                    }
+                  ),
+                default: () => '确定删除此虚拟密钥吗？'
+              }
+            )
+          ]
+        }
+      )
+  }
+]
 
 function handleEdit(vk: VirtualKey) {
-  editingId.value = vk.id;
-  const modelIds: string[] = [];
-  if (vk.modelId) modelIds.push(vk.modelId);
+  editingId.value = vk.id
+  const modelIds: string[] = []
+  if (vk.modelId) modelIds.push(vk.modelId)
   if (vk.modelIds && Array.isArray(vk.modelIds)) {
-    modelIds.push(...vk.modelIds);
+    modelIds.push(...vk.modelIds)
   }
 
   formValue.value = {
@@ -357,25 +434,25 @@ function handleEdit(vk: VirtualKey) {
     interceptZeroTemperature: vk.interceptZeroTemperature,
     zeroTemperatureReplacement: vk.zeroTemperatureReplacement || 0.7,
     piiProtectionEnabled: vk.piiProtectionEnabled,
-    promptCaptureEnabled: vk.promptCaptureEnabled,
-  };
-  showModal.value = true;
+    promptCaptureEnabled: vk.promptCaptureEnabled
+  }
+  showModal.value = true
 }
 
 async function handleDelete(id: string) {
   try {
-    await virtualKeyApi.delete(id);
-    message.success('删除成功');
-    await virtualKeyStore.fetchVirtualKeys();
+    await virtualKeyApi.delete(id)
+    message.success('删除成功')
+    await virtualKeyStore.fetchVirtualKeys()
   } catch (error: any) {
-    message.error(error.message);
+    message.error(error.message)
   }
 }
 
 async function handleSubmit() {
   try {
-    await formRef.value?.validate();
-    submitting.value = true;
+    await formRef.value?.validate()
+    submitting.value = true
 
     if (editingId.value) {
       await virtualKeyApi.update(editingId.value, {
@@ -386,66 +463,64 @@ async function handleSubmit() {
         cacheEnabled: formValue.value.cacheEnabled,
         disableLogging: formValue.value.disableLogging,
         interceptZeroTemperature: formValue.value.interceptZeroTemperature,
-        zeroTemperatureReplacement: formValue.value.zeroTemperatureReplacement !== undefined
-          ? Number(formValue.value.zeroTemperatureReplacement)
-          : undefined,
+        zeroTemperatureReplacement:
+          formValue.value.zeroTemperatureReplacement !== undefined
+            ? Number(formValue.value.zeroTemperatureReplacement)
+            : undefined,
         dynamicCompressionEnabled: formValue.value.dynamicCompressionEnabled,
         imageCompressionEnabled: formValue.value.imageCompressionEnabled,
         piiProtectionEnabled: formValue.value.piiProtectionEnabled,
-        promptCaptureEnabled: formValue.value.promptCaptureEnabled,
-      });
-      message.success('更新成功');
-      showModal.value = false;
+        promptCaptureEnabled: formValue.value.promptCaptureEnabled
+      })
+      message.success('更新成功')
+      showModal.value = false
     } else {
       const createData = {
         ...formValue.value,
-        zeroTemperatureReplacement: formValue.value.zeroTemperatureReplacement !== undefined
-          ? Number(formValue.value.zeroTemperatureReplacement)
-          : undefined,
-      };
-      const result = await virtualKeyApi.create(createData);
-      createdKeyValue.value = result.keyValue;
-      showModal.value = false;
-      showKeyModal.value = true;
+        zeroTemperatureReplacement:
+          formValue.value.zeroTemperatureReplacement !== undefined
+            ? Number(formValue.value.zeroTemperatureReplacement)
+            : undefined
+      }
+      const result = await virtualKeyApi.create(createData)
+      createdKeyValue.value = result.keyValue
+      showModal.value = false
+      showKeyModal.value = true
     }
 
-    resetForm();
-    await virtualKeyStore.fetchVirtualKeys();
+    resetForm()
+    await virtualKeyStore.fetchVirtualKeys()
   } catch (error: any) {
     if (error.message) {
-      message.error(error.message);
+      message.error(error.message)
     }
   } finally {
-    submitting.value = false;
+    submitting.value = false
   }
 }
 
 function resetForm() {
-  editingId.value = null;
-  formValue.value = createDefaultVirtualKeyForm();
+  editingId.value = null
+  formValue.value = createDefaultVirtualKeyForm()
 }
 
 function copyKeyValue(keyValue: string) {
-  copyToClipboard(keyValue);
+  copyToClipboard(keyValue)
 }
 
 function copyKey() {
-  copyToClipboard(createdKeyValue.value);
+  copyToClipboard(createdKeyValue.value)
 }
 
 onMounted(async () => {
-  await Promise.all([
-    virtualKeyStore.fetchVirtualKeys(),
-    modelStore.fetchModels(),
-  ]);
-});
+  await Promise.all([virtualKeyStore.fetchVirtualKeys(), modelStore.fetchModels()])
+})
 
-watch(showModal, async (val) => {
+watch(showModal, async val => {
   if (val) {
-    await modelStore.fetchModels();
+    await modelStore.fetchModels()
   }
-});
-
+})
 </script>
 
 <style scoped>

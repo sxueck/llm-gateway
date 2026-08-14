@@ -77,7 +77,7 @@
       preset="card"
       :title="editingId ? '编辑智能路由' : '创建智能路由'"
       class="virtual-model-modal"
-      :style="{ width: '1000px', maxHeight: '90vh' }"
+      :style="{ width: '1000px', maxWidth: '92vw', maxHeight: '90vh' }"
       :segmented="{
         content: 'soft',
         footer: 'soft'
@@ -103,7 +103,7 @@
       preset="card"
       title="配置预览"
       class="preview-modal"
-      :style="{ width: '700px', maxHeight: '85vh' }"
+      :style="{ width: '700px', maxWidth: '92vw', maxHeight: '85vh' }"
       :segmented="{
         content: 'soft',
         footer: 'soft'
@@ -447,7 +447,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-@import '@/styles/modal.css';
 .virtual-models-view {
   max-width: 1400px;
   margin: 0 auto;

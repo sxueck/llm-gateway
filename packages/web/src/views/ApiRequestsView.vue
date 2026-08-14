@@ -48,6 +48,7 @@
             :pagination="pagination"
             :row-key="(row: ApiRequest) => row.id"
             :row-props="rowProps"
+            :scroll-x="1180"
             remote
             striped
           />
@@ -55,7 +56,7 @@
       </n-card>
     </n-space>
 
-    <n-drawer v-model:show="showDetail" :width="'65%'" placement="right">
+    <n-drawer v-model:show="showDetail" :width="drawerWidth" placement="right">
       <n-drawer-content title="请求详情" closable class="request-detail-drawer">
         <n-space vertical :size="20" v-if="selectedRequest">
           <n-card size="small" :bordered="false" class="detail-meta-card">
@@ -82,24 +83,41 @@
                 <n-text strong>{{ selectedRequest.model || '-' }}</n-text>
               </n-descriptions-item>
               <n-descriptions-item label="状态">
-                <n-tag :type="selectedRequest.status === 'success' ? 'success' : 'error'" size="medium">
+                <n-tag
+                  :type="selectedRequest.status === 'success' ? 'success' : 'error'"
+                  size="medium"
+                >
                   {{ selectedRequest.status === 'success' ? '成功' : '失败' }}
                 </n-tag>
               </n-descriptions-item>
               <n-descriptions-item label="输入 Tokens">
-                <n-tag type="default" size="small">{{ getTokens(selectedRequest!, 'input') }}</n-tag>
+                <n-tag type="default" size="small">
+                  {{ getTokens(selectedRequest!, 'input') }}
+                </n-tag>
               </n-descriptions-item>
               <n-descriptions-item label="输出 Tokens">
-                <n-tag type="default" size="small">{{ getTokens(selectedRequest!, 'output') }}</n-tag>
+                <n-tag type="default" size="small">
+                  {{ getTokens(selectedRequest!, 'output') }}
+                </n-tag>
               </n-descriptions-item>
               <n-descriptions-item label="缓存 Tokens" v-if="selectedRequest.cached_tokens">
                 <n-tag type="warning" size="small">{{ selectedRequest.cached_tokens }}</n-tag>
               </n-descriptions-item>
-              <n-descriptions-item label="压缩前 Tokens" v-if="selectedRequest.compression_original_tokens">
-                <n-tag type="info" size="small">{{ selectedRequest.compression_original_tokens }}</n-tag>
+              <n-descriptions-item
+                label="压缩前 Tokens"
+                v-if="selectedRequest.compression_original_tokens"
+              >
+                <n-tag type="info" size="small">
+                  {{ selectedRequest.compression_original_tokens }}
+                </n-tag>
               </n-descriptions-item>
-              <n-descriptions-item label="压缩节省 Tokens" v-if="selectedRequest.compression_saved_tokens">
-                <n-tag type="success" size="small">{{ selectedRequest.compression_saved_tokens }}</n-tag>
+              <n-descriptions-item
+                label="压缩节省 Tokens"
+                v-if="selectedRequest.compression_saved_tokens"
+              >
+                <n-tag type="success" size="small">
+                  {{ selectedRequest.compression_saved_tokens }}
+                </n-tag>
               </n-descriptions-item>
               <n-descriptions-item label="虚拟密钥 ID" v-if="selectedRequest.virtual_key_id">
                 <n-text code class="detail-code-id">{{ selectedRequest.virtual_key_id }}</n-text>
@@ -173,56 +191,75 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted, reactive } from 'vue';
-import { useMessage, NSpace, NCard, NButton, NDataTable, NTag, NDrawer, NDrawerContent, NDescriptions, NDescriptionsItem, NDatePicker, NSelect, NCode, NModal, NText, NInputNumber, NAlert } from 'naive-ui';
-import { apiRequestApi, type ApiRequest } from '@/api/api-request';
-import { virtualKeyApi } from '@/api/virtual-key';
-import type { DataTableColumns, PaginationProps } from 'naive-ui';
-import { formatJson, formatTimestamp } from '@/utils/common';
-import { extractRequestPreview, extractResponsePreview } from '@/utils/content-truncator';
+import { ref, computed, h, onMounted, reactive } from 'vue'
+import {
+  useMessage,
+  NSpace,
+  NCard,
+  NButton,
+  NDataTable,
+  NTag,
+  NDrawer,
+  NDrawerContent,
+  NDescriptions,
+  NDescriptionsItem,
+  NDatePicker,
+  NSelect,
+  NCode,
+  NModal,
+  NText,
+  NInputNumber,
+  NAlert
+} from 'naive-ui'
+import { apiRequestApi, type ApiRequest } from '@/api/api-request'
+import { virtualKeyApi } from '@/api/virtual-key'
+import type { DataTableColumns, PaginationProps } from 'naive-ui'
+import { formatJson, formatTimestamp } from '@/utils/common'
+import { extractRequestPreview, extractResponsePreview } from '@/utils/content-truncator'
+import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize'
 
-const message = useMessage();
-const loading = ref(false);
-const requests = ref<ApiRequest[]>([]);
-const showDetail = ref(false);
-const selectedRequest = ref<ApiRequest | null>(null);
-const timeRange = ref<[number, number] | null>(null);
-const filterStatus = ref<string | undefined>(undefined);
-const filterVirtualKeyId = ref<string | undefined>(undefined);
-const virtualKeyOptions = ref<Array<{ label: string; value: string }>>([]);
-const showCleanDialog = ref(false);
-const cleanDays = ref(30);
-const cleanLoading = ref(false);
+const message = useMessage()
+const loading = ref(false)
+const requests = ref<ApiRequest[]>([])
+const showDetail = ref(false)
+const selectedRequest = ref<ApiRequest | null>(null)
+const timeRange = ref<[number, number] | null>(null)
+const filterStatus = ref<string | undefined>(undefined)
+const filterVirtualKeyId = ref<string | undefined>(undefined)
+const virtualKeyOptions = ref<Array<{ label: string; value: string }>>([])
+const showCleanDialog = ref(false)
+const cleanDays = ref(30)
+const cleanLoading = ref(false)
 
-type JsonLike = Record<string, any> | string | null | undefined;
+type JsonLike = Record<string, any> | string | null | undefined
 
 const parseJsonLike = (value: JsonLike): Record<string, any> | null => {
-  if (!value) return null;
-  if (typeof value === 'object') return value;
+  if (!value) return null
+  if (typeof value === 'object') return value
   try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' ? parsed : null;
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' ? parsed : null
   } catch {
-    return null;
+    return null
   }
-};
+}
 
 const getRequestParams = (row: ApiRequest): Record<string, any> | null => {
-  return parseJsonLike(row.request_params_json);
-};
+  return parseJsonLike(row.request_params_json)
+}
 
 const getResponseMeta = (row: ApiRequest): Record<string, any> | null => {
-  return parseJsonLike(row.response_meta_json);
-};
+  return parseJsonLike(row.response_meta_json)
+}
 
 const previewFromJson = (value: JsonLike): string => {
-  const parsed = parseJsonLike(value);
-  if (!parsed) return '-';
+  const parsed = parseJsonLike(value)
+  if (!parsed) return '-'
 
-  const text = JSON.stringify(parsed);
-  if (!text) return '-';
-  return text.length > 80 ? `${text.slice(0, 80)}...` : text;
-};
+  const text = JSON.stringify(parsed)
+  if (!text) return '-'
+  return text.length > 80 ? `${text.slice(0, 80)}...` : text
+}
 
 const getTokens = (row: ApiRequest, type: 'input' | 'output') => {
   const isInput = type === 'input'
@@ -235,9 +272,14 @@ const getTokens = (row: ApiRequest, type: 'input' | 'output') => {
       ? (usage.input_tokens ?? usage.prompt_tokens ?? 0)
       : (usage.output_tokens ?? usage.completion_tokens ?? 0)
     return isInput && base === 0
-      ? base + (usage.input_tokens_details?.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0)
+      ? base +
+          (usage.input_tokens_details?.cached_tokens ??
+            usage.prompt_tokens_details?.cached_tokens ??
+            0)
       : base
-  } catch { return 0 }
+  } catch {
+    return 0
+  }
 }
 
 const toDisplayDepth = (raw: unknown): string | null => {
@@ -296,15 +338,21 @@ const getModelDisplay = (row: ApiRequest): string => {
 }
 
 const handlePageChange = (page: number) => {
-  pagination.page = page;
-  loadRequests();
-};
+  pagination.page = page
+  loadRequests()
+}
 
 const handlePageSizeChange = (pageSize: number) => {
-  pagination.pageSize = pageSize;
-  pagination.page = 1;
-  loadRequests();
-};
+  pagination.pageSize = pageSize
+  pagination.page = 1
+  loadRequests()
+}
+
+const { windowWidth } = useDebouncedWindowSize(200)
+
+const drawerWidth = computed(() =>
+  Math.min(800, Math.max(320, Math.floor(windowWidth.value * 0.65)))
+)
 
 const pagination = reactive<PaginationProps>({
   page: 1,
@@ -313,195 +361,203 @@ const pagination = reactive<PaginationProps>({
   pageCount: 0,
   pageSizes: [10, 20, 50, 100],
   showSizePicker: true,
-  prefix: (info) => `共 ${info.itemCount} 条`,
+  prefix: info => `共 ${info.itemCount} 条`,
   onChange: handlePageChange,
-  onUpdatePageSize: handlePageSizeChange,
-});
+  onUpdatePageSize: handlePageSizeChange
+})
 
 const statusOptions = [
   { label: '成功', value: 'success' },
-  { label: '失败', value: 'error' },
-];
+  { label: '失败', value: 'error' }
+]
 
 const columns: DataTableColumns<ApiRequest> = [
   {
     title: '请求时间',
     key: 'created_at',
     width: 160,
-    render: (row) => h('span', { class: 'table-time' }, formatTimestamp(row.created_at)),
+    render: row => h('span', { class: 'table-time' }, formatTimestamp(row.created_at))
   },
   {
     title: '模型',
     key: 'model',
     width: 190,
     ellipsis: {
-      tooltip: true,
+      tooltip: true
     },
-    render: (row) => h('span', { class: 'table-model' }, getModelDisplay(row)),
+    render: row => h('span', { class: 'table-model' }, getModelDisplay(row))
   },
   {
     title: '状态',
     key: 'status',
     width: 70,
-    render: (row) => {
+    render: row => {
       return h(
         NTag,
         {
           type: row.status === 'success' ? 'success' : 'error',
-          size: 'small',
+          size: 'small'
         },
         { default: () => (row.status === 'success' ? '成功' : '失败') }
-      );
-    },
+      )
+    }
   },
   {
     title: '响应时间',
     key: 'response_time',
     width: 90,
-    render: (row) => h('span', { class: row.response_time ? 'table-latency' : 'table-placeholder' }, row.response_time ? `${row.response_time}ms` : '-'),
+    render: row =>
+      h(
+        'span',
+        { class: row.response_time ? 'table-latency' : 'table-placeholder' },
+        row.response_time ? `${row.response_time}ms` : '-'
+      )
   },
   {
     title: 'TFFB',
     key: 'tffb_ms',
     width: 90,
-    render: (row) => h('span', { class: row.tffb_ms !== null ? 'table-latency' : 'table-placeholder' }, row.tffb_ms !== null ? `${row.tffb_ms}ms` : '-'),
+    render: row =>
+      h(
+        'span',
+        { class: row.tffb_ms !== null ? 'table-latency' : 'table-placeholder' },
+        row.tffb_ms !== null ? `${row.tffb_ms}ms` : '-'
+      )
   },
   {
     title: 'Tokens',
     key: 'tokens',
     width: 180,
-    render: (row) => {
+    render: row => {
       const items = [
         h('div', { class: 'token-line' }, `输入: ${getTokens(row, 'input')}`),
-        h('div', { class: 'token-line' }, `输出: ${getTokens(row, 'output')}`),
-      ];
+        h('div', { class: 'token-line' }, `输出: ${getTokens(row, 'output')}`)
+      ]
 
       if (row.compression_saved_tokens && row.compression_saved_tokens > 0) {
         items.push(
-          h('div', { class: 'token-line token-line-saving' }, `节省: ${row.compression_saved_tokens}`)
-        );
+          h(
+            'div',
+            { class: 'token-line token-line-saving' },
+            `节省: ${row.compression_saved_tokens}`
+          )
+        )
       }
 
-      return h(
-        NSpace,
-        { vertical: true, size: 2 },
-        { default: () => items }
-      );
-    },
+      return h(NSpace, { vertical: true, size: 2 }, { default: () => items })
+    }
   },
   {
     title: '请求预览',
     key: 'request_body',
     width: 200,
     ellipsis: {
-      tooltip: true,
+      tooltip: true
     },
-    render: (row) => h('span', { class: 'table-preview' }, getRequestPreview(row)),
+    render: row => h('span', { class: 'table-preview' }, getRequestPreview(row))
   },
   {
     title: '响应预览',
     key: 'response_body',
     width: 200,
     ellipsis: {
-      tooltip: true,
+      tooltip: true
     },
-    render: (row) => h('span', { class: 'table-preview' }, getResponsePreview(row)),
-  },
-];
-
+    render: row => h('span', { class: 'table-preview' }, getResponsePreview(row))
+  }
+]
 
 const loadRequests = async () => {
-  loading.value = true;
+  loading.value = true
   try {
     const params: any = {
       page: pagination.page,
-      pageSize: pagination.pageSize,
-    };
+      pageSize: pagination.pageSize
+    }
 
     if (timeRange.value) {
-      params.startTime = timeRange.value[0];
-      params.endTime = timeRange.value[1];
+      params.startTime = timeRange.value[0]
+      params.endTime = timeRange.value[1]
     }
 
     if (filterStatus.value) {
-      params.status = filterStatus.value;
+      params.status = filterStatus.value
     }
 
     if (filterVirtualKeyId.value) {
-      params.virtualKeyId = filterVirtualKeyId.value;
+      params.virtualKeyId = filterVirtualKeyId.value
     }
 
-    const response = await apiRequestApi.getAll(params);
-    requests.value = response.data;
-    pagination.itemCount = response.total;
-    pagination.pageCount = response.totalPages;
+    const response = await apiRequestApi.getAll(params)
+    requests.value = response.data
+    pagination.itemCount = response.total
+    pagination.pageCount = response.totalPages
   } catch (error: any) {
-    message.error(error.message || '加载请求日志失败');
+    message.error(error.message || '加载请求日志失败')
   } finally {
-    loading.value = false;
+    loading.value = false
   }
-};
+}
 
 const handleTimeRangeChange = () => {
-  pagination.page = 1;
-  loadRequests();
-};
+  pagination.page = 1
+  loadRequests()
+}
 
 const handleViewDetail = async (request: ApiRequest) => {
-  loading.value = true;
+  loading.value = true
   try {
-    selectedRequest.value = await apiRequestApi.getById(request.id);
-    showDetail.value = true;
+    selectedRequest.value = await apiRequestApi.getById(request.id)
+    showDetail.value = true
   } catch (error: any) {
-    message.error(error.message || '加载请求详情失败');
+    message.error(error.message || '加载请求详情失败')
   } finally {
-    loading.value = false;
+    loading.value = false
   }
-};
+}
 
 const rowProps = (row: ApiRequest) => {
   return {
     style: 'cursor: pointer;',
-    onClick: () => handleViewDetail(row),
-  };
-};
+    onClick: () => handleViewDetail(row)
+  }
+}
 
 const handleCleanLogs = async () => {
-  cleanLoading.value = true;
+  cleanLoading.value = true
   try {
-    const result = await apiRequestApi.clean(cleanDays.value);
-    message.success(result.message);
-    showCleanDialog.value = false;
-    loadRequests();
+    const result = await apiRequestApi.clean(cleanDays.value)
+    message.success(result.message)
+    showCleanDialog.value = false
+    loadRequests()
   } catch (error: any) {
-    message.error(error.message || '清理日志失败');
+    message.error(error.message || '清理日志失败')
   } finally {
-    cleanLoading.value = false;
+    cleanLoading.value = false
   }
-};
+}
 
 const loadVirtualKeys = async () => {
   try {
-    const response = await virtualKeyApi.getAll();
+    const response = await virtualKeyApi.getAll()
     virtualKeyOptions.value = response.virtualKeys.map(vk => ({
       label: `${vk.name} (${vk.keyValue.substring(0, 20)}...)`,
-      value: vk.id,
-    }));
+      value: vk.id
+    }))
   } catch (error: any) {
-    message.error(error.message || '加载虚拟密钥列表失败');
+    message.error(error.message || '加载虚拟密钥列表失败')
   }
-};
+}
 onMounted(() => {
-  const now = Date.now();
-  const oneDayAgo = now - 24 * 60 * 60 * 1000;
-  timeRange.value = [oneDayAgo, now];
-  loadVirtualKeys();
-  loadRequests();
-});
+  const now = Date.now()
+  const oneDayAgo = now - 24 * 60 * 60 * 1000
+  timeRange.value = [oneDayAgo, now]
+  loadVirtualKeys()
+  loadRequests()
+})
 </script>
 
 <style scoped>
-@import '@/styles/modal.css';
 .card-title {
   font-size: 20px;
   font-weight: 600;

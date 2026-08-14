@@ -36,7 +36,7 @@ const themeOverrides = {
     primaryColorHover: '#0d5a3e',
     primaryColorPressed: '#0a4830',
     borderRadius: '12px',
-    borderColor: 'transparent',
+    borderColor: '#dcdcdc',
     dividerColor: '#e8e8e8',
     fontFamily: 'MiSans, PingFang SC, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif',
   },
@@ -70,9 +70,9 @@ const themeOverrides = {
   Input: {
     borderRadius: '10px',
   },
-    Button: {
-      borderRadius: '10px',
-    },
+  Button: {
+    borderRadius: '10px',
+  },
   };
 </script>
 

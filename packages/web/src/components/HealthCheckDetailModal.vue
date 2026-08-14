@@ -3,7 +3,7 @@
     :show="show"
     preset="card"
     title="检查详情"
-    style="width: 500px"
+    style="width: 500px; max-width: 92vw"
     :bordered="false"
     size="small"
     @update:show="$emit('update:show', $event)"
@@ -18,9 +18,7 @@
         <n-descriptions-item label="检查时间">
           {{ new Date(check.timestamp).toLocaleString('zh-CN') }}
         </n-descriptions-item>
-        <n-descriptions-item label="延迟">
-          {{ check.latencyMs }}ms
-        </n-descriptions-item>
+        <n-descriptions-item label="延迟">{{ check.latencyMs }}ms</n-descriptions-item>
         <n-descriptions-item v-if="check.errorMessage" label="错误信息">
           <n-text type="error">{{ check.errorMessage }}</n-text>
         </n-descriptions-item>
@@ -30,27 +28,21 @@
 </template>
 
 <script setup lang="ts">
-import {
-  NModal,
-  NDescriptions,
-  NDescriptionsItem,
-  NTag,
-  NText,
-} from 'naive-ui';
+import { NModal, NDescriptions, NDescriptionsItem, NTag, NText } from 'naive-ui'
 
 interface HealthCheck {
-  status: 'success' | 'error';
-  timestamp: number;
-  latencyMs: number;
-  errorMessage?: string;
+  status: 'success' | 'error'
+  timestamp: number
+  latencyMs: number
+  errorMessage?: string
 }
 
 defineProps<{
-  show: boolean;
-  check: HealthCheck | null;
-}>();
+  show: boolean
+  check: HealthCheck | null
+}>()
 
 defineEmits<{
-  (e: 'update:show', value: boolean): void;
-}>();
+  (e: 'update:show', value: boolean): void
+}>()
 </script>
