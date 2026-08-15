@@ -1,6 +1,6 @@
 <template>
   <div class="providers-view">
-    <n-space vertical :size="12" class="providers-stack">
+    <div class="providers-stack">
       <n-space justify="space-between" align="center">
         <div>
           <h2 class="page-title">提供商管理</h2>
@@ -67,7 +67,7 @@
           :single-line="false"
         />
       </n-card>
-    </n-space>
+    </div>
 
     <n-modal
       v-model:show="showModal"
@@ -676,6 +676,9 @@ onMounted(() => {
 .providers-stack {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .table-card {
