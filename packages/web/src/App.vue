@@ -20,15 +20,10 @@
 </template>
 
 <script setup lang="ts">
-import {
-  NConfigProvider,
-  NMessageProvider,
-  NDialogProvider,
-  NSpin,
-} from 'naive-ui';
-import { useLoadingStore } from '@/stores/loading';
+import { NConfigProvider, NMessageProvider, NDialogProvider, NSpin } from 'naive-ui'
+import { useLoadingStore } from '@/stores/loading'
 
-const loadingStore = useLoadingStore();
+const loadingStore = useLoadingStore()
 
 const themeOverrides = {
   common: {
@@ -38,7 +33,8 @@ const themeOverrides = {
     borderRadius: '12px',
     borderColor: '#dcdcdc',
     dividerColor: '#e8e8e8',
-    fontFamily: 'MiSans, PingFang SC, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif',
+    fontFamily:
+      'MiSans, PingFang SC, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
   },
   Card: {
     borderRadius: '16px',
@@ -46,12 +42,14 @@ const themeOverrides = {
     color: '#ffffff',
     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
     paddingMedium: '20px',
-    paddingSmall: '16px',
+    paddingSmall: '16px'
   },
   Layout: {
-    color: '#f5f5f5',
-    siderColor: '#f8f8f8',
-    headerColor: '#ffffff',
+    // Transparent so the body's gradient background shows through the whole layout,
+    // instead of a flat #f5f5f5 patch painted by .n-layout / .n-layout-scroll-container.
+    color: 'transparent',
+    siderColor: 'transparent',
+    headerColor: 'transparent'
   },
   Menu: {
     itemColorActive: 'rgba(15, 107, 74, 0.08)',
@@ -61,19 +59,19 @@ const themeOverrides = {
     itemIconColorActive: '#0f6b4a',
     itemIconColorHover: '#0f6b4a',
     borderRadius: '10px',
-    itemHeight: '40px',
+    itemHeight: '40px'
   },
   Modal: {
     borderRadius: '16px',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
   },
   Input: {
-    borderRadius: '10px',
+    borderRadius: '10px'
   },
   Button: {
-    borderRadius: '10px',
-  },
-  };
+    borderRadius: '10px'
+  }
+}
 </script>
 
 <style scoped>
@@ -86,4 +84,3 @@ const themeOverrides = {
   backdrop-filter: blur(2px);
 }
 </style>
-
