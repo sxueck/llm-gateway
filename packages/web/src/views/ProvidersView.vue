@@ -1,6 +1,6 @@
 <template>
   <div class="providers-view">
-    <n-space vertical :size="12">
+    <n-space vertical :size="12" class="providers-stack">
       <n-space justify="space-between" align="center">
         <div>
           <h2 class="page-title">提供商管理</h2>
@@ -38,11 +38,29 @@
       <ProviderOverview :providers="providerStore.providers" />
 
       <n-card class="table-card">
+        <template #header>
+          <span class="table-card-title">提供商列表</span>
+        </template>
+        <template #header-extra>
+          <n-input
+            v-model:value="searchQuery"
+            class="provider-search"
+            placeholder="搜索名称 / Base URL / 描述"
+            clearable
+            round
+          >
+            <template #prefix>
+              <n-icon :component="SearchOutline" />
+            </template>
+          </n-input>
+        </template>
         <n-data-table
+          class="providers-table"
+          flex-height
           :columns="columns"
-          :data="providerStore.providers"
+          :data="filteredProviders"
           :loading="providerStore.loading"
-          :pagination="{ pageSize: 10 }"
+          :pagination="pagination"
           :scroll-x="900"
           :bordered="false"
           size="small"
@@ -80,7 +98,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted, watch } from 'vue'
+import { ref, reactive, computed, h, onMounted, watch } from 'vue'
 import {
   useMessage,
   useDialog,
@@ -94,12 +112,15 @@ import {
   NDropdown,
   NUpload,
   NIcon,
-  type UploadFileInfo
+  NInput,
+  type UploadFileInfo,
+  type PaginationProps
 } from 'naive-ui'
 import {
   Download as DownloadIcon,
   CloudUpload as UploadIcon,
-  FlashOutline as SpeedTestIcon
+  FlashOutline as SpeedTestIcon,
+  SearchOutline
 } from '@vicons/ionicons5'
 import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined } from '@vicons/material'
 import { useProviderStore } from '@/stores/provider'
@@ -122,6 +143,42 @@ const showModal = ref(false)
 const formRef = ref()
 const submitting = ref(false)
 const editingId = ref<string | null>(null)
+const searchQuery = ref('')
+
+const pagination = reactive<PaginationProps>({
+  page: 1,
+  pageSize: 20,
+  itemCount: 0,
+  pageSizes: [10, 20, 50],
+  showSizePicker: true,
+  prefix: info => `共 ${info.itemCount} 条`,
+  onChange: page => {
+    pagination.page = page
+  },
+  onUpdatePageSize: pageSize => {
+    pagination.pageSize = pageSize
+    pagination.page = 1
+  }
+})
+
+const filteredProviders = computed(() => {
+  const keyword = searchQuery.value.trim().toLowerCase()
+  if (!keyword) return providerStore.providers
+  return providerStore.providers.filter(provider =>
+    [provider.id, provider.name, provider.baseUrl, provider.description].some(
+      field => field && field.toLowerCase().includes(keyword)
+    )
+  )
+})
+
+// Client-side pagination: keep the page within range after deletes/imports shrink the list.
+watch([filteredProviders, () => pagination.pageSize], () => {
+  const maxPage = Math.max(
+    1,
+    Math.ceil(filteredProviders.value.length / (pagination.pageSize ?? 10))
+  )
+  if ((pagination.page ?? 1) > maxPage) pagination.page = maxPage
+})
 
 const exportOptions = [
   {
@@ -609,14 +666,51 @@ onMounted(() => {
 .providers-view {
   max-width: 1400px;
   margin: 0 auto;
+  /* 72px header + 8px/24px content padding in MainLayout */
+  height: calc(100vh - 104px);
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+}
+
+.providers-stack {
+  flex: 1;
+  min-height: 0;
 }
 
 .table-card {
+  flex: 1;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
   background: #ffffff;
   border-radius: 12px;
   border: 1px solid #e6e6e6;
   overflow: hidden;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+.table-card :deep(.n-card__content) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.providers-table {
+  flex: 1;
+  min-height: 0;
+}
+
+.table-card-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-title);
+  letter-spacing: -0.015em;
+}
+
+.provider-search {
+  width: 260px;
 }
 
 .table-card :deep(.n-data-table) {

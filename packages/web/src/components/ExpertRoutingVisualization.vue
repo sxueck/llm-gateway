@@ -14,7 +14,7 @@
       </n-space>
     </div>
 
-    <div class="visualization-container">
+    <div v-if="editable" class="visualization-container">
       <div class="node entry-node">
         <div class="node-header">
           <n-icon size="20"><EnterOutline /></n-icon>
@@ -27,7 +27,7 @@
         </div>
       </div>
 
-      <div class="arrow">→</div>
+      <div class="arrow">↓</div>
 
       <div class="node classifier-node non-editable">
         <div class="node-header">
@@ -40,10 +40,10 @@
         </div>
       </div>
 
-      <div class="arrow">→</div>
+      <div class="arrow">↓</div>
 
       <div class="experts-container">
-        <div v-for="(expert, index) in localExperts" :key="expert.id" class="expert-item">
+        <div v-for="expert in localExperts" :key="expert.id">
           <div class="node expert-node" @click="editable ? handleEditExpert(expert) : undefined">
             <div class="node-header" :style="{ backgroundColor: expert.color || '#f0f0f0' }">
               <n-icon size="18"><CubeOutline /></n-icon>
@@ -72,9 +72,6 @@
               </n-tag>
             </div>
           </div>
-          <div v-if="index < localExperts.length - 1" class="expert-divider">
-            <n-divider style="margin: 8px 0" />
-          </div>
         </div>
 
         <n-empty
@@ -84,13 +81,59 @@
           size="small"
           style="padding: 20px"
         >
-          <template v-if="editable" #extra>
+          <template #extra>
             <n-button size="small" @click="handleAddExpert">
               {{ t('expertRouting.addFirstExpert') }}
             </n-button>
           </template>
         </n-empty>
       </div>
+    </div>
+
+    <div v-else class="preview-container">
+      <div class="preview-flow">
+        <span class="flow-pill flow-pill--entry">{{ t('expertRouting.entryNode') }}</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-pill flow-pill--classifier">{{ t('expertRouting.classifier') }}</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-pill flow-pill--experts">
+          {{ t('expertRouting.expertCount') }} × {{ localExperts.length }}
+        </span>
+      </div>
+      <div v-if="localExperts.length > 0" class="expert-chips">
+        <n-tooltip v-for="expert in visibleExperts" :key="expert.id" trigger="hover">
+          <template #trigger>
+            <div class="expert-chip">
+              <span class="chip-dot" :style="{ backgroundColor: expert.color || '#1890ff' }"></span>
+              <span class="chip-category">{{ expert.category }}</span>
+              <span v-if="getExpertLabel(expert)" class="chip-model">
+                {{ getExpertLabel(expert) }}
+              </span>
+            </div>
+          </template>
+          {{ expert.category }} → {{ getExpertLabel(expert) || '-' }} ·
+          {{
+            expert.type === 'virtual'
+              ? t('expertRouting.virtualModel')
+              : t('expertRouting.realModel')
+          }}
+        </n-tooltip>
+        <button
+          v-if="hiddenCount > 0 || expanded"
+          type="button"
+          class="chip-toggle"
+          @click.stop="toggleExpanded"
+        >
+          {{ expanded ? t('common.collapse') : `+${hiddenCount}` }}
+        </button>
+      </div>
+      <n-empty
+        v-else
+        :description="t('expertRouting.noExperts')"
+        :show-icon="false"
+        size="small"
+        style="padding: 20px"
+      />
     </div>
 
     <n-drawer v-model:show="showExpertDrawer" :width="expertDrawerWidth">
@@ -133,10 +176,10 @@ import {
   NText,
   NTag,
   NEmpty,
-  NDivider,
   NDrawer,
   NDrawerContent,
   NModal,
+  NTooltip,
   useDialog
 } from 'naive-ui'
 import {
@@ -184,6 +227,18 @@ const emit = defineEmits<{
 const localExperts = ref<ExpertTarget[]>([...props.experts])
 const localRoutes = ref<{ category: string; utterances: string[] }[]>([...(props.routes || [])])
 const showExpertDrawer = ref(false)
+
+// Preview chips collapse after this many experts to keep config cards a bounded height.
+const COLLAPSED_CHIP_COUNT = 18
+const expanded = ref(false)
+const visibleExperts = computed(() =>
+  expanded.value ? localExperts.value : localExperts.value.slice(0, COLLAPSED_CHIP_COUNT)
+)
+const hiddenCount = computed(() => Math.max(0, localExperts.value.length - COLLAPSED_CHIP_COUNT))
+
+function toggleExpanded() {
+  expanded.value = !expanded.value
+}
 
 const { windowWidth: expertDrawerWindowWidth } = useDebouncedWindowSize(200)
 const expertDrawerWidth = computed(() =>
@@ -342,28 +397,25 @@ watch(
   flex-direction: column;
 }
 
+/* Compact preview should size to its chips, not the editable diagram min-height */
+.preview-mode {
+  min-height: auto;
+}
+
 .toolbar {
   padding: 12px;
   border-bottom: 1px solid #e0e0e0;
   background-color: #fff;
 }
 
+/* Editable flow: vertical entry → classifier → experts grid */
 .visualization-container {
   flex: 1;
   padding: 24px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 16px;
-  overflow-x: auto;
-}
-
-.preview-mode .visualization-container {
-  padding: 16px;
-  min-height: auto;
-}
-
-.preview-mode {
-  min-height: auto;
+  gap: 12px;
 }
 
 .node {
@@ -382,17 +434,6 @@ watch(
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.preview-mode .node {
-  width: 160px;
-  border-width: 1.5px;
-}
-
-.preview-mode .node:hover {
-  border-color: #d9d9d9;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transform: none;
-}
-
 .node-header {
   padding: 8px 12px;
   background-color: #f0f0f0;
@@ -404,20 +445,11 @@ watch(
   font-weight: 500;
 }
 
-.preview-mode .node-header {
-  padding: 6px 10px;
-  font-size: 13px;
-}
-
 .node-body {
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.preview-mode .node-body {
-  padding: 8px 10px;
 }
 
 .entry-node {
@@ -430,15 +462,7 @@ watch(
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.preview-mode .entry-node:hover {
-  border-color: #52c41a;
-}
-
 .classifier-node {
-  border-color: #1890ff;
-}
-
-.preview-mode .classifier-node:hover {
   border-color: #1890ff;
 }
 
@@ -453,32 +477,117 @@ watch(
 }
 
 .arrow {
-  font-size: 24px;
+  font-size: 22px;
   color: #999;
-  display: flex;
-  align-items: center;
-  padding-top: 40px;
-  flex-shrink: 0;
-}
-
-.preview-mode .arrow {
-  font-size: 20px;
-  padding-top: 30px;
+  line-height: 1;
 }
 
 .experts-container {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.experts-container .node {
+  width: auto;
+  min-width: 0;
+}
+
+/* Preview: compact flow pills + wrapping expert chips, bounded height */
+.preview-container {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 12px;
+}
+
+.preview-flow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.flow-pill {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.flow-pill--entry {
+  background: rgba(82, 196, 26, 0.12);
+  color: #389e0d;
+}
+
+.flow-pill--classifier {
+  background: rgba(24, 144, 255, 0.1);
+  color: #1677ff;
+}
+
+.flow-pill--experts {
+  background: rgba(15, 107, 74, 0.1);
+  color: var(--color-primary);
+}
+
+.flow-arrow {
+  color: #999;
+  font-size: 13px;
+}
+
+.expert-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.expert-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 999px;
+  font-size: 12px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
   flex-shrink: 0;
 }
 
-.expert-item {
-  display: flex;
-  flex-direction: column;
+.chip-category {
+  font-weight: 500;
+  white-space: nowrap;
 }
 
-.expert-divider {
-  width: 100%;
+.chip-model {
+  color: #8c8c8c;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip-toggle {
+  border: 1px dashed #bbb;
+  background: transparent;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: #595959;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.chip-toggle:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 </style>
