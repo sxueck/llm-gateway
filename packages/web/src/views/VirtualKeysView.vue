@@ -140,7 +140,7 @@
             <n-space vertical :size="4">
               <n-switch v-model:value="formValue.promptCaptureEnabled" size="small" />
               <span style="font-size: 12px; color: #999">
-                捕获清洗后的用户提问样本，可在 Prompt 样本中下载
+                捕获每个会话首个提问的清洗后样本，可在 Prompt 样本中下载
               </span>
             </n-space>
           </n-form-item>

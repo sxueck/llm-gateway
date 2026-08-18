@@ -2,11 +2,16 @@
 import { h, onMounted, reactive, ref } from 'vue'
 import type { DataTableColumns, PaginationProps } from 'naive-ui'
 import {
+  NAlert,
   NButton,
+  NCard,
   NDataTable,
+  NDatePicker,
   NDropdown,
   NIcon,
   NPopconfirm,
+  NSelect,
+  NSpace,
   NTag,
   NText,
   useMessage
@@ -258,7 +263,7 @@ onMounted(async () => {
         </n-space>
       </template>
       <n-alert type="info" :bordered="false" class="notice">
-        仅捕获在虚拟密钥中明确开启此功能后的请求；已启用 PII
+        仅捕获在虚拟密钥中明确开启此功能后的请求，且每个会话只记录首个提问（后续轮次不重复捕获）；已启用 PII
         保护的密钥会存储脱敏后的文本。批量下载每种格式最多导出最新 10000
         条匹配样本，仅包含提问意图（不含模型回复）。
       </n-alert>
