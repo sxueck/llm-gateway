@@ -1,8 +1,8 @@
-import request from '@/utils/request';
+import request from "@/utils/request";
 
-export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
+export type LogLevel = "INFO" | "WARN" | "ERROR" | "DEBUG";
 
-export type Period = '24h' | '7d' | '30d' | 'all';
+export type Period = "24h" | "7d" | "30d" | "all";
 
 type AnyRecord = Record<string, any>;
 
@@ -12,8 +12,8 @@ type CircuitBreakerStats = {
   maxTriggerCount: number;
 };
 
-const ADMIN_CONFIG_BASE_PATH = '/admin/config';
-const PUBLIC_BASE_PATH = '/public';
+const ADMIN_CONFIG_BASE_PATH = "/admin/config";
+const PUBLIC_BASE_PATH = "/public";
 
 const withId = (basePath: string, id: string) => `${basePath}/${id}`;
 
@@ -62,7 +62,7 @@ export interface ApiStats {
   dbUptime?: number;
 }
 
-export interface ExpertRoutingStats {
+export interface IntentClassifyStats {
   totalRequests: number;
   avgClassificationTime: number;
 }
@@ -120,7 +120,7 @@ export interface RequestSourceEntry {
   geo: RequestSourceGeoInfo | null;
   timestamp: number;
   count: number;
-  type: 'normal' | 'blocked';
+  type: "normal" | "blocked";
   userAgent?: string | null;
   blockedReason?: string | null;
 }
@@ -137,7 +137,7 @@ export interface RequestSourceStats {
     geo: RequestSourceGeoInfo | null;
     timestamp: number;
     reason?: string | null;
-    source?: 'manual' | 'threat';
+    source?: "manual" | "threat";
   } | null;
   recentSources?: RequestSourceEntry[];
 }
@@ -209,7 +209,7 @@ type GetStatsResponse = {
   period: string;
   stats: ApiStats;
   trend: VirtualKeyTrend[];
-  expertRoutingStats: ExpertRoutingStats;
+  intentClassifyStats: IntentClassifyStats;
   modelStats: ModelStat[];
   modelResponseTimeStats: ModelResponseTimeStat[];
   circuitBreakerStats?: CircuitBreakerStats;
@@ -354,11 +354,11 @@ export interface TrafficAnalysisResponse {
   actual: HourlyActual[];
   prediction: HourlyPrediction[];
   peaks: PeakWindow[];
-  dataQuality: 'insufficient' | 'low' | 'good';
+  dataQuality: "insufficient" | "low" | "good";
   availableDays: number;
   region: string | null;
   modelInfo: {
-    type: 'weekly-empirical';
+    type: "weekly-empirical";
     trainingSamples: number;
     priorStrength: number;
     workdayProfile: number[];
@@ -381,7 +381,7 @@ type HealthTargetsResponse = { targets: any[] };
 
 export interface RoutingTargetStatus {
   targetKey: string;
-  circuitState: 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+  circuitState: "CLOSED" | "OPEN" | "HALF_OPEN";
   isAnonymousAffinitySelected: boolean;
   boundSessionCount: number;
 }
@@ -399,7 +399,7 @@ export interface RoutingStatusResponse {
 }
 
 type CreateHealthTargetRequest = {
-  type: 'model' | 'virtual_model';
+  type: "model" | "virtual_model";
   target_id: string;
   check_interval_seconds?: number;
   check_prompt?: string;
@@ -412,20 +412,29 @@ type UpdateHealthTargetRequest = {
   check_prompt?: string;
 };
 
-const adminConfigPath = (suffix: string) => `${ADMIN_CONFIG_BASE_PATH}${suffix}`;
+const adminConfigPath = (suffix: string) =>
+  `${ADMIN_CONFIG_BASE_PATH}${suffix}`;
 
-const ADMIN_LOGS_PATH = adminConfigPath('/logs');
-const ADMIN_STATS_PATH = adminConfigPath('/stats');
-const ADMIN_REQUEST_SOURCES_LOOKUP_PATH = adminConfigPath('/request-sources/lookup');
-const ADMIN_REQUEST_SOURCES_BLOCK_PATH = adminConfigPath('/request-sources/block');
-const ADMIN_ROUTING_CONFIGS_PATH = adminConfigPath('/routing-configs');
-const ADMIN_SYSTEM_SETTINGS_PATH = adminConfigPath('/system-settings');
-const ADMIN_HEALTH_TARGETS_PATH = adminConfigPath('/health-targets');
-const ADMIN_PERFORMANCE_METRICS_PATH = adminConfigPath('/performance-metrics');
-const ADMIN_ROUTING_STATUS_PATH = adminConfigPath('/routing-status');
-const ADMIN_TRAFFIC_ANALYSIS_PATH = adminConfigPath('/stats/traffic-analysis');
-const ADMIN_TRAFFIC_ANALYSIS_HISTORY_DAY_PATH = adminConfigPath('/stats/traffic-analysis/history-day');
-const ADMIN_TRAFFIC_ANALYSIS_REGIONS_PATH = adminConfigPath('/traffic-analysis-regions');
+const ADMIN_LOGS_PATH = adminConfigPath("/logs");
+const ADMIN_STATS_PATH = adminConfigPath("/stats");
+const ADMIN_REQUEST_SOURCES_LOOKUP_PATH = adminConfigPath(
+  "/request-sources/lookup",
+);
+const ADMIN_REQUEST_SOURCES_BLOCK_PATH = adminConfigPath(
+  "/request-sources/block",
+);
+const ADMIN_ROUTING_CONFIGS_PATH = adminConfigPath("/routing-configs");
+const ADMIN_SYSTEM_SETTINGS_PATH = adminConfigPath("/system-settings");
+const ADMIN_HEALTH_TARGETS_PATH = adminConfigPath("/health-targets");
+const ADMIN_PERFORMANCE_METRICS_PATH = adminConfigPath("/performance-metrics");
+const ADMIN_ROUTING_STATUS_PATH = adminConfigPath("/routing-status");
+const ADMIN_TRAFFIC_ANALYSIS_PATH = adminConfigPath("/stats/traffic-analysis");
+const ADMIN_TRAFFIC_ANALYSIS_HISTORY_DAY_PATH = adminConfigPath(
+  "/stats/traffic-analysis/history-day",
+);
+const ADMIN_TRAFFIC_ANALYSIS_REGIONS_PATH = adminConfigPath(
+  "/traffic-analysis-regions",
+);
 
 const PUBLIC_SYSTEM_SETTINGS_PATH = `${PUBLIC_BASE_PATH}/system-settings`;
 
@@ -446,7 +455,9 @@ export const configApi = {
     return request.get(ADMIN_REQUEST_SOURCES_LOOKUP_PATH, { params: { ip } });
   },
 
-  blockRequestSource(data: BlockRequestSourceRequest): Promise<BlockRequestSourceResponse> {
+  blockRequestSource(
+    data: BlockRequestSourceRequest,
+  ): Promise<BlockRequestSourceResponse> {
     return request.post(ADMIN_REQUEST_SOURCES_BLOCK_PATH, data);
   },
 
@@ -458,7 +469,10 @@ export const configApi = {
     return request.post(ADMIN_ROUTING_CONFIGS_PATH, data);
   },
 
-  updateRoutingConfig(id: string, data: UpdateRoutingConfigRequest): Promise<any> {
+  updateRoutingConfig(
+    id: string,
+    data: UpdateRoutingConfigRequest,
+  ): Promise<any> {
     return request.put(withId(ADMIN_ROUTING_CONFIGS_PATH, id), data);
   },
 
@@ -474,7 +488,9 @@ export const configApi = {
     return request.get(PUBLIC_SYSTEM_SETTINGS_PATH);
   },
 
-  updateSystemSettings(data: UpdateSystemSettingsRequest): Promise<DeleteResponse> {
+  updateSystemSettings(
+    data: UpdateSystemSettingsRequest,
+  ): Promise<DeleteResponse> {
     return request.post(ADMIN_SYSTEM_SETTINGS_PATH, data);
   },
 
@@ -486,7 +502,10 @@ export const configApi = {
     return request.post(ADMIN_HEALTH_TARGETS_PATH, data);
   },
 
-  updateHealthTarget(id: string, data: UpdateHealthTargetRequest): Promise<any> {
+  updateHealthTarget(
+    id: string,
+    data: UpdateHealthTargetRequest,
+  ): Promise<any> {
     return request.put(withId(ADMIN_HEALTH_TARGETS_PATH, id), data);
   },
 
@@ -506,8 +525,12 @@ export const configApi = {
     return request.get(ADMIN_TRAFFIC_ANALYSIS_PATH);
   },
 
-  getTrafficAnalysisHistoryDay(dayOffset: number): Promise<TrafficAnalysisHistoryDayResponse> {
-    return request.get(ADMIN_TRAFFIC_ANALYSIS_HISTORY_DAY_PATH, { params: { dayOffset } });
+  getTrafficAnalysisHistoryDay(
+    dayOffset: number,
+  ): Promise<TrafficAnalysisHistoryDayResponse> {
+    return request.get(ADMIN_TRAFFIC_ANALYSIS_HISTORY_DAY_PATH, {
+      params: { dayOffset },
+    });
   },
 
   getTrafficAnalysisRegions(): Promise<TrafficAnalysisRegion[]> {

@@ -1,7 +1,9 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
+import { nanoid } from "nanoid";
 import { EXPERT_ROUTING_MODEL_REPO } from "@llm-gateway/shared";
 import { classifyWithLocalOnnx } from "../services/expert-router/local/classifier.js";
+import { intentClassifyLogDb } from "../db/index.js";
 import {
   getLocalClassifierError,
   isLocalClassifierReady,
@@ -51,7 +53,7 @@ export async function intentRoutes(fastify: FastifyInstance) {
     if ("error" in authResult) {
       return reply.code(authResult.error.code).send(authResult.error.body);
     }
-    const { virtualKeyValue } = authResult;
+    const { virtualKeyValue, virtualKey } = authResult;
 
     const parsed = classifySchema.safeParse(request.body);
     if (!parsed.success) {
@@ -87,6 +89,26 @@ export async function intentRoutes(fastify: FastifyInstance) {
         `Intent classify | key=${vkDisplay} | labels=${ranked.length}/${result.ranked.length} | latency=${result.latencyMs}ms`,
         "IntentApi",
       );
+
+      // Log every successful classification so dashboard intent-classify stats
+      // cover both this API and Expert Router runs. Persistence failures must
+      // never break the classification response.
+      intentClassifyLogDb
+        .create({
+          id: nanoid(),
+          virtual_key_id: virtualKey?.id || null,
+          classifier_model: `onnx/${EXPERT_ROUTING_MODEL_REPO}`,
+          top_label: result.ranked[0]?.label || null,
+          latency_ms: result.latencyMs,
+          seq_len: result.seqLen,
+          input_truncated: result.truncated,
+        })
+        .catch((e: any) =>
+          memoryLogger.warn(
+            `Intent classify log persistence failed: ${e?.message || e}`,
+            "IntentApi",
+          ),
+        );
 
       reply.header("Content-Type", "application/json");
       return reply.send({
