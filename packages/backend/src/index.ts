@@ -1,44 +1,59 @@
-import Fastify from 'fastify';
-import cors from '@fastify/cors';
-import jwt from '@fastify/jwt';
-import fastifyStatic from '@fastify/static';
-import websocket from '@fastify/websocket';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { appConfig, setPublicUrl } from './config/index.js';
-import { initDatabase, apiRequestDb, systemConfigDb, shutdownDatabase } from './db/index.js';
-import { initLocalClassifier, startSessionBindingCleanup } from './services/expert-router.js';
-import { startContextNormalizationCleanup } from './services/context-normalization/index.js';
-import { authRoutes } from './routes/auth.js';
-import { providerRoutes } from './routes/providers.js';
-import { modelRoutes } from './routes/models.js';
-import { virtualKeyRoutes } from './routes/virtual-keys.js';
-import { configRoutes } from './routes/config.js';
-import { publicConfigRoutes } from './routes/public-config.js';
-import { proxyRoutes } from './routes/proxy.js';
-import { anthropicRoutes } from './routes/anthropic.js';
-import { openaiRoutes } from './routes/openai.js';
-import { geminiRoutes } from './routes/gemini.js';
-import { modelPresetsRoutes } from './routes/model-presets.js';
-import { expertRoutingRoutes } from './routes/expert-routing.js';
-import { healthRoutes } from './routes/health.js';
-import { costMappingRoutes } from './routes/cost-mapping.js';
-import { promptSampleRoutes } from './routes/prompt-samples.js';
-import backupRoutes from './routes/backup.js';
-import { memoryLogger } from './services/logger.js';
-import { modelPresetsService } from './services/model-presets.js';
-import { healthCheckerService } from './services/health-checker.js';
-import { getBackupScheduler } from './services/backup-scheduler.js';
-import { healthRunDb, systemConfigDb as systemConfigDbForDebug } from './db/index.js';
-import { debugModeService } from './services/debug-mode.js';
-import { manualIpBlocklist } from './services/manual-ip-blocklist.js';
-import { requestHeaderForwardingService } from './services/request-header-forwarding.js';
-import { upstreamSslConfigService } from './services/upstream-ssl-config.js';
-import { requestCache } from './services/request-cache.js';
-import { runtimeSystemConfigCache } from './services/runtime-system-config-cache.js';
-import { reasoningEffortSuffixesCache } from './services/reasoning-effort-suffixes.js';
-import { getProxyConfigFromEnv, isProxyConfigured } from './utils/upstream-proxy.js';
-import { upstreamFetch, clearProxyAgentCache } from './utils/upstream-fetch.js';
+import Fastify from "fastify";
+import cors from "@fastify/cors";
+import jwt from "@fastify/jwt";
+import fastifyStatic from "@fastify/static";
+import websocket from "@fastify/websocket";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
+import { appConfig, setPublicUrl } from "./config/index.js";
+import {
+  initDatabase,
+  apiRequestDb,
+  systemConfigDb,
+  shutdownDatabase,
+} from "./db/index.js";
+import {
+  initLocalClassifier,
+  startSessionBindingCleanup,
+} from "./services/expert-router.js";
+import { startContextNormalizationCleanup } from "./services/context-normalization/index.js";
+import { authRoutes } from "./routes/auth.js";
+import { providerRoutes } from "./routes/providers.js";
+import { modelRoutes } from "./routes/models.js";
+import { virtualKeyRoutes } from "./routes/virtual-keys.js";
+import { configRoutes } from "./routes/config.js";
+import { publicConfigRoutes } from "./routes/public-config.js";
+import { proxyRoutes } from "./routes/proxy.js";
+import { anthropicRoutes } from "./routes/anthropic.js";
+import { openaiRoutes } from "./routes/openai.js";
+import { geminiRoutes } from "./routes/gemini.js";
+import { modelPresetsRoutes } from "./routes/model-presets.js";
+import { expertRoutingRoutes } from "./routes/expert-routing.js";
+import { intentRoutes } from "./routes/intent.js";
+import { healthRoutes } from "./routes/health.js";
+import { costMappingRoutes } from "./routes/cost-mapping.js";
+import { promptSampleRoutes } from "./routes/prompt-samples.js";
+import backupRoutes from "./routes/backup.js";
+import { memoryLogger } from "./services/logger.js";
+import { modelPresetsService } from "./services/model-presets.js";
+import { healthCheckerService } from "./services/health-checker.js";
+import { getBackupScheduler } from "./services/backup-scheduler.js";
+import {
+  healthRunDb,
+  systemConfigDb as systemConfigDbForDebug,
+} from "./db/index.js";
+import { debugModeService } from "./services/debug-mode.js";
+import { manualIpBlocklist } from "./services/manual-ip-blocklist.js";
+import { requestHeaderForwardingService } from "./services/request-header-forwarding.js";
+import { upstreamSslConfigService } from "./services/upstream-ssl-config.js";
+import { requestCache } from "./services/request-cache.js";
+import { runtimeSystemConfigCache } from "./services/runtime-system-config-cache.js";
+import { reasoningEffortSuffixesCache } from "./services/reasoning-effort-suffixes.js";
+import {
+  getProxyConfigFromEnv,
+  isProxyConfigured,
+} from "./utils/upstream-proxy.js";
+import { upstreamFetch, clearProxyAgentCache } from "./utils/upstream-fetch.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -46,28 +61,39 @@ const __dirname = dirname(__filename);
 const fastify = Fastify({
   logger: {
     level: appConfig.logLevel,
-    transport: appConfig.nodeEnv === 'development' ? {
-      target: 'pino-pretty',
-      options: {
-        translateTime: 'HH:MM:ss Z',
-        ignore: 'pid,hostname',
-      },
-    } : undefined,
+    transport:
+      appConfig.nodeEnv === "development"
+        ? {
+            target: "pino-pretty",
+            options: {
+              translateTime: "HH:MM:ss Z",
+              ignore: "pid,hostname",
+            },
+          }
+        : undefined,
   },
   bodyLimit: 10 * 1024 * 1024, // 10MB 请求体大小限制
-})
+});
 
-fastify.server.on('connection', socket => {
-  socket.setNoDelay(true)
-})
+fastify.server.on("connection", (socket) => {
+  socket.setNoDelay(true);
+});
 
 await fastify.register(cors, {
   origin: (_origin, callback) => {
     callback(null, true);
   },
   credentials: true,
-  methods: ['GET', 'POST', 'OPTIONS', 'HEAD', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-portkey-config', 'Accept', 'Origin', 'anthropic-version', 'x-api-key'],
+  methods: ["GET", "POST", "OPTIONS", "HEAD", "PUT", "DELETE", "PATCH"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "x-portkey-config",
+    "Accept",
+    "Origin",
+    "anthropic-version",
+    "x-api-key",
+  ],
 });
 
 await fastify.register(jwt, {
@@ -75,34 +101,34 @@ await fastify.register(jwt, {
 });
 
 await fastify.register(fastifyStatic, {
-  root: resolve(__dirname, '..', 'public'),
-  prefix: '/',
+  root: resolve(__dirname, "..", "public"),
+  prefix: "/",
 });
 
 await fastify.register(websocket);
 
-fastify.decorate('authenticate', async function(request: any, reply: any) {
+fastify.decorate("authenticate", async function (request: any, reply: any) {
   try {
     await request.jwtVerify();
   } catch (err: any) {
     reply.code(401).send({
       error: {
-        message: '未授权',
-        type: 'invalid_request_error',
+        message: "未授权",
+        type: "invalid_request_error",
         param: null,
-        code: 'unauthorized'
-      }
+        code: "unauthorized",
+      },
     });
     throw err;
   }
 });
 
 // Developer debug HTTP stream endpoint (SSE)
-fastify.get('/api/admin/config/debug-stream', (_request, reply) => {
-  reply.raw.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-  reply.raw.setHeader('Cache-Control', 'no-cache, no-transform');
-  reply.raw.setHeader('Connection', 'keep-alive');
-  reply.raw.setHeader('X-Accel-Buffering', 'no');
+fastify.get("/api/admin/config/debug-stream", (_request, reply) => {
+  reply.raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
+  reply.raw.setHeader("Connection", "keep-alive");
+  reply.raw.setHeader("X-Accel-Buffering", "no");
   reply.hijack();
 
   debugModeService.addStreamClient(reply);
@@ -127,79 +153,103 @@ await requestHeaderForwardingService.reloadConfig();
 await upstreamSslConfigService.reloadConfig();
 upstreamSslConfigService.onChange(() => clearProxyAgentCache());
 
-memoryLogger.info('Database initialized', 'System');
+memoryLogger.info("Database initialized", "System");
 
 // Initialize developer debug mode state from system_config
 try {
-  const debugEnabledCfg = await systemConfigDbForDebug.get('developer_debug_enabled');
-  const debugExpiresCfg = await systemConfigDbForDebug.get('developer_debug_expires_at');
-  const debugEnabled = debugEnabledCfg ? debugEnabledCfg.value === 'true' : false;
+  const debugEnabledCfg = await systemConfigDbForDebug.get(
+    "developer_debug_enabled",
+  );
+  const debugExpiresCfg = await systemConfigDbForDebug.get(
+    "developer_debug_expires_at",
+  );
+  const debugEnabled = debugEnabledCfg
+    ? debugEnabledCfg.value === "true"
+    : false;
   const debugExpiresAt = debugExpiresCfg ? Number(debugExpiresCfg.value) : 0;
   debugModeService.initFromConfig(debugEnabled, debugExpiresAt);
 } catch (e: any) {
-  memoryLogger.error(`初始化开发者调试模式状态失败: ${e.message}`, 'System');
+  memoryLogger.error(`初始化开发者调试模式状态失败: ${e.message}`, "System");
 }
 
-const publicUrlCfg = await systemConfigDb.get('public_url');
+const publicUrlCfg = await systemConfigDb.get("public_url");
 if (publicUrlCfg) {
   setPublicUrl(publicUrlCfg.value);
-  memoryLogger.info(`使用自定义 LLM Gateway URL: ${publicUrlCfg.value}`, 'System');
+  memoryLogger.info(
+    `使用自定义 LLM Gateway URL: ${publicUrlCfg.value}`,
+    "System",
+  );
 } else {
-  memoryLogger.info(`使用默认 LLM Gateway URL: ${appConfig.publicUrl}`, 'System');
+  memoryLogger.info(
+    `使用默认 LLM Gateway URL: ${appConfig.publicUrl}`,
+    "System",
+  );
 }
 
 const corsEnabled = runtimeSystemConfigCache.getCorsEnabled();
 
 if (corsEnabled) {
-  memoryLogger.info('CORS 跨域支持已启用', 'System');
+  memoryLogger.info("CORS 跨域支持已启用", "System");
 } else {
-  memoryLogger.warn('CORS 跨域支持已禁用，浏览器端应用可能无法正常访问', 'System');
+  memoryLogger.warn(
+    "CORS 跨域支持已禁用，浏览器端应用可能无法正常访问",
+    "System",
+  );
 }
 
-fastify.addHook('onRequest', async (request, reply) => {
+fastify.addHook("onRequest", async (request, reply) => {
   const corsEnabled = runtimeSystemConfigCache.getCorsEnabled();
 
   if (!corsEnabled && request.headers.origin) {
-    reply.header('Access-Control-Allow-Origin', 'null');
-    reply.header('Access-Control-Allow-Credentials', 'false');
+    reply.header("Access-Control-Allow-Origin", "null");
+    reply.header("Access-Control-Allow-Credentials", "false");
   }
 });
 
-fastify.get('/health', async () => {
-  return { status: 'ok', timestamp: Date.now() };
+fastify.get("/health", async () => {
+  return { status: "ok", timestamp: Date.now() };
 });
 
 await fastify.register(proxyRoutes);
 await fastify.register(anthropicRoutes);
 await fastify.register(openaiRoutes);
 await fastify.register(geminiRoutes);
-await fastify.register(authRoutes, { prefix: '/api/auth' });
-await fastify.register(publicConfigRoutes, { prefix: '/api/public' });
-await fastify.register(providerRoutes, { prefix: '/api/admin/providers' });
-await fastify.register(modelRoutes, { prefix: '/api/admin/models' });
-await fastify.register(virtualKeyRoutes, { prefix: '/api/admin/virtual-keys' });
-await fastify.register(configRoutes, { prefix: '/api/admin/config' });
-await fastify.register(modelPresetsRoutes, { prefix: '/api/admin/model-presets' });
-await fastify.register(expertRoutingRoutes, { prefix: '/api/admin/expert-routing' });
-await fastify.register(costMappingRoutes, { prefix: '/api/admin/cost-mappings' });
-await fastify.register(promptSampleRoutes, { prefix: '/api/admin/prompt-samples' });
+await fastify.register(authRoutes, { prefix: "/api/auth" });
+await fastify.register(publicConfigRoutes, { prefix: "/api/public" });
+await fastify.register(providerRoutes, { prefix: "/api/admin/providers" });
+await fastify.register(modelRoutes, { prefix: "/api/admin/models" });
+await fastify.register(virtualKeyRoutes, { prefix: "/api/admin/virtual-keys" });
+await fastify.register(configRoutes, { prefix: "/api/admin/config" });
+await fastify.register(modelPresetsRoutes, {
+  prefix: "/api/admin/model-presets",
+});
+await fastify.register(expertRoutingRoutes, {
+  prefix: "/api/admin/expert-routing",
+});
+await fastify.register(intentRoutes, { prefix: "/v1/intent" });
+await fastify.register(costMappingRoutes, {
+  prefix: "/api/admin/cost-mappings",
+});
+await fastify.register(promptSampleRoutes, {
+  prefix: "/api/admin/prompt-samples",
+});
 await fastify.register(healthRoutes);
 await fastify.register(backupRoutes);
 
-memoryLogger.info('Routes registered', 'System');
+memoryLogger.info("Routes registered", "System");
 
 fastify.setNotFoundHandler((request, reply) => {
-  if (request.url.startsWith('/api/')) {
+  if (request.url.startsWith("/api/")) {
     return reply.code(404).send({
       error: {
-        message: '未找到请求的资源',
-        type: 'invalid_request_error',
+        message: "未找到请求的资源",
+        type: "invalid_request_error",
         param: null,
-        code: 'not_found'
-      }
+        code: "not_found",
+      },
     });
   } else {
-    return reply.type('text/html').code(200).sendFile('index.html');
+    return reply.type("text/html").code(200).sendFile("index.html");
   }
 });
 
@@ -209,21 +259,21 @@ fastify.setErrorHandler((error: any, _request, reply) => {
   if (error.validation) {
     return reply.code(400).send({
       error: {
-        message: '请求参数验证失败',
-        type: 'invalid_request_error',
+        message: "请求参数验证失败",
+        type: "invalid_request_error",
         param: null,
-        code: 'validation_error'
-      }
+        code: "validation_error",
+      },
     });
   }
 
   return reply.code(error.statusCode || 500).send({
     error: {
-      message: error.message || '服务器内部错误',
-      type: 'internal_error',
+      message: error.message || "服务器内部错误",
+      type: "internal_error",
       param: null,
-      code: 'internal_server_error'
-    }
+      code: "internal_server_error",
+    },
   });
 });
 
@@ -232,32 +282,38 @@ function logProxyConfig() {
   const isConfigured = isProxyConfigured();
 
   if (isConfigured) {
-    memoryLogger.info('检测到代理配置:', 'System');
+    memoryLogger.info("检测到代理配置:", "System");
     if (proxyConfig.httpProxyUrl) {
-      memoryLogger.info(`  HTTP_PROXY: ${proxyConfig.httpProxyUrl}`, 'System');
+      memoryLogger.info(`  HTTP_PROXY: ${proxyConfig.httpProxyUrl}`, "System");
     }
     if (proxyConfig.httpsProxyUrl) {
-      memoryLogger.info(`  HTTPS_PROXY: ${proxyConfig.httpsProxyUrl}`, 'System');
+      memoryLogger.info(
+        `  HTTPS_PROXY: ${proxyConfig.httpsProxyUrl}`,
+        "System",
+      );
     }
     if (proxyConfig.noProxy.length > 0) {
-      memoryLogger.info(`  NO_PROXY: ${proxyConfig.noProxy.join(', ')}`, 'System');
+      memoryLogger.info(
+        `  NO_PROXY: ${proxyConfig.noProxy.join(", ")}`,
+        "System",
+      );
     }
   } else {
-    memoryLogger.info('未检测到代理配置', 'System');
+    memoryLogger.info("未检测到代理配置", "System");
   }
 }
 
 async function checkGoogleConnectivity(): Promise<void> {
-  const GOOGLE_GENERATE_204_URL = 'https://www.google.com/generate_204';
+  const GOOGLE_GENERATE_204_URL = "https://www.google.com/generate_204";
   const startTime = Date.now();
 
   try {
     const isConfigured = isProxyConfigured();
 
     if (isConfigured) {
-      memoryLogger.info('正在通过代理测试网络连通性...', 'System');
+      memoryLogger.info("正在通过代理测试网络连通性...", "System");
     } else {
-      memoryLogger.info('正在测试网络连通性...', 'System');
+      memoryLogger.info("正在测试网络连通性...", "System");
     }
 
     const response = await upstreamFetch(GOOGLE_GENERATE_204_URL, {
@@ -267,53 +323,64 @@ async function checkGoogleConnectivity(): Promise<void> {
     const latency = Date.now() - startTime;
 
     if (response.status === 204) {
-      memoryLogger.info(`网络连通性测试成功 | 延迟: ${latency}ms`, 'System');
+      memoryLogger.info(`网络连通性测试成功 | 延迟: ${latency}ms`, "System");
     } else {
-      memoryLogger.warn(`网络连通性测试返回非预期状态码: HTTP ${response.status}`, 'System');
+      memoryLogger.warn(
+        `网络连通性测试返回非预期状态码: HTTP ${response.status}`,
+        "System",
+      );
     }
   } catch (error: any) {
     const latency = Date.now() - startTime;
-    memoryLogger.error(`网络连通性测试失败 (${latency}ms): ${error?.message || error}`, 'System');
+    memoryLogger.error(
+      `网络连通性测试失败 (${latency}ms): ${error?.message || error}`,
+      "System",
+    );
   }
 }
 
 async function cleanOldApiRequests() {
   try {
-    const result = await apiRequestDb.cleanOldRecords(appConfig.apiRequestLogRetentionDays);
+    const result = await apiRequestDb.cleanOldRecords(
+      appConfig.apiRequestLogRetentionDays,
+    );
     if (result.deletedRequestCount > 0 || result.summarizedCount > 0) {
       memoryLogger.info(
         `自动清理旧请求日志: 汇总 ${result.summarizedCount} 条，删除明细 ${result.deletedRequestCount} 条 (保留 ${appConfig.apiRequestLogRetentionDays} 天)`,
-        'System'
+        "System",
       );
     }
   } catch (error: any) {
-    memoryLogger.error(`自动清理请求日志失败: ${error.message}`, 'System');
+    memoryLogger.error(`自动清理请求日志失败: ${error.message}`, "System");
   }
 }
 
 async function checkAndUpdateModelPresets() {
   try {
     if (modelPresetsService.shouldAutoUpdate()) {
-      memoryLogger.info('检测到模型预设需要更新，开始自动更新...', 'System');
+      memoryLogger.info("检测到模型预设需要更新，开始自动更新...", "System");
       const result = await modelPresetsService.updateFromRemote();
       if (result.success) {
-        memoryLogger.info(result.message, 'System');
+        memoryLogger.info(result.message, "System");
       } else {
-        memoryLogger.warn(`模型预设更新失败: ${result.message}`, 'System');
+        memoryLogger.warn(`模型预设更新失败: ${result.message}`, "System");
       }
     } else {
       const stats = modelPresetsService.getStats();
-      memoryLogger.info(`模型预设库已加载: ${stats.totalModels} 个模型`, 'System');
+      memoryLogger.info(
+        `模型预设库已加载: ${stats.totalModels} 个模型`,
+        "System",
+      );
     }
   } catch (error: any) {
-    memoryLogger.error(`模型预设检查失败: ${error.message}`, 'System');
+    memoryLogger.error(`模型预设检查失败: ${error.message}`, "System");
   }
 }
 
 try {
-  await fastify.listen({ port: appConfig.port, host: '0.0.0.0' });
+  await fastify.listen({ port: appConfig.port, host: "0.0.0.0" });
   console.log(`Server listening on http://localhost:${appConfig.port}`);
-  memoryLogger.info(`Server started on port ${appConfig.port}`, 'System');
+  memoryLogger.info(`Server started on port ${appConfig.port}`, "System");
 
   // 显示代理配置信息
   logProxyConfig();
@@ -324,91 +391,105 @@ try {
   setInterval(cleanOldApiRequests, 24 * 60 * 60 * 1000);
   memoryLogger.info(
     `已启动请求日志自动清理任务，每 24 小时执行一次，保留 ${appConfig.apiRequestLogRetentionDays} 天`,
-    'System'
+    "System",
   );
 
   await checkAndUpdateModelPresets();
 
   setInterval(checkAndUpdateModelPresets, 24 * 60 * 60 * 1000);
-  memoryLogger.info('已启动模型预设自动更新任务，每 24 小时检查一次', 'System');
+  memoryLogger.info("已启动模型预设自动更新任务，每 24 小时检查一次", "System");
 
   // 根据系统设置决定是否启动健康检查服务
-  const persistentMonitoringCfg = await systemConfigDb.get('persistent_monitoring_enabled');
-  if (persistentMonitoringCfg && persistentMonitoringCfg.value === 'true') {
+  const persistentMonitoringCfg = await systemConfigDb.get(
+    "persistent_monitoring_enabled",
+  );
+  if (persistentMonitoringCfg && persistentMonitoringCfg.value === "true") {
     await healthCheckerService.start();
-    memoryLogger.info('健康检查服务已启动', 'System');
+    memoryLogger.info("健康检查服务已启动", "System");
   } else {
-    memoryLogger.info('持久监控未启用，未启动健康检查服务', 'System');
+    memoryLogger.info("持久监控未启用，未启动健康检查服务", "System");
   }
 
   // 每天清理一次健康检查历史记录（保留7天）
-  setInterval(async () => {
-    try {
-      const deletedCount = await healthRunDb.cleanOldRecords(7);
-      if (deletedCount > 0) {
-        memoryLogger.info(`清理健康检查历史记录: 删除 ${deletedCount} 条记录`, 'System');
+  setInterval(
+    async () => {
+      try {
+        const deletedCount = await healthRunDb.cleanOldRecords(7);
+        if (deletedCount > 0) {
+          memoryLogger.info(
+            `清理健康检查历史记录: 删除 ${deletedCount} 条记录`,
+            "System",
+          );
+        }
+      } catch (error: any) {
+        memoryLogger.error(
+          `清理健康检查历史记录失败: ${error.message}`,
+          "System",
+        );
       }
-    } catch (error: any) {
-      memoryLogger.error(`清理健康检查历史记录失败: ${error.message}`, 'System');
-    }
-  }, 24 * 60 * 60 * 1000);
+    },
+    24 * 60 * 60 * 1000,
+  );
 
   // Start backup scheduler if S3 is configured
   try {
     const backupScheduler = getBackupScheduler();
     await backupScheduler.loadConfigFromDatabase();
     backupScheduler.start();
-    memoryLogger.info('Backup scheduler started', 'Backup');
+    memoryLogger.info("Backup scheduler started", "Backup");
   } catch (error: any) {
-    memoryLogger.warn(`Backup scheduler not started: ${error.message}`, 'Backup');
+    memoryLogger.warn(
+      `Backup scheduler not started: ${error.message}`,
+      "Backup",
+    );
   }
 } catch (err: any) {
   fastify.log.error(err);
-  memoryLogger.error(`Failed to start server: ${err}`, 'System');
+  memoryLogger.error(`Failed to start server: ${err}`, "System");
   process.exit(1);
 }
 
 const gracefulShutdown = async (signal: string) => {
-  memoryLogger.info(`收到 ${signal} 信号，开始优雅关闭...`, 'System');
+  memoryLogger.info(`收到 ${signal} 信号，开始优雅关闭...`, "System");
 
   try {
     // Stop backup scheduler
     try {
       const backupScheduler = getBackupScheduler();
       backupScheduler.stop();
-      memoryLogger.info('Backup scheduler stopped', 'Backup');
+      memoryLogger.info("Backup scheduler stopped", "Backup");
     } catch (error) {
       // Ignore if not started
     }
 
     await healthCheckerService.stop();
-    memoryLogger.info('健康检查服务已停止', 'System');
+    memoryLogger.info("健康检查服务已停止", "System");
 
     requestCache.destroy();
-    memoryLogger.info('请求缓存已清理', 'System');
+    memoryLogger.info("请求缓存已清理", "System");
 
     await fastify.close();
-    memoryLogger.info('Fastify 服务已关闭', 'System');
+    memoryLogger.info("Fastify 服务已关闭", "System");
 
     await shutdownDatabase();
-    memoryLogger.info('数据库已安全关闭', 'System');
+    memoryLogger.info("数据库已安全关闭", "System");
 
     process.exit(0);
   } catch (err: any) {
-    memoryLogger.error(`优雅关闭失败: ${err}`, 'System');
+    memoryLogger.error(`优雅关闭失败: ${err}`, "System");
     process.exit(1);
   }
 };
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
-process.on('uncaughtException', async (err) => {
-  memoryLogger.error(`未捕获的异常: ${err.stack}`, 'System');
-  await gracefulShutdown('uncaughtException');
+process.on("uncaughtException", async (err) => {
+  memoryLogger.error(`未捕获的异常: ${err.stack}`, "System");
+  await gracefulShutdown("uncaughtException");
 });
 
-process.on('unhandledRejection', async (reason, _promise) => {
-  memoryLogger.error(`未处理的 Promise 拒绝: ${reason}`, 'System');
-  await gracefulShutdown('unhandledRejection');
+process.on("unhandledRejection", async (reason, _promise) => {
+  memoryLogger.error(`未处理的 Promise 拒绝: ${reason}`, "System");
+  await gracefulShutdown("unhandledRejection");
 });
