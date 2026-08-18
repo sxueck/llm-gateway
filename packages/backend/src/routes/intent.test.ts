@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   classifyWithLocalOnnx: vi.fn(),
   isLocalClassifierReady: vi.fn(),
   getLocalClassifierError: vi.fn(),
+  intentClassifyLogCreate: vi.fn(),
 }));
 
 vi.mock("./proxy/auth.js", () => ({
@@ -26,6 +27,10 @@ vi.mock("../services/expert-router/local/model-assets.js", () => ({
 
 vi.mock("../services/logger.js", () => ({
   memoryLogger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+}));
+
+vi.mock("../db/index.js", () => ({
+  intentClassifyLogDb: { create: mocks.intentClassifyLogCreate },
 }));
 
 import { intentRoutes } from "./intent.js";
@@ -114,6 +119,7 @@ describe("intentRoutes POST /classify", () => {
     mocks.isLocalClassifierReady.mockReturnValue(true);
     mocks.getLocalClassifierError.mockReturnValue(undefined);
     mocks.classifyWithLocalOnnx.mockResolvedValue(makeClassifyResult());
+    mocks.intentClassifyLogCreate.mockResolvedValue(undefined);
   });
 
   it("rejects missing authentication with 401", async () => {
@@ -198,6 +204,16 @@ describe("intentRoutes POST /classify", () => {
       "帮我写个快排",
       1024,
     );
+    expect(mocks.intentClassifyLogCreate).toHaveBeenCalledTimes(1);
+    expect(mocks.intentClassifyLogCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        virtual_key_id: "vk-1",
+        top_label: "coding",
+        latency_ms: 12,
+        seq_len: 8,
+        input_truncated: false,
+      }),
+    );
   });
 
   it("slices the distribution to top_n while keeping total_labels", async () => {
@@ -218,7 +234,7 @@ describe("intentRoutes POST /classify", () => {
     expect((reply.body as any).labels).toHaveLength(3);
   });
 
-  it("returns 500 when inference throws", async () => {
+  it("returns 500 and does not log when inference throws", async () => {
     mocks.classifyWithLocalOnnx.mockRejectedValue(
       new Error("onnx session failed"),
     );
@@ -227,5 +243,6 @@ describe("intentRoutes POST /classify", () => {
     expect(reply.statusCode).toBe(500);
     expect((reply.body as any).error.code).toBe("classification_error");
     expect((reply.body as any).error.message).toContain("onnx session failed");
+    expect(mocks.intentClassifyLogCreate).not.toHaveBeenCalled();
   });
 });

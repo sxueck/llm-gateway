@@ -1,46 +1,62 @@
-import { FastifyInstance } from 'fastify';
-import { appConfig, setPublicUrl, validatePublicUrl } from '../config/index.js';
-import { memoryLogger } from '../services/logger.js';
-import { apiRequestDb, routingConfigDb, modelDb, systemConfigDb, expertRoutingLogDb, healthTargetDb, virtualKeyDb } from '../db/index.js';
-import { hotConfigCache } from '../services/hot-config-cache.js';
-import { nanoid } from 'nanoid';
-import { loadAntiBotConfig, validateUserAgentList } from '../utils/anti-bot-config.js';
-import { hashKey } from '../utils/crypto.js';
-import { healthCheckerService } from '../services/health-checker.js';
-import { debugModeService } from '../services/debug-mode.js';
-import { costMappingService } from '../services/cost-mapping.js';
-import { runtimeSystemConfigCache } from '../services/runtime-system-config-cache.js';
-import { threatIpBlocker } from '../services/threat-ip-blocker.js';
-import { manualIpBlocklist } from '../services/manual-ip-blocklist.js';
-import { requestHeaderForwardingService } from '../services/request-header-forwarding.js';
-import { upstreamSslConfigService } from '../services/upstream-ssl-config.js';
+import { FastifyInstance } from "fastify";
+import { appConfig, setPublicUrl, validatePublicUrl } from "../config/index.js";
+import { memoryLogger } from "../services/logger.js";
+import {
+  apiRequestDb,
+  routingConfigDb,
+  modelDb,
+  systemConfigDb,
+  expertRoutingLogDb,
+  healthTargetDb,
+  virtualKeyDb,
+  intentClassifyLogDb,
+} from "../db/index.js";
+import { hotConfigCache } from "../services/hot-config-cache.js";
+import { nanoid } from "nanoid";
+import {
+  loadAntiBotConfig,
+  validateUserAgentList,
+} from "../utils/anti-bot-config.js";
+import { hashKey } from "../utils/crypto.js";
+import { healthCheckerService } from "../services/health-checker.js";
+import { debugModeService } from "../services/debug-mode.js";
+import { costMappingService } from "../services/cost-mapping.js";
+import { runtimeSystemConfigCache } from "../services/runtime-system-config-cache.js";
+import { threatIpBlocker } from "../services/threat-ip-blocker.js";
+import { manualIpBlocklist } from "../services/manual-ip-blocklist.js";
+import { requestHeaderForwardingService } from "../services/request-header-forwarding.js";
+import { upstreamSslConfigService } from "../services/upstream-ssl-config.js";
 import {
   reasoningEffortSuffixesCache,
   normalizeSuffixes,
   DEFAULT_REASONING_EFFORT_MODEL_SUFFIXES,
   REASONING_EFFORT_SUFFIXES_CONFIG_KEY,
-} from '../services/reasoning-effort-suffixes.js';
-import { getGeoInfo, normalizeIp } from '../utils/ip.js';
-import { getShanghaiDayStart } from '../db/utils/time-buckets.js';
-import { circuitBreaker } from '../services/circuit-breaker.js';
-import { getTargetKey, getAnonymousAffinityTargetKey, countExplicitSessionBindings } from './proxy/routing.js';
+} from "../services/reasoning-effort-suffixes.js";
+import { getGeoInfo, normalizeIp } from "../utils/ip.js";
+import { getShanghaiDayStart } from "../db/utils/time-buckets.js";
+import { circuitBreaker } from "../services/circuit-breaker.js";
+import {
+  getTargetKey,
+  getAnonymousAffinityTargetKey,
+  countExplicitSessionBindings,
+} from "./proxy/routing.js";
 
 export async function configRoutes(fastify: FastifyInstance) {
-  fastify.addHook('onRequest', fastify.authenticate);
+  fastify.addHook("onRequest", fastify.authenticate);
 
-  type StatsPeriod = '24h' | '7d' | '30d' | 'all';
+  type StatsPeriod = "24h" | "7d" | "30d" | "all";
 
   function resolveStatsStartTime(period: StatsPeriod) {
     const now = Date.now();
 
     switch (period) {
-      case '7d':
+      case "7d":
         // Align to Shanghai natural-day window: 7 complete days before today
         return { now, startTime: getShanghaiDayStart(-7) };
-      case '30d':
+      case "30d":
         // Align to Shanghai natural-day window: 30 complete days before today
         return { now, startTime: getShanghaiDayStart(-30) };
-      case 'all':
+      case "all":
         return { now, startTime: 0 };
       default:
         return { now, startTime: now - 24 * 60 * 60 * 1000 };
@@ -65,8 +81,10 @@ export async function configRoutes(fastify: FastifyInstance) {
   }
 
   async function ensureMonitoringVirtualKey() {
-    const keyIdCfg = await systemConfigDb.get('monitoring_virtual_key_id');
-    let monitoringKey = keyIdCfg ? await virtualKeyDb.getById(keyIdCfg.value) : undefined;
+    const keyIdCfg = await systemConfigDb.get("monitoring_virtual_key_id");
+    let monitoringKey = keyIdCfg
+      ? await virtualKeyDb.getById(keyIdCfg.value)
+      : undefined;
 
     if (!monitoringKey) {
       const id = nanoid();
@@ -75,10 +93,10 @@ export async function configRoutes(fastify: FastifyInstance) {
         id,
         key_value: keyValue,
         key_hash: hashKey(keyValue),
-        name: 'System Monitoring Key',
+        name: "System Monitoring Key",
         provider_id: null,
         model_id: null,
-        routing_strategy: 'single',
+        routing_strategy: "single",
         model_ids: null,
         routing_config: null,
         enabled: 1,
@@ -93,83 +111,122 @@ export async function configRoutes(fastify: FastifyInstance) {
         prompt_capture_enabled: 0,
         context_normalization_enabled: 0,
       });
-      await systemConfigDb.set('monitoring_virtual_key_id', monitoringKey.id, '监控专用虚拟密钥ID');
-      memoryLogger.info(`已创建监控专用虚拟密钥: ${monitoringKey.id}`, 'Config');
+      await systemConfigDb.set(
+        "monitoring_virtual_key_id",
+        monitoringKey.id,
+        "监控专用虚拟密钥ID",
+      );
+      memoryLogger.info(
+        `已创建监控专用虚拟密钥: ${monitoringKey.id}`,
+        "Config",
+      );
     }
 
     return monitoringKey;
   }
 
   async function syncMonitoringKeyModelsFromTargets() {
-    const persistentCfg = await systemConfigDb.get('persistent_monitoring_enabled');
-    if (!persistentCfg || persistentCfg.value !== 'true') {
+    const persistentCfg = await systemConfigDb.get(
+      "persistent_monitoring_enabled",
+    );
+    if (!persistentCfg || persistentCfg.value !== "true") {
       return;
     }
 
     const monitoringKey = await ensureMonitoringVirtualKey();
     const targets = await healthTargetDb.getAll();
     const enabledTargets = targets.filter((t: any) => t.enabled === 1);
-    const modelIds = Array.from(new Set(enabledTargets.map((t: any) => t.target_id))).filter(Boolean);
+    const modelIds = Array.from(
+      new Set(enabledTargets.map((t: any) => t.target_id)),
+    ).filter(Boolean);
 
     await virtualKeyDb.update(monitoringKey.id, {
       model_ids: JSON.stringify(modelIds),
-      routing_strategy: 'single',
+      routing_strategy: "single",
     } as any);
-    memoryLogger.info(`监控密钥已同步 ${modelIds.length} 个监控目标`, 'Config');
+    memoryLogger.info(`监控密钥已同步 ${modelIds.length} 个监控目标`, "Config");
   }
 
-  fastify.get('/system-settings', async () => {
-    const allowRegCfg = await systemConfigDb.get('allow_registration');
-    const corsEnabledCfg = await systemConfigDb.get('cors_enabled');
-    const publicUrlCfg = await systemConfigDb.get('public_url');
-    const litellmCompatCfg = await systemConfigDb.get('litellm_compat_enabled');
-    const healthMonitoringCfg = await systemConfigDb.get('health_monitoring_enabled');
-    const persistentMonitoringCfg = await systemConfigDb.get('persistent_monitoring_enabled');
-    const debugEnabledCfg = await systemConfigDb.get('developer_debug_enabled');
-    const debugExpiresCfg = await systemConfigDb.get('developer_debug_expires_at');
-    const dashboardHideRequestSourceCardCfg = await systemConfigDb.get('dashboard_hide_request_source_card');
-    const forwardClientUserAgentCfg = await systemConfigDb.get('forward_client_user_agent');
-    const skipUpstreamSslVerifyCfg = await systemConfigDb.get('skip_upstream_ssl_verify');
-    const trafficAnalysisRegionCfg = await systemConfigDb.get('traffic_analysis_region');
+  fastify.get("/system-settings", async () => {
+    const allowRegCfg = await systemConfigDb.get("allow_registration");
+    const corsEnabledCfg = await systemConfigDb.get("cors_enabled");
+    const publicUrlCfg = await systemConfigDb.get("public_url");
+    const litellmCompatCfg = await systemConfigDb.get("litellm_compat_enabled");
+    const healthMonitoringCfg = await systemConfigDb.get(
+      "health_monitoring_enabled",
+    );
+    const persistentMonitoringCfg = await systemConfigDb.get(
+      "persistent_monitoring_enabled",
+    );
+    const debugEnabledCfg = await systemConfigDb.get("developer_debug_enabled");
+    const debugExpiresCfg = await systemConfigDb.get(
+      "developer_debug_expires_at",
+    );
+    const dashboardHideRequestSourceCardCfg = await systemConfigDb.get(
+      "dashboard_hide_request_source_card",
+    );
+    const forwardClientUserAgentCfg = await systemConfigDb.get(
+      "forward_client_user_agent",
+    );
+    const skipUpstreamSslVerifyCfg = await systemConfigDb.get(
+      "skip_upstream_ssl_verify",
+    );
+    const trafficAnalysisRegionCfg = await systemConfigDb.get(
+      "traffic_analysis_region",
+    );
     const antiBot = await loadAntiBotConfig();
 
-    const reasoningSuffixesCfg = await systemConfigDb.get(REASONING_EFFORT_SUFFIXES_CONFIG_KEY);
+    const reasoningSuffixesCfg = await systemConfigDb.get(
+      REASONING_EFFORT_SUFFIXES_CONFIG_KEY,
+    );
     const reasoningEffortModelSuffixes = reasoningSuffixesCfg
       ? normalizeSuffixes(reasoningSuffixesCfg.value)
       : [...DEFAULT_REASONING_EFFORT_MODEL_SUFFIXES];
 
     const now = Date.now();
     const rawExpiresAt = debugExpiresCfg ? Number(debugExpiresCfg.value) : 0;
-    const activeDebug = debugEnabledCfg?.value === 'true' && rawExpiresAt > now;
+    const activeDebug = debugEnabledCfg?.value === "true" && rawExpiresAt > now;
 
     return {
-      allowRegistration: !(allowRegCfg && allowRegCfg.value === 'false'),
-      corsEnabled: corsEnabledCfg ? corsEnabledCfg.value === 'true' : true,
+      allowRegistration: !(allowRegCfg && allowRegCfg.value === "false"),
+      corsEnabled: corsEnabledCfg ? corsEnabledCfg.value === "true" : true,
       publicUrl: publicUrlCfg ? publicUrlCfg.value : appConfig.defaultPublicUrl,
-      litellmCompatEnabled: litellmCompatCfg ? litellmCompatCfg.value === 'true' : false,
-      healthMonitoringEnabled: healthMonitoringCfg ? healthMonitoringCfg.value === 'true' : true,
-      persistentMonitoringEnabled: persistentMonitoringCfg ? persistentMonitoringCfg.value === 'true' : false,
+      litellmCompatEnabled: litellmCompatCfg
+        ? litellmCompatCfg.value === "true"
+        : false,
+      healthMonitoringEnabled: healthMonitoringCfg
+        ? healthMonitoringCfg.value === "true"
+        : true,
+      persistentMonitoringEnabled: persistentMonitoringCfg
+        ? persistentMonitoringCfg.value === "true"
+        : false,
       developerDebugEnabled: activeDebug,
       developerDebugExpiresAt: activeDebug ? rawExpiresAt : null,
-      dashboardHideRequestSourceCard: dashboardHideRequestSourceCardCfg ? dashboardHideRequestSourceCardCfg.value === 'true' : false,
-      forwardClientUserAgent: forwardClientUserAgentCfg ? forwardClientUserAgentCfg.value === 'true' : false,
-      skipUpstreamSslVerify: skipUpstreamSslVerifyCfg ? skipUpstreamSslVerifyCfg.value === 'true' : false,
+      dashboardHideRequestSourceCard: dashboardHideRequestSourceCardCfg
+        ? dashboardHideRequestSourceCardCfg.value === "true"
+        : false,
+      forwardClientUserAgent: forwardClientUserAgentCfg
+        ? forwardClientUserAgentCfg.value === "true"
+        : false,
+      skipUpstreamSslVerify: skipUpstreamSslVerifyCfg
+        ? skipUpstreamSslVerifyCfg.value === "true"
+        : false,
       trafficAnalysisRegion: trafficAnalysisRegionCfg?.value || null,
       antiBot,
       reasoningEffortModelSuffixes,
     };
   });
 
-  fastify.get('/request-sources/lookup', async (request, reply) => {
+  fastify.get("/request-sources/lookup", async (request, reply) => {
     const { ip } = request.query as { ip?: string };
     if (!ip) {
       return reply.code(400).send({
         error: {
-          message: 'IP 地址不能为空',
-          type: 'invalid_request_error',
-          param: 'ip',
-          code: 'invalid_ip',
-        }
+          message: "IP 地址不能为空",
+          type: "invalid_request_error",
+          param: "ip",
+          code: "invalid_ip",
+        },
       });
     }
 
@@ -177,11 +234,11 @@ export async function configRoutes(fastify: FastifyInstance) {
     if (!normalizedIp) {
       return reply.code(400).send({
         error: {
-          message: '无效的 IP 地址',
-          type: 'invalid_request_error',
-          param: 'ip',
-          code: 'invalid_ip_format',
-        }
+          message: "无效的 IP 地址",
+          type: "invalid_request_error",
+          param: "ip",
+          code: "invalid_ip_format",
+        },
       });
     }
 
@@ -201,16 +258,16 @@ export async function configRoutes(fastify: FastifyInstance) {
     };
   });
 
-  fastify.post('/request-sources/block', async (request, reply) => {
+  fastify.post("/request-sources/block", async (request, reply) => {
     const { ip, reason } = request.body as { ip?: string; reason?: string };
     if (!ip) {
       return reply.code(400).send({
         error: {
-          message: 'IP 地址不能为空',
-          type: 'invalid_request_error',
-          param: 'ip',
-          code: 'invalid_ip',
-        }
+          message: "IP 地址不能为空",
+          type: "invalid_request_error",
+          param: "ip",
+          code: "invalid_ip",
+        },
       });
     }
 
@@ -222,33 +279,53 @@ export async function configRoutes(fastify: FastifyInstance) {
           ip: entry.ip,
           reason: entry.reason,
           timestamp: entry.createdAt,
-        }
+        },
       };
     } catch (error: any) {
-      memoryLogger.error(`手动拦截 IP 失败: ${error?.message || error}`, 'ManualBlock');
+      memoryLogger.error(
+        `手动拦截 IP 失败: ${error?.message || error}`,
+        "ManualBlock",
+      );
       return reply.code(400).send({
         error: {
-          message: error?.message || '拦截 IP 失败',
-          type: 'invalid_request_error',
-          param: 'ip',
-          code: 'block_ip_failed',
-        }
+          message: error?.message || "拦截 IP 失败",
+          type: "invalid_request_error",
+          param: "ip",
+          code: "block_ip_failed",
+        },
       });
     }
   });
 
-  fastify.post('/system-settings/refresh-threat-ip', async () => {
+  fastify.post("/system-settings/refresh-threat-ip", async () => {
     try {
       await threatIpBlocker.refresh();
-      return { success: true, message: '威胁 IP 列表已刷新' };
+      return { success: true, message: "威胁 IP 列表已刷新" };
     } catch (error: any) {
-      memoryLogger.error(`手动刷新威胁 IP 列表失败: ${error.message}`, 'Config');
+      memoryLogger.error(
+        `手动刷新威胁 IP 列表失败: ${error.message}`,
+        "Config",
+      );
       throw error;
     }
   });
 
-  fastify.post('/system-settings', async (request) => {
-    const { allowRegistration, corsEnabled, publicUrl, litellmCompatEnabled, healthMonitoringEnabled, persistentMonitoringEnabled, developerDebugEnabled, dashboardHideRequestSourceCard, forwardClientUserAgent, skipUpstreamSslVerify, trafficAnalysisRegion, antiBot, reasoningEffortModelSuffixes } = request.body as {
+  fastify.post("/system-settings", async (request) => {
+    const {
+      allowRegistration,
+      corsEnabled,
+      publicUrl,
+      litellmCompatEnabled,
+      healthMonitoringEnabled,
+      persistentMonitoringEnabled,
+      developerDebugEnabled,
+      dashboardHideRequestSourceCard,
+      forwardClientUserAgent,
+      skipUpstreamSslVerify,
+      trafficAnalysisRegion,
+      antiBot,
+      reasoningEffortModelSuffixes,
+    } = request.body as {
       allowRegistration?: boolean;
       corsEnabled?: boolean;
       publicUrl?: string;
@@ -275,72 +352,127 @@ export async function configRoutes(fastify: FastifyInstance) {
 
     try {
       if (allowRegistration !== undefined) {
-        await systemConfigDb.set('allow_registration', allowRegistration ? 'true' : 'false', '是否允许新用户注册');
-        const verify = await systemConfigDb.get('allow_registration');
-        if (!verify || verify.value !== (allowRegistration ? 'true' : 'false')) {
-          throw new Error('注册配置保存失败');
+        await systemConfigDb.set(
+          "allow_registration",
+          allowRegistration ? "true" : "false",
+          "是否允许新用户注册",
+        );
+        const verify = await systemConfigDb.get("allow_registration");
+        if (
+          !verify ||
+          verify.value !== (allowRegistration ? "true" : "false")
+        ) {
+          throw new Error("注册配置保存失败");
         }
       }
 
       if (corsEnabled !== undefined) {
-        await systemConfigDb.set('cors_enabled', corsEnabled ? 'true' : 'false', '是否启用 CORS 跨域支持');
-        const verify = await systemConfigDb.get('cors_enabled');
-        if (!verify || verify.value !== (corsEnabled ? 'true' : 'false')) {
-          throw new Error('CORS 配置保存失败');
+        await systemConfigDb.set(
+          "cors_enabled",
+          corsEnabled ? "true" : "false",
+          "是否启用 CORS 跨域支持",
+        );
+        const verify = await systemConfigDb.get("cors_enabled");
+        if (!verify || verify.value !== (corsEnabled ? "true" : "false")) {
+          throw new Error("CORS 配置保存失败");
         }
         runtimeSystemConfigCache.setCorsEnabled(corsEnabled);
-        memoryLogger.info(`CORS 配置已更新: ${corsEnabled ? '启用' : '禁用'}`, 'Config');
+        memoryLogger.info(
+          `CORS 配置已更新: ${corsEnabled ? "启用" : "禁用"}`,
+          "Config",
+        );
       }
 
       if (litellmCompatEnabled !== undefined) {
-        await systemConfigDb.set('litellm_compat_enabled', litellmCompatEnabled ? 'true' : 'false', '是否启用 LiteLLM 兼容模式');
-        const verify = await systemConfigDb.get('litellm_compat_enabled');
-        if (!verify || verify.value !== (litellmCompatEnabled ? 'true' : 'false')) {
-          throw new Error('LiteLLM 兼容模式配置保存失败');
+        await systemConfigDb.set(
+          "litellm_compat_enabled",
+          litellmCompatEnabled ? "true" : "false",
+          "是否启用 LiteLLM 兼容模式",
+        );
+        const verify = await systemConfigDb.get("litellm_compat_enabled");
+        if (
+          !verify ||
+          verify.value !== (litellmCompatEnabled ? "true" : "false")
+        ) {
+          throw new Error("LiteLLM 兼容模式配置保存失败");
         }
-        memoryLogger.info(`LiteLLM 兼容模式已更新: ${litellmCompatEnabled ? '启用' : '禁用'}`, 'Config');
+        memoryLogger.info(
+          `LiteLLM 兼容模式已更新: ${litellmCompatEnabled ? "启用" : "禁用"}`,
+          "Config",
+        );
       }
 
       if (healthMonitoringEnabled !== undefined) {
-        await systemConfigDb.set('health_monitoring_enabled', healthMonitoringEnabled ? 'true' : 'false', '是否启用健康监控公开页面');
-        const verify = await systemConfigDb.get('health_monitoring_enabled');
-        if (!verify || verify.value !== (healthMonitoringEnabled ? 'true' : 'false')) {
-          throw new Error('健康监控配置保存失败');
+        await systemConfigDb.set(
+          "health_monitoring_enabled",
+          healthMonitoringEnabled ? "true" : "false",
+          "是否启用健康监控公开页面",
+        );
+        const verify = await systemConfigDb.get("health_monitoring_enabled");
+        if (
+          !verify ||
+          verify.value !== (healthMonitoringEnabled ? "true" : "false")
+        ) {
+          throw new Error("健康监控配置保存失败");
         }
-        memoryLogger.info(`健康监控公开页面已更新: ${healthMonitoringEnabled ? '启用' : '禁用'}`, 'Config');
+        memoryLogger.info(
+          `健康监控公开页面已更新: ${healthMonitoringEnabled ? "启用" : "禁用"}`,
+          "Config",
+        );
       }
 
       if (persistentMonitoringEnabled !== undefined) {
-        await systemConfigDb.set('persistent_monitoring_enabled', persistentMonitoringEnabled ? 'true' : 'false', '是否启用持久监控');
-        const verifyPersist = await systemConfigDb.get('persistent_monitoring_enabled');
-        if (!verifyPersist || verifyPersist.value !== (persistentMonitoringEnabled ? 'true' : 'false')) {
-          throw new Error('持久监控配置保存失败');
+        await systemConfigDb.set(
+          "persistent_monitoring_enabled",
+          persistentMonitoringEnabled ? "true" : "false",
+          "是否启用持久监控",
+        );
+        const verifyPersist = await systemConfigDb.get(
+          "persistent_monitoring_enabled",
+        );
+        if (
+          !verifyPersist ||
+          verifyPersist.value !==
+            (persistentMonitoringEnabled ? "true" : "false")
+        ) {
+          throw new Error("持久监控配置保存失败");
         }
-        memoryLogger.info(`持久监控已${persistentMonitoringEnabled ? '启用' : '禁用'}`, 'Config');
+        memoryLogger.info(
+          `持久监控已${persistentMonitoringEnabled ? "启用" : "禁用"}`,
+          "Config",
+        );
 
         if (persistentMonitoringEnabled) {
           await ensureMonitoringVirtualKey();
           try {
             await syncMonitoringKeyModelsFromTargets();
           } catch (syncErr: any) {
-            memoryLogger.warn(`同步监控密钥模型失败: ${syncErr.message}`, 'Config');
+            memoryLogger.warn(
+              `同步监控密钥模型失败: ${syncErr.message}`,
+              "Config",
+            );
           }
 
           await healthCheckerService.start();
-          memoryLogger.info('检测到启用持久监控，健康检查服务已启动', 'Config');
+          memoryLogger.info("检测到启用持久监控，健康检查服务已启动", "Config");
         } else {
           await healthCheckerService.stop();
-          memoryLogger.info('检测到关闭持久监控，健康检查服务已停止', 'Config');
+          memoryLogger.info("检测到关闭持久监控，健康检查服务已停止", "Config");
 
-          const keyIdCfg = await systemConfigDb.get('monitoring_virtual_key_id');
+          const keyIdCfg = await systemConfigDb.get(
+            "monitoring_virtual_key_id",
+          );
           if (keyIdCfg) {
             try {
               await virtualKeyDb.update(keyIdCfg.value, {
                 model_ids: JSON.stringify([]),
               } as any);
-              memoryLogger.info('已清空监控虚拟密钥的模型绑定', 'Config');
+              memoryLogger.info("已清空监控虚拟密钥的模型绑定", "Config");
             } catch (clearErr: any) {
-              memoryLogger.warn(`清空监控密钥模型绑定失败: ${clearErr.message}`, 'Config');
+              memoryLogger.warn(
+                `清空监控密钥模型绑定失败: ${clearErr.message}`,
+                "Config",
+              );
             }
           }
         }
@@ -350,59 +482,81 @@ export async function configRoutes(fastify: FastifyInstance) {
       if (developerDebugEnabled !== undefined) {
         if (developerDebugEnabled) {
           const expiresAt = Date.now() + 15 * 60 * 1000;
-          await systemConfigDb.set('developer_debug_enabled', 'true', '是否启用开发者调试模式');
-          await systemConfigDb.set('developer_debug_expires_at', String(expiresAt), '开发者调试模式到期时间');
+          await systemConfigDb.set(
+            "developer_debug_enabled",
+            "true",
+            "是否启用开发者调试模式",
+          );
+          await systemConfigDb.set(
+            "developer_debug_expires_at",
+            String(expiresAt),
+            "开发者调试模式到期时间",
+          );
           debugModeService.setState(true, expiresAt);
-          memoryLogger.warn(`开发者调试模式已开启，将在 ${new Date(expiresAt).toLocaleString('zh-CN')} 自动关闭`, 'Config');
+          memoryLogger.warn(
+            `开发者调试模式已开启，将在 ${new Date(expiresAt).toLocaleString("zh-CN")} 自动关闭`,
+            "Config",
+          );
         } else {
-          await systemConfigDb.set('developer_debug_enabled', 'false', '是否启用开发者调试模式');
-          await systemConfigDb.set('developer_debug_expires_at', '0', '开发者调试模式到期时间');
+          await systemConfigDb.set(
+            "developer_debug_enabled",
+            "false",
+            "是否启用开发者调试模式",
+          );
+          await systemConfigDb.set(
+            "developer_debug_expires_at",
+            "0",
+            "开发者调试模式到期时间",
+          );
           debugModeService.setState(false, Date.now());
-          memoryLogger.info('开发者调试模式已关闭', 'Config');
+          memoryLogger.info("开发者调试模式已关闭", "Config");
         }
       }
 
       if (dashboardHideRequestSourceCard !== undefined) {
         await systemConfigDb.set(
-          'dashboard_hide_request_source_card',
-          dashboardHideRequestSourceCard ? 'true' : 'false',
-          '是否在首页隐藏「请求来源」'
+          "dashboard_hide_request_source_card",
+          dashboardHideRequestSourceCard ? "true" : "false",
+          "是否在首页隐藏「请求来源」",
         );
       }
 
       if (forwardClientUserAgent !== undefined) {
         await systemConfigDb.set(
-          'forward_client_user_agent',
-          forwardClientUserAgent ? 'true' : 'false',
-          '是否向上游透传客户端 User-Agent'
+          "forward_client_user_agent",
+          forwardClientUserAgent ? "true" : "false",
+          "是否向上游透传客户端 User-Agent",
         );
         await requestHeaderForwardingService.reloadConfig();
         memoryLogger.info(
-          `客户端 User-Agent 透传已更新: ${forwardClientUserAgent ? '启用' : '禁用'}`,
-          'Config'
+          `客户端 User-Agent 透传已更新: ${forwardClientUserAgent ? "启用" : "禁用"}`,
+          "Config",
         );
       }
 
       if (skipUpstreamSslVerify !== undefined) {
         await systemConfigDb.set(
-          'skip_upstream_ssl_verify',
-          skipUpstreamSslVerify ? 'true' : 'false',
-          'Skip upstream SSL certificate verification'
+          "skip_upstream_ssl_verify",
+          skipUpstreamSslVerify ? "true" : "false",
+          "Skip upstream SSL certificate verification",
         );
         await upstreamSslConfigService.reloadConfig();
         memoryLogger.info(
-          `Skip upstream SSL verification updated: ${skipUpstreamSslVerify ? 'enabled' : 'disabled'}`,
-          'Config'
+          `Skip upstream SSL verification updated: ${skipUpstreamSslVerify ? "enabled" : "disabled"}`,
+          "Config",
         );
       }
 
       if (trafficAnalysisRegion !== undefined) {
         await systemConfigDb.set(
-          'traffic_analysis_region',
-          trafficAnalysisRegion || '',
-          '流量分析地区 (ISO 3166-1 alpha-2)'
+          "traffic_analysis_region",
+          trafficAnalysisRegion || "",
+          "流量分析地区 (ISO 3166-1 alpha-2)",
         );
-        memoryLogger.info(`流量分析地区已更新: ${trafficAnalysisRegion || '未设置'}`, 'Config');
+        memoryLogger.info(
+          `流量分析地区已更新: ${trafficAnalysisRegion || "未设置"}`,
+          "Config",
+        );
       }
 
       if (publicUrl !== undefined) {
@@ -411,91 +565,142 @@ export async function configRoutes(fastify: FastifyInstance) {
           throw new Error(validation.error);
         }
 
-        await systemConfigDb.set('public_url', publicUrl, 'LLM Gateway 公网访问地址');
-        const verify = await systemConfigDb.get('public_url');
+        await systemConfigDb.set(
+          "public_url",
+          publicUrl,
+          "LLM Gateway 公网访问地址",
+        );
+        const verify = await systemConfigDb.get("public_url");
         if (!verify || verify.value !== publicUrl) {
-          throw new Error('公网地址配置保存失败');
+          throw new Error("公网地址配置保存失败");
         }
         setPublicUrl(publicUrl);
-        memoryLogger.info(`LLM Gateway URL 已更新: ${publicUrl}`, 'Config');
+        memoryLogger.info(`LLM Gateway URL 已更新: ${publicUrl}`, "Config");
       }
 
       if (antiBot !== undefined) {
-      if (antiBot.allowedUserAgents !== undefined) {
-        const validation = validateUserAgentList(antiBot.allowedUserAgents);
-        if (!validation.valid) {
-          throw new Error(`白名单验证失败: ${validation.error}`);
+        if (antiBot.allowedUserAgents !== undefined) {
+          const validation = validateUserAgentList(antiBot.allowedUserAgents);
+          if (!validation.valid) {
+            throw new Error(`白名单验证失败: ${validation.error}`);
+          }
+        }
+        if (antiBot.blockedUserAgents !== undefined) {
+          const validation = validateUserAgentList(antiBot.blockedUserAgents);
+          if (!validation.valid) {
+            throw new Error(`黑名单验证失败: ${validation.error}`);
+          }
+        }
+
+        if (antiBot.enabled !== undefined) {
+          await systemConfigDb.set(
+            "anti_bot_enabled",
+            antiBot.enabled ? "true" : "false",
+            "是否启用反爬虫功能",
+          );
+          memoryLogger.info(
+            `反爬虫功能已更新: ${antiBot.enabled ? "启用" : "禁用"}`,
+            "Config",
+          );
+        }
+        if (antiBot.blockBots !== undefined) {
+          await systemConfigDb.set(
+            "anti_bot_block_bots",
+            antiBot.blockBots ? "true" : "false",
+            "是否拦截爬虫",
+          );
+        }
+        if (antiBot.blockSuspicious !== undefined) {
+          await systemConfigDb.set(
+            "anti_bot_block_suspicious",
+            antiBot.blockSuspicious ? "true" : "false",
+            "是否拦截可疑请求",
+          );
+        }
+        if (antiBot.blockThreatIPs !== undefined) {
+          await systemConfigDb.set(
+            "anti_bot_block_threat_ips",
+            antiBot.blockThreatIPs ? "true" : "false",
+            "是否拦截威胁IP",
+          );
+          memoryLogger.info(
+            `威胁 IP 拦截已更新: ${antiBot.blockThreatIPs ? "启用" : "禁用"}`,
+            "Config",
+          );
+        }
+        if (antiBot.logOnly !== undefined) {
+          await systemConfigDb.set(
+            "anti_bot_log_only",
+            antiBot.logOnly ? "true" : "false",
+            "是否仅记录日志不拦截",
+          );
+        }
+        if (antiBot.logHeaders !== undefined) {
+          await systemConfigDb.set(
+            "anti_bot_log_headers",
+            antiBot.logHeaders ? "true" : "false",
+            "是否在日志中记录完整请求头",
+          );
+          memoryLogger.info(
+            `反爬虫请求头记录已更新: ${antiBot.logHeaders ? "启用" : "禁用"}`,
+            "Config",
+          );
+        }
+        if (antiBot.allowedUserAgents !== undefined) {
+          await systemConfigDb.set(
+            "anti_bot_allowed_user_agents",
+            antiBot.allowedUserAgents.join(","),
+            "白名单User-Agent列表",
+          );
+        }
+        if (antiBot.blockedUserAgents !== undefined) {
+          await systemConfigDb.set(
+            "anti_bot_blocked_user_agents",
+            antiBot.blockedUserAgents.join(","),
+            "黑名单User-Agent列表",
+          );
+        }
+
+        const { antiBotService } = await import("../services/anti-bot.js");
+        await antiBotService.reloadConfig();
+
+        const reloadedConfig = await loadAntiBotConfig();
+        if (
+          antiBot.enabled !== undefined &&
+          reloadedConfig.enabled !== antiBot.enabled
+        ) {
+          throw new Error("反爬虫配置保存验证失败");
         }
       }
-      if (antiBot.blockedUserAgents !== undefined) {
-        const validation = validateUserAgentList(antiBot.blockedUserAgents);
-        if (!validation.valid) {
-          throw new Error(`黑名单验证失败: ${validation.error}`);
-        }
-      }
-
-      if (antiBot.enabled !== undefined) {
-        await systemConfigDb.set('anti_bot_enabled', antiBot.enabled ? 'true' : 'false', '是否启用反爬虫功能');
-        memoryLogger.info(`反爬虫功能已更新: ${antiBot.enabled ? '启用' : '禁用'}`, 'Config');
-      }
-      if (antiBot.blockBots !== undefined) {
-        await systemConfigDb.set('anti_bot_block_bots', antiBot.blockBots ? 'true' : 'false', '是否拦截爬虫');
-      }
-      if (antiBot.blockSuspicious !== undefined) {
-        await systemConfigDb.set('anti_bot_block_suspicious', antiBot.blockSuspicious ? 'true' : 'false', '是否拦截可疑请求');
-      }
-      if (antiBot.blockThreatIPs !== undefined) {
-        await systemConfigDb.set('anti_bot_block_threat_ips', antiBot.blockThreatIPs ? 'true' : 'false', '是否拦截威胁IP');
-        memoryLogger.info(`威胁 IP 拦截已更新: ${antiBot.blockThreatIPs ? '启用' : '禁用'}`, 'Config');
-      }
-      if (antiBot.logOnly !== undefined) {
-        await systemConfigDb.set('anti_bot_log_only', antiBot.logOnly ? 'true' : 'false', '是否仅记录日志不拦截');
-      }
-      if (antiBot.logHeaders !== undefined) {
-        await systemConfigDb.set('anti_bot_log_headers', antiBot.logHeaders ? 'true' : 'false', '是否在日志中记录完整请求头');
-        memoryLogger.info(`反爬虫请求头记录已更新: ${antiBot.logHeaders ? '启用' : '禁用'}`, 'Config');
-      }
-      if (antiBot.allowedUserAgents !== undefined) {
-        await systemConfigDb.set('anti_bot_allowed_user_agents', antiBot.allowedUserAgents.join(','), '白名单User-Agent列表');
-      }
-      if (antiBot.blockedUserAgents !== undefined) {
-        await systemConfigDb.set('anti_bot_blocked_user_agents', antiBot.blockedUserAgents.join(','), '黑名单User-Agent列表');
-      }
-
-      const { antiBotService } = await import('../services/anti-bot.js');
-      await antiBotService.reloadConfig();
-
-      const reloadedConfig = await loadAntiBotConfig();
-      if (antiBot.enabled !== undefined && reloadedConfig.enabled !== antiBot.enabled) {
-        throw new Error('反爬虫配置保存验证失败');
-      }
-    }
 
       if (reasoningEffortModelSuffixes !== undefined) {
         const normalized = normalizeSuffixes(reasoningEffortModelSuffixes);
         await systemConfigDb.set(
           REASONING_EFFORT_SUFFIXES_CONFIG_KEY,
           JSON.stringify(normalized),
-          '模型名后缀 reasoning_effort 白名单（JSON 数组）'
+          "模型名后缀 reasoning_effort 白名单（JSON 数组）",
         );
         await reasoningEffortSuffixesCache.reload();
         memoryLogger.info(
-          `reasoning_effort 后缀白名单已更新: [${normalized.join(', ')}]`,
-          'Config'
+          `reasoning_effort 后缀白名单已更新: [${normalized.join(", ")}]`,
+          "Config",
         );
       }
 
       return { success: true };
     } catch (error: any) {
-      memoryLogger.error(`系统配置更新失败: ${error.message}`, 'Config');
+      memoryLogger.error(`系统配置更新失败: ${error.message}`, "Config");
       throw error;
     }
   });
 
-
-  fastify.get('/logs', async (request) => {
-    const { level, limit = 100, search } = request.query as {
-      level?: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
+  fastify.get("/logs", async (request) => {
+    const {
+      level,
+      limit = 100,
+      search,
+    } = request.query as {
+      level?: "INFO" | "WARN" | "ERROR" | "DEBUG";
       limit?: number;
       search?: string;
     };
@@ -511,19 +716,26 @@ export async function configRoutes(fastify: FastifyInstance) {
   });
 
   async function calculateCostStats(startTime: number, endTime: number) {
-      const pool = await import('../db/connection.js').then(m => m.getDatabase());
+    const pool = await import("../db/connection.js").then((m) =>
+      m.getDatabase(),
+    );
     const conn = await pool.getConnection();
     try {
-      const detailStart = getShanghaiDayStart(-appConfig.apiRequestLogRetentionDays);
+      const detailStart = getShanghaiDayStart(
+        -appConfig.apiRequestLogRetentionDays,
+      );
       const needsSummary = startTime < detailStart;
       const needsDetail = endTime >= detailStart;
 
       // 使用 Map 聚合各模型的 token 使用情况
-      const modelUsageMap = new Map<string, {
-        promptTokens: number;
-        completionTokens: number;
-        cachedTokens: number;
-      }>();
+      const modelUsageMap = new Map<
+        string,
+        {
+          promptTokens: number;
+          completionTokens: number;
+          cachedTokens: number;
+        }
+      >();
 
       if (needsSummary) {
         const lastSummaryDay = new Date(detailStart - 1);
@@ -539,12 +751,16 @@ export async function configRoutes(fastify: FastifyInstance) {
             AND s.summary_date <= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
             AND (s.virtual_key_id = '' OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)
           GROUP BY s.model`,
-          [startTime, lastSummaryDay.getTime()]
+          [startTime, lastSummaryDay.getTime()],
         );
 
         for (const row of summaryRows as any[]) {
           if (!row.model) continue;
-          const existing = modelUsageMap.get(row.model) || { promptTokens: 0, completionTokens: 0, cachedTokens: 0 };
+          const existing = modelUsageMap.get(row.model) || {
+            promptTokens: 0,
+            completionTokens: 0,
+            cachedTokens: 0,
+          };
           existing.promptTokens += Number(row.total_prompt_tokens) || 0;
           existing.completionTokens += Number(row.total_completion_tokens) || 0;
           existing.cachedTokens += Number(row.total_cached_tokens) || 0;
@@ -566,12 +782,16 @@ export async function configRoutes(fastify: FastifyInstance) {
             AND ar.status = 'success'
             AND (ar.virtual_key_id IS NULL OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)
           GROUP BY ar.model`,
-          [detailStartTime, endTime]
+          [detailStartTime, endTime],
         );
 
         for (const row of detailRows as any[]) {
           if (!row.model) continue;
-          const existing = modelUsageMap.get(row.model) || { promptTokens: 0, completionTokens: 0, cachedTokens: 0 };
+          const existing = modelUsageMap.get(row.model) || {
+            promptTokens: 0,
+            completionTokens: 0,
+            cachedTokens: 0,
+          };
           existing.promptTokens += Number(row.total_prompt_tokens) || 0;
           existing.completionTokens += Number(row.total_completion_tokens) || 0;
           existing.cachedTokens += Number(row.total_cached_tokens) || 0;
@@ -594,12 +814,14 @@ export async function configRoutes(fastify: FastifyInstance) {
           }
 
           if (info.output_cost_per_token && usage.completionTokens) {
-            modelCost += usage.completionTokens * Number(info.output_cost_per_token);
+            modelCost +=
+              usage.completionTokens * Number(info.output_cost_per_token);
           }
 
           // 使用模型定义的缓存读取成本，若未定义则使用输入成本作为回退
           if (usage.cachedTokens) {
-            const cacheReadCostPerToken = info.cache_read_cost_per_token ?? info.input_cost_per_token;
+            const cacheReadCostPerToken =
+              info.cache_read_cost_per_token ?? info.input_cost_per_token;
             if (cacheReadCostPerToken) {
               modelCost += usage.cachedTokens * Number(cacheReadCostPerToken);
             }
@@ -630,30 +852,69 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
   }
 
-  fastify.get('/stats', async (request) => {
-    const { period = '24h' } = request.query as { period?: StatsPeriod };
+  fastify.get("/stats", async (request) => {
+    const { period = "24h" } = request.query as { period?: StatsPeriod };
     const { now, startTime, stats } = await getStatsOverview(period);
     const trend = await apiRequestDb.getTrend({
       startTime,
       endTime: now,
-      interval: period === '24h' ? 'hour' : 'day'
+      interval: period === "24h" ? "hour" : "day",
     });
-    const piiProtectionCount = await apiRequestDb.getPiiProtectionCount({ startTime, endTime: now });
- 
-    const expertRoutingStats = await expertRoutingLogDb.getGlobalStatistics(startTime);
-    const modelStats = await apiRequestDb.getModelStats({ startTime, endTime: now });
-    const modelResponseTimeStats = await apiRequestDb.getModelResponseTimeStats({ startTime, endTime: now });
+    const piiProtectionCount = await apiRequestDb.getPiiProtectionCount({
+      startTime,
+      endTime: now,
+    });
+
+    // Intent classification stats aggregate both sources: the external
+    // /v1/intent/classify API and every Expert Router classification.
+    const [expertRoutingStats, intentApiStats] = await Promise.all([
+      expertRoutingLogDb.getGlobalStatistics(startTime),
+      intentClassifyLogDb.getGlobalStatistics(startTime),
+    ]);
+    const totalClassifications =
+      expertRoutingStats.totalRequests + intentApiStats.totalRequests;
+    // Weighted average: reconstruct each source's total latency from its own
+    // count × average, then divide by the combined count.
+    const totalLatencyMs =
+      expertRoutingStats.avgClassificationTime *
+        expertRoutingStats.totalRequests +
+      intentApiStats.avgClassificationTime * intentApiStats.totalRequests;
+    const intentClassifyStats = {
+      totalRequests: totalClassifications,
+      avgClassificationTime: totalClassifications
+        ? Math.round(totalLatencyMs / totalClassifications)
+        : 0,
+    };
+    const modelStats = await apiRequestDb.getModelStats({
+      startTime,
+      endTime: now,
+    });
+    const modelResponseTimeStats = await apiRequestDb.getModelResponseTimeStats(
+      { startTime, endTime: now },
+    );
     // 熔断器统计改为从数据库获取持久化结果，并传递时间范围参数
-    const circuitBreakerStats = await import('../db/repositories/circuit-breaker-stats.repository.js').then(m => m.circuitBreakerStatsRepository.getGlobalStats(startTime));
+    const circuitBreakerStats = await import(
+      "../db/repositories/circuit-breaker-stats.repository.js"
+    ).then((m) => m.circuitBreakerStatsRepository.getGlobalStats(startTime));
 
     const lastRequest = await apiRequestDb.getLastRequest();
     const manualLastBlocked = manualIpBlocklist.getLastBlocked();
     const threatIpStats = threatIpBlocker.getStats();
     const threatLastBlocked = threatIpStats.lastBlockedIp
-      ? { ip: threatIpStats.lastBlockedIp, timestamp: threatIpStats.lastBlockedAt || 0, reason: null, source: 'threat' as const }
+      ? {
+          ip: threatIpStats.lastBlockedIp,
+          timestamp: threatIpStats.lastBlockedAt || 0,
+          reason: null,
+          source: "threat" as const,
+        }
       : null;
     const lastBlockedInfo = manualLastBlocked
-      ? { ip: manualLastBlocked.ip, timestamp: manualLastBlocked.createdAt, reason: manualLastBlocked.reason, source: 'manual' as const }
+      ? {
+          ip: manualLastBlocked.ip,
+          timestamp: manualLastBlocked.createdAt,
+          reason: manualLastBlocked.reason,
+          source: "manual" as const,
+        }
       : threatLastBlocked;
 
     const [lastRequestGeo, lastBlockedGeo] = await Promise.all([
@@ -666,14 +927,14 @@ export async function configRoutes(fastify: FastifyInstance) {
       ip: string;
       timestamp: number;
       count: number;
-      type: 'normal' | 'blocked';
+      type: "normal" | "blocked";
     }> = recentIps
       .filter((row: any) => !!row.ip)
       .map((row: any) => ({
         ip: row.ip,
         timestamp: row.last_seen,
         count: row.count,
-        type: 'normal' as const,
+        type: "normal" as const,
       }));
 
     if (lastBlockedInfo?.ip) {
@@ -681,7 +942,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         ip: lastBlockedInfo.ip,
         timestamp: lastBlockedInfo.timestamp || Date.now(),
         count: 0,
-        type: 'blocked',
+        type: "blocked",
       });
     }
 
@@ -707,12 +968,12 @@ export async function configRoutes(fastify: FastifyInstance) {
           ip: entry.ip,
           timestamp: lastRequestForIp?.created_at || entry.timestamp,
           count: entry.count,
-          type: manualBlocked ? 'blocked' : entry.type,
+          type: manualBlocked ? "blocked" : entry.type,
           geo,
           userAgent: lastRequestForIp?.user_agent || null,
           blockedReason: manualBlocked?.reason || null,
         };
-      })
+      }),
     );
 
     const requestSourceStats = {
@@ -740,26 +1001,26 @@ export async function configRoutes(fastify: FastifyInstance) {
     try {
       costStats = await calculateCostStats(startTime, now);
     } catch (error: any) {
-      memoryLogger.warn(`计算成本统计失败: ${error.message}`, 'Config');
+      memoryLogger.warn(`计算成本统计失败: ${error.message}`, "Config");
     }
 
-      return {
-        period,
-        stats,
-        trend,
-        expertRoutingStats,
-        modelStats,
+    return {
+      period,
+      stats,
+      trend,
+      intentClassifyStats,
+      modelStats,
       modelResponseTimeStats,
       circuitBreakerStats,
       costStats,
       requestSourceStats,
       threatIpStats,
-        piiProtectionCount,
-      };
+      piiProtectionCount,
+    };
   });
 
-  fastify.get('/stats/summary', async (request) => {
-    const { period = '24h' } = request.query as { period?: StatsPeriod };
+  fastify.get("/stats/summary", async (request) => {
+    const { period = "24h" } = request.query as { period?: StatsPeriod };
     const { stats } = await getStatsOverview(period);
 
     return {
@@ -768,7 +1029,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     };
   });
 
-  fastify.get('/api-requests', async (request) => {
+  fastify.get("/api-requests", async (request) => {
     const {
       page = 1,
       pageSize = 20,
@@ -803,25 +1064,25 @@ export async function configRoutes(fastify: FastifyInstance) {
     return result;
   });
 
-  fastify.get('/api-requests/:id', async (request) => {
+  fastify.get("/api-requests/:id", async (request) => {
     const { id } = request.params as { id: string };
     const apiRequest = await apiRequestDb.getById(id);
 
     if (!apiRequest) {
-      throw new Error('请求记录不存在');
+      throw new Error("请求记录不存在");
     }
 
     return apiRequest;
   });
 
-  fastify.post('/api-requests/clean', async (request) => {
+  fastify.post("/api-requests/clean", async (request) => {
     const { daysToKeep = 7 } = request.body as { daysToKeep?: number };
 
     try {
       const result = await apiRequestDb.cleanOldRecords(daysToKeep);
       memoryLogger.info(
         `清理旧请求日志: 汇总 ${result.summarizedCount} 条，删除明细 ${result.deletedRequestCount} 条 (保留 ${daysToKeep} 天)`,
-        'Config'
+        "Config",
       );
 
       return {
@@ -833,16 +1094,16 @@ export async function configRoutes(fastify: FastifyInstance) {
         message: `已汇总 ${result.summarizedCount} 条并删除 ${result.deletedRequestCount} 条超过 ${daysToKeep} 天的请求明细`,
       };
     } catch (error: any) {
-      memoryLogger.error(`清理请求日志失败: ${error.message}`, 'Config');
+      memoryLogger.error(`清理请求日志失败: ${error.message}`, "Config");
       throw error;
     }
   });
 
-  fastify.get('/routing-configs', async () => {
+  fastify.get("/routing-configs", async () => {
     try {
       const configs = await routingConfigDb.getAll();
-    return {
-      configs: (configs as any[]).map(c => ({
+      return {
+        configs: (configs as any[]).map((c) => ({
           id: c.id,
           name: c.name,
           description: c.description,
@@ -854,12 +1115,12 @@ export async function configRoutes(fastify: FastifyInstance) {
         })),
       };
     } catch (error: any) {
-      memoryLogger.error(`获取路由配置失败: ${error.message}`, 'Config');
+      memoryLogger.error(`获取路由配置失败: ${error.message}`, "Config");
       throw error;
     }
   });
 
-  fastify.post('/routing-configs', async (request) => {
+  fastify.post("/routing-configs", async (request) => {
     try {
       const body = request.body as {
         name: string;
@@ -881,7 +1142,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         enabled: 1,
       });
 
-      memoryLogger.info(`创建路由配置: ${body.name}`, 'Config');
+      memoryLogger.info(`创建路由配置: ${body.name}`, "Config");
 
       let virtualModel = null;
       if (body.createVirtualModel && body.virtualModelName) {
@@ -899,7 +1160,7 @@ export async function configRoutes(fastify: FastifyInstance) {
           prompt_config: null,
           compression_config: null,
         });
-        memoryLogger.info(`创建虚拟模型: ${body.virtualModelName}`, 'Config');
+        memoryLogger.info(`创建虚拟模型: ${body.virtualModelName}`, "Config");
       }
 
       return {
@@ -911,22 +1172,24 @@ export async function configRoutes(fastify: FastifyInstance) {
         enabled: config!.enabled === 1,
         createdAt: config!.created_at,
         updatedAt: config!.updated_at,
-        virtualModel: virtualModel ? {
-          id: virtualModel.id,
-          name: virtualModel.name,
-          providerId: virtualModel.provider_id,
-          modelIdentifier: virtualModel.model_identifier,
-          isVirtual: true,
-          routingConfigId: virtualModel.routing_config_id,
-        } : null,
+        virtualModel: virtualModel
+          ? {
+              id: virtualModel.id,
+              name: virtualModel.name,
+              providerId: virtualModel.provider_id,
+              modelIdentifier: virtualModel.model_identifier,
+              isVirtual: true,
+              routingConfigId: virtualModel.routing_config_id,
+            }
+          : null,
       };
     } catch (error: any) {
-      memoryLogger.error(`创建路由配置失败: ${error.message}`, 'Config');
+      memoryLogger.error(`创建路由配置失败: ${error.message}`, "Config");
       throw error;
     }
   });
 
-  fastify.put('/routing-configs/:id', async (request) => {
+  fastify.put("/routing-configs/:id", async (request) => {
     try {
       const { id } = request.params as { id: string };
       const body = request.body as {
@@ -939,7 +1202,7 @@ export async function configRoutes(fastify: FastifyInstance) {
 
       const existingConfig = await routingConfigDb.getById(id);
       if (!existingConfig) {
-        throw new Error('路由配置不存在');
+        throw new Error("路由配置不存在");
       }
 
       await routingConfigDb.update(id, {
@@ -950,15 +1213,17 @@ export async function configRoutes(fastify: FastifyInstance) {
       });
 
       const allModels = await modelDb.getAll();
-      const virtualModel = allModels.find((m: any) => m.routing_config_id === id && m.is_virtual === 1);
+      const virtualModel = allModels.find(
+        (m: any) => m.routing_config_id === id && m.is_virtual === 1,
+      );
       if (virtualModel && body.virtualModelName) {
         await modelDb.update(virtualModel.id, {
-          name: body.virtualModelName
+          name: body.virtualModelName,
         });
         hotConfigCache.invalidateModel(virtualModel.id);
       }
 
-      memoryLogger.info(`更新路由配置: ${id}`, 'Config');
+      memoryLogger.info(`更新路由配置: ${id}`, "Config");
 
       const updatedConfig = await routingConfigDb.getById(id);
       return {
@@ -972,18 +1237,18 @@ export async function configRoutes(fastify: FastifyInstance) {
         updatedAt: updatedConfig!.updated_at,
       };
     } catch (error: any) {
-      memoryLogger.error(`更新路由配置失败: ${error.message}`, 'Config');
+      memoryLogger.error(`更新路由配置失败: ${error.message}`, "Config");
       throw error;
     }
   });
 
-  fastify.delete('/routing-configs/:id', async (request) => {
+  fastify.delete("/routing-configs/:id", async (request) => {
     try {
       const { id } = request.params as { id: string };
 
       const existingConfig = await routingConfigDb.getById(id);
       if (!existingConfig) {
-        throw new Error('路由配置不存在');
+        throw new Error("路由配置不存在");
       }
 
       const associatedModels = await modelDb.getByRoutingConfigId(id);
@@ -1005,19 +1270,19 @@ export async function configRoutes(fastify: FastifyInstance) {
       await routingConfigDb.delete(id);
       memoryLogger.info(
         `删除路由配置: ${id} | 删除虚拟模型: ${deletedModels} 个 | 解绑模型: ${detachedModels} 个`,
-        'Config'
+        "Config",
       );
       return { success: true };
     } catch (error: any) {
-      memoryLogger.error(`删除路由配置失败: ${error.message}`, 'Config');
+      memoryLogger.error(`删除路由配置失败: ${error.message}`, "Config");
       throw error;
     }
   });
 
-  fastify.get('/routing-status', async () => {
+  fastify.get("/routing-status", async () => {
     try {
       const configs = await routingConfigDb.getAll();
-      const result = (configs as any[]).map(c => {
+      const result = (configs as any[]).map((c) => {
         let parsedConfig: any;
         try {
           parsedConfig = JSON.parse(c.config);
@@ -1034,7 +1299,10 @@ export async function configRoutes(fastify: FastifyInstance) {
             targetKey,
             circuitState: circuitBreaker.getState(targetKey),
             isAnonymousAffinitySelected: anonymousStickyTarget === targetKey,
-            boundSessionCount: countExplicitSessionBindings(configId, targetKey),
+            boundSessionCount: countExplicitSessionBindings(
+              configId,
+              targetKey,
+            ),
           };
         });
 
@@ -1049,12 +1317,12 @@ export async function configRoutes(fastify: FastifyInstance) {
         meta: { polledAt: new Date().toISOString() },
       };
     } catch (error: any) {
-      memoryLogger.error(`获取路由状态失败: ${error.message}`, 'Config');
+      memoryLogger.error(`获取路由状态失败: ${error.message}`, "Config");
       throw error;
     }
   });
 
-  fastify.get('/health-targets', async () => {
+  fastify.get("/health-targets", async () => {
     try {
       const targets = await healthTargetDb.getAll();
       return {
@@ -1073,32 +1341,32 @@ export async function configRoutes(fastify: FastifyInstance) {
         })),
       };
     } catch (error: any) {
-      memoryLogger.error(`获取健康监控目标失败: ${error.message}`, 'Config');
+      memoryLogger.error(`获取健康监控目标失败: ${error.message}`, "Config");
       throw error;
     }
   });
 
-  fastify.post('/health-targets', async (request) => {
+  fastify.post("/health-targets", async (request) => {
     try {
       const body = request.body as {
-        type: 'model' | 'virtual_model';
+        type: "model" | "virtual_model";
         target_id: string;
         check_interval_seconds?: number;
         check_prompt?: string;
       };
 
       // 获取目标名称
-      let targetName = '';
-      if (body.type === 'model') {
+      let targetName = "";
+      if (body.type === "model") {
         const model = await modelDb.getById(body.target_id);
         if (!model) {
-          throw new Error('模型不存在');
+          throw new Error("模型不存在");
         }
         targetName = model.name;
       } else {
         const model = await modelDb.getById(body.target_id);
         if (!model || model.is_virtual !== 1) {
-          throw new Error('虚拟模型不存在');
+          throw new Error("虚拟模型不存在");
         }
         targetName = model.name;
       }
@@ -1116,12 +1384,18 @@ export async function configRoutes(fastify: FastifyInstance) {
         check_config: null,
       });
 
-      memoryLogger.info(`创建健康监控目标: ${targetName} (${body.type})`, 'Config');
+      memoryLogger.info(
+        `创建健康监控目标: ${targetName} (${body.type})`,
+        "Config",
+      );
 
       try {
         await syncMonitoringKeyModelsFromTargets();
       } catch (syncErr: any) {
-        memoryLogger.warn(`新增监控目标后同步监控密钥失败: ${syncErr.message}`, 'Config');
+        memoryLogger.warn(
+          `新增监控目标后同步监控密钥失败: ${syncErr.message}`,
+          "Config",
+        );
       }
 
       return {
@@ -1137,12 +1411,12 @@ export async function configRoutes(fastify: FastifyInstance) {
         updated_at: target.updated_at,
       };
     } catch (error: any) {
-      memoryLogger.error(`创建健康监控目标失败: ${error.message}`, 'Config');
+      memoryLogger.error(`创建健康监控目标失败: ${error.message}`, "Config");
       throw error;
     }
   });
 
-  fastify.put('/health-targets/:id', async (request) => {
+  fastify.put("/health-targets/:id", async (request) => {
     try {
       const { id } = request.params as { id: string };
       const body = request.body as {
@@ -1154,7 +1428,7 @@ export async function configRoutes(fastify: FastifyInstance) {
 
       const existingTarget = await healthTargetDb.getById(id);
       if (!existingTarget) {
-        throw new Error('监控目标不存在');
+        throw new Error("监控目标不存在");
       }
 
       const updates: any = {};
@@ -1172,12 +1446,15 @@ export async function configRoutes(fastify: FastifyInstance) {
       }
       await healthTargetDb.update(id, updates);
 
-      memoryLogger.info(`更新健康监控目标: ${id}`, 'Config');
+      memoryLogger.info(`更新健康监控目标: ${id}`, "Config");
 
       try {
         await syncMonitoringKeyModelsFromTargets();
       } catch (syncErr: any) {
-        memoryLogger.warn(`更新监控目标后同步监控密钥失败: ${syncErr.message}`, 'Config');
+        memoryLogger.warn(
+          `更新监控目标后同步监控密钥失败: ${syncErr.message}`,
+          "Config",
+        );
       }
 
       const updatedTarget = await healthTargetDb.getById(id);
@@ -1194,57 +1471,67 @@ export async function configRoutes(fastify: FastifyInstance) {
         updated_at: updatedTarget!.updated_at,
       };
     } catch (error: any) {
-      memoryLogger.error(`更新健康监控目标失败: ${error.message}`, 'Config');
+      memoryLogger.error(`更新健康监控目标失败: ${error.message}`, "Config");
       throw error;
     }
   });
 
-  fastify.delete('/health-targets/:id', async (request) => {
+  fastify.delete("/health-targets/:id", async (request) => {
     try {
       const { id } = request.params as { id: string };
       await healthTargetDb.delete(id);
-      memoryLogger.info(`删除健康监控目标: ${id}`, 'Config');
+      memoryLogger.info(`删除健康监控目标: ${id}`, "Config");
 
       try {
         await syncMonitoringKeyModelsFromTargets();
       } catch (syncErr: any) {
-        memoryLogger.warn(`删除监控目标后同步监控密钥失败: ${syncErr.message}`, 'Config');
+        memoryLogger.warn(
+          `删除监控目标后同步监控密钥失败: ${syncErr.message}`,
+          "Config",
+        );
       }
       return { success: true };
     } catch (error: any) {
-      memoryLogger.error(`删除健康监控目标失败: ${error.message}`, 'Config');
+      memoryLogger.error(`删除健康监控目标失败: ${error.message}`, "Config");
       throw error;
     }
   });
 
-  fastify.get('/performance-metrics', async () => {
+  fastify.get("/performance-metrics", async () => {
     try {
       const now = Date.now();
       const startTime = now - 7 * 24 * 60 * 60 * 1000; // 7 days ago
 
-      const metrics = await apiRequestDb.getPerformanceMetrics({ startTime, endTime: now });
+      const metrics = await apiRequestDb.getPerformanceMetrics({
+        startTime,
+        endTime: now,
+      });
 
       return {
-        period: '7d',
+        period: "7d",
         summary: metrics.summary,
         items: metrics.items,
         filters: metrics.filters,
       };
     } catch (error: any) {
-      memoryLogger.error(`获取性能监控指标失败: ${error.message}`, 'Config');
+      memoryLogger.error(`获取性能监控指标失败: ${error.message}`, "Config");
       throw error;
     }
   });
 
-  fastify.get('/stats/traffic-analysis', async (_request, reply) => {
+  fastify.get("/stats/traffic-analysis", async (_request, reply) => {
     try {
-      const { workdayCalendarService } = await import('../services/workday-calendar.js');
-      const { trafficPredictionService } = await import('../services/traffic-prediction.js');
+      const { workdayCalendarService } = await import(
+        "../services/workday-calendar.js"
+      );
+      const { trafficPredictionService } = await import(
+        "../services/traffic-prediction.js"
+      );
 
       // Ensure holiday modules are loaded (idempotent after first call)
       await workdayCalendarService.initialize();
 
-      const regionCfg = await systemConfigDb.get('traffic_analysis_region');
+      const regionCfg = await systemConfigDb.get("traffic_analysis_region");
       const region = regionCfg?.value || null;
 
       const now = Date.now();
@@ -1257,16 +1544,17 @@ export async function configRoutes(fastify: FastifyInstance) {
         apiRequestDb.getHourlyTrainingData({ days: maxDays }),
       ]);
 
-      const availableDays = trainingRaw.length > 0
-        ? Math.ceil((now - trainingRaw[0].timestampMs) / (24 * hourMs))
-        : 0;
+      const availableDays =
+        trainingRaw.length > 0
+          ? Math.ceil((now - trainingRaw[0].timestampMs) / (24 * hourMs))
+          : 0;
 
       const lastHourStart = Math.floor(now / hourMs) * hourMs;
 
-      const dataQuality: 'insufficient' | 'low' | 'good' =
-        availableDays < 3 ? 'insufficient' : availableDays < 7 ? 'low' : 'good';
+      const dataQuality: "insufficient" | "low" | "good" =
+        availableDays < 3 ? "insufficient" : availableDays < 7 ? "low" : "good";
 
-      const actualMap = new Map(actualRaw.map(r => [r.timestampMs, r.count]));
+      const actualMap = new Map(actualRaw.map((r) => [r.timestampMs, r.count]));
       const actual: { timestamp: number; count: number }[] = [];
       for (let i = 23; i >= 0; i--) {
         const ts = lastHourStart - i * hourMs;
@@ -1274,17 +1562,18 @@ export async function configRoutes(fastify: FastifyInstance) {
       }
 
       const nextHour = lastHourStart + hourMs;
-      let prediction: import('../services/traffic-prediction.js').HourlyPrediction[];
-      let peaks: import('../services/traffic-prediction.js').PeakWindow[];
+      let prediction: import("../services/traffic-prediction.js").HourlyPrediction[];
+      let peaks: import("../services/traffic-prediction.js").PeakWindow[];
       let modelInfo: {
-        type: 'weekly-empirical';
+        type: "weekly-empirical";
         trainingSamples: number;
         priorStrength: number;
         workdayProfile: number[];
         nonWorkdayProfile: number[];
       };
 
-      const trainingSamples: import('../services/traffic-prediction.js').TrainingData[] = [];
+      const trainingSamples: import("../services/traffic-prediction.js").TrainingData[] =
+        [];
 
       if (availableDays < 3) {
         prediction = Array.from({ length: 24 }, (_, i) => ({
@@ -1292,19 +1581,28 @@ export async function configRoutes(fastify: FastifyInstance) {
           predictedCount: 0,
           isPeak: false,
           peakScore: 0,
-          isWorkday: workdayCalendarService.isWorkday(nextHour + i * hourMs, region),
+          isWorkday: workdayCalendarService.isWorkday(
+            nextHour + i * hourMs,
+            region,
+          ),
         }));
         peaks = [];
         modelInfo = {
-          type: 'weekly-empirical',
+          type: "weekly-empirical",
           trainingSamples: 0,
           priorStrength: 3,
           workdayProfile: Array(24).fill(0),
           nonWorkdayProfile: Array(24).fill(0),
         };
       } else {
-        const trainingMap = new Map(trainingRaw.map(r => [r.timestampMs, r.count]));
-        for (let ts = trainingRaw[0].timestampMs; ts <= lastHourStart; ts += hourMs) {
+        const trainingMap = new Map(
+          trainingRaw.map((r) => [r.timestampMs, r.count]),
+        );
+        for (
+          let ts = trainingRaw[0].timestampMs;
+          ts <= lastHourStart;
+          ts += hourMs
+        ) {
           trainingSamples.push({
             timestampMs: ts,
             count: trainingMap.get(ts) ?? 0,
@@ -1312,13 +1610,21 @@ export async function configRoutes(fastify: FastifyInstance) {
           });
         }
 
-        const model = trafficPredictionService.trainWeeklyEmpirical(trainingSamples);
+        const model =
+          trafficPredictionService.trainWeeklyEmpirical(trainingSamples);
 
         prediction = Array.from({ length: 24 }, (_, i) => {
           const ts = nextHour + i * hourMs;
           const iwd = workdayCalendarService.isWorkday(ts, region);
-          const predictedCount = trafficPredictionService.predictWeeklyEmpirical(model, ts, iwd);
-          return { timestamp: ts, predictedCount, isPeak: false, peakScore: 0, isWorkday: iwd };
+          const predictedCount =
+            trafficPredictionService.predictWeeklyEmpirical(model, ts, iwd);
+          return {
+            timestamp: ts,
+            predictedCount,
+            isPeak: false,
+            peakScore: 0,
+            isWorkday: iwd,
+          };
         });
 
         peaks = trafficPredictionService.detectPeaks(prediction);
@@ -1329,18 +1635,24 @@ export async function configRoutes(fastify: FastifyInstance) {
         }
         for (const peak of peaks) {
           for (const p of prediction) {
-            if (p.timestamp >= peak.startTimestamp && p.timestamp <= peak.endTimestamp) {
+            if (
+              p.timestamp >= peak.startTimestamp &&
+              p.timestamp <= peak.endTimestamp
+            ) {
               p.isPeak = true;
             }
           }
         }
 
         modelInfo = {
-          type: 'weekly-empirical',
+          type: "weekly-empirical",
           trainingSamples: model.trainingSamples,
           priorStrength: model.priorStrength,
           workdayProfile: trafficPredictionService.clusterProfile(model, true),
-          nonWorkdayProfile: trafficPredictionService.clusterProfile(model, false),
+          nonWorkdayProfile: trafficPredictionService.clusterProfile(
+            model,
+            false,
+          ),
         };
       }
 
@@ -1349,15 +1661,32 @@ export async function configRoutes(fastify: FastifyInstance) {
         if (trainingSamples.length >= 48) {
           const trainSet = trainingSamples.slice(0, -24);
           const valSet = trainingSamples.slice(-24);
-          const valModel = trafficPredictionService.trainWeeklyEmpirical(trainSet);
-          const predicted = valSet.map(v =>
-            trafficPredictionService.predictWeeklyEmpirical(valModel, v.timestampMs, v.isWorkday)
+          const valModel =
+            trafficPredictionService.trainWeeklyEmpirical(trainSet);
+          const predicted = valSet.map((v) =>
+            trafficPredictionService.predictWeeklyEmpirical(
+              valModel,
+              v.timestampMs,
+              v.isWorkday,
+            ),
           );
-          const actualValues = valSet.map(v => v.count);
-          const mean = actualValues.reduce((s, v) => s + v, 0) / actualValues.length;
-          const ssTot = actualValues.reduce((sum, y) => sum + (y - mean) ** 2, 0);
-          const ssRes = actualValues.reduce((sum, y, i) => sum + (y - predicted[i]) ** 2, 0);
-          const r2 = ssTot === 0 ? (ssRes === 0 ? 1 : 0) : Math.max(0, 1 - ssRes / ssTot);
+          const actualValues = valSet.map((v) => v.count);
+          const mean =
+            actualValues.reduce((s, v) => s + v, 0) / actualValues.length;
+          const ssTot = actualValues.reduce(
+            (sum, y) => sum + (y - mean) ** 2,
+            0,
+          );
+          const ssRes = actualValues.reduce(
+            (sum, y, i) => sum + (y - predicted[i]) ** 2,
+            0,
+          );
+          const r2 =
+            ssTot === 0
+              ? ssRes === 0
+                ? 1
+                : 0
+              : Math.max(0, 1 - ssRes / ssTot);
           // WAPE（按量加权绝对百分比误差）：Σ|实际-预测| / Σ实际。
           // 相比 MAPE 不会被低谷小数值放大，对低流量网关更能反映真实预测质量。
           let absErrorSum = 0;
@@ -1367,89 +1696,151 @@ export async function configRoutes(fastify: FastifyInstance) {
             actualSum += actualValues[i];
           }
           const wape = actualSum > 0 ? (absErrorSum / actualSum) * 100 : 0;
-          accuracy = { r2: Math.round(r2 * 1000) / 1000, wape: Math.round(wape * 10) / 10 };
+          accuracy = {
+            r2: Math.round(r2 * 1000) / 1000,
+            wape: Math.round(wape * 10) / 10,
+          };
         }
       }
 
-      return { actual, prediction, peaks, dataQuality, availableDays, region, modelInfo, accuracy, generatedAt: now };
+      return {
+        actual,
+        prediction,
+        peaks,
+        dataQuality,
+        availableDays,
+        region,
+        modelInfo,
+        accuracy,
+        generatedAt: now,
+      };
     } catch (error: any) {
-      memoryLogger.error(`流量分析失败: ${error?.message}`, 'TrafficAnalysis');
+      memoryLogger.error(`流量分析失败: ${error?.message}`, "TrafficAnalysis");
       return reply.code(500).send({
-        error: { message: error?.message || '流量分析失败', type: 'internal_error', code: 'traffic_analysis_error' },
+        error: {
+          message: error?.message || "流量分析失败",
+          type: "internal_error",
+          code: "traffic_analysis_error",
+        },
       });
     }
   });
 
-  fastify.get<{ Querystring: { dayOffset?: string } }>('/stats/traffic-analysis/history-day', async (request, reply) => {
-    try {
-      const dayOffset = Math.floor(Math.min(6, Math.max(0, Number(request.query.dayOffset) || 0)));
-      const { workdayCalendarService } = await import('../services/workday-calendar.js');
-      const { trafficPredictionService } = await import('../services/traffic-prediction.js');
+  fastify.get<{ Querystring: { dayOffset?: string } }>(
+    "/stats/traffic-analysis/history-day",
+    async (request, reply) => {
+      try {
+        const dayOffset = Math.floor(
+          Math.min(6, Math.max(0, Number(request.query.dayOffset) || 0)),
+        );
+        const { workdayCalendarService } = await import(
+          "../services/workday-calendar.js"
+        );
+        const { trafficPredictionService } = await import(
+          "../services/traffic-prediction.js"
+        );
 
-      await workdayCalendarService.initialize();
+        await workdayCalendarService.initialize();
 
-      const regionCfg = await systemConfigDb.get('traffic_analysis_region');
-      const region = regionCfg?.value || null;
+        const regionCfg = await systemConfigDb.get("traffic_analysis_region");
+        const region = regionCfg?.value || null;
 
-      const hourMs = 3600000;
-      const shanghaiOffset = 8 * 3600000;
-      const now = Date.now();
-      const todayStartLocal = Math.floor((now + shanghaiOffset) / (24 * hourMs)) * (24 * hourMs) - shanghaiOffset;
-      const dayStart = todayStartLocal - dayOffset * 24 * hourMs;
-      const dayEnd = dayStart + 24 * hourMs;
+        const hourMs = 3600000;
+        const shanghaiOffset = 8 * 3600000;
+        const now = Date.now();
+        const todayStartLocal =
+          Math.floor((now + shanghaiOffset) / (24 * hourMs)) * (24 * hourMs) -
+          shanghaiOffset;
+        const dayStart = todayStartLocal - dayOffset * 24 * hourMs;
+        const dayEnd = dayStart + 24 * hourMs;
 
-      if (dayOffset > 0 && dayEnd > now) {
-        return reply.code(400).send({ error: { message: 'dayOffset 超出范围' } });
-      }
+        if (dayOffset > 0 && dayEnd > now) {
+          return reply
+            .code(400)
+            .send({ error: { message: "dayOffset 超出范围" } });
+        }
 
-      const trainingRaw = await apiRequestDb.getHourlyTrainingData({ days: 14 });
-      if (trainingRaw.length < 72) {
-        return { actual: [], predicted: [], dayStart, isWorkday: workdayCalendarService.isWorkday(dayStart, region) };
-      }
+        const trainingRaw = await apiRequestDb.getHourlyTrainingData({
+          days: 14,
+        });
+        if (trainingRaw.length < 72) {
+          return {
+            actual: [],
+            predicted: [],
+            dayStart,
+            isWorkday: workdayCalendarService.isWorkday(dayStart, region),
+          };
+        }
 
-      const trainingSamples: import('../services/traffic-prediction.js').TrainingData[] = [];
-      const trainingMap = new Map(trainingRaw.map(r => [r.timestampMs, r.count]));
-      const lastTrainingTs = trainingRaw[trainingRaw.length - 1].timestampMs;
-      for (let ts = trainingRaw[0].timestampMs; ts <= lastTrainingTs; ts += hourMs) {
-        trainingSamples.push({
-          timestampMs: ts,
-          count: trainingMap.get(ts) ?? 0,
-          isWorkday: workdayCalendarService.isWorkday(ts, region),
+        const trainingSamples: import("../services/traffic-prediction.js").TrainingData[] =
+          [];
+        const trainingMap = new Map(
+          trainingRaw.map((r) => [r.timestampMs, r.count]),
+        );
+        const lastTrainingTs = trainingRaw[trainingRaw.length - 1].timestampMs;
+        for (
+          let ts = trainingRaw[0].timestampMs;
+          ts <= lastTrainingTs;
+          ts += hourMs
+        ) {
+          trainingSamples.push({
+            timestampMs: ts,
+            count: trainingMap.get(ts) ?? 0,
+            isWorkday: workdayCalendarService.isWorkday(ts, region),
+          });
+        }
+
+        const model =
+          trafficPredictionService.trainWeeklyEmpirical(trainingSamples);
+        const isWorkday = workdayCalendarService.isWorkday(dayStart, region);
+        const profile = trafficPredictionService.clusterProfile(
+          model,
+          isWorkday,
+        );
+
+        const actual: { timestamp: number; count: number }[] = [];
+        const predicted: { timestamp: number; predictedCount: number }[] = [];
+
+        for (let i = 0; i < 24; i++) {
+          const ts = dayStart + i * hourMs;
+          actual.push({ timestamp: ts, count: trainingMap.get(ts) ?? 0 });
+          predicted.push({
+            timestamp: ts,
+            predictedCount: Math.round(profile[i] ?? 0),
+          });
+        }
+
+        return { actual, predicted, dayStart, isWorkday };
+      } catch (error: any) {
+        memoryLogger.error(
+          `获取历史叠加数据失败: ${error?.message}`,
+          "TrafficAnalysis",
+        );
+        return reply.code(500).send({
+          error: { message: error?.message || "获取历史叠加数据失败" },
         });
       }
+    },
+  );
 
-      const model = trafficPredictionService.trainWeeklyEmpirical(trainingSamples);
-      const isWorkday = workdayCalendarService.isWorkday(dayStart, region);
-      const profile = trafficPredictionService.clusterProfile(model, isWorkday);
-
-      const actual: { timestamp: number; count: number }[] = [];
-      const predicted: { timestamp: number; predictedCount: number }[] = [];
-
-      for (let i = 0; i < 24; i++) {
-        const ts = dayStart + i * hourMs;
-        actual.push({ timestamp: ts, count: trainingMap.get(ts) ?? 0 });
-        predicted.push({ timestamp: ts, predictedCount: Math.round(profile[i] ?? 0) });
-      }
-
-      return { actual, predicted, dayStart, isWorkday };
-    } catch (error: any) {
-      memoryLogger.error(`获取历史叠加数据失败: ${error?.message}`, 'TrafficAnalysis');
-      return reply.code(500).send({ error: { message: error?.message || '获取历史叠加数据失败' } });
-    }
-  });
-
-  fastify.get('/traffic-analysis-regions', async (_request, reply) => {
+  fastify.get("/traffic-analysis-regions", async (_request, reply) => {
     try {
-      const { workdayCalendarService } = await import('../services/workday-calendar.js');
+      const { workdayCalendarService } = await import(
+        "../services/workday-calendar.js"
+      );
       await workdayCalendarService.initialize();
       const countries = workdayCalendarService.getCountries();
-      const cn = countries.find(c => c.code === 'CN');
-      const rest = countries.filter(c => c.code !== 'CN').sort((a, b) => a.name.localeCompare(b.name));
+      const cn = countries.find((c) => c.code === "CN");
+      const rest = countries
+        .filter((c) => c.code !== "CN")
+        .sort((a, b) => a.name.localeCompare(b.name));
       return cn ? [cn, ...rest] : rest;
     } catch (error: any) {
-      memoryLogger.error(`获取地区列表失败: ${error?.message}`, 'TrafficAnalysis');
-      return reply.code(500).send({ error: { message: '获取地区列表失败' } });
+      memoryLogger.error(
+        `获取地区列表失败: ${error?.message}`,
+        "TrafficAnalysis",
+      );
+      return reply.code(500).send({ error: { message: "获取地区列表失败" } });
     }
   });
-
 }

@@ -206,16 +206,16 @@
         <n-gi class="stagger-item" style="--delay: 300ms">
           <n-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-header">路由分类速度</div>
+              <div class="stat-header">意图分类速度</div>
               <div class="stat-main-value">
                 <n-skeleton v-if="loading" text style="width: 50%; height: 42px" :sharp="false" />
                 <span v-else>
                   {{
-                    expertRoutingSpeed >= 1000
-                      ? (expertRoutingSpeed / 1000).toFixed(2)
-                      : formatResponseTime(expertRoutingSpeed)
+                    intentClassifySpeed >= 1000
+                      ? (intentClassifySpeed / 1000).toFixed(2)
+                      : formatResponseTime(intentClassifySpeed)
                   }}
-                  <span class="stat-unit">{{ expertRoutingSpeed >= 1000 ? 's' : 'ms' }}</span>
+                  <span class="stat-unit">{{ intentClassifySpeed >= 1000 ? 's' : 'ms' }}</span>
                 </span>
               </div>
               <div class="stat-details">
@@ -223,7 +223,7 @@
                   <span class="stat-detail-label">分类次数:</span>
                   <span class="stat-detail-value">
                     <n-skeleton v-if="loading" text style="width: 40px" />
-                    <span v-else>{{ formatNumber(expertRoutingCount) }}</span>
+                    <span v-else>{{ formatNumber(intentClassifyCount) }}</span>
                   </span>
                 </span>
               </div>
@@ -553,7 +553,7 @@ import {
   configApi,
   type ApiStats,
   type VirtualKeyTrend,
-  type ExpertRoutingStats,
+  type IntentClassifyStats,
   type ModelStat,
   type CostStats,
   type RequestSourceEntry,
@@ -583,7 +583,7 @@ const stats = ref<ApiStats | null>(null)
 const statsAllTime = ref<ApiStats | null>(null)
 const isTokenCardFlipped = ref(false)
 const trendData = ref<VirtualKeyTrend[]>([])
-const expertRoutingStats = ref<ExpertRoutingStats | null>(null)
+const intentClassifyStats = ref<IntentClassifyStats | null>(null)
 const modelStats = ref<ModelStat[]>([])
 const circuitBreakerStats = ref<{
   totalTriggers: number
@@ -867,12 +867,12 @@ const avgOutputTokens = computed(() => {
   return Math.round(Number(stats.value?.completionTokens || 0) / reqs)
 })
 
-const expertRoutingSpeed = computed(() => {
-  return Number(expertRoutingStats.value?.avgClassificationTime || 0)
+const intentClassifySpeed = computed(() => {
+  return Number(intentClassifyStats.value?.avgClassificationTime || 0)
 })
 
-const expertRoutingCount = computed(() => {
-  return Number(expertRoutingStats.value?.totalRequests || 0)
+const intentClassifyCount = computed(() => {
+  return Number(intentClassifyStats.value?.totalRequests || 0)
 })
 
 const topModel = computed(() => {
@@ -1274,7 +1274,7 @@ async function loadStats(opts: { silent?: boolean } = {}) {
 
     stats.value = result.stats
     trendData.value = result.trend || []
-    expertRoutingStats.value = result.expertRoutingStats || {
+    intentClassifyStats.value = result.intentClassifyStats || {
       totalRequests: 0,
       avgClassificationTime: 0
     }
