@@ -32,6 +32,7 @@ export interface ModelAttributes {
   max_input_tokens?: number;
   max_output_tokens?: number;
   context_length?: number;
+  context_window?: number;
   limit?: number;
   supports_vision?: boolean;
   supports_prompt_caching?: boolean;

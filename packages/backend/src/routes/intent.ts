@@ -6,6 +6,7 @@ import { classifyWithLocalOnnx } from "../services/expert-router/local/classifie
 import { intentClassifyLogDb } from "../db/index.js";
 import {
   getLocalClassifierError,
+  isLocalClassifierDisabled,
   isLocalClassifierReady,
 } from "../services/expert-router/local/model-assets.js";
 import { memoryLogger } from "../services/logger.js";
@@ -69,6 +70,15 @@ export async function intentRoutes(fastify: FastifyInstance) {
     }
 
     const { input, top_n: topN, max_tokens: maxTokens } = parsed.data;
+
+    if (isLocalClassifierDisabled()) {
+      return sendError(reply, 503, {
+        message:
+          "Local intent classifier is disabled on this deployment (LOCAL_INTENT_CLASSIFIER=off)",
+        type: "service_unavailable",
+        errCode: "classifier_disabled",
+      });
+    }
 
     if (!isLocalClassifierReady()) {
       const detail = getLocalClassifierError();

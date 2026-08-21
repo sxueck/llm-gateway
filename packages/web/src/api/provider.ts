@@ -15,6 +15,7 @@ export interface ModelInfo {
   max_input_tokens?: number;
   max_output_tokens?: number;
   context_length?: number;
+  context_window?: number;
   limit?: number;
   [key: string]: unknown;
 }
@@ -25,6 +26,7 @@ const CAPABILITY_NUMBER_FIELDS = [
   "max_input_tokens",
   "max_output_tokens",
   "context_length",
+  "context_window",
   "limit",
 ] as const;
 

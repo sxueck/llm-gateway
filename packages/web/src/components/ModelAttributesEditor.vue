@@ -4,8 +4,8 @@
       <n-collapse-item
         v-for="cat in categories"
         :key="cat"
-        :name="cat === '协议优化' ? 'protocol' : 'cost'"
-        :title="cat === '协议优化' ? t('models.protocolParams') : t('models.costParams')"
+        :name="categoryMeta[cat].name"
+        :title="t(categoryMeta[cat].titleKey)"
       >
         <n-space vertical :size="4">
           <div v-for="attr in attrsByCategory(cat)" :key="attr.key" class="attr-item">
@@ -94,6 +94,12 @@ const localAttributes = ref<ModelAttributes>({});
 const headersText = ref<string>('');
 
 type AttributeCategory = typeof ATTRIBUTE_CATEGORIES[number];
+
+const categoryMeta: Record<AttributeCategory, { name: string; titleKey: string }> = {
+  '服务限制': { name: 'limits', titleKey: 'models.servingParams' },
+  '协议优化': { name: 'protocol', titleKey: 'models.protocolParams' },
+  '成本参数': { name: 'cost', titleKey: 'models.costParams' },
+};
 
 const categories = computed(() => [...ATTRIBUTE_CATEGORIES]);
 const attrsByCategory = (category: AttributeCategory) => getAttributesByCategory(category);

@@ -30,6 +30,7 @@ const baseModelAttributesSchema = z.object({
   max_input_tokens: z.number().optional(),
   max_output_tokens: z.number().optional(),
   context_length: z.number().optional(),
+  context_window: z.number().optional(),
   limit: z.number().optional(),
   supports_vision: z.boolean().optional(),
   supports_prompt_caching: z.boolean().optional(),
