@@ -27,6 +27,16 @@ export interface ModelAttributes {
   output_cost_per_token?: number;
   input_cost_per_token_cache_hit?: number;
 
+  max_tokens?: number;
+  max_completion_tokens?: number;
+  max_input_tokens?: number;
+  max_output_tokens?: number;
+  context_length?: number;
+  limit?: number;
+  supports_vision?: boolean;
+  supports_prompt_caching?: boolean;
+  supports_function_calling?: boolean;
+
   upstream_websocket_enabled?: boolean;
 
   litellm_provider?: string;
@@ -80,7 +90,7 @@ export interface VirtualKey {
 }
 
 export interface RoutingConfig {
-  algorithm?: 'round-robin' | 'random' | 'weighted';
+  algorithm?: "round-robin" | "random" | "weighted";
   weights?: Record<string, number>;
   failoverPriority?: string[];
 }
@@ -146,10 +156,10 @@ export interface CreateVirtualKeyRequest {
   name: string;
   providerId?: string;
   modelId?: string;
-  routingStrategy?: 'single' | 'load-balance' | 'failover';
+  routingStrategy?: "single" | "load-balance" | "failover";
   modelIds?: string[];
   routingConfig?: RoutingConfig;
-  keyType: 'auto' | 'custom';
+  keyType: "auto" | "custom";
   customKey?: string;
   rateLimit?: number;
   enabled?: boolean;

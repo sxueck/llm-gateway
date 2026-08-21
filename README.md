@@ -43,7 +43,7 @@
 ## 特性
 
 | 功能 | 描述 |
-|------|------|
+| ------ | ------ |
 | **提供商管理** | 支持 20+ 主流 LLM 提供商：OpenAI、Anthropic、Google、DeepSeek 等 |
 | **虚拟密钥** | 创建和管理虚拟 API 密钥，支持速率限制和访问控制 |
 | **路由配置** | 负载均衡和故障转移策略，提高服务可用性 |
@@ -62,7 +62,7 @@
 ### 前置要求
 
 | 依赖 | 版本要求 | 说明 |
-|------|----------|------|
+| ------ | ---------- | ------ |
 | Node.js | >= v22 | 运行时环境 |
 | Bun | >= v1.0 | Monorepo 脚本基于 Bun workspaces |
 | MySQL | 8.x | 数据库（或兼容 MySQL 协议） |
@@ -115,8 +115,8 @@ bun run dev:all
 
 | 服务 | 地址 |
 |------|------|
-| Web UI | http://localhost:5173 |
-| Backend API | http://localhost:3000 |
+| Web UI | <http://localhost:5173> |
+| Backend API | <http://localhost:3000> |
 
 **单独启动：**
 
@@ -167,6 +167,7 @@ LLM Gateway 提供公开的健康监控页面，无需登录即可访问，实�
    - 默认禁用请求体/响应体日志
 
 **只有当"持久监控"为开启状态时，以下能力才会生效：**
+
 - 后端健康检查调度器运行（周期性对目标执行健康检查）
 - 公开监控页面与相关免鉴权 API 可访问
 
@@ -190,7 +191,7 @@ LLM Gateway 提供公开的健康监控页面，无需登录即可访问，实�
 健康监控提供以下公开 API 端点（免鉴权）：
 
 | 端点 | 描述 |
-|------|------|
+| ------ | ------ |
 | `GET /public/health/summary` | 获取所有目标的汇总信息 |
 | `GET /public/health/targets` | 获取目标清单 |
 | `GET /public/health/detail?target_id=xxx` | 获取单个目标的详细信息 |
@@ -209,7 +210,7 @@ VALUES ('target-1', 'DeepSeek Chat', 'model', 'model-id-here', 1, 300, 'Say "OK"
 **主要配置参数：**
 
 | 参数 | 说明 | 默认值 |
-|------|------|--------|
+| ------ | ------ | -------- |
 | `check_interval_seconds` | 检查频率（秒） | 300 秒（5分钟） |
 | `check_prompt` | 健康检查使用的提示词 | `"Say 'OK'"` |
 | `check_config` | JSON 配置，可设置超时、重试等参数 | - |
@@ -217,6 +218,7 @@ VALUES ('target-1', 'DeepSeek Chat', 'model', 'model-id-here', 1, 300, 'Say "OK"
 ### 限流保护
 
 健康监控 API 默认启用限流保护：
+
 - 每个 IP 每分钟最多 60 个请求
 - 超过限制将返回 429 错误
 
@@ -229,7 +231,7 @@ LLM Gateway 的专家路由（Expert Routing）功能内置了一个本地 ONNX 
 ### 模型信息
 
 | 项目 | 详情 |
-|------|------|
+| ------ | ------ |
 | **模型仓库** | [`snival/intent-router-zh-setfit-v1`](https://huggingface.co/snival/intent-router-zh-setfit-v1) |
 | **基座模型** | `Qwen/Qwen3-Embedding-0.6B` |
 | **训练方法** | SetFit（对比学习 body 微调 + 加权线性 head） |
@@ -237,6 +239,47 @@ LLM Gateway 的专家路由（Expert Routing）功能内置了一个本地 ONNX 
 | **运行时** | `onnxruntime-node`（本地 CPU 推理，无需 GPU） |
 | **标签数** | 21（coding 9 + ops 8 + general_control 3 + out_of_scope） |
 | **拒绝策略** | v4（`rejection_policy.json`），`max_probability = 0.15` |
+
+### 意图分类 API
+
+本地分类器同时以外部 API 形式开放，返回原始信号量（完整 label→score 分布，按分数降序），不做专家映射、拒绝决策或会话绑定。鉴权使用任意启用的虚拟密钥（Bearer）。
+
+```bash
+curl -X POST http://your-gateway-url/v1/intent/classify \
+  -H "Authorization: Bearer <你的虚拟密钥>" \
+  -H "Content-Type: application/json" \
+  -d '{"input": "帮我写一个快排", "top_n": 5}'
+```
+
+**请求参数：**
+
+| 参数 | 类型 | 说明 | 默认值 |
+| ------ | ------ | ------ | -------- |
+| `input` | string | 待分类文本（必填，非空，直接送分类器，不做路由预处理） | - |
+| `top_n` | int | 截取前 N 个标签；超过标签总数时返回全量 | 返回全量（21） |
+| `max_tokens` | int | 分词器截断上限 | 1024 |
+
+**响应示例：**
+
+```json
+{
+  "object": "intent_classification",
+  "model": "onnx/snival/intent-router-zh-setfit-v1",
+  "revision": "ce71b323",
+  "labels": [
+    { "label": "coding", "score": 0.92 },
+    { "label": "general_control", "score": 0.03 }
+  ],
+  "total_labels": 21,
+  "seq_len": 8,
+  "input_truncated": false,
+  "latency_ms": 12
+}
+```
+
+**错误码：** `401`（鉴权失败）、`400`（参数校验失败）、`503`（分类器未就绪，模型资产未加载）、`500`（推理失败）。
+
+> 注意：外部输入不经过专家路由的 `SignalBuilder` 去噪，与内部路由的分类结果可能不同；该端点为原始信号接口。
 
 ---
 
