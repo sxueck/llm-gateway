@@ -5,7 +5,7 @@ export interface AttributeConfig {
   description: string;
   descriptionKey?: string; // i18n key for description
   type: 'number' | 'boolean';
-  category: '成本参数' | '协议优化';
+  category: '服务限制' | '协议优化' | '成本参数';
   unit?: string;
   min?: number;
   max?: number;
@@ -13,6 +13,28 @@ export interface AttributeConfig {
 }
 
 export const MODEL_ATTRIBUTE_CONFIGS: AttributeConfig[] = [
+  {
+    key: 'max_completion_tokens',
+    label: '实际输出上限',
+    labelKey: 'modelAttributes.maxCompletionTokens.label',
+    description: '本网关实际接受并转发的最大补全 tokens（serving cap）。会通过 /v1/models 的 max_completion_tokens 字段与响应头 X-Max-Completion-Tokens 下发；请求中的 max_tokens 超出时会被钳制到该值',
+    descriptionKey: 'modelAttributes.maxCompletionTokens.description',
+    type: 'number',
+    category: '服务限制',
+    min: 1,
+    step: 1,
+  },
+  {
+    key: 'context_window',
+    label: '上下文窗口',
+    labelKey: 'modelAttributes.contextWindow.label',
+    description: '模型的上下文窗口（input + output），通过 /v1/models 的 context_window 字段下发。未填写时回退到目录的 context_length / max_tokens',
+    descriptionKey: 'modelAttributes.contextWindow.description',
+    type: 'number',
+    category: '服务限制',
+    min: 1,
+    step: 1,
+  },
   {
     key: 'input_cost_per_token',
     label: '输入成本',
@@ -54,7 +76,7 @@ export const MODEL_ATTRIBUTE_CONFIGS: AttributeConfig[] = [
   },
 ];
 
-export const ATTRIBUTE_CATEGORIES = ['协议优化', '成本参数'] as const;
+export const ATTRIBUTE_CATEGORIES = ['服务限制', '协议优化', '成本参数'] as const;
 
 export function getAttributesByCategory(category: typeof ATTRIBUTE_CATEGORIES[number]) {
   return MODEL_ATTRIBUTE_CONFIGS.filter(attr => attr.category === category);

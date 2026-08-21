@@ -228,6 +228,16 @@ VALUES ('target-1', 'DeepSeek Chat', 'model', 'model-id-here', 1, 300, 'Say "OK"
 
 LLM Gateway 的专家路由（Expert Routing）功能内置了一个本地 ONNX 意图分类器，作为请求的第一级路由决策器。它将用户意图分类到 21 个标签（coding 9 类 + ops 8 类 + general_control 3 类 + out_of_scope），仅当本地分类器置信度不足或结果不可用时，才回退到 LLM 二次分类。
 
+### 关闭本地分类器（可选）
+
+不使用专家路由或意图分类 API 的部署，可设置环境变量 `LOCAL_INTENT_CLASSIFIER=off`（可选值 `off` / `disabled` / `0` / `false`，默认开启）：
+
+- 启动时跳过模型加载，~615MB artifacts 不会占用进程内存；
+- 专家路由自动回退到 LLM 二次分类 / fallback；
+- `/v1/intent/classify` 返回 `503 classifier_disabled`。
+
+修改后需重启生效。
+
 ### 模型信息
 
 | 项目 | 详情 |

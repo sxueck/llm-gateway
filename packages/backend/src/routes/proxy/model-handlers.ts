@@ -3,6 +3,10 @@ import { systemConfigDb } from '../../db/index.js';
 import { hotConfigCache } from '../../services/hot-config-cache.js';
 import { memoryLogger } from '../../services/logger.js';
 import { authenticateVirtualKey, extractVirtualKeyAuthHeader, getModelIdsFromVirtualKey } from './auth.js';
+import { resolveServingLimits } from '../../utils/serving-limits.js';
+
+// Internal attribute keys that configure upstream transport, never meant for clients.
+const INTERNAL_ATTRIBUTE_KEYS = new Set(['headers', 'timeout', 'maxRetries', 'requestTimeout', 'upstream_websocket_enabled']);
 
 export function parseModelAttributes(modelAttributes: string | null | undefined): any {
   if (!modelAttributes) {
@@ -27,11 +31,25 @@ export function buildModelBaseInfo(model: any): any {
 
 export function mergeModelAttributes(baseInfo: any, attributes: any): any {
   for (const [key, value] of Object.entries(attributes)) {
-    if (key !== 'id' && key !== 'object' && key !== 'created' && key !== 'owned_by') {
+    if (key !== 'id' && key !== 'object' && key !== 'created' && key !== 'owned_by' && !INTERNAL_ATTRIBUTE_KEYS.has(key)) {
       baseInfo[key] = value;
     }
   }
   return baseInfo;
+}
+
+// Surface the model's serving limits (context window, real completion cap) as
+// top-level /v1/models fields so clients can machine-read them. Catalog output
+// values (max_tokens/max_output_tokens) are never advertised as the cap.
+export function applyServingLimits(entry: any, attributes: any): any {
+  const limits = resolveServingLimits(attributes);
+  if (limits.contextWindow !== undefined) {
+    entry.context_window = limits.contextWindow;
+  }
+  if (limits.maxCompletionTokens !== undefined) {
+    entry.max_completion_tokens = limits.maxCompletionTokens;
+  }
+  return entry;
 }
 
 export async function getModelsHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -59,7 +77,7 @@ export async function getModelsHandler(request: FastifyRequest, reply: FastifyRe
     const modelList = models.map(model => {
       const baseInfo = buildModelBaseInfo(model!);
       const attributes = parseModelAttributes(model!.model_attributes);
-      return mergeModelAttributes(baseInfo, attributes);
+      return applyServingLimits(mergeModelAttributes(baseInfo, attributes), attributes);
     });
 
     memoryLogger.info(
@@ -126,6 +144,8 @@ export async function getModelInfoHandler(request: FastifyRequest, reply: Fastif
         max_tokens: modelAttributes.max_tokens || 8192,
         max_input_tokens: modelAttributes.max_input_tokens || 200000,
         max_output_tokens: modelAttributes.max_output_tokens || 8192,
+        max_completion_tokens: modelAttributes.max_completion_tokens || 8192,
+        context_window: modelAttributes.context_window || modelAttributes.context_length || modelAttributes.max_tokens || 200000,
         input_cost_per_token: modelAttributes.input_cost_per_token || 0.000003,
         output_cost_per_token: modelAttributes.output_cost_per_token || 0.000015,
         supports_vision: modelAttributes.supports_vision !== undefined ? modelAttributes.supports_vision : true,

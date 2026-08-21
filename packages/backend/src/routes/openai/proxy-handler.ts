@@ -23,6 +23,7 @@ import {
 import { maybeCompressImagesInOpenAIRequestBodyInPlace, logImageCompressionStats } from '../../services/image-compression.js';
 import { capturePromptSampleAsync } from '../../services/prompt-capture-service.js';
 import { applyContextNormalization } from '../../services/context-normalization/index.js';
+import { clampMaxTokensFields, resolveServingLimits } from '../../utils/serving-limits.js';
 
 const MESSAGE_COMPRESSION_MIN_TOKENS = parseInt(process.env.MESSAGE_COMPRESSION_MIN_TOKENS || '2048', 10);
 
@@ -136,6 +137,8 @@ export interface ProxyRequestContext {
   modelResult?: any;
   virtualKeyValue: string;
   modelAttributes?: any;
+  /** Serving completion cap enforced on this request (from model attributes), echoed to clients. */
+  effectiveMaxCompletionTokens?: number;
 }
 
 // ─── Shared helpers ───────────────────────────────────────────────────────
@@ -333,6 +336,21 @@ export function createOpenAIProxyHandler() {
 
       const { protocolConfig, path, vkDisplay, isStreamRequest } = configResult;
 
+      // Clamp oversized max_tokens/max_completion_tokens to the model's serving cap
+      // (sourced from model_attributes.max_completion_tokens) and expose the enforced
+      // value back to the client, so clients no longer have to learn caps via 400s.
+      const servingLimits = resolveServingLimits(parsedModelAttributes);
+      const didClampMaxTokens = clampMaxTokensFields(request.body, servingLimits.maxCompletionTokens);
+      if (didClampMaxTokens) {
+        memoryLogger.info(
+          `Request max tokens exceeded serving cap; clamped to ${servingLimits.maxCompletionTokens} | 模型: ${currentModel?.name}`,
+          'Proxy'
+        );
+      }
+      // The effective completion cap the relay enforced on this request (regardless
+      // of whether a rewrite happened), echoed in responses for machine readability.
+      const effectiveMaxCompletionTokens = servingLimits.maxCompletionTokens;
+
       if (currentModel && (request.body as any)?.messages && isChatCompletionsPath(path)) {
         const approxTokens = estimateTokensForMessages((request.body as any).messages);
         const shouldCompressMessages = approxTokens >= MESSAGE_COMPRESSION_MIN_TOKENS;
@@ -448,6 +466,7 @@ export function createOpenAIProxyHandler() {
         modelResult,
         virtualKeyValue: virtualKeyValue!,
         modelAttributes: parsedModelAttributes,
+        effectiveMaxCompletionTokens,
       };
 
       if (isStreamRequest) {
@@ -520,6 +539,16 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
   const circuitBreakerKey = modelResult?.circuitBreakerKey || providerId;
   const modelAttributes = modelAttributesParam ?? parseModelAttributes(currentModel);
   let piiMaskedCount = 0;
+
+  // Advertise the enforced completion cap on chat completions streams before the
+  // first byte is written; headers cannot be added once SSE starts.
+  // Streams are written via reply.raw.writeHead(), which skips Fastify-managed
+  // headers, so set on the raw response too (writeHead merges setHeader values).
+  if (!isResponsesApi && ctx.effectiveMaxCompletionTokens !== undefined) {
+    const capHeader = String(ctx.effectiveMaxCompletionTokens);
+    reply.header('X-Max-Completion-Tokens', capHeader);
+    reply.raw.setHeader('X-Max-Completion-Tokens', capHeader);
+  }
 
   memoryLogger.info(
     `流式请求开始: ${path} | virtual key: ${vkDisplay}`,
@@ -716,7 +745,9 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
           responseBody: tokenUsage.streamChunks,
           requestHeaders: request.headers,
         });
-      } catch (_e) {}
+      } catch (_e) {
+        memoryLogger.debug(`Debug broadcast failed: ${(_e as Error)?.message || _e}`, 'Proxy');
+      }
     }
  
     return;
@@ -756,7 +787,8 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
           return;
         }
       }
-    } catch {
+    } catch (retryError: any) {
+      memoryLogger.debug(`Stream retry dispatch failed: ${retryError?.message || retryError}`, 'Proxy');
     }
 
     const shouldLogBody = shouldLogRequestBody(virtualKey);
@@ -804,7 +836,9 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
           error: streamError.message,
           requestHeaders: request.headers,
         });
-      } catch (_e) {}
+      } catch (_e) {
+        memoryLogger.debug(`Debug broadcast failed: ${(_e as Error)?.message || _e}`, 'Proxy');
+      }
     }
  
     const errorPayload = streamError?.errorResponse || {
@@ -825,7 +859,9 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
     } else if (!reply.raw.writableEnded) {
       try {
         reply.raw.write(`event: error\ndata: ${JSON.stringify(errorPayload)}\n\n`);
-      } catch (_e) {}
+      } catch (_e) {
+        memoryLogger.debug(`Failed to write SSE error event: ${(_e as Error)?.message || _e}`, 'Proxy');
+      }
       reply.raw.end();
     }
 
@@ -846,6 +882,12 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
   const isResponsesCompactRequest = isResponsesCompactPath(path);
   const bypassGatewayCache = shouldBypassGatewayCache(path);
   const nonStreamRequestUserAgent = getRequestUserAgent(request);
+
+  // Advertise the enforced completion cap (serving cap of this model) on all
+  // non-stream responses, including cache hits.
+  if (ctx.effectiveMaxCompletionTokens !== undefined) {
+    reply.header('X-Max-Completion-Tokens', String(ctx.effectiveMaxCompletionTokens));
+  }
   const nonStreamRequestIp = extractIp(request);
   const forwardedHeaders = requestHeaderForwardingService.buildForwardedHeaders(
     request.headers as any
@@ -1007,7 +1049,9 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
     let cachedResponseForClient: any = cacheResult.cached.response;
     try {
       stripFieldRecursively(cachedResponseForClient, 'instructions');
-    } catch (_e) {}
+    } catch (_e) {
+      memoryLogger.debug(`Strip cached instructions failed: ${(_e as Error)?.message || _e}`, 'Proxy');
+    }
 
     const duration = Date.now() - startTime;
     const shouldLogBody = shouldLogRequestBody(virtualKey);
@@ -1186,7 +1230,9 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
   try {
     try {
       stripFieldRecursively(responseData, 'instructions');
-    } catch (_e) {}
+    } catch (_e) {
+      memoryLogger.debug(`Strip instructions failed: ${(_e as Error)?.message || _e}`, 'Proxy');
+    }
 
     const piiContext = piiResult?.context || (response as any)?.__piiContext;
     if (piiContext) {
@@ -1284,7 +1330,9 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
         error: isSuccess ? undefined : JSON.stringify(responseData),
         requestHeaders: request.headers,
       });
-    } catch (_e) {}
+    } catch (_e) {
+      memoryLogger.debug(`Debug broadcast failed: ${(_e as Error)?.message || _e}`, 'Proxy');
+    }
   }
  
   // 统一归一化解析 usage，兼容两种协议字段

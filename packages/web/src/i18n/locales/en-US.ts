@@ -169,6 +169,7 @@ export default {
     performanceParams: 'Performance Parameters',
     costParams: 'Cost Parameters',
     protocolParams: 'Protocol Optimization',
+    servingParams: 'Serving Limits',
     featureSupport: 'Feature Support',
     itemsPerPage: 'Items per page:',
     groupByModelName: 'Group by model name:',
@@ -209,6 +210,14 @@ export default {
     upstreamWebsocket: {
       label: 'Upstream WebSocket',
       description: 'Use upstream WebSocket connections for Responses API streaming requests to reduce latency in multi-turn tool calling. Requests fail if the upstream WebSocket connection fails.',
+    },
+    maxCompletionTokens: {
+      label: 'Serving Output Cap',
+      description: 'The max completion tokens this relay actually accepts and forwards (serving cap). Surfaced via max_completion_tokens in /v1/models and the X-Max-Completion-Tokens response header; request max_tokens above it are clamped to this value',
+    },
+    contextWindow: {
+      label: 'Context Window',
+      description: 'The model context window (input + output), surfaced via context_window in /v1/models. Falls back to catalog context_length / max_tokens when unset',
     },
   },
   virtualModels: {

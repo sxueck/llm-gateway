@@ -169,6 +169,7 @@ export default {
     performanceParams: '性能参数',
     costParams: '成本参数',
     protocolParams: '协议优化',
+    servingParams: '服务限制',
     featureSupport: '功能支持',
     itemsPerPage: '每页显示：',
     groupByModelName: '按模型名称分组：',
@@ -209,6 +210,14 @@ export default {
     upstreamWebsocket: {
       label: '上游 WebSocket',
       description: '对 Responses API 流式请求使用上游 WebSocket 连接，可降低多轮工具调用的延迟。连接失败时请求会失败',
+    },
+    maxCompletionTokens: {
+      label: '实际输出上限',
+      description: '本网关实际接受并转发的最大补全 tokens（serving cap）。下发到 /v1/models 的 max_completion_tokens 字段与响应头 X-Max-Completion-Tokens；请求中的 max_tokens 超出时会被钳制到该值',
+    },
+    contextWindow: {
+      label: '上下文窗口',
+      description: '模型的上下文窗口（input + output），下发到 /v1/models 的 context_window 字段。未填写时回退到目录的 context_length / max_tokens',
     },
   },
   virtualModels: {

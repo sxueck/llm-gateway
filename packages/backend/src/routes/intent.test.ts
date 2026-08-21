@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   authenticateVirtualKey: vi.fn(),
   classifyWithLocalOnnx: vi.fn(),
   isLocalClassifierReady: vi.fn(),
+  isLocalClassifierDisabled: vi.fn(),
   getLocalClassifierError: vi.fn(),
   intentClassifyLogCreate: vi.fn(),
 }));
@@ -22,6 +23,7 @@ vi.mock("../services/expert-router/local/classifier.js", () => ({
 
 vi.mock("../services/expert-router/local/model-assets.js", () => ({
   isLocalClassifierReady: mocks.isLocalClassifierReady,
+  isLocalClassifierDisabled: mocks.isLocalClassifierDisabled,
   getLocalClassifierError: mocks.getLocalClassifierError,
 }));
 
@@ -117,6 +119,7 @@ describe("intentRoutes POST /classify", () => {
     vi.clearAllMocks();
     mocks.authenticateVirtualKey.mockResolvedValue(AUTH_OK);
     mocks.isLocalClassifierReady.mockReturnValue(true);
+    mocks.isLocalClassifierDisabled.mockReturnValue(false);
     mocks.getLocalClassifierError.mockReturnValue(undefined);
     mocks.classifyWithLocalOnnx.mockResolvedValue(makeClassifyResult());
     mocks.intentClassifyLogCreate.mockResolvedValue(undefined);
@@ -186,6 +189,20 @@ describe("intentRoutes POST /classify", () => {
     expect((reply.body as any).error.code).toBe("classifier_not_ready");
     expect((reply.body as any).error.message).toContain("assets missing");
     expect(mocks.classifyWithLocalOnnx).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 classifier_disabled when the classifier is disabled by env", async () => {
+    mocks.isLocalClassifierDisabled.mockReturnValue(true);
+
+    const reply = await callHandler({ input: "帮我写个快排" });
+    expect(reply.statusCode).toBe(503);
+    expect((reply.body as any).error.code).toBe("classifier_disabled");
+    expect((reply.body as any).error.message).toContain(
+      "LOCAL_INTENT_CLASSIFIER=off",
+    );
+    expect(mocks.isLocalClassifierReady).not.toHaveBeenCalled();
+    expect(mocks.classifyWithLocalOnnx).not.toHaveBeenCalled();
+    expect(mocks.intentClassifyLogCreate).not.toHaveBeenCalled();
   });
 
   it("returns the full ranked distribution by default", async () => {
