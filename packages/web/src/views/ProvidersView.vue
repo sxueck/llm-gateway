@@ -125,7 +125,7 @@ import {
 import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined } from '@vicons/material'
 import { useProviderStore } from '@/stores/provider'
 import { useModelStore } from '@/stores/model'
-import { providerApi } from '@/api/provider'
+import { providerApi, extractModelAttributes } from '@/api/provider'
 import { modelApi } from '@/api/model'
 import type { Provider } from '@/types'
 import type { ProviderFormValue } from '@/types/provider'
@@ -483,7 +483,8 @@ async function handleSubmit() {
             name: model.name || model.id,
             providerId: formValue.value.id,
             modelIdentifier: model.id,
-            enabled: true
+            enabled: true,
+            modelAttributes: extractModelAttributes(model),
           }))
 
         if (modelsToCreate.length > 0) {
@@ -513,7 +514,8 @@ async function handleSubmit() {
           name: model.name || model.id,
           providerId: formValue.value.id,
           modelIdentifier: model.id,
-          enabled: true
+          enabled: true,
+          modelAttributes: extractModelAttributes(model),
         }))
 
         try {

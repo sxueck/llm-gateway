@@ -1,12 +1,33 @@
-import { FastifyInstance } from 'fastify';
-import { lookup } from 'node:dns/promises';
-import { createConnection } from 'node:net';
-import { z } from 'zod';
-import { providerDb } from '../db/index.js';
-import { hotConfigCache } from '../services/hot-config-cache.js';
-import { encryptApiKey, decryptApiKey } from '../utils/crypto.js';
-import { buildModelsEndpoint } from '../utils/api-endpoint-builder.js';
-import { upstreamFetch } from '../utils/upstream-fetch.js';
+import type { FastifyInstance } from "fastify";
+import { lookup } from "node:dns/promises";
+import { createConnection } from "node:net";
+import { z } from "zod";
+import { providerDb } from "../db/index.js";
+import { hotConfigCache } from "../services/hot-config-cache.js";
+import { encryptApiKey, decryptApiKey } from "../utils/crypto.js";
+import { buildModelsEndpoint } from "../utils/api-endpoint-builder.js";
+import { upstreamFetch } from "../utils/upstream-fetch.js";
+
+function safeParseJson(value: string | null | undefined): any {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+// Preserve upstream model entries as-is (max_completion_tokens, context_length, ...)
+// so capability metadata survives into the admin UI; only id/name are normalized.
+export function mapUpstreamModelList(data: any): Array<Record<string, any>> {
+  return (
+    data?.data?.map((model: any) => ({
+      ...model,
+      id: model.id,
+      name: model.id,
+    })) || []
+  );
+}
 
 interface ProviderTestResult {
   success: boolean;
@@ -23,10 +44,14 @@ function resolvePort(url: URL): number {
     return Number(url.port);
   }
 
-  return url.protocol === 'https:' ? 443 : 80;
+  return url.protocol === "https:" ? 443 : 80;
 }
 
-async function tcpConnectLatency(hostOrIp: string, port: number, timeoutMs: number): Promise<{ success: boolean; latencyMs: number; error?: string }> {
+async function tcpConnectLatency(
+  hostOrIp: string,
+  port: number,
+  timeoutMs: number,
+): Promise<{ success: boolean; latencyMs: number; error?: string }> {
   return new Promise((resolve) => {
     const started = Date.now();
     const socket = createConnection({ host: hostOrIp, port });
@@ -40,13 +65,17 @@ async function tcpConnectLatency(hostOrIp: string, port: number, timeoutMs: numb
       resolve({ success, latencyMs, error: error?.message });
     };
 
-    socket.once('connect', () => finish(true));
-    socket.once('error', (err) => finish(false, err));
-    socket.setTimeout(timeoutMs, () => finish(false, new Error(`连接超时 (${timeoutMs}ms)`)));
+    socket.once("connect", () => finish(true));
+    socket.once("error", (err) => finish(false, err));
+    socket.setTimeout(timeoutMs, () =>
+      finish(false, new Error(`连接超时 (${timeoutMs}ms)`)),
+    );
   });
 }
 
-async function testProviderTcpOnly(baseUrl: string): Promise<ProviderTestResult> {
+async function testProviderTcpOnly(
+  baseUrl: string,
+): Promise<ProviderTestResult> {
   try {
     const url = new URL(baseUrl);
     const host = url.hostname;
@@ -54,23 +83,30 @@ async function testProviderTcpOnly(baseUrl: string): Promise<ProviderTestResult>
 
     // DNS 解析放在计时外，保证 latencyMs 仅反映 TCP connect 时长。
     const resolved = await lookup(host);
-    const latency = await tcpConnectLatency(resolved.address, port, PROVIDER_TEST_TIMEOUT_MS);
+    const latency = await tcpConnectLatency(
+      resolved.address,
+      port,
+      PROVIDER_TEST_TIMEOUT_MS,
+    );
 
     return {
       success: latency.success,
       status: latency.success ? 200 : undefined,
-      message: latency.success ? '网络连通' : (latency.error || '连接失败'),
+      message: latency.success ? "网络连通" : latency.error || "连接失败",
       latencyMs: latency.latencyMs,
     };
   } catch (error: any) {
     return {
       success: false,
-      message: error?.message || '连接失败',
+      message: error?.message || "连接失败",
     };
   }
 }
 
-function getOrCreateProviderTest(providerId: string, baseUrl: string): Promise<ProviderTestResult> {
+function getOrCreateProviderTest(
+  providerId: string,
+  baseUrl: string,
+): Promise<ProviderTestResult> {
   const inFlight = inFlightProviderTests.get(providerId);
   if (inFlight) {
     return inFlight;
@@ -84,11 +120,14 @@ function getOrCreateProviderTest(providerId: string, baseUrl: string): Promise<P
   return task;
 }
 
-const protocolMappingSchema = z.object({
-  openai: z.string().url().optional(),
-  anthropic: z.string().url().optional(),
-  google: z.string().url().optional(),
-}).nullable().optional();
+const protocolMappingSchema = z
+  .object({
+    openai: z.string().url().optional(),
+    anthropic: z.string().url().optional(),
+    google: z.string().url().optional(),
+  })
+  .nullable()
+  .optional();
 
 const createProviderSchema = z.object({
   id: z.string(),
@@ -112,31 +151,33 @@ const updateProviderSchema = z.object({
 });
 
 const batchImportSchema = z.object({
-  providers: z.array(z.object({
-    id: z.string(),
-    name: z.string(),
-    description: z.string().nullable().optional(),
-    baseUrl: z.string().url(),
-    apiKey: z.string(),
-    enabled: z.boolean().optional(),
-  })),
+  providers: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      description: z.string().nullable().optional(),
+      baseUrl: z.string().url(),
+      apiKey: z.string(),
+      enabled: z.boolean().optional(),
+    }),
+  ),
   skipExisting: z.boolean().optional(),
 });
 
 export async function providerRoutes(fastify: FastifyInstance) {
-  fastify.addHook('onRequest', fastify.authenticate);
+  fastify.addHook("onRequest", fastify.authenticate);
 
-  fastify.get('/', async () => {
+  fastify.get("/", async () => {
     const providers = await providerDb.getAll();
     return {
-      providers: providers.map(p => ({
+      providers: providers.map((p) => ({
         id: p.id,
         name: p.name,
         description: p.description,
         baseUrl: p.base_url,
-        protocolMappings: p.protocol_mappings ? JSON.parse(p.protocol_mappings) : null,
-        apiKey: '***',
-        modelMapping: p.model_mapping ? JSON.parse(p.model_mapping) : null,
+        protocolMappings: safeParseJson(p.protocol_mappings),
+        apiKey: "***",
+        modelMapping: safeParseJson(p.model_mapping),
         enabled: p.enabled === 1,
         createdAt: p.created_at,
         updatedAt: p.updated_at,
@@ -144,13 +185,13 @@ export async function providerRoutes(fastify: FastifyInstance) {
     };
   });
 
-  fastify.get('/:id', async (request, reply) => {
+  fastify.get("/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const { includeApiKey } = request.query as { includeApiKey?: string };
     const provider = await providerDb.getById(id);
 
     if (!provider) {
-      return reply.code(404).send({ error: '提供商不存在' });
+      return reply.code(404).send({ error: "提供商不存在" });
     }
 
     const result = {
@@ -158,29 +199,33 @@ export async function providerRoutes(fastify: FastifyInstance) {
       name: provider.name,
       description: provider.description,
       baseUrl: provider.base_url,
-      protocolMappings: provider.protocol_mappings ? JSON.parse(provider.protocol_mappings) : null,
-      apiKey: includeApiKey === 'true' ? decryptApiKey(provider.api_key) : '***',
-      modelMapping: provider.model_mapping ? JSON.parse(provider.model_mapping) : null,
+      protocolMappings: safeParseJson(provider.protocol_mappings),
+      apiKey:
+        includeApiKey === "true" ? decryptApiKey(provider.api_key) : "***",
+      modelMapping: safeParseJson(provider.model_mapping),
       enabled: provider.enabled === 1,
       createdAt: provider.created_at,
       updatedAt: provider.updated_at,
     };
 
-    fastify.log.info({
-      providerId: id,
-      protocolMappingsRaw: provider.protocol_mappings,
-      protocolMappingsParsed: result.protocolMappings
-    }, '[Providers] Getting provider by id');
+    fastify.log.info(
+      {
+        providerId: id,
+        protocolMappingsRaw: provider.protocol_mappings,
+        protocolMappingsParsed: result.protocolMappings,
+      },
+      "[Providers] Getting provider by id",
+    );
 
     return result;
   });
 
-  fastify.post('/', async (request, reply) => {
+  fastify.post("/", async (request, reply) => {
     const body = createProviderSchema.parse(request.body);
 
     const existing = await providerDb.getById(body.id);
     if (existing) {
-      return reply.code(400).send({ error: '提供商 ID 已存在' });
+      return reply.code(400).send({ error: "提供商 ID 已存在" });
     }
 
     const provider = await providerDb.create({
@@ -188,10 +233,14 @@ export async function providerRoutes(fastify: FastifyInstance) {
       name: body.name,
       description: body.description,
       base_url: body.baseUrl,
-      protocol_mappings: body.protocolMappings ? JSON.stringify(body.protocolMappings) : null,
+      protocol_mappings: body.protocolMappings
+        ? JSON.stringify(body.protocolMappings)
+        : null,
       api_key: encryptApiKey(body.apiKey),
-      model_mapping: body.modelMapping ? JSON.stringify(body.modelMapping) : null,
-      enabled: body.enabled !== false ? 1 : 0,
+      model_mapping: body.modelMapping
+        ? JSON.stringify(body.modelMapping)
+        : null,
+      enabled: body.enabled === false ? 0 : 1,
     });
 
     return {
@@ -199,23 +248,23 @@ export async function providerRoutes(fastify: FastifyInstance) {
       name: provider.name,
       description: provider.description,
       baseUrl: provider.base_url,
-      protocolMappings: provider.protocol_mappings ? JSON.parse(provider.protocol_mappings) : null,
-      modelMapping: provider.model_mapping ? JSON.parse(provider.model_mapping) : null,
+      protocolMappings: safeParseJson(provider.protocol_mappings),
+      modelMapping: safeParseJson(provider.model_mapping),
       enabled: provider.enabled === 1,
       createdAt: provider.created_at,
       updatedAt: provider.updated_at,
     };
   });
 
-  fastify.put('/:id', async (request, reply) => {
+  fastify.put("/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = updateProviderSchema.parse(request.body);
 
-    fastify.log.info({ providerId: id, body }, '[Providers] Updating provider');
+    fastify.log.info({ providerId: id, body }, "[Providers] Updating provider");
 
     const provider = await providerDb.getById(id);
     if (!provider) {
-      return reply.code(404).send({ error: '提供商不存在' });
+      return reply.code(404).send({ error: "提供商不存在" });
     }
 
     const updates: any = {};
@@ -223,26 +272,33 @@ export async function providerRoutes(fastify: FastifyInstance) {
     if (body.description !== undefined) updates.description = body.description;
     if (body.baseUrl !== undefined) updates.base_url = body.baseUrl;
     if (body.protocolMappings !== undefined) {
-      updates.protocol_mappings = body.protocolMappings ? JSON.stringify(body.protocolMappings) : null;
-      fastify.log.info({
-        protocolMappings: body.protocolMappings,
-        stringified: updates.protocol_mappings
-      }, '[Providers] Protocol mappings update');
+      updates.protocol_mappings = body.protocolMappings
+        ? JSON.stringify(body.protocolMappings)
+        : null;
+      fastify.log.info(
+        {
+          protocolMappings: body.protocolMappings,
+          stringified: updates.protocol_mappings,
+        },
+        "[Providers] Protocol mappings update",
+      );
     }
     if (body.apiKey !== undefined) updates.api_key = encryptApiKey(body.apiKey);
     if (body.modelMapping !== undefined) {
-      updates.model_mapping = body.modelMapping ? JSON.stringify(body.modelMapping) : null;
+      updates.model_mapping = body.modelMapping
+        ? JSON.stringify(body.modelMapping)
+        : null;
     }
     if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
 
-    fastify.log.info({ updates }, '[Providers] Final updates to apply');
+    fastify.log.info({ updates }, "[Providers] Final updates to apply");
 
     await providerDb.update(id, updates);
     hotConfigCache.invalidateProvider(id);
 
     const updated = await providerDb.getById(id);
     if (!updated) {
-      throw new Error('提供商不存在');
+      throw new Error("提供商不存在");
     }
 
     return {
@@ -250,20 +306,20 @@ export async function providerRoutes(fastify: FastifyInstance) {
       name: updated.name,
       description: updated.description,
       baseUrl: updated.base_url,
-      protocolMappings: updated.protocol_mappings ? JSON.parse(updated.protocol_mappings) : null,
-      modelMapping: updated.model_mapping ? JSON.parse(updated.model_mapping) : null,
+      protocolMappings: safeParseJson(updated.protocol_mappings),
+      modelMapping: safeParseJson(updated.model_mapping),
       enabled: updated.enabled === 1,
       createdAt: updated.created_at,
       updatedAt: updated.updated_at,
     };
   });
 
-  fastify.delete('/:id', async (request, reply) => {
+  fastify.delete("/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
 
     const provider = await providerDb.getById(id);
     if (!provider) {
-      return reply.code(404).send({ error: '提供商不存在' });
+      return reply.code(404).send({ error: "提供商不存在" });
     }
 
     await providerDb.delete(id);
@@ -273,31 +329,34 @@ export async function providerRoutes(fastify: FastifyInstance) {
     return { success: true };
   });
 
-  fastify.post('/:id/test', async (request, reply) => {
+  fastify.post("/:id/test", async (request, reply) => {
     const { id } = request.params as { id: string };
 
     const provider = await providerDb.getById(id);
     if (!provider) {
-      return reply.code(404).send({ error: '提供商不存在' });
+      return reply.code(404).send({ error: "提供商不存在" });
     }
 
     return getOrCreateProviderTest(id, provider.base_url);
   });
 
-  fastify.post('/fetch-models', async (request, reply) => {
-    const { baseUrl, apiKey } = request.body as { baseUrl: string; apiKey: string };
+  fastify.post("/fetch-models", async (request, reply) => {
+    const { baseUrl, apiKey } = request.body as {
+      baseUrl: string;
+      apiKey: string;
+    };
 
     if (!baseUrl || !apiKey) {
-      return reply.code(400).send({ error: 'baseUrl 和 apiKey 是必需的' });
+      return reply.code(400).send({ error: "baseUrl 和 apiKey 是必需的" });
     }
 
     try {
       const endpoint = buildModelsEndpoint(baseUrl);
 
       const response = await upstreamFetch(endpoint, {
-        method: 'GET',
+        method: "GET",
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         timeoutMs: 10000,
       });
@@ -311,11 +370,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
       }
 
       const data: any = await response.json();
-      const models = data?.data?.map((model: any) => ({
-        id: model.id,
-        name: model.id,
-        created: model.created,
-      })) || [];
+      const models = mapUpstreamModelList(data);
 
       return {
         success: true,
@@ -325,13 +380,13 @@ export async function providerRoutes(fastify: FastifyInstance) {
     } catch (error: any) {
       return {
         success: false,
-        message: error.message || '获取模型列表失败',
+        message: error.message || "获取模型列表失败",
         models: [],
       };
     }
   });
 
-  fastify.post('/batch-import', async (request, _reply) => {
+  fastify.post("/batch-import", async (request, _reply) => {
     const body = batchImportSchema.parse(request.body);
     const { providers, skipExisting = true } = body;
 
@@ -353,7 +408,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
           } else {
             results.errors.push({
               id: providerData.id,
-              error: '提供商 ID 已存在',
+              error: "提供商 ID 已存在",
             });
             results.failed++;
             continue;
@@ -368,14 +423,14 @@ export async function providerRoutes(fastify: FastifyInstance) {
           protocol_mappings: null,
           api_key: encryptApiKey(providerData.apiKey),
           model_mapping: null,
-          enabled: providerData.enabled !== false ? 1 : 0,
+          enabled: providerData.enabled === false ? 0 : 1,
         });
 
         results.success++;
       } catch (error: any) {
         results.errors.push({
           id: providerData.id,
-          error: error.message || '创建失败',
+          error: error.message || "创建失败",
         });
         results.failed++;
       }
