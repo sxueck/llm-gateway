@@ -618,6 +618,62 @@ export const migrations: Migration[] = [
       await conn.query("DROP TABLE IF EXISTS intent_classify_logs");
     },
   },
+  {
+    version: 42,
+    name: "add_effective_time_to_summaries",
+    up: async (conn: Connection) => {
+      const hasColumn = async (columnName: string) => {
+        const [rows] = await conn.query(
+          `SELECT COUNT(*) AS cnt
+           FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = 'api_request_daily_summaries'
+             AND COLUMN_NAME = ?`,
+          [columnName],
+        );
+        const result = rows as any[];
+        return Number(result?.[0]?.cnt || 0) > 0;
+      };
+
+      // 平均响应时间改用 tffb_ms 优先、response_time 回退口径后，
+      // 汇总表需要同步保存请求级有效时间，否则 7 天前的汇总段无法回算。
+      if (!(await hasColumn("total_effective_time"))) {
+        await conn.query(`
+          ALTER TABLE api_request_daily_summaries
+          ADD COLUMN total_effective_time BIGINT NOT NULL DEFAULT 0
+          COMMENT '请求级有效响应时间总和：tffb_ms > 0 用 tffb_ms，否则回退 response_time(毫秒)'
+          AFTER response_time_count
+        `);
+        console.log(
+          "[迁移] 已添加 api_request_daily_summaries.total_effective_time 字段",
+        );
+      }
+
+      if (!(await hasColumn("effective_time_count"))) {
+        await conn.query(`
+          ALTER TABLE api_request_daily_summaries
+          ADD COLUMN effective_time_count INT NOT NULL DEFAULT 0
+          COMMENT '参与 total_effective_time 统计的请求数'
+          AFTER total_effective_time
+        `);
+        console.log(
+          "[迁移] 已添加 api_request_daily_summaries.effective_time_count 字段",
+        );
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(
+          `ALTER TABLE api_request_daily_summaries DROP COLUMN IF EXISTS effective_time_count`,
+        );
+        await conn.query(
+          `ALTER TABLE api_request_daily_summaries DROP COLUMN IF EXISTS total_effective_time`,
+        );
+      } catch (e: any) {
+        console.warn("[迁移] 删除 effective_time 字段失败:", e.message);
+      }
+    },
+  },
 ];
 
 async function hasProviderForeignKey(

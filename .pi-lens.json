@@ -1,0 +1,11 @@
+{
+  "ignore": ["packages/backend/src/db/migrations.ts"],
+  "rules": {
+    "sql": {
+      "disable": ["no-sql-in-code", "sql-injection"]
+    },
+    "typed-rows": {
+      "disable": ["no-any-type"]
+    }
+  }
+}

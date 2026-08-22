@@ -507,6 +507,8 @@ export async function createTables() {
         prompt_cache_hit_count INT NOT NULL DEFAULT 0 COMMENT 'cached_tokens > 0 的计数（即使用了 prompt cache）',
         total_response_time BIGINT NOT NULL DEFAULT 0 COMMENT '所有请求 response_time 总和(毫秒)',
         response_time_count INT NOT NULL DEFAULT 0 COMMENT '参与 total_response_time 统计的请求数',
+        total_effective_time BIGINT NOT NULL DEFAULT 0 COMMENT '请求级有效响应时间总和：tffb_ms > 0 用 tffb_ms，否则回退 response_time(毫秒)',
+        effective_time_count INT NOT NULL DEFAULT 0 COMMENT '参与 total_effective_time 统计的请求数',
         created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
         updated_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
         UNIQUE KEY uk_daily_summary_dimensions (summary_date, virtual_key_id, provider_id, model),

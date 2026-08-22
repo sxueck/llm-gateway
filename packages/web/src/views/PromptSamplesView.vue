@@ -13,7 +13,6 @@ import {
   NSelect,
   NSpace,
   NTag,
-  NText,
   useMessage
 } from 'naive-ui'
 import { DownloadOutline } from '@vicons/ionicons5'
@@ -187,7 +186,9 @@ const columns: DataTableColumns<PromptSample> = [
     title: 'Prompt',
     key: 'intent_text',
     ellipsis: { tooltip: true },
-    render: row => h(NText, { depth: 2 }, { default: () => row.intent_text })
+    // 直接输出文本,让 tooltip 文字颜色跟随主题(原先包 NText depth=2
+    // 会强制深色文字,在黑底 tooltip 上几乎看不清)。
+    render: row => row.intent_text
   },
   {
     title: '操作',
