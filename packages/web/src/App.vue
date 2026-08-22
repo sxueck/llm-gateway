@@ -75,6 +75,12 @@ const themeOverrides = {
 </script>
 
 <style scoped>
+.route-loading {
+  /* 路由懒加载期间内容为空,容器高度会塌缩为 0,spinner 会贴到视口顶部;
+     撑满一屏让 spinner 落在视口中央。 */
+  min-height: 100vh;
+}
+
 .route-loading :deep(.n-spin-content) {
   opacity: 1;
 }

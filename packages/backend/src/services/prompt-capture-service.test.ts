@@ -412,18 +412,128 @@ describe("capturePromptSample", () => {
     );
   });
 
-  it("strips assistant turns marked with full-width colons", async () => {
+  it("extracts the reason from an orchestrator context JSON", async () => {
     const { SignalBuilder } = await import(
       "./expert-router/preprocess/index.js"
     );
-    const mixedConversation = [
-      "User：帮我看看这段代码",
-      "Assistant：这段代码有 bug，建议这样改。",
-      "User：还是报错，怎么办？",
-    ].join("\n");
+    const orchestratorJson = JSON.stringify({
+      task: "The orchestrator executed this command for the reason given below. Observe the command's output and ensure the command has exited before reporting the relevant output.\n\nReason:\nRerun training prep after User-Agent 403 fix\n\nExpected duration: 1800.0 seconds",
+      active_command:
+        "export LLM_API_KEY='vk_secret_key'\npython prepare_training_once.py",
+      current_output_frame: "+ python gen_llm_augmentation.py\ngeneration plan: {...}",
+    });
     vi.mocked(SignalBuilder.buildRoutingSignal).mockResolvedValue({
-      intentText: mixedConversation,
-      stats: { promptTokens: 12, intentTruncated: false },
+      intentText: orchestratorJson,
+      stats: { promptTokens: 936, intentTruncated: false },
+    } as any);
+
+    await capturePromptSample(
+      {
+        id: "vk-1",
+        prompt_capture_enabled: 1,
+        pii_protection_enabled: 0,
+      } as any,
+      {
+        body: {
+          model: "grok-4.6-medium",
+          messages: [{ role: "user", content: orchestratorJson }],
+        },
+      } as any,
+      "openai",
+    );
+
+    expect(promptSampleDb.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent_text: "Rerun training prep after User-Agent 403 fix",
+      }),
+    );
+    // 命令与密钥绝不能入库。
+    const persisted = vi.mocked(promptSampleDb.create).mock
+      .calls[0][0] as { intent_text: string };
+    expect(persisted.intent_text).not.toContain("vk_secret_key");
+    expect(persisted.intent_text).not.toContain("current_output_frame");
+    expect(persisted.intent_text).not.toContain("active_command");
+  });
+
+  it("falls back to the task text when the orchestrator context has no reason", async () => {
+    const { SignalBuilder } = await import(
+      "./expert-router/preprocess/index.js"
+    );
+    const orchestratorJson = JSON.stringify({
+      task: "Run the weekly report generation script",
+      active_command: "python gen_report.py",
+      current_output_frame: "",
+    });
+    vi.mocked(SignalBuilder.buildRoutingSignal).mockResolvedValue({
+      intentText: orchestratorJson,
+      stats: { promptTokens: 10, intentTruncated: false },
+    } as any);
+
+    await capturePromptSample(
+      {
+        id: "vk-1",
+        prompt_capture_enabled: 1,
+        pii_protection_enabled: 0,
+      } as any,
+      {
+        body: {
+          model: "grok-4.6-medium",
+          messages: [{ role: "user", content: orchestratorJson }],
+        },
+      } as any,
+      "openai",
+    );
+
+    expect(promptSampleDb.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent_text: "Run the weekly report generation script",
+      }),
+    );
+  });
+
+  it("skips capture when the orchestrator context has no extractable intent", async () => {
+    const { SignalBuilder } = await import(
+      "./expert-router/preprocess/index.js"
+    );
+    const orchestratorJson = JSON.stringify({
+      task: "The orchestrator executed this command for the reason given below.",
+      active_command: "echo hi",
+      current_output_frame: "> hi",
+    });
+    vi.mocked(SignalBuilder.buildRoutingSignal).mockResolvedValue({
+      intentText: orchestratorJson,
+      stats: { promptTokens: 8, intentTruncated: false },
+    } as any);
+
+    await capturePromptSample(
+      {
+        id: "vk-1",
+        prompt_capture_enabled: 1,
+        pii_protection_enabled: 0,
+      } as any,
+      {
+        body: {
+          model: "grok-4.6-medium",
+          messages: [{ role: "user", content: orchestratorJson }],
+        },
+      } as any,
+      "openai",
+    );
+
+    expect(promptSampleDb.create).not.toHaveBeenCalled();
+  });
+
+  it("keeps non-orchestrator JSON prompts unchanged", async () => {
+    const { SignalBuilder } = await import(
+      "./expert-router/preprocess/index.js"
+    );
+    const customJson = JSON.stringify({
+      request: "帮我写一个清理脚本",
+      tag: "demo",
+    });
+    vi.mocked(SignalBuilder.buildRoutingSignal).mockResolvedValue({
+      intentText: customJson,
+      stats: { promptTokens: 6, intentTruncated: false },
     } as any);
 
     await capturePromptSample(
@@ -435,7 +545,7 @@ describe("capturePromptSample", () => {
       {
         body: {
           model: "gpt-5",
-          messages: [{ role: "user", content: mixedConversation }],
+          messages: [{ role: "user", content: customJson }],
         },
       } as any,
       "openai",
@@ -443,7 +553,7 @@ describe("capturePromptSample", () => {
 
     expect(promptSampleDb.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        intent_text: "还是报错，怎么办？",
+        intent_text: customJson,
       }),
     );
   });

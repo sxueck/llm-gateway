@@ -1,4 +1,5 @@
 import { getDatabase } from '../connection.js';
+import type { ResultSetHeader } from 'mysql2';
 import { ApiRequestBuffer } from '../types.js';
 import { addToBuffer, shouldFlush, flushApiRequestBuffer } from '../utils/buffer.js';
 import { generateTimeBuckets, generateShanghaiDayBuckets, initializeTimeBuckets, getShanghaiDayStart } from '../utils/time-buckets.js';
@@ -113,8 +114,9 @@ export const apiRequestRepository = {
       let promptTokens = 0;
       let completionTokens = 0;
       let cachedTokens = 0;
-      let totalResponseTime = 0;
-      let responseTimeCount = 0;
+      // 有效响应时间：每条请求 tffb_ms > 0 时用 tffb_ms（首字节），否则回退 response_time（端到端）。
+      let totalEffectiveTime = 0;
+      let effectiveTimeCount = 0;
       let cacheHits = 0;
       let promptCacheHits = 0;
 
@@ -131,10 +133,16 @@ export const apiRequestRepository = {
             SUM(s.prompt_tokens) as prompt_tokens,
             SUM(s.completion_tokens) as completion_tokens,
             SUM(s.cached_tokens) as cached_tokens,
-            SUM(s.total_response_time) as total_response_time,
-            SUM(s.response_time_count) as response_time_count,
             SUM(s.cache_hit_count) as cache_hits,
-            SUM(s.prompt_cache_hit_count) as prompt_cache_hits
+            SUM(s.prompt_cache_hit_count) as prompt_cache_hits,
+            SUM(CASE
+              WHEN s.effective_time_count > 0 THEN s.total_effective_time
+              ELSE s.total_response_time
+            END) as total_effective_time,
+            SUM(CASE
+              WHEN s.effective_time_count > 0 THEN s.effective_time_count
+              ELSE s.response_time_count
+            END) as effective_time_count
           FROM api_request_daily_summaries s
           LEFT JOIN virtual_keys vk ON s.virtual_key_id = vk.id
           WHERE s.summary_date >= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
@@ -152,8 +160,10 @@ export const apiRequestRepository = {
           promptTokens += Number(summary.prompt_tokens) || 0;
           completionTokens += Number(summary.completion_tokens) || 0;
           cachedTokens += Number(summary.cached_tokens) || 0;
-          totalResponseTime += Number(summary.total_response_time) || 0;
-          responseTimeCount += Number(summary.response_time_count) || 0;
+          // 存量汇总行（effective 列未写入）行级回退到 response_time 口径：
+          // 明细早已清洗删除，无法再回算 tffb。
+          totalEffectiveTime += Number(summary.total_effective_time) || 0;
+          effectiveTimeCount += Number(summary.effective_time_count) || 0;
           cacheHits += Number(summary.cache_hits) || 0;
           promptCacheHits += Number(summary.prompt_cache_hits) || 0;
         }
@@ -173,8 +183,12 @@ export const apiRequestRepository = {
             SUM(CASE WHEN ar.cache_hit = 0 THEN ar.prompt_tokens ELSE 0 END) as prompt_tokens,
             SUM(CASE WHEN ar.cache_hit = 0 THEN ar.completion_tokens ELSE 0 END) as completion_tokens,
             SUM(ar.cached_tokens) as cached_tokens,
-            SUM(ar.response_time) as total_response_time,
-            COUNT(CASE WHEN ar.response_time > 0 THEN 1 END) as response_time_count,
+            SUM(CASE
+              WHEN ar.tffb_ms > 0 THEN ar.tffb_ms
+              WHEN ar.response_time > 0 THEN ar.response_time
+              ELSE 0
+            END) as total_effective_time,
+            COUNT(CASE WHEN ar.tffb_ms > 0 OR ar.response_time > 0 THEN 1 END) as effective_time_count,
             SUM(CASE WHEN ar.cache_hit = 1 THEN 1 ELSE 0 END) as cache_hits,
             SUM(CASE WHEN ar.cached_tokens > 0 THEN 1 ELSE 0 END) as prompt_cache_hits
           FROM api_requests ar
@@ -192,14 +206,14 @@ export const apiRequestRepository = {
           promptTokens += Number(detail.prompt_tokens) || 0;
           completionTokens += Number(detail.completion_tokens) || 0;
           cachedTokens += Number(detail.cached_tokens) || 0;
-          totalResponseTime += Number(detail.total_response_time) || 0;
-          responseTimeCount += Number(detail.response_time_count) || 0;
+          totalEffectiveTime += Number(detail.total_effective_time) || 0;
+          effectiveTimeCount += Number(detail.effective_time_count) || 0;
           cacheHits += Number(detail.cache_hits) || 0;
           promptCacheHits += Number(detail.prompt_cache_hits) || 0;
         }
       }
 
-      const avgResponseTime = responseTimeCount > 0 ? totalResponseTime / responseTimeCount : 0;
+      const avgResponseTime = effectiveTimeCount > 0 ? totalEffectiveTime / effectiveTimeCount : 0;
 
       return {
         totalRequests,
@@ -297,9 +311,10 @@ export const apiRequestRepository = {
           }
 
           const bucket = Number(row.time_bucket);
-          if (!bucket || isNaN(bucket)) return;
+          if (!bucket || Number.isNaN(bucket)) return;
 
-          const keyBuckets = dataByKey.get(keyId)!;
+          const keyBuckets = dataByKey.get(keyId);
+          if (!keyBuckets) return;
           if (keyBuckets.has(bucket)) {
             const existing = keyBuckets.get(bucket);
             keyBuckets.set(bucket, {
@@ -353,9 +368,10 @@ export const apiRequestRepository = {
           }
 
           const bucket = Number(row.time_bucket);
-          if (!bucket || isNaN(bucket)) return;
+          if (!bucket || Number.isNaN(bucket)) return;
 
-          const keyBuckets = dataByKey.get(keyId)!;
+          const keyBuckets = dataByKey.get(keyId);
+          if (!keyBuckets) return;
           if (keyBuckets.has(bucket)) {
             const existing = keyBuckets.get(bucket);
             keyBuckets.set(bucket, {
@@ -369,13 +385,11 @@ export const apiRequestRepository = {
         });
       }
 
-      const trendByKey = Array.from(dataByKey.entries()).map(([keyId, buckets]) => ({
+      return Array.from(dataByKey.entries()).map(([keyId, buckets]) => ({
         virtualKeyId: keyId,
         virtualKeyName: virtualKeyMap.get(keyId)?.name || '未知密钥',
         data: Array.from(buckets.values()).sort((a, b) => a.timestamp - b.timestamp)
       }));
-
-      return trendByKey;
     } finally {
       conn.release();
     }
@@ -482,9 +496,8 @@ export const apiRequestRepository = {
       const [rows] = await conn.query(dataQuery, dataParams);
 
       const normalizedRows = (rows as any[]).map(row => {
-        row.request_body = row.payload_request_body ?? null;
-        delete row.payload_request_body;
-        return row;
+        const { payload_request_body, ...rest } = row;
+        return { ...rest, request_body: payload_request_body ?? null };
       });
 
       return {
@@ -513,12 +526,12 @@ export const apiRequestRepository = {
       );
       const result = rows as any[];
       if (result.length === 0) return undefined;
-      const row = result[0];
-      row.request_body = row.payload_request_body ?? row.request_body;
-      row.response_body = row.payload_response_body ?? row.response_body;
-      delete row.payload_request_body;
-      delete row.payload_response_body;
-      return row;
+      const { payload_request_body, payload_response_body, ...rest } = result[0];
+      return {
+        ...rest,
+        request_body: payload_request_body ?? rest.request_body,
+        response_body: payload_response_body ?? rest.response_body,
+      };
     } finally {
       conn.release();
     }
@@ -568,6 +581,8 @@ export const apiRequestRepository = {
           prompt_cache_hit_count,
           total_response_time,
           response_time_count,
+          total_effective_time,
+          effective_time_count,
           created_at,
           updated_at
         )
@@ -587,6 +602,12 @@ export const apiRequestRepository = {
           SUM(CASE WHEN ar.cached_tokens > 0 THEN 1 ELSE 0 END) AS prompt_cache_hit_count,
           SUM(COALESCE(ar.response_time, 0)) AS total_response_time,
           COUNT(CASE WHEN ar.response_time > 0 THEN 1 END) AS response_time_count,
+          SUM(CASE
+            WHEN ar.tffb_ms > 0 THEN ar.tffb_ms
+            WHEN ar.response_time > 0 THEN ar.response_time
+            ELSE 0
+          END) AS total_effective_time,
+          COUNT(CASE WHEN ar.tffb_ms > 0 OR ar.response_time > 0 THEN 1 END) AS effective_time_count,
           UNIX_TIMESTAMP() * 1000 AS created_at,
           UNIX_TIMESTAMP() * 1000 AS updated_at
         FROM api_requests ar
@@ -610,6 +631,8 @@ export const apiRequestRepository = {
           prompt_cache_hit_count = prompt_cache_hit_count + VALUES(prompt_cache_hit_count),
           total_response_time = total_response_time + VALUES(total_response_time),
           response_time_count = response_time_count + VALUES(response_time_count),
+          total_effective_time = total_effective_time + VALUES(total_effective_time),
+          effective_time_count = effective_time_count + VALUES(effective_time_count),
           updated_at = UNIX_TIMESTAMP() * 1000`,
         [cutoffTime]
       );
@@ -631,8 +654,8 @@ export const apiRequestRepository = {
 
       await conn.commit();
 
-      const deletedPayloadCount = (payloadDeleteResult as any).affectedRows || 0;
-      const deletedRequestCount = (requestDeleteResult as any).affectedRows || 0;
+      const deletedPayloadCount = (payloadDeleteResult as ResultSetHeader).affectedRows || 0;
+      const deletedRequestCount = (requestDeleteResult as ResultSetHeader).affectedRows || 0;
 
       return {
         summarizedCount,
@@ -748,7 +771,7 @@ export const apiRequestRepository = {
         });
       }
 
-      const results = Array.from(modelStats.values())
+      return Array.from(modelStats.values())
         .map(stat => ({
           model: stat.model,
           provider_name: stat.providerName,
@@ -760,8 +783,6 @@ export const apiRequestRepository = {
         }))
         .sort((a, b) => b.request_count - a.request_count)
         .slice(0, 5);
-
-      return results;
     } finally {
       conn.release();
     }
@@ -944,17 +965,17 @@ export const apiRequestRepository = {
       const validSpeedItems = items.filter(i => i.avgOutputSpeed !== null && i.validSpeedCount > 0);
 
       const avgTffbMs = validTffbItems.length > 0
-        ? validTffbItems.reduce((sum, i) => sum + (i.avgTffbMs! * i.validTffbCount), 0) /
+        ? validTffbItems.reduce((sum, i) => sum + ((i.avgTffbMs ?? 0) * i.validTffbCount), 0) /
           validTffbItems.reduce((sum, i) => sum + i.validTffbCount, 0)
         : null;
 
       const avgResponseTimeMs = validResponseTimeItems.length > 0
-        ? validResponseTimeItems.reduce((sum, i) => sum + (i.avgResponseTimeMs! * i.validResponseTimeCount), 0) /
+        ? validResponseTimeItems.reduce((sum, i) => sum + ((i.avgResponseTimeMs ?? 0) * i.validResponseTimeCount), 0) /
           validResponseTimeItems.reduce((sum, i) => sum + i.validResponseTimeCount, 0)
         : null;
 
       const avgOutputSpeed = validSpeedItems.length > 0
-        ? validSpeedItems.reduce((sum, i) => sum + (i.avgOutputSpeed! * i.validSpeedCount), 0) /
+        ? validSpeedItems.reduce((sum, i) => sum + ((i.avgOutputSpeed ?? 0) * i.validSpeedCount), 0) /
           validSpeedItems.reduce((sum, i) => sum + i.validSpeedCount, 0)
         : null;
 

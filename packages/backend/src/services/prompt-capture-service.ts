@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import { jsonrepair } from "jsonrepair";
 import type { FastifyRequest } from "fastify";
 import { promptSampleDb } from "../db/index.js";
 import type { VirtualKey } from "../types/index.js";
@@ -117,6 +118,49 @@ function stripConversationTurns(text: string): string {
   return result || text;
 }
 
+// Agent/orchestrator 循环请求会把工具执行回显打包进单条 user message，形如
+// { "task": "...", "active_command": "...", "current_output_frame": "..." }。
+// 这类 JSON 不是用户提问，且 active_command 常携带明文密钥，不应整段入库。
+// 返回 null 表示不是 orchestrator 上下文；返回 '' 表示是但无可用意图（调用方应跳过捕获）；
+// 非空字符串为提取出的意图文本。
+function extractOrchestratorIntent(text: string): string | null {
+  const trimmed = (text || "").trim();
+  if (!trimmed.startsWith("{")) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonrepair(trimmed));
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+
+  const obj = parsed as Record<string, unknown>;
+  const task = obj.task;
+  const isOrchestratorContext =
+    typeof task === "string" &&
+    (typeof obj.active_command === "string" ||
+      typeof obj.current_output_frame === "string");
+  if (!isOrchestratorContext) return null;
+
+  // task 是固定模板（"The orchestrator executed this command…\n\nReason:\n<原因>\n\nExpected duration: …"），
+  // 原因段才是意图核心，命令/输出帧一律丢弃。
+  const reasonMatch = task.match(
+    /Reason\s*:\s*([\s\S]*?)(?=\n\s*(?:Expected duration|$))/i,
+  );
+  const reason = reasonMatch?.[1]?.trim();
+  if (reason) return reason;
+
+  // 无 Reason 段时退回 task 本体，剥掉 orchestrator 模板前缀/尾部。
+  return task
+    .replace(
+      /^The orchestrator executed this command for the reason given below\.\s*/i,
+      "",
+    )
+    .replace(/\n\s*Expected duration:[\s\S]*$/, "")
+    .trim();
+}
+
 export async function capturePromptSample(
   virtualKey: Pick<
     VirtualKey,
@@ -141,12 +185,17 @@ export async function capturePromptSample(
   const intentText = stripConversationTurns(signal.intentText).trim();
   if (!intentText) return;
 
+  // orchestrator 上下文：仅保留提取出的意图；提取不到则跳过，避免把命令回显示入库。
+  const orchestratorIntent = extractOrchestratorIntent(intentText);
+  const finalIntent = orchestratorIntent === null ? intentText : orchestratorIntent;
+  if (!finalIntent) return;
+
   await promptSampleDb.create({
     id: nanoid(),
     virtual_key_id: virtualKey.id,
     model: typeof body.model === "string" ? body.model : "unknown",
     protocol,
-    intent_text: intentText,
+    intent_text: finalIntent,
     prompt_tokens: signal.stats?.promptTokens || 0,
     intent_truncated: signal.stats?.intentTruncated ? 1 : 0,
     created_at: Date.now(),
