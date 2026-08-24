@@ -2,7 +2,11 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { memoryLogger } from '../../services/logger.js';
 import { upstreamFetch } from '../../utils/upstream-fetch.js';
 
-const MODEL_ATTRIBUTES_URL = 'https://models.dev/models.json';
+// api.json is the full models.dev catalog (all providers, nested, with
+// cost/reasoning_options). models.json is only a curated first-party subset
+// (~350 models, flat "provider/id" keys) — clients expecting the complete
+// catalog (e.g. pi's llm-gateway extension) came up short on it.
+const MODEL_ATTRIBUTES_URL = 'https://models.dev/api.json';
 
 export async function getCloudModelAttributesHandler(
   _request: FastifyRequest,

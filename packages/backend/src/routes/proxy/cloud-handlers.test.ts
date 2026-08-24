@@ -59,7 +59,7 @@ describe('getCloudModelAttributesHandler', () => {
 
     await getCloudModelAttributesHandler({} as FastifyRequest, reply);
 
-    expect(vi.mocked(upstreamFetch)).toHaveBeenCalledWith('https://models.dev/models.json', {
+    expect(vi.mocked(upstreamFetch)).toHaveBeenCalledWith('https://models.dev/api.json', {
       method: 'GET',
       headers: {
         accept: 'application/json',
