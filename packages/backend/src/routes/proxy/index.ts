@@ -1,6 +1,7 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, RouteHandlerMethod } from 'fastify';
 import { memoryLogger } from '../../services/logger.js';
 import { getModelsHandler, getModelInfoHandler } from './model-handlers.js';
+import { getCloudModelAttributesHandler } from './cloud-handlers.js';
 import { startCacheStatsLogger } from './cache.js';
 
 interface RouteConfig {
@@ -27,7 +28,7 @@ const API_GROUPS: Record<string, ApiGroup> = {
 function registerApiGroup(
   fastify: FastifyInstance,
   group: ApiGroup,
-  handlers: Record<string, any>
+  handlers: Record<string, RouteHandlerMethod>
 ) {
   group.routes.forEach(route => {
     const handler = handlers[route.handler];
@@ -48,12 +49,13 @@ function registerApiGroup(
 }
 
 export async function proxyRoutes(fastify: FastifyInstance) {
-  const handlers: Record<string, any> = {
+  const handlers: Record<string, RouteHandlerMethod> = {
     getModels: getModelsHandler,
     getModelInfo: getModelInfoHandler,
   };
 
   registerApiGroup(fastify, API_GROUPS.models, handlers);
+  fastify.get('/v1/cloud/model-attributes', getCloudModelAttributesHandler);
 
   startCacheStatsLogger();
 }
