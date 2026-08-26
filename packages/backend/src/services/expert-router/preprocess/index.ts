@@ -13,6 +13,10 @@ export interface PreprocessOptions {
 }
 
 /** Hard cap on intent text length fed to classifiers (matches local ONNX max_tokens default). */
+// Classify-side preprocessing stays on the main thread by design: the intent
+// text is hard-capped here before tokenize/ONNX, bounding tokenizer JS cost to
+// a few ms (ONNX inference itself is native-async). Revisit worker offload of
+// the whole classifyWithLocalOnnx only if profiling shows this budget blown.
 const INTENT_TEXT_TOKEN_LIMIT = 1024;
 
 export class SignalBuilder {

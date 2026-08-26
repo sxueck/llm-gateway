@@ -11,11 +11,21 @@ import { extractIp } from '../../utils/ip.js';
 import { getRequestUserAgent } from '../../utils/http.js';
 import { requestHeaderForwardingService } from '../../services/request-header-forwarding.js';
 import { upstreamFetch } from '../../utils/upstream-fetch.js';
+import { BoundedChunkRecorder } from '../../utils/bounded-chunk-recorder.js';
 
 const DEFAULT_GEMINI_EMPTY_RETRY_LIMIT = Math.max(
   parseInt(process.env.GEMINI_STREAM_EMPTY_RETRY_LIMIT || '1', 10),
   0
 );
+
+/** Build the native passthrough upstream URL, surfacing malformed baseUrl clearly. */
+function buildNativeUpstreamUrl(upstreamBase: string, path: string): URL {
+  try {
+    return new URL(upstreamBase + path);
+  } catch {
+    throw new Error(`Gemini native baseUrl is not a valid URL: "${upstreamBase}"`);
+  }
+}
 
 function getGeminiEmptyRetryLimit(protocolConfig: ProtocolConfig): number {
   const configured = protocolConfig.modelAttributes?.gemini_empty_retry_limit;
@@ -206,7 +216,7 @@ export async function handleGeminiNativeNonStreamRequest(
     throw new Error('Gemini native baseUrl is not configured');
   }
   const upstreamPath = path.startsWith('/') ? path : '/' + path;
-  const url = new URL(upstreamBase + upstreamPath);
+  const url = buildNativeUpstreamUrl(upstreamBase, upstreamPath);
   url.searchParams.set('key', protocolConfig.apiKey);
 
   const submittedModelIdentifier = protocolConfig.model;
@@ -268,6 +278,8 @@ export async function handleGeminiNativeNonStreamRequest(
         );
       }
     } catch {
+      // Best-effort usage extraction: a non-JSON body or a counting failure
+      // must never break the proxied response, so keep defaults and continue.
     }
 
     const shouldLogBody = shouldLogRequestBody(virtualKey);
@@ -368,7 +380,7 @@ export async function handleGeminiNativeStreamRequest(
     throw new Error('Gemini native baseUrl is not configured');
   }
   const upstreamPath = path.startsWith('/') ? path : '/' + path;
-  const url = new URL(upstreamBase + upstreamPath);
+  const url = buildNativeUpstreamUrl(upstreamBase, upstreamPath);
   url.searchParams.set('key', protocolConfig.apiKey);
   url.searchParams.set('alt', 'sse');
 
@@ -665,7 +677,7 @@ async function streamGeminiAttempt(
   }
 
   const decoder = new TextDecoder();
-  const streamChunks: string[] = [];
+  const streamChunks = new BoundedChunkRecorder();
   const pendingChunks: string[] = [];
   let buffering = true;
   let hasAssistantContent = false;
@@ -698,7 +710,7 @@ async function streamGeminiAttempt(
   };
 
   const enqueueChunk = async (chunk: string) => {
-    streamChunks.push(chunk);
+    streamChunks.record(chunk);
     if (buffering) {
       pendingChunks.push(chunk);
     } else {
@@ -798,7 +810,7 @@ async function streamGeminiAttempt(
   }
 
   return {
-    streamChunks,
+    streamChunks: streamChunks.chunks,
     totalBytes,
     hasAssistantContent,
     bypassGuard,

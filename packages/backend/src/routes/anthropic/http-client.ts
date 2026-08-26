@@ -12,6 +12,7 @@ import { upstreamFetch } from '../../utils/upstream-fetch.js';
 import { upstreamSslConfigService } from '../../services/upstream-ssl-config.js';
 import { getProxyConfigFromEnv, getProxyUrlForTarget } from '../../utils/upstream-proxy.js';
 import { normalizeAnthropicRequest } from '../../utils/anthropic-request-normalizer.js';
+import { BoundedChunkRecorder } from '../../utils/bounded-chunk-recorder.js';
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 
@@ -321,7 +322,7 @@ export async function consumeAnthropicStreamAttempt(
   let buffering = true;
   const pendingChunks: string[] = [];
   let hasAssistantContent = false;
-  const streamChunks: string[] = [];
+  const streamChunks = new BoundedChunkRecorder();
 
   // Initialize PII stream restorer if context is provided
   const piiRestorer = piiCtx ? new PiiStreamRestorer(piiCtx) : null;
@@ -333,7 +334,7 @@ export async function consumeAnthropicStreamAttempt(
     ensureSseHeaders(reply);
     for (const chunk of pendingChunks) {
       reply.raw.write(chunk);
-      streamChunks.push(chunk);
+      streamChunks.record(chunk);
     }
     pendingChunks.length = 0;
   };
@@ -346,7 +347,7 @@ export async function consumeAnthropicStreamAttempt(
 
     ensureSseHeaders(reply);
     reply.raw.write(chunk);
-    streamChunks.push(chunk);
+    streamChunks.record(chunk);
   };
 
   const flushPiiKey = (key: string) => {
@@ -475,7 +476,7 @@ export async function consumeAnthropicStreamAttempt(
     promptTokens,
     completionTokens,
     hasAssistantContent,
-    streamChunks,
+    streamChunks: streamChunks.chunks,
   };
 }
 

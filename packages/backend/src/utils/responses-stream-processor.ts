@@ -1,6 +1,7 @@
 import type { FastifyReply } from 'fastify';
 
 import { normalizeUsageCounts } from './usage-normalizer.js';
+import { BoundedChunkRecorder } from './bounded-chunk-recorder.js';
 import { createInitialAggregate, processResponsesEvent, type ResponsesAggregate } from './responses-parser.js';
 import { EmptyOutputError } from '../errors/empty-output-error.js';
 
@@ -98,7 +99,7 @@ interface AttemptResult {
 }
 
 class SseWriter {
-  private readonly chunks: string[] = [];
+  private readonly recorded = new BoundedChunkRecorder();
   private readonly pending: string[] = [];
   private phase: AttemptPhase = 'buffering';
 
@@ -114,7 +115,7 @@ class SseWriter {
   }
 
   get recordedChunks(): string[] {
-    return this.chunks;
+    return this.recorded.chunks;
   }
 
   get isBuffering(): boolean {
@@ -123,7 +124,7 @@ class SseWriter {
 
   /** Write a frame directly to the client (handles backpressure). */
   async write(data: string): Promise<void> {
-    this.chunks.push(data);
+    this.recorded.record(data);
     this.ensureHeadersSent();
     if (!this.reply.raw.write(data)) {
       await new Promise<void>((resolve) => this.reply.raw.once('drain', resolve));
@@ -221,6 +222,8 @@ async function runStreamAttempt(
 
   let stream: AsyncIterable<any>;
   try {
+    // SAFETY: OpenAI SDK returns Stream<ChatCompletionChunk>-like async iterable in streaming mode;
+    // its generated union type doesn't narrow here, but every consumer iterates SSE chunk objects.
     stream = (await client.responses.create(
       requestParams,
       attemptUpstreamRequestOptions

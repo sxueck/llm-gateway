@@ -2,6 +2,7 @@ import type { FastifyReply } from 'fastify';
 
 import { extractReasoningFromChoice } from './request-logger.js';
 import { normalizeUsageCounts } from './usage-normalizer.js';
+import { BoundedChunkRecorder } from './bounded-chunk-recorder.js';
 
 import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-client.js';
 
@@ -68,7 +69,7 @@ export async function processOpenAIChatCompletionStreamToSse(
   let totalTokens = 0;
   let cachedTokens = 0;
   let tffbMs: number | undefined;
-  const streamChunks: string[] = [];
+  const chunkRecorder = new BoundedChunkRecorder();
   let reasoningContent = '';
   let thinkingBlocks: ThinkingBlock[] = [];
   let toolCalls: any[] = [];
@@ -131,7 +132,7 @@ export async function processOpenAIChatCompletionStreamToSse(
       if (!(skipUsageChunks && isUsageOnlyChunk(chunk))) {
         const chunkData = JSON.stringify(chunk);
         const sseData = `data: ${chunkData}\n\n`;
-        streamChunks.push(sseData);
+        chunkRecorder.record(sseData);
 
         if (!reply.raw.write(sseData)) {
           await new Promise<void>((resolve) => {
@@ -206,7 +207,7 @@ export async function processOpenAIChatCompletionStreamToSse(
       };
 
       const flushData = `data: ${JSON.stringify(flushChunk)}\n\n`;
-      streamChunks.push(flushData);
+      chunkRecorder.record(flushData);
       if (!reply.raw.write(flushData)) {
         await new Promise<void>((resolve) => {
           reply.raw.once('drain', resolve);
@@ -225,7 +226,7 @@ export async function processOpenAIChatCompletionStreamToSse(
     completionTokens,
     totalTokens,
     cachedTokens,
-    streamChunks,
+    streamChunks: chunkRecorder.chunks,
     tffbMs,
     reasoningContent: reasoningContent || undefined,
     thinkingBlocks: thinkingBlocks.length > 0 ? thinkingBlocks : undefined,

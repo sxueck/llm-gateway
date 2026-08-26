@@ -10,6 +10,7 @@ import { normalizeUsageCounts } from '../utils/usage-normalizer.js';
 import { stripFieldRecursively } from '../utils/request-logger.js';
 import { TERMINAL_EVENT_TYPES } from './responses-transport/constants.js';
 import { getProxyConfigFromEnv, getProxyUrlForTarget } from '../utils/upstream-proxy.js';
+import { BoundedChunkRecorder } from '../utils/bounded-chunk-recorder.js';
 
 const WS_CONNECT_TIMEOUT_MS = 30000;
 
@@ -70,7 +71,7 @@ export async function streamResponsesViaWebSocket(
 
   const startTime = Date.now();
   let tffbMs: number | undefined;
-  const streamChunks: string[] = [];
+  const streamChunks = new BoundedChunkRecorder();
   let promptTokens = 0;
   let completionTokens = 0;
   let totalTokens = 0;
@@ -98,7 +99,9 @@ export async function streamResponsesViaWebSocket(
     closed = true;
     try {
       upstreamSocket.close(code, reason);
-    } catch (_e) {}
+    } catch (_e) {
+      // Best-effort teardown: socket may already be closed/destroyed.
+    }
   }
 
   function writeSse(event: any) {
@@ -106,7 +109,7 @@ export async function streamResponsesViaWebSocket(
     const eventName = typeof event?.type === 'string' ? event.type : undefined;
     const prefix = eventName ? `event: ${eventName}\n` : '';
     const data = `${prefix}data: ${JSON.stringify(event)}\n\n`;
-    streamChunks.push(data);
+    streamChunks.record(data);
     reply.raw.write(data);
   }
 
@@ -156,14 +159,16 @@ export async function streamResponsesViaWebSocket(
       let event: any;
       try {
         event = JSON.parse(messageStr);
-      } catch (e) {
+      } catch {
         memoryLogger.warn(`${logPrefix} | Invalid JSON from upstream WS: ${messageStr.slice(0, 200)}`, 'ResponsesWS');
         return;
       }
 
       try {
         stripFieldRecursively(event, 'instructions');
-      } catch (_e) {}
+      } catch {
+        // Cosmetic field strip must never drop an upstream event.
+      }
 
       writeSse(event);
 
@@ -193,7 +198,7 @@ export async function streamResponsesViaWebSocket(
           completionTokens,
           totalTokens,
           cachedTokens,
-          streamChunks,
+          streamChunks: streamChunks.chunks,
           tffbMs,
         });
       }
@@ -222,7 +227,7 @@ export async function streamResponsesViaWebSocket(
           completionTokens,
           totalTokens,
           cachedTokens,
-          streamChunks,
+          streamChunks: streamChunks.chunks,
           tffbMs,
         });
       }
