@@ -82,7 +82,12 @@
     >
       <div class="modal-content-wrapper">
         <div class="modal-content">
-          <ProviderForm ref="formRef" v-model="formValue" :editing-id="editingId" />
+          <ProviderForm
+            ref="formRef"
+            v-model="formValue"
+            :editing-id="editingId"
+            :existing-model-identifiers="existingModelIdentifiers"
+          />
         </div>
       </div>
       <template #footer>
@@ -192,6 +197,12 @@ const exportOptions = [
 ]
 
 const formValue = ref<ProviderFormValue>(createDefaultProviderForm())
+
+const existingModelIdentifiers = computed(() =>
+  modelStore.models
+    .filter(model => model.providerId === editingId.value)
+    .map(model => model.modelIdentifier)
+)
 
 const originalApiKey = ref('')
 const apiKeyChanged = ref(false)
@@ -341,7 +352,10 @@ async function handleEdit(provider: Provider) {
   apiKeyChanged.value = false
 
   try {
-    const fullProvider = await providerApi.getById(provider.id, true)
+    const [fullProvider] = await Promise.all([
+      providerApi.getById(provider.id, true),
+      modelStore.fetchModels(),
+    ])
     originalApiKey.value = fullProvider.apiKey || ''
 
     formValue.value = {

@@ -270,7 +270,7 @@
                   size="small"
                 />
                 <n-text depth="3" style="font-size: 11px">
-                  已发现 {{ availableModels.length }} 个模型，选中 {{ selectedModels.length }} 个
+                  已发现 {{ availableModels.length }} 个模型，已添加 {{ addedModelCount }} 个，当前选中 {{ selectedModels.length }} 个
                 </n-text>
               </n-space>
             </n-form-item>
@@ -337,6 +337,7 @@ interface Props {
     enabled: boolean;
   };
   editingId?: string | null;
+  existingModelIdentifiers?: string[];
 }
 
 const props = defineProps<Props>();
@@ -435,6 +436,11 @@ const modelOptions = computed(() => {
     label: model.name,
     value: model.id,
   }));
+});
+
+const addedModelCount = computed(() => {
+  const existingModelIdentifiers = new Set(props.existingModelIdentifiers ?? []);
+  return availableModels.value.filter(model => existingModelIdentifiers.has(model.id)).length;
 });
 
 const rules = {
@@ -570,7 +576,10 @@ async function handleFetchModels() {
 
     if (result.success) {
       availableModels.value = result.models;
-      selectedModels.value = [];
+      const existingModelIdentifiers = new Set(props.existingModelIdentifiers ?? []);
+      selectedModels.value = result.models
+        .filter(model => existingModelIdentifiers.has(model.id))
+        .map(model => model.id);
       fetchError.value = '';
       message.success(result.message);
     } else {
