@@ -183,7 +183,7 @@ function applyGeminiNativeFields(options: any, body: any): void {
 
 /** Filter upstream response headers (strip hop-by-hop + content-length/type). */
 function filterResponseHeaders(
-  headers: Record<string, any>,
+  headers: Record<string, string | string[]>,
   stripContentType = false
 ): Record<string, string> {
   const result: Record<string, string> = {};
@@ -357,7 +357,7 @@ export function createOpenAIProxyHandler() {
 
         if (virtualKey.dynamic_compression_enabled === 1 && shouldCompressMessages) {
           try {
-            const { messages: compressedMessages, stats } = messageCompressor.compressMessages(
+            const { messages: compressedMessages, stats } = await messageCompressor.compressMessages(
               (request.body as any).messages
             );
 

@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { memoryLogger } from './logger.js';
-import { countTokensForMessages } from './token-counter.js';
+import { countMessagesCooperatively } from './token-counter.js';
 
 // 配置常量
 const MIN_CODE_LENGTH = parseInt(process.env.MIN_CODE_LENGTH || '100', 10);
@@ -30,39 +30,60 @@ interface CompressionStats {
   compressionRatio: number;
 }
 
+export interface CompressionTiming {
+  preprocessMs: number;
+  tokenCountMs: number;
+  totalMs: number;
+}
+
+export interface CompressionResult {
+  messages: MessageContent[];
+  stats: CompressionStats;
+  timing: CompressionTiming;
+}
+
 export class MessageCompressor {
   private readonly MIN_CODE_LENGTH = MIN_CODE_LENGTH;
   private readonly MIN_TEXT_LENGTH = MIN_TEXT_LENGTH;
   private readonly KEEP_RECENT_MESSAGES = KEEP_RECENT_MESSAGES;
 
-  compressMessages(messages: MessageContent[]): { messages: MessageContent[]; stats: CompressionStats } {
+  async compressMessages(messages: MessageContent[]): Promise<CompressionResult> {
+    const startTime = performance.now();
     // 如果消息数量不足以进行压缩（需要至少比保留数量多1条），则直接返回
     if (!messages || messages.length <= this.KEEP_RECENT_MESSAGES) {
       return {
         messages,
-        stats: this.createEmptyStats(messages.length)
+        stats: this.createEmptyStats(messages.length),
+        timing: { preprocessMs: 0, tokenCountMs: 0, totalMs: performance.now() - startTime }
       };
     }
 
-    const startTime = Date.now();
     const originalMessages = [...messages];
     const recentMessages = messages.slice(-this.KEEP_RECENT_MESSAGES);
     const historyMessages = messages.slice(0, -this.KEEP_RECENT_MESSAGES);
 
+    const preprocessStart = performance.now();
     const fingerprints = this.extractFingerprints(historyMessages);
     const compressedHistory = this.compressHistoryMessages(historyMessages, fingerprints);
     const compressedMessages = [...compressedHistory, ...recentMessages];
+    const preprocessMs = performance.now() - preprocessStart;
 
-    const stats = this.calculateStats(originalMessages, compressedMessages, fingerprints);
-    const duration = Date.now() - startTime;
+    const tokenCountStart = performance.now();
+    const stats = await this.calculateStats(originalMessages, compressedMessages, fingerprints);
+    const tokenCountMs = performance.now() - tokenCountStart;
+    const totalMs = performance.now() - startTime;
 
     memoryLogger.info(
       `消息压缩完成 | 原始: ${stats.originalMessageCount} 条 | 压缩后: ${stats.compressedMessageCount} 条 | ` +
-      `去重: ${stats.duplicatesFound} 个 | Token保留率: ${(stats.compressionRatio * 100).toFixed(1)}% | 耗时: ${duration}ms`,
+      `去重: ${stats.duplicatesFound} 个 | Token保留率: ${(stats.compressionRatio * 100).toFixed(1)}% | 耗时: ${totalMs.toFixed(1)}ms`,
       'MessageCompressor'
     );
 
-    return { messages: compressedMessages, stats };
+    return {
+      messages: compressedMessages,
+      stats,
+      timing: { preprocessMs, tokenCountMs, totalMs }
+    };
   }
 
   private extractFingerprints(messages: MessageContent[]): Map<string, ContentFingerprint[]> {
@@ -376,13 +397,19 @@ export class MessageCompressor {
     map.set(hash, existing);
   }
 
-  private calculateStats(
+  // Both token counts run through the cooperative encoder: compression fires
+  // precisely on long histories, so synchronous full-history encodes here were
+  // the largest remaining event-loop stall in the request path. The two
+  // counters yield independently and are waited together.
+  private async calculateStats(
     original: MessageContent[],
     compressed: MessageContent[],
     fingerprints: Map<string, ContentFingerprint[]>
-  ): CompressionStats {
-    const originalTokens = this.estimateTokens(original);
-    const compressedTokens = this.estimateTokens(compressed);
+  ): Promise<CompressionStats> {
+    const [originalTokens, compressedTokens] = await Promise.all([
+      countMessagesCooperatively(original),
+      countMessagesCooperatively(compressed),
+    ]);
     
     let duplicatesFound = 0;
     for (const prints of fingerprints.values()) {
@@ -399,10 +426,6 @@ export class MessageCompressor {
       duplicatesFound,
       compressionRatio: compressedTokens / originalTokens
     };
-  }
-
-  private estimateTokens(messages: MessageContent[]): number {
-    return countTokensForMessages(messages);
   }
 
   private createEmptyStats(messageCount: number): CompressionStats {
