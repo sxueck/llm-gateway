@@ -6,19 +6,19 @@ import { countMessagesCooperatively } from './token-counter.js';
 const MIN_CODE_LENGTH = parseInt(process.env.MIN_CODE_LENGTH || '100', 10);
 const MIN_TEXT_LENGTH = parseInt(process.env.MIN_TEXT_LENGTH || '200', 10);
 const KEEP_RECENT_MESSAGES = parseInt(process.env.KEEP_RECENT_MESSAGES || '5', 10);
+// 会话级预压缩缓存：按"首条历史消息哈希"定位会话，命中后仅处理新增消息。
+// 容量与 TTL 防止内存无限增长；进程重启后缓存清空、首次请求全量重建。
+const CACHE_MAX_CONVERSATIONS = parseInt(process.env.MESSAGE_COMPRESSION_CACHE_SIZE || '256', 10);
+const CACHE_TTL_MS = parseInt(process.env.MESSAGE_COMPRESSION_CACHE_TTL_MS || String(30 * 60 * 1000), 10);
+const CACHE_MAX_VARIANTS_PER_KEY = 2;
+
+/** 压缩只作用于历史窗口：最近 KEEP_RECENT_MESSAGES 条始终原样保留（阈值判断复用同一口径） */
+export const KEEP_RECENT_WINDOW = KEEP_RECENT_MESSAGES;
 
 interface MessageContent {
   role: string;
   content: string | any;
   [key: string]: any;
-}
-
-interface ContentFingerprint {
-  hash: string;
-  content: string;
-  messageIndex: number;
-  contentType: 'code' | 'text-block';
-  length: number;
 }
 
 interface CompressionStats {
@@ -36,10 +36,39 @@ export interface CompressionTiming {
   totalMs: number;
 }
 
+export interface CompressionCacheInfo {
+  hit: boolean;
+  reusedMessages: number;
+}
+
 export interface CompressionResult {
   messages: MessageContent[];
   stats: CompressionStats;
   timing: CompressionTiming;
+  cache: CompressionCacheInfo;
+}
+
+/**
+ * 单个会话的增量压缩状态。
+ *
+ * 关键不变量：重复块保留"首次出现"的完整内容，后续出现替换为 [... #首次出现索引]。
+ * 因此每条历史消息的压缩形态只取决于它自身和更早的消息（历史是前缀切片），
+ * 追加式对话下压缩结果逐字节稳定 —— 上游 provider 的前缀缓存不会被逐轮破坏。
+ */
+interface ConversationCacheEntry {
+  key: string;
+  /** 每条原始历史消息的哈希，用于前缀校验（客户端编辑历史时缓存失效） */
+  messageHashes: string[];
+  /** 与 messageHashes 对齐的压缩后历史消息 */
+  compressedMessages: MessageContent[];
+  /** blockHash -> 首次出现的历史索引，append-only，一旦写入不再变化 */
+  firstOccurrences: Map<string, number>;
+  duplicatesFound: number;
+  /** 历史部分的逐消息 token 帧总数（不含数组级 +2 修正），供增量统计复用 */
+  originalHistoryFrames: number;
+  compressedHistoryFrames: number;
+  /** 绝对时间戳，TTL/LRU 依据 */
+  lastAccess: number;
 }
 
 export class MessageCompressor {
@@ -47,152 +76,293 @@ export class MessageCompressor {
   private readonly MIN_TEXT_LENGTH = MIN_TEXT_LENGTH;
   private readonly KEEP_RECENT_MESSAGES = KEEP_RECENT_MESSAGES;
 
+  private readonly cache = new Map<string, ConversationCacheEntry[]>();
+  /** 同一会话的并发请求串行化，避免增量写入交错导致缓存状态错乱 */
+  private readonly locks = new Map<string, Promise<void>>();
+  private readonly configFingerprint = `${MIN_CODE_LENGTH}|${MIN_TEXT_LENGTH}|${KEEP_RECENT_MESSAGES}`;
+
   async compressMessages(messages: MessageContent[]): Promise<CompressionResult> {
     const startTime = performance.now();
     // 如果消息数量不足以进行压缩（需要至少比保留数量多1条），则直接返回
     if (!messages || messages.length <= this.KEEP_RECENT_MESSAGES) {
       return {
         messages,
-        stats: this.createEmptyStats(messages.length),
-        timing: { preprocessMs: 0, tokenCountMs: 0, totalMs: performance.now() - startTime }
+        stats: this.createEmptyStats(messages ? messages.length : 0),
+        timing: { preprocessMs: 0, tokenCountMs: 0, totalMs: performance.now() - startTime },
+        cache: { hit: false, reusedMessages: 0 }
       };
     }
 
-    const originalMessages = [...messages];
     const recentMessages = messages.slice(-this.KEEP_RECENT_MESSAGES);
-    const historyMessages = messages.slice(0, -this.KEEP_RECENT_MESSAGES);
+    const historyMessages = messages.slice(0, messages.length - this.KEEP_RECENT_MESSAGES);
+    const historyHashes = historyMessages.map(msg => this.generateHash(JSON.stringify(msg)));
+    const cacheKey = this.generateHash(`${this.configFingerprint}\n${historyHashes[0]}`);
 
-    const preprocessStart = performance.now();
-    const fingerprints = this.extractFingerprints(historyMessages);
-    const compressedHistory = this.compressHistoryMessages(historyMessages, fingerprints);
-    const compressedMessages = [...compressedHistory, ...recentMessages];
-    const preprocessMs = performance.now() - preprocessStart;
+    const result = await this.withLock(cacheKey, async () => {
+      const preprocessStart = performance.now();
 
-    const tokenCountStart = performance.now();
-    const stats = await this.calculateStats(originalMessages, compressedMessages, fingerprints);
-    const tokenCountMs = performance.now() - tokenCountStart;
-    const totalMs = performance.now() - startTime;
+      let entry = this.findReusableEntry(cacheKey, historyHashes);
+      const reusedMessages = entry ? entry.messageHashes.length : 0;
+      if (entry) {
+        entry.lastAccess = Date.now();
+      } else {
+        entry = this.createEntry(cacheKey);
+        this.storeEntry(cacheKey, entry);
+      }
+
+      // 只处理缓存未覆盖的增量历史消息；历史是前缀切片，且压缩形态只依赖更早
+      // 的消息，所以增量结果与全量重算逐字节一致。
+      const newMessages = historyMessages.slice(reusedMessages);
+      const newCompressed = this.compressNewHistoryMessages(
+        entry,
+        newMessages,
+        reusedMessages,
+        historyHashes.slice(reusedMessages)
+      );
+
+      const compressedMessages = [...entry.compressedMessages, ...recentMessages];
+      const preprocessMs = performance.now() - preprocessStart;
+
+      const tokenCountStart = performance.now();
+      const stats = await this.calculateStats(entry, newMessages, newCompressed, recentMessages, messages.length);
+      const tokenCountMs = performance.now() - tokenCountStart;
+
+      return {
+        messages: compressedMessages,
+        stats,
+        timing: { preprocessMs, tokenCountMs, totalMs: performance.now() - startTime },
+        cache: { hit: reusedMessages > 0, reusedMessages }
+      };
+    });
 
     memoryLogger.info(
-      `消息压缩完成 | 原始: ${stats.originalMessageCount} 条 | 压缩后: ${stats.compressedMessageCount} 条 | ` +
-      `去重: ${stats.duplicatesFound} 个 | Token保留率: ${(stats.compressionRatio * 100).toFixed(1)}% | 耗时: ${totalMs.toFixed(1)}ms`,
+      `消息压缩完成 | 原始: ${result.stats.originalMessageCount} 条 | 压缩后: ${result.stats.compressedMessageCount} 条 | ` +
+      `去重: ${result.stats.duplicatesFound} 个 | Token保留率: ${(result.stats.compressionRatio * 100).toFixed(1)}% | ` +
+      `缓存: ${result.cache.hit ? `命中,复用 ${result.cache.reusedMessages} 条历史` : '未命中'} | 耗时: ${result.timing.totalMs.toFixed(1)}ms`,
       'MessageCompressor'
     );
 
+    return result;
+  }
+
+  private createEntry(key: string): ConversationCacheEntry {
     return {
-      messages: compressedMessages,
-      stats,
-      timing: { preprocessMs, tokenCountMs, totalMs }
+      key,
+      messageHashes: [],
+      compressedMessages: [],
+      firstOccurrences: new Map(),
+      duplicatesFound: 0,
+      originalHistoryFrames: 0,
+      compressedHistoryFrames: 0,
+      lastAccess: Date.now()
     };
   }
 
-  private extractFingerprints(messages: MessageContent[]): Map<string, ContentFingerprint[]> {
-    const fingerprintMap = new Map<string, ContentFingerprint[]>();
+  /** 找到与当前历史前缀匹配的缓存条目；顺带清理过期条目 */
+  private findReusableEntry(key: string, historyHashes: string[]): ConversationCacheEntry | undefined {
+    const bucket = this.cache.get(key);
+    if (!bucket) return undefined;
 
-    messages.forEach((msg, index) => {
-      const textContent = this.extractTextContent(msg.content);
-      if (!textContent) return;
-
-      const codeBlocks = this.extractCodeBlocks(textContent);
-      codeBlocks.forEach(code => {
-        if (code.length >= this.MIN_CODE_LENGTH) {
-          const hash = this.generateHash(code);
-          const fingerprint: ContentFingerprint = {
-            hash,
-            content: code,
-            messageIndex: index,
-            contentType: 'code',
-            length: code.length
-          };
-          this.addFingerprint(fingerprintMap, hash, fingerprint);
-        }
-      });
-
-      const textBlocks = this.extractTextBlocks(textContent);
-      textBlocks.forEach(block => {
-        if (block.length >= this.MIN_TEXT_LENGTH) {
-          const hash = this.generateHash(block);
-          const fingerprint: ContentFingerprint = {
-            hash,
-            content: block,
-            messageIndex: index,
-            contentType: 'text-block',
-            length: block.length
-          };
-          this.addFingerprint(fingerprintMap, hash, fingerprint);
-        }
-      });
-    });
-
-    return fingerprintMap;
+    const now = Date.now();
+    for (let i = bucket.length - 1; i >= 0; i--) {
+      if (now - bucket[i].lastAccess > CACHE_TTL_MS) {
+        bucket.splice(i, 1);
+        continue;
+      }
+      if (this.isPrefixMatch(bucket[i].messageHashes, historyHashes)) {
+        return bucket[i];
+      }
+    }
+    if (bucket.length === 0) this.cache.delete(key);
+    return undefined;
   }
 
-  private compressHistoryMessages(
-    messages: MessageContent[],
-    fingerprints: Map<string, ContentFingerprint[]>
-  ): MessageContent[] {
-    const compressedMessages: MessageContent[] = [];
+  private isPrefixMatch(stored: string[], current: string[]): boolean {
+    if (stored.length === 0 || stored.length > current.length) return false;
+    for (let i = 0; i < stored.length; i++) {
+      if (stored[i] !== current[i]) return false;
+    }
+    return true;
+  }
 
-    messages.forEach((msg, index) => {
-      const textContent = this.extractTextContent(msg.content);
-      if (!textContent) {
-        compressedMessages.push(msg);
-        return;
-      }
+  private storeEntry(key: string, entry: ConversationCacheEntry): void {
+    let bucket = this.cache.get(key);
+    if (!bucket) {
+      bucket = [];
+      this.cache.set(key, bucket);
+    }
+    bucket.push(entry);
+    while (bucket.length > CACHE_MAX_VARIANTS_PER_KEY) bucket.shift();
 
-      let compressedContent = textContent;
-      let compressionCount = 0;
-      const replacements: Array<{ content: string; replacement: string; length: number }> = [];
-
-      for (const [, prints] of fingerprints.entries()) {
-        if (prints.length <= 1) continue;
-
-        const currentPrint = prints.find(p => p.messageIndex === index);
-        if (!currentPrint) continue;
-
-        const lastOccurrence = prints[prints.length - 1];
-        if (lastOccurrence.messageIndex === index) continue;
-
-        const referenceMsg = `[... #${lastOccurrence.messageIndex + 1}]`;
-
-        replacements.push({
-          content: currentPrint.content,
-          replacement: referenceMsg,
-          length: currentPrint.content.length
-        });
-      }
-
-      replacements.sort((a, b) => b.length - a.length);
-
-      for (const { content, replacement } of replacements) {
-        if (compressedContent.includes(content)) {
-          compressedContent = compressedContent.replace(content, replacement);
-          compressionCount++;
-
-          memoryLogger.debug(
-            `压缩消息 #${index + 1} | 长度: ${content.length} -> ${replacement.length}`,
-            'MessageCompressor'
-          );
+    // simple: 全局容量超限时 O(n) 扫描逐出最久未用条目，规模 <=256 足够
+    while (this.countEntries() > CACHE_MAX_CONVERSATIONS) {
+      let oldestKey: string | null = null;
+      let oldestIdx = -1;
+      let oldestTs = Infinity;
+      for (const [k, b] of this.cache) {
+        for (let i = 0; i < b.length; i++) {
+          if (b[i].lastAccess < oldestTs) {
+            oldestTs = b[i].lastAccess;
+            oldestKey = k;
+            oldestIdx = i;
+          }
         }
       }
+      if (!oldestKey) break;
+      const bucketToTrim = this.cache.get(oldestKey)!;
+      bucketToTrim.splice(oldestIdx, 1);
+      if (bucketToTrim.length === 0) this.cache.delete(oldestKey);
+    }
+  }
 
-      const finalContent = compressionCount > 0 ? compressedContent : msg.content;
+  private countEntries(): number {
+    let n = 0;
+    for (const bucket of this.cache.values()) n += bucket.length;
+    return n;
+  }
 
-      if (typeof finalContent === 'string' && finalContent.trim().length === 0) {
-        memoryLogger.warn(
-          `压缩后消息 #${index + 1} 内容为空，保留原始消息`,
-          'MessageCompressor'
-        );
-        compressedMessages.push(msg);
-      } else {
-        compressedMessages.push({
-          ...msg,
-          content: finalContent
-        });
-      }
+  private async withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.locks.get(key) ?? Promise.resolve();
+    const run = prev.then(fn);
+    const tail: Promise<void> = run.then(() => undefined, () => undefined);
+    this.locks.set(key, tail);
+    void tail.then(() => {
+      if (this.locks.get(key) === tail) this.locks.delete(key);
+    });
+    return run;
+  }
+
+  /**
+   * 增量压缩新进入历史窗口的消息，并提交到缓存条目。
+   * 同步执行（无 await），配合外层 per-key 锁保证状态一致性。
+   */
+  private compressNewHistoryMessages(
+    entry: ConversationCacheEntry,
+    newMessages: MessageContent[],
+    startIndex: number,
+    newHashes: string[]
+  ): MessageContent[] {
+    const compressed: MessageContent[] = [];
+    let duplicates = 0;
+
+    newMessages.forEach((msg, offset) => {
+      const index = startIndex + offset;
+      const { message, duplicatesFound } = this.compressSingleMessage(msg, index, entry.firstOccurrences);
+      duplicates += duplicatesFound;
+      compressed.push(message);
     });
 
-    return compressedMessages;
+    entry.messageHashes.push(...newHashes);
+    entry.compressedMessages.push(...compressed);
+    entry.duplicatesFound += duplicates;
+    return compressed;
+  }
+
+  /**
+   * 压缩单条消息：提取代码块/文本块，首次出现的块登记索引并保留原文，
+   * 重复块替换为指向首次出现的引用 [... #n]。
+   * 数组 content 按文本 part 逐段替换，图片等非文本 part 原样保留。
+   */
+  private compressSingleMessage(
+    msg: MessageContent,
+    index: number,
+    firstOccurrences: Map<string, number>
+  ): { message: MessageContent; duplicatesFound: number } {
+    if (typeof msg.content === 'string') {
+      if (!msg.content) return { message: msg, duplicatesFound: 0 };
+
+      const replacements = this.collectReplacements(msg.content, index, firstOccurrences);
+      let out = msg.content;
+      for (const { content, replacement } of replacements) {
+        if (out.includes(content)) out = out.replace(content, replacement);
+      }
+      if (out === msg.content) return { message: msg, duplicatesFound: replacements.length };
+
+      if (out.trim().length === 0) {
+        memoryLogger.warn(`压缩后消息 #${index + 1} 内容为空，保留原始消息`, 'MessageCompressor');
+        return { message: msg, duplicatesFound: replacements.length };
+      }
+      if (replacements.length > 0) {
+        memoryLogger.debug(`压缩消息 #${index + 1} | 替换 ${replacements.length} 个重复块`, 'MessageCompressor');
+      }
+      return { message: { ...msg, content: out }, duplicatesFound: replacements.length };
+    }
+
+    if (Array.isArray(msg.content)) {
+      let changed = false;
+      let duplicatesFound = 0;
+      const newParts = msg.content.map(part => {
+        if (!part || typeof part !== 'object' || part.type !== 'text' || typeof part.text !== 'string') {
+          return part;
+        }
+        const replacements = this.collectReplacements(part.text, index, firstOccurrences);
+        duplicatesFound += replacements.length;
+        let out = part.text;
+        for (const { content, replacement } of replacements) {
+          if (out.includes(content)) out = out.replace(content, replacement);
+        }
+        if (out === part.text) return part;
+        changed = true;
+        return { ...part, text: out };
+      });
+      if (!changed) return { message: msg, duplicatesFound };
+
+      // 所有文本 part 都被压空时保留原始消息，避免丢失非文本内容
+      const textParts = newParts.filter(p => p && p.type === 'text');
+      if (textParts.length > 0 && textParts.every(p => typeof p.text !== 'string' || p.text.trim().length === 0)) {
+        memoryLogger.warn(`压缩后消息 #${index + 1} 文本内容为空，保留原始消息`, 'MessageCompressor');
+        return { message: msg, duplicatesFound };
+      }
+      return { message: { ...msg, content: newParts }, duplicatesFound };
+    }
+
+    // 非法/非标准 content 类型（null、对象等）不做压缩，原样透传
+    return { message: msg, duplicatesFound: 0 };
+  }
+
+  /**
+   * 提取文本中的可压缩块，登记首次出现索引，返回需要替换的重复块列表。
+   * 同一消息内出现的相同块不互相替换（与旧实现一致），只跨消息去重。
+   */
+  private collectReplacements(
+    text: string,
+    index: number,
+    firstOccurrences: Map<string, number>
+  ): Array<{ content: string; replacement: string; length: number }> {
+    const replacements: Array<{ content: string; replacement: string; length: number }> = [];
+    const seenInThisMessage = new Set<string>();
+
+    for (const block of this.extractBlocks(text)) {
+      const hash = this.generateHash(block);
+      if (seenInThisMessage.has(hash)) continue;
+      seenInThisMessage.add(hash);
+
+      const first = firstOccurrences.get(hash);
+      if (first === undefined) {
+        firstOccurrences.set(hash, index);
+      } else if (first < index) {
+        replacements.push({
+          content: block,
+          replacement: `[... #${first + 1}]`,
+          length: block.length
+        });
+      }
+    }
+
+    replacements.sort((a, b) => b.length - a.length);
+    return replacements;
+  }
+
+  /** 提取全部可压缩块：完整围栏代码块 + 内部代码/XML/environment_details 内容 */
+  private extractBlocks(text: string): string[] {
+    const blocks: string[] = [];
+    for (const fenced of this.extractCodeBlocks(text)) {
+      if (fenced.length >= this.MIN_CODE_LENGTH) blocks.push(fenced);
+    }
+    for (const inner of this.extractTextBlocks(text)) {
+      if (inner.length >= this.MIN_TEXT_LENGTH) blocks.push(inner);
+    }
+    return blocks;
   }
 
   /**
@@ -203,7 +373,7 @@ export class MessageCompressor {
     const codeBlocks: string[] = [];
     let i = 0;
     const len = text.length;
-    
+
     while (i < len) {
       const startIdx = text.indexOf('```', i);
       if (startIdx === -1) break;
@@ -213,10 +383,10 @@ export class MessageCompressor {
 
       const codeBlock = text.substring(startIdx, endIdx + 3);
       codeBlocks.push(codeBlock);
-      
+
       i = endIdx + 3;
     }
-    
+
     return codeBlocks;
   }
 
@@ -361,71 +531,46 @@ export class MessageCompressor {
     return sections;
   }
 
-  private extractTextContent(content: string | any): string {
-    if (typeof content === 'string') {
-      return content;
-    }
-
-    if (Array.isArray(content)) {
-      return content
-        .filter(part => part.type === 'text' && part.text)
-        .map(part => part.text)
-        .join('\n');
-    }
-
-    if (content && typeof content === 'object') {
-      return JSON.stringify(content);
-    }
-
-    return '';
-  }
-
   /**
-   * 生成内容哈希 - 完全匹配，不做标准化
+   * 生成内容哈希 - 完全匹配，不做标准化（指纹用途，非安全场景）
    */
   private generateHash(content: string): string {
-    return crypto.createHash('md5').update(content).digest('hex');
+    return crypto.createHash('sha256').update(content).digest('hex');
   }
 
-  private addFingerprint(
-    map: Map<string, ContentFingerprint[]>,
-    hash: string,
-    fingerprint: ContentFingerprint
-  ): void {
-    const existing = map.get(hash) || [];
-    existing.push(fingerprint);
-    map.set(hash, existing);
-  }
-
-  // Both token counts run through the cooperative encoder: compression fires
-  // precisely on long histories, so synchronous full-history encodes here were
-  // the largest remaining event-loop stall in the request path. The two
-  // counters yield independently and are waited together.
+  // Token 计数复用缓存的逐消息帧数，只对增量消息和新近窗口计数；
+  // countMessagesCooperatively 每次调用附带 +2 数组级修正，帧数求和时扣除。
   private async calculateStats(
-    original: MessageContent[],
-    compressed: MessageContent[],
-    fingerprints: Map<string, ContentFingerprint[]>
+    entry: ConversationCacheEntry,
+    newMessages: MessageContent[],
+    newCompressed: MessageContent[],
+    recentMessages: MessageContent[],
+    originalMessageCount: number
   ): Promise<CompressionStats> {
-    const [originalTokens, compressedTokens] = await Promise.all([
-      countMessagesCooperatively(original),
-      countMessagesCooperatively(compressed),
+    const [newOriginalFrames, newCompressedFrames, recentTokens] = await Promise.all([
+      this.countFrames(newMessages),
+      this.countFrames(newCompressed),
+      countMessagesCooperatively(recentMessages)
     ]);
-    
-    let duplicatesFound = 0;
-    for (const prints of fingerprints.values()) {
-      if (prints.length > 1) {
-        duplicatesFound += prints.length - 1;
-      }
-    }
+    entry.originalHistoryFrames += newOriginalFrames;
+    entry.compressedHistoryFrames += newCompressedFrames;
+
+    const originalTokens = entry.originalHistoryFrames + recentTokens;
+    const compressedTokens = entry.compressedHistoryFrames + recentTokens;
 
     return {
-      originalMessageCount: original.length,
-      compressedMessageCount: compressed.length,
+      originalMessageCount,
+      compressedMessageCount: entry.compressedMessages.length + recentMessages.length,
       originalTokenEstimate: originalTokens,
       compressedTokenEstimate: compressedTokens,
-      duplicatesFound,
-      compressionRatio: compressedTokens / originalTokens
+      duplicatesFound: entry.duplicatesFound,
+      compressionRatio: originalTokens > 0 ? compressedTokens / originalTokens : 1
     };
+  }
+
+  private async countFrames(messages: MessageContent[]): Promise<number> {
+    if (!messages || messages.length === 0) return 0;
+    return (await countMessagesCooperatively(messages)) - 2;
   }
 
   private createEmptyStats(messageCount: number): CompressionStats {
@@ -438,9 +583,6 @@ export class MessageCompressor {
       compressionRatio: 1.0
     };
   }
-
-
 }
 
 export const messageCompressor = new MessageCompressor();
-

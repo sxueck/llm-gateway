@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid';
 import { memoryLogger } from '../../services/logger.js';
 import { debugModeService } from '../../services/debug-mode.js';
 import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse, buildFullRequestBody, accumulateResponsesStream, stripFieldRecursively } from '../../utils/request-logger.js';
-import { messageCompressor } from '../../services/message-compressor.js';
+import { messageCompressor, KEEP_RECENT_WINDOW } from '../../services/message-compressor.js';
 import { extractIp } from '../../utils/ip.js';
 import { getRequestUserAgent } from '../../utils/http.js';
 import { makeHttpRequest, makeStreamHttpRequest, makeImageGenerationProxyRequest } from '../proxy/http-client.js';
@@ -25,7 +25,7 @@ import { capturePromptSampleAsync } from '../../services/prompt-capture-service.
 import { applyContextNormalization } from '../../services/context-normalization/index.js';
 import { clampMaxTokensFields, resolveServingLimits } from '../../utils/serving-limits.js';
 
-const MESSAGE_COMPRESSION_MIN_TOKENS = parseInt(process.env.MESSAGE_COMPRESSION_MIN_TOKENS || '2048', 10);
+const MESSAGE_COMPRESSION_MIN_TOKENS = parseInt(process.env.MESSAGE_COMPRESSION_MIN_TOKENS || '8192', 10);
 
 function shouldApplyPiiProtection(
   path: string,
@@ -44,13 +44,18 @@ function shouldApplyPiiProtection(
   return protocolConfig?.protocol === 'openai';
 }
 
-function estimateTokensForMessages(messages: any[]): number {
+/**
+ * 阈值判断只统计历史窗口（去掉最近 KEEP_RECENT_WINDOW 条）：system prompt 若在历史内会计入，
+ * 但最近消息不受压缩影响、不应把短对话撑过阈值。估算口径与 chars/4 对齐。
+ */
+function estimateTokensForMessages(messages: any[], keepRecent: number): number {
   if (!Array.isArray(messages) || messages.length === 0) {
     return 0;
   }
 
+  const history = messages.slice(0, Math.max(0, messages.length - keepRecent));
   let totalChars = 0;
-  for (const message of messages) {
+  for (const message of history) {
     if (!message) continue;
     if (typeof message.content === 'string') {
       totalChars += message.content.length;
@@ -352,12 +357,13 @@ export function createOpenAIProxyHandler() {
       const effectiveMaxCompletionTokens = servingLimits.maxCompletionTokens;
 
       if (currentModel && (request.body as any)?.messages && isChatCompletionsPath(path)) {
-        const approxTokens = estimateTokensForMessages((request.body as any).messages);
+        const approxTokens = estimateTokensForMessages((request.body as any).messages, KEEP_RECENT_WINDOW);
         const shouldCompressMessages = approxTokens >= MESSAGE_COMPRESSION_MIN_TOKENS;
 
         if (virtualKey.dynamic_compression_enabled === 1 && shouldCompressMessages) {
           try {
-            const { messages: compressedMessages, stats } = await messageCompressor.compressMessages(
+            const { messages: compressedMessages, stats, cache: compressionCache } =
+              await messageCompressor.compressMessages(
               (request.body as any).messages
             );
 
@@ -370,7 +376,7 @@ export function createOpenAIProxyHandler() {
 
             memoryLogger.info(
               `消息压缩完成 | 虚拟密钥: ${vkDisplay} | 压缩率: ${(stats.compressionRatio * 100).toFixed(1)}% | ` +
-              `Token 节省: ${compressionStats.savedTokens}`,
+              `Token 节省: ${compressionStats.savedTokens} | 压缩缓存: ${compressionCache.hit ? `命中(复用${compressionCache.reusedMessages}条)` : '未命中'}`,
               'Proxy'
             );
           } catch (compressionError: any) {
@@ -381,7 +387,7 @@ export function createOpenAIProxyHandler() {
           }
         } else if (virtualKey.dynamic_compression_enabled === 1 && !shouldCompressMessages) {
           memoryLogger.debug(
-            `跳过消息压缩 | 虚拟密钥: ${vkDisplay} | 估算 tokens: ${approxTokens} < 阈值 ${MESSAGE_COMPRESSION_MIN_TOKENS}`,
+            `跳过消息压缩 | 虚拟密钥: ${vkDisplay} | 历史估算 tokens: ${approxTokens} < 阈值 ${MESSAGE_COMPRESSION_MIN_TOKENS}`,
             'Proxy'
           );
         }
