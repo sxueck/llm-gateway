@@ -382,6 +382,8 @@ type HealthTargetsResponse = { targets: any[] };
 export interface RoutingTargetStatus {
   targetKey: string;
   circuitState: "CLOSED" | "OPEN" | "HALF_OPEN";
+  /** 熔断预计恢复时刻（epoch ms）；仅 OPEN 且窗口未过期时有值 */
+  closeAt?: number | null;
   isAnonymousAffinitySelected: boolean;
   boundSessionCount: number;
 }

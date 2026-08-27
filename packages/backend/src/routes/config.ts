@@ -1298,6 +1298,7 @@ export async function configRoutes(fastify: FastifyInstance) {
           return {
             targetKey,
             circuitState: circuitBreaker.getState(targetKey),
+            closeAt: circuitBreaker.getCloseAt(targetKey),
             isAnonymousAffinitySelected: anonymousStickyTarget === targetKey,
             boundSessionCount: countExplicitSessionBindings(
               configId,

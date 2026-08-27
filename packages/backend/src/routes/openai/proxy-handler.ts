@@ -16,6 +16,7 @@ import { shouldLogRequestBody, getModelForLogging } from '../proxy/handlers/shar
 import { logApiRequestToDb } from '../../services/api-request-logger.js';
 import { normalizeUsageCounts } from '../../utils/usage-normalizer.js';
 import { isChatCompletionsPath, isResponsesApiPath, isResponsesCompactPath, isEmbeddingsPath, isImagesPath, shouldBypassGatewayCache } from '../../utils/path-detector.js';
+import { extractRateLimitResetAt } from '../../utils/rate-limit-parser.js';
 import {
   maskRequestBodyInPlace,
   restoreResponseBodyInPlace,
@@ -757,23 +758,31 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
     }
  
     return;
-  } catch (streamError: any) {
-    const duration = Date.now() - startTime;
+    } catch (streamError: any) {
+      const duration = Date.now() - startTime;
 
-    if (streamError.name === 'AbortError' || abortController.signal.aborted) {
-      memoryLogger.info('流式请求被客户端取消', 'Proxy');
-      return;
-    }
+      if (streamError.name === 'AbortError' || abortController.signal.aborted) {
+        memoryLogger.info('流式请求被客户端取消', 'Proxy');
+        return;
+      }
 
-    circuitBreaker.recordFailure(circuitBreakerKey, streamError);
+      const statusCode = (streamError?.statusCode || streamError?.status || 500) as number;
+      const rateLimitResetAt = statusCode === 429
+        ? extractRateLimitResetAt(
+            streamError?.errorResponse?.error?.message ?? streamError?.message,
+            streamError?.errorResponse?.headers?.['retry-after']
+          )
+        : null;
 
-    memoryLogger.error(
-      `流式请求失败: ${streamError.message}`,
-      'Proxy',
-      { error: streamError.stack }
-    );
+      circuitBreaker.recordFailure(circuitBreakerKey, streamError, rateLimitResetAt ?? undefined);
 
-    const statusForRetry = (streamError?.statusCode || streamError?.status || 500) as number;
+      memoryLogger.error(
+        `流式请求失败: ${streamError.message}`,
+        'Proxy',
+        { error: streamError.stack }
+      );
+
+      const statusForRetry = statusCode;
     try {
       const { shouldRetrySmartRouting } = await import('../proxy/routing.js');
       if (modelResult?.canRetry && virtualKeyValueParam && shouldRetrySmartRouting(statusForRetry) && !reply.sent && !reply.raw.headersSent) {
@@ -1385,7 +1394,14 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       'Proxy'
     );
   } else {
-    circuitBreaker.recordFailure(circuitBreakerKey, new Error(`HTTP ${response.statusCode}`));
+    const rateLimitResetAt = response.statusCode === 429
+      ? extractRateLimitResetAt(
+          (responseData as any)?.error?.message ?? (responseData as any)?.message,
+          (response.headers as any)?.['retry-after']
+        )
+      : null;
+
+    circuitBreaker.recordFailure(circuitBreakerKey, new Error(`HTTP ${response.statusCode}`), rateLimitResetAt ?? undefined);
 
     const errorStr = JSON.stringify(responseData);
     const truncatedError = errorStr.length > 500

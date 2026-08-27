@@ -20,6 +20,7 @@ import { capturePromptSampleAsync } from '../../services/prompt-capture-service.
 import { applyContextNormalization } from '../../services/context-normalization/index.js';
 import { clampMaxTokensFields, resolveServingLimits } from '../../utils/serving-limits.js';
 import { parseModelAttributes } from '../proxy/model-handlers.js';
+import { extractRateLimitResetAt } from '../../utils/rate-limit-parser.js';
 
 function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
   return !virtualKey.disable_logging;
@@ -351,9 +352,15 @@ async function handleAnthropicNonStreamRequest(
       reply.header('Content-Type', 'application/json');
       return reply.code(response.statusCode).send(responseData);
     } else {
-      circuitBreaker.recordFailure(circuitBreakerKey, new Error(`HTTP ${response.statusCode}`));
-
       const errorData = JSON.parse(response.body);
+      const rateLimitResetAt = response.statusCode === 429
+        ? extractRateLimitResetAt(
+            errorData?.error?.message ?? errorData?.message,
+            (response.headers as any)?.['retry-after']
+          )
+        : null;
+
+      circuitBreaker.recordFailure(circuitBreakerKey, new Error(`HTTP ${response.statusCode}`), rateLimitResetAt ?? undefined);
       const shouldLogBody = shouldLogRequestBody(virtualKey);
       const tokenCount = await calculateTokensIfNeeded(0, requestBody, errorData);
 
@@ -487,9 +494,18 @@ async function handleAnthropicStreamRequest(
       'Anthropic'
     );
     return;
-  } catch (streamError: any) {
-    const duration = Date.now() - startTime;
-    circuitBreaker.recordFailure(circuitBreakerKey, streamError);
+    } catch (streamError: any) {
+      const duration = Date.now() - startTime;
+
+      const statusCode = (streamError?.statusCode || streamError?.status || 500) as number;
+      const rateLimitResetAt = statusCode === 429
+        ? extractRateLimitResetAt(
+            streamError?.errorResponse?.error?.message ?? streamError?.message,
+            streamError?.errorResponse?.headers?.['retry-after']
+          )
+        : null;
+
+      circuitBreaker.recordFailure(circuitBreakerKey, streamError, rateLimitResetAt ?? undefined);
 
     memoryLogger.error(
       `Anthropic 流式请求失败: ${streamError.message}`,

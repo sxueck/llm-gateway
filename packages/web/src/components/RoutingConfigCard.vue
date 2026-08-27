@@ -86,6 +86,7 @@
                   >
                     当前周期选中
                   </n-tag>
+                  <span v-if="getCloseAtText(target)" class="close-at">预计恢复 {{ getCloseAtText(target) }}</span>
                 </div>
               </div>
               <div class="target-meta" v-if="index > 0 && target.onStatusCodes?.length">
@@ -130,8 +131,9 @@
                     type="info"
                     class="status-badge is-secondary"
                   >
-                    当前周期选中
-                  </n-tag>
+                  当前周期选中
+                </n-tag>
+                <span v-if="getCloseAtText(target)" class="close-at">预计恢复 {{ getCloseAtText(target) }}</span>
                 </div>
                 <span class="weight-label">{{ (target.weight * 100).toFixed(0) }}%</span>
               </div>
@@ -181,6 +183,7 @@
                 >
                   当前周期选中
                 </n-tag>
+                <span v-if="getCloseAtText(target)" class="close-at">预计恢复 {{ getCloseAtText(target) }}</span>
               </div>
             </div>
             <div class="target-subline" v-if="getBoundSessionCount(target) > 0">
@@ -274,6 +277,20 @@ function getCircuitStateLabel(state: string): string {
     default:
       return '正常';
   }
+}
+
+function formatCloseAt(ts?: number | null): string | null {
+  if (typeof ts !== 'number' || !Number.isFinite(ts)) return null;
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/** 仅在熔断开启(OPEN)且有预计恢复时刻时返回展示文本 */
+function getCloseAtText(target: any): string | null {
+  const status = getTargetStatus(target);
+  if (!status || status.circuitState !== 'OPEN') return null;
+  return formatCloseAt(status.closeAt);
 }
 
 const enrichedTargets = computed(() => {
@@ -448,6 +465,13 @@ function getWeightColor(weight: number) {
 
 .status-badge.is-secondary {
   opacity: 0.92;
+}
+
+.close-at {
+  font-size: 10px;
+  color: #d03050;
+  font-family: monospace;
+  white-space: nowrap;
 }
 
 .target-subline {

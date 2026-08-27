@@ -21,6 +21,8 @@ interface ProviderStats {
   state: CircuitState;
   halfOpenAttempts: number;
   triggerCount: number;
+  /** 配额耗尽等场景下的绝对锁定到期时刻（ms）；存在时优先于相对 timeout。 */
+  openUntil?: number;
 }
 
 export class CircuitBreaker {
@@ -63,7 +65,8 @@ export class CircuitBreaker {
         lastFailureTime: 0,
         state: CircuitState.CLOSED,
         halfOpenAttempts: 0,
-        triggerCount: 0
+        triggerCount: 0,
+        openUntil: undefined
       });
     }
     return this.stats.get(circuitKey)!;
@@ -77,10 +80,15 @@ export class CircuitBreaker {
     }
 
     if (stats.state === CircuitState.OPEN) {
+      // 配额重置锁定：锁定到指定绝对时刻，未到期则保持打开
+      if (stats.openUntil && stats.openUntil > Date.now()) {
+        return false;
+      }
       const now = Date.now();
       if (now - stats.lastFailureTime >= this.config.timeout) {
         stats.state = CircuitState.HALF_OPEN;
         stats.halfOpenAttempts = 0;
+        stats.openUntil = undefined;
         memoryLogger.info(
           `熔断器进入半开状态 | key: ${circuitKey}`,
           'CircuitBreaker'
@@ -111,6 +119,9 @@ export class CircuitBreaker {
     }
 
     if (stats.state === CircuitState.OPEN) {
+      if (stats.openUntil && stats.openUntil > Date.now()) {
+        return false;
+      }
       return Date.now() - stats.lastFailureTime >= this.config.timeout;
     }
 
@@ -132,6 +143,7 @@ export class CircuitBreaker {
         stats.failures = 0;
         stats.successes = 0;
         stats.halfOpenAttempts = 0;
+        stats.openUntil = undefined;
         memoryLogger.info(
           `熔断器恢复正常 | key: ${circuitKey}`,
           'CircuitBreaker'
@@ -142,9 +154,12 @@ export class CircuitBreaker {
     }
   }
 
-  recordFailure(circuitKey: string, error?: any): void {
+  recordFailure(circuitKey: string, error?: any, openUntil?: number): void {
     const stats = this.getStats(circuitKey);
     const providerId = this.extractProviderId(circuitKey);
+
+    // 配额重置锁定：仅当 openUntil 是未来的绝对时刻才生效
+    const lockUntil = (typeof openUntil === 'number' && openUntil > Date.now()) ? openUntil : undefined;
 
     const persistTriggerStats = () => {
       if (!providerId) {
@@ -168,6 +183,9 @@ export class CircuitBreaker {
       stats.state = CircuitState.OPEN;
       stats.successes = 0;
       stats.halfOpenAttempts = 0;
+      if (lockUntil) {
+        stats.openUntil = lockUntil;
+      }
       stats.triggerCount = (stats.triggerCount || 0) + 1;
       persistTriggerStats();
       memoryLogger.warn(
@@ -175,12 +193,23 @@ export class CircuitBreaker {
         'CircuitBreaker'
       );
     } else if (stats.state === CircuitState.CLOSED) {
-      if (stats.failures >= this.config.failureThreshold) {
+      // 配额 429：第一次就立即熔断并锁定到重置时刻；否则累计到失败阈值再打开
+      if (lockUntil || stats.failures >= this.config.failureThreshold) {
         stats.state = CircuitState.OPEN;
+        stats.openUntil = lockUntil;
         stats.triggerCount = (stats.triggerCount || 0) + 1;
         persistTriggerStats();
         memoryLogger.warn(
-          `熔断器打开 | key: ${circuitKey} | provider: ${providerId} | failures: ${stats.failures}`,
+          `熔断器打开 | key: ${circuitKey} | provider: ${providerId} | ${lockUntil ? `配额锁定至 ${new Date(lockUntil).toISOString()}` : `failures: ${stats.failures}`}`,
+          'CircuitBreaker'
+        );
+      }
+    } else if (stats.state === CircuitState.OPEN) {
+      // 已打开：若新的锁定时刻更晚，则延长锁定
+      if (lockUntil && (!stats.openUntil || lockUntil > stats.openUntil)) {
+        stats.openUntil = lockUntil;
+        memoryLogger.info(
+          `熔断器锁定延长至 ${new Date(lockUntil).toISOString()} | key: ${circuitKey}`,
           'CircuitBreaker'
         );
       }
@@ -189,6 +218,25 @@ export class CircuitBreaker {
 
   getState(circuitKey: string): CircuitState {
     return this.getStats(circuitKey).state;
+  }
+
+  /**
+   * 计算熔断器预计恢复（转为半开试探）的绝对时刻（epoch ms）。
+   * - 配额锁定（openUntil）优先；
+   * - 否则按相对超时 lastFailureTime + timeout；
+   * - 非 OPEN 状态、或窗口已过期（相对超时场景）返回 null。
+   */
+  getCloseAt(circuitKey: string): number | null {
+    const stats = this.getStats(circuitKey);
+    if (stats.state !== CircuitState.OPEN) {
+      return null;
+    }
+    const now = Date.now();
+    if (stats.openUntil && stats.openUntil > now) {
+      return stats.openUntil;
+    }
+    const relativeClose = stats.lastFailureTime + this.config.timeout;
+    return relativeClose > now ? relativeClose : null;
   }
 
   getProviderStats(circuitKey: string): ProviderStats {
