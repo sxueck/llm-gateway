@@ -803,20 +803,29 @@ onMounted(() => {
   background: #ffffff;
   border-radius: 8px;
   border: 1px solid #e8e8e8;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .provider-modal :deep(.n-card__header) {
   padding: 16px 20px;
   border-bottom: 1px solid #e8e8e8;
+  flex-shrink: 0;
 }
 
 .provider-modal :deep(.n-card__content) {
   padding: 0;
   overflow: hidden;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .modal-content-wrapper {
-  max-height: calc(90vh - 120px);
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -825,6 +834,7 @@ onMounted(() => {
   padding: 12px 20px;
   border-top: 1px solid #e8e8e8;
   background: #ffffff;
+  flex-shrink: 0;
 }
 
 .modal-content {
