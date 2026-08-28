@@ -157,6 +157,23 @@ export async function buildProviderConfig(
     );
   }
 
+  // 真实模型统一映射为 model_identifier 再发往上游（与重试路径 retry-handler 的行为一致）。
+  // name 是对外展示名，客户端用 name 请求时不能把 name 原样透传给上游。
+  // 虚拟模型的 identifier 是内部名（virtual-*/expert-*），其上游模型名由路由
+  // override_params.model 改写 request.body.model 完成，此处必须跳过。
+  if (
+    currentModel &&
+    currentModel.is_virtual !== 1 &&
+    currentModel.model_identifier &&
+    model !== currentModel.model_identifier
+  ) {
+    memoryLogger.debug(
+      `模型名映射: ${model || '(empty)'} -> ${currentModel.model_identifier}`,
+      'ProviderConfig'
+    );
+    model = currentModel.model_identifier;
+  }
+
   if (!model) {
     model = 'unknown';
   }
@@ -165,7 +182,8 @@ export async function buildProviderConfig(
   if (currentModel?.model_attributes) {
     try {
       modelAttributes = JSON.parse(currentModel.model_attributes);
-    } catch (e) {
+    } catch {
+      // model_attributes 不是合法 JSON 时按无属性处理，不阻断转发
     }
   }
 
