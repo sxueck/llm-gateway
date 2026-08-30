@@ -88,6 +88,13 @@ test('parses "minimal" suffix', () => {
   });
 });
 
+test('parses "none" suffix (disable thinking)', () => {
+  expect(parseModelSuffix('glm5.3-none', DEFAULT_SUFFIXES)).toEqual({
+    baseModel: 'glm5.3',
+    reasoningEffort: 'none',
+  });
+});
+
 test('suffix match is case-sensitive', () => {
   expect(parseModelSuffix('gpt-5-Max', DEFAULT_SUFFIXES)).toBeNull();
 });

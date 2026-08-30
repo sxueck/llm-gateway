@@ -11,6 +11,7 @@ test('default suffixes include all spec values', () => {
     'low',
     'medium',
     'high',
+    'none',
   ]);
 });
 
