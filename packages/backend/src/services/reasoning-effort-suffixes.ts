@@ -6,6 +6,7 @@ export const DEFAULT_REASONING_EFFORT_MODEL_SUFFIXES = [
   'low',
   'medium',
   'high',
+  'none',
 ];
 
 export const REASONING_EFFORT_SUFFIXES_CONFIG_KEY = 'reasoning_effort_model_suffixes';

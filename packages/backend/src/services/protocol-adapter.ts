@@ -49,6 +49,19 @@ export interface ProtocolResponse {
 }
 
 
+export function applyReasoningEffortNoneTranslation(
+  requestParams: any,
+  options: any
+): void {
+  if ((options as any)?.reasoning_effort !== 'none') return;
+  if (requestParams.thinking !== undefined) return;
+
+  requestParams.thinking = { type: 'disabled' };
+  delete requestParams.reasoning_effort;
+
+  memoryLogger.debug('reasoning_effort=none -> thinking.type=disabled', 'Protocol');
+}
+
 export class ProtocolAdapter {
   private readonly httpClientFactory = new HttpClientFactory({
     keepAliveMaxSockets: parseInt(process.env.HTTP_KEEP_ALIVE_MAX_SOCKETS || '64', 10),
@@ -206,6 +219,7 @@ export class ProtocolAdapter {
     if ((options as any).thinking !== undefined) (requestParams as any).thinking = (options as any).thinking;
     if ((options as any).tool_search !== undefined) (requestParams as any).tool_search = (options as any).tool_search;
     if ((options as any).phase !== undefined) (requestParams as any).phase = (options as any).phase;
+    applyReasoningEffortNoneTranslation(requestParams, options);
 
     const requestOptions: any = {};
     if (options.requestTimeout !== undefined) {
@@ -295,6 +309,7 @@ export class ProtocolAdapter {
     if ((options as any).thinking !== undefined) (requestParams as any).thinking = (options as any).thinking;
     if ((options as any).tool_search !== undefined) (requestParams as any).tool_search = (options as any).tool_search;
     if ((options as any).phase !== undefined) (requestParams as any).phase = (options as any).phase;
+    applyReasoningEffortNoneTranslation(requestParams, options);
 
     const requestOptions: any = {};
     if (options.requestTimeout !== undefined) {
