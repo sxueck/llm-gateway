@@ -76,3 +76,85 @@ describe('buildProviderConfig protocol selection', () => {
     });
   });
 });
+
+describe('buildProviderConfig upstream model mapping', () => {
+  function makeRequest(model: string) {
+    return {
+      method: 'POST',
+      url: '/v1/chat/completions',
+      body: { model },
+    } as any;
+  }
+
+  it('maps client-facing display name to model_identifier for real models', async () => {
+    const result = await buildProviderConfig(
+      provider,
+      virtualKey,
+      'vk-test-value',
+      provider.id,
+      makeRequest('configured-model'),
+      modelWithProtocols(['openai']),
+      'openai'
+    );
+
+    expect('code' in result).toBe(false);
+    if ('code' in result) return;
+    expect(result.protocolConfig.model).toBe('upstream-model');
+  });
+
+  it('keeps model_identifier requests unchanged', async () => {
+    const result = await buildProviderConfig(
+      provider,
+      virtualKey,
+      'vk-test-value',
+      provider.id,
+      makeRequest('upstream-model'),
+      modelWithProtocols(['openai']),
+      'openai'
+    );
+
+    expect('code' in result).toBe(false);
+    if ('code' in result) return;
+    expect(result.protocolConfig.model).toBe('upstream-model');
+  });
+
+  it('skips mapping for virtual models (identifier is internal)', async () => {
+    const virtualModel = {
+      ...modelWithProtocols(['openai']),
+      name: 'grok-4.6',
+      model_identifier: 'virtual-123',
+      is_virtual: 1,
+      routing_config_id: 1,
+    };
+    const result = await buildProviderConfig(
+      provider,
+      virtualKey,
+      'vk-test-value',
+      provider.id,
+      // 智能路由已把 override_params.model 改写进 body.model
+      makeRequest('xai/grok-4.6'),
+      virtualModel,
+      'openai'
+    );
+
+    expect('code' in result).toBe(false);
+    if ('code' in result) return;
+    expect(result.protocolConfig.model).toBe('xai/grok-4.6');
+  });
+
+  it('passes client model through when no model record was resolved', async () => {
+    const result = await buildProviderConfig(
+      provider,
+      virtualKey,
+      'vk-test-value',
+      provider.id,
+      makeRequest('any-model-string'),
+      undefined,
+      'openai'
+    );
+
+    expect('code' in result).toBe(false);
+    if ('code' in result) return;
+    expect(result.protocolConfig.model).toBe('any-model-string');
+  });
+});
