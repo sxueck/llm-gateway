@@ -221,7 +221,7 @@ export default {
     },
     disableThinking: {
       label: '关闭思考',
-      description: '开启后网关会移除请求中的思考控制参数（reasoning_effort / reasoning / thinking），Anthropic 协议强制 thinking: disabled，Gemini 协议将 thinkingBudget 置 0，OpenAI 协议附上 enable_thinking: false（不识别该参数的提供商可能报错，请仅对支持的模型开启）。适合 instant 等无需思考的场景',
+      description: '开启后网关会移除请求中的思考控制参数（reasoning_effort / reasoning），并在 OpenAI/Anthropic 协议强制 thinking: { type: disabled }，Gemini 协议将 thinkingBudget 置 0。适合 instant 等无需思考的场景；MiMo 等 OpenAI 兼容上游使用此参数关闭思考。',
     },
   },
   virtualModels: {
