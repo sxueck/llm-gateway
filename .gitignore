@@ -71,10 +71,6 @@ local-test
 ## CodeGraph index
 .codegraph/
 
-## AI Guidline
-AGENTS.md
-CLAUDE.md
-
 .roo
 .claude
 
