@@ -8,9 +8,9 @@ describe("applyDisableThinking", () => {
     expect(applyDisableThinking("junk", "gemini")).toBe(false);
   });
 
-  it("strips client-requested reasoning knobs on openai bodies", () => {
+  it("strips client-requested reasoning knobs and forces MiMo-compatible thinking disabled", () => {
     const body: any = {
-      model: "qwen-instant",
+      model: "mimo-v2.5-pro",
       messages: [],
       reasoning_effort: "high",
       reasoning: { effort: "high" },
@@ -20,15 +20,13 @@ describe("applyDisableThinking", () => {
     expect(applyDisableThinking(body, "openai")).toBe(true);
     expect(body.reasoning_effort).toBeUndefined();
     expect(body.reasoning).toBeUndefined();
-    expect(body.thinking).toBeUndefined();
-    expect(body.enable_thinking).toBe(false);
-    expect(body.extra_body).toEqual({ enable_thinking: false });
+    expect(body.thinking).toEqual({ type: "disabled" });
   });
 
   it("is idempotent on already-disabled openai bodies", () => {
-    const body: any = { enable_thinking: false, extra_body: { enable_thinking: false } };
+    const body: any = { thinking: { type: "disabled" } };
     expect(applyDisableThinking(body, "openai")).toBe(false);
-    expect(body.enable_thinking).toBe(false);
+    expect(body.thinking).toEqual({ type: "disabled" });
   });
 
   it("forces thinking disabled on anthropic bodies", () => {
