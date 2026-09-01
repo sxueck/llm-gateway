@@ -35,6 +35,7 @@ const baseModelAttributesSchema = z.object({
   supports_vision: z.boolean().optional(),
   supports_prompt_caching: z.boolean().optional(),
   supports_function_calling: z.boolean().optional(),
+  disable_thinking: z.boolean().optional(),
 
   litellm_provider: z.string().optional(),
   provider: z.string().optional(),

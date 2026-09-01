@@ -4,6 +4,8 @@ import { runProxyPipeline } from '../proxy/pipeline.js';
 import { logApiRequestToDb } from '../../services/api-request-logger.js';
 import { handleGeminiNativeNonStreamRequest, handleGeminiNativeStreamRequest } from './gemini-native.js';
 import { shouldLogRequestBody } from '../proxy/handlers/shared.js';
+import { parseModelAttributes } from '../proxy/model-handlers.js';
+import { applyDisableThinking } from '../../utils/thinking-control.js';
 import { capturePromptSampleAsync } from '../../services/prompt-capture-service.js';
 import { applyContextNormalization } from '../../services/context-normalization/index.js';
 
@@ -91,6 +93,11 @@ export function createGeminiProxyHandler() {
       });
       if (normalization.blocked) {
         return reply.code(normalization.status).send(normalization.body);
+      }
+
+      const modelAttributes = parseModelAttributes(currentModel?.model_attributes);
+      if (modelAttributes?.disable_thinking && applyDisableThinking(request.body, 'gemini')) {
+        memoryLogger.info(`已禁用思考 (disable_thinking) | 模型: ${currentModel?.name}`, 'Gemini');
       }
 
       const { protocolConfig, vkDisplay, isStreamRequest } = configResult;

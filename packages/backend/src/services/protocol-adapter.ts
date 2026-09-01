@@ -217,6 +217,7 @@ export class ProtocolAdapter {
     if ((options as any).reasoning_effort !== undefined) (requestParams as any).reasoning_effort = (options as any).reasoning_effort;
     if ((options as any).verbosity !== undefined) (requestParams as any).verbosity = (options as any).verbosity;
     if ((options as any).thinking !== undefined) (requestParams as any).thinking = (options as any).thinking;
+    if ((options as any).enable_thinking !== undefined) (requestParams as any).enable_thinking = (options as any).enable_thinking;
     if ((options as any).tool_search !== undefined) (requestParams as any).tool_search = (options as any).tool_search;
     if ((options as any).phase !== undefined) (requestParams as any).phase = (options as any).phase;
     applyReasoningEffortNoneTranslation(requestParams, options);
@@ -307,6 +308,7 @@ export class ProtocolAdapter {
     if ((options as any).reasoning_effort !== undefined) (requestParams as any).reasoning_effort = (options as any).reasoning_effort;
     if ((options as any).verbosity !== undefined) (requestParams as any).verbosity = (options as any).verbosity;
     if ((options as any).thinking !== undefined) (requestParams as any).thinking = (options as any).thinking;
+    if ((options as any).enable_thinking !== undefined) (requestParams as any).enable_thinking = (options as any).enable_thinking;
     if ((options as any).tool_search !== undefined) (requestParams as any).tool_search = (options as any).tool_search;
     if ((options as any).phase !== undefined) (requestParams as any).phase = (options as any).phase;
     applyReasoningEffortNoneTranslation(requestParams, options);

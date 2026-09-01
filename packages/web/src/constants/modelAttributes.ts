@@ -36,6 +36,15 @@ export const MODEL_ATTRIBUTE_CONFIGS: AttributeConfig[] = [
     step: 1,
   },
   {
+    key: 'disable_thinking',
+    label: '关闭思考',
+    labelKey: 'modelAttributes.disableThinking.label',
+    description: '开启后网关会移除请求中的思考控制参数（reasoning_effort / reasoning / thinking），Anthropic 协议强制 thinking: disabled，Gemini 协议将 thinkingBudget 置 0，OpenAI 协议附上 enable_thinking: false（不识别该参数的提供商可能报错，请仅对支持的模型开启）。适合 instant 等无需思考的场景',
+    descriptionKey: 'modelAttributes.disableThinking.description',
+    type: 'boolean',
+    category: '服务限制',
+  },
+  {
     key: 'input_cost_per_token',
     label: '输入成本',
     description: '每百万输入令牌的成本',

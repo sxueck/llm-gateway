@@ -219,6 +219,10 @@ export default {
       label: 'Context Window',
       description: 'The model context window (input + output), surfaced via context_window in /v1/models. Falls back to catalog context_length / max_tokens when unset',
     },
+    disableThinking: {
+      label: 'Disable Thinking',
+      description: 'When enabled, the gateway strips reasoning controls (reasoning_effort / reasoning / thinking) from requests, forces thinking: disabled on the Anthropic protocol, sets thinkingBudget to 0 on the Gemini protocol, and attaches enable_thinking: false on the OpenAI protocol (providers that reject the unknown field will error — enable only for models that support it). Suited for instant-style scenarios where thinking is never wanted',
+    },
   },
   virtualModels: {
     title: 'Smart Routing',

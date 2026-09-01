@@ -40,6 +40,8 @@ export interface ModelAttributes {
 
   upstream_websocket_enabled?: boolean;
 
+  disable_thinking?: boolean;
+
   litellm_provider?: string;
   provider?: string; // deprecated: alias of litellm_provider
   mode?: string;
