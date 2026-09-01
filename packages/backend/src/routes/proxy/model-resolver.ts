@@ -5,6 +5,7 @@ import { memoryLogger } from '../../services/logger.js';
 import { reasoningEffortSuffixesCache } from '../../services/reasoning-effort-suffixes.js';
 import { isChatCompletionsPath } from '../../utils/path-detector.js';
 import { resolveProviderFromModel } from './routing.js';
+import { parseModelAttributes } from './model-handlers.js';
 
 export interface ModelResolutionResult {
   provider: any;
@@ -358,18 +359,27 @@ export async function resolveModelAndProvider(
             const baseMatched = await collectModelMatches(parsedModelIds, parsed.baseModel);
 
             if (baseMatched.length === 1) {
-              forcedReasoningEffort = parsed.reasoningEffort;
               const matched = baseMatched[0];
               targetModelId = matched.modelId;
               selectedModel = matched.model;
-              // 保留实际生效的模型和 effort，确保上游、缓存与重试使用同一请求语义。
+              // 保留实际生效的模型，确保上游、缓存与重试使用同一请求语义。
               (request.body as any).model = parsed.baseModel;
-              (request.body as any).reasoning_effort = parsed.reasoningEffort;
-              const providerInfo = matched.provider ? matched.provider.name : '智能路由';
-              memoryLogger.debug(
-                `模型后缀解析: ${requestedModel} -> 基础模型 ${matched.model.name} (${providerInfo}) + reasoning_effort=${parsed.reasoningEffort}`,
-                'ModelResolver'
-              );
+              // disable_thinking 是运营者硬关闭：后缀只用于路由到基础模型，不注入
+              // reasoning_effort，否则客户端可用 <model>-<depth> 绕过硬关闭。
+              if (parseModelAttributes(matched.model?.model_attributes)?.disable_thinking) {
+                memoryLogger.debug(
+                  `模型后缀解析: ${requestedModel} -> 基础模型 ${matched.model.name}，模型已开启 disable_thinking，忽略后缀 reasoning_effort=${parsed.reasoningEffort}`,
+                  'ModelResolver'
+                );
+              } else {
+                forcedReasoningEffort = parsed.reasoningEffort;
+                (request.body as any).reasoning_effort = parsed.reasoningEffort;
+                const providerInfo = matched.provider ? matched.provider.name : '智能路由';
+                memoryLogger.debug(
+                  `模型后缀解析: ${requestedModel} -> 基础模型 ${matched.model.name} (${providerInfo}) + reasoning_effort=${parsed.reasoningEffort}`,
+                  'ModelResolver'
+                );
+              }
             } else if (baseMatched.length > 1) {
               // 基础模型名仍有多个候选，维持既有歧义行为，不通过后缀规避
               const availableOptions = baseMatched.map(m => {

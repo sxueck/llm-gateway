@@ -119,23 +119,25 @@
               size="small"
             />
           </n-form-item>
-          <n-form-item label="支持协议">
-            <n-select
-              v-model:value="formValue.supportedProtocols"
-              :options="protocolOptions"
-              placeholder="选择支持的协议"
-              size="small"
-              multiple
-            />
-          </n-form-item>
-          <n-form-item label="探测协议">
-            <n-select
-              v-model:value="formValue.healthCheckProtocol"
-              :options="healthCheckProtocolOptions"
-              placeholder="选择健康检查协议"
-              size="small"
-              clearable
-            />
+          <n-form-item label="支持/探测协议">
+            <div class="protocol-row">
+              <n-select
+                v-model:value="formValue.supportedProtocols"
+                :options="protocolOptions"
+                placeholder="支持协议"
+                size="small"
+                multiple
+                class="protocol-select-supported"
+              />
+              <n-select
+                v-model:value="formValue.healthCheckProtocol"
+                :options="healthCheckProtocolOptions"
+                placeholder="探测协议"
+                size="small"
+                clearable
+                class="protocol-select-probe"
+              />
+            </div>
           </n-form-item>
           <n-form-item :label="t('common.enabled')">
             <n-switch v-model:value="formValue.enabled" size="small" />
@@ -780,6 +782,20 @@ onMounted(async () => {
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:disabled) {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.protocol-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.protocol-select-supported {
+  flex: 1.6;
+}
+
+.protocol-select-probe {
+  flex: 1;
 }
 
 .model-modal :deep(.n-card) {

@@ -219,6 +219,10 @@ export default {
       label: '上下文窗口',
       description: '模型的上下文窗口（input + output），下发到 /v1/models 的 context_window 字段。未填写时回退到目录的 context_length / max_tokens',
     },
+    disableThinking: {
+      label: '关闭思考',
+      description: '开启后网关会移除请求中的思考控制参数（reasoning_effort / reasoning / thinking），Anthropic 协议强制 thinking: disabled，Gemini 协议将 thinkingBudget 置 0，OpenAI 协议附上 enable_thinking: false（不识别该参数的提供商可能报错，请仅对支持的模型开启）。适合 instant 等无需思考的场景',
+    },
   },
   virtualModels: {
     title: '智能路由',

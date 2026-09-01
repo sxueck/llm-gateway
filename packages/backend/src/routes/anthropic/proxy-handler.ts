@@ -19,6 +19,7 @@ import {
 import { capturePromptSampleAsync } from '../../services/prompt-capture-service.js';
 import { applyContextNormalization } from '../../services/context-normalization/index.js';
 import { clampMaxTokensFields, resolveServingLimits } from '../../utils/serving-limits.js';
+import { applyDisableThinking } from '../../utils/thinking-control.js';
 import { parseModelAttributes } from '../proxy/model-handlers.js';
 
 function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
@@ -96,23 +97,6 @@ export function createAnthropicProxyHandler() {
           virtualKeyValue = vkValue;
           const requestBody = request.body as AnthropicRequest;
 
-          // Clamp max_tokens to the model's serving cap and advertise it, mirroring the
-          // OpenAI protocol path so clients can learn the effective cap machine-readably.
-          const servingLimits = resolveServingLimits(parseModelAttributes(currentModel?.model_attributes));
-          const requestedMaxTokens = requestBody.max_tokens;
-          if (clampMaxTokensFields(requestBody, servingLimits.maxCompletionTokens)) {
-            memoryLogger.info(
-              `max_tokens ${requestedMaxTokens} exceeds serving cap, clamped to ${servingLimits.maxCompletionTokens} | 模型: ${currentModel?.name}`,
-              'Anthropic'
-            );
-          }
-          if (servingLimits.maxCompletionTokens !== undefined) {
-            // Streams are written via reply.raw.writeHead(), which skips Fastify-managed
-            // headers; setHeader on the raw response survives both stream and non-stream sends.
-            reply.header('X-Max-Completion-Tokens', String(servingLimits.maxCompletionTokens));
-            reply.raw.setHeader('X-Max-Completion-Tokens', String(servingLimits.maxCompletionTokens));
-          }
-
           // Best-effort: shrink base64 images early (payload + downstream prompt caching stability).
           try {
             const vkDisplayPre = virtualKey.key_value && virtualKey.key_value.length > 10
@@ -185,6 +169,31 @@ export function createAnthropicProxyHandler() {
       const { protocolConfig, vkDisplay } = configResult;
 
       const requestBody = request.body as AnthropicRequest;
+
+      // Model attributes are only available after the pipeline resolves the model
+      // (afterAuth runs BEFORE model resolution), so serving-cap enforcement lives here:
+      // clamp max_tokens to the model's serving cap and advertise it, mirroring the
+      // OpenAI protocol path so clients can learn the effective cap machine-readably.
+      const modelAttributes = parseModelAttributes(currentModel?.model_attributes);
+      const servingLimits = resolveServingLimits(modelAttributes);
+
+      const requestedMaxTokens = requestBody.max_tokens;
+      if (clampMaxTokensFields(requestBody, servingLimits.maxCompletionTokens)) {
+        memoryLogger.info(
+          `max_tokens ${requestedMaxTokens} exceeds serving cap, clamped to ${servingLimits.maxCompletionTokens} | 模型: ${currentModel?.name}`,
+          'Anthropic'
+        );
+      }
+      if (servingLimits.maxCompletionTokens !== undefined) {
+        // Streams are written via reply.raw.writeHead(), which skips Fastify-managed
+        // headers; setHeader on the raw response survives both stream and non-stream sends.
+        reply.header('X-Max-Completion-Tokens', String(servingLimits.maxCompletionTokens));
+        reply.raw.setHeader('X-Max-Completion-Tokens', String(servingLimits.maxCompletionTokens));
+      }
+
+      if (modelAttributes?.disable_thinking && applyDisableThinking(requestBody, 'anthropic')) {
+        memoryLogger.info(`已禁用思考 (disable_thinking) | 模型: ${currentModel?.name}`, 'Anthropic');
+      }
 
       if (!isAnthropicProtocolConfig(protocolConfig)) {
         const error = createAnthropicError(

@@ -29,6 +29,12 @@ describe("modelAttributesSchema", () => {
     });
   });
 
+  it("preserves disable_thinking toggle", () => {
+    const result = modelAttributesSchema.parse({ disable_thinking: true });
+
+    expect(result).toEqual({ disable_thinking: true });
+  });
+
   it("still strips unknown keys", () => {
     const result = modelAttributesSchema.parse({
       max_tokens: 8192,

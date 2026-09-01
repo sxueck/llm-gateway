@@ -24,6 +24,7 @@ import { maybeCompressImagesInOpenAIRequestBodyInPlace, logImageCompressionStats
 import { capturePromptSampleAsync } from '../../services/prompt-capture-service.js';
 import { applyContextNormalization } from '../../services/context-normalization/index.js';
 import { clampMaxTokensFields, resolveServingLimits } from '../../utils/serving-limits.js';
+import { applyDisableThinking } from '../../utils/thinking-control.js';
 
 const MESSAGE_COMPRESSION_MIN_TOKENS = parseInt(process.env.MESSAGE_COMPRESSION_MIN_TOKENS || '8192', 10);
 
@@ -173,6 +174,7 @@ function buildChatCompletionBaseOptions(body: any): any {
     reasoning_effort: body?.reasoning_effort,
     verbosity: body?.verbosity,
     thinking: body?.thinking,
+    enable_thinking: body?.enable_thinking,
     tools: body?.tools,
     tool_choice: body?.tool_choice,
     parallel_tool_calls: body?.parallel_tool_calls,
@@ -411,6 +413,13 @@ export function createOpenAIProxyHandler() {
         try {
           const enhancedRequestBody = buildFullRequestBody(request.body, parsedModelAttributes);
           request.body = enhancedRequestBody;
+
+          if (parsedModelAttributes.disable_thinking) {
+            const didDisable = applyDisableThinking(request.body, 'openai');
+            if (didDisable) {
+              memoryLogger.info(`已禁用思考 (disable_thinking) | 模型: ${currentModel?.name}`, 'Proxy');
+            }
+          }
 
           if (parsedModelAttributes.supports_prompt_caching) {
             const messageCount = (request.body as any)?.messages?.length || 0;

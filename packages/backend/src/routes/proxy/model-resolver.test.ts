@@ -123,3 +123,35 @@ test('resolves a suffix request to its base model and records the forced effort'
   expect(request.body).toMatchObject({ model: 'gpt-5', reasoning_effort: 'high' });
   expect(result).toMatchObject({ forcedReasoningEffort: 'high' });
 });
+
+test('skips forced effort when the matched model has disable_thinking', async () => {
+  const model = {
+    id: 'model-1',
+    name: 'gpt-5',
+    model_identifier: 'gpt-5',
+    provider_id: 'provider-1',
+    model_attributes: JSON.stringify({ disable_thinking: true }),
+  };
+  const provider = { id: 'provider-1', name: 'provider-1' };
+  vi.mocked(reasoningEffortSuffixesCache.getSuffixes).mockReturnValue(['high']);
+  vi.mocked(hotConfigCache.getModelById).mockResolvedValue(model as any);
+  vi.mocked(hotConfigCache.getProviderById).mockResolvedValue(provider as any);
+  vi.mocked(resolveProviderFromModel).mockResolvedValue({ provider, providerId: 'provider-1' } as any);
+
+  const request = {
+    body: { model: 'gpt-5-high' },
+    headers: {},
+    protocol: 'openai',
+    url: '/v1/chat/completions',
+  } as any;
+
+  const result = await resolveModelAndProvider(
+    { id: 'vk-1', model_ids: JSON.stringify(['model-1']) },
+    request,
+    'vk-value'
+  );
+
+  // 路由仍落到基础模型，但不注入/强制 reasoning_effort，避免绕过 disable_thinking
+  expect(request.body).toEqual({ model: 'gpt-5' });
+  expect((result as any).forcedReasoningEffort).toBeUndefined();
+});

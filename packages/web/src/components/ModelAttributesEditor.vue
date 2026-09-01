@@ -1,6 +1,6 @@
 <template>
   <div class="model-attributes-editor">
-    <n-collapse :default-expanded-names="['protocol']">
+    <n-collapse>
       <n-collapse-item
         v-for="cat in categories"
         :key="cat"
