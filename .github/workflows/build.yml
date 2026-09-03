@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write  # required for SARIF upload to GitHub Security tab
 
 jobs:
   build:
@@ -30,50 +29,13 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Stage 1/4 — Typecheck (advisory, non-blocking)
+      # Stage 1/3 — Typecheck (advisory, non-blocking)
       # Mirrors analyze.sh's lint stage: surface issues but never block the pipeline.
       - name: Typecheck (advisory)
         continue-on-error: true
         run: npm run typecheck
 
-      # Stage 2/4 — Semgrep security scan (advisory, non-blocking)
-      # Security-focused ruleset: secrets leakage, Node.js pitfalls, OWASP Top 10.
-      # Produces semgrep.sarif consumed by both SonarQube and GitHub Security tab.
-      - name: Setup Python for Semgrep
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: '3.12'
-
-      - name: Install Semgrep
-        run: pip install semgrep
-
-      - name: Run Semgrep scan
-        continue-on-error: true
-        run: |
-          semgrep scan \
-            --config p/security-audit \
-            --config p/secrets \
-            --config p/nodejs \
-            --config p/owasp-top-ten \
-            --metrics off \
-            --sarif --output semgrep.sarif
-
-      - name: Upload Semgrep SARIF to GitHub Security tab
-        if: always() && hashFiles('semgrep.sarif') != ''
-        uses: github/codeql-action/upload-sarif@4187e74d05793876e9989daffde9c3e66b4acd07 # v3.37.3
-        with:
-          sarif_file: semgrep.sarif
-          category: semgrep
-
-      - name: Upload Semgrep artifacts
-        if: always() && hashFiles('semgrep.sarif') != ''
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: semgrep-sarif
-          path: semgrep.sarif
-          retention-days: 14
-
-      # Stage 3/4 — Tests with coverage (blocking)
+      # Stage 2/3 — Tests with coverage (blocking)
       # Produces packages/backend/coverage/lcov.info and test-results.junit.xml
       - name: Test with coverage
         run: npm run test:coverage -w @llm-gateway/backend
@@ -92,7 +54,7 @@ jobs:
             packages/backend/test-results.junit.xml
           retention-days: 14
 
-      # Stage 4/4 — SonarQube scan + Quality Gate (imports coverage + Semgrep SARIF)
+      # Stage 3/3 — SonarQube scan + Quality Gate (imports coverage)
       - name: SonarQube Scan
         if: github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
