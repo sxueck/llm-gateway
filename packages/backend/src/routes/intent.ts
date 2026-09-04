@@ -1,14 +1,11 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { nanoid } from "nanoid";
-import { EXPERT_ROUTING_MODEL_REPO } from "@llm-gateway/shared";
-import { classifyWithLocalOnnx } from "../services/expert-router/local/classifier.js";
 import { intentClassifyLogDb } from "../db/index.js";
 import {
-  getLocalClassifierError,
-  isLocalClassifierDisabled,
-  isLocalClassifierReady,
-} from "../services/expert-router/local/model-assets.js";
+  classifyIntent,
+  IntentRouterApiError,
+} from "../services/expert-router/intent-router-client.js";
 import { memoryLogger } from "../services/logger.js";
 import {
   authenticateVirtualKey,
@@ -18,7 +15,6 @@ import {
 const classifySchema = z.object({
   input: z.string().min(1),
   top_n: z.number().int().positive().optional(),
-  max_tokens: z.number().int().min(1).max(1024).default(1024),
 });
 
 interface ApiErrorBody {
@@ -41,10 +37,8 @@ function sendError(
 }
 
 /**
- * External intent classification API. Runs the same local ONNX classifier the
- * Expert Router uses, but returns the raw ranked label distribution (no expert
- * mapping, rejection decision, or session binding). Callers authenticate with
- * any virtual key and may slice the distribution via `top_n`.
+ * Gateway-facing intent classification API. It authenticates virtual keys and
+ * proxies classification to the separately deployed Intent Router API.
  */
 export async function intentRoutes(fastify: FastifyInstance) {
   fastify.post("/classify", async (request, reply) => {
@@ -69,76 +63,58 @@ export async function intentRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const { input, top_n: topN, max_tokens: maxTokens } = parsed.data;
-
-    if (isLocalClassifierDisabled()) {
-      return sendError(reply, 503, {
-        message:
-          "Local intent classifier is disabled on this deployment (LOCAL_INTENT_CLASSIFIER=off)",
-        type: "service_unavailable",
-        errCode: "classifier_disabled",
-      });
-    }
-
-    if (!isLocalClassifierReady()) {
-      const detail = getLocalClassifierError();
-      return sendError(reply, 503, {
-        message: detail
-          ? `Local intent classifier is not ready: ${detail}`
-          : "Local intent classifier is not ready",
-        type: "service_unavailable",
-        errCode: "classifier_not_ready",
-      });
-    }
-
     try {
-      const result = await classifyWithLocalOnnx(input, maxTokens);
-      const ranked = topN ? result.ranked.slice(0, topN) : result.ranked;
+      const result = await classifyIntent(parsed.data.input);
+      const item = result.data[0];
+      const labels = parsed.data.top_n
+        ? item.labels.slice(0, parsed.data.top_n)
+        : item.labels;
       const vkDisplay = `${virtualKeyValue.slice(0, 6)}...${virtualKeyValue.slice(-4)}`;
       memoryLogger.info(
-        `Intent classify | key=${vkDisplay} | labels=${ranked.length}/${result.ranked.length} | latency=${result.latencyMs}ms`,
+        `Intent classify | key=${vkDisplay} | labels=${labels.length}/${item.labels.length} | latency=${result.latency_ms}ms`,
         "IntentApi",
       );
 
-      // Log every successful classification so dashboard intent-classify stats
-      // cover both this API and Expert Router runs. Persistence failures must
-      // never break the classification response.
       intentClassifyLogDb
         .create({
           id: nanoid(),
           virtual_key_id: virtualKey?.id || null,
-          classifier_model: `onnx/${EXPERT_ROUTING_MODEL_REPO}`,
-          top_label: result.ranked[0]?.label || null,
-          latency_ms: result.latencyMs,
-          seq_len: result.seqLen,
-          input_truncated: result.truncated,
+          classifier_model: result.model,
+          top_label: item.labels[0]?.label || item.route.intent,
+          latency_ms: Math.round(result.latency_ms),
+          seq_len: item.token_count,
+          input_truncated: item.truncated,
         })
-        .catch((e: any) =>
+        .catch((error: unknown) =>
           memoryLogger.warn(
-            `Intent classify log persistence failed: ${e?.message || e}`,
+            `Intent classify log persistence failed: ${error instanceof Error ? error.message : error}`,
             "IntentApi",
           ),
         );
 
-      reply.header("Content-Type", "application/json");
       return reply.send({
         object: "intent_classification",
-        model: `onnx/${EXPERT_ROUTING_MODEL_REPO}`,
+        model: result.model,
         revision: result.revision,
-        labels: ranked.map((r) => ({ label: r.label, score: r.score })),
-        total_labels: result.ranked.length,
-        seq_len: result.seqLen,
-        input_truncated: result.truncated,
-        latency_ms: result.latencyMs,
+        labels: labels.map(({ label, score }) => ({ label, score })),
+        total_labels: item.labels.length,
+        seq_len: item.token_count,
+        input_truncated: item.truncated,
+        latency_ms: result.latency_ms,
       });
-    } catch (e: any) {
-      memoryLogger.error(
-        `Intent classify failed: ${e?.message || e}`,
-        "IntentApi",
-      );
-      return sendError(reply, 500, {
-        message: e?.message || "Intent classification failed",
-        type: "internal_error",
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      memoryLogger.error(`Intent classify failed: ${message}`, "IntentApi");
+      if (error instanceof IntentRouterApiError && !error.configured) {
+        return sendError(reply, 503, {
+          message,
+          type: "service_unavailable",
+          errCode: "classifier_unavailable",
+        });
+      }
+      return sendError(reply, 502, {
+        message,
+        type: "api_error",
         errCode: "classification_error",
       });
     }

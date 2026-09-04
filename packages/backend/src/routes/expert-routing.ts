@@ -1,24 +1,30 @@
-import { FastifyInstance } from 'fastify';
-import { z } from 'zod';
-import { nanoid } from 'nanoid';
-import { expertRoutingConfigDb, expertRoutingLogDb, expertRoutingSessionBindingDb, expertRoutingTrainingRecordDb, modelDb, systemConfigDb } from '../db/index.js';
-import { hotConfigCache } from '../services/hot-config-cache.js';
-import { memoryLogger } from '../services/logger.js';
-import { expertTemplates } from '../data/expert-templates.js';
+import { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { nanoid } from "nanoid";
+import {
+  expertRoutingConfigDb,
+  expertRoutingLogDb,
+  expertRoutingSessionBindingDb,
+  expertRoutingTrainingRecordDb,
+  modelDb,
+  systemConfigDb,
+} from "../db/index.js";
+import { hotConfigCache } from "../services/hot-config-cache.js";
+import { memoryLogger } from "../services/logger.js";
+import { expertTemplates } from "../data/expert-templates.js";
 import {
   isEligibleExpertRoutingLabel,
   isExpertRoutingLabel,
-  EXPERT_ROUTING_MODEL_REPO,
-  EXPERT_ROUTING_MODEL_REVISION,
-  EXPERT_ROUTING_ONNX_FILE,
   DEFAULT_SESSION_IDLE_TTL_SECONDS,
   DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
-} from '@llm-gateway/shared';
+} from "@llm-gateway/shared";
 
 const expertTargetSchema = z.object({
   id: z.string(),
-  category: z.string().refine(isEligibleExpertRoutingLabel, '必须是可直接路由的稳定意图标签'),
-  type: z.enum(['virtual', 'real']),
+  category: z
+    .string()
+    .refine(isEligibleExpertRoutingLabel, "必须是可直接路由的稳定意图标签"),
+  type: z.enum(["virtual", "real"]),
   model_id: z.string().optional(),
   provider_id: z.string().optional(),
   model: z.string().optional(),
@@ -28,7 +34,7 @@ const expertTargetSchema = z.object({
 
 // LLM second-pass model wiring (replaces the legacy primary classifier).
 const llmSecondPassSchema = z.object({
-  type: z.enum(['virtual', 'real']),
+  type: z.enum(["virtual", "real"]),
   model_id: z.string().optional(),
   provider_id: z.string().optional(),
   model: z.string().optional(),
@@ -42,25 +48,27 @@ const llmSecondPassSchema = z.object({
   enable_adaptive_thinking: z.boolean().optional(),
 });
 
-// Local ONNX policy metadata (pin info; rejection policy is loaded from artifacts).
-const localClassifierSchema = z.object({
-  model_repo: z.string().default(EXPERT_ROUTING_MODEL_REPO),
-  revision: z.string().default(EXPERT_ROUTING_MODEL_REVISION),
-  onnx_file: z.string().default(EXPERT_ROUTING_ONNX_FILE),
-  max_tokens: z.number().int().positive().max(1024).default(1024),
-});
-
 const sessionBindingPolicySchema = z.object({
-  idle_ttl_seconds: z.number().int().positive().default(DEFAULT_SESSION_IDLE_TTL_SECONDS),
-  absolute_ttl_seconds: z.number().int().positive().default(DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS),
+  idle_ttl_seconds: z
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_SESSION_IDLE_TTL_SECONDS),
+  absolute_ttl_seconds: z
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS),
 });
 
-const fallbackConfigSchema = z.object({
-  type: z.enum(['virtual', 'real']),
-  model_id: z.string().optional(),
-  provider_id: z.string().optional(),
-  model: z.string().optional(),
-}).optional();
+const fallbackConfigSchema = z
+  .object({
+    type: z.enum(["virtual", "real"]),
+    model_id: z.string().optional(),
+    provider_id: z.string().optional(),
+    model: z.string().optional(),
+  })
+  .optional();
 
 const preprocessingSchema = z
   .object({
@@ -71,13 +79,16 @@ const preprocessingSchema = z
   })
   .optional();
 
-const trainingRecordStatusSchema = z.enum(['pending_review', 'accepted', 'rejected']);
+const trainingRecordStatusSchema = z.enum([
+  "pending_review",
+  "accepted",
+  "rejected",
+]);
 
 const createExpertRoutingSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   enabled: z.boolean().optional(),
-  local_classifier: localClassifierSchema.optional(),
   llm_second_pass: llmSecondPassSchema,
   preprocessing: preprocessingSchema,
   experts: z.array(expertTargetSchema),
@@ -92,7 +103,6 @@ const updateExpertRoutingSchema = z.object({
   name: z.string().optional(),
   description: z.string().nullable().optional(),
   enabled: z.boolean().optional(),
-  local_classifier: localClassifierSchema.optional(),
   llm_second_pass: llmSecondPassSchema.optional(),
   preprocessing: preprocessingSchema,
   experts: z.array(expertTargetSchema).optional(),
@@ -100,8 +110,11 @@ const updateExpertRoutingSchema = z.object({
   session_binding_policy: sessionBindingPolicySchema.optional(),
 });
 
-async function validateModelConfig(config: any, configType: string): Promise<void> {
-  if (config.type === 'virtual') {
+async function validateModelConfig(
+  config: any,
+  configType: string,
+): Promise<void> {
+  if (config.type === "virtual") {
     if (!config.model_id) {
       throw new Error(`${configType}虚拟模型未指定 model_id`);
     }
@@ -125,22 +138,22 @@ async function validateModelConfig(config: any, configType: string): Promise<voi
 }
 
 async function validateLlmSecondPassConfig(secondPass: any): Promise<void> {
-  await validateModelConfig(secondPass, 'LLM 二次分类');
+  await validateModelConfig(secondPass, "LLM 二次分类");
 
-  if (secondPass.type === 'virtual') {
+  if (secondPass.type === "virtual") {
     const virtualModel = await modelDb.getById(secondPass.model_id);
 
     if (virtualModel!.expert_routing_id) {
       throw new Error(
         `LLM 二次分类不能使用专家路由虚拟模型 "${virtualModel!.name}"。` +
-        `二次分类需要直接调用 LLM API,请使用真实模型或智能路由虚拟模型。`
+          `二次分类需要直接调用 LLM API,请使用真实模型或智能路由虚拟模型。`,
       );
     }
 
     if (!virtualModel!.routing_config_id && !virtualModel!.provider_id) {
       throw new Error(
         `LLM 二次分类虚拟模型 "${virtualModel!.name}" 没有配置智能路由或供应商。` +
-        `请为该模型配置供应商或智能路由。`
+          `请为该模型配置供应商或智能路由。`,
       );
     }
   }
@@ -150,65 +163,80 @@ function validateSessionBindingPolicy(policy: any): void {
   const idle = Number(policy?.idle_ttl_seconds);
   const absolute = Number(policy?.absolute_ttl_seconds);
   if (!Number.isFinite(idle) || idle <= 0) {
-    throw new Error('session_binding_policy.idle_ttl_seconds 必须为正整数');
+    throw new Error("session_binding_policy.idle_ttl_seconds 必须为正整数");
   }
   if (!Number.isFinite(absolute) || absolute <= 0) {
-    throw new Error('session_binding_policy.absolute_ttl_seconds 必须为正整数');
+    throw new Error("session_binding_policy.absolute_ttl_seconds 必须为正整数");
   }
   if (idle > absolute) {
     throw new Error(
-      'session_binding_policy.idle_ttl_seconds 不能大于 absolute_ttl_seconds'
+      "session_binding_policy.idle_ttl_seconds 不能大于 absolute_ttl_seconds",
     );
   }
 }
 
-async function validateExpertConfig(expert: any, currentExpertRoutingId?: string): Promise<void> {
+async function validateExpertConfig(
+  expert: any,
+  currentExpertRoutingId?: string,
+): Promise<void> {
   // FR-2: expert categories must map to a production-eligible intent label.
   // ops labels and out_of_scope MUST be rejected.
   if (!isEligibleExpertRoutingLabel(String(expert.category))) {
     throw new Error(
-      `专家分类 "${expert.category}" 不是受支持的意图标签。仅允许 coding 和 general_control 域的 12 个标签。`
+      `专家分类 "${expert.category}" 不是受支持的意图标签。仅允许 coding 和 general_control 域的 12 个标签。`,
     );
   }
 
   await validateModelConfig(expert, `专家 "${expert.category}"`);
 
-  if (expert.type === 'virtual') {
+  if (expert.type === "virtual") {
     const virtualModel = await modelDb.getById(expert.model_id);
 
     if (virtualModel!.expert_routing_id) {
-      if (currentExpertRoutingId && virtualModel!.expert_routing_id === currentExpertRoutingId) {
+      if (
+        currentExpertRoutingId &&
+        virtualModel!.expert_routing_id === currentExpertRoutingId
+      ) {
         throw new Error(
           `专家 "${expert.category}" 的虚拟模型 "${virtualModel!.name}" 引用了当前专家路由配置,会导致循环依赖。` +
-          `请选择其他模型。`
+            `请选择其他模型。`,
         );
       }
     }
   }
 }
 
-async function validateFallbackConfig(fallback: any, currentExpertRoutingId?: string): Promise<void> {
-  await validateModelConfig(fallback, '降级');
+async function validateFallbackConfig(
+  fallback: any,
+  currentExpertRoutingId?: string,
+): Promise<void> {
+  await validateModelConfig(fallback, "降级");
 
-  if (fallback.type === 'virtual') {
+  if (fallback.type === "virtual") {
     const virtualModel = await modelDb.getById(fallback.model_id);
 
     if (virtualModel!.expert_routing_id) {
-      if (currentExpertRoutingId && virtualModel!.expert_routing_id === currentExpertRoutingId) {
+      if (
+        currentExpertRoutingId &&
+        virtualModel!.expert_routing_id === currentExpertRoutingId
+      ) {
         throw new Error(
           `降级虚拟模型 "${virtualModel!.name}" 引用了当前专家路由配置,会导致循环依赖。` +
-          `请选择其他模型。`
+            `请选择其他模型。`,
         );
       }
     }
   }
 }
 
-async function validateExpertRoutingConfig(config: any, currentExpertRoutingId?: string): Promise<void> {
+async function validateExpertRoutingConfig(
+  config: any,
+  currentExpertRoutingId?: string,
+): Promise<void> {
   await validateLlmSecondPassConfig(config.llm_second_pass);
 
   if (!Array.isArray(config.experts) || config.experts.length === 0) {
-    throw new Error('至少需要配置一个专家映射');
+    throw new Error("至少需要配置一个专家映射");
   }
 
   for (const expert of config.experts) {
@@ -228,37 +256,34 @@ async function validateExpertRoutingConfig(config: any, currentExpertRoutingId?:
  */
 function normalizeRouteSource(raw: string | null): string | null {
   if (!raw) return null;
-  if (raw === 'session' || raw === 'local_onnx' || raw === 'llm_second_pass' || raw === 'fallback') {
+  if (
+    raw === "session" ||
+    raw === "intent_api" ||
+    raw === "llm_second_pass" ||
+    raw === "fallback"
+  ) {
     return raw;
   }
-  return 'llm_second_pass';
+  return "llm_second_pass";
 }
 
 /**
- * Assemble the persisted config object, applying defaults for local_classifier
- * and session_binding_policy when omitted. When `current` is provided (update),
+ * Assemble the persisted config object, applying a session-binding default when
+ * omitted. When `current` is provided (update),
  * unspecified fields fall back to the existing stored values.
  */
 function buildConfigData(body: any, current?: any): any {
-  const local =
-    body.local_classifier ||
-    current?.local_classifier || {
-      model_repo: EXPERT_ROUTING_MODEL_REPO,
-      revision: EXPERT_ROUTING_MODEL_REVISION,
-      onnx_file: EXPERT_ROUTING_ONNX_FILE,
-      max_tokens: 1024,
-    };
-  const sessionBindingPolicy =
-    body.session_binding_policy ||
+  const sessionBindingPolicy = body.session_binding_policy ||
     current?.session_binding_policy || {
       idle_ttl_seconds: DEFAULT_SESSION_IDLE_TTL_SECONDS,
       absolute_ttl_seconds: DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
     };
   return {
-    local_classifier: local,
     llm_second_pass: body.llm_second_pass || current?.llm_second_pass,
     preprocessing:
-      body.preprocessing !== undefined ? body.preprocessing : current?.preprocessing,
+      body.preprocessing !== undefined
+        ? body.preprocessing
+        : current?.preprocessing,
     experts: body.experts || current?.experts || [],
     fallback: body.fallback !== undefined ? body.fallback : current?.fallback,
     session_binding_policy: sessionBindingPolicy,
@@ -272,7 +297,7 @@ function buildConfigData(body: any, current?: any): any {
 async function invalidateBindingsForExpertChanges(
   expertRoutingId: string,
   prevExperts: any[],
-  nextExperts: any[]
+  nextExperts: any[],
 ): Promise<void> {
   const prevById = new Map(prevExperts.map((e) => [e.id, e]));
   const nextById = new Map(nextExperts.map((e) => [e.id, e]));
@@ -292,15 +317,21 @@ async function invalidateBindingsForExpertChanges(
     }
   }
   for (const expertId of changedOrRemoved) {
-    const n = await expertRoutingSessionBindingDb.deleteByExpert(expertRoutingId, expertId);
+    const n = await expertRoutingSessionBindingDb.deleteByExpert(
+      expertRoutingId,
+      expertId,
+    );
     if (n > 0) {
-      memoryLogger.info(`专家映射变更失效会话绑定 | expert=${expertId} | 清除=${n}`, 'ExpertRouting');
+      memoryLogger.info(
+        `专家映射变更失效会话绑定 | expert=${expertId} | 清除=${n}`,
+        "ExpertRouting",
+      );
     }
   }
 }
 
 export async function expertRoutingRoutes(fastify: FastifyInstance) {
-  fastify.addHook('onRequest', fastify.authenticate);
+  fastify.addHook("onRequest", fastify.authenticate);
 
   function safeJsonParse(value?: string | null): any {
     if (!value) return null;
@@ -317,17 +348,28 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
 
     // Some deployments might not have v22 columns; fall back to existing fields.
     const req = log?.classifier_request;
-    if (typeof req === 'string') {
-      if (req === 'llm') return 'llm';
-      if (req === 'l1_semantic' || req === 'l2_llm' || req === 'l3_llm' || req === 'fallback') return req;
-      if (req.startsWith('l1_') || req.startsWith('l2_') || req.startsWith('l3_')) return req;
+    if (typeof req === "string") {
+      if (req === "llm") return "llm";
+      if (
+        req === "l1_semantic" ||
+        req === "l2_llm" ||
+        req === "l3_llm" ||
+        req === "fallback"
+      )
+        return req;
+      if (
+        req.startsWith("l1_") ||
+        req.startsWith("l2_") ||
+        req.startsWith("l3_")
+      )
+        return req;
     }
 
-    const model = String(log?.classifier_model || '');
-    if (model === 'fallback') return 'fallback';
-    if (model === 'heuristic') return 'l2_heuristic';
-    if (model.startsWith('semantic/')) return 'l1_semantic';
-    return 'llm';
+    const model = String(log?.classifier_model || "");
+    if (model === "fallback") return "fallback";
+    if (model === "heuristic") return "l2_heuristic";
+    if (model.startsWith("semantic/")) return "l1_semantic";
+    return "llm";
   }
 
   function inferSemanticScore(log: any): number | undefined {
@@ -336,7 +378,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       return Number.isFinite(n) ? n : undefined;
     }
     const source = inferRouteSource(log);
-    if (source !== 'l1_semantic') return undefined;
+    if (source !== "l1_semantic") return undefined;
     try {
       const parsed = safeJsonParse(log?.classifier_response);
       const score = parsed?.top1?.score;
@@ -347,11 +389,11 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     }
   }
 
-  fastify.get('/', async () => {
+  fastify.get("/", async () => {
     try {
       const configs = await expertRoutingConfigDb.getAll();
-        return {
-          configs: (configs as any[]).map(c => ({
+      return {
+        configs: (configs as any[]).map((c) => ({
           id: c.id,
           name: c.name,
           description: c.description,
@@ -362,23 +404,26 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         })),
       };
     } catch (error: any) {
-      memoryLogger.error(`获取专家路由配置失败: ${error.message}`, 'ExpertRouting');
+      memoryLogger.error(
+        `获取专家路由配置失败: ${error.message}`,
+        "ExpertRouting",
+      );
       throw error;
     }
   });
 
   // Expert templates are served from backend so the frontend doesn't hardcode them.
-  fastify.get('/templates', async () => {
+  fastify.get("/templates", async () => {
     return { templates: expertTemplates };
   });
 
-  fastify.get('/:id', async (request) => {
+  fastify.get("/:id", async (request) => {
     try {
       const { id } = request.params as { id: string };
       const config = await expertRoutingConfigDb.getById(id);
 
       if (!config) {
-        throw new Error('专家路由配置不存在');
+        throw new Error("专家路由配置不存在");
       }
 
       return {
@@ -391,12 +436,15 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         updatedAt: config.updated_at,
       };
     } catch (error: any) {
-      memoryLogger.error(`获取专家路由配置失败: ${error.message}`, 'ExpertRouting');
+      memoryLogger.error(
+        `获取专家路由配置失败: ${error.message}`,
+        "ExpertRouting",
+      );
       throw error;
     }
   });
 
-  fastify.post('/', async (request) => {
+  fastify.post("/", async (request) => {
     try {
       const body = createExpertRoutingSchema.parse(request.body);
 
@@ -413,7 +461,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         config: JSON.stringify(configData),
       });
 
-      memoryLogger.info(`创建专家路由配置: ${config!.name}`, 'ExpertRouting');
+      memoryLogger.info(`创建专家路由配置: ${config!.name}`, "ExpertRouting");
 
       let virtualModel = null;
       if (body.createVirtualModel !== false) {
@@ -430,11 +478,13 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
           routing_config_id: null,
           expert_routing_id: configId,
           enabled: 1,
-          model_attributes: body.modelAttributes ? JSON.stringify(body.modelAttributes) : null,
+          model_attributes: body.modelAttributes
+            ? JSON.stringify(body.modelAttributes)
+            : null,
           prompt_config: null,
           compression_config: null,
         });
-        memoryLogger.info(`创建专家模型: ${virtualModelName}`, 'ExpertRouting');
+        memoryLogger.info(`创建专家模型: ${virtualModelName}`, "ExpertRouting");
       }
 
       return {
@@ -445,36 +495,40 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         config: JSON.parse(config!.config),
         createdAt: config!.created_at,
         updatedAt: config!.updated_at,
-        virtualModel: virtualModel ? {
-          id: virtualModel.id,
-          name: virtualModel.name,
-          providerId: virtualModel.provider_id,
-          modelIdentifier: virtualModel.model_identifier,
-          isVirtual: true,
-          expertRoutingId: virtualModel.expert_routing_id,
-        } : null,
+        virtualModel: virtualModel
+          ? {
+              id: virtualModel.id,
+              name: virtualModel.name,
+              providerId: virtualModel.provider_id,
+              modelIdentifier: virtualModel.model_identifier,
+              isVirtual: true,
+              expertRoutingId: virtualModel.expert_routing_id,
+            }
+          : null,
       };
     } catch (error: any) {
-      memoryLogger.error(`创建专家路由配置失败: ${error.message}`, 'ExpertRouting');
+      memoryLogger.error(
+        `创建专家路由配置失败: ${error.message}`,
+        "ExpertRouting",
+      );
       throw error;
     }
   });
 
-  fastify.put('/:id', async (request) => {
+  fastify.put("/:id", async (request) => {
     try {
       const { id } = request.params as { id: string };
       const body = updateExpertRoutingSchema.parse(request.body);
 
       const existingConfig = await expertRoutingConfigDb.getById(id);
       if (!existingConfig) {
-        throw new Error('专家路由配置不存在');
+        throw new Error("专家路由配置不存在");
       }
 
       let configData;
       const currentConfig = JSON.parse(existingConfig.config);
       if (
         body.llm_second_pass ||
-        body.local_classifier ||
         body.experts ||
         body.fallback !== undefined ||
         body.preprocessing !== undefined ||
@@ -486,27 +540,37 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
 
         // AC-6: invalidate bindings for experts removed or changed by this update.
         if (body.experts) {
-          await invalidateBindingsForExpertChanges(id, currentConfig.experts || [], configData.experts);
+          await invalidateBindingsForExpertChanges(
+            id,
+            currentConfig.experts || [],
+            configData.experts,
+          );
         }
       }
 
       await expertRoutingConfigDb.update(id, {
         name: body.name,
         description: body.description ?? undefined,
-        enabled: body.enabled !== undefined ? (body.enabled ? 1 : 0) : undefined,
+        enabled:
+          body.enabled !== undefined ? (body.enabled ? 1 : 0) : undefined,
         config: configData ? JSON.stringify(configData) : undefined,
       });
 
       if (body.name && body.name !== existingConfig.name) {
-        const associatedModels = (await modelDb.getAll() as any[]).filter((m: any) => m.expert_routing_id === id);
+        const associatedModels = ((await modelDb.getAll()) as any[]).filter(
+          (m: any) => m.expert_routing_id === id,
+        );
         for (const model of associatedModels) {
           await modelDb.update(model.id, { name: body.name });
           hotConfigCache.invalidateModel(model.id);
         }
-        memoryLogger.info(`同步更新专家路由关联模型名称: ${associatedModels.length} 个`, 'ExpertRouting');
+        memoryLogger.info(
+          `同步更新专家路由关联模型名称: ${associatedModels.length} 个`,
+          "ExpertRouting",
+        );
       }
 
-      memoryLogger.info(`更新专家路由配置: ${id}`, 'ExpertRouting');
+      memoryLogger.info(`更新专家路由配置: ${id}`, "ExpertRouting");
 
       const updatedConfig = await expertRoutingConfigDb.getById(id);
       return {
@@ -519,18 +583,21 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         updatedAt: updatedConfig!.updated_at,
       };
     } catch (error: any) {
-      memoryLogger.error(`更新专家路由配置失败: ${error.message}`, 'ExpertRouting');
+      memoryLogger.error(
+        `更新专家路由配置失败: ${error.message}`,
+        "ExpertRouting",
+      );
       throw error;
     }
   });
 
-  fastify.delete('/:id', async (request) => {
+  fastify.delete("/:id", async (request) => {
     try {
       const { id } = request.params as { id: string };
 
       const existingConfig = await expertRoutingConfigDb.getById(id);
       if (!existingConfig) {
-        throw new Error('专家路由配置不存在');
+        throw new Error("专家路由配置不存在");
       }
 
       const associatedModels = await modelDb.getByExpertRoutingId(id);
@@ -538,7 +605,8 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       let detachedModels = 0;
 
       for (const model of associatedModels) {
-        const shouldDelete = model.is_virtual === 1 && model.model_identifier === `expert-${id}`;
+        const shouldDelete =
+          model.is_virtual === 1 && model.model_identifier === `expert-${id}`;
         if (shouldDelete) {
           await modelDb.delete(model.id);
           hotConfigCache.invalidateModel(model.id);
@@ -551,31 +619,38 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       }
 
       await expertRoutingConfigDb.delete(id);
-      const clearedBindings = await expertRoutingSessionBindingDb.deleteByConfig(id);
+      const clearedBindings =
+        await expertRoutingSessionBindingDb.deleteByConfig(id);
       memoryLogger.info(
         `删除专家路由配置: ${id} | 删除专家模型: ${deletedModels} 个 | 解绑模型: ${detachedModels} 个 | 清除会话绑定: ${clearedBindings} 个`,
-        'ExpertRouting'
+        "ExpertRouting",
       );
       return { success: true };
     } catch (error: any) {
-      memoryLogger.error(`删除专家路由配置失败: ${error.message}`, 'ExpertRouting');
+      memoryLogger.error(
+        `删除专家路由配置失败: ${error.message}`,
+        "ExpertRouting",
+      );
       throw error;
     }
   });
 
-  fastify.get('/:id/statistics', async (request) => {
+  fastify.get("/:id/statistics", async (request) => {
     try {
       const { id } = request.params as { id: string };
       const { timeRange } = request.query as { timeRange?: string };
 
       const config = await expertRoutingConfigDb.getById(id);
       if (!config) {
-        throw new Error('专家路由配置不存在');
+        throw new Error("专家路由配置不存在");
       }
 
       const timeRangeMs = timeRange ? Number.parseInt(timeRange) : undefined;
       const stats = await expertRoutingLogDb.getStatistics(id, timeRangeMs);
-      const routeStats = await expertRoutingLogDb.getRouteStats(id, timeRangeMs);
+      const routeStats = await expertRoutingLogDb.getRouteStats(
+        id,
+        timeRangeMs,
+      );
 
       const categoryDistribution: Record<string, number> = {};
       let totalRequests = 0;
@@ -600,7 +675,8 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
           // (l1_/l2_/l3_/llm) roll up to llm_second_pass.
           const normalized = normalizeRouteSource(raw);
           if (normalized) {
-            routeSourceDistribution[normalized] = (routeSourceDistribution[normalized] || 0) + Number(row.count);
+            routeSourceDistribution[normalized] =
+              (routeSourceDistribution[normalized] || 0) + Number(row.count);
           }
           const count = Number(row.count);
           totalCleanedLength += Number(row.avg_cleaned_length || 0) * count;
@@ -609,50 +685,64 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         }
       } else {
         // Fallback when stats columns (route_source/prompt_tokens/cleaned_content_length) are missing.
-        const modelStats = await expertRoutingLogDb.getClassifierModelStats(id, timeRangeMs);
+        const modelStats = await expertRoutingLogDb.getClassifierModelStats(
+          id,
+          timeRangeMs,
+        );
         for (const row of modelStats as any[]) {
-          const model = String(row.classifier_model || '');
+          const model = String(row.classifier_model || "");
           const count = Number(row.count);
-          const source = model === 'fallback' ? 'fallback' : 'llm_second_pass';
-          routeSourceDistribution[source] = (routeSourceDistribution[source] || 0) + count;
+          const source = model === "fallback" ? "fallback" : "llm_second_pass";
+          routeSourceDistribution[source] =
+            (routeSourceDistribution[source] || 0) + count;
         }
       }
 
       const cleaningStats = {
-        avgPromptTokens: cleaningCount > 0 ? Math.round(totalPromptTokens / cleaningCount) : 0,
-        avgCleanedLength: cleaningCount > 0 ? Math.round(totalCleanedLength / cleaningCount) : 0,
-        totalRequests: cleaningCount
+        avgPromptTokens:
+          cleaningCount > 0 ? Math.round(totalPromptTokens / cleaningCount) : 0,
+        avgCleanedLength:
+          cleaningCount > 0
+            ? Math.round(totalCleanedLength / cleaningCount)
+            : 0,
+        totalRequests: cleaningCount,
       };
 
-      const avgClassificationTime = totalRequests > 0
-        ? Math.round(totalClassificationTime / totalRequests)
-        : 0;
+      const avgClassificationTime =
+        totalRequests > 0
+          ? Math.round(totalClassificationTime / totalRequests)
+          : 0;
 
       return {
         totalRequests,
         avgClassificationTime,
         categoryDistribution,
         routeSourceDistribution,
-        cleaningStats
+        cleaningStats,
       };
     } catch (error: any) {
-      memoryLogger.error(`获取专家路由统计失败: ${error.message}`, 'ExpertRouting');
+      memoryLogger.error(
+        `获取专家路由统计失败: ${error.message}`,
+        "ExpertRouting",
+      );
       throw error;
     }
   });
 
-  fastify.get('/:id/logs', async (request) => {
+  fastify.get("/:id/logs", async (request) => {
     try {
       const { id } = request.params as { id: string };
       const { limit } = request.query as { limit?: string };
 
       const config = await expertRoutingConfigDb.getById(id);
       if (!config) {
-        throw new Error('专家路由配置不存在');
+        throw new Error("专家路由配置不存在");
       }
 
       const limitNum = limit ? Number.parseInt(limit) : 100;
-      const logs = (await expertRoutingLogDb.getByConfigId(id, limitNum) as any[]).map((log) => ({
+      const logs = (
+        (await expertRoutingLogDb.getByConfigId(id, limitNum)) as any[]
+      ).map((log) => ({
         ...log,
         route_source: inferRouteSource(log),
         semantic_score: inferSemanticScore(log),
@@ -660,66 +750,100 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
 
       return { logs };
     } catch (error: any) {
-      memoryLogger.error(`获取专家路由日志失败: ${error.message}`, 'ExpertRouting');
+      memoryLogger.error(
+        `获取专家路由日志失败: ${error.message}`,
+        "ExpertRouting",
+      );
       throw error;
     }
   });
 
-  fastify.get('/:id/training-records', async (request) => {
+  fastify.get("/:id/training-records", async (request) => {
     const { id } = request.params as { id: string };
-    const query = z.object({
-      status: trainingRecordStatusSchema.optional(),
-      limit: z.coerce.number().int().min(1).max(500).default(100),
-    }).parse(request.query);
+    const query = z
+      .object({
+        status: trainingRecordStatusSchema.optional(),
+        limit: z.coerce.number().int().min(1).max(500).default(100),
+      })
+      .parse(request.query);
     const config = await expertRoutingConfigDb.getById(id);
-    if (!config) throw new Error('专家路由配置不存在');
-    return { records: await expertRoutingTrainingRecordDb.getByConfigId(id, query.status, query.limit) };
+    if (!config) throw new Error("专家路由配置不存在");
+    return {
+      records: await expertRoutingTrainingRecordDb.getByConfigId(
+        id,
+        query.status,
+        query.limit,
+      ),
+    };
   });
 
-  fastify.patch('/:id/training-records/:recordId', async (request) => {
+  fastify.patch("/:id/training-records/:recordId", async (request) => {
     const { id, recordId } = request.params as { id: string; recordId: string };
-    const body = z.object({
-      status: trainingRecordStatusSchema,
-      final_intent_label: z.string().refine(isExpertRoutingLabel, '必须是稳定意图标签'),
-    }).parse(request.body);
+    const body = z
+      .object({
+        status: trainingRecordStatusSchema,
+        final_intent_label: z
+          .string()
+          .refine(isExpertRoutingLabel, "必须是稳定意图标签"),
+      })
+      .parse(request.body);
     const updated = await expertRoutingTrainingRecordDb.updateReview(
       id,
       recordId,
       body.status,
-      body.final_intent_label
+      body.final_intent_label,
     );
-    if (!updated) throw new Error('训练样本不存在');
+    if (!updated) throw new Error("训练样本不存在");
     return { success: true };
   });
 
-  fastify.get('/:id/training-records/export', async (request, reply) => {
+  fastify.get("/:id/training-records/export", async (request, reply) => {
     const { id } = request.params as { id: string };
     const config = await expertRoutingConfigDb.getById(id);
-    if (!config) throw new Error('专家路由配置不存在');
-    const records = await expertRoutingTrainingRecordDb.getByConfigId(id, 'accepted');
-    const jsonl = records.map((record) => JSON.stringify({
-      text: record.input_text,
-      label: record.final_intent_label,
-      source: 'llm_judge_reviewed',
-      judge_prompt_version: record.judge_prompt_version,
-    })).join('\n');
-    reply.header('Content-Type', 'application/x-ndjson; charset=utf-8');
-    reply.header('Content-Disposition', `attachment; filename="expert-routing-${id}-accepted.jsonl"`);
-    return jsonl ? `${jsonl}\n` : '';
+    if (!config) throw new Error("专家路由配置不存在");
+    const records = await expertRoutingTrainingRecordDb.getByConfigId(
+      id,
+      "accepted",
+    );
+    const jsonl = records
+      .map((record) =>
+        JSON.stringify({
+          text: record.input_text,
+          label: record.final_intent_label,
+          source: "llm_judge_reviewed",
+          judge_prompt_version: record.judge_prompt_version,
+        }),
+      )
+      .join("\n");
+    reply.header("Content-Type", "application/x-ndjson; charset=utf-8");
+    reply.header(
+      "Content-Disposition",
+      `attachment; filename="expert-routing-${id}-accepted.jsonl"`,
+    );
+    return jsonl ? `${jsonl}\n` : "";
   });
 
-  fastify.get('/:id/logs/category/:category', async (request) => {
+  fastify.get("/:id/logs/category/:category", async (request) => {
     try {
-      const { id, category } = request.params as { id: string; category: string };
+      const { id, category } = request.params as {
+        id: string;
+        category: string;
+      };
       const { limit } = request.query as { limit?: string };
 
       const config = await expertRoutingConfigDb.getById(id);
       if (!config) {
-        throw new Error('专家路由配置不存在');
+        throw new Error("专家路由配置不存在");
       }
 
       const limitNum = limit ? Number.parseInt(limit) : 100;
-      const logs = (await expertRoutingLogDb.getByCategory(id, category, limitNum) as any[]).map((log) => ({
+      const logs = (
+        (await expertRoutingLogDb.getByCategory(
+          id,
+          category,
+          limitNum,
+        )) as any[]
+      ).map((log) => ({
         ...log,
         route_source: inferRouteSource(log),
         semantic_score: inferSemanticScore(log),
@@ -727,27 +851,27 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
 
       return { logs };
     } catch (error: any) {
-      memoryLogger.error(`获取分类日志失败: ${error.message}`, 'ExpertRouting');
+      memoryLogger.error(`获取分类日志失败: ${error.message}`, "ExpertRouting");
       throw error;
     }
   });
 
-  fastify.get('/:id/logs/:logId/details', async (request) => {
+  fastify.get("/:id/logs/:logId/details", async (request) => {
     try {
       const { id, logId } = request.params as { id: string; logId: string };
 
       const config = await expertRoutingConfigDb.getById(id);
       if (!config) {
-        throw new Error('专家路由配置不存在');
+        throw new Error("专家路由配置不存在");
       }
 
       const log = await expertRoutingLogDb.getById(logId);
       if (!log) {
-        throw new Error('日志不存在');
+        throw new Error("日志不存在");
       }
 
       if (log.expert_routing_id !== id) {
-        throw new Error('日志不属于该专家路由配置');
+        throw new Error("日志不属于该专家路由配置");
       }
 
       const inferredSource = inferRouteSource(log);
@@ -773,19 +897,19 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         semantic_score: inferSemanticScore(log),
       };
     } catch (error: any) {
-      memoryLogger.error(`获取日志详情失败: ${error.message}`, 'ExpertRouting');
+      memoryLogger.error(`获取日志详情失败: ${error.message}`, "ExpertRouting");
       throw error;
     }
   });
 
-  fastify.post('/:id/models', async (request) => {
+  fastify.post("/:id/models", async (request) => {
     try {
       const { id } = request.params as { id: string };
       const { modelIds } = request.body as { modelIds: string[] };
 
       const config = await expertRoutingConfigDb.getById(id);
       if (!config) {
-        throw new Error('专家路由配置不存在');
+        throw new Error("专家路由配置不存在");
       }
 
       for (const modelId of modelIds) {
@@ -798,26 +922,29 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         }
       }
 
-      memoryLogger.info(`关联模型到专家路由: ${id} | 模型数量: ${modelIds.length}`, 'ExpertRouting');
+      memoryLogger.info(
+        `关联模型到专家路由: ${id} | 模型数量: ${modelIds.length}`,
+        "ExpertRouting",
+      );
 
       return { success: true };
     } catch (error: any) {
-      memoryLogger.error(`关联模型失败: ${error.message}`, 'ExpertRouting');
+      memoryLogger.error(`关联模型失败: ${error.message}`, "ExpertRouting");
       throw error;
     }
   });
 
-  fastify.delete('/:id/models/:modelId', async (request) => {
+  fastify.delete("/:id/models/:modelId", async (request) => {
     try {
       const { id, modelId } = request.params as { id: string; modelId: string };
 
       const model = await modelDb.getById(modelId);
       if (!model) {
-        throw new Error('模型不存在');
+        throw new Error("模型不存在");
       }
 
       if (model.expert_routing_id !== id) {
-        throw new Error('模型未关联到此专家路由');
+        throw new Error("模型未关联到此专家路由");
       }
 
       await modelDb.update(modelId, {
@@ -825,40 +952,47 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       });
       hotConfigCache.invalidateModel(modelId);
 
-      memoryLogger.info(`取消模型关联: ${modelId} | 专家路由: ${id}`, 'ExpertRouting');
+      memoryLogger.info(
+        `取消模型关联: ${modelId} | 专家路由: ${id}`,
+        "ExpertRouting",
+      );
 
       return { success: true };
     } catch (error: any) {
-      memoryLogger.error(`取消模型关联失败: ${error.message}`, 'ExpertRouting');
+      memoryLogger.error(`取消模型关联失败: ${error.message}`, "ExpertRouting");
       throw error;
     }
   });
 
-  fastify.post('/preferences/preview-width', async (request) => {
+  fastify.post("/preferences/preview-width", async (request) => {
     try {
       const { width } = request.body as { width: number };
 
-      if (typeof width !== 'number' || width < 400 || width > 1200) {
-        throw new Error('无效的预览宽度');
+      if (typeof width !== "number" || width < 400 || width > 1200) {
+        throw new Error("无效的预览宽度");
       }
 
-      await systemConfigDb.set('expert_routing_preview_width', String(width), '专家路由预览宽度');
+      await systemConfigDb.set(
+        "expert_routing_preview_width",
+        String(width),
+        "专家路由预览宽度",
+      );
 
       return { success: true };
     } catch (error: any) {
-      memoryLogger.error(`保存预览宽度失败: ${error.message}`, 'ExpertRouting');
+      memoryLogger.error(`保存预览宽度失败: ${error.message}`, "ExpertRouting");
       throw error;
     }
   });
 
-  fastify.get('/preferences/preview-width', async () => {
+  fastify.get("/preferences/preview-width", async () => {
     try {
-      const config = await systemConfigDb.get('expert_routing_preview_width');
+      const config = await systemConfigDb.get("expert_routing_preview_width");
       const width = config ? Number.parseInt(config.value, 10) : 600;
 
       return { width };
     } catch (error: any) {
-      memoryLogger.error(`获取预览宽度失败: ${error.message}`, 'ExpertRouting');
+      memoryLogger.error(`获取预览宽度失败: ${error.message}`, "ExpertRouting");
       throw error;
     }
   });

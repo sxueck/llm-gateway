@@ -9,10 +9,7 @@ import { memoryLogger } from "./logger.js";
 import { ExpertRoutingConfig } from "../types/index.js";
 import { ExpertTarget } from "../types/expert-routing.js";
 import crypto from "crypto";
-import {
-  isEligibleExpertRoutingLabel,
-  EXPERT_ROUTING_MODEL_REPO,
-} from "@llm-gateway/shared";
+import { isEligibleExpertRoutingLabel } from "@llm-gateway/shared";
 
 import { SignalBuilder } from "./expert-router/preprocess/index.js";
 import { LLMJudge } from "./expert-router/decision/llm-judge.js";
@@ -24,14 +21,9 @@ import {
   type SessionBindingKey,
 } from "../db/repositories/expert-routing-session-binding.repository.js";
 import {
-  classifyWithLocalOnnx,
-  type LocalClassifyResult,
-} from "./expert-router/local/classifier.js";
-import {
-  isLocalClassifierDisabled,
-  isLocalClassifierReady,
-  loadLocalClassifierAssets,
-} from "./expert-router/local/model-assets.js";
+  classifyIntent,
+  type IntentRouterResponse,
+} from "./expert-router/intent-router-client.js";
 
 interface RoutingContext {
   modelId?: string;
@@ -52,18 +44,14 @@ interface ExpertRoutingResult {
   enable_adaptive_thinking?: boolean;
 }
 
-const LOCAL_CLASSIFIER_MODEL_NAME = `onnx/${EXPERT_ROUTING_MODEL_REPO}`;
-
 export class ExpertRouter {
   /**
    * Core Expert Routing flow:
    *   1. (session) read durable binding → if valid, route directly without inference
-   *   2. local ONNX classify → eligible+passing+mapped expert (local_onnx)
-   *   3. LLM second pass when local rejects / returns ineligible / unmapped / errored
+   *   2. Intent Router API classify → accepted+eligible+mapped expert (intent_api)
+   *   3. LLM second pass when the API rejects, returns an ineligible/unmapped label, or fails
    *   4. fallback when no expert resolves
-   *   5. persist a durable binding only for a resolved local_onnx/llm_second_pass expert
-   *
-   * See FR-1..FR-15 and NFR-3/NFR-4 for the binding and policy semantics.
+   *   5. persist a durable binding only for a resolved intent_api/llm_second_pass expert
    */
   async route(
     request: ProxyRequest,
@@ -187,78 +175,63 @@ export class ExpertRouter {
       }
     }
 
-    // 3. Local ONNX classification (local_onnx) when assets are ready.
+    // 3. Intent Router API classification when configured.
     let candidateExpert: ExpertTarget | null = null;
-    let candidateSource: RouteDecision["source"] = "local_onnx";
+    let candidateSource: RouteDecision["source"] = "intent_api";
     const candidateMeta: Record<string, any> = {};
-    let localResult: LocalClassifyResult | null = null;
+    let intentResult: IntentRouterResponse | null = null;
 
-    if (isLocalClassifierReady()) {
-      try {
-        localResult = await classifyWithLocalOnnx(
-          signal.intentText,
-          config.local_classifier.max_tokens,
-        );
-        candidateMeta.local = {
-          revision: localResult.revision,
-          latencyMs: localResult.latencyMs,
-          seqLen: localResult.seqLen,
-          truncated: localResult.truncated,
-          top1: localResult.policy.top1,
-          top2: localResult.policy.top2,
-          rejected: localResult.policy.rejected,
-          rejectionReason: localResult.policy.rejectionReason,
-          matchedKeywordIntent: localResult.policy.matchedKeywordIntent,
-          appliedFlip: localResult.policy.appliedFlip,
-          chosenLabel: localResult.policy.chosenLabel,
-        };
-        // Make the local classifier request auditable; otherwise the log field renders as '{}'.
-        candidateMeta.classifierRequest = {
-          model: LOCAL_CLASSIFIER_MODEL_NAME,
-          input: signal.intentText,
-          max_tokens: config.local_classifier.max_tokens,
-        };
+    try {
+      intentResult = await classifyIntent(signal.intentText);
+      const item = intentResult.data[0];
+      const route = item.route;
+      candidateMeta.intentApi = {
+        model: intentResult.model,
+        revision: intentResult.revision,
+        latencyMs: intentResult.latency_ms,
+        inferenceMs: intentResult.stats.inference_ms,
+        tokenCount: item.token_count,
+        truncated: item.truncated,
+        top1: item.labels[0],
+        route,
+      };
+      candidateMeta.classifierRequest = {
+        model: intentResult.model,
+        input: signal.intentText,
+      };
 
-        const chosen = localResult.policy.chosenLabel;
-        const eligible =
-          !localResult.policy.rejected && isEligibleExpertRoutingLabel(chosen);
-        memoryLogger.debug(
-          `Local ONNX | chosen=${chosen} | top1=${localResult.policy.top1?.label}:${(localResult.policy.top1?.score ?? 0).toFixed(3)} | rejected=${localResult.policy.rejected}(${localResult.policy.rejectionReason ?? ""}) | eligible=${eligible}`,
-          "ExpertRouter",
-        );
+      const eligible =
+        !route.rejected && isEligibleExpertRoutingLabel(route.intent);
+      memoryLogger.debug(
+        `Intent Router API | intent=${route.intent} | top1=${route.top1_score.toFixed(3)} | rejected=${route.rejected}(${route.reason}) | eligible=${eligible}`,
+        "ExpertRouter",
+      );
 
-        if (eligible) {
-          const expert = matchExpert(chosen, config.experts);
-          if (expert) {
-            candidateExpert = expert;
-          } else {
-            memoryLogger.info(
-              `Local ONNX label "${chosen}" has no mapped expert → LLM second pass`,
-              "ExpertRouter",
-            );
-          }
+      if (eligible) {
+        const expert = matchExpert(route.intent, config.experts);
+        if (expert) {
+          candidateExpert = expert;
         } else {
           memoryLogger.info(
-            `Local ONNX ineligible/rejected ("${chosen}") → LLM second pass`,
+            `Intent Router API label "${route.intent}" has no mapped expert → LLM second pass`,
             "ExpertRouter",
           );
         }
-      } catch (e: any) {
-        memoryLogger.error(
-          `Local ONNX classifier failed: ${e.message} → LLM second pass`,
+      } else {
+        memoryLogger.info(
+          `Intent Router API rejected/ineligible ("${route.intent}") → LLM second pass`,
           "ExpertRouter",
         );
-        candidateMeta.localError = e?.message || String(e);
       }
-    } else {
-      candidateMeta.localUnavailable = true;
-      memoryLogger.warn(
-        "Local ONNX classifier not ready → LLM second pass",
+    } catch (e: any) {
+      memoryLogger.error(
+        `Intent Router API failed: ${e.message} → LLM second pass`,
         "ExpertRouter",
       );
+      candidateMeta.intentApiError = e?.message || String(e);
     }
 
-    // 4. LLM second pass when local did not resolve a candidate (FR-5).
+    // 4. LLM second pass when the API did not resolve a candidate.
     let llmJudgeFailedRequest: any = null;
     if (!candidateExpert) {
       if (signal.intentText?.trim()) {
@@ -274,7 +247,7 @@ export class ExpertRouter {
           await this.archiveLlmDecision(
             expertRoutingId,
             signal.intentText,
-            localResult,
+            intentResult,
             decision,
             expert?.id,
           );
@@ -313,8 +286,8 @@ export class ExpertRouter {
     if (candidateExpert) {
       const classificationTime = Date.now() - startTime;
       const classifierModelName =
-        candidateSource === "local_onnx"
-          ? LOCAL_CLASSIFIER_MODEL_NAME
+        candidateSource === "intent_api"
+          ? intentResult?.model
           : await this.llmSecondPassModelName(config);
 
       const result = await this.resolveExpert(
@@ -322,8 +295,8 @@ export class ExpertRouter {
         {
           category: candidateExpert.category,
           confidence:
-            candidateSource === "local_onnx"
-              ? (localResult?.policy.top1.score ?? 0)
+            candidateSource === "intent_api"
+              ? (intentResult?.data[0].route.top1_score ?? 0)
               : 1,
           source: candidateSource,
           metadata: candidateMeta,
@@ -339,8 +312,7 @@ export class ExpertRouter {
         classifierModelName,
       );
 
-      // FR-8 / NFR-3: persist a durable binding only on a successful
-      // local_onnx or llm_second_pass resolution, using first-writer-wins.
+      // Persist a durable binding only after an API or LLM expert resolution.
       if (sessionId) {
         await this.persistBindingRaceSafe(
           bindingKey,
@@ -434,7 +406,7 @@ export class ExpertRouter {
     const requestHash = this.generateRequestHash(request);
     const modelName =
       classifierModelName ??
-      (routeSource === "local_onnx" ? LOCAL_CLASSIFIER_MODEL_NAME : "expert");
+      (routeSource === "intent_api" ? "intent-router-api" : "expert");
 
     await expertRoutingLogDb.create({
       id: nanoid(),
@@ -567,7 +539,7 @@ export class ExpertRouter {
   private async archiveLlmDecision(
     expertRoutingId: string,
     inputText: string,
-    localResult: LocalClassifyResult | null,
+    intentResult: IntentRouterResponse | null,
     decision: RouteDecision,
     expertId?: string,
   ): Promise<void> {
@@ -577,16 +549,15 @@ export class ExpertRouter {
         expert_routing_id: expertRoutingId,
         input_hash: crypto.createHash("sha256").update(inputText).digest("hex"),
         input_text: inputText,
-        local_result: localResult
+        local_result: intentResult
           ? JSON.stringify({
-              top1: localResult.policy.top1,
-              top2: localResult.policy.top2,
-              rejected: localResult.policy.rejected,
-              rejectionReason: localResult.policy.rejectionReason,
-              chosenLabel: localResult.policy.chosenLabel,
+              model: intentResult.model,
+              revision: intentResult.revision,
+              top1: intentResult.data[0].labels[0],
+              route: intentResult.data[0].route,
             })
           : undefined,
-        classifier_revision: localResult?.revision,
+        classifier_revision: intentResult?.revision,
         judge_prompt_version: String(
           decision.metadata?.promptVersion || "unknown",
         ),
@@ -630,29 +601,6 @@ function findExpertById(
 }
 
 export const expertRouter = new ExpertRouter();
-
-/**
- * Ensure local ONNX assets are loaded (best-effort, non-fatal). Called at
- * startup so readiness reflects asset availability (FR-15); failures degrade
- * Expert Routing to LLM second pass / fallback rather than crashing the process.
- * Deployments that set LOCAL_INTENT_CLASSIFIER=off skip the preload entirely so
- * the model never occupies process memory.
- */
-export async function initLocalClassifier(): Promise<void> {
-  if (isLocalClassifierDisabled()) {
-    memoryLogger.info(
-      "Local ONNX classifier disabled (LOCAL_INTENT_CLASSIFIER=off); model not loaded. " +
-        "Expert Routing falls back to LLM second pass / fallback; /v1/intent/classify returns 503 classifier_disabled.",
-      "ExpertRouter",
-    );
-    return;
-  }
-  try {
-    await loadLocalClassifierAssets();
-  } catch {
-    // Error already logged inside the loader.
-  }
-}
 
 /**
  * Periodically delete expired session bindings in bounded batches (NFR-4).
