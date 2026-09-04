@@ -4,41 +4,50 @@
       <template #header>
         <div class="stage-header">
           <n-tag type="warning" round size="small">Step 1</n-tag>
-          <span class="stage-title">{{ tr('expertRouting.preprocessingTitle', '请求清洗 (Cleaning)') }}</span>
+          <span class="stage-title">{{
+            tr("expertRouting.preprocessingTitle", "请求清洗 (Cleaning)")
+          }}</span>
           <n-tooltip trigger="hover">
             <template #trigger>
-              <n-icon size="16" class="info-icon"><InformationCircleOutline /></n-icon>
+              <n-icon size="16" class="info-icon"
+                ><InformationCircleOutline
+              /></n-icon>
             </template>
-            {{ tr('expertRouting.preprocessingTooltip', '清洗请求中的干扰信息，提高分类准确度') }}
+            {{
+              tr(
+                "expertRouting.preprocessingTooltip",
+                "清洗请求中的干扰信息，提高分类准确度",
+              )
+            }}
           </n-tooltip>
         </div>
       </template>
-      
+
       <div class="stage-content">
         <n-text depth="3" class="stage-desc">
           配置需要清理/缩减的内容，以获得更纯净的意图文本。
         </n-text>
         <n-divider style="margin: 12px 0" />
         <n-grid :cols="2" :y-gap="12" :x-gap="24">
-           <n-gi>
-              <n-checkbox v-model:checked="preprocessing.strip_tools">
-                缩减工具上下文 (Tools)
-              </n-checkbox>
-            </n-gi>
           <n-gi>
-             <n-checkbox v-model:checked="preprocessing.strip_code_blocks">
-               移除代码块 (Code Blocks)
-             </n-checkbox>
+            <n-checkbox v-model:checked="preprocessing.strip_tools">
+              缩减工具上下文 (Tools)
+            </n-checkbox>
           </n-gi>
           <n-gi>
-             <n-checkbox v-model:checked="preprocessing.strip_files">
-               移除文件/多媒体 (Files)
-             </n-checkbox>
+            <n-checkbox v-model:checked="preprocessing.strip_code_blocks">
+              移除代码块 (Code Blocks)
+            </n-checkbox>
           </n-gi>
           <n-gi>
-             <n-checkbox v-model:checked="preprocessing.strip_system_prompt">
-               移除系统提示词 (System Prompt)
-             </n-checkbox>
+            <n-checkbox v-model:checked="preprocessing.strip_files">
+              移除文件/多媒体 (Files)
+            </n-checkbox>
+          </n-gi>
+          <n-gi>
+            <n-checkbox v-model:checked="preprocessing.strip_system_prompt">
+              移除系统提示词 (System Prompt)
+            </n-checkbox>
           </n-gi>
         </n-grid>
       </div>
@@ -52,35 +61,37 @@
       <template #header>
         <div class="stage-header">
           <n-tag type="info" round size="small">Step 2</n-tag>
-          <span class="stage-title">{{ tr('expertRouting.localClassifierTitle', '本地 ONNX 分类 (Primary)') }}</span>
+          <span class="stage-title">{{
+            tr(
+              "expertRouting.localClassifierTitle",
+              "外置 Intent Router API (主分类)",
+            )
+          }}</span>
           <n-tooltip trigger="hover">
             <template #trigger>
-              <n-icon size="16" class="info-icon"><InformationCircleOutline /></n-icon>
+              <n-icon size="16" class="info-icon"
+                ><InformationCircleOutline
+              /></n-icon>
             </template>
-            {{ tr('expertRouting.localClassifierTooltip', '本地 ONNX 意图分类器作为主分类；无需调用 LLM。模型与版本由部署固定。') }}
+            {{
+              tr(
+                "expertRouting.localClassifierTooltip",
+                "由部署环境配置的 Intent Router API 执行主分类。",
+              )
+            }}
           </n-tooltip>
         </div>
       </template>
 
       <div class="stage-content">
         <n-text depth="3" class="stage-desc">
-          {{ tr('expertRouting.localClassifierDesc', '主分类由本地 ONNX 模型完成。低置信度、ops 或 out_of_scope 结果将进入下方 LLM 二次分类。') }}
+          {{
+            tr(
+              "expertRouting.localClassifierDesc",
+              "主分类由外置 Intent Router API 完成。被拒判、ops、out_of_scope 或服务不可用时，将进入下方 LLM 二次分类。",
+            )
+          }}
         </n-text>
-        <n-divider style="margin: 12px 0" />
-        <n-descriptions label-placement="left" :column="1" size="small" bordered>
-          <n-descriptions-item label="Repo">
-            {{ localClassifier?.model_repo }}
-          </n-descriptions-item>
-          <n-descriptions-item label="Revision">
-            <n-text depth="3" code style="font-size: 12px">{{ localClassifier?.revision }}</n-text>
-          </n-descriptions-item>
-          <n-descriptions-item label="ONNX">
-            {{ localClassifier?.onnx_file }}
-          </n-descriptions-item>
-          <n-descriptions-item :label="tr('expertRouting.maxTokens', '最大 Tokens')">
-            {{ localClassifier?.max_tokens }}
-          </n-descriptions-item>
-        </n-descriptions>
       </div>
     </n-card>
 
@@ -92,19 +103,33 @@
       <template #header>
         <div class="stage-header">
           <n-tag type="success" round size="small">Step 3</n-tag>
-          <span class="stage-title">{{ tr('expertRouting.llmSecondPassTitle', 'LLM 二次分类 (Second Pass)') }}</span>
+          <span class="stage-title">{{
+            tr("expertRouting.llmSecondPassTitle", "LLM 二次分类 (Second Pass)")
+          }}</span>
           <n-tooltip trigger="hover">
             <template #trigger>
-              <n-icon size="16" class="info-icon"><InformationCircleOutline /></n-icon>
+              <n-icon size="16" class="info-icon"
+                ><InformationCircleOutline
+              /></n-icon>
             </template>
-            {{ tr('expertRouting.classificationTooltip', '当本地分类被拒判、返回不支持的 ops/out_of_scope 标签或缺少专家映射时调用') }}
+            {{
+              tr(
+                "expertRouting.classificationTooltip",
+                "当本地分类被拒判、返回不支持的 ops/out_of_scope 标签或缺少专家映射时调用",
+              )
+            }}
           </n-tooltip>
         </div>
       </template>
 
       <div class="stage-content">
         <n-text depth="3" class="stage-desc">
-          {{ tr('expertRouting.classificationDesc', '配置二次分类器模型和提示词，以处理本地分类无法决策的请求。') }}
+          {{
+            tr(
+              "expertRouting.classificationDesc",
+              "配置二次分类器模型和提示词，以处理本地分类无法决策的请求。",
+            )
+          }}
         </n-text>
 
         <n-divider style="margin: 12px 0" />
@@ -120,20 +145,24 @@
 
         <n-form-item style="margin-top: 12px; margin-bottom: 0">
           <n-checkbox v-model:checked="llmSecondPass.enable_adaptive_thinking">
-            {{ t('expertRouting.enableAdaptiveThinking') }}
+            {{ t("expertRouting.enableAdaptiveThinking") }}
           </n-checkbox>
           <n-tooltip trigger="hover">
             <template #trigger>
-              <n-icon size="16" class="info-icon" style="margin-left: 6px; vertical-align: middle;">
+              <n-icon
+                size="16"
+                class="info-icon"
+                style="margin-left: 6px; vertical-align: middle"
+              >
                 <InformationCircleOutline />
               </n-icon>
             </template>
-            {{ t('expertRouting.enableAdaptiveThinkingHint') }}
+            {{ t("expertRouting.enableAdaptiveThinkingHint") }}
           </n-tooltip>
         </n-form-item>
 
         <n-alert type="info" :show-icon="false" style="margin-top: 12px">
-          {{ t('expertRouting.stableLabelPromptHint') }}
+          {{ t("expertRouting.stableLabelPromptHint") }}
         </n-alert>
       </div>
     </n-card>
@@ -141,20 +170,27 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
+import { useI18n } from "vue-i18n";
 import {
-  NCard, NTag, NIcon, NText, NDivider, NGrid, NGi, NFormItem,
-  NTooltip, NAlert, NDescriptions, NDescriptionsItem,
-  NCheckbox
-} from 'naive-ui';
-import { InformationCircleOutline, ArrowDownOutline } from '@vicons/ionicons5';
-import ModelSelector from './ModelSelector.vue';
+  NCard,
+  NTag,
+  NIcon,
+  NText,
+  NDivider,
+  NGrid,
+  NGi,
+  NFormItem,
+  NTooltip,
+  NAlert,
+  NCheckbox,
+} from "naive-ui";
+import { InformationCircleOutline, ArrowDownOutline } from "@vicons/ionicons5";
+import ModelSelector from "./ModelSelector.vue";
 import type {
   ExpertTarget,
   LlmSecondPassConfig,
-  LocalClassifierPolicy,
   PreprocessingConfig,
-} from '@/api/expert-routing';
+} from "@/api/expert-routing";
 
 const { t, te } = useI18n();
 
@@ -164,7 +200,6 @@ function tr(key: string, fallback: string) {
 
 interface Props {
   llmSecondPass: LlmSecondPassConfig;
-  localClassifier?: LocalClassifierPolicy;
   preprocessing: PreprocessingConfig;
   experts: ExpertTarget[];
   providerOptions: any[];
@@ -172,7 +207,7 @@ interface Props {
 }
 
 defineProps<Props>();
-defineEmits(['update:llmSecondPass', 'update:preprocessing']);
+defineEmits(["update:llmSecondPass", "update:preprocessing"]);
 </script>
 
 <style scoped>

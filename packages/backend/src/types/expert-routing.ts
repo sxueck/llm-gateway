@@ -1,24 +1,12 @@
 export interface ExpertTarget {
   id: string;
   category: string;
-  type: 'virtual' | 'real';
+  type: "virtual" | "real";
   model_id?: string;
   provider_id?: string;
   model?: string;
   description?: string;
   color?: string;
-}
-
-/**
- * Local ONNX classifier policy. The actual rejection policy is loaded from the
- * pinned model artifact directory (rejection_policy.json); this struct only
- * records pin metadata for logging, readiness checks, and audit.
- */
-export interface LocalClassifierPolicy {
-  model_repo: string;
-  revision: string;
-  onnx_file: string;
-  max_tokens: number;
 }
 
 /**
@@ -32,11 +20,11 @@ export interface SessionBindingPolicy {
 
 /**
  * LLM second-pass classifier configuration. Repurposes the former primary
- * `classifier` model wiring; invoked only when local ONNX rejects, returns an
- * ineligible label (ops/out_of_scope), or lacks a mapped expert.
+ * `classifier` model wiring; invoked when the Intent Router API rejects,
+ * returns an ineligible label (ops/out_of_scope), lacks a mapped expert, or fails.
  */
 export interface LlmSecondPassConfig {
-  type: 'virtual' | 'real';
+  type: "virtual" | "real";
   model_id?: string;
   provider_id?: string;
   model?: string;
@@ -51,14 +39,14 @@ export interface LlmSecondPassConfig {
 }
 
 export interface FallbackConfig {
-  type: 'virtual' | 'real';
+  type: "virtual" | "real";
   model_id?: string;
   provider_id?: string;
   model?: string;
 }
 
 export interface ModelConfig {
-  type: 'virtual' | 'real';
+  type: "virtual" | "real";
   model_id?: string;
   provider_id?: string;
   model?: string;
@@ -68,7 +56,7 @@ export interface ResolvedModelInfo {
   provider?: any;
   providerId?: string;
   modelOverride?: string;
-  expertType: 'virtual' | 'real';
+  expertType: "virtual" | "real";
   expertName: string;
   expertModelId?: string;
 }

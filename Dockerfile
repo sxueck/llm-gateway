@@ -82,22 +82,9 @@ COPY packages/backend ./packages/backend
 
 RUN bun run --cwd=packages/backend build
 
-# Pinned local ONNX classifier artifacts (~615MB). Downloaded from the exact HF
-# revision at image build time so the production container is self-contained —
-# runtime downloads from mutable `main` are prohibited (NFR-1).
-FROM bun-base AS model-assets
-
-WORKDIR /build
-COPY packages/backend/scripts/download-onnx-model.ts ./
-RUN bun download-onnx-model.ts
-
 FROM node-runtime
 
 WORKDIR /app
-
-# libgomp1 is required by the ONNX Runtime CPU shared library on slim images.
-RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
-  && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid 1001 --system nodejs && \
   useradd --uid 1001 --gid 1001 --system --create-home --home-dir /home/nodejs --shell /usr/sbin/nologin nodejs && \
@@ -108,7 +95,6 @@ COPY --from=backend-prod-deps --chown=nodejs:nodejs /app/packages/backend/node_m
 
 COPY --from=backend-builder --chown=nodejs:nodejs /app/packages/backend/dist ./packages/backend/dist
 COPY --from=web-builder --chown=nodejs:nodejs /app/packages/web/dist ./packages/backend/public
-COPY --from=model-assets --chown=nodejs:nodejs /build/model-assets ./packages/backend/model-assets
 
 COPY --chown=nodejs:nodejs scripts ./scripts
 

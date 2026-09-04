@@ -1,15 +1,18 @@
 <template>
-  <div class="expert-routing-visualization" :class="{ 'preview-mode': !editable }">
+  <div
+    class="expert-routing-visualization"
+    :class="{ 'preview-mode': !editable }"
+  >
     <div v-if="editable" class="toolbar">
       <n-space>
         <n-button size="small" @click="handleAddExpert">
           <template #icon>
             <n-icon><AddOutline /></n-icon>
           </template>
-          {{ t('expertRouting.addExpert') }}
+          {{ t("expertRouting.addExpert") }}
         </n-button>
         <n-text depth="3" style="font-size: 12px">
-          {{ t('expertRouting.clickToEdit') }}
+          {{ t("expertRouting.clickToEdit") }}
         </n-text>
       </n-space>
     </div>
@@ -18,11 +21,11 @@
       <div class="node entry-node">
         <div class="node-header">
           <n-icon size="20"><EnterOutline /></n-icon>
-          <span>{{ t('expertRouting.entryNode') }}</span>
+          <span>{{ t("expertRouting.entryNode") }}</span>
         </div>
         <div class="node-body">
           <n-text depth="3" style="font-size: 12px">
-            {{ t('expertRouting.entryNodeDesc') }}
+            {{ t("expertRouting.entryNodeDesc") }}
           </n-text>
         </div>
       </div>
@@ -32,10 +35,12 @@
       <div class="node classifier-node non-editable">
         <div class="node-header">
           <n-icon size="20"><FilterOutline /></n-icon>
-          <span>{{ t('expertRouting.classifier') }}</span>
+          <span>{{ t("expertRouting.classifier") }}</span>
         </div>
         <div class="node-body">
-          <n-text depth="3" style="font-size: 12px">本地 ONNX 意图分类</n-text>
+          <n-text depth="3" style="font-size: 12px"
+            >外置 Intent Router API</n-text
+          >
           <n-tag size="tiny" type="success">intent-router</n-tag>
         </div>
       </div>
@@ -44,8 +49,14 @@
 
       <div class="experts-container">
         <div v-for="expert in localExperts" :key="expert.id">
-          <div class="node expert-node" @click="editable ? handleEditExpert(expert) : undefined">
-            <div class="node-header" :style="{ backgroundColor: expert.color || '#f0f0f0' }">
+          <div
+            class="node expert-node"
+            @click="editable ? handleEditExpert(expert) : undefined"
+          >
+            <div
+              class="node-header"
+              :style="{ backgroundColor: expert.color || '#f0f0f0' }"
+            >
               <n-icon size="18"><CubeOutline /></n-icon>
               <span>{{ expert.category }}</span>
               <n-button
@@ -63,11 +74,14 @@
               <n-text depth="3" style="font-size: 12px">
                 {{ getExpertLabel(expert) }}
               </n-text>
-              <n-tag size="tiny" :type="expert.type === 'virtual' ? 'info' : 'success'">
+              <n-tag
+                size="tiny"
+                :type="expert.type === 'virtual' ? 'info' : 'success'"
+              >
                 {{
-                  expert.type === 'virtual'
-                    ? t('expertRouting.virtualModel')
-                    : t('expertRouting.realModel')
+                  expert.type === "virtual"
+                    ? t("expertRouting.virtualModel")
+                    : t("expertRouting.realModel")
                 }}
               </n-tag>
             </div>
@@ -83,7 +97,7 @@
         >
           <template #extra>
             <n-button size="small" @click="handleAddExpert">
-              {{ t('expertRouting.addFirstExpert') }}
+              {{ t("expertRouting.addFirstExpert") }}
             </n-button>
           </template>
         </n-empty>
@@ -92,30 +106,41 @@
 
     <div v-else class="preview-container">
       <div class="preview-flow">
-        <span class="flow-pill flow-pill--entry">{{ t('expertRouting.entryNode') }}</span>
+        <span class="flow-pill flow-pill--entry">{{
+          t("expertRouting.entryNode")
+        }}</span>
         <span class="flow-arrow">→</span>
-        <span class="flow-pill flow-pill--classifier">{{ t('expertRouting.classifier') }}</span>
+        <span class="flow-pill flow-pill--classifier">{{
+          t("expertRouting.classifier")
+        }}</span>
         <span class="flow-arrow">→</span>
         <span class="flow-pill flow-pill--experts">
-          {{ t('expertRouting.expertCount') }} × {{ localExperts.length }}
+          {{ t("expertRouting.expertCount") }} × {{ localExperts.length }}
         </span>
       </div>
       <div v-if="localExperts.length > 0" class="expert-chips">
-        <n-tooltip v-for="expert in visibleExperts" :key="expert.id" trigger="hover">
+        <n-tooltip
+          v-for="expert in visibleExperts"
+          :key="expert.id"
+          trigger="hover"
+        >
           <template #trigger>
             <div class="expert-chip">
-              <span class="chip-dot" :style="{ backgroundColor: expert.color || '#1890ff' }"></span>
+              <span
+                class="chip-dot"
+                :style="{ backgroundColor: expert.color || '#1890ff' }"
+              ></span>
               <span class="chip-category">{{ expert.category }}</span>
               <span v-if="getExpertLabel(expert)" class="chip-model">
                 {{ getExpertLabel(expert) }}
               </span>
             </div>
           </template>
-          {{ expert.category }} → {{ getExpertLabel(expert) || '-' }} ·
+          {{ expert.category }} → {{ getExpertLabel(expert) || "-" }} ·
           {{
-            expert.type === 'virtual'
-              ? t('expertRouting.virtualModel')
-              : t('expertRouting.realModel')
+            expert.type === "virtual"
+              ? t("expertRouting.virtualModel")
+              : t("expertRouting.realModel")
           }}
         </n-tooltip>
         <button
@@ -124,7 +149,7 @@
           class="chip-toggle"
           @click.stop="toggleExpanded"
         >
-          {{ expanded ? t('common.collapse') : `+${hiddenCount}` }}
+          {{ expanded ? t("common.collapse") : `+${hiddenCount}` }}
         </button>
       </div>
       <n-empty
@@ -161,14 +186,17 @@
       :bordered="false"
       size="huge"
     >
-      <ExpertTemplateSelector v-if="showTemplateSelector" @select="handleTemplateSelect" />
+      <ExpertTemplateSelector
+        v-if="showTemplateSelector"
+        @select="handleTemplateSelect"
+      />
     </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { ref, watch, computed } from "vue";
+import { useI18n } from "vue-i18n";
 import {
   NSpace,
   NButton,
@@ -180,214 +208,227 @@ import {
   NDrawerContent,
   NModal,
   NTooltip,
-  useDialog
-} from 'naive-ui'
+  useDialog,
+} from "naive-ui";
 import {
   AddOutline,
   CloseOutline,
   EnterOutline,
   FilterOutline,
-  CubeOutline
-} from '@vicons/ionicons5'
-import type { ExpertTarget, LlmSecondPassConfig, ExpertTemplate } from '@/api/expert-routing'
-import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize'
-import ExpertForm from './ExpertForm.vue'
-import ExpertTemplateSelector from './ExpertTemplateSelector.vue'
+  CubeOutline,
+} from "@vicons/ionicons5";
+import type {
+  ExpertTarget,
+  LlmSecondPassConfig,
+  ExpertTemplate,
+} from "@/api/expert-routing";
+import { useDebouncedWindowSize } from "@/composables/useDebouncedWindowSize";
+import ExpertForm from "./ExpertForm.vue";
+import ExpertTemplateSelector from "./ExpertTemplateSelector.vue";
 
 function generateId(): string {
-  return `expert_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+  return `expert_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
-const { t } = useI18n()
-const dialog = useDialog()
+const { t } = useI18n();
+const dialog = useDialog();
 
 interface Props {
-  experts?: ExpertTarget[]
-  routes?: { category: string; utterances: string[] }[]
-  classifierConfig?: LlmSecondPassConfig
-  providerOptions?: Array<{ label: string; value: string }>
-  virtualModelOptions?: Array<{ label: string; value: string }>
-  config?: any
-  editable?: boolean
-  showUtterances?: boolean
+  experts?: ExpertTarget[];
+  routes?: { category: string; utterances: string[] }[];
+  classifierConfig?: LlmSecondPassConfig;
+  providerOptions?: Array<{ label: string; value: string }>;
+  virtualModelOptions?: Array<{ label: string; value: string }>;
+  config?: any;
+  editable?: boolean;
+  showUtterances?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   experts: () => [],
   routes: () => [],
   editable: false,
-  showUtterances: false
-})
+  showUtterances: false,
+});
 
 const emit = defineEmits<{
-  'update:experts': [experts: ExpertTarget[]]
-  'update:routes': [routes: { category: string; utterances: string[] }[]]
-}>()
+  "update:experts": [experts: ExpertTarget[]];
+  "update:routes": [routes: { category: string; utterances: string[] }[]];
+}>();
 
-const localExperts = ref<ExpertTarget[]>([...props.experts])
-const localRoutes = ref<{ category: string; utterances: string[] }[]>([...(props.routes || [])])
-const showExpertDrawer = ref(false)
+const localExperts = ref<ExpertTarget[]>([...props.experts]);
+const localRoutes = ref<{ category: string; utterances: string[] }[]>([
+  ...(props.routes || []),
+]);
+const showExpertDrawer = ref(false);
 
 // Preview chips collapse after this many experts to keep config cards a bounded height.
-const COLLAPSED_CHIP_COUNT = 18
-const expanded = ref(false)
+const COLLAPSED_CHIP_COUNT = 18;
+const expanded = ref(false);
 const visibleExperts = computed(() =>
-  expanded.value ? localExperts.value : localExperts.value.slice(0, COLLAPSED_CHIP_COUNT)
-)
-const hiddenCount = computed(() => Math.max(0, localExperts.value.length - COLLAPSED_CHIP_COUNT))
+  expanded.value
+    ? localExperts.value
+    : localExperts.value.slice(0, COLLAPSED_CHIP_COUNT),
+);
+const hiddenCount = computed(() =>
+  Math.max(0, localExperts.value.length - COLLAPSED_CHIP_COUNT),
+);
 
 function toggleExpanded() {
-  expanded.value = !expanded.value
+  expanded.value = !expanded.value;
 }
 
-const { windowWidth: expertDrawerWindowWidth } = useDebouncedWindowSize(200)
+const { windowWidth: expertDrawerWindowWidth } = useDebouncedWindowSize(200);
 const expertDrawerWidth = computed(() =>
-  Math.min(640, Math.max(320, expertDrawerWindowWidth.value - 24))
-)
-const showTemplateSelector = ref(false)
+  Math.min(640, Math.max(320, expertDrawerWindowWidth.value - 24)),
+);
+const showTemplateSelector = ref(false);
 const editingExpert = ref<ExpertTarget>({
-  id: '',
-  category: '',
-  type: 'real'
-})
-const editingUtterances = ref<string[]>([])
+  id: "",
+  category: "",
+  type: "real",
+});
+const editingUtterances = ref<string[]>([]);
 
 function getExpertLabel(expert: ExpertTarget): string {
-  if (expert.type === 'virtual') {
-    const option = props.virtualModelOptions?.find(o => o.value === expert.model_id)
-    return option?.label || expert.model_id || ''
+  if (expert.type === "virtual") {
+    const option = props.virtualModelOptions?.find(
+      (o) => o.value === expert.model_id,
+    );
+    return option?.label || expert.model_id || "";
   } else {
-    return expert.model || ''
+    return expert.model || "";
   }
 }
 
 function handleAddExpert() {
-  showTemplateSelector.value = true
+  showTemplateSelector.value = true;
 }
 
 function handleTemplateSelect(template: ExpertTemplate | null) {
-  showTemplateSelector.value = false
+  showTemplateSelector.value = false;
 
   const colorMap: Record<string, string> = {
-    code_authoring: '#18a058',
-    code_modification: '#8a2be2',
-    code_repair: '#d03050',
-    code_review: '#f5222d',
-    code_explanation: '#2080f0',
-    test_generation: '#10b981',
-    code_search: '#0ea5e9',
-    architecture_consultation: '#f0a020',
-    dependency_management: '#707070',
-    context_specification: '#7c3aed',
-    workflow_control: '#0891b2',
-    general_inquiry: '#64748b'
-  }
+    code_authoring: "#18a058",
+    code_modification: "#8a2be2",
+    code_repair: "#d03050",
+    code_review: "#f5222d",
+    code_explanation: "#2080f0",
+    test_generation: "#10b981",
+    code_search: "#0ea5e9",
+    architecture_consultation: "#f0a020",
+    dependency_management: "#707070",
+    context_specification: "#7c3aed",
+    workflow_control: "#0891b2",
+    general_inquiry: "#64748b",
+  };
 
-  const defaultColor = template && colorMap[template.value] ? colorMap[template.value] : '#1890ff'
+  const defaultColor =
+    template && colorMap[template.value] ? colorMap[template.value] : "#1890ff";
 
   editingExpert.value = {
     id: generateId(),
-    category: template ? template.value : '',
-    type: 'real',
-    description: template ? template.description : '',
-    color: defaultColor
-  }
+    category: template ? template.value : "",
+    type: "real",
+    description: template ? template.description : "",
+    color: defaultColor,
+  };
 
-  editingUtterances.value = template ? [...template.utterances] : []
-  showExpertDrawer.value = true
+  editingUtterances.value = template ? [...template.utterances] : [];
+  showExpertDrawer.value = true;
 }
 
 function handleEditExpert(expert: ExpertTarget) {
-  editingExpert.value = { ...expert }
-  const route = localRoutes.value.find(r => r.category === expert.category)
-  editingUtterances.value = route ? [...route.utterances] : []
-  showExpertDrawer.value = true
+  editingExpert.value = { ...expert };
+  const route = localRoutes.value.find((r) => r.category === expert.category);
+  editingUtterances.value = route ? [...route.utterances] : [];
+  showExpertDrawer.value = true;
 }
 
 function handleDeleteExpert(expertId: string) {
   dialog.warning({
-    title: t('common.warning'),
-    content: t('expertRouting.deleteExpertConfirm'),
-    positiveText: t('common.confirm'),
-    negativeText: t('common.cancel'),
+    title: t("common.warning"),
+    content: t("expertRouting.deleteExpertConfirm"),
+    positiveText: t("common.confirm"),
+    negativeText: t("common.cancel"),
     onPositiveClick: () => {
-      const expert = localExperts.value.find(e => e.id === expertId)
-      if (!expert) return
-      const category = expert.category
+      const expert = localExperts.value.find((e) => e.id === expertId);
+      if (!expert) return;
+      const category = expert.category;
 
-      localExperts.value = localExperts.value.filter(e => e.id !== expertId)
-      emit('update:experts', localExperts.value)
+      localExperts.value = localExperts.value.filter((e) => e.id !== expertId);
+      emit("update:experts", localExperts.value);
 
-      const isUsed = localExperts.value.some(e => e.category === category)
+      const isUsed = localExperts.value.some((e) => e.category === category);
       if (!isUsed) {
-        const routes = localRoutes.value.filter(r => r.category !== category)
-        localRoutes.value = routes
-        emit('update:routes', routes)
+        const routes = localRoutes.value.filter((r) => r.category !== category);
+        localRoutes.value = routes;
+        emit("update:routes", routes);
       }
-    }
-  })
+    },
+  });
 }
 
 function handleSaveExpert(expert: ExpertTarget, utterances: string[]) {
-  const index = localExperts.value.findIndex(e => e.id === expert.id)
-  const oldCategory = index >= 0 ? localExperts.value[index].category : null
+  const index = localExperts.value.findIndex((e) => e.id === expert.id);
+  const oldCategory = index >= 0 ? localExperts.value[index].category : null;
 
   if (index >= 0) {
-    localExperts.value[index] = expert
+    localExperts.value[index] = expert;
   } else {
-    localExperts.value.push(expert)
+    localExperts.value.push(expert);
   }
-  emit('update:experts', localExperts.value)
+  emit("update:experts", localExperts.value);
 
-  let routes = [...localRoutes.value]
+  let routes = [...localRoutes.value];
 
   // Clean up old route if category changed and no other expert uses it
   if (oldCategory && oldCategory !== expert.category) {
-    const isUsed = localExperts.value.some(e => e.category === oldCategory)
+    const isUsed = localExperts.value.some((e) => e.category === oldCategory);
     if (!isUsed) {
-      routes = routes.filter(r => r.category !== oldCategory)
+      routes = routes.filter((r) => r.category !== oldCategory);
     }
   }
 
-  const routeIndex = routes.findIndex(r => r.category === expert.category)
+  const routeIndex = routes.findIndex((r) => r.category === expert.category);
 
   if (routeIndex >= 0) {
-    routes[routeIndex] = { ...routes[routeIndex], utterances }
+    routes[routeIndex] = { ...routes[routeIndex], utterances };
   } else {
-    routes.push({ category: expert.category, utterances })
+    routes.push({ category: expert.category, utterances });
   }
 
-  localRoutes.value = routes
-  emit('update:routes', routes)
+  localRoutes.value = routes;
+  emit("update:routes", routes);
 
-  showExpertDrawer.value = false
+  showExpertDrawer.value = false;
 }
 
 // Deep watch forces Vue to traverse the whole experts/routes tree on each render,
 // which can be very expensive when utterances/rules grow.
 watch(
   () => props.experts,
-  newExperts => {
-    localExperts.value = [...newExperts]
-  }
-)
+  (newExperts) => {
+    localExperts.value = [...newExperts];
+  },
+);
 
 watch(
   () => props.routes,
-  newRoutes => {
-    localRoutes.value = [...(newRoutes || [])]
-  }
-)
+  (newRoutes) => {
+    localRoutes.value = [...(newRoutes || [])];
+  },
+);
 
 watch(
   () => props.config,
-  newConfig => {
+  (newConfig) => {
     if (newConfig?.config?.experts) {
-      localExperts.value = [...newConfig.config.experts]
+      localExperts.value = [...newConfig.config.experts];
     }
   },
-  { immediate: true }
-)
+  { immediate: true },
+);
 </script>
 
 <style scoped>

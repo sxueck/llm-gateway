@@ -12,10 +12,7 @@ import {
   systemConfigDb,
   shutdownDatabase,
 } from "./db/index.js";
-import {
-  initLocalClassifier,
-  startSessionBindingCleanup,
-} from "./services/expert-router.js";
+import { startSessionBindingCleanup } from "./services/expert-router.js";
 import { startContextNormalizationCleanup } from "./services/context-normalization/index.js";
 import { authRoutes } from "./routes/auth.js";
 import { providerRoutes } from "./routes/providers.js";
@@ -139,9 +136,6 @@ await manualIpBlocklist.init();
 await runtimeSystemConfigCache.initialize();
 await reasoningEffortSuffixesCache.initialize();
 
-// Best-effort preload of local ONNX classifier assets (FR-15). Failures degrade
-// Expert Routing to LLM second pass / fallback rather than blocking startup.
-initLocalClassifier();
 // Periodic cleanup of expired durable session bindings (NFR-4).
 startSessionBindingCleanup();
 startContextNormalizationCleanup();

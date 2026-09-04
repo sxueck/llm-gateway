@@ -11,7 +11,7 @@
 
 </div>
 
-> 生产级别 LLM 网关管理系统，部署六个月已稳定负载超过 **500亿 Token** 的任务处理（持续累积中）
+> 生产级别 LLM 网关管理系统，部署六个月已稳定负载超过 **5000亿 Token** 的任务处理（持续累积中）
 >
 > 提供直观的 Web UI 界面，用于管理多个 LLM 提供商、虚拟密钥、路由配置和模型管理
 
@@ -226,29 +226,18 @@ VALUES ('target-1', 'DeepSeek Chat', 'model', 'model-id-here', 1, 300, 'Say "OK"
 
 ## 意图路由分类器
 
-LLM Gateway 的专家路由（Expert Routing）功能内置了一个本地 ONNX 意图分类器，作为请求的第一级路由决策器。它将用户意图分类到 21 个标签（coding 9 类 + ops 8 类 + general_control 3 类 + out_of_scope），仅当本地分类器置信度不足或结果不可用时，才回退到 LLM 二次分类。
+LLM Gateway 的专家路由（Expert Routing）使用独立部署的 Intent Router API 作为第一级路由决策器。它将用户意图分类到 21 个标签（coding 9 类 + ops 8 类 + general_control 3 类 + out_of_scope）；被拒判、无可用专家映射或服务不可用时，网关回退到 LLM 二次分类。
 
-### 关闭本地分类器（可选）
+### 配置外置分类服务
 
-不使用专家路由或意图分类 API 的部署，可设置环境变量 `LOCAL_INTENT_CLASSIFIER=off`（可选值 `off` / `disabled` / `0` / `false`，默认开启）：
+设置 `INTENT_ROUTER_API_URL` 为绝对 HTTP(S) 地址；容器编排中可直接使用服务名，例如 `http://intent-router:8000`。服务启用认证时，设置可选的 `INTENT_ROUTER_API_KEY`；`INTENT_ROUTER_API_TIMEOUT_MS` 默认为 5000 毫秒。
 
-- 启动时跳过模型加载，~615MB artifacts 不会占用进程内存；
-- 专家路由自动回退到 LLM 二次分类 / fallback；
-- `/v1/intent/classify` 返回 `503 classifier_disabled`。
+```bash
+INTENT_ROUTER_API_URL=https://intent-api.sxueck.com
+# INTENT_ROUTER_API_KEY=change-me
+```
 
-修改后需重启生效。
-
-### 模型信息
-
-| 项目 | 详情 |
-| ------ | ------ |
-| **模型仓库** | [`snival/intent-router-zh-setfit-v1`](https://huggingface.co/snival/intent-router-zh-setfit-v1) |
-| **基座模型** | `Qwen/Qwen3-Embedding-0.6B` |
-| **训练方法** | SetFit（对比学习 body 微调 + 加权线性 head） |
-| **量化格式** | ONNX `encoder-woq8`（权重仅量化，~615MB artifacts） |
-| **运行时** | `onnxruntime-node`（本地 CPU 推理，无需 GPU） |
-| **标签数** | 21（coding 9 + ops 8 + general_control 3 + out_of_scope） |
-| **拒绝策略** | v4（`rejection_policy.json`），`max_probability = 0.15` |
+网关不再下载或加载 ONNX 模型。未配置或无法访问该服务时，专家路由继续走 LLM 二次分类 / fallback，而 `/v1/intent/classify` 返回 `503`。
 
 ### 意图分类 API
 
@@ -274,8 +263,8 @@ curl -X POST http://your-gateway-url/v1/intent/classify \
 ```json
 {
   "object": "intent_classification",
-  "model": "onnx/snival/intent-router-zh-setfit-v1",
-  "revision": "ce71b323",
+  "model": "snival/intent-router-zh-setfit-v2",
+  "revision": "44b7e54f38c4657708c59a0ea7b4dfbf7226cf61",
   "labels": [
     { "label": "coding", "score": 0.92 },
     { "label": "general_control", "score": 0.03 }

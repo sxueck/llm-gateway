@@ -2,20 +2,32 @@
   <div class="expert-routing-editor">
     <div class="steps-container">
       <n-steps :current="currentStep" :status="currentStatus">
-        <n-step :title="t('expertRouting.stepDefineExperts')" :description="t('expertRouting.stepDefineExpertsDesc')" />
-        <n-step :title="t('expertRouting.stepConfigurePipeline')" :description="t('expertRouting.stepConfigurePipelineDesc')" />
-        <n-step :title="t('expertRouting.stepReview')" :description="t('expertRouting.stepReviewDesc')" />
+        <n-step
+          :title="t('expertRouting.stepDefineExperts')"
+          :description="t('expertRouting.stepDefineExpertsDesc')"
+        />
+        <n-step
+          :title="t('expertRouting.stepConfigurePipeline')"
+          :description="t('expertRouting.stepConfigurePipelineDesc')"
+        />
+        <n-step
+          :title="t('expertRouting.stepReview')"
+          :description="t('expertRouting.stepReviewDesc')"
+        />
       </n-steps>
     </div>
 
     <div class="step-content">
       <div v-show="currentStep === 1">
         <div class="step-header-text">
-          <h3>{{ t('expertRouting.basicInfo') }}</h3>
+          <h3>{{ t("expertRouting.basicInfo") }}</h3>
         </div>
         <n-form :model="formValue" label-placement="left" :label-width="120">
           <n-form-item :label="t('expertRouting.configName')" required>
-            <n-input v-model:value="formValue.name" :placeholder="t('expertRouting.configNamePlaceholder')" />
+            <n-input
+              v-model:value="formValue.name"
+              :placeholder="t('expertRouting.configNamePlaceholder')"
+            />
           </n-form-item>
           <n-form-item :label="t('expertRouting.configDescription')">
             <n-input
@@ -33,10 +45,12 @@
         <n-divider />
 
         <div class="step-header-text">
-          <h3>{{ t('expertRouting.expertsConfig') }}</h3>
-          <p class="step-sub-text">{{ t('expertRouting.expertsConfigHint') }}</p>
+          <h3>{{ t("expertRouting.expertsConfig") }}</h3>
+          <p class="step-sub-text">
+            {{ t("expertRouting.expertsConfigHint") }}
+          </p>
         </div>
-        
+
         <ExpertRoutingVisualization
           v-model:experts="formValue.experts"
           :classifier-config="formValue.llm_second_pass"
@@ -47,14 +61,18 @@
       </div>
 
       <div v-show="currentStep === 2">
-        <div class="step-header-text" style="text-align: center; margin-bottom: 20px;">
-          <h3>{{ t('expertRouting.pipelineConfig') }}</h3>
-          <p class="step-sub-text">{{ t('expertRouting.pipelineConfigHint') }}</p>
+        <div
+          class="step-header-text"
+          style="text-align: center; margin-bottom: 20px"
+        >
+          <h3>{{ t("expertRouting.pipelineConfig") }}</h3>
+          <p class="step-sub-text">
+            {{ t("expertRouting.pipelineConfigHint") }}
+          </p>
         </div>
 
         <RoutingPipelineConfig
           v-model:llm-second-pass="formValue.llm_second_pass"
-          :local-classifier="formValue.local_classifier"
           :preprocessing="formValue.preprocessing"
           :experts="formValue.experts"
           :provider-options="providerOptions"
@@ -64,18 +82,35 @@
         <n-divider />
 
         <div class="step-header-text">
-          <h3>{{ t('expertRouting.sessionBindingPolicy', '会话绑定策略') }}</h3>
-          <p class="step-sub-text">{{ t('expertRouting.sessionBindingPolicyHint', '首个可路由请求选定专家后会话即绑定；到达空闲或绝对过期时间后失效。') }}</p>
+          <h3>{{ t("expertRouting.sessionBindingPolicy", "会话绑定策略") }}</h3>
+          <p class="step-sub-text">
+            {{
+              t(
+                "expertRouting.sessionBindingPolicyHint",
+                "首个可路由请求选定专家后会话即绑定；到达空闲或绝对过期时间后失效。",
+              )
+            }}
+          </p>
         </div>
         <n-form :model="formValue" label-placement="left" :label-width="160">
           <n-form-item :label="t('expertRouting.idleTtl', '空闲过期 (秒)')">
-            <n-input-number v-model:value="formValue.session_binding_policy!.idle_ttl_seconds" :min="1" />
+            <n-input-number
+              v-model:value="formValue.session_binding_policy!.idle_ttl_seconds"
+              :min="1"
+            />
           </n-form-item>
           <n-form-item :label="t('expertRouting.absoluteTtl', '绝对过期 (秒)')">
-            <n-input-number v-model:value="formValue.session_binding_policy!.absolute_ttl_seconds" :min="1" />
+            <n-input-number
+              v-model:value="
+                formValue.session_binding_policy!.absolute_ttl_seconds
+              "
+              :min="1"
+            />
             <template #feedback>
               <n-text depth="3" style="font-size: 12px">
-                {{ t('expertRouting.ttlConstraint', '空闲过期不得大于绝对过期。') }}
+                {{
+                  t("expertRouting.ttlConstraint", "空闲过期不得大于绝对过期。")
+                }}
               </n-text>
             </template>
           </n-form-item>
@@ -85,12 +120,12 @@
       <div v-show="currentStep === 3">
         <n-form :model="formValue" label-placement="left" :label-width="120">
           <div class="step-header-text">
-            <h3>{{ t('expertRouting.fallbackStrategy') }}</h3>
-            <p class="step-sub-text">{{ t('expertRouting.fallbackDesc') }}</p>
+            <h3>{{ t("expertRouting.fallbackStrategy") }}</h3>
+            <p class="step-sub-text">{{ t("expertRouting.fallbackDesc") }}</p>
           </div>
 
-          <n-card :bordered="true" style="margin-bottom: 20px;">
-             <n-form-item :label="t('expertRouting.enableFallback')">
+          <n-card :bordered="true" style="margin-bottom: 20px">
+            <n-form-item :label="t('expertRouting.enableFallback')">
               <n-switch v-model:value="enableFallback" />
             </n-form-item>
 
@@ -107,7 +142,7 @@
           </n-card>
 
           <div class="step-header-text">
-            <h3>{{ t('expertRouting.reviewConfig') }}</h3>
+            <h3>{{ t("expertRouting.reviewConfig") }}</h3>
           </div>
 
           <n-descriptions bordered :column="1">
@@ -127,24 +162,15 @@
 
     <n-space class="footer-actions" justify="space-between">
       <n-button @click="handlePrevious" :disabled="currentStep === 1">
-        {{ t('common.previous') }}
+        {{ t("common.previous") }}
       </n-button>
       <n-space>
-        <n-button @click="$emit('cancel')">{{ t('common.cancel') }}</n-button>
-        <n-button
-          v-if="currentStep < 3"
-          type="primary"
-          @click="handleNext"
-        >
-          {{ t('common.next') }}
+        <n-button @click="$emit('cancel')">{{ t("common.cancel") }}</n-button>
+        <n-button v-if="currentStep < 3" type="primary" @click="handleNext">
+          {{ t("common.next") }}
         </n-button>
-        <n-button
-          v-else
-          type="primary"
-          @click="handleSave"
-          :loading="saving"
-        >
-          {{ t('common.save') }}
+        <n-button v-else type="primary" @click="handleSave" :loading="saving">
+          {{ t("common.save") }}
         </n-button>
       </n-space>
     </n-space>
@@ -152,8 +178,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
-import { useI18n } from 'vue-i18n';
+import { ref, computed, onMounted, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import {
   NSteps,
   NStep,
@@ -169,17 +195,17 @@ import {
   NDescriptions,
   NDescriptionsItem,
   NText,
-} from 'naive-ui';
-import { useProviderStore } from '@/stores/provider';
-import { useModelStore } from '@/stores/model';
-import type { CreateExpertRoutingRequest, LlmSecondPassConfig } from '@/api/expert-routing';
-import {
-  createDefaultLocalClassifier,
-  createDefaultSessionBindingPolicy,
-} from '@/utils/expert-routing';
-import ExpertRoutingVisualization from './ExpertRoutingVisualization.vue';
-import RoutingPipelineConfig from './RoutingPipelineConfig.vue';
-import ModelSelector from './ModelSelector.vue';
+} from "naive-ui";
+import { useProviderStore } from "@/stores/provider";
+import { useModelStore } from "@/stores/model";
+import type {
+  CreateExpertRoutingRequest,
+  LlmSecondPassConfig,
+} from "@/api/expert-routing";
+import { createDefaultSessionBindingPolicy } from "@/utils/expert-routing";
+import ExpertRoutingVisualization from "./ExpertRoutingVisualization.vue";
+import RoutingPipelineConfig from "./RoutingPipelineConfig.vue";
+import ModelSelector from "./ModelSelector.vue";
 
 const { t } = useI18n();
 
@@ -199,7 +225,7 @@ const providerStore = useProviderStore();
 const modelStore = useModelStore();
 
 const currentStep = ref(1);
-const currentStatus = ref<'process' | 'finish' | 'error' | 'wait'>('process');
+const currentStatus = ref<"process" | "finish" | "error" | "wait">("process");
 const formValue = ref<CreateExpertRoutingRequest>({ ...props.config });
 
 function normalizeForm(target: CreateExpertRoutingRequest) {
@@ -212,10 +238,7 @@ function normalizeForm(target: CreateExpertRoutingRequest) {
       strip_system_prompt: false,
     };
   }
-  // Ensure local classifier pin metadata + session binding policy exist.
-  if (!target.local_classifier) {
-    target.local_classifier = createDefaultLocalClassifier();
-  }
+  // Ensure session binding policy exists.
   if (!target.session_binding_policy) {
     target.session_binding_policy = createDefaultSessionBindingPolicy();
   }
@@ -224,16 +247,18 @@ function normalizeForm(target: CreateExpertRoutingRequest) {
 normalizeForm(formValue.value);
 
 const enableFallback = ref(!!props.config.fallback);
-const fallbackType = ref<'virtual' | 'real'>(props.config.fallback?.type || 'real');
-const fallbackModelId = ref(props.config.fallback?.model_id || '');
-const fallbackProviderId = ref(props.config.fallback?.provider_id || '');
-const fallbackModel = ref(props.config.fallback?.model || '');
+const fallbackType = ref<"virtual" | "real">(
+  props.config.fallback?.type || "real",
+);
+const fallbackModelId = ref(props.config.fallback?.model_id || "");
+const fallbackProviderId = ref(props.config.fallback?.provider_id || "");
+const fallbackModel = ref(props.config.fallback?.model || "");
 
 const providerOptions = computed(() =>
   providerStore.providers.map((p) => ({
     label: p.name,
     value: p.id,
-  }))
+  })),
 );
 
 const virtualModelOptions = computed(() =>
@@ -242,15 +267,17 @@ const virtualModelOptions = computed(() =>
     .map((m) => ({
       label: m.name,
       value: m.id,
-    }))
+    })),
 );
 
 function getModelLabel(config: LlmSecondPassConfig) {
-  if (config.type === 'virtual') {
-     const m = virtualModelOptions.value.find(v => v.value === config.model_id);
-     return m ? `Virtual: ${m.label}` : config.model_id;
+  if (config.type === "virtual") {
+    const m = virtualModelOptions.value.find(
+      (v) => v.value === config.model_id,
+    );
+    return m ? `Virtual: ${m.label}` : config.model_id;
   }
-  return config.model || 'Unknown';
+  return config.model || "Unknown";
 }
 
 function handlePrevious() {
@@ -269,22 +296,26 @@ function handleSave() {
   if (enableFallback.value) {
     formValue.value.fallback = {
       type: fallbackType.value,
-      model_id: fallbackType.value === 'virtual' ? fallbackModelId.value : undefined,
-      provider_id: fallbackType.value === 'real' ? fallbackProviderId.value : undefined,
-      model: fallbackType.value === 'real' ? fallbackModel.value : undefined,
+      model_id:
+        fallbackType.value === "virtual" ? fallbackModelId.value : undefined,
+      provider_id:
+        fallbackType.value === "real" ? fallbackProviderId.value : undefined,
+      model: fallbackType.value === "real" ? fallbackModel.value : undefined,
     };
   } else {
     formValue.value.fallback = undefined;
   }
 
-  emit('save', formValue.value);
+  emit("save", formValue.value);
 }
 
 // Avoid refetching large provider/model lists on every modal open.
 onMounted(async () => {
   const tasks: Promise<unknown>[] = [];
-  if (!providerStore.providers.length && !providerStore.loading) tasks.push(providerStore.fetchProviders());
-  if (!modelStore.models.length && !modelStore.loading) tasks.push(modelStore.fetchModels());
+  if (!providerStore.providers.length && !providerStore.loading)
+    tasks.push(providerStore.fetchProviders());
+  if (!modelStore.models.length && !modelStore.loading)
+    tasks.push(modelStore.fetchModels());
   if (tasks.length) await Promise.all(tasks);
 });
 
@@ -295,8 +326,8 @@ watch(
     formValue.value = { ...cfg };
     normalizeForm(formValue.value);
     currentStep.value = 1;
-    currentStatus.value = 'process';
-  }
+    currentStatus.value = "process";
+  },
 );
 </script>
 
@@ -345,8 +376,8 @@ watch(
   bottom: 0;
   z-index: 10;
   padding-top: 12px;
-  border-top: 1px solid var(--divider-color, rgba(0,0,0,0.06));
-  background-color: var(--modal-color, rgba(255,255,255,0.9));
+  border-top: 1px solid var(--divider-color, rgba(0, 0, 0, 0.06));
+  background-color: var(--modal-color, rgba(255, 255, 255, 0.9));
   margin-top: auto; /* Push to bottom */
 }
 </style>
@@ -355,7 +386,7 @@ watch(
 .expert-routing-editor {
   display: flex;
   flex-direction: column;
-  max-height: 100%;  /* 跟随外层容器高度 */
+  max-height: 100%; /* 跟随外层容器高度 */
   overflow: visible; /* 让 sticky 参考外层滚动容器 (.modal-content-wrapper) */
   box-sizing: border-box;
 }
@@ -368,10 +399,10 @@ watch(
 
 .step-content {
   margin-top: 24px;
-  flex: 1;             /* 让内容区占满中间空间 */
-  min-height: 0;       /* 配合 flex:1 才能正确收缩 */
-  overflow: visible;   /* 将滚动交给 .modal-content-wrapper */
-  padding-bottom: 12px;/* 避免最后一行被底部操作区遮挡 */
+  flex: 1; /* 让内容区占满中间空间 */
+  min-height: 0; /* 配合 flex:1 才能正确收缩 */
+  overflow: visible; /* 将滚动交给 .modal-content-wrapper */
+  padding-bottom: 12px; /* 避免最后一行被底部操作区遮挡 */
 }
 
 .footer-actions {
@@ -379,7 +410,7 @@ watch(
   bottom: 0;
   z-index: 1;
   padding-top: 12px;
-  border-top: 1px solid var(--divider-color, rgba(0,0,0,0.06));
-  background-color: var(--modal-color, rgba(255,255,255,0.9));
+  border-top: 1px solid var(--divider-color, rgba(0, 0, 0, 0.06));
+  background-color: var(--modal-color, rgba(255, 255, 255, 0.9));
 }
 </style>

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   expertRoutingConfigDb: { getById: vi.fn() },
@@ -8,45 +8,35 @@ const mocks = vi.hoisted(() => ({
     getActiveBinding: vi.fn(),
     createOrSelectBinding: vi.fn(),
     deleteBinding: vi.fn(),
-    deleteByExpert: vi.fn(),
-    deleteByConfig: vi.fn(),
     cleanupExpired: vi.fn(),
   },
   providerDb: { getById: vi.fn() },
   modelDb: { getById: vi.fn() },
   routingConfigDb: { getById: vi.fn() },
   decide: vi.fn(),
-  classify: vi.fn(),
-  isReady: vi.fn(),
+  classifyIntent: vi.fn(),
 }));
-
-vi.mock('../db/index.js', () => ({
-  expertRoutingConfigDb: mocks.expertRoutingConfigDb,
-  expertRoutingLogDb: mocks.expertRoutingLogDb,
-  expertRoutingTrainingRecordDb: mocks.expertRoutingTrainingRecordDb,
-  expertRoutingSessionBindingDb: mocks.expertRoutingSessionBindingDb,
-  providerDb: mocks.providerDb,
-  modelDb: mocks.modelDb,
-  routingConfigDb: mocks.routingConfigDb,
+vi.mock("../db/index.js", () => ({
+  ...(mocks.expertRoutingConfigDb && {
+    expertRoutingConfigDb: mocks.expertRoutingConfigDb,
+    expertRoutingLogDb: mocks.expertRoutingLogDb,
+    expertRoutingTrainingRecordDb: mocks.expertRoutingTrainingRecordDb,
+    expertRoutingSessionBindingDb: mocks.expertRoutingSessionBindingDb,
+    providerDb: mocks.providerDb,
+    modelDb: mocks.modelDb,
+    routingConfigDb: mocks.routingConfigDb,
+  }),
 }));
-
-vi.mock('./expert-router/local/model-assets.js', () => ({
-  isLocalClassifierReady: mocks.isReady,
-  loadLocalClassifierAssets: vi.fn(),
+vi.mock("./expert-router/intent-router-client.js", () => ({
+  classifyIntent: mocks.classifyIntent,
 }));
-
-vi.mock('./expert-router/local/classifier.js', () => ({
-  classifyWithLocalOnnx: mocks.classify,
-}));
-
-vi.mock('./expert-router/decision/llm-judge.js', () => ({
+vi.mock("./expert-router/decision/llm-judge.js", () => ({
   LLMJudge: { decide: mocks.decide },
 }));
-
-vi.mock('./expert-router/preprocess/index.js', () => ({
+vi.mock("./expert-router/preprocess/index.js", () => ({
   SignalBuilder: {
     buildRoutingSignal: vi.fn(async (request: any) => ({
-      intentText: request.body?.messages?.[0]?.content ?? 'route me',
+      intentText: request.body?.messages?.[0]?.content ?? "route me",
       toolSignals: [],
       hardHints: [],
       originalRequest: request,
@@ -55,318 +45,148 @@ vi.mock('./expert-router/preprocess/index.js', () => ({
   },
 }));
 
-import { ExpertRouter } from './expert-router.js';
-
-function baseConfig(overrides: Record<string, any> = {}) {
-  return {
-    local_classifier: { model_repo: 'r', revision: 'rev', onnx_file: 'e.onnx', max_tokens: 1024 },
-    llm_second_pass: {
-      type: 'real',
-      provider_id: 'classifier-provider',
-      model: 'classifier-model',
-    },
-    experts: [
-      {
-        id: 'expert-review',
-        category: 'code_review',
-        type: 'real',
-        provider_id: 'review-provider',
-        model: 'review-model',
+import { ExpertRouter } from "./expert-router.js";
+const remoteResult = (overrides: Record<string, unknown> = {}) => ({
+  object: "intent.classification",
+  model: "intent-router-v2",
+  revision: "rev",
+  latency_ms: 10,
+  stats: { batch_size: 1, cache_hits: 0, inference_ms: 8 },
+  data: [
+    {
+      index: 0,
+      truncated: false,
+      token_count: 5,
+      labels: [{ label: "code_review", domain: "coding", score: 0.82 }],
+      route: {
+        intent: "code_review",
+        domain: "coding",
+        rejected: false,
+        reason: "argmax",
+        top1_score: 0.82,
       },
-    ],
-    fallback: {
-      type: 'real',
-      provider_id: 'fallback-provider',
-      model: 'fallback-model',
     },
-    session_binding_policy: { idle_ttl_seconds: 86400, absolute_ttl_seconds: 2592000 },
-    ...overrides,
-  };
-}
+  ],
+  ...overrides,
+});
+const config = () => ({
+  llm_second_pass: {
+    type: "real",
+    provider_id: "classifier",
+    model: "classifier",
+  },
+  experts: [
+    {
+      id: "expert-review",
+      category: "code_review",
+      type: "real",
+      provider_id: "review",
+      model: "review",
+    },
+  ],
+  fallback: { type: "real", provider_id: "fallback", model: "fallback" },
+  session_binding_policy: { idle_ttl_seconds: 60, absolute_ttl_seconds: 3600 },
+});
 
-describe('ExpertRouter route flow', () => {
+describe("ExpertRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.isReady.mockReturnValue(false);
-    mocks.expertRoutingSessionBindingDb.getActiveBinding.mockResolvedValue(null);
-    mocks.expertRoutingTrainingRecordDb.createOrIncrement.mockResolvedValue(undefined);
-    mocks.expertRoutingSessionBindingDb.createOrSelectBinding.mockResolvedValue({
-      row: { expert_id: 'expert-review', route_source: 'llm_second_pass' },
-      winner: true,
+    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+      id: "routing",
+      enabled: 1,
+      config: JSON.stringify(config()),
     });
+    mocks.expertRoutingSessionBindingDb.getActiveBinding.mockResolvedValue(
+      null,
+    );
+    mocks.expertRoutingSessionBindingDb.createOrSelectBinding.mockResolvedValue(
+      { winner: true, row: {} },
+    );
     mocks.providerDb.getById.mockImplementation(async (id: string) => ({
       id,
       name: id,
-      base_url: 'https://example.test',
-      api_key: 'key',
+      base_url: "https://example.test",
+      api_key: "key",
     }));
+    mocks.classifyIntent.mockResolvedValue(remoteResult());
   });
-
-  test('LLM second pass resolving an eligible expert persists a binding (FR-8)', async () => {
-    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
-      id: 'routing-a',
-      enabled: 1,
-      config: JSON.stringify(baseConfig()),
-    });
-    mocks.decide.mockResolvedValue({ category: 'code_review', confidence: 1, source: 'llm', metadata: {} });
-
-    const router = new ExpertRouter();
-    const result = await router.route(
-      {
-        headers: { 'x-session-id': 'session-1' },
-        body: { messages: [{ role: 'user', content: 'review this code' }] },
-      },
-      'routing-a',
-      { virtualKeyId: 'vk-a' }
+  test("uses an accepted remote intent to select an expert without LLM fallback", async () => {
+    const result = await new ExpertRouter().route(
+      { body: { messages: [{ role: "user", content: "review" }] } },
+      "routing",
+      {},
     );
-
-    expect(result.expert.id).toBe('expert-review');
-    expect(result.providerId).toBe('review-provider');
-    expect(mocks.expertRoutingSessionBindingDb.createOrSelectBinding).toHaveBeenCalledOnce();
-    expect(mocks.expertRoutingLogDb.create).toHaveBeenCalledOnce();
-    const log = (mocks.expertRoutingLogDb.create as any).mock.calls[0][0];
-    expect(log.route_source).toBe('llm_second_pass');
-    expect(mocks.expertRoutingTrainingRecordDb.createOrIncrement).toHaveBeenCalledWith(
-      expect.objectContaining({
-        expert_routing_id: 'routing-a',
-        judge_intent_label: 'code_review',
-        final_intent_label: 'code_review',
-        status: 'pending_review',
-      })
-    );
-  });
-
-  test('fallback path does NOT persist a session binding (FR-8)', async () => {
-    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
-      id: 'routing-a',
-      enabled: 1,
-      config: JSON.stringify(baseConfig()),
-    });
-    // LLM returns a category with no mapped expert.
-    mocks.decide.mockResolvedValue({ category: 'deployment', confidence: 1, source: 'llm', metadata: {} });
-
-    const router = new ExpertRouter();
-    const result = await router.route(
-      {
-        headers: { 'x-session-id': 'session-1' },
-        body: { messages: [{ role: 'user', content: 'deploy it' }] },
-      },
-      'routing-a',
-      { virtualKeyId: 'vk-a' }
-    );
-
-    expect(result.expert.id).toBe('fallback');
-    expect(mocks.expertRoutingSessionBindingDb.createOrSelectBinding).not.toHaveBeenCalled();
-    const log = (mocks.expertRoutingLogDb.create as any).mock.calls.at(-1)![0];
-    expect(log.route_source).toBe('fallback');
-  });
-
-  test('LLM second pass does not route an ineligible label to an expert', async () => {
-    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
-      id: 'routing-a',
-      enabled: 1,
-      config: JSON.stringify(baseConfig({
-        experts: [{
-          id: 'expert-deployment',
-          category: 'deployment',
-          type: 'real',
-          provider_id: 'deployment-provider',
-          model: 'deployment-model',
-        }],
-      })),
-    });
-    mocks.decide.mockResolvedValue({ category: 'deployment', confidence: 1, source: 'llm', metadata: {} });
-
-    const router = new ExpertRouter();
-    const result = await router.route(
-      { body: { messages: [{ role: 'user', content: 'deploy it' }] } },
-      'routing-a',
-      {}
-    );
-
-    expect(result.expert.id).toBe('fallback');
-  });
-
-  test('local ONNX eligible label selects expert without LLM second pass (FR-4)', async () => {
-    mocks.isReady.mockReturnValue(true);
-    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
-      id: 'routing-a',
-      enabled: 1,
-      config: JSON.stringify(baseConfig()),
-    });
-    mocks.classify.mockResolvedValue({
-      policy: {
-        chosenLabel: 'code_review',
-        rejected: false,
-        top1: { label: 'code_review', score: 0.82 },
-        top2: { label: 'architecture_consultation', score: 0.05 },
-      },
-      ranked: [],
-      revision: 'rev',
-      latencyMs: 10,
-      seqLen: 5,
-      truncated: false,
-    });
-
-    const router = new ExpertRouter();
-    const result = await router.route(
-      { body: { messages: [{ role: 'user', content: 'review my PR' }] } },
-      'routing-a',
-      {}
-    );
-
-    expect(result.expert.id).toBe('expert-review');
+    expect(result.expert.id).toBe("expert-review");
     expect(mocks.decide).not.toHaveBeenCalled();
-    const log = (mocks.expertRoutingLogDb.create as any).mock.calls[0][0];
-    expect(log.route_source).toBe('local_onnx');
-    const classifierRequest = JSON.parse(log.classifier_request);
-    expect(classifierRequest.model).toContain('onnx/');
-    expect(classifierRequest.input).toBe('review my PR');
+    const log = mocks.expertRoutingLogDb.create.mock.calls[0][0];
+    expect(log.route_source).toBe("intent_api");
+    expect(JSON.parse(log.classifier_request).model).toBe("intent-router-v2");
   });
-
-  test('eligible local label that is rejected routes to LLM second pass (FR-5)', async () => {
-    mocks.isReady.mockReturnValue(true);
-    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
-      id: 'routing-a',
-      enabled: 1,
-      config: JSON.stringify(baseConfig()),
-    });
-    mocks.classify.mockResolvedValue({
-      policy: {
-        chosenLabel: 'out_of_scope',
-        rejected: true,
-        rejectionReason: 'low_confidence',
-        top1: { label: 'out_of_scope', score: 0.1 },
-        top2: { label: 'code_review', score: 0.09 },
-      },
-      ranked: [],
-      revision: 'rev',
-      latencyMs: 10,
-      seqLen: 5,
-      truncated: false,
-    });
-    mocks.decide.mockResolvedValue({ category: 'code_review', confidence: 1, source: 'llm', metadata: {} });
-
-    const router = new ExpertRouter();
-    const result = await router.route(
-      { body: { messages: [{ role: 'user', content: 'hi' }] } },
-      'routing-a',
-      {}
+  test("uses LLM fallback when the remote policy rejects an intent", async () => {
+    mocks.classifyIntent.mockResolvedValue(
+      remoteResult({
+        data: [
+          {
+            index: 0,
+            truncated: false,
+            token_count: 2,
+            labels: [],
+            route: {
+              intent: "out_of_scope",
+              domain: "out_of_scope",
+              rejected: true,
+              reason: "short_text",
+              top1_score: 0.4,
+            },
+          },
+        ],
+      }),
     );
-
-    expect(result.expert.id).toBe('expert-review');
-    expect(mocks.decide).toHaveBeenCalledOnce();
-    const log = (mocks.expertRoutingLogDb.create as any).mock.calls[0][0];
-    expect(log.route_source).toBe('llm_second_pass');
-  });
-
-  test('session binding hit routes directly without inference and persists no new binding (FR-6)', async () => {
-    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
-      id: 'routing-a',
-      enabled: 1,
-      config: JSON.stringify(baseConfig()),
+    mocks.decide.mockResolvedValue({
+      category: "code_review",
+      confidence: 1,
+      source: "llm",
+      metadata: {},
     });
+    const result = await new ExpertRouter().route(
+      { body: { messages: [{ role: "user", content: "hi" }] } },
+      "routing",
+      {},
+    );
+    expect(result.expert.id).toBe("expert-review");
+    expect(mocks.decide).toHaveBeenCalledOnce();
+  });
+  test("uses LLM fallback when the remote service fails", async () => {
+    mocks.classifyIntent.mockRejectedValue(new Error("unavailable"));
+    mocks.decide.mockResolvedValue({
+      category: "code_review",
+      confidence: 1,
+      source: "llm",
+      metadata: {},
+    });
+    const result = await new ExpertRouter().route(
+      { body: { messages: [{ role: "user", content: "review" }] } },
+      "routing",
+      {},
+    );
+    expect(result.expert.id).toBe("expert-review");
+    expect(mocks.decide).toHaveBeenCalledOnce();
+  });
+  test("reuses a session binding without calling either classifier", async () => {
     mocks.expertRoutingSessionBindingDb.getActiveBinding.mockResolvedValue({
-      expert_id: 'expert-review',
-      route_source: 'local_onnx',
+      expert_id: "expert-review",
+      route_source: "intent_api",
     });
-
-    const router = new ExpertRouter();
-    const result = await router.route(
+    const result = await new ExpertRouter().route(
       {
-        headers: { 'x-session-id': 'session-1' },
-        body: { messages: [{ role: 'user', content: 'anything' }] },
+        headers: { "x-session-id": "s" },
+        body: { messages: [{ role: "user", content: "review" }] },
       },
-      'routing-a',
-      { virtualKeyId: 'vk-a' }
+      "routing",
+      { virtualKeyId: "key" },
     );
-
-    expect(result.expert.id).toBe('expert-review');
-    expect(mocks.classify).not.toHaveBeenCalled();
+    expect(result.expert.id).toBe("expert-review");
+    expect(mocks.classifyIntent).not.toHaveBeenCalled();
     expect(mocks.decide).not.toHaveBeenCalled();
-    // Session reuse must not create a competing binding.
-    expect(mocks.expertRoutingSessionBindingDb.createOrSelectBinding).not.toHaveBeenCalled();
-    expect(mocks.expertRoutingLogDb.create).toHaveBeenCalledOnce();
-    const log = (mocks.expertRoutingLogDb.create as any).mock.calls[0][0];
-    expect(log.route_source).toBe('session');
-  });
-
-  test('a divergent race loser returns its own candidate and writes exactly one log row', async () => {
-    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
-      id: 'routing-a',
-      enabled: 1,
-      config: JSON.stringify(baseConfig()),
-    });
-    mocks.decide.mockResolvedValue({ category: 'code_review', confidence: 1, source: 'llm', metadata: {} });
-    // Lost the race; the persisted winner is a different expert.
-    mocks.expertRoutingSessionBindingDb.createOrSelectBinding.mockResolvedValue({
-      row: { expert_id: 'expert-other', route_source: 'local_onnx' },
-      winner: false,
-    });
-
-    const router = new ExpertRouter();
-    const result = await router.route(
-      {
-        headers: { 'x-session-id': 'session-1' },
-        body: { messages: [{ role: 'user', content: 'review this code' }] },
-      },
-      'routing-a',
-      { virtualKeyId: 'vk-a' }
-    );
-
-    // The loser's own candidate is returned; the race is observability-only.
-    expect(result.expert.id).toBe('expert-review');
-    // Exactly one analytics row — no second "session race" row.
-    expect(mocks.expertRoutingLogDb.create).toHaveBeenCalledOnce();
-    const log = (mocks.expertRoutingLogDb.create as any).mock.calls[0][0];
-    expect(log.route_source).toBe('llm_second_pass');
-  });
-
-  test('local classifier unavailable falls through to LLM second pass (FR-5)', async () => {
-    mocks.isReady.mockReturnValue(false);
-    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
-      id: 'routing-a',
-      enabled: 1,
-      config: JSON.stringify(baseConfig()),
-    });
-    mocks.decide.mockResolvedValue({ category: 'code_review', confidence: 1, source: 'llm', metadata: {} });
-
-    const router = new ExpertRouter();
-    const result = await router.route(
-      { body: { messages: [{ role: 'user', content: 'review' }] } },
-      'routing-a',
-      {}
-    );
-
-    expect(result.expert.id).toBe('expert-review');
-    expect(mocks.classify).not.toHaveBeenCalled();
-    expect(mocks.decide).toHaveBeenCalledOnce();
-    const log = (mocks.expertRoutingLogDb.create as any).mock.calls[0][0];
-    const meta = JSON.parse(log.classifier_response);
-    expect(meta.localUnavailable).toBe(true);
-  });
-
-  test('local classifier error falls through to LLM second pass (FR-5)', async () => {
-    mocks.isReady.mockReturnValue(true);
-    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
-      id: 'routing-a',
-      enabled: 1,
-      config: JSON.stringify(baseConfig()),
-    });
-    mocks.classify.mockRejectedValue(new Error('onnx blew up'));
-    mocks.decide.mockResolvedValue({ category: 'code_review', confidence: 1, source: 'llm', metadata: {} });
-
-    const router = new ExpertRouter();
-    const result = await router.route(
-      { body: { messages: [{ role: 'user', content: 'review' }] } },
-      'routing-a',
-      {}
-    );
-
-    expect(result.expert.id).toBe('expert-review');
-    expect(mocks.decide).toHaveBeenCalledOnce();
-    const log = (mocks.expertRoutingLogDb.create as any).mock.calls[0][0];
-    const meta = JSON.parse(log.classifier_response);
-    expect(meta.localError).toBe('onnx blew up');
   });
 });

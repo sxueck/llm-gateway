@@ -1,9 +1,9 @@
-import request from '@/utils/request';
+import request from "@/utils/request";
 
 export interface ExpertTarget {
   id: string;
   category: string;
-  type: 'virtual' | 'real';
+  type: "virtual" | "real";
   model_id?: string;
   provider_id?: string;
   model?: string;
@@ -18,13 +18,9 @@ export interface ExpertTemplate {
   utterances: string[];
 }
 
-/**
- * LLM second-pass classifier configuration. Invoked only when the local ONNX
- * classifier rejects, returns an ineligible label (ops/out_of_scope), or lacks
- * a mapped expert. Same shape as the former primary `classifier`.
- */
+/** The external Intent Router API runs before this fallback classifier. */
 export interface LlmSecondPassConfig {
-  type: 'virtual' | 'real';
+  type: "virtual" | "real";
   model_id?: string;
   provider_id?: string;
   model?: string;
@@ -41,14 +37,6 @@ export interface LlmSecondPassConfig {
 /** Deprecated alias kept for transition; prefer LlmSecondPassConfig. */
 export type ClassifierConfig = LlmSecondPassConfig;
 
-/** Pin metadata for the local ONNX classifier (auditable, not user-editable). */
-export interface LocalClassifierPolicy {
-  model_repo: string;
-  revision: string;
-  onnx_file: string;
-  max_tokens: number;
-}
-
 /** Session binding TTL policy (NFR-4). */
 export interface SessionBindingPolicy {
   idle_ttl_seconds: number;
@@ -56,7 +44,7 @@ export interface SessionBindingPolicy {
 }
 
 export interface FallbackConfig {
-  type: 'virtual' | 'real';
+  type: "virtual" | "real";
   model_id?: string;
   provider_id?: string;
   model?: string;
@@ -69,14 +57,15 @@ export interface ExpertRoutingConfig {
     strip_code_blocks?: boolean;
     strip_system_prompt?: boolean;
   };
-  local_classifier: LocalClassifierPolicy;
   llm_second_pass: LlmSecondPassConfig;
   experts: ExpertTarget[];
   fallback?: FallbackConfig;
   session_binding_policy: SessionBindingPolicy;
 }
 
-export type PreprocessingConfig = NonNullable<ExpertRoutingConfig['preprocessing']>;
+export type PreprocessingConfig = NonNullable<
+  ExpertRoutingConfig["preprocessing"]
+>;
 
 export interface ExpertRouting {
   id: string;
@@ -100,7 +89,6 @@ export interface CreateExpertRoutingRequest {
   name: string;
   description?: string;
   enabled?: boolean;
-  local_classifier?: LocalClassifierPolicy;
   llm_second_pass: LlmSecondPassConfig;
   // Editor always normalizes this; make it required to simplify v-model usage.
   preprocessing: PreprocessingConfig;
@@ -116,9 +104,8 @@ export interface UpdateExpertRoutingRequest {
   name?: string;
   description?: string;
   enabled?: boolean;
-  local_classifier?: LocalClassifierPolicy;
   llm_second_pass?: LlmSecondPassConfig;
-  preprocessing?: ExpertRoutingConfig['preprocessing'];
+  preprocessing?: ExpertRoutingConfig["preprocessing"];
   experts?: ExpertTarget[];
   fallback?: FallbackConfig;
   session_binding_policy?: SessionBindingPolicy;
@@ -175,7 +162,7 @@ export interface ExpertRoutingLogDetail {
   semantic_score?: number;
 }
 
-export type TrainingRecordStatus = 'pending_review' | 'accepted' | 'rejected';
+export type TrainingRecordStatus = "pending_review" | "accepted" | "rejected";
 
 export interface ExpertRoutingTrainingRecord {
   id: string;
@@ -194,7 +181,7 @@ export interface ExpertRoutingTrainingRecord {
 
 export const expertRoutingApi = {
   getAll(): Promise<{ configs: ExpertRouting[] }> {
-    return request.get('/admin/expert-routing');
+    return request.get("/admin/expert-routing");
   },
 
   getById(id: string): Promise<ExpertRouting> {
@@ -202,7 +189,7 @@ export const expertRoutingApi = {
   },
 
   create(data: CreateExpertRoutingRequest): Promise<ExpertRouting> {
-    return request.post('/admin/expert-routing', data);
+    return request.post("/admin/expert-routing", data);
   },
 
   update(id: string, data: UpdateExpertRoutingRequest): Promise<ExpertRouting> {
@@ -213,7 +200,10 @@ export const expertRoutingApi = {
     return request.delete(`/admin/expert-routing/${id}`);
   },
 
-  getStatistics(id: string, timeRange?: number): Promise<ExpertRoutingStatistics> {
+  getStatistics(
+    id: string,
+    timeRange?: number,
+  ): Promise<ExpertRoutingStatistics> {
     const params = timeRange ? { timeRange: timeRange.toString() } : {};
     return request.get(`/admin/expert-routing/${id}/statistics`, { params });
   },
@@ -223,47 +213,74 @@ export const expertRoutingApi = {
     return request.get(`/admin/expert-routing/${id}/logs`, { params });
   },
 
-  getLogsByCategory(id: string, category: string, limit?: number): Promise<{ logs: ExpertRoutingLog[] }> {
+  getLogsByCategory(
+    id: string,
+    category: string,
+    limit?: number,
+  ): Promise<{ logs: ExpertRoutingLog[] }> {
     const params = limit ? { limit: limit.toString() } : {};
-    return request.get(`/admin/expert-routing/${id}/logs/category/${encodeURIComponent(category)}`, { params });
+    return request.get(
+      `/admin/expert-routing/${id}/logs/category/${encodeURIComponent(category)}`,
+      { params },
+    );
   },
 
   getLogDetails(id: string, logId: string): Promise<ExpertRoutingLogDetail> {
     return request.get(`/admin/expert-routing/${id}/logs/${logId}/details`);
   },
 
-  associateModels(id: string, modelIds: string[]): Promise<{ success: boolean }> {
+  associateModels(
+    id: string,
+    modelIds: string[],
+  ): Promise<{ success: boolean }> {
     return request.post(`/admin/expert-routing/${id}/models`, { modelIds });
   },
 
-  disassociateModel(id: string, modelId: string): Promise<{ success: boolean }> {
+  disassociateModel(
+    id: string,
+    modelId: string,
+  ): Promise<{ success: boolean }> {
     return request.delete(`/admin/expert-routing/${id}/models/${modelId}`);
   },
 
   savePreviewWidth(width: number): Promise<{ success: boolean }> {
-    return request.post('/admin/expert-routing/preferences/preview-width', { width });
+    return request.post("/admin/expert-routing/preferences/preview-width", {
+      width,
+    });
   },
 
   getPreviewWidth(): Promise<{ width: number }> {
-    return request.get('/admin/expert-routing/preferences/preview-width');
+    return request.get("/admin/expert-routing/preferences/preview-width");
   },
 
   getTemplates(): Promise<{ templates: ExpertTemplate[] }> {
-    return request.get('/admin/expert-routing/templates');
+    return request.get("/admin/expert-routing/templates");
   },
 
-  getTrainingRecords(id: string, status?: TrainingRecordStatus): Promise<{ records: ExpertRoutingTrainingRecord[] }> {
-    return request.get(`/admin/expert-routing/${id}/training-records`, { params: status ? { status } : {} });
+  getTrainingRecords(
+    id: string,
+    status?: TrainingRecordStatus,
+  ): Promise<{ records: ExpertRoutingTrainingRecord[] }> {
+    return request.get(`/admin/expert-routing/${id}/training-records`, {
+      params: status ? { status } : {},
+    });
   },
 
-  reviewTrainingRecord(id: string, recordId: string, data: Pick<ExpertRoutingTrainingRecord, 'status' | 'final_intent_label'>): Promise<{ success: boolean }> {
-    return request.patch(`/admin/expert-routing/${id}/training-records/${recordId}`, data);
+  reviewTrainingRecord(
+    id: string,
+    recordId: string,
+    data: Pick<ExpertRoutingTrainingRecord, "status" | "final_intent_label">,
+  ): Promise<{ success: boolean }> {
+    return request.patch(
+      `/admin/expert-routing/${id}/training-records/${recordId}`,
+      data,
+    );
   },
 
   exportTrainingRecords(id: string): Promise<string> {
     return request.get(`/admin/expert-routing/${id}/training-records/export`, {
-      headers: { Accept: 'application/x-ndjson' },
-      responseType: 'text',
+      headers: { Accept: "application/x-ndjson" },
+      responseType: "text",
     });
   },
 };

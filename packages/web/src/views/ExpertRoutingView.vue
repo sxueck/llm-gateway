@@ -3,21 +3,21 @@
     <n-space vertical :size="12">
       <n-space justify="space-between" align="center">
         <div>
-          <h2 class="page-title">{{ t('expertRouting.title') }}</h2>
-          <p class="page-subtitle">{{ t('expertRouting.subtitle') }}</p>
+          <h2 class="page-title">{{ t("expertRouting.title") }}</h2>
+          <p class="page-subtitle">{{ t("expertRouting.subtitle") }}</p>
         </div>
         <n-space :size="8">
           <n-button type="primary" size="small" @click="handleCreate">
             <template #icon>
               <n-icon><AddOutline /></n-icon>
             </template>
-            {{ t('expertRouting.createExpertRouting') }}
+            {{ t("expertRouting.createExpertRouting") }}
           </n-button>
           <n-button size="small" @click="handleRefresh">
             <template #icon>
               <n-icon><RefreshOutline /></n-icon>
             </template>
-            {{ t('common.refresh') }}
+            {{ t("common.refresh") }}
           </n-button>
         </n-space>
       </n-space>
@@ -30,10 +30,12 @@
       >
         <template #header>
           <div style="font-size: 14px; font-weight: 500">
-            {{ t('expertRouting.experimentalFeature') }}
+            {{ t("expertRouting.experimentalFeature") }}
           </div>
         </template>
-        <div style="font-size: 13px">{{ t('expertRouting.experimentalFeatureDesc') }}</div>
+        <div style="font-size: 13px">
+          {{ t("expertRouting.experimentalFeatureDesc") }}
+        </div>
       </n-alert>
 
       <n-spin :show="loading">
@@ -45,24 +47,36 @@
         >
           <template #extra>
             <n-button type="primary" @click="handleCreate">
-              {{ t('expertRouting.createFirstConfig') }}
+              {{ t("expertRouting.createFirstConfig") }}
             </n-button>
           </template>
         </n-empty>
 
         <div v-else class="config-grid">
-          <n-card v-for="config in configs" :key="config.id" class="config-card" hoverable>
+          <n-card
+            v-for="config in configs"
+            :key="config.id"
+            class="config-card"
+            hoverable
+          >
             <template #header>
               <n-space justify="space-between" align="center">
                 <n-space align="center" :size="8">
                   <n-text strong>{{ config.name }}</n-text>
-                  <n-tag :type="config.enabled ? 'success' : 'default'" size="small">
-                    {{ config.enabled ? t('common.enabled') : t('common.disabled') }}
+                  <n-tag
+                    :type="config.enabled ? 'success' : 'default'"
+                    size="small"
+                  >
+                    {{
+                      config.enabled
+                        ? t("common.enabled")
+                        : t("common.disabled")
+                    }}
                   </n-tag>
                 </n-space>
                 <n-switch
                   :value="config.enabled"
-                  @update:value="val => handleToggleEnabled(config.id, val)"
+                  @update:value="(val) => handleToggleEnabled(config.id, val)"
                   size="small"
                   @click.stop
                 />
@@ -71,7 +85,9 @@
 
             <div class="config-card-content">
               <div v-if="config.description" class="config-description">
-                <n-text depth="3" style="font-size: 13px">{{ config.description }}</n-text>
+                <n-text depth="3" style="font-size: 13px">{{
+                  config.description
+                }}</n-text>
               </div>
 
               <div class="visualization-preview" @click="handleEdit(config)">
@@ -85,17 +101,24 @@
               <div class="config-meta">
                 <n-space :size="16">
                   <n-text depth="3" style="font-size: 12px">
-                    <n-icon size="14" style="vertical-align: -2px; margin-right: 4px">
+                    <n-icon
+                      size="14"
+                      style="vertical-align: -2px; margin-right: 4px"
+                    >
                       <FilterOutline />
                     </n-icon>
-                    {{ t('expertRouting.classifier') }}:
+                    {{ t("expertRouting.classifier") }}:
                     {{ getClassifierLabel(config.config.llm_second_pass) }}
                   </n-text>
                   <n-text depth="3" style="font-size: 12px">
-                    <n-icon size="14" style="vertical-align: -2px; margin-right: 4px">
+                    <n-icon
+                      size="14"
+                      style="vertical-align: -2px; margin-right: 4px"
+                    >
                       <CubeOutline />
                     </n-icon>
-                    {{ t('expertRouting.expertCount') }}: {{ config.config.experts.length }}
+                    {{ t("expertRouting.expertCount") }}:
+                    {{ config.config.experts.length }}
                   </n-text>
                 </n-space>
               </div>
@@ -103,34 +126,45 @@
 
             <template #footer>
               <n-space justify="end" :size="8">
-                <n-button text size="small" @click.stop="handleShowStatistics(config.id)">
+                <n-button
+                  text
+                  size="small"
+                  @click.stop="handleShowStatistics(config.id)"
+                >
                   <template #icon>
                     <n-icon><BarChartOutlined /></n-icon>
                   </template>
-                  {{ t('expertRouting.statistics') }}
+                  {{ t("expertRouting.statistics") }}
                 </n-button>
-                <n-button text size="small" @click.stop="handleShowTrainingRecords(config.id)">
+                <n-button
+                  text
+                  size="small"
+                  @click.stop="handleShowTrainingRecords(config.id)"
+                >
                   <template #icon>
                     <n-icon><DocumentTextOutline /></n-icon>
                   </template>
-                  {{ t('expertRouting.trainingRecords') }}
+                  {{ t("expertRouting.trainingRecords") }}
                 </n-button>
                 <n-button text size="small" @click.stop="handleEdit(config)">
                   <template #icon>
                     <n-icon><EditOutlined /></n-icon>
                   </template>
-                  {{ t('common.edit') }}
+                  {{ t("common.edit") }}
                 </n-button>
-                <n-popconfirm @positive-click="handleDelete(config.id)" @click.stop>
+                <n-popconfirm
+                  @positive-click="handleDelete(config.id)"
+                  @click.stop
+                >
                   <template #trigger>
                     <n-button text size="small" type="error" @click.stop>
                       <template #icon>
                         <n-icon><DeleteOutlined /></n-icon>
                       </template>
-                      {{ t('common.delete') }}
+                      {{ t("common.delete") }}
                     </n-button>
                   </template>
-                  {{ t('expertRouting.deleteConfigConfirm') }}
+                  {{ t("expertRouting.deleteConfigConfirm") }}
                 </n-popconfirm>
               </n-space>
             </template>
@@ -143,13 +177,15 @@
       v-model:show="showEditorModal"
       preset="card"
       :title="
-        editingId ? t('expertRouting.editExpertRouting') : t('expertRouting.createExpertRouting')
+        editingId
+          ? t('expertRouting.editExpertRouting')
+          : t('expertRouting.createExpertRouting')
       "
       class="expert-routing-modal"
       :style="{ width: '95%', maxWidth: '1600px', maxHeight: '90vh' }"
       :segmented="{
         content: 'soft',
-        footer: 'soft'
+        footer: 'soft',
       }"
     >
       <div class="modal-content-wrapper">
@@ -188,11 +224,14 @@
       :style="{ width: '800px', maxWidth: '92vw', maxHeight: '85vh' }"
       :segmented="{
         content: 'soft',
-        footer: 'soft'
+        footer: 'soft',
       }"
     >
       <div class="modal-content-wrapper">
-        <ExpertRoutingStatistics v-if="showStatisticsModal" :config-id="selectedConfigId" />
+        <ExpertRoutingStatistics
+          v-if="showStatisticsModal"
+          :config-id="selectedConfigId"
+        />
       </div>
     </n-modal>
   </div>
@@ -292,8 +331,8 @@
 </style>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { ref, computed, onMounted, watch, nextTick } from "vue";
+import { useI18n } from "vue-i18n";
 import {
   useMessage,
   NSpace,
@@ -307,209 +346,223 @@ import {
   NSpin,
   NEmpty,
   NText,
-  NTag
-} from 'naive-ui'
+  NTag,
+} from "naive-ui";
 import {
   AddOutline,
   RefreshOutline,
   FilterOutline,
   CubeOutline,
-  DocumentTextOutline
-} from '@vicons/ionicons5'
-import { EditOutlined, DeleteOutlined, BarChartOutlined } from '@vicons/material'
+  DocumentTextOutline,
+} from "@vicons/ionicons5";
+import {
+  EditOutlined,
+  DeleteOutlined,
+  BarChartOutlined,
+} from "@vicons/material";
 import {
   expertRoutingApi,
   type ExpertRouting,
-  type CreateExpertRoutingRequest
-} from '@/api/expert-routing'
-import ExpertRoutingEditor from '@/components/ExpertRoutingEditor.vue'
-import ExpertRoutingVisualization from '@/components/ExpertRoutingVisualization.vue'
-import ExpertRoutingStatistics from '@/components/ExpertRoutingStatistics.vue'
-import ExpertRoutingTrainingRecords from '@/components/ExpertRoutingTrainingRecords.vue'
-import { useProviderStore } from '@/stores/provider'
-import { useModelStore } from '@/stores/model'
-import { createDefaultExpertRoutingConfig } from '@/utils/expert-routing'
+  type CreateExpertRoutingRequest,
+} from "@/api/expert-routing";
+import ExpertRoutingEditor from "@/components/ExpertRoutingEditor.vue";
+import ExpertRoutingVisualization from "@/components/ExpertRoutingVisualization.vue";
+import ExpertRoutingStatistics from "@/components/ExpertRoutingStatistics.vue";
+import ExpertRoutingTrainingRecords from "@/components/ExpertRoutingTrainingRecords.vue";
+import { useProviderStore } from "@/stores/provider";
+import { useModelStore } from "@/stores/model";
+import { createDefaultExpertRoutingConfig } from "@/utils/expert-routing";
 
-const { t } = useI18n()
-const message = useMessage()
-const providerStore = useProviderStore()
-const modelStore = useModelStore()
+const { t } = useI18n();
+const message = useMessage();
+const providerStore = useProviderStore();
+const modelStore = useModelStore();
 
 const virtualModels = computed(() => {
-  return modelStore.models.filter(m => m.isVirtual)
-})
+  return modelStore.models.filter((m) => m.isVirtual);
+});
 
 const virtualModelOptions = computed(() => {
-  return virtualModels.value.map(m => ({
+  return virtualModels.value.map((m) => ({
     label: m.name,
-    value: m.id
-  }))
-})
+    value: m.id,
+  }));
+});
 
-const EXPERIMENTAL_ALERT_KEY = 'expert-routing-experimental-alert-closed'
+const EXPERIMENTAL_ALERT_KEY = "expert-routing-experimental-alert-closed";
 
-const configs = ref<ExpertRouting[]>([])
-const loading = ref(false)
-const showEditorModal = ref(false)
+const configs = ref<ExpertRouting[]>([]);
+const loading = ref(false);
+const showEditorModal = ref(false);
 // Delay mounting the editor until after modal is visible to avoid jank during transition.
-const renderEditor = ref(false)
-const showStatisticsModal = ref(false)
-const showTrainingRecordsModal = ref(false)
-const editingId = ref<string | null>(null)
-const editingConfig = ref<CreateExpertRoutingRequest>(createDefaultExpertRoutingConfig())
-const selectedConfigId = ref<string>('')
-const selectedTrainingConfigId = ref<string>('')
-const saving = ref(false)
-const showExperimentalAlert = ref(localStorage.getItem(EXPERIMENTAL_ALERT_KEY) !== 'true')
+const renderEditor = ref(false);
+const showStatisticsModal = ref(false);
+const showTrainingRecordsModal = ref(false);
+const editingId = ref<string | null>(null);
+const editingConfig = ref<CreateExpertRoutingRequest>(
+  createDefaultExpertRoutingConfig(),
+);
+const selectedConfigId = ref<string>("");
+const selectedTrainingConfigId = ref<string>("");
+const saving = ref(false);
+const showExperimentalAlert = ref(
+  localStorage.getItem(EXPERIMENTAL_ALERT_KEY) !== "true",
+);
 
 function blurActiveElement() {
   // Avoid Chrome blocking aria-hidden when opening naive-ui modal (focus must move off background).
-  const el = document.activeElement
-  if (el && el instanceof HTMLElement) el.blur()
+  const el = document.activeElement;
+  if (el && el instanceof HTMLElement) el.blur();
 }
 
 function handleCloseExperimentalAlert() {
-  showExperimentalAlert.value = false
-  localStorage.setItem(EXPERIMENTAL_ALERT_KEY, 'true')
+  showExperimentalAlert.value = false;
+  localStorage.setItem(EXPERIMENTAL_ALERT_KEY, "true");
 }
 
 function getClassifierLabel(secondPass: any): string {
-  if (!secondPass) return t('expertRouting.realModel')
-  if (secondPass.type === 'virtual') {
-    const virtualModel = modelStore.models.find(m => m.id === secondPass.model_id)
-    return virtualModel?.name || secondPass.model_id || t('expertRouting.virtualModel')
+  if (!secondPass) return t("expertRouting.realModel");
+  if (secondPass.type === "virtual") {
+    const virtualModel = modelStore.models.find(
+      (m) => m.id === secondPass.model_id,
+    );
+    return (
+      virtualModel?.name ||
+      secondPass.model_id ||
+      t("expertRouting.virtualModel")
+    );
   } else {
-    return secondPass.model || t('expertRouting.realModel')
+    return secondPass.model || t("expertRouting.realModel");
   }
 }
 
 async function loadConfigs() {
-  loading.value = true
+  loading.value = true;
   try {
-    const response = await expertRoutingApi.getAll()
-    configs.value = response.configs
+    const response = await expertRoutingApi.getAll();
+    configs.value = response.configs;
   } catch (error: any) {
-    message.error(error.message || t('messages.operationFailed'))
+    message.error(error.message || t("messages.operationFailed"));
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
 function handleCreate() {
-  blurActiveElement()
-  editingId.value = null
-  editingConfig.value = createDefaultExpertRoutingConfig()
-  showEditorModal.value = true
+  blurActiveElement();
+  editingId.value = null;
+  editingConfig.value = createDefaultExpertRoutingConfig();
+  showEditorModal.value = true;
 }
 
 function handleEdit(config: ExpertRouting) {
-  blurActiveElement()
-  editingId.value = config.id
+  blurActiveElement();
+  editingId.value = config.id;
   editingConfig.value = {
     name: config.name,
     description: config.description,
     enabled: config.enabled,
-    local_classifier: config.config.local_classifier,
     llm_second_pass: config.config.llm_second_pass,
     preprocessing: config.config.preprocessing ?? {
       strip_tools: false,
       strip_files: false,
       strip_code_blocks: false,
-      strip_system_prompt: false
+      strip_system_prompt: false,
     },
     experts: config.config.experts,
     fallback: config.config.fallback,
-    session_binding_policy: config.config.session_binding_policy
-  }
-  showEditorModal.value = true
+    session_binding_policy: config.config.session_binding_policy,
+  };
+  showEditorModal.value = true;
 }
 
 function handleShowStatistics(configId: string) {
-  blurActiveElement()
-  selectedConfigId.value = configId
-  showStatisticsModal.value = true
+  blurActiveElement();
+  selectedConfigId.value = configId;
+  showStatisticsModal.value = true;
 }
 
 function handleShowTrainingRecords(configId: string) {
-  blurActiveElement()
-  selectedTrainingConfigId.value = configId
-  showTrainingRecordsModal.value = true
+  blurActiveElement();
+  selectedTrainingConfigId.value = configId;
+  showTrainingRecordsModal.value = true;
 }
 
 async function handleSave(data: CreateExpertRoutingRequest) {
-  saving.value = true
+  saving.value = true;
   try {
     if (editingId.value) {
-      await expertRoutingApi.update(editingId.value, data)
-      message.success(t('expertRouting.updateSuccess'))
+      await expertRoutingApi.update(editingId.value, data);
+      message.success(t("expertRouting.updateSuccess"));
     } else {
-      await expertRoutingApi.create(data)
-      message.success('专家路由创建成功,已自动创建专家模型')
+      await expertRoutingApi.create(data);
+      message.success("专家路由创建成功,已自动创建专家模型");
     }
 
-    showEditorModal.value = false
-    await loadConfigs()
+    showEditorModal.value = false;
+    await loadConfigs();
   } catch (error: any) {
-    message.error(error.message || t('messages.operationFailed'))
+    message.error(error.message || t("messages.operationFailed"));
   } finally {
-    saving.value = false
+    saving.value = false;
   }
 }
 
 function handleCancel() {
-  showEditorModal.value = false
+  showEditorModal.value = false;
 }
 
 async function handleToggleEnabled(id: string, enabled: boolean) {
   try {
-    await expertRoutingApi.update(id, { enabled })
-    message.success(t('messages.operationSuccess'))
-    await loadConfigs()
+    await expertRoutingApi.update(id, { enabled });
+    message.success(t("messages.operationSuccess"));
+    await loadConfigs();
   } catch (error: any) {
-    message.error(error.message || t('messages.operationFailed'))
+    message.error(error.message || t("messages.operationFailed"));
   }
 }
 
 async function handleDelete(id: string) {
   try {
-    await expertRoutingApi.delete(id)
-    message.success(t('expertRouting.deleteSuccess'))
-    await loadConfigs()
+    await expertRoutingApi.delete(id);
+    message.success(t("expertRouting.deleteSuccess"));
+    await loadConfigs();
   } catch (error: any) {
-    message.error(error.message || t('messages.operationFailed'))
+    message.error(error.message || t("messages.operationFailed"));
   }
 }
 
 function handleRefresh() {
-  loadConfigs()
+  loadConfigs();
 }
 
 onMounted(async () => {
-  await Promise.all([providerStore.fetchProviders(), modelStore.fetchModels()])
-  loadConfigs()
-})
+  await Promise.all([providerStore.fetchProviders(), modelStore.fetchModels()]);
+  loadConfigs();
+});
 
 // Clear the deferred unmount timer before a reopen can race it: a stale
 // callback would blank a freshly re-mounted editor.
-let editorUnmountTimer: number | undefined
+let editorUnmountTimer: number | undefined;
 
-watch(showEditorModal, async show => {
+watch(showEditorModal, async (show) => {
   if (show) {
     if (editorUnmountTimer !== undefined) {
-      window.clearTimeout(editorUnmountTimer)
-      editorUnmountTimer = undefined
+      window.clearTimeout(editorUnmountTimer);
+      editorUnmountTimer = undefined;
     }
-    renderEditor.value = false
-    await nextTick()
+    renderEditor.value = false;
+    await nextTick();
     requestAnimationFrame(() => {
-      renderEditor.value = true
-    })
+      renderEditor.value = true;
+    });
   } else {
-    if (editorUnmountTimer !== undefined) window.clearTimeout(editorUnmountTimer)
+    if (editorUnmountTimer !== undefined)
+      window.clearTimeout(editorUnmountTimer);
     editorUnmountTimer = window.setTimeout(() => {
-      renderEditor.value = false
-      editorUnmountTimer = undefined
-    }, 250)
+      renderEditor.value = false;
+      editorUnmountTimer = undefined;
+    }, 250);
   }
-})
+});
 </script>
