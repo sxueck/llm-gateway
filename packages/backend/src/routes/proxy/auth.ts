@@ -1,5 +1,6 @@
 import { hotConfigCache } from '../../services/hot-config-cache.js';
 import { memoryLogger } from '../../services/logger.js';
+import { maskKey } from '../../utils/crypto.js';
 
 export interface VirtualKeyAuthResult {
   virtualKey: any;
@@ -20,7 +21,7 @@ export interface AuthError {
   };
 }
 
-export function extractVirtualKeyAuthHeader(headers: Record<string, any> | undefined): string | undefined {
+export function extractVirtualKeyAuthHeader(headers: Record<string, unknown> | undefined): string | undefined {
   if (!headers) return undefined;
 
   // 优先使用标准 Authorization 头
@@ -30,7 +31,7 @@ export function extractVirtualKeyAuthHeader(headers: Record<string, any> | undef
   }
 
   // Fastify 默认会把 header 名转换为小写，这里统一做一次降级
-  const lowered: Record<string, any> = {};
+  const lowered: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(headers)) {
     lowered[key.toLowerCase()] = value;
   }
@@ -72,7 +73,7 @@ export async function authenticateVirtualKey(authHeader: string | undefined): Pr
   const virtualKeyValue = token;
   const virtualKey = await hotConfigCache.getVirtualKeyByKeyValue(virtualKeyValue);
   if (!virtualKey) {
-    memoryLogger.warn(`Virtual key not found: ${virtualKeyValue}`, 'Proxy');
+    memoryLogger.warn(`Virtual key not found: ${maskKey(virtualKeyValue)}`, 'Proxy');
     return {
       error: {
         code: 401,
@@ -89,7 +90,7 @@ export async function authenticateVirtualKey(authHeader: string | undefined): Pr
   }
 
   if (!virtualKey.enabled) {
-    memoryLogger.warn(`Virtual key disabled: ${virtualKeyValue}`, 'Proxy');
+    memoryLogger.warn(`Virtual key disabled: ${maskKey(virtualKeyValue)}`, 'Proxy');
     return {
       error: {
         code: 403,

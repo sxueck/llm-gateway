@@ -20,6 +20,10 @@ export function hashKey(key: string): string {
   return createHash('sha256').update(key).digest('hex');
 }
 
+export function maskKey(key: string): string {
+  return key.length <= 8 ? '***' : `***${key.slice(-4)}`;
+}
+
 export function encryptApiKey(apiKey: string): string {
   const iv = randomBytes(16);
   const cipher = createCipheriv(ALGORITHM, ENCRYPTION_KEY, iv);

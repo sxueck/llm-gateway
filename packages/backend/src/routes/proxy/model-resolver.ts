@@ -4,6 +4,7 @@ import { hotConfigCache } from '../../services/hot-config-cache.js';
 import { memoryLogger } from '../../services/logger.js';
 import { reasoningEffortSuffixesCache } from '../../services/reasoning-effort-suffixes.js';
 import { isChatCompletionsPath } from '../../utils/path-detector.js';
+import { maskKey } from '../../utils/crypto.js';
 import { resolveProviderFromModel } from './routing.js';
 import { parseModelAttributes } from './model-handlers.js';
 
@@ -322,7 +323,7 @@ export async function resolveModelAndProvider(
     try {
       const parsedModelIds = JSON.parse(virtualKey.model_ids);
       if (!Array.isArray(parsedModelIds) || parsedModelIds.length === 0) {
-        memoryLogger.error(`Invalid model_ids config for virtual key: ${virtualKeyValue}`, 'Proxy');
+        memoryLogger.error(`Invalid model_ids config for virtual key: ${maskKey(virtualKeyValue)}`, 'Proxy');
         return {
           code: 500,
           body: {
@@ -472,7 +473,7 @@ export async function resolveModelAndProvider(
           const candidateModel = await hotConfigCache.getModelById(candidateId);
           if (!candidateModel) {
             memoryLogger.warn(
-              `虚拟密钥 ${virtualKeyValue} 引用了不存在的模型: ${candidateId}，已跳过`,
+              `虚拟密钥 ${maskKey(virtualKeyValue)} 引用了不存在的模型: ${candidateId}，已跳过`,
               'ModelResolver'
             );
             missingModels.push(candidateId);
@@ -487,12 +488,12 @@ export async function resolveModelAndProvider(
         // 如果所有模型都不存在，记录错误
         if (missingModels.length === parsedModelIds.length) {
           memoryLogger.error(
-            `虚拟密钥 ${virtualKeyValue} 的所有模型配置都不存在: ${parsedModelIds.join(', ')}`,
+            `虚拟密钥 ${maskKey(virtualKeyValue)} 的所有模型配置都不存在: ${parsedModelIds.join(', ')}`,
             'ModelResolver'
           );
         } else if (missingModels.length > 0) {
           memoryLogger.info(
-            `虚拟密钥 ${virtualKeyValue} 有 ${missingModels.length}/${parsedModelIds.length} 个模型不存在，但仍有可用模型`,
+            `虚拟密钥 ${maskKey(virtualKeyValue)} 有 ${missingModels.length}/${parsedModelIds.length} 个模型不存在，但仍有可用模型`,
             'ModelResolver'
           );
         }
@@ -584,7 +585,7 @@ export async function resolveModelAndProvider(
 
     providerId = virtualKey.provider_id;
   } else {
-    memoryLogger.error(`Virtual key has no model or provider configured: ${virtualKeyValue}`, 'Proxy');
+    memoryLogger.error(`Virtual key has no model or provider configured: ${maskKey(virtualKeyValue)}`, 'Proxy');
     return {
       code: 500,
       body: {
