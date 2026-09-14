@@ -1242,7 +1242,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.delete("/routing-configs/:id", async (request) => {
+  fastify.delete("/routing-configs/:id", async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
 
@@ -1252,6 +1252,29 @@ export async function configRoutes(fastify: FastifyInstance) {
       }
 
       const associatedModels = await modelDb.getByRoutingConfigId(id);
+
+      // 引用完整性：待删除的虚拟模型仍被虚拟密钥引用时拒绝删除，避免悬空引用
+      const modelsToDelete = associatedModels.filter((m) => m.is_virtual === 1);
+      if (modelsToDelete.length > 0) {
+        const virtualKeyCounts = await virtualKeyDb.countByModels(
+          modelsToDelete.map((m) => ({
+            id: m.id,
+            provider_id: m.provider_id,
+            model_identifier: m.model_identifier,
+            name: m.name,
+          })),
+        );
+        const referencedModels = modelsToDelete.filter(
+          (m) => (virtualKeyCounts.get(m.id) || 0) > 0,
+        );
+        if (referencedModels.length > 0) {
+          const names = referencedModels.map((m) => m.name).join("、");
+          return reply.code(400).send({
+            error: `无法删除路由配置，${referencedModels.length} 个关联虚拟模型仍被虚拟密钥引用（${names}），请先解除引用后重试`,
+          });
+        }
+      }
+
       let deletedModels = 0;
       let detachedModels = 0;
 

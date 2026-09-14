@@ -564,9 +564,9 @@ export async function makeAnthropicStreamRequest(
 
     } catch (error: any) {
       if (error instanceof EmptyOutputError) {
-        if (!reply.raw.writableEnded) {
-            reply.raw.end();
-        }
+        // The empty-output terminal state may have already flushed buffered
+        // chunks (headers sent). The handler owns response termination so it can
+        // still attempt a smart-routing retry when nothing was written.
         throw error;
       }
 
@@ -576,24 +576,15 @@ export async function makeAnthropicStreamRequest(
         { error: error.stack }
       );
 
+      // OpenAI transport contract parity: do NOT write the error response to
+      // the client here. Enrich the thrown error with the normalized upstream
+      // status/envelope and let the route handler decide between a
+      // protocol-correct smart-routing retry and delivering the error.
       const { statusCode, errorResponse } = normalizeError(error);
-
-      if (!reply.raw.headersSent) {
-        reply.raw.writeHead(statusCode, {
-          'Content-Type': 'application/json',
-        });
-        const errorData = `data: ${JSON.stringify(errorResponse)}\n\n`;
-        reply.raw.write(errorData);
-        reply.raw.end();
-      } else {
-         if (!reply.raw.writableEnded) {
-             const errorData = `event: error\ndata: ${JSON.stringify(errorResponse)}\n\n`;
-             reply.raw.write(errorData);
-             reply.raw.end();
-         }
-      }
-
-      throw error;
+      const enriched = new Error(errorResponse?.error?.message || error?.message || 'Anthropic stream request failed');
+      (enriched as any).statusCode = statusCode;
+      (enriched as any).errorResponse = errorResponse;
+      throw enriched;
     }
   }
   throw new Error('Anthropic stream retries exhausted');

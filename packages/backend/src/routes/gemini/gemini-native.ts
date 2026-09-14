@@ -1,5 +1,8 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { memoryLogger } from '../../services/logger.js';
+import { circuitBreaker } from '../../services/circuit-breaker.js';
+import { shouldRetrySmartRouting } from '../proxy/routing.js';
+import type { ModelResolutionResult } from '../proxy/model-resolver.js';
 import { calculateTokensIfNeeded } from '../proxy/token-calculator.js';
 import { logApiRequestAsync } from '../../services/api-request-logger.js';
 import { shouldLogRequestBody, getModelForLogging } from '../proxy/handlers/shared.js';
@@ -12,6 +15,20 @@ import { getRequestUserAgent } from '../../utils/http.js';
 import { requestHeaderForwardingService } from '../../services/request-header-forwarding.js';
 import { upstreamFetch } from '../../utils/upstream-fetch.js';
 import { BoundedChunkRecorder } from '../../utils/bounded-chunk-recorder.js';
+
+/**
+ * Pipeline context threaded from the Gemini route into the native handlers so
+ * every terminal upstream outcome is recorded against the smart-routing
+ * circuit key (modelResult.circuitBreakerKey) and retry-eligible failures can
+ * re-enter the Gemini handlers on the next target.
+ */
+export interface GeminiNativeRequestOptions {
+  /** Smart-routing circuit key; falls back to the bare provider id. */
+  circuitBreakerKey?: string;
+  modelResult?: ModelResolutionResult;
+  virtualKeyValue?: string;
+  retryBodySnapshot?: any;
+}
 
 const DEFAULT_GEMINI_EMPTY_RETRY_LIMIT = Math.max(
   parseInt(process.env.GEMINI_STREAM_EMPTY_RETRY_LIMIT || '1', 10),
@@ -199,11 +216,13 @@ export async function handleGeminiNativeNonStreamRequest(
   providerId: string,
   startTime: number,
   vkDisplay: string,
-  currentModel?: any
+  currentModel?: any,
+  options?: GeminiNativeRequestOptions
 ): Promise<void> {
   const method = request.method;
   const requestUserAgent = getRequestUserAgent(request);
   const requestIp = extractIp(request);
+  const circuitBreakerKey = options?.circuitBreakerKey || providerId;
 
   memoryLogger.info(
     `Gemini 原生透传 (非流式): ${method} ${path} | virtual key: ${vkDisplay}`,
@@ -252,15 +271,6 @@ export async function handleGeminiNativeNonStreamRequest(
     const responseText = await upstreamResponse.text();
     const duration = Date.now() - startTime;
 
-    const excludedResponseHeaders = ['content-length', 'transfer-encoding', 'connection'];
-    upstreamResponse.headers.forEach((value, key) => {
-      if (!excludedResponseHeaders.includes(key.toLowerCase())) {
-        reply.header(key, value);
-      }
-    });
-
-    reply.code(upstreamResponse.status);
-
     let responseData: any;
     let tokenCount: any = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
@@ -286,6 +296,15 @@ export async function handleGeminiNativeNonStreamRequest(
     const truncatedRequest = shouldLogBody && requestBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
     const isSuccess = upstreamResponse.status >= 200 && upstreamResponse.status < 300;
 
+    // Record the breaker verdict for this terminal upstream outcome against the
+    // pipeline circuit key before anything is sent, so a retry dispatch below
+    // cannot skip accounting for the failed target.
+    if (isSuccess) {
+      circuitBreaker.recordSuccess(circuitBreakerKey);
+    } else {
+      circuitBreaker.recordFailure(circuitBreakerKey, new Error(`HTTP ${upstreamResponse.status}`));
+    }
+
     logApiRequestAsync({
       virtualKey,
       providerId,
@@ -300,6 +319,40 @@ export async function handleGeminiNativeNonStreamRequest(
       userAgent: requestUserAgent,
     });
 
+    // Smart-routing retry (OpenAI parity): on a retry-eligible upstream failure,
+    // switch to the next target while the response is still unsent. The failed
+    // target was already breaker-recorded and audited above; the retry re-enters
+    // the Gemini-native handlers with a pristine body, never another protocol's.
+    if (!isSuccess && options?.modelResult?.canRetry && options?.virtualKeyValue && shouldRetrySmartRouting(upstreamResponse.status) && !reply.sent) {
+      try {
+        const { handleNonStreamRetry } = await import('../proxy/retry-handler.js');
+        const retried = await handleNonStreamRetry(request, reply, upstreamResponse.status, {
+          virtualKey,
+          virtualKeyValue: options.virtualKeyValue,
+          vkDisplay,
+          modelResult: options.modelResult,
+          currentModel,
+          startTime,
+          entrypointProtocol: 'gemini',
+          retryBodySnapshot: options.retryBodySnapshot
+        });
+        if (retried) {
+          return;
+        }
+        memoryLogger.warn(`智能路由重试失败: 没有更多可用目标`, 'Gemini');
+      } catch (retryError: any) {
+        memoryLogger.warn(`智能路由重试分发异常(已忽略): ${retryError?.message || retryError}`, 'Gemini');
+      }
+    }
+
+    const excludedResponseHeaders = ['content-length', 'transfer-encoding', 'connection'];
+    upstreamResponse.headers.forEach((value, key) => {
+      if (!excludedResponseHeaders.includes(key.toLowerCase())) {
+        reply.header(key, value);
+      }
+    });
+    reply.code(upstreamResponse.status);
+
     memoryLogger.info(
       `Gemini 原生透传完成: ${upstreamResponse.status} | ${duration}ms | tokens: ${tokenCount.totalTokens}`,
       'GeminiNative'
@@ -309,10 +362,18 @@ export async function handleGeminiNativeNonStreamRequest(
   } catch (error: any) {
     const duration = Date.now() - startTime;
 
+    // A client disconnect is not an upstream failure: no breaker verdict.
+    if (error.name === 'AbortError' || abortController.signal.aborted) {
+      memoryLogger.info('Gemini 非流式请求被取消（客户端断开）', 'GeminiNative');
+      return;
+    }
+
     memoryLogger.error(
       `Gemini 原生透传失败: ${error.message}`,
       'GeminiNative'
     );
+
+    circuitBreaker.recordFailure(circuitBreakerKey, error);
 
     const shouldLogBody = shouldLogRequestBody(virtualKey);
     const truncatedRequest = shouldLogBody && requestBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
@@ -330,6 +391,29 @@ export async function handleGeminiNativeNonStreamRequest(
       ip: requestIp,
       userAgent: requestUserAgent,
     });
+
+    const statusForRetry = (error?.statusCode || error?.status || 500) as number;
+    if (options?.modelResult?.canRetry && options?.virtualKeyValue && shouldRetrySmartRouting(statusForRetry) && !reply.sent) {
+      try {
+        const { handleNonStreamRetry } = await import('../proxy/retry-handler.js');
+        const retried = await handleNonStreamRetry(request, reply, statusForRetry, {
+          virtualKey,
+          virtualKeyValue: options.virtualKeyValue,
+          vkDisplay,
+          modelResult: options.modelResult,
+          currentModel,
+          startTime,
+          entrypointProtocol: 'gemini',
+          retryBodySnapshot: options.retryBodySnapshot
+        });
+        if (retried) {
+          return;
+        }
+        memoryLogger.warn(`智能路由重试失败: 没有更多可用目标`, 'Gemini');
+      } catch (retryError: any) {
+        memoryLogger.warn(`智能路由重试分发异常(已忽略): ${retryError?.message || retryError}`, 'Gemini');
+      }
+    }
 
     if (!reply.sent) {
       return reply.code(500).send({
@@ -353,11 +437,13 @@ export async function handleGeminiNativeStreamRequest(
   providerId: string,
   startTime: number,
   vkDisplay: string,
-  currentModel?: any
+  currentModel?: any,
+  options?: GeminiNativeRequestOptions
 ): Promise<void> {
   const method = request.method;
   const requestUserAgent = getRequestUserAgent(request);
   const requestIp = extractIp(request);
+  const circuitBreakerKey = options?.circuitBreakerKey || providerId;
 
   const abortController = new AbortController();
   reply.raw.on('close', () => {
@@ -453,6 +539,10 @@ export async function handleGeminiNativeStreamRequest(
           'GeminiNative'
         );
 
+        // Record the failed target against the pipeline circuit key before any
+        // response write, so a retry dispatch below cannot skip accounting.
+        circuitBreaker.recordFailure(circuitBreakerKey, new Error(`HTTP ${upstreamResponse.status}`));
+
         let errorResponse;
         try {
           errorResponse = JSON.parse(errorText);
@@ -476,6 +566,32 @@ export async function handleGeminiNativeStreamRequest(
           ip: requestIp,
           userAgent: requestUserAgent,
         });
+
+        // Smart-routing retry (OpenAI parity): only safe while nothing has been
+        // written to the client. The failed target was already breaker-recorded
+        // and audited above; the retry re-enters the Gemini-native handlers with
+        // a pristine body, never another protocol's handlers.
+        if (options?.modelResult?.canRetry && options?.virtualKeyValue && shouldRetrySmartRouting(upstreamResponse.status) && !headersSent && !reply.raw.headersSent && !reply.raw.writableEnded) {
+          try {
+            const { handleStreamRetry } = await import('../proxy/retry-handler.js');
+            const retried = await handleStreamRetry(request, reply, upstreamResponse.status, {
+              virtualKey,
+              virtualKeyValue: options.virtualKeyValue,
+              vkDisplay,
+              modelResult: options.modelResult,
+              currentModel,
+              startTime,
+              entrypointProtocol: 'gemini',
+              retryBodySnapshot: options.retryBodySnapshot
+            });
+            if (retried) {
+              return;
+            }
+            memoryLogger.warn(`智能路由重试(流式)失败: 没有更多可用目标`, 'Gemini');
+          } catch (retryError: any) {
+            memoryLogger.warn(`智能路由重试(流式)分发异常(已忽略): ${retryError?.message || retryError}`, 'Gemini');
+          }
+        }
 
         if (!headersSent) {
           reply.raw.writeHead(upstreamResponse.status, { 'Content-Type': 'application/json' });
@@ -508,6 +624,10 @@ export async function handleGeminiNativeStreamRequest(
         const text = await upstreamResponse.text();
         const duration = Date.now() - startTime;
         const truncatedRequest = shouldLogBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
+
+        // 2xx with a non-SSE payload is a terminal upstream success for this
+        // request (passed through below); record it against the circuit key.
+        circuitBreaker.recordSuccess(circuitBreakerKey);
 
         logApiRequestAsync({
           virtualKey,
@@ -577,6 +697,10 @@ export async function handleGeminiNativeStreamRequest(
 
     const duration = Date.now() - startTime;
 
+    // Terminal success: the completed stream is a success verdict for the
+    // pipeline circuit key.
+    circuitBreaker.recordSuccess(circuitBreakerKey);
+
     memoryLogger.info(
       `Gemini 原生流式透传完成: ${duration}ms | bytes: ${totalBytes} | chunks: ${finalStreamChunks.length}`,
       'GeminiNative'
@@ -635,6 +759,10 @@ export async function handleGeminiNativeStreamRequest(
       'GeminiNative'
     );
 
+    // Terminal upstream failure (includes the final EmptyOutputError): record
+    // against the pipeline circuit key before any terminal write.
+    circuitBreaker.recordFailure(circuitBreakerKey, error);
+
     const truncatedRequest = shouldLogBody ? truncateRequestBody(JSON.parse(requestBody)) : undefined;
 
     logApiRequestAsync({
@@ -650,6 +778,32 @@ export async function handleGeminiNativeStreamRequest(
       ip: requestIp,
       userAgent: requestUserAgent,
     });
+
+    // Smart-routing retry is only safe while nothing has been written to the
+    // client. Empty-output failures have already sent SSE headers by the time
+    // they surface, so the guard below keeps them on the legacy path.
+    const statusForRetry = (error?.statusCode || error?.status || 500) as number;
+    if (options?.modelResult?.canRetry && options?.virtualKeyValue && shouldRetrySmartRouting(statusForRetry) && !reply.raw.headersSent && !reply.raw.writableEnded) {
+      try {
+        const { handleStreamRetry } = await import('../proxy/retry-handler.js');
+        const retried = await handleStreamRetry(request, reply, statusForRetry, {
+          virtualKey,
+          virtualKeyValue: options.virtualKeyValue,
+          vkDisplay,
+          modelResult: options.modelResult,
+          currentModel,
+          startTime,
+          entrypointProtocol: 'gemini',
+          retryBodySnapshot: options.retryBodySnapshot
+        });
+        if (retried) {
+          return;
+        }
+        memoryLogger.warn(`智能路由重试(流式)失败: 没有更多可用目标`, 'Gemini');
+      } catch (retryError: any) {
+        memoryLogger.warn(`智能路由重试(流式)分发异常(已忽略): ${retryError?.message || retryError}`, 'Gemini');
+      }
+    }
 
     if (!reply.raw.headersSent) {
       reply.raw.writeHead(500, { 'Content-Type': 'application/json' });

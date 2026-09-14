@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { lookup } from "node:dns/promises";
 import { createConnection } from "node:net";
 import { z } from "zod";
-import { providerDb } from "../db/index.js";
+import { modelDb, providerDb, virtualKeyDb } from "../db/index.js";
 import { hotConfigCache } from "../services/hot-config-cache.js";
 import { encryptApiKey, decryptApiKey } from "../utils/crypto.js";
 import { buildModelsEndpoint } from "../utils/api-endpoint-builder.js";
@@ -320,6 +320,28 @@ export async function providerRoutes(fastify: FastifyInstance) {
     const provider = await providerDb.getById(id);
     if (!provider) {
       return reply.code(404).send({ error: "提供商不存在" });
+    }
+
+    // 引用完整性：提供商下的模型仍被虚拟密钥引用时拒绝删除，避免悬空引用
+    const providerModels = await modelDb.getByProviderId(id);
+    if (providerModels.length > 0) {
+      const virtualKeyCounts = await virtualKeyDb.countByModels(
+        providerModels.map((m) => ({
+          id: m.id,
+          provider_id: m.provider_id,
+          model_identifier: m.model_identifier,
+          name: m.name,
+        })),
+      );
+      const referencedModels = providerModels.filter(
+        (m) => (virtualKeyCounts.get(m.id) || 0) > 0,
+      );
+      if (referencedModels.length > 0) {
+        const names = referencedModels.map((m) => m.name).join("、");
+        return reply.code(400).send({
+          error: `无法删除提供商，其下 ${referencedModels.length} 个模型仍被虚拟密钥引用（${names}），请先解除引用后重试`,
+        });
+      }
     }
 
     await providerDb.delete(id);

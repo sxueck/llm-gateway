@@ -61,9 +61,13 @@ export const routingConfigRepository = {
       const fields: string[] = [];
       const values: any[] = [];
 
+      // Only update columns that have a defined value to avoid
+      // accidentally setting NOT NULL columns (like name) to NULL.
       Object.entries(data).forEach(([key, value]) => {
-        fields.push(`${key} = ?`);
-        values.push(value);
+        if (value !== undefined) {
+          fields.push(`${key} = ?`);
+          values.push(value);
+        }
       });
 
       if (fields.length === 0) return;

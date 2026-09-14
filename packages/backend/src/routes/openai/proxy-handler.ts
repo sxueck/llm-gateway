@@ -13,7 +13,7 @@ import { runProxyPipeline } from '../proxy/pipeline.js';
 import { calculateTokensIfNeeded } from '../proxy/token-calculator.js';
 import { circuitBreaker } from '../../services/circuit-breaker.js';
 import { shouldLogRequestBody, getModelForLogging } from '../proxy/handlers/shared.js';
-import { logApiRequestToDb } from '../../services/api-request-logger.js';
+import { logApiRequestAsync } from '../../services/api-request-logger.js';
 import { normalizeUsageCounts } from '../../utils/usage-normalizer.js';
 import { isChatCompletionsPath, isResponsesApiPath, isResponsesCompactPath, isEmbeddingsPath, isImagesPath, shouldBypassGatewayCache } from '../../utils/path-detector.js';
 import {
@@ -145,6 +145,121 @@ export interface ProxyRequestContext {
   modelAttributes?: any;
   /** Serving completion cap enforced on this request (from model attributes), echoed to clients. */
   effectiveMaxCompletionTokens?: number;
+  /**
+   * Pristine, globally-normalized request body captured before target-specific
+   * mutations (serving-cap clamp, model attributes, PII masking). Threaded through
+   * RetryContext so every smart-routing retry replays the same pristine body.
+   */
+  retryBodySnapshot?: any;
+}
+
+// ─── Smart-routing retry-safe body snapshot ─────────────────────────────────
+
+const RETRY_BODY_SNAPSHOT = Symbol('openaiSmartRoutingRetryBodySnapshot');
+
+/** Deep-clone a request body for retry snapshot use; undefined when uncloneable. */
+export function cloneOpenAIRetryBody(body: any): any {
+  if (body === undefined || body === null) return body;
+  try {
+    return structuredClone(body);
+  } catch (_e) {
+    try {
+      return JSON.parse(JSON.stringify(body));
+    } catch (_e2) {
+      return undefined;
+    }
+  }
+}
+
+/**
+ * Capture the request body as a retry-safe snapshot. Must be called immediately
+ * before the first target-specific mutation (serving-cap clamp / model attributes
+ * application / PII masking) so retries replay a pristine, globally-normalized
+ * body. Transformations with global semantics that ran earlier (pipeline
+ * normalization, message compression, zero-temperature interception) are
+ * intentionally retained in the snapshot. Only the first capture wins; later
+ * invocations (retries) reuse it untouched.
+ */
+export function captureOpenAIRetryBodySnapshot(
+  request: FastifyRequest
+): any | undefined {
+  const existing = (request as any)[RETRY_BODY_SNAPSHOT];
+  if (existing !== undefined) {
+    return existing;
+  }
+  const snapshot = cloneOpenAIRetryBody(request.body);
+  if (snapshot !== undefined) {
+    (request as any)[RETRY_BODY_SNAPSHOT] = snapshot;
+  }
+  return snapshot;
+}
+
+export interface OpenAITargetMutationResult {
+  modelAttributes?: any;
+  effectiveMaxCompletionTokens?: number;
+}
+
+/**
+ * Apply target-specific request-body mutations derived from the resolved (real)
+ * model: serving-cap clamp on max_tokens/max_completion_tokens plus model
+ * attributes (extra_body reasoning switches, disable_thinking). Used by both the
+ * initial dispatch and smart-routing retries so a retried target receives the
+ * same transformation semantics as a first attempt. Mutates request.body in place
+ * (attributes application replaces it via a shallow merge).
+ */
+export function applyOpenAITargetModelMutations(
+  request: FastifyRequest,
+  currentModel: any,
+  parsedModelAttributes?: any
+): OpenAITargetMutationResult {
+  const modelAttributes = parsedModelAttributes ?? parseModelAttributes(currentModel);
+
+  // Clamp oversized max_tokens/max_completion_tokens to the model's serving cap
+  // (sourced from model_attributes.max_completion_tokens).
+  const servingLimits = resolveServingLimits(modelAttributes);
+  const didClampMaxTokens = clampMaxTokensFields(request.body, servingLimits.maxCompletionTokens);
+  if (didClampMaxTokens) {
+    memoryLogger.info(
+      `Request max tokens exceeded serving cap; clamped to ${servingLimits.maxCompletionTokens} | 模型: ${currentModel?.name}`,
+      'Proxy'
+    );
+  }
+
+  // 应用模型属性到请求体
+  if (modelAttributes) {
+    try {
+      const enhancedRequestBody = buildFullRequestBody(request.body, modelAttributes);
+      request.body = enhancedRequestBody;
+
+      if (modelAttributes.disable_thinking) {
+        const didDisable = applyDisableThinking(request.body, 'openai');
+        if (didDisable) {
+          memoryLogger.info(`已禁用思考 (disable_thinking) | 模型: ${currentModel?.name}`, 'Proxy');
+        }
+      }
+
+      if (modelAttributes.supports_prompt_caching) {
+        const messageCount = (request.body as any)?.messages?.length || 0;
+        const toolsCount = (request.body as any)?.tools?.length || 0;
+
+        memoryLogger.info(
+          `Prompt Caching 已启用 | 模型: ${currentModel?.name} | ` +
+          `消息数: ${messageCount} | 工具数: ${toolsCount}`,
+          'Proxy'
+        );
+      }
+    } catch (e: any) {
+      memoryLogger.error(
+        `应用模型属性失败: ${e.message}`,
+        'Proxy'
+      );
+    }
+  }
+
+  return {
+    modelAttributes,
+    effectiveMaxCompletionTokens: servingLimits.maxCompletionTokens,
+  };
 }
 
 // ─── Shared helpers ───────────────────────────────────────────────────────
@@ -343,21 +458,6 @@ export function createOpenAIProxyHandler() {
 
       const { protocolConfig, path, vkDisplay, isStreamRequest } = configResult;
 
-      // Clamp oversized max_tokens/max_completion_tokens to the model's serving cap
-      // (sourced from model_attributes.max_completion_tokens) and expose the enforced
-      // value back to the client, so clients no longer have to learn caps via 400s.
-      const servingLimits = resolveServingLimits(parsedModelAttributes);
-      const didClampMaxTokens = clampMaxTokensFields(request.body, servingLimits.maxCompletionTokens);
-      if (didClampMaxTokens) {
-        memoryLogger.info(
-          `Request max tokens exceeded serving cap; clamped to ${servingLimits.maxCompletionTokens} | 模型: ${currentModel?.name}`,
-          'Proxy'
-        );
-      }
-      // The effective completion cap the relay enforced on this request (regardless
-      // of whether a rewrite happened), echoed in responses for machine readability.
-      const effectiveMaxCompletionTokens = servingLimits.maxCompletionTokens;
-
       if (currentModel && (request.body as any)?.messages && isChatCompletionsPath(path)) {
         const approxTokens = estimateTokensForMessages((request.body as any).messages, KEEP_RECENT_WINDOW);
         const shouldCompressMessages = approxTokens >= MESSAGE_COMPRESSION_MIN_TOKENS;
@@ -408,36 +508,22 @@ export function createOpenAIProxyHandler() {
         );
       }
 
-      // 应用模型属性到请求体
-      if (parsedModelAttributes) {
-        try {
-          const enhancedRequestBody = buildFullRequestBody(request.body, parsedModelAttributes);
-          request.body = enhancedRequestBody;
+      // Smart-routing retry safety: snapshot the globally-normalized body (context
+      // normalization, compression, zero-temperature interception) BEFORE any
+      // target-specific mutation (serving-cap clamp, model attributes, PII masking)
+      // so a retry to the next target replays a pristine request instead of the
+      // failed target's residue (attributes, PII surrogates).
+      const retryBodySnapshot = captureOpenAIRetryBodySnapshot(request);
 
-          if (parsedModelAttributes.disable_thinking) {
-            const didDisable = applyDisableThinking(request.body, 'openai');
-            if (didDisable) {
-              memoryLogger.info(`已禁用思考 (disable_thinking) | 模型: ${currentModel?.name}`, 'Proxy');
-            }
-          }
-
-          if (parsedModelAttributes.supports_prompt_caching) {
-            const messageCount = (request.body as any)?.messages?.length || 0;
-            const toolsCount = (request.body as any)?.tools?.length || 0;
-
-            memoryLogger.info(
-              `Prompt Caching 已启用 | 模型: ${currentModel.name} | ` +
-              `消息数: ${messageCount} | 工具数: ${toolsCount}`,
-              'Proxy'
-            );
-          }
-        } catch (e: any) {
-          memoryLogger.error(
-            `应用模型属性失败: ${e.message}`,
-            'Proxy'
-          );
-        }
-      }
+      // Target-specific mutations: clamp oversized max_tokens/max_completion_tokens
+      // to the model's serving cap and apply model attributes (extra_body switches,
+      // disable_thinking). The enforced cap is echoed back to the client, so clients
+      // no longer have to learn caps via 400s.
+      const { effectiveMaxCompletionTokens } = applyOpenAITargetModelMutations(
+        request,
+        currentModel,
+        parsedModelAttributes
+      );
 
       if (request.method !== 'GET' && request.method !== 'HEAD') {
         const truncatedBody = truncateRequestBody(request.body);
@@ -482,6 +568,7 @@ export function createOpenAIProxyHandler() {
         virtualKeyValue: virtualKeyValue!,
         modelAttributes: parsedModelAttributes,
         effectiveMaxCompletionTokens,
+        retryBodySnapshot,
       };
 
       if (isStreamRequest) {
@@ -498,33 +585,42 @@ export function createOpenAIProxyHandler() {
         { error: error.stack }
       );
 
-      if (virtualKeyValue && providerId) {
-        const { virtualKeyDb } = await import('../../db/index.js');
-        const virtualKey = await virtualKeyDb.getByKeyValue(virtualKeyValue);
-        if (virtualKey) {
-          const shouldLogBody = shouldLogRequestBody(virtualKey);
+      // Best-effort audit of the failed request. Fire-and-forget and fully guarded:
+      // an audit/logging outage must never change the response delivered to the client.
+      try {
+        if (virtualKeyValue && providerId) {
+          const { virtualKeyDb } = await import('../../db/index.js');
+          const virtualKey = await virtualKeyDb.getByKeyValue(virtualKeyValue);
+          if (virtualKey) {
+            const shouldLogBody = shouldLogRequestBody(virtualKey);
 
-          const fullRequestBody = buildRequestBodyForLogging(request.body, parsedModelAttributes, shouldLogBody);
-          const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
+            const fullRequestBody = buildRequestBodyForLogging(request.body, parsedModelAttributes, shouldLogBody);
+            const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
 
-          const tokenCount = await calculateTokensIfNeeded(0, request.body);
+            const tokenCount = await calculateTokensIfNeeded(0, request.body);
 
-          await logApiRequestToDb({
-            virtualKey,
-            providerId,
-            model: getModelForLogging(request.body, currentModel),
-            tokenCount,
-            status: 'error',
-            responseTime: duration,
-            errorMessage: error.message,
-            truncatedRequest,
-            cacheHit: 0,
-            compressionStats,
-            ip: requestIp,
-            userAgent: requestUserAgent,
-            piiMaskedCount: 0,
-          });
+            logApiRequestAsync({
+              virtualKey,
+              providerId,
+              model: getModelForLogging(request.body, currentModel),
+              tokenCount,
+              status: 'error',
+              responseTime: duration,
+              errorMessage: error.message,
+              truncatedRequest,
+              cacheHit: 0,
+              compressionStats,
+              ip: requestIp,
+              userAgent: requestUserAgent,
+              piiMaskedCount: 0,
+            });
+          }
         }
+      } catch (auditError: any) {
+        memoryLogger.warn(
+          `失败请求审计记录异常(已忽略): ${auditError?.message || auditError}`,
+          'Proxy'
+        );
       }
 
       // 检查是否已经发送响应(流式请求会直接写入 raw 响应)
@@ -718,7 +814,7 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
       ? (isResponsesApi ? accumulateResponsesStream(tokenUsage.streamChunks) : accumulateStreamResponse(tokenUsage.streamChunks))
       : undefined;
 
-    await logApiRequestToDb({
+    logApiRequestAsync({
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),
@@ -796,7 +892,8 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
           compressionStats,
           startTime,
           isResponsesApi,
-          entrypointProtocol: 'openai'
+          entrypointProtocol: 'openai',
+          retryBodySnapshot: ctx.retryBodySnapshot,
         });
         if (retried) {
           return;
@@ -813,7 +910,7 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
 
     const tokenCount = await calculateTokensIfNeeded(0, request.body);
 
-    await logApiRequestToDb({
+    logApiRequestAsync({
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),
@@ -976,7 +1073,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       const truncatedRequest = shouldLogBody ? truncateRequestBody(requestBody) : undefined;
       const truncatedResponse = shouldLogBody ? truncateResponseBody(response.body) : undefined;
 
-      await logApiRequestToDb({
+      logApiRequestAsync({
         virtualKey,
         providerId,
         model: protocolConfig.model,
@@ -1015,7 +1112,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       const shouldLogBody = shouldLogRequestBody(virtualKey);
       const truncatedRequest = shouldLogBody ? truncateRequestBody(request.body) : undefined;
 
-      await logApiRequestToDb({
+      logApiRequestAsync({
         virtualKey,
         providerId,
         model: protocolConfig.model,
@@ -1086,7 +1183,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       normCached.completionTokens
     );
 
-    await logApiRequestToDb({
+    logApiRequestAsync({
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),
@@ -1284,6 +1381,30 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
   }
   const duration = Date.now() - startTime;
   const isSuccess = response.statusCode >= 200 && response.statusCode < 300;
+
+  const shouldLogBody = shouldLogRequestBody(virtualKey);
+
+  const fullRequestBody = buildRequestBodyForLogging(request.body, modelAttributes, shouldLogBody);
+  const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
+  const truncatedResponse = shouldLogBody ? truncateResponseBody(responseData) : undefined;
+
+  // 统一归一化解析 usage，兼容两种协议字段
+  const norm = normalizeUsageCounts(responseData?.usage);
+  const tokenCount = await calculateTokensIfNeeded(
+    norm.totalTokens,
+    request.body,
+    responseData,
+    undefined,
+    norm.promptTokens,
+    norm.completionTokens
+  );
+
+  // A retry-eligible failure means this target definitively failed: record the
+  // circuit-breaker failure and audit the failed attempt BEFORE dispatching the
+  // retry. Previously a successful retry returned early and skipped both, and an
+  // awaited audit could alter delivery. Both are now done up front; the audit is
+  // fire-and-forget so an observability outage cannot change the outcome.
+  let failedAttemptAccountedFor = false;
   if (!isSuccess && modelResult && virtualKeyValue) {
     const { shouldRetrySmartRouting } = await import('../proxy/routing.js');
     if (modelResult.canRetry && shouldRetrySmartRouting(response.statusCode)) {
@@ -1291,6 +1412,26 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
         `智能路由重试: 检测到失败 (${response.statusCode})，尝试下一个目标`,
         'Proxy'
       );
+
+      circuitBreaker.recordFailure(circuitBreakerKey, new Error(`HTTP ${response.statusCode}`));
+      logApiRequestAsync({
+        virtualKey,
+        providerId,
+        model: getModelForLogging(request.body, currentModel),
+        tokenCount,
+        status: 'error',
+        responseTime: duration,
+        errorMessage: JSON.stringify(responseData),
+        truncatedRequest,
+        truncatedResponse,
+        cacheHit: fromCache ? 1 : 0,
+        cachedTokens: norm.cachedTokens,
+        compressionStats,
+        ip: nonStreamRequestIp,
+        userAgent: nonStreamRequestUserAgent,
+        piiMaskedCount: piiResult?.maskedCount || 0,
+      });
+      failedAttemptAccountedFor = true;
 
       const { handleNonStreamRetry } = await import('../proxy/retry-handler.js');
       const retried = await handleNonStreamRetry(request, reply, response.statusCode, {
@@ -1301,7 +1442,8 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
         currentModel,
         compressionStats,
         startTime,
-        entrypointProtocol: 'openai'
+        entrypointProtocol: 'openai',
+        retryBodySnapshot: ctx.retryBodySnapshot,
       });
 
       if (retried) {
@@ -1314,12 +1456,6 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       );
     }
   }
-
-  const shouldLogBody = shouldLogRequestBody(virtualKey);
-
-  const fullRequestBody = buildRequestBodyForLogging(request.body, modelAttributes, shouldLogBody);
-  const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
-  const truncatedResponse = shouldLogBody ? truncateResponseBody(responseData) : undefined;
 
   // Developer debug mode: send full event (no truncation) to WS clients
   if (debugModeService.isActive()) {
@@ -1350,34 +1486,27 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
     }
   }
  
-  // 统一归一化解析 usage，兼容两种协议字段
-  const norm = normalizeUsageCounts(responseData?.usage);
-  const tokenCount = await calculateTokensIfNeeded(
-    norm.totalTokens,
-    request.body,
-    responseData,
-    undefined,
-    norm.promptTokens,
-    norm.completionTokens
-  );
-
-  await logApiRequestToDb({
-    virtualKey,
-    providerId,
-    model: getModelForLogging(request.body, currentModel),
-    tokenCount,
-    status: isSuccess ? 'success' : 'error',
-    responseTime: duration,
-    errorMessage: isSuccess ? undefined : JSON.stringify(responseData),
-    truncatedRequest,
-    truncatedResponse,
-    cacheHit: fromCache ? 1 : 0,
-    cachedTokens: norm.cachedTokens,
-    compressionStats,
-    ip: nonStreamRequestIp,
-    userAgent: nonStreamRequestUserAgent,
-    piiMaskedCount: piiResult?.maskedCount || 0,
-  });
+  // Audit the final outcome exactly once: the failed attempt was already audited
+  // above when a retry was dispatched, so only log here when no retry occurred.
+  if (!failedAttemptAccountedFor) {
+    logApiRequestAsync({
+      virtualKey,
+      providerId,
+      model: getModelForLogging(request.body, currentModel),
+      tokenCount,
+      status: isSuccess ? 'success' : 'error',
+      responseTime: duration,
+      errorMessage: isSuccess ? undefined : JSON.stringify(responseData),
+      truncatedRequest,
+      truncatedResponse,
+      cacheHit: fromCache ? 1 : 0,
+      cachedTokens: norm.cachedTokens,
+      compressionStats,
+      ip: nonStreamRequestIp,
+      userAgent: nonStreamRequestUserAgent,
+      piiMaskedCount: piiResult?.maskedCount || 0,
+    });
+  }
 
   if (isSuccess) {
     circuitBreaker.recordSuccess(circuitBreakerKey);
@@ -1394,7 +1523,11 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       'Proxy'
     );
   } else {
-    circuitBreaker.recordFailure(circuitBreakerKey, new Error(`HTTP ${response.statusCode}`));
+    // The breaker failure was already recorded before the retry dispatch when one
+    // was attempted; only record it here when no retry-eligible failure path ran.
+    if (!failedAttemptAccountedFor) {
+      circuitBreaker.recordFailure(circuitBreakerKey, new Error(`HTTP ${response.statusCode}`));
+    }
 
     const errorStr = JSON.stringify(responseData);
     const truncatedError = errorStr.length > 500

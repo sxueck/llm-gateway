@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { nanoid } from "nanoid";
-import { modelDb, providerDb, virtualKeyDb } from "../db/index.js";
+import { modelDb, providerDb, routingConfigDb, virtualKeyDb } from "../db/index.js";
 import { hotConfigCache } from "../services/hot-config-cache.js";
 import { decryptApiKey } from "../utils/crypto.js";
 import { probeService } from "../services/probe-service.js";
@@ -216,6 +216,13 @@ export async function modelRoutes(fastify: FastifyInstance) {
       }
     } else if (!body.isVirtual) {
       return reply.code(400).send({ error: "非虚拟模型必须关联提供商" });
+    }
+
+    if (body.routingConfigId) {
+      const routingConfig = await routingConfigDb.getById(body.routingConfigId);
+      if (!routingConfig) {
+        return reply.code(400).send({ error: "路由配置不存在" });
+      }
     }
 
     const model = await modelDb.create({

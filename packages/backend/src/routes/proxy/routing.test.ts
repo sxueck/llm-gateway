@@ -1,7 +1,7 @@
-import { test, expect } from 'vitest';
+import { describe, it, test, expect } from 'vitest';
 
 import { circuitBreaker } from '../../services/circuit-breaker.js';
-import { getTargetKey, hasAvailableRoutingTargets, selectRoutingTarget, getAnonymousAffinityTargetKey, countExplicitSessionBindings, type RoutingConfig } from './routing.js';
+import { getTargetKey, hasAvailableRoutingTargets, selectRoutingTarget, getAnonymousAffinityTargetKey, countExplicitSessionBindings, shouldRetrySmartRouting, type RoutingConfig } from './routing.js';
 
 test('selectRoutingTarget rotates loadbalance targets without weights', () => {
   circuitBreaker.resetAll();
@@ -478,4 +478,18 @@ test('affinity mode does not drift target when probe mechanism is triggered', as
     (circuitBreaker as any).config.halfOpenMaxAttempts = originalHalfOpenMaxAttempts;
     circuitBreaker.resetAll();
   }
+});
+
+describe('shouldRetrySmartRouting', () => {
+  it.each([401, 403, 429, 472, 500, 502, 503, 504])('retries cross-target for upstream/transient/auth status %i', statusCode => {
+    expect(shouldRetrySmartRouting(statusCode)).toBe(true);
+  });
+
+  it.each([400, 404])('does not replay invalid client request status %i to every target', statusCode => {
+    expect(shouldRetrySmartRouting(statusCode)).toBe(false);
+  });
+
+  it.each([200, 201, 301, 402, 418, 422])('does not retry non-eligible status %i', statusCode => {
+    expect(shouldRetrySmartRouting(statusCode)).toBe(false);
+  });
 });

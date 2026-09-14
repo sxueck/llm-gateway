@@ -382,19 +382,26 @@ function simpleHash(str: string): number {
   return Math.abs(hash);
 }
 
+/**
+ * Status codes eligible for automatic cross-target smart-routing retry.
+ *
+ * Only upstream/transient/auth failures where switching targets can actually help
+ * are retried. Client errors like 400/404 mean the request itself is invalid —
+ * replaying it to every target only amplifies load and masks the real error.
+ */
+const SMART_ROUTING_RETRYABLE_STATUS_CODES: ReadonlySet<number> = new Set([
+  401, // upstream rejected credentials — a different target may hold valid keys
+  403, // upstream refused access — target-specific quota/permission
+  429, // rate limited — next target has its own quota
+  472, // gateway-specific upstream failure marker
+  500, // upstream server error
+  502, // bad gateway
+  503, // upstream unavailable / overloaded
+  504, // gateway timeout
+]);
+
 export function shouldRetrySmartRouting(statusCode: number): boolean {
-  return (
-    statusCode === 401 ||
-    statusCode === 403 ||
-    statusCode === 400 ||
-    statusCode === 404 ||
-    statusCode === 429 ||
-    statusCode === 472 ||
-    statusCode === 500 ||
-    statusCode === 502 ||
-    statusCode === 503 ||
-    statusCode === 504
-  );
+  return SMART_ROUTING_RETRYABLE_STATUS_CODES.has(statusCode);
 }
 
 export function selectRoutingTarget(

@@ -2,7 +2,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { memoryLogger } from '../../services/logger.js';
 import { shouldRetrySmartRouting } from './routing.js';
 import { retrySmartRouting, type ModelResolutionResult } from './model-resolver.js';
-import { buildProviderConfig } from './provider-config-builder.js';
+import { buildProviderConfig, type ProviderConfigResult } from './provider-config-builder.js';
 
 export interface RetryContext {
   virtualKey: any;
@@ -14,22 +14,61 @@ export interface RetryContext {
   startTime: number;
   isResponsesApi?: boolean;
   entrypointProtocol?: 'openai' | 'anthropic' | 'gemini';
+  /**
+   * Pristine, globally-normalized request body captured by the entrypoint route before
+   * any target-specific mutation (serving-cap clamp, model attributes, PII masking).
+   * Replayed before the retry target so it never receives the failed target's
+   * residue (e.g., the first target's PII surrogates or extra_body attributes).
+   */
+  retryBodySnapshot?: any;
 }
 
 const SMART_ROUTING_RETRY_WINDOW_MS = 10_000;
 
-async function handleSmartRoutingRetry(
+/** Deep-clone a request body for retry snapshot use; undefined when uncloneable. */
+export function cloneSmartRoutingRetryBody(body: any): any {
+  if (body === undefined || body === null) return body;
+  try {
+    return structuredClone(body);
+  } catch (_e) {
+    try {
+      return JSON.parse(JSON.stringify(body));
+    } catch (_e2) {
+      return undefined;
+    }
+  }
+}
+
+export interface SmartRoutingRetrySelection {
+  /** Model-resolution result for the retry target (updated excludeTargetKeys). */
+  modelResult: ModelResolutionResult;
+  /** Provider config for the retry target, built with the entrypoint protocol. */
+  configResult: ProviderConfigResult;
+  providerId: string;
+}
+
+/**
+ * Protocol-agnostic smart-routing retry target selection.
+ *
+ * Performs every cross-protocol-safe decision — retry eligibility (canRetry,
+ * retry window, retryable status), stream response-state guard, target
+ * re-selection with exclusions, and provider config rebuild for the entrypoint
+ * protocol — and returns the selected target. Protocol-specific re-entry
+ * (request-body representation per protocol) stays with the callers, so a
+ * retry never crosses protocol handlers.
+ */
+export async function selectSmartRoutingRetryTarget(
   request: FastifyRequest,
   reply: FastifyReply,
   statusCode: number,
   context: RetryContext,
   isStream: boolean
-): Promise<boolean> {
+): Promise<SmartRoutingRetrySelection | null> {
   if (!context.modelResult.canRetry) {
     if (!isStream) {
       memoryLogger.debug('不支持重试：不是智能路由模式', 'Proxy');
     }
-    return false;
+    return null;
   }
 
   if (Date.now() - context.startTime > SMART_ROUTING_RETRY_WINDOW_MS) {
@@ -39,26 +78,26 @@ async function handleSmartRoutingRetry(
         : `智能路由重试终止：超过最大重试窗口 ${SMART_ROUTING_RETRY_WINDOW_MS}ms`,
       'Proxy'
     );
-    return false;
+    return null;
   }
 
   if (!shouldRetrySmartRouting(statusCode)) {
     if (!isStream) {
       memoryLogger.debug(`状态码 ${statusCode} 不满足重试条件`, 'Proxy');
     }
-    return false;
+    return null;
   }
 
   if (isStream && (reply.sent || reply.raw.headersSent)) {
     memoryLogger.debug('流式请求已发送响应，无法重试', 'Proxy');
-    return false;
+    return null;
   }
 
   if (!context.modelResult.excludeTargetKeys || !context.modelResult.modelId) {
     if (!isStream) {
       memoryLogger.warn('缺少重试所需信息', 'Proxy');
     }
-    return false;
+    return null;
   }
 
   const logPrefix = isStream ? '智能路由重试(流式)' : '智能路由重试';
@@ -81,7 +120,7 @@ async function handleSmartRoutingRetry(
         : `${logPrefix}失败: 没有更多可用目标 | 已尝试: ${context.modelResult.excludeTargetKeys.size}`,
       'Proxy'
     );
-    return false;
+    return null;
   }
 
   const retriedModelResult = {
@@ -93,10 +132,6 @@ async function handleSmartRoutingRetry(
     `${logPrefix}: 切换到新目标 provider=${retryResult.provider.name}`,
     'Proxy'
   );
-
-  if (retryResult.currentModel?.model_identifier) {
-    (request.body as any).model = retryResult.currentModel.model_identifier;
-  }
 
   const configResult = await buildProviderConfig(
     retryResult.provider,
@@ -110,40 +145,152 @@ async function handleSmartRoutingRetry(
 
   if ('code' in configResult) {
     memoryLogger.error(`${logPrefix}: 构建配置失败`, 'Proxy');
+    return null;
+  }
+
+  return {
+    modelResult: retriedModelResult,
+    configResult,
+    providerId: retryResult.providerId,
+  };
+}
+
+/**
+ * Replay the pristine body snapshot captured before the failed target's
+ * mutations so the retry target gets a clean, globally-normalized body — this
+ * also prevents re-masking the first target's PII surrogates (the original
+ * text is masked fresh for this target, producing this target's own
+ * surrogates).
+ */
+function replayRetryBodySnapshot(
+  request: FastifyRequest,
+  snapshot: any | undefined,
+  logPrefix: string
+): void {
+  if (snapshot === undefined) {
+    return;
+  }
+  const pristineBody = cloneSmartRoutingRetryBody(snapshot);
+  if (pristineBody !== undefined) {
+    request.body = pristineBody;
+    memoryLogger.debug(`${logPrefix}: 已恢复重试前请求体快照`, 'Proxy');
+  }
+}
+
+async function handleSmartRoutingRetry(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  statusCode: number,
+  context: RetryContext,
+  isStream: boolean
+): Promise<boolean> {
+  const selection = await selectSmartRoutingRetryTarget(request, reply, statusCode, context, isStream);
+  if (!selection) {
     return false;
   }
 
+  const { modelResult: retriedModelResult, configResult, providerId } = selection;
+  const logPrefix = isStream ? '智能路由重试(流式)' : '智能路由重试';
+  const entrypointProtocol = context.entrypointProtocol || 'openai';
+
+  replayRetryBodySnapshot(request, context.retryBodySnapshot, logPrefix);
+
+  if (entrypointProtocol === 'anthropic') {
+    // Protocol-correct re-entry: rebuild the Anthropic request against the new
+    // target (model rewrite, serving-cap clamp, disable_thinking) and dispatch
+    // through the Anthropic /v1/messages handlers. Never routed through the
+    // OpenAI handlers, so the wire representation stays Anthropic.
+    const anthropicProxyModule = await import('../anthropic/proxy-handler.js');
+    if (retriedModelResult.currentModel?.model_identifier) {
+      (request.body as any).model = retriedModelResult.currentModel.model_identifier;
+    }
+    await anthropicProxyModule.dispatchAnthropicRequest({
+      request,
+      reply,
+      virtualKey: context.virtualKey,
+      virtualKeyValue: context.virtualKeyValue,
+      providerId,
+      currentModel: retriedModelResult.currentModel,
+      modelResult: retriedModelResult,
+      startTime: context.startTime,
+      protocolConfig: configResult.protocolConfig,
+      vkDisplay: configResult.vkDisplay,
+      retryBodySnapshot: context.retryBodySnapshot,
+    });
+    return true;
+  }
+
+  if (entrypointProtocol === 'gemini') {
+    // Protocol-correct re-entry: rebuild the Gemini-native request against the
+    // new target (native URL model rewrite, disable_thinking) and dispatch
+    // through the Gemini native passthrough handlers.
+    const geminiProxyModule = await import('../gemini/proxy-handler.js');
+    if (retriedModelResult.currentModel?.model_identifier) {
+      (request.body as any).model = retriedModelResult.currentModel.model_identifier;
+    }
+    await geminiProxyModule.dispatchGeminiRequest({
+      request,
+      reply,
+      virtualKey: context.virtualKey,
+      virtualKeyValue: context.virtualKeyValue,
+      providerId,
+      currentModel: retriedModelResult.currentModel,
+      modelResult: retriedModelResult,
+      startTime: context.startTime,
+      protocolConfig: configResult.protocolConfig,
+      vkDisplay: configResult.vkDisplay,
+      isStreamRequest: configResult.isStreamRequest,
+      retryBodySnapshot: context.retryBodySnapshot,
+    });
+    return true;
+  }
+
+  const openaiProxyModule = await import('../openai/proxy-handler.js');
+
+  if (retriedModelResult.currentModel?.model_identifier) {
+    (request.body as any).model = retriedModelResult.currentModel.model_identifier;
+  }
+
+  // Re-run the retry target's own configuration/attributes through the normal
+  // OpenAI mutation path (serving-cap clamp, extra_body, disable_thinking) so
+  // target B receives the same treatment as a first attempt.
+  const targetMutations = openaiProxyModule.applyOpenAITargetModelMutations(request, retriedModelResult.currentModel);
+
   if (isStream) {
-    const { handleStreamRequest } = await import('../openai/proxy-handler.js');
-    await handleStreamRequest({
+    await openaiProxyModule.handleStreamRequest({
       request,
       reply,
       protocolConfig: configResult.protocolConfig,
       path: configResult.path,
       virtualKey: context.virtualKey,
-      providerId: retryResult.providerId,
+      providerId,
       startTime: context.startTime,
       compressionStats: context.compressionStats,
-      currentModel: retryResult.currentModel,
+      currentModel: retriedModelResult.currentModel,
       modelResult: retriedModelResult,
       virtualKeyValue: context.virtualKeyValue,
+      modelAttributes: targetMutations.modelAttributes,
+      effectiveMaxCompletionTokens: targetMutations.effectiveMaxCompletionTokens,
+      retryBodySnapshot: context.retryBodySnapshot,
     });
     return true;
   }
 
-  const { handleNonStreamRequest } = await import('../openai/proxy-handler.js');
-  await handleNonStreamRequest({
+  await openaiProxyModule.handleNonStreamRequest({
     request,
     reply,
     protocolConfig: configResult.protocolConfig,
     path: configResult.path,
     virtualKey: context.virtualKey,
-    providerId: retryResult.providerId,
+    providerId,
     startTime: context.startTime,
     compressionStats: context.compressionStats,
-    currentModel: retryResult.currentModel,
+    currentModel: retriedModelResult.currentModel,
     modelResult: retriedModelResult,
     virtualKeyValue: context.virtualKeyValue,
+    modelAttributes: targetMutations.modelAttributes,
+    effectiveMaxCompletionTokens: targetMutations.effectiveMaxCompletionTokens,
+    retryBodySnapshot: context.retryBodySnapshot,
   });
   return true;
 }
