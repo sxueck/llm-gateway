@@ -671,7 +671,12 @@ export const apiRequestRepository = {
     }
   },
 
-  async getModelStats(options: { startTime: number; endTime: number }) {
+  async getModelStats(options: {
+    startTime: number;
+    endTime: number;
+    sortBy?: 'requests' | 'tokens';
+    limit?: number;
+  }) {
     const { startTime, endTime } = options;
     const pool = getDatabase();
     const conn = await pool.getConnection();
@@ -771,6 +776,9 @@ export const apiRequestRepository = {
         });
       }
 
+      const sortBy = options.sortBy ?? 'requests';
+      const limit = options.limit ?? 10;
+
       return Array.from(modelStats.values())
         .map(stat => ({
           model: stat.model,
@@ -781,8 +789,12 @@ export const apiRequestRepository = {
             ? stat.totalResponseTime / stat.responseTimeCount
             : 0,
         }))
-        .sort((a, b) => b.request_count - a.request_count)
-        .slice(0, 5);
+        .sort((a, b) =>
+          sortBy === 'tokens'
+            ? b.total_tokens - a.total_tokens
+            : b.request_count - a.request_count
+        )
+        .slice(0, limit);
     } finally {
       conn.release();
     }

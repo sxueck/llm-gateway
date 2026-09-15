@@ -853,7 +853,10 @@ export async function configRoutes(fastify: FastifyInstance) {
   }
 
   fastify.get("/stats", async (request) => {
-    const { period = "24h" } = request.query as { period?: StatsPeriod };
+    const { period = "24h", metric = "requests" } = request.query as {
+      period?: StatsPeriod;
+      metric?: "requests" | "tokens";
+    };
     const { now, startTime, stats } = await getStatsOverview(period);
     const trend = await apiRequestDb.getTrend({
       startTime,
@@ -888,6 +891,8 @@ export async function configRoutes(fastify: FastifyInstance) {
     const modelStats = await apiRequestDb.getModelStats({
       startTime,
       endTime: now,
+      sortBy: metric,
+      limit: 10,
     });
     const modelResponseTimeStats = await apiRequestDb.getModelResponseTimeStats(
       { startTime, endTime: now },

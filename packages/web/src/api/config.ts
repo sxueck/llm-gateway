@@ -4,8 +4,6 @@ export type LogLevel = "INFO" | "WARN" | "ERROR" | "DEBUG";
 
 export type Period = "24h" | "7d" | "30d" | "all";
 
-type AnyRecord = Record<string, any>;
-
 type CircuitBreakerStats = {
   totalTriggers: number;
   maxTriggeredProvider: string;
@@ -22,7 +20,7 @@ export interface LogEntry {
   level: LogLevel;
   message: string;
   module?: string;
-  metadata?: AnyRecord;
+  metadata?: Record<string, unknown>;
 }
 
 export interface LogStats {
@@ -443,8 +441,11 @@ export const configApi = {
     return request.get(ADMIN_LOGS_PATH, { params });
   },
 
-  getStats(period?: Period): Promise<GetStatsResponse> {
-    return request.get(ADMIN_STATS_PATH, { params: { period } });
+  getStats(
+    period?: Period,
+    metric?: "requests" | "tokens",
+  ): Promise<GetStatsResponse> {
+    return request.get(ADMIN_STATS_PATH, { params: { period, metric } });
   },
 
   getStatsSummary(period?: Period): Promise<GetStatsSummaryResponse> {

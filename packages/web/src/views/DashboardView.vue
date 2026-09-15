@@ -525,7 +525,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, h } from 'vue'
 import {
   useMessage,
   NSpace,
@@ -1266,7 +1266,7 @@ async function loadStats(opts: { silent?: boolean } = {}) {
   }
   loadError.value = null
   try {
-    const result = await configApi.getStats(selectedPeriod.value)
+    const result = await configApi.getStats(selectedPeriod.value, chartMetric.value)
 
     if (!result || !result.stats) {
       throw new Error('获取统计数据失败')
@@ -1300,6 +1300,11 @@ async function loadStats(opts: { silent?: boolean } = {}) {
     }
   }
 }
+
+// 饼图/趋势的 Top N 由后端按当前 metric 排序截断，切换指标需重新拉取
+watch(chartMetric, () => {
+  loadStats({ silent: true })
+})
 
 const formatProviderName = (name: string | undefined) => {
   if (!name || name === '-') return '-'
