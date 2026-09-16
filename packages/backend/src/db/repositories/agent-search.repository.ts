@@ -252,6 +252,134 @@ export const agentSearchRunRepository = {
   },
 };
 
+export interface AgentRunMonitoringFilters {
+  status?: AgentSearchRun['status'];
+  activeOnly?: boolean;
+  limit: number;
+  offset: number;
+}
+
+export interface AgentRunMonitoringItem {
+  id: string;
+  plugin_id: string;
+  plugin_version: string;
+  source_type: AgentSearchRun['source_type'];
+  model_profile: string;
+  status: AgentSearchRun['status'];
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+  duration_ms: number | null;
+  error_code: string | null;
+  error_message: string | null;
+  usage: {
+    turn_count: number;
+    tool_call_count: number;
+    input_tokens: number;
+    output_tokens: number;
+    cost: number;
+  } | null;
+}
+
+export interface AgentRunMonitoringSummary {
+  total: number;
+  active: number;
+  completed: number;
+  failed: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost: number;
+}
+
+// 只读取管理端监控所需的非敏感列，绝不返回 query/result/token 或加密字段
+export const agentRunMonitoringRepository = {
+  async list(filters: AgentRunMonitoringFilters): Promise<{
+    items: AgentRunMonitoringItem[];
+    summary: AgentRunMonitoringSummary;
+  }> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const where: string[] = [];
+      const params: (string | number)[] = [];
+      if (filters.activeOnly) {
+        where.push("r.status IN ('queued', 'running')");
+      } else if (filters.status) {
+        where.push('r.status = ?');
+        params.push(filters.status);
+      }
+      const whereSql = where.length > 0 ? ` WHERE ${where.join(' AND ')}` : '';
+
+      const [rows] = await conn.query(
+        `SELECT r.id, r.plugin_id, r.plugin_version, r.source_type, r.model_profile,
+                r.status, r.created_at, r.started_at, r.completed_at,
+                r.error_code, r.error_message,
+                u.turn_count, u.tool_call_count, u.input_tokens, u.output_tokens, u.cost
+         FROM agent_search_runs r
+         LEFT JOIN agent_search_usage u ON u.run_id = r.id${whereSql}
+         ORDER BY r.created_at DESC, r.id DESC
+         LIMIT ? OFFSET ?`,
+        [...params, filters.limit, filters.offset],
+      );
+      const items = (rows as any[]).map((row): AgentRunMonitoringItem => {
+        const hasUsage = row.turn_count !== null;
+        return {
+          id: row.id,
+          plugin_id: row.plugin_id,
+          plugin_version: row.plugin_version,
+          source_type: row.source_type,
+          model_profile: row.model_profile,
+          status: row.status,
+          created_at: Number(row.created_at),
+          started_at: row.started_at === null ? null : Number(row.started_at),
+          completed_at: row.completed_at === null ? null : Number(row.completed_at),
+          duration_ms:
+            row.started_at !== null
+              ? Number(row.completed_at ?? Date.now()) - Number(row.started_at)
+              : null,
+          error_code: row.error_code ?? null,
+          error_message: row.error_message ?? null,
+          usage: hasUsage
+            ? {
+                turn_count: Number(row.turn_count),
+                tool_call_count: Number(row.tool_call_count),
+                input_tokens: Number(row.input_tokens),
+                output_tokens: Number(row.output_tokens),
+                cost: Number(row.cost),
+              }
+            : null,
+        };
+      });
+
+      const [summaryRows] = await conn.query(
+        `SELECT COUNT(*) AS total,
+                COALESCE(SUM(r.status IN ('queued', 'running')), 0) AS active,
+                COALESCE(SUM(r.status = 'completed'), 0) AS completed,
+                COALESCE(SUM(r.status IN ('failed', 'timed_out', 'budget_exceeded', 'cancelled')), 0) AS failed,
+                COALESCE(SUM(u.input_tokens), 0) AS input_tokens,
+                COALESCE(SUM(u.output_tokens), 0) AS output_tokens,
+                COALESCE(SUM(u.cost), 0) AS cost
+         FROM agent_search_runs r
+         LEFT JOIN agent_search_usage u ON u.run_id = r.id${whereSql}`,
+        params,
+      );
+      const s = (summaryRows as any[])[0] ?? {};
+      const summary: AgentRunMonitoringSummary = {
+        total: Number(s.total ?? 0),
+        active: Number(s.active ?? 0),
+        completed: Number(s.completed ?? 0),
+        failed: Number(s.failed ?? 0),
+        input_tokens: Number(s.input_tokens ?? 0),
+        output_tokens: Number(s.output_tokens ?? 0),
+        cost: Number(s.cost ?? 0),
+      };
+      return { items, summary };
+    } finally {
+      conn.release();
+    }
+  },
+};
+
 export const agentSearchRunEventRepository = {
   async append(
     runId: string,

@@ -67,6 +67,8 @@ export default {
     models: 'Models',
     virtualModels: 'Smart Routing',
     virtualKeys: 'Virtual Keys',
+    monitoring: 'Monitoring',
+    workerMonitoring: 'Worker Monitoring',
     experimentalFeatures: 'Experimental Features',
     expertRouting: 'Expert Routing',
     workerPlugins: 'Worker Plugins',

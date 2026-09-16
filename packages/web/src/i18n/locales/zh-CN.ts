@@ -67,6 +67,8 @@ export default {
     models: '模型列表',
     virtualModels: '智能路由',
     virtualKeys: '虚拟密钥',
+    monitoring: '监控中心',
+    workerMonitoring: 'Worker 监控',
     experimentalFeatures: '实验性功能',
     expertRouting: '专家路由',
     workerPlugins: 'Worker 插件',
