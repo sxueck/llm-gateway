@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { encryptText, decryptText, getMasterKey } from '../snapshot/encryption.js';
-import { resolvePlugin } from '../plugins/registry.js';
+import { resolvePlugin, PluginStoreError } from '../plugins/store.js';
 import { modelDb, agentSearchRunDb, agentSearchUsageDb } from '../../db/index.js';
 import { generateServiceToken } from './service-token.js';
 import {
@@ -18,6 +18,7 @@ import type {
 export type RunOperationError = {
   code:
     | 'unknown_plugin'
+    | 'plugin_revoked'
     | 'snapshot_not_ready'
     | 'snapshot_expired'
     | 'model_profile_not_configured'
@@ -34,7 +35,16 @@ export class RunError extends Error {
 }
 
 export async function validateRunInputs(principal: { virtualKeyId: string }, body: CreateSearchRunRequest) {
-  const plugin = resolvePlugin(body.plugin.id, body.plugin.version);
+  let plugin;
+  try {
+    plugin = await resolvePlugin(body.plugin.id, body.plugin.version);
+  } catch (e) {
+    // resolvePlugin 只可能抛 plugin_revoked；其余 store 错误码属于发布链路，原样上抛
+    if (e instanceof PluginStoreError && e.code === 'plugin_revoked') {
+      throw new RunError({ code: e.code, message: e.message });
+    }
+    throw e;
+  }
   if (!plugin) {
     throw new RunError({
       code: 'unknown_plugin',

@@ -1,4 +1,5 @@
 import { spawn } from "child_process";
+import { existsSync } from "fs";
 import type { ChildProcess } from "child_process";
 import path from "path";
 
@@ -94,12 +95,22 @@ export function createDockerExecutor(image: string): RunExecutor {
  * 本地进程执行器：不经 Docker 直接以子进程运行 worker 入口（开发/测试用）。
  * 隔离性弱于容器，仅建议在受控环境通过 AGENT_WORKER_LOCAL=1 启用。
  */
+function resolveLocalWorkerEntry(): string {
+  const explicit = process.env.AGENT_WORKER_ENTRY;
+  if (explicit) return explicit;
+  // cwd 可能是仓库根（bun run dev:all）或 packages/backend（bun run dev），逐一探测
+  const candidates = [
+    path.resolve(process.cwd(), "packages/worker/dist/index.js"),
+    path.resolve(process.cwd(), "../worker/dist/index.js"),
+  ];
+  return candidates.find((p) => existsSync(p)) ?? candidates[0];
+}
+
 export function createLocalProcessExecutor(): RunExecutor {
   return {
     name: "local",
     async start(ctx: ExecutorStartContext) {
-      const entry =
-        process.env.AGENT_WORKER_ENTRY || "packages/worker/dist/index.js";
+      const entry = resolveLocalWorkerEntry();
       const env = {
         ...process.env,
         ...ctx.env,

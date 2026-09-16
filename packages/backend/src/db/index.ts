@@ -51,6 +51,10 @@ import {
   agentSearchRunEventRepository,
   agentSearchUsageRepository,
 } from "./repositories/agent-search.repository.js";
+import {
+  workerPluginRepository,
+  userPluginEnrollmentRepository,
+} from "./repositories/worker-plugin.repository.js";
 
 // Export repositories with backward-compatible names
 export const userDb = userRepository;
@@ -78,6 +82,8 @@ export const repositorySnapshotDb = repositorySnapshotRepository;
 export const agentSearchRunDb = agentSearchRunRepository;
 export const agentSearchRunEventDb = agentSearchRunEventRepository;
 export const agentSearchUsageDb = agentSearchUsageRepository;
+export const workerPluginDb = workerPluginRepository;
+export const userPluginEnrollmentDb = userPluginEnrollmentRepository;
 
 // Enhanced initDatabase that also creates tables and runs migrations
 export async function initDatabase() {

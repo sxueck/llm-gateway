@@ -1,40 +1,47 @@
-import type { WorkerPluginManifest } from '@llm-gateway/shared';
+import type { WorkerPluginManifest } from "@llm-gateway/shared";
 
 export const CODE_SEARCH_MANIFEST: WorkerPluginManifest = {
-  schema_version: '1',
-  id: 'com.llm-gateway.code-search',
-  name: 'Code Search',
-  version: '1.0.0',
+  schema_version: "1",
+  id: "com.llm-gateway.code-search",
+  name: "Code Search",
+  version: "1.0.2",
   description:
-    'Read-only cross-file code search: locates and explains code evidence relevant to a query.',
+    "Read-only cross-file code search: locates and explains code evidence relevant to a query.",
   runtime: {
-    kind: 'pi-worker',
-    min_pi_version: '0.85.1',
+    kind: "pi-worker",
+    min_pi_version: "0.85.1",
   },
   role: {
-    system_prompt: './prompt.md',
-    input_schema: './input.schema.json',
-    output_schema: './output.schema.json',
+    system_prompt: "./prompt.md",
+    input_schema: "./input.schema.json",
+    output_schema: "./output.schema.json",
   },
   tool_policy: {
-    allow: ['grep_search', 'read_file', 'list_directory', 'glob_files'],
-    deny: ['write', 'edit', 'bash', 'network'],
+    allow: ["grep_search", "read_file", "list_directory", "glob_files"],
+    deny: ["write", "edit", "bash", "network"],
     max_parallel_calls: 6,
   },
   workspace_policy: {
-    mode: 'read_only',
-    allowed_roots: ['/workspace/repo'],
-    exclude_globs: ['.env', '.env.*', '.git/**', 'node_modules/**', 'dist/**', 'build/**'],
+    mode: "read_only",
+    allowed_roots: ["/workspace/repo"],
+    exclude_globs: [
+      ".env",
+      ".env.*",
+      ".git/**",
+      "node_modules/**",
+      "dist/**",
+      "build/**",
+    ],
   },
   execution_policy: {
-    max_turns: 4,
-    timeout_seconds: 60,
+    max_turns: 8,
+    timeout_seconds: 120,
     max_files_read: 20,
     max_total_read_lines: 6000,
     max_result_tokens: 4000,
   },
   model_policy: {
-    profile: 'search-fast',
+    profile: "search-fast",
     allow_client_override: false,
   },
 };
@@ -80,43 +87,44 @@ If evidence is insufficient, return few or zero files and state that clearly.
 `;
 
 export const CODE_SEARCH_INPUT_SCHEMA = {
-  $schema: 'https://json-schema.org/draft/2020-12/schema',
-  type: 'object',
-  required: ['query'],
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  type: "object",
+  required: ["query"],
   properties: {
     query: {
-      type: 'string',
-      description: 'What to find in the repository, e.g. a call chain or behavior.',
+      type: "string",
+      description:
+        "What to find in the repository, e.g. a call chain or behavior.",
     },
   },
   additionalProperties: false,
 } as const;
 
 export const CODE_SEARCH_OUTPUT_SCHEMA = {
-  $schema: 'https://json-schema.org/draft/2020-12/schema',
-  type: 'object',
-  required: ['status', 'summary', 'files'],
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  type: "object",
+  required: ["status", "summary", "files"],
   properties: {
-    status: { type: 'string', enum: ['completed'] },
-    summary: { type: 'string' },
+    status: { type: "string", enum: ["completed"] },
+    summary: { type: "string" },
     files: {
-      type: 'array',
+      type: "array",
       maxItems: 50,
       items: {
-        type: 'object',
-        required: ['path', 'start_line', 'end_line', 'reason'],
+        type: "object",
+        required: ["path", "start_line", "end_line", "reason"],
         properties: {
-          path: { type: 'string' },
-          start_line: { type: 'integer', minimum: 1 },
-          end_line: { type: 'integer', minimum: 1 },
-          reason: { type: 'string' },
-          evidence: { type: 'string' },
+          path: { type: "string" },
+          start_line: { type: "integer", minimum: 1 },
+          end_line: { type: "integer", minimum: 1 },
+          reason: { type: "string" },
+          evidence: { type: "string" },
         },
         additionalProperties: false,
       },
     },
-    uncertainties: { type: 'array', items: { type: 'string' } },
-    next_questions: { type: 'array', items: { type: 'string' } },
+    uncertainties: { type: "array", items: { type: "string" } },
+    next_questions: { type: "array", items: { type: "string" } },
   },
   additionalProperties: false,
 } as const;

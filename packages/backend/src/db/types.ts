@@ -148,3 +148,30 @@ export interface AgentSearchRunEventRow {
   payload_json: string | null;
   created_at: number;
 }
+
+export interface WorkerPluginRow {
+  id: string;
+  version: string;
+  digest: string;
+  name: string;
+  description: string | null;
+  manifest_json: string;
+  bundle_files_json: string;
+  changelog: string | null;
+  bundle_url: string | null;
+  signature: string | null;
+  status: 'draft' | 'published' | 'deprecated' | 'revoked';
+  published_at: number | null;
+  deprecated_at: number | null;
+  revoked_at: number | null;
+  created_at: number;
+}
+
+export interface UserPluginEnrollmentRow {
+  user_id: string;
+  plugin_id: string;
+  version: string;
+  enabled: number;
+  is_default: number;
+  updated_at: number;
+}

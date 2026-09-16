@@ -824,6 +824,7 @@ onMounted(() => {
 }
 
 .modal-content-wrapper {
+  max-height: calc(90vh - 180px);
   flex: 1;
   min-height: 0;
   overflow-y: auto;

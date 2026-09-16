@@ -142,6 +142,7 @@ const mainMenuParentByKey: Record<string, string> = {
   models: 'model-management',
   'virtual-models': 'model-management',
   'expert-routing': 'experimental-features',
+  'worker-plugins': 'experimental-features',
   'cost-analysis': 'experimental-features',
   'performance-monitoring': 'experimental-features',
   'traffic-analysis': 'experimental-features',
@@ -239,6 +240,11 @@ const menuOptions = computed(() => [
         label: t('menu.expertRouting'),
         key: 'expert-routing',
         icon: () => h(NIcon, null, { default: () => h(GitBranchOutline) }),
+      },
+      {
+        label: t('menu.workerPlugins'),
+        key: 'worker-plugins',
+        icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
       },
       {
         label: t('menu.costAnalysis'),

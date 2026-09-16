@@ -7,10 +7,12 @@ const mocks = vi.hoisted(() => {
   const runs = new Map<string, any>();
   const usage = new Map<string, any>();
   const events: { runId: string; type: string }[] = [];
+  const pluginRows = new Map<string, any>();
   return {
     runs,
     usage,
     events,
+    pluginRows,
     agentSearchRunRepository: {
       create: vi.fn(async (r: any) => {
         runs.set(r.id, {
@@ -65,6 +67,27 @@ const mocks = vi.hoisted(() => {
       findExpired: vi.fn(async () => []),
     },
     systemConfigRepository: { get: vi.fn(async () => undefined), set: vi.fn() },
+    workerPluginRepository: {
+      create: vi.fn(async (row: any) => {
+        pluginRows.set(`${row.id}@${row.version}`, {
+          bundle_url: null,
+          signature: null,
+          deprecated_at: null,
+          revoked_at: null,
+          ...row,
+        });
+        return pluginRows.get(`${row.id}@${row.version}`);
+      }),
+      getByIdVersion: vi.fn(async (id: string, version: string) =>
+        pluginRows.get(`${id}@${version}`),
+      ),
+      listAll: vi.fn(async () => [...pluginRows.values()]),
+      setStatus: vi.fn(async (id: string, version: string, status: string) => {
+        const row = pluginRows.get(`${id}@${version}`);
+        if (row) row.status = status;
+        return row;
+      }),
+    },
   };
 });
 
@@ -74,6 +97,7 @@ vi.mock("../../db/index.js", () => ({
   agentSearchRunEventDb: mocks.agentSearchRunEventRepository,
   repositorySnapshotDb: mocks.snapshotRepository,
   systemConfigDb: mocks.systemConfigRepository,
+  workerPluginDb: mocks.workerPluginRepository,
   modelDb: {
     getByName: vi.fn(async () => ({ id: "m1", name: "search-fast" })),
   },
@@ -108,6 +132,8 @@ import {
   type ExecutorHandle,
 } from "./scheduler.js";
 import { agentSearchRunDb } from "../../db/index.js";
+import { seedBuiltinPlugins } from "../plugins/store.js";
+import { CODE_SEARCH_MANIFEST } from "../plugins/code-search.js";
 
 let workspaceBase: string;
 
@@ -151,7 +177,7 @@ function validResult(runId: string) {
     uncertainties: [],
     next_questions: [],
     usage: {
-      plugin: "com.llm-gateway.code-search@1.0.0",
+      plugin: `com.llm-gateway.code-search@${CODE_SEARCH_MANIFEST.version}`,
       model_profile: "search-fast",
       turns: 1,
       tool_calls: 1,
@@ -168,7 +194,7 @@ async function seedRun(id: string) {
     user_id: "vk-1",
     virtual_key_id: "vk-1",
     plugin_id: "com.llm-gateway.code-search",
-    plugin_version: "1.0.0",
+    plugin_version: CODE_SEARCH_MANIFEST.version,
     plugin_digest: "sha256:x",
     source_type: "snapshot",
     snapshot_id: "snap_1",
@@ -203,6 +229,9 @@ beforeEach(async () => {
   mocks.runs.clear();
   mocks.usage.clear();
   mocks.events.length = 0;
+  mocks.pluginRows.clear();
+  // scheduler 通过 store 解析插件（DB 化注册表），用真实 seed 填充内存 mock
+  await seedBuiltinPlugins();
 });
 
 afterEach(async () => {
@@ -306,7 +335,7 @@ describe("SearchRunScheduler", () => {
       commit: null,
     });
     expect(stored.usage).toEqual({
-      plugin: "com.llm-gateway.code-search@1.0.0",
+      plugin: `com.llm-gateway.code-search@${CODE_SEARCH_MANIFEST.version}`,
       model_profile: "search-fast",
       turns: 2,
       tool_calls: 3,
