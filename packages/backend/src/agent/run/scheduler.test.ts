@@ -230,6 +230,9 @@ beforeEach(async () => {
   mocks.usage.clear();
   mocks.events.length = 0;
   mocks.pluginRows.clear();
+  mocks.agentSearchRunRepository.getById.mockImplementation(async (id: string) =>
+    mocks.runs.get(id),
+  );
   // scheduler 通过 store 解析插件（DB 化注册表），用真实 seed 填充内存 mock
   await seedBuiltinPlugins();
 });
@@ -459,6 +462,31 @@ describe("SearchRunScheduler", () => {
     scheduler.enqueue("asr_q");
     await waitFor(() => mocks.runs.get("asr_q").status === "cancelled");
     expect(mocks.runs.get("asr_q").error_code).toBe("cancelled_before_start");
+  });
+
+  it("does not start a worker when cancellation lands during scheduler startup", async () => {
+    const scheduler = new SearchRunScheduler();
+    const executor = new FakeExecutor();
+    scheduler.setExecutor(executor);
+    await seedRun("asr_start_race");
+    let reads = 0;
+    mocks.agentSearchRunRepository.getById.mockImplementation(async (id: string) => {
+      reads++;
+      if (reads === 2) {
+        mocks.runs.get(id).cancellation_requested_at = Date.now();
+      }
+      return mocks.runs.get(id);
+    });
+
+    scheduler.enqueue("asr_start_race");
+
+    await waitFor(
+      () => mocks.runs.get("asr_start_race").status === "cancelled",
+    );
+    expect(executor.lastEnv).toBeNull();
+    expect(mocks.runs.get("asr_start_race").error_code).toBe(
+      "cancelled_before_start",
+    );
   });
 
   it("recoverAtBoot deterministically fails active runs", async () => {

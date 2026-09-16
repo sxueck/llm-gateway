@@ -169,7 +169,12 @@ export async function grepSearch(ctx: ToolContext, params: Record<string, unknow
   const hits: string[] = [];
   let scanned = 0;
   for (const file of files) {
-    if (hits.length >= MAX_GREP_RESULTS || Date.now() > ctx.deadline) break;
+    if (
+      hits.length >= MAX_GREP_RESULTS ||
+      Date.now() > ctx.deadline ||
+      ctx.budget.exhausted()
+    )
+      break;
     if (globRe && !globRe.test(file.rel) && !globRe.test(file.rel.split('/').pop()!)) continue;
     if (file.size > MAX_GREP_FILE_BYTES || file.size === 0) continue;
     let content: Buffer;
@@ -178,9 +183,15 @@ export async function grepSearch(ctx: ToolContext, params: Record<string, unknow
     } catch {
       continue;
     }
-    if (content.includes(0)) continue; // 跳过二进制
+    if (content.includes(0)) {
+      ctx.budget.noteFileRead(0);
+      continue;
+    }
+    const remainingLines =
+      ctx.budget.maxTotalReadLines - ctx.budget.totalReadLines;
+    const lines = content.toString('utf8').split('\n').slice(0, remainingLines);
+    ctx.budget.noteFileRead(lines.length);
     scanned++;
-    const lines = content.toString('utf8').split('\n');
     for (let i = 0; i < lines.length; i++) {
       if (regex.test(lines[i])) {
         hits.push(`${file.rel}:${i + 1}: ${lines[i].slice(0, 300)}`);

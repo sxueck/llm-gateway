@@ -280,7 +280,6 @@ export async function agentSearchRoutes(fastify: FastifyInstance) {
       const first = await agentSearchRunDb.requestCancellation(id);
       if (first) {
         searchRunScheduler.requestKill(id);
-        await runEventHub.append(id, "run.cancelled", { status: "cancelling" });
       }
       const current = (await agentSearchRunDb.getById(id)) ?? run;
       return {
