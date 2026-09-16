@@ -54,6 +54,17 @@ describe('workspace containment', () => {
     await expect(grepSearch(ctx, { pattern: '(' })).rejects.toBeInstanceOf(ToolError);
   });
 
+  it('grep respects the file and line read budget', async () => {
+    const tight = createToolContext(root, EXCLUDES, new Budget(1, 2), Date.now() + 30_000);
+
+    const out = await grepSearch(tight, { pattern: '401' });
+
+    expect(out).toContain('src/a.ts:2');
+    expect(out).not.toContain('src/b.ts');
+    expect(tight.budget.filesRead).toBe(1);
+    expect(tight.budget.totalReadLines).toBe(2);
+  });
+
   it('read_file returns numbered lines and honors offset/limit', async () => {
     const out = await readFileTool(ctx, { path: 'src/a.ts', offset: 2, limit: 1 });
     expect(out).toContain('2:   return 401;');

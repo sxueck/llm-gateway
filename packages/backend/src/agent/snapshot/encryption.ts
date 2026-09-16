@@ -52,10 +52,15 @@ export function encryptBlob(dek: Buffer, plaintext: Buffer): Buffer {
 }
 
 export function decryptBlob(dek: Buffer, envelope: Buffer): Buffer {
+  if (envelope.length < IV_BYTES + TAG_BYTES) {
+    throw new Error('invalid AES-GCM envelope');
+  }
   const iv = envelope.subarray(0, IV_BYTES);
   const tag = envelope.subarray(IV_BYTES, IV_BYTES + TAG_BYTES);
   const ct = envelope.subarray(IV_BYTES + TAG_BYTES);
-  const decipher = createDecipheriv('aes-256-gcm', dek, iv);
+  const decipher = createDecipheriv('aes-256-gcm', dek, iv, {
+    authTagLength: TAG_BYTES,
+  });
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(ct), decipher.final()]);
 }

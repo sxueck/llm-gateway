@@ -146,6 +146,7 @@ export class SearchRunScheduler {
     };
     this.active.set(runId, active);
 
+    let cancellationRequested = false;
     const outcome = new Promise<
       | { kind: "terminal"; report: TerminalReport }
       | { kind: "exited" }
@@ -153,11 +154,21 @@ export class SearchRunScheduler {
       | { kind: "cancel" }
     >((resolve) => {
       active.terminal = (report) => resolve({ kind: "terminal", report });
-      active.cancelRequested = () => resolve({ kind: "cancel" });
+      active.cancelRequested = () => {
+        cancellationRequested = true;
+        resolve({ kind: "cancel" });
+      };
       active.timedOut = () => resolve({ kind: "timeout" });
     });
 
     try {
+      const currentRun = await agentSearchRunDb.getById(runId);
+      if (currentRun?.cancellation_requested_at) {
+        await this.finalize(run, "cancelled", {
+          errorCode: "cancelled_before_start",
+        });
+        return;
+      }
       await agentSearchRunDb.update(runId, {
         status: "running",
         started_at: Date.now(),
@@ -224,6 +235,10 @@ export class SearchRunScheduler {
         },
       };
 
+      if (cancellationRequested) {
+        await this.finalize(run, "cancelled", { errorCode: "cancelled" });
+        return;
+      }
       await runEventHub.append(runId, "worker.started", {
         executor: this.executor.name,
       });
