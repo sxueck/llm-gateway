@@ -1,7 +1,9 @@
 import { spawn } from "child_process";
 import { existsSync } from "fs";
 import type { ChildProcess } from "child_process";
+import { Writable } from "stream";
 import path from "path";
+import Docker from "dockerode";
 
 export interface ExecutorStartContext {
   runId: string;
@@ -34,7 +36,13 @@ function childHandle(child: ChildProcess): ExecutorHandle {
   };
 }
 
-export function createDockerExecutor(image: string): RunExecutor {
+/** executor 依赖的 dockerode 客户端面；收窄到 createContainer 以便测试注入假实现。 */
+export type DockerClient = Pick<Docker, "createContainer">;
+
+export function createDockerExecutor(
+  image: string,
+  createClient: () => DockerClient = () => new Docker(),
+): RunExecutor {
   return {
     name: "docker",
     async start(ctx: ExecutorStartContext) {
@@ -47,44 +55,61 @@ export function createDockerExecutor(image: string): RunExecutor {
         AGENT_PLUGIN_FILE: "/run/plugin.json",
         AGENT_WORKSPACE_ROOT: "/workspace/repo",
       };
-      const child = spawn(
-        "docker",
-        [
-          "run",
-          "--rm",
-          "--name",
-          containerName,
-          "--network",
-          "bridge",
+      const container = await createClient().createContainer({
+        Image: image,
+        name: containerName,
+        Env: Object.entries(env).map(([k, v]) => `${k}=${v}`),
+        HostConfig: {
+          // 与 compose 网络隔离：worker 只经 host-gateway 回连网关发布端口
+          NetworkMode: "bridge",
           // Linux 上 host.docker.internal 仅在显式映射 host-gateway 后可解析
-          "--add-host",
-          "host.docker.internal:host-gateway",
-          "--read-only",
-          "-v",
-          `${ctx.workspaceDir}/repo:/workspace/repo:ro`,
-          "-v",
-          `${ctx.runDir}:/run:ro`,
-          ...Object.entries(env).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
-          image,
-        ],
-        { stdio: ["ignore", "ignore", "pipe"] },
-      );
-      child.stderr?.on("data", (d) => {
-        // 容器级错误日志；worker 自身进度经 internal API 上报
-        if (d.toString().trim()) {
-          process.stderr.write(`[craft-worker-${ctx.runId}] ${d}`);
-        }
+          ExtraHosts: ["host.docker.internal:host-gateway"],
+          ReadonlyRootfs: true,
+          Binds: [
+            `${ctx.workspaceDir}/repo:/workspace/repo:ro`,
+            `${ctx.runDir}:/run:ro`,
+          ],
+        },
       });
+      const stderr = await container.attach({
+        stream: true,
+        stdin: false,
+        stdout: false,
+        stderr: true,
+      });
+      // 容器级错误日志；worker 自身进度经 internal API 上报
+      container.modem.demuxStream(
+        stderr,
+        new Writable({
+          write(_chunk, _enc, cb) {
+            cb();
+          },
+        }),
+        new Writable({
+          write(chunk, _enc, cb) {
+            const text = chunk.toString().trim();
+            if (text) process.stderr.write(`[${containerName}] ${text}\n`);
+            cb();
+          },
+        }),
+      );
+      await container.start();
+      const exited = container
+        .wait()
+        .then(
+          (res: { StatusCode?: number }) =>
+            ({ code: res.StatusCode ?? -1, signal: null }) as const,
+          () => ({ code: -1, signal: null }) as const,
+        )
+        .finally(() => {
+          // 对应 docker run --rm：wait 终态后兜底清理（force 幂等，与 kill 路径重复无害）
+          void container.remove({ force: true }).catch(() => {});
+        });
       return {
-        ...childHandle(child),
+        exited,
         kill: async () => {
-          await new Promise<void>((resolve) => {
-            const killer = spawn("docker", ["kill", containerName], {
-              stdio: "ignore",
-            });
-            killer.once("exit", () => resolve());
-            killer.once("error", () => resolve());
-          });
+          // 容器已退出/已移除时 kill 返回 404/409，按已终止处理
+          await container.kill({ signal: "SIGKILL" }).catch(() => {});
         },
       };
     },

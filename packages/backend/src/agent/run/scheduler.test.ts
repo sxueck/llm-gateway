@@ -213,11 +213,11 @@ async function seedRun(id: string) {
 }
 
 async function waitFor(
-  predicate: () => boolean,
+  predicate: () => boolean | Promise<boolean>,
   timeoutMs = 3000,
 ): Promise<void> {
   const start = Date.now();
-  while (!predicate()) {
+  while (!(await predicate())) {
     if (Date.now() - start > timeoutMs) throw new Error("waitFor timeout");
     await new Promise((r) => setTimeout(r, 10));
   }
@@ -258,6 +258,8 @@ describe("SearchRunScheduler", () => {
     scheduler.enqueue("asr_ok");
 
     await waitFor(() => mocks.runs.get("asr_ok").status === "running");
+    // executor.start 滞后于置 running 状态（workspace 准备在此之间），轮询等待副作用
+    await waitFor(() => executor.lastEnv !== undefined);
     expect(executor.lastEnv?.AGENT_SERVICE_TOKEN).toBe("tok123");
     expect(executor.lastEnv?.AGENT_RUN_ID).toBe("asr_ok");
     expect(executor.lastEnv?.AGENT_GATEWAY_INTERNAL_URL).toBe(
@@ -281,8 +283,13 @@ describe("SearchRunScheduler", () => {
     expect(run.result_encrypted).toContain("Found the refresh flow.");
     expect(mocks.usage.get("asr_ok").tool_call_count).toBe(1);
     expect(mocks.events.map((e) => e.type)).toContain("run.completed");
-    // workspace 清理
-    await expect(stat(path.join(workspaceBase, "asr_ok"))).rejects.toBeTruthy();
+    // workspace 清理：rm 发生在 finalize 置终态之后的 finally，轮询等待而非立即断言
+    await waitFor(() =>
+      stat(path.join(workspaceBase, "asr_ok")).then(
+        () => false,
+        () => true,
+      ),
+    );
   });
 
   it("enriches a model-shaped result with gateway-side repository/usage before storing", async () => {

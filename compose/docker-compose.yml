@@ -28,6 +28,10 @@ services:
       - "13030:3000"
     volumes:
       - ../data:/app/data
+      # Agent Search：网关经 docker.sock 拉起 worker 容器；workspace 目录
+      # 会被 daemon 按「宿主机路径」bind 到 worker，因此必须与宿主机侧同路径挂载
+      - ${AGENT_WORKSPACE_DIR:-/opt/llm-gateway/agent-workspaces}:${AGENT_WORKSPACE_DIR:-/opt/llm-gateway/agent-workspaces}
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -40,6 +44,14 @@ services:
       - MYSQL_USER=root
       - MYSQL_PASSWORD=${MYSQL_PASSWORD:-your-mysql-password}
       - MYSQL_DATABASE=${MYSQL_DATABASE:-llm_gateway}
+      # Agent Search / craft-worker（须先完成 docs/docker-deployment.md 中的启用步骤）
+      - AGENT_WORKER_IMAGE=${AGENT_WORKER_IMAGE:-ghcr.io/sxueck/llm-gateway/craft-worker:latest}
+      # worker 在默认 bridge 网络，经 host-gateway 回连网关发布端口（13030）
+      - AGENT_WORKER_GATEWAY_URL=${AGENT_WORKER_GATEWAY_URL:-http://host.docker.internal:13030}
+      - AGENT_WORKSPACE_DIR=${AGENT_WORKSPACE_DIR:-/opt/llm-gateway/agent-workspaces}
+    # 需与宿主机 docker 组 gid 一致（getent group docker | cut -d: -f3），用于读写 docker.sock
+    group_add:
+      - "${DOCKER_GID:-999}"
     restart: unless-stopped
     depends_on:
       mysql:

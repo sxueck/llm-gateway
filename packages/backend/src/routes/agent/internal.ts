@@ -4,7 +4,11 @@ import {
   internalCompletionRequestSchema,
   type SearchRunEventType,
 } from "@llm-gateway/shared";
-import { agentSearchRunDb, agentSearchUsageDb } from "../../db/index.js";
+import {
+  agentSearchRunDb,
+  agentSearchUsageDb,
+  virtualKeyDb,
+} from "../../db/index.js";
 import { hashServiceToken } from "../../agent/run/service-token.js";
 import { runEventHub } from "../../agent/run/run-events.js";
 import { searchRunScheduler } from "../../agent/run/scheduler.js";
@@ -192,13 +196,19 @@ export async function agentInternalRoutes(fastify: FastifyInstance) {
         );
       }
 
-      const internalVirtualKey = process.env.AGENT_INTERNAL_VIRTUAL_KEY;
-      if (!internalVirtualKey) {
+      // 虚拟密钥自动放行：loopback 用 run 归属密钥鉴权与计量，用量记账到
+      // 该密钥；默认所有可用密钥均可发起 Agent Search，无需预置内部密钥。
+      const ownerKey = run.virtual_key_id
+        ? await virtualKeyDb.getById(run.virtual_key_id)
+        : undefined;
+      if (!ownerKey || !ownerKey.enabled) {
         return opaiError(
           reply,
           503,
           "internal_model_unavailable",
-          "AGENT_INTERNAL_VIRTUAL_KEY is not configured",
+          !run.virtual_key_id || !ownerKey
+            ? "run owner virtual key not found"
+            : "run owner virtual key disabled",
         );
       }
       const loopbackBase = `http://127.0.0.1:${process.env.PORT || 3000}`;
@@ -208,7 +218,7 @@ export async function agentInternalRoutes(fastify: FastifyInstance) {
         upstream = await fetch(`${loopbackBase}/v1/chat/completions`, {
           method: "POST",
           headers: {
-            authorization: `Bearer ${internalVirtualKey}`,
+            authorization: `Bearer ${ownerKey.key_value}`,
             "content-type": "application/json",
           },
           body: JSON.stringify({
