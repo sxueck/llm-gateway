@@ -41,6 +41,7 @@ COPY package.json bunfig.toml bun.lock* ./
 COPY packages/backend/package.json ./packages/backend/package.json
 COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/web/package.json ./packages/web/package.json
+COPY packages/worker/package.json ./packages/worker/package.json
 COPY packages/tsconfig ./packages/tsconfig
 COPY scripts/install-hooks.sh ./scripts/install-hooks.sh
 
