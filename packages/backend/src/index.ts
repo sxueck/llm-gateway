@@ -31,6 +31,10 @@ import { healthRoutes } from "./routes/health.js";
 import { costMappingRoutes } from "./routes/cost-mapping.js";
 import { promptSampleRoutes } from "./routes/prompt-samples.js";
 import backupRoutes from "./routes/backup.js";
+import { agentSnapshotRoutes } from "./routes/agent/snapshots.js";
+import { agentSearchRoutes } from "./routes/agent/searches.js";
+import { agentInternalRoutes } from "./routes/agent/internal.js";
+import { searchRunScheduler } from "./agent/run/scheduler.js";
 import { memoryLogger } from "./services/logger.js";
 import { modelPresetsService } from "./services/model-presets.js";
 import { healthCheckerService } from "./services/health-checker.js";
@@ -140,6 +144,30 @@ await reasoningEffortSuffixesCache.initialize();
 startSessionBindingCleanup();
 startContextNormalizationCleanup();
 
+// Agent Search：固定执行器并恢复重启前遗留的 run（确定性失败，不挂起）。
+if (process.env.AGENT_WORKER_IMAGE) {
+  const { createDockerExecutor } = await import("./agent/run/executors.js");
+  searchRunScheduler.setExecutor(createDockerExecutor(process.env.AGENT_WORKER_IMAGE));
+  memoryLogger.info(
+    `Agent search executor: docker (${process.env.AGENT_WORKER_IMAGE})`,
+    "AgentSearch",
+  );
+} else if (process.env.AGENT_WORKER_LOCAL === "1") {
+  const { createLocalProcessExecutor } = await import("./agent/run/executors.js");
+  searchRunScheduler.setExecutor(createLocalProcessExecutor());
+  process.env.AGENT_WORKER_GATEWAY_URL =
+    process.env.AGENT_WORKER_GATEWAY_URL || `http://127.0.0.1:${appConfig.port}`;
+  memoryLogger.info("Agent search executor: local process", "AgentSearch");
+} else {
+  memoryLogger.warn(
+    "AGENT_WORKER_IMAGE not set; search runs will fail with executor_not_configured",
+    "AgentSearch",
+  );
+}
+await searchRunScheduler.recoverAtBoot();
+const { startAgentSearchCleanup } = await import("./agent/run/cleanup.js");
+startAgentSearchCleanup();
+
 // Load request header forwarding config before serving traffic.
 await requestHeaderForwardingService.reloadConfig();
 
@@ -229,6 +257,9 @@ await fastify.register(promptSampleRoutes, {
 });
 await fastify.register(healthRoutes);
 await fastify.register(backupRoutes);
+await fastify.register(agentSnapshotRoutes, { prefix: "/api/agent/snapshots" });
+await fastify.register(agentSearchRoutes, { prefix: "/api/agent/searches" });
+await fastify.register(agentInternalRoutes, { prefix: "/api/internal/agent" });
 
 memoryLogger.info("Routes registered", "System");
 
@@ -452,7 +483,7 @@ const gracefulShutdown = async (signal: string) => {
       const backupScheduler = getBackupScheduler();
       backupScheduler.stop();
       memoryLogger.info("Backup scheduler stopped", "Backup");
-    } catch (error) {
+    } catch {
       // Ignore if not started
     }
 

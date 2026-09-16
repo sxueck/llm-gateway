@@ -45,6 +45,12 @@ import { circuitBreakerStatsRepository } from "./repositories/circuit-breaker-st
 import { blockedIpRepository } from "./repositories/blocked-ip.repository.js";
 import { promptSampleRepository } from "./repositories/prompt-sample.repository.js";
 import { contextNormalizationRepository } from "./repositories/context-normalization.repository.js";
+import {
+  repositorySnapshotRepository,
+  agentSearchRunRepository,
+  agentSearchRunEventRepository,
+  agentSearchUsageRepository,
+} from "./repositories/agent-search.repository.js";
 
 // Export repositories with backward-compatible names
 export const userDb = userRepository;
@@ -68,6 +74,10 @@ export const circuitBreakerStatsDb = circuitBreakerStatsRepository;
 export const blockedIpDb = blockedIpRepository;
 export const promptSampleDb = promptSampleRepository;
 export const contextNormalizationDb = contextNormalizationRepository;
+export const repositorySnapshotDb = repositorySnapshotRepository;
+export const agentSearchRunDb = agentSearchRunRepository;
+export const agentSearchRunEventDb = agentSearchRunEventRepository;
+export const agentSearchUsageDb = agentSearchUsageRepository;
 
 // Enhanced initDatabase that also creates tables and runs migrations
 export async function initDatabase() {

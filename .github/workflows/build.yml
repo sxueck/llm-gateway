@@ -82,6 +82,11 @@ jobs:
           JWT_SECRET: ci-test-only-jwt-secret-must-be-at-least-32-characters
           MYSQL_PASSWORD: ci-test-password
 
+      - name: Test worker package
+        run: npm run test -w @llm-gateway/craft-worker
+        env:
+          NODE_ENV: test
+
       - name: Upload coverage artifacts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

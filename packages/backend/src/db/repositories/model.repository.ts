@@ -26,6 +26,22 @@ export const modelRepository = {
     }
   },
 
+  async getByName(name: string): Promise<Model | undefined> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query(
+        'SELECT * FROM models WHERE name = ? AND enabled = 1 LIMIT 1',
+        [name],
+      );
+      const models = rows as any[];
+      if (models.length === 0) return undefined;
+      return models[0];
+    } finally {
+      conn.release();
+    }
+  },
+
   async getByProviderId(providerId: string): Promise<Model[]> {
     const pool = getDatabase();
     const conn = await pool.getConnection();

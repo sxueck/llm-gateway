@@ -1,0 +1,24 @@
+{
+  "name": "@llm-gateway/craft-worker",
+  "version": "0.2.4",
+  "private": true,
+  "description": "craft-worker: isolated read-only agent search worker for llm-gateway",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --outfile=dist/index.js --platform=node --format=esm --target=node22",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@llm-gateway/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "esbuild": "^0.27.2",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
+  }
+}

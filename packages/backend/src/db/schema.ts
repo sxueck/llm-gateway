@@ -487,6 +487,93 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+        // Agent Search：仓库快照（加密存储，24h 保留）
+        await conn.query(`
+      CREATE TABLE IF NOT EXISTS repository_snapshots (
+        id VARCHAR(255) PRIMARY KEY,
+        user_id VARCHAR(255) NOT NULL,
+        virtual_key_id VARCHAR(255),
+        source_type VARCHAR(50) NOT NULL DEFAULT 'pi_local_worktree',
+        display_name VARCHAR(255),
+        git_remote TEXT,
+        head_commit VARCHAR(64),
+        manifest_encrypted MEDIUMTEXT NOT NULL,
+        dek_encrypted VARCHAR(512) NOT NULL,
+        file_count INT NOT NULL DEFAULT 0,
+        total_size BIGINT NOT NULL DEFAULT 0,
+        storage_prefix VARCHAR(512) NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'uploading',
+        created_at BIGINT NOT NULL,
+        expires_at BIGINT NOT NULL,
+        deleted_at BIGINT,
+        INDEX idx_snapshots_user (user_id),
+        INDEX idx_snapshots_status (status),
+        INDEX idx_snapshots_expires (expires_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+        // Agent Search：检索 run
+        await conn.query(`
+      CREATE TABLE IF NOT EXISTS agent_search_runs (
+        id VARCHAR(255) PRIMARY KEY,
+        user_id VARCHAR(255) NOT NULL,
+        virtual_key_id VARCHAR(255),
+        plugin_id VARCHAR(255) NOT NULL,
+        plugin_version VARCHAR(64) NOT NULL,
+        plugin_digest VARCHAR(128) NOT NULL,
+        source_type VARCHAR(32) NOT NULL,
+        snapshot_id VARCHAR(255),
+        public_git_url_encrypted TEXT,
+        requested_ref VARCHAR(255),
+        resolved_commit VARCHAR(64),
+        query_encrypted MEDIUMTEXT NOT NULL,
+        model_profile VARCHAR(128) NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'queued',
+        result_encrypted MEDIUMTEXT,
+        error_code VARCHAR(128),
+        error_message TEXT,
+        service_token_hash VARCHAR(128),
+        created_at BIGINT NOT NULL,
+        started_at BIGINT,
+        completed_at BIGINT,
+        expires_at BIGINT NOT NULL,
+        cancellation_requested_at BIGINT,
+        INDEX idx_runs_user (user_id),
+        INDEX idx_runs_status (status),
+        INDEX idx_runs_expires (expires_at),
+        INDEX idx_runs_snapshot (snapshot_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+        // Agent Search：run 事件（SSE 重放）
+        await conn.query(`
+      CREATE TABLE IF NOT EXISTS agent_search_run_events (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        run_id VARCHAR(255) NOT NULL,
+        seq INT NOT NULL,
+        type VARCHAR(64) NOT NULL,
+        payload_json TEXT,
+        created_at BIGINT NOT NULL,
+        UNIQUE KEY uq_agent_search_run_events_seq (run_id, seq),
+        INDEX idx_agent_search_run_events_run (run_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+        // Agent Search：用量（run 终态后保留，是匿名聚合指标）
+        await conn.query(`
+      CREATE TABLE IF NOT EXISTS agent_search_usage (
+        run_id VARCHAR(255) PRIMARY KEY,
+        turn_count INT NOT NULL DEFAULT 0,
+        tool_call_count INT NOT NULL DEFAULT 0,
+        input_tokens BIGINT NOT NULL DEFAULT 0,
+        output_tokens BIGINT NOT NULL DEFAULT 0,
+        cost DECIMAL(12,6) NOT NULL DEFAULT 0,
+        model_route_metadata TEXT,
+        updated_at BIGINT NOT NULL,
+        INDEX idx_agent_search_usage_updated (updated_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
         // API 请求按天汇总表（支持 7 天外的统计查询，天边界为 Asia/Shanghai 时区）
         // Nullable 维度使用空字符串作为 sentinel 值以满足唯一键约束
         await conn.query(`
