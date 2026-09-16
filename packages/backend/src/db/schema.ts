@@ -574,6 +574,44 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+        // Worker Plugin Center：官方插件版本（不可变，id+version 唯一）
+        await conn.query(`
+      CREATE TABLE IF NOT EXISTS worker_plugins (
+        id VARCHAR(255) NOT NULL,
+        version VARCHAR(64) NOT NULL,
+        digest VARCHAR(128) NOT NULL,
+        name VARCHAR(100) NOT NULL,
+        description VARCHAR(500),
+        manifest_json MEDIUMTEXT NOT NULL,
+        bundle_files_json MEDIUMTEXT NOT NULL,
+        changelog TEXT,
+        bundle_url VARCHAR(1024),
+        signature VARCHAR(512),
+        status VARCHAR(32) NOT NULL DEFAULT 'published',
+        published_at BIGINT,
+        deprecated_at BIGINT,
+        revoked_at BIGINT,
+        created_at BIGINT NOT NULL,
+        PRIMARY KEY (id, version),
+        INDEX idx_worker_plugins_id (id),
+        INDEX idx_worker_plugins_status (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+        // Worker Plugin Center：用户启用状态与默认版本
+        await conn.query(`
+      CREATE TABLE IF NOT EXISTS user_plugin_enrollments (
+        user_id VARCHAR(255) NOT NULL,
+        plugin_id VARCHAR(255) NOT NULL,
+        version VARCHAR(64) NOT NULL,
+        enabled TINYINT(1) NOT NULL DEFAULT 1,
+        is_default TINYINT(1) NOT NULL DEFAULT 0,
+        updated_at BIGINT NOT NULL,
+        PRIMARY KEY (user_id, plugin_id),
+        INDEX idx_plugin_enrollments_plugin (plugin_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
         // API 请求按天汇总表（支持 7 天外的统计查询，天边界为 Asia/Shanghai 时区）
         // Nullable 维度使用空字符串作为 sentinel 值以满足唯一键约束
         await conn.query(`

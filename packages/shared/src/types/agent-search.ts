@@ -66,6 +66,37 @@ export const workerPluginManifestSchema = z.object({
 
 export type WorkerPluginManifest = z.infer<typeof workerPluginManifestSchema>;
 
+// ============ Worker Plugin Center（Phase 1 官方策展） ============
+
+export const WORKER_PLUGIN_STATUSES = [
+  "draft",
+  "published",
+  "deprecated",
+  "revoked",
+] as const;
+export type WorkerPluginStatus = (typeof WORKER_PLUGIN_STATUSES)[number];
+
+/** 发布请求：manifest + bundle 文件内容；深度校验（引用/工具/根路径/schema 必填项）在 validatePluginBundle。 */
+export const publishWorkerPluginRequestSchema = z.object({
+  manifest: workerPluginManifestSchema,
+  files: z.record(z.string(), z.string().min(1)),
+  changelog: z.string().max(4000).optional(),
+});
+
+export type PublishWorkerPluginRequest = z.infer<
+  typeof publishWorkerPluginRequestSchema
+>;
+
+export const updatePluginEnrollmentRequestSchema = z.object({
+  version: z.string().regex(/^\d+\.\d+\.\d+$/),
+  enabled: z.boolean(),
+  is_default: z.boolean(),
+});
+
+export type UpdatePluginEnrollmentRequest = z.infer<
+  typeof updatePluginEnrollmentRequestSchema
+>;
+
 // Bundle 内允许被 role.* 引用的文件名（Phase 1 固定集合）
 export const PLUGIN_BUNDLE_FILES = [
   "prompt.md",

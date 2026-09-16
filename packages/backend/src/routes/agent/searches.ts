@@ -26,6 +26,7 @@ import { searchRunScheduler } from "../../agent/run/scheduler.js";
 
 const RUN_ERROR_STATUS: Record<string, number> = {
   unknown_plugin: 400,
+  plugin_revoked: 403,
   snapshot_not_ready: 409,
   snapshot_expired: 410,
   model_profile_not_configured: 400,

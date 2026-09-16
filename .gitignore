@@ -79,3 +79,8 @@ data/*
 packages/backend/data/model-presets.json
 .opencode
 .agents/skills/ego-browser/
+
+# Local runtime artifacts and planning documents
+packages/backend/data/agent-snapshots/
+packages/backend/public/
+docs/*-prd.md

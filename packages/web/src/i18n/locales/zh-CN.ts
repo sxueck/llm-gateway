@@ -69,6 +69,7 @@ export default {
     virtualKeys: '虚拟密钥',
     experimentalFeatures: '实验性功能',
     expertRouting: '专家路由',
+    workerPlugins: 'Worker 插件',
     costAnalysis: '成本分析',
     performanceMonitoring: '性能监测',
     trafficAnalysis: '流量分析',

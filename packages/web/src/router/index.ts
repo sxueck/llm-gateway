@@ -63,6 +63,11 @@ const router = createRouter({
           component: () => import('@/views/ExpertRoutingView.vue'),
         },
         {
+          path: 'worker-plugins',
+          name: 'WorkerPlugins',
+          component: () => import('@/views/WorkerPluginsView.vue'),
+        },
+        {
           path: 'cost-analysis',
           name: 'CostAnalysis',
           component: () => import('@/views/CostAnalysisView.vue'),

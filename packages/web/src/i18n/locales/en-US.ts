@@ -69,6 +69,7 @@ export default {
     virtualKeys: 'Virtual Keys',
     experimentalFeatures: 'Experimental Features',
     expertRouting: 'Expert Routing',
+    workerPlugins: 'Worker Plugins',
     costAnalysis: 'Cost Analysis',
     performanceMonitoring: 'Performance Monitoring',
     trafficAnalysis: 'Traffic Analysis',

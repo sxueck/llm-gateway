@@ -766,6 +766,51 @@ export const migrations: Migration[] = [
       await conn.query("DROP TABLE IF EXISTS repository_snapshots");
     },
   },
+  {
+    version: 44,
+    name: "add_worker_plugin_center_tables",
+    up: async (conn: Connection) => {
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS worker_plugins (
+          id VARCHAR(255) NOT NULL,
+          version VARCHAR(64) NOT NULL,
+          digest VARCHAR(128) NOT NULL,
+          name VARCHAR(100) NOT NULL,
+          description VARCHAR(500),
+          manifest_json MEDIUMTEXT NOT NULL,
+          bundle_files_json MEDIUMTEXT NOT NULL,
+          changelog TEXT,
+          bundle_url VARCHAR(1024),
+          signature VARCHAR(512),
+          status VARCHAR(32) NOT NULL DEFAULT 'published',
+          published_at BIGINT,
+          deprecated_at BIGINT,
+          revoked_at BIGINT,
+          created_at BIGINT NOT NULL,
+          PRIMARY KEY (id, version),
+          INDEX idx_worker_plugins_id (id),
+          INDEX idx_worker_plugins_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS user_plugin_enrollments (
+          user_id VARCHAR(255) NOT NULL,
+          plugin_id VARCHAR(255) NOT NULL,
+          version VARCHAR(64) NOT NULL,
+          enabled TINYINT(1) NOT NULL DEFAULT 1,
+          is_default TINYINT(1) NOT NULL DEFAULT 0,
+          updated_at BIGINT NOT NULL,
+          PRIMARY KEY (user_id, plugin_id),
+          INDEX idx_plugin_enrollments_plugin (plugin_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      console.log("[迁移] 已创建 worker plugin center 相关表");
+    },
+    down: async (conn: Connection) => {
+      await conn.query("DROP TABLE IF EXISTS user_plugin_enrollments");
+      await conn.query("DROP TABLE IF EXISTS worker_plugins");
+    },
+  },
 ];
 
 async function hasProviderForeignKey(

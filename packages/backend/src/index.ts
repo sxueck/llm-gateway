@@ -30,6 +30,7 @@ import { intentRoutes } from "./routes/intent.js";
 import { healthRoutes } from "./routes/health.js";
 import { costMappingRoutes } from "./routes/cost-mapping.js";
 import { promptSampleRoutes } from "./routes/prompt-samples.js";
+import { workerPluginRoutes } from "./routes/worker-plugins.js";
 import backupRoutes from "./routes/backup.js";
 import { agentSnapshotRoutes } from "./routes/agent/snapshots.js";
 import { agentSearchRoutes } from "./routes/agent/searches.js";
@@ -136,6 +137,13 @@ fastify.get("/api/admin/config/debug-stream", (_request, reply) => {
 });
 
 await initDatabase();
+
+// Plugin Center：内置官方插件幂等 seed 到 worker_plugins（版本不可变，不覆盖已存在版本）
+{
+  const { seedBuiltinPlugins } = await import("./agent/plugins/store.js");
+  await seedBuiltinPlugins();
+}
+
 await manualIpBlocklist.init();
 await runtimeSystemConfigCache.initialize();
 await reasoningEffortSuffixesCache.initialize();
@@ -254,6 +262,9 @@ await fastify.register(costMappingRoutes, {
 });
 await fastify.register(promptSampleRoutes, {
   prefix: "/api/admin/prompt-samples",
+});
+await fastify.register(workerPluginRoutes, {
+  prefix: "/api/admin/worker-plugins",
 });
 await fastify.register(healthRoutes);
 await fastify.register(backupRoutes);
