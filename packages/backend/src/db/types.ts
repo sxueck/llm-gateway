@@ -75,3 +75,76 @@ export type ApiRequestBuffer = {
   ip?: string;
   user_agent?: string;
 };
+
+export interface RepositorySnapshot {
+  id: string;
+  user_id: string;
+  virtual_key_id: string | null;
+  source_type: string;
+  display_name: string | null;
+  git_remote: string | null;
+  head_commit: string | null;
+  manifest_encrypted: string;
+  dek_encrypted: string;
+  file_count: number;
+  total_size: number;
+  storage_prefix: string;
+  status: "uploading" | "ready" | "deleted";
+  created_at: number;
+  expires_at: number;
+  deleted_at: number | null;
+}
+
+export interface AgentSearchRun {
+  id: string;
+  user_id: string;
+  virtual_key_id: string | null;
+  plugin_id: string;
+  plugin_version: string;
+  plugin_digest: string;
+  source_type: "snapshot" | "public_git";
+  snapshot_id: string | null;
+  public_git_url_encrypted: string | null;
+  requested_ref: string | null;
+  resolved_commit: string | null;
+  query_encrypted: string;
+  model_profile: string;
+  status:
+    | "queued"
+    | "running"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "timed_out"
+    | "budget_exceeded"
+    | "expired";
+  result_encrypted: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  service_token_hash: string | null;
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+  expires_at: number;
+  cancellation_requested_at: number | null;
+}
+
+export interface AgentSearchUsage {
+  run_id: string;
+  turn_count: number;
+  tool_call_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost: number;
+  model_route_metadata: string | null;
+  updated_at: number;
+}
+
+export interface AgentSearchRunEventRow {
+  id: number;
+  run_id: string;
+  seq: number;
+  type: string;
+  payload_json: string | null;
+  created_at: number;
+}

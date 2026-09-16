@@ -100,6 +100,19 @@
         "vue-tsc": "^2.1.10",
       },
     },
+    "packages/worker": {
+      "name": "@llm-gateway/craft-worker",
+      "version": "0.2.4",
+      "dependencies": {
+        "@llm-gateway/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "^22.10.2",
+        "esbuild": "^0.27.2",
+        "typescript": "^5.7.2",
+        "vitest": "^3.0.0",
+      },
+    },
   },
   "trustedDependencies": [
     "sharp",
@@ -354,6 +367,8 @@
     "@juggle/resize-observer": ["@juggle/resize-observer@3.4.0", "https://registry.npmmirror.com/@juggle/resize-observer/-/resize-observer-3.4.0.tgz", {}, "sha512-dfLbk+PwWvFzSxwk3n5ySL0hfBog779o8h68wK/7/APo/7cgyWp5jcXockbxdk5kFRkbeXWm4Fbi9FrdN381sA=="],
 
     "@llm-gateway/backend": ["@llm-gateway/backend@workspace:packages/backend"],
+
+    "@llm-gateway/craft-worker": ["@llm-gateway/craft-worker@workspace:packages/worker"],
 
     "@llm-gateway/shared": ["@llm-gateway/shared@workspace:packages/shared"],
 
