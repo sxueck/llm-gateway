@@ -191,6 +191,53 @@ export interface PerformanceMetricsResponse {
   };
 }
 
+export type AgentRunStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "timed_out"
+  | "budget_exceeded"
+  | "expired";
+
+export interface AgentRunMonitoringItem {
+  id: string;
+  plugin_id: string;
+  plugin_version: string;
+  source_type: "snapshot" | "public_git";
+  model_profile: string;
+  status: AgentRunStatus;
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+  duration_ms: number | null;
+  error_code: string | null;
+  error_message: string | null;
+  usage: {
+    turn_count: number;
+    tool_call_count: number;
+    input_tokens: number;
+    output_tokens: number;
+    cost: number;
+  } | null;
+}
+
+export interface AgentRunMonitoringResponse {
+  summary: {
+    total: number;
+    active: number;
+    completed: number;
+    failed: number;
+    input_tokens: number;
+    output_tokens: number;
+    cost: number;
+  };
+  items: AgentRunMonitoringItem[];
+  limit: number;
+  offset: number;
+}
+
 type GetLogsParams = {
   level?: LogLevel;
   limit?: number;
@@ -425,6 +472,7 @@ const ADMIN_ROUTING_CONFIGS_PATH = adminConfigPath("/routing-configs");
 const ADMIN_SYSTEM_SETTINGS_PATH = adminConfigPath("/system-settings");
 const ADMIN_HEALTH_TARGETS_PATH = adminConfigPath("/health-targets");
 const ADMIN_PERFORMANCE_METRICS_PATH = adminConfigPath("/performance-metrics");
+const ADMIN_AGENT_RUNS_PATH = "/admin/agent-runs";
 const ADMIN_ROUTING_STATUS_PATH = adminConfigPath("/routing-status");
 const ADMIN_TRAFFIC_ANALYSIS_PATH = adminConfigPath("/stats/traffic-analysis");
 const ADMIN_TRAFFIC_ANALYSIS_HISTORY_DAY_PATH = adminConfigPath(
@@ -516,6 +564,15 @@ export const configApi = {
 
   getPerformanceMetrics(): Promise<PerformanceMetricsResponse> {
     return request.get(ADMIN_PERFORMANCE_METRICS_PATH);
+  },
+
+  getAgentRunMonitoring(params?: {
+    status?: AgentRunStatus;
+    activeOnly?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<AgentRunMonitoringResponse> {
+    return request.get(ADMIN_AGENT_RUNS_PATH, { params });
   },
 
   getRoutingStatus(): Promise<RoutingStatusResponse> {

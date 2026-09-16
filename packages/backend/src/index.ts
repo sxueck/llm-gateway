@@ -35,6 +35,7 @@ import backupRoutes from "./routes/backup.js";
 import { agentSnapshotRoutes } from "./routes/agent/snapshots.js";
 import { agentSearchRoutes } from "./routes/agent/searches.js";
 import { agentInternalRoutes } from "./routes/agent/internal.js";
+import { agentMonitoringRoutes } from "./routes/agent/monitoring.js";
 import { searchRunScheduler } from "./agent/run/scheduler.js";
 import { memoryLogger } from "./services/logger.js";
 import { modelPresetsService } from "./services/model-presets.js";
@@ -271,6 +272,7 @@ await fastify.register(backupRoutes);
 await fastify.register(agentSnapshotRoutes, { prefix: "/api/agent/snapshots" });
 await fastify.register(agentSearchRoutes, { prefix: "/api/agent/searches" });
 await fastify.register(agentInternalRoutes, { prefix: "/api/internal/agent" });
+await fastify.register(agentMonitoringRoutes, { prefix: "/api/admin/agent-runs" });
 
 memoryLogger.info("Routes registered", "System");
 

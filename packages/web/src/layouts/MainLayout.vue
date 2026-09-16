@@ -144,8 +144,9 @@ const mainMenuParentByKey: Record<string, string> = {
   'expert-routing': 'experimental-features',
   'worker-plugins': 'experimental-features',
   'cost-analysis': 'experimental-features',
-  'performance-monitoring': 'experimental-features',
-  'traffic-analysis': 'experimental-features',
+  'worker-monitoring': 'monitoring',
+  'performance-monitoring': 'monitoring',
+  'traffic-analysis': 'monitoring',
   'api-guide': 'tools',
   logs: 'tools',
   'api-requests': 'tools',
@@ -232,6 +233,28 @@ const menuOptions = computed(() => [
     icon: () => h(NIcon, null, { default: () => h(KeyOutline) }),
   },
   {
+    label: t('menu.monitoring'),
+    key: 'monitoring',
+    icon: () => h(NIcon, null, { default: () => h(SpeedometerOutline) }),
+    children: [
+      {
+        label: t('menu.workerMonitoring'),
+        key: 'worker-monitoring',
+        icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
+      },
+      {
+        label: t('menu.performanceMonitoring'),
+        key: 'performance-monitoring',
+        icon: () => h(NIcon, null, { default: () => h(SpeedometerOutline) }),
+      },
+      {
+        label: t('menu.trafficAnalysis'),
+        key: 'traffic-analysis',
+        icon: () => h(NIcon, null, { default: () => h(TrendingUpOutline) }),
+      },
+    ],
+  },
+  {
     label: t('menu.experimentalFeatures'),
     key: 'experimental-features',
     icon: () => h(NIcon, null, { default: () => h(FlaskOutline) }),
@@ -250,16 +273,6 @@ const menuOptions = computed(() => [
         label: t('menu.costAnalysis'),
         key: 'cost-analysis',
         icon: () => h(NIcon, null, { default: () => h(CashOutline) }),
-      },
-      {
-        label: t('menu.performanceMonitoring'),
-        key: 'performance-monitoring',
-        icon: () => h(NIcon, null, { default: () => h(SpeedometerOutline) }),
-      },
-      {
-        label: t('menu.trafficAnalysis'),
-        key: 'traffic-analysis',
-        icon: () => h(NIcon, null, { default: () => h(TrendingUpOutline) }),
       },
     ],
   },
