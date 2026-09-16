@@ -36,10 +36,6 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  if (config.plugin.manifest.id !== 'com.llm-gateway.code-search' && !config.plugin.manifest.id.startsWith('com.llm-gateway.')) {
-    throw new Error(`untrusted plugin id: ${config.plugin.manifest.id}`);
-  }
-
   try {
     await runSearchAgent({
       runId,

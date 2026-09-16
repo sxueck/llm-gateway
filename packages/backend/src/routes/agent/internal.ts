@@ -8,6 +8,8 @@ import { agentSearchRunDb, agentSearchUsageDb } from "../../db/index.js";
 import { hashServiceToken } from "../../agent/run/service-token.js";
 import { runEventHub } from "../../agent/run/run-events.js";
 import { searchRunScheduler } from "../../agent/run/scheduler.js";
+import { costMappingService } from "../../services/cost-mapping.js";
+import { normalizeUsageCounts } from "../../utils/usage-normalizer.js";
 import type { AgentSearchRun } from "../../db/types.js";
 
 const LOOPBACK_TIMEOUT_MS = Number(
@@ -90,6 +92,33 @@ function opaiError(
   return reply.code(status).send({
     error: { message, type: "invalid_request_error", param: null, code },
   });
+}
+
+/** 与 routes/config.ts 用量费用统计一致的每 token 计价公式。 */
+async function computeCost(
+  model: string | null,
+  usage: unknown,
+): Promise<number> {
+  if (!model) return 0;
+  const counts = normalizeUsageCounts(usage);
+  const costInfo = await costMappingService.resolveModelCost(model);
+  if (!costInfo?.info) return 0;
+  const info = costInfo.info;
+  let cost = 0;
+  if (info.input_cost_per_token && counts.promptTokens) {
+    cost += counts.promptTokens * Number(info.input_cost_per_token);
+  }
+  if (info.output_cost_per_token && counts.completionTokens) {
+    cost += counts.completionTokens * Number(info.output_cost_per_token);
+  }
+  if (counts.cachedTokens) {
+    const cacheReadCostPerToken =
+      info.cache_read_cost_per_token ?? info.input_cost_per_token;
+    if (cacheReadCostPerToken) {
+      cost += counts.cachedTokens * Number(cacheReadCostPerToken);
+    }
+  }
+  return cost;
 }
 
 /** 把网关侧计量累加到 run 用量行（token/cost 的唯一权威来源）。 */
@@ -220,12 +249,14 @@ export async function agentInternalRoutes(fastify: FastifyInstance) {
       }
 
       const usage = completion?.usage;
+      const routedModel = completion?.model ?? null;
+      const cost = await computeCost(routedModel, usage);
       await accumulateUsage(
         run,
         Number(usage?.prompt_tokens ?? 0),
         Number(usage?.completion_tokens ?? 0),
-        0,
-        completion?.model ?? null,
+        cost,
+        routedModel,
       );
       await runEventHub.append(run.id, "model.completed", {
         turn: body.turn,
