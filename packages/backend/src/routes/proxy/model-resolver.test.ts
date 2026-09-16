@@ -1,12 +1,29 @@
 import { beforeEach, expect, test, vi } from 'vitest';
 
+// config/index.ts 在模块加载期校验 env，而 vitest 不加载 .env——注入最小
+// 占位值（db 入口已 mock，不产生真实连接）。
+vi.hoisted(() => {
+  process.env.MYSQL_PASSWORD ??= 'vitest-placeholder';
+  process.env.JWT_SECRET ??= 'vitest-placeholder-secret-32-chars!!';
+});
+
+import { modelDb } from '../../db/index.js';
 import { hotConfigCache } from '../../services/hot-config-cache.js';
 import { reasoningEffortSuffixesCache } from '../../services/reasoning-effort-suffixes.js';
+import {
+  AGENT_LOOPBACK_HEADER,
+  agentLoopbackToken,
+} from '../../agent/run/loopback-token.js';
 import { resolveProviderFromModel } from './routing.js';
 import { parseModelSuffix, resolveModelAndProvider } from './model-resolver.js';
 import {
   DEFAULT_REASONING_EFFORT_MODEL_SUFFIXES,
 } from '../../services/reasoning-effort-suffixes.js';
+
+vi.mock('../../db/index.js', () => ({
+  systemConfigDb: { get: vi.fn() },
+  modelDb: { getByName: vi.fn() },
+}));
 
 vi.mock('../../services/hot-config-cache.js', () => ({
   hotConfigCache: {
@@ -154,4 +171,77 @@ test('skips forced effort when the matched model has disable_thinking', async ()
   // 路由仍落到基础模型，但不注入/强制 reasoning_effort，避免绕过 disable_thinking
   expect(request.body).toEqual({ model: 'gpt-5' });
   expect((result as any).forcedReasoningEffort).toBeUndefined();
+});
+
+// ─── agent loopback 旁路 ────────────────────────────────────────────────────
+
+test('agent loopback header resolves a model outside the virtual key allowlist', async () => {
+  vi.mocked(modelDb.getByName).mockResolvedValue({
+    id: 'model-agent',
+    name: 'search-fast',
+    model_identifier: 'search-fast',
+    provider_id: 'provider-1',
+    is_virtual: 0,
+  } as any);
+  vi.mocked(resolveProviderFromModel).mockResolvedValue({
+    provider: { id: 'provider-1', name: 'provider-1' },
+    providerId: 'provider-1',
+  } as any);
+
+  const request = {
+    body: { model: 'search-fast' },
+    headers: { [AGENT_LOOPBACK_HEADER]: agentLoopbackToken() },
+    protocol: 'openai',
+    url: '/v1/chat/completions',
+  } as any;
+
+  const result = await resolveModelAndProvider(
+    { id: 'vk-1', model_ids: JSON.stringify(['model-1']) },
+    request,
+    'vk-value'
+  );
+
+  expect(modelDb.getByName).toHaveBeenCalledWith('search-fast');
+  expect((result as any).modelId).toBe('model-agent');
+  expect((result as any).code).toBeUndefined();
+});
+
+test('forged agent loopback header stays on the allowlist path', async () => {
+  vi.mocked(hotConfigCache.getModelById).mockResolvedValue(undefined as any);
+  vi.mocked(reasoningEffortSuffixesCache.getSuffixes).mockReturnValue([]);
+
+  const request = {
+    body: { model: 'search-fast' },
+    headers: { [AGENT_LOOPBACK_HEADER]: 'forged-token' },
+    protocol: 'openai',
+    url: '/v1/chat/completions',
+  } as any;
+
+  const result = await resolveModelAndProvider(
+    { id: 'vk-1', model_ids: JSON.stringify(['model-1']) },
+    request,
+    'vk-value'
+  );
+
+  expect((result as any).code).toBe(404);
+  expect(modelDb.getByName).not.toHaveBeenCalled();
+});
+
+test('agent loopback returns 404 when the profile model is missing or disabled', async () => {
+  vi.mocked(modelDb.getByName).mockResolvedValue(undefined as any);
+
+  const request = {
+    body: { model: 'search-fast' },
+    headers: { [AGENT_LOOPBACK_HEADER]: agentLoopbackToken() },
+    protocol: 'openai',
+    url: '/v1/chat/completions',
+  } as any;
+
+  const result = await resolveModelAndProvider(
+    { id: 'vk-1', model_ids: JSON.stringify(['model-1']) },
+    request,
+    'vk-value'
+  );
+
+  expect((result as any).code).toBe(404);
 });

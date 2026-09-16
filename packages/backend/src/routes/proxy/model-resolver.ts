@@ -1,6 +1,10 @@
 import { FastifyRequest } from 'fastify';
-import { systemConfigDb } from '../../db/index.js';
+import { modelDb, systemConfigDb } from '../../db/index.js';
 import { hotConfigCache } from '../../services/hot-config-cache.js';
+import {
+  AGENT_LOOPBACK_HEADER,
+  isValidAgentLoopbackToken,
+} from '../../agent/run/loopback-token.js';
 import { memoryLogger } from '../../services/logger.js';
 import { reasoningEffortSuffixesCache } from '../../services/reasoning-effort-suffixes.js';
 import { isChatCompletionsPath } from '../../utils/path-detector.js';
@@ -265,6 +269,72 @@ export async function resolveModelAndProvider(
     }
   } catch (_e) {
     // 忽略健康检查快速路径中的异常，继续走常规分支
+  }
+
+  // Agent loopback 旁路：worker 模型通道携带进程内共享密钥时，跳过虚拟密钥
+  // 白名单、按 name 解析全局启用模型；鉴权与计量仍走发起密钥，agent 模型
+  // 无需绑定到用户密钥或暴露在其 /v1/models 列表。
+  if (isValidAgentLoopbackToken((request.headers as any)?.[AGENT_LOOPBACK_HEADER])) {
+    const requestedModel = (request.body as any)?.model;
+    if (!requestedModel || typeof requestedModel !== 'string') {
+      return {
+        code: 400,
+        body: {
+          error: {
+            message: 'Missing model for agent loopback',
+            type: 'invalid_request_error',
+            param: null,
+            code: 'missing_model'
+          }
+        }
+      };
+    }
+
+    const model = await modelDb.getByName(requestedModel);
+    if (!model) {
+      memoryLogger.warn(
+        `Agent loopback model not found or disabled: ${requestedModel}`,
+        'ModelResolver'
+      );
+      return {
+        code: 404,
+        body: {
+          error: {
+            message: `Model not found: ${requestedModel}`,
+            type: 'invalid_request_error',
+            param: null,
+            code: 'model_not_found'
+          }
+        }
+      };
+    }
+
+    try {
+      const result = await resolveProviderFromModel(model, request as any, virtualKey.id);
+      const canRetry = !!(model.is_virtual && model.routing_config_id && result.canRetry);
+      return {
+        provider: result.provider,
+        providerId: result.providerId!,
+        circuitBreakerKey: result.circuitBreakerKey || result.providerId!,
+        currentModel: result.resolvedModel || model,
+        excludeTargetKeys: result.excludeTargetKeys,
+        canRetry,
+        modelId: model.id
+      };
+    } catch (e: any) {
+      memoryLogger.error(`Agent loopback provider resolution failed: ${e.message}`, 'ModelResolver');
+      return {
+        code: 500,
+        body: {
+          error: {
+            message: e.message || 'Agent loopback resolution failed',
+            type: 'internal_error',
+            param: null,
+            code: 'agent_loopback_resolution_failed'
+          }
+        }
+      };
+    }
   }
 
   if (virtualKey.model_id) {

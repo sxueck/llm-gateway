@@ -10,6 +10,10 @@ import {
   virtualKeyDb,
 } from "../../db/index.js";
 import { hashServiceToken } from "../../agent/run/service-token.js";
+import {
+  AGENT_LOOPBACK_HEADER,
+  agentLoopbackToken,
+} from "../../agent/run/loopback-token.js";
 import { runEventHub } from "../../agent/run/run-events.js";
 import { searchRunScheduler } from "../../agent/run/scheduler.js";
 import { costMappingService } from "../../services/cost-mapping.js";
@@ -198,6 +202,7 @@ export async function agentInternalRoutes(fastify: FastifyInstance) {
 
       // 虚拟密钥自动放行：loopback 用 run 归属密钥鉴权与计量，用量记账到
       // 该密钥；默认所有可用密钥均可发起 Agent Search，无需预置内部密钥。
+      // x-agent-loopback 让模型解析跳过该密钥的白名单（见 loopback-token.ts）。
       const ownerKey = run.virtual_key_id
         ? await virtualKeyDb.getById(run.virtual_key_id)
         : undefined;
@@ -220,6 +225,7 @@ export async function agentInternalRoutes(fastify: FastifyInstance) {
           headers: {
             authorization: `Bearer ${ownerKey.key_value}`,
             "content-type": "application/json",
+            [AGENT_LOOPBACK_HEADER]: agentLoopbackToken(),
           },
           body: JSON.stringify({
             model: body.model_profile,

@@ -32,6 +32,7 @@ vi.mock("../../services/cost-mapping.js", () => ({
   costMappingService: { resolveModelCost: vi.fn(async () => undefined) },
 }));
 
+import { agentLoopbackToken } from "../../agent/run/loopback-token.js";
 import { agentInternalRoutes } from "./internal.js";
 
 const RUN = {
@@ -102,6 +103,7 @@ describe("agent internal completions: 虚拟密钥自动放行", () => {
     expect(String(url)).toContain("/v1/chat/completions");
     expect((init as RequestInit).headers).toMatchObject({
       authorization: "Bearer vk-raw-owner-key",
+      "x-agent-loopback": agentLoopbackToken(),
     });
     expect(mocks.virtualKeyGetById).toHaveBeenCalledWith("vk-owner");
     await server.close();
