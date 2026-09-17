@@ -26,8 +26,6 @@
   <a href="./docs/screenshot.md">更多截图</a>
 </p>
 
----
-
 ## 目录
 
 - [特性](#特性)
@@ -37,8 +35,6 @@
 - [贡献](#贡献)
 - [许可证](#许可证)
 - [致谢](#致谢)
-
----
 
 ## 特性
 
@@ -54,8 +50,6 @@
 | **实时监控** | 仪表盘展示系统状态和配置信息 |
 | **中转站支持** | 隔离 Codex 等上游强制注入的提示词，使下游应用对 Prompt 遵循更规范 |
 | **内置 PII 保护** | 自动检测和脱敏请求中的个人身份信息，支持流式响应还原 |
-
----
 
 ## 快速开始
 
@@ -152,68 +146,6 @@ bun run start
 4. **(可选) 配置 Prompt 管理规则** - 实现 prompt 的动态修改和增强
 5. **使用虚拟密钥访问 API** - 在应用中调用 LLM Gateway
 
----
-
-## 健康监控
-
-LLM Gateway 提供公开的健康监控页面，无需登录即可访问，实时展示各模型的可用性和性能指标。
-
-### 启用持久监控
-
-1. 在"系统设置 -> 监控设置"中开启"启用持久监控"
-2. 首次开启时系统会自动创建一个"监控专用虚拟密钥"：
-   - 具备访问全部模型的能力
-   - 仅用于健康检查
-   - 默认禁用请求体/响应体日志
-
-**只有当"持久监控"为开启状态时，以下能力才会生效：**
-
-- 后端健康检查调度器运行（周期性对目标执行健康检查）
-- 公开监控页面与相关免鉴权 API 可访问
-
-> 提示：可随时关闭"持久监控"，系统将停止调度器并关闭公开访问（公开端点返回 404）
-
-### 访问健康监控页面
-
-访问 `http://your-gateway-url/status` 即可查看健康监控页面。
-
-### 功能特性
-
-- **实时状态监控** - 显示所有配置的模型目标的当前状态（健康/降级/宕机）
-- **可用率统计** - 展示 1小时 和 24小时 的可用率
-- **延迟指标** - P50 和 P95 延迟统计
-- **错误追踪** - 记录并展示错误类型和错误信息
-- **自动刷新** - 默认每 60 秒自动刷新数据
-- **详细历史** - 点击目标可查看详细的检查历史记录
-
-### API 端点
-
-健康监控提供以下公开 API 端点（免鉴权）：
-
-| 端点 | 描述 |
-| ------ | ------ |
-| `GET /public/health/summary` | 获取所有目标的汇总信息 |
-| `GET /public/health/targets` | 获取目标清单 |
-| `GET /public/health/detail?target_id=xxx` | 获取单个目标的详细信息 |
-| `GET /public/health/runs?target_id=xxx&window=24h&page=1&page_size=50` | 获取检查历史记录 |
-
-### 配置健康检查目标
-
-健康检查目标通过数据库配置，可以为任何模型或虚拟模型设置健康检查：
-
-```sql
--- 示例：为模型添加健康检查
-INSERT INTO health_targets (id, name, type, target_id, enabled, check_interval_seconds, check_prompt)
-VALUES ('target-1', 'DeepSeek Chat', 'model', 'model-id-here', 1, 300, 'Say "OK"');
-```
-
-**主要配置参数：**
-
-| 参数 | 说明 | 默认值 |
-| ------ | ------ | -------- |
-| `check_interval_seconds` | 检查频率（秒） | 300 秒（5分钟） |
-| `check_prompt` | 健康检查使用的提示词 | `"Say 'OK'"` |
-| `check_config` | JSON 配置，可设置超时、重试等参数 | - |
 
 ### 限流保护
 
@@ -222,7 +154,6 @@ VALUES ('target-1', 'DeepSeek Chat', 'model', 'model-id-here', 1, 300, 'Say "OK"
 - 每个 IP 每分钟最多 60 个请求
 - 超过限制将返回 429 错误
 
----
 
 ## 意图路由分类器
 
@@ -278,21 +209,22 @@ curl -X POST http://your-gateway-url/v1/intent/classify \
 
 **错误码：** `401`（鉴权失败）、`400`（参数校验失败）、`503`（分类器未就绪，模型资产未加载）、`500`（推理失败）。
 
-> 注意：外部输入不经过专家路由的 `SignalBuilder` 去噪，与内部路由的分类结果可能不同；该端点为原始信号接口。
+> 注意：外部输入不经过专家路由的 `SignalBuilder` 去噪，与内部路由的分类结果可能不同；该端点为原始信号接口
 
----
+## Cloud SubAgent
+
+这个功能是参考了 OpenAI 的 Agent API，网关目前支持自定义插件的编写和使用，我们内置了一个代码检索插件（`code-search`），可以只读地对上传的代码快照发起多轮 tool-use 检索并返回结构化结果，用法参考 [Agent Search API 使用教程](./docs/agent-search-api.md)。
+
+<img width="60%" alt="Cloud SubAgent 示例" src="./docs/assets/cloud-subagent-demo.png" />
 
 ## 贡献
 
 欢迎提交 Issue 和 Pull Request！
 
----
-
 ## 许可证
 
 [MIT License](./LICENSE) - LLM Gateway
 
----
 
 ## 致谢
 

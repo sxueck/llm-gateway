@@ -9,6 +9,7 @@ import {
   globFiles,
   grepSearch,
   listDirectory,
+  listRepoStructure,
   readFileTool,
 } from './tools.js';
 
@@ -63,34 +64,32 @@ describe('workspace containment', () => {
     await expect(grepSearch(ctx, { pattern: '(' })).rejects.toBeInstanceOf(ToolError);
   });
 
-  it('grep scans non-matches without consuming the result read budget', async () => {
+  it('a wide grep never consumes the read budget (skeleton regression)', async () => {
     await mkdir(path.join(root, 'docs'));
     await Promise.all(
       Array.from({ length: 25 }, (_, i) =>
-        writeFile(path.join(root, 'docs', `${i}.md`), 'unrelated content\n'),
+        writeFile(path.join(root, 'docs', `${i}.md`), `const hit${i} = 401;\n`),
       ),
     );
-    await writeFile(path.join(root, 'src', 'target.ts'), 'const TARGET = true;\n');
-    const tight = createToolContext(root, EXCLUDES, new Budget(1, 2), Date.now() + 30_000);
+    const tight = createToolContext(root, EXCLUDES, new Budget(60, 9000), Date.now() + 30_000);
 
-    const missed = await grepSearch(tight, { pattern: 'TARGET', path: 'docs' });
-    const found = await grepSearch(tight, { pattern: 'TARGET', path: 'src' });
+    const out = await grepSearch(tight, { pattern: '401' });
 
-    expect(missed).toContain('0 match(es)');
-    expect(found).toContain('src/target.ts:1');
-    expect(tight.budget.filesRead).toBe(1);
-    expect(tight.budget.totalReadLines).toBe(1);
+    expect((out.match(/docs\/\d+\.md:\d+:/g) ?? []).length).toBe(25);
+    expect(tight.budget.filesRead).toBe(0);
+    expect(tight.budget.totalReadLines).toBe(0);
+    await expect(readFileTool(tight, { path: 'src/a.ts' })).resolves.toContain('function refresh');
   });
 
-  it('grep limits returned matches by the file and line read budget', async () => {
+  it('grep returns all matches even with a tight read budget', async () => {
     const tight = createToolContext(root, EXCLUDES, new Budget(1, 2), Date.now() + 30_000);
 
     const out = await grepSearch(tight, { pattern: '401' });
 
-    expect(out).toMatch(/src\/[ab]\.ts:\d+:/);
-    expect(out.match(/:\d+:/g)).toHaveLength(1);
-    expect(tight.budget.filesRead).toBe(1);
-    expect(tight.budget.totalReadLines).toBe(1);
+    expect(out).toMatch(/src\/a\.ts:\d+:/);
+    expect(out).toMatch(/src\/b\.ts:\d+:/);
+    expect(tight.budget.filesRead).toBe(0);
+    expect(tight.budget.totalReadLines).toBe(0);
   });
 
   it('grep honors the user glob but never re-includes excluded paths', async () => {
@@ -104,16 +103,16 @@ describe('workspace containment', () => {
     expect(excludedScope).toContain('0 match(es)');
   });
 
-  it('grep reserves read budget atomically across concurrent calls', async () => {
+  it('concurrent greps both return results and leave the read budget untouched', async () => {
     const tight = createToolContext(root, EXCLUDES, new Budget(1, 1), Date.now() + 30_000);
     const [a, b] = await Promise.all([
       grepSearch(tight, { pattern: '401' }),
       grepSearch(tight, { pattern: '401' }),
     ]);
-    const totalHits = (a.match(/:\d+:/g) ?? []).length + (b.match(/:\d+:/g) ?? []).length;
-    expect(totalHits).toBe(1);
-    expect(tight.budget.totalReadLines).toBe(1);
-    expect(tight.budget.filesRead).toBe(1);
+    expect(a).toMatch(/src\/[ab]\.ts:\d+:/);
+    expect(b).toMatch(/src\/[ab]\.ts:\d+:/);
+    expect(tight.budget.filesRead).toBe(0);
+    expect(tight.budget.totalReadLines).toBe(0);
   });
 
   it('grep caps matches per file and notes the remainder', async () => {
@@ -127,12 +126,11 @@ describe('workspace containment', () => {
     expect(out.match(/many\.ts:\d+:/g)).toHaveLength(5);
     expect(out).toContain('3 more match(es) in src/many.ts');
     expect(out).toContain('(capped)');
-    expect(ctx.budget.filesRead).toBe(1);
-    // 5 条匹配 + 1 条尾注都进入结果，同样计入行预算
-    expect(ctx.budget.totalReadLines).toBe(6);
+    expect(ctx.budget.filesRead).toBe(0);
+    expect(ctx.budget.totalReadLines).toBe(0);
   });
 
-  it('grep returns context lines that consume the line budget', async () => {
+  it('grep returns context lines without consuming the line budget', async () => {
     const tight = createToolContext(root, EXCLUDES, new Budget(1, 10), Date.now() + 30_000);
 
     const out = await grepSearch(tight, { pattern: '401', glob: 'a.ts', context_lines: 1 });
@@ -140,8 +138,8 @@ describe('workspace containment', () => {
     expect(out).toContain('src/a.ts-1-');
     expect(out).toContain('src/a.ts:2:');
     expect(out).toContain('src/a.ts-3-');
-    expect(tight.budget.filesRead).toBe(1);
-    expect(tight.budget.totalReadLines).toBe(3);
+    expect(tight.budget.filesRead).toBe(0);
+    expect(tight.budget.totalReadLines).toBe(0);
   });
 
   it('grep rejects context_lines above the maximum', async () => {
@@ -202,5 +200,33 @@ describe('workspace containment', () => {
     expect(out).toContain('src/a.ts');
     expect(out).toContain('src/b.ts');
     expect(out).not.toContain('node_modules');
+  });
+
+  it('listRepoStructure emits a depth-2 flat map without excluded entries', async () => {
+    await mkdir(path.join(root, 'src', 'deep'));
+    await writeFile(path.join(root, 'src', 'deep', 'x.ts'), 'x\n');
+
+    const map = await listRepoStructure(ctx, 2, 1000);
+
+    const lines = map.split('\n');
+    expect(lines[0]).toBe('.');
+    expect(lines).toContain('src/');
+    expect(lines).toContain('src/a.ts');
+    expect(lines).toContain('src/deep/');
+    expect(lines).not.toContain(expect.stringContaining('src/deep/x.ts'));
+    expect(map).not.toContain('node_modules');
+    expect(map).not.toContain('.git');
+    expect(map).not.toContain('.env');
+  });
+
+  it('listRepoStructure truncates at the cap with an omitted note', async () => {
+    await Promise.all(
+      Array.from({ length: 30 }, (_, i) => writeFile(path.join(root, `f${i}.ts`), 'x\n')),
+    );
+
+    const map = await listRepoStructure(ctx, 2, 10);
+
+    expect(map.split('\n')).toHaveLength(11);
+    expect(map).toContain('… 22 more entries (truncated at 10)');
   });
 });

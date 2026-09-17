@@ -6,6 +6,7 @@ import {
   TOOL_IMPLEMENTATIONS,
   ToolError,
   createToolContext,
+  listRepoStructure,
 } from './tools.js';
 import type { WorkerPluginManifest } from '@llm-gateway/shared';
 
@@ -72,12 +73,18 @@ export async function runSearchAgent(config: WorkerRunConfig): Promise<void> {
     .map((name) => TOOL_DEFINITIONS.find((t) => t.function.name === name))
     .filter((t): t is (typeof TOOL_DEFINITIONS)[number] => t !== undefined);
 
+  // 首条用户消息携带深度 2 的 <repo_structure> 全局地图（WarpGrep 协议设计），
+  // 让 turn 1 的检索直接瞄准目标，省掉对根目录的盲探索。
+  const repoStructure = await listRepoStructure(toolCtx, 2, 1000);
   const messages: ChatMessage[] = [
     {
       role: 'system',
       content: `${config.promptMd}\n\n# Output schema\n\nYour submit_result.result must validate against this JSON Schema:\n\n${config.outputSchemaJson}`,
     },
-    { role: 'user', content: config.query },
+    {
+      role: 'user',
+      content: `<repo_structure>\n${repoStructure}\n</repo_structure>\n\n<search_string>\n${config.query}\n</search_string>`,
+    },
   ];
 
   let repairAttempted = false;

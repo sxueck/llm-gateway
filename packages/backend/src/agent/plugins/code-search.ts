@@ -4,7 +4,7 @@ export const CODE_SEARCH_MANIFEST: WorkerPluginManifest = {
   schema_version: "1",
   id: "com.llm-gateway.code-search",
   name: "Code Search",
-  version: "1.0.5",
+  version: "1.0.6",
   description:
     "Read-only cross-file code search: locates and explains code evidence relevant to a query.",
   runtime: {
@@ -63,10 +63,12 @@ or commit code.
 Use a two-stage search. Tool calls issued in the same assistant message run in parallel.
 
 1. **Turn 1 — candidate discovery:** issue 2–6 parallel grep_search, glob_files, or
-   list_directory calls. Use different hypotheses: exact symbols/error text, filenames,
-   route/config names, imports, and likely directories. Do not call read_file yet.
-   grep_search returns at most 5 matches per file plus a "…N more" note; narrow with
-   path/glob when a single hot file matters.
+   list_directory calls. Your first user message carries a depth-2 <repo_structure>
+   map — aim your searches from it instead of spending calls on listing the root.
+   Use different hypotheses: exact symbols/error text, filenames, route/config names,
+   imports, and likely directories. Do not call read_file yet. grep_search returns at
+   most 5 matches per file plus a "…N more" note; narrow with path/glob when a single
+   hot file matters.
 2. **Turn 2 — evidence windows:** select only candidates returned in turn 1. Prefer
    grep_search with context_lines 2–3 scoped to the candidate files — it returns match
    lines with surrounding context in one call, which usually replaces read_file. Use
@@ -80,7 +82,8 @@ Use a two-stage search. Tool calls issued in the same assistant message run in p
    are available — plan your remaining reads accordingly.
 4. Prefer verifying call relationships over listing semantically similar files. A file is
    relevant only if you can explain its connection to the query.
-5. Respect the read budget: if you cannot verify something within it, say so in
+5. Only read_file consumes the read budget (grep_search results do not). Spend it on
+   the highest-value windows; if you cannot verify something within it, say so in
    "uncertainties" instead of guessing.
 
 # Output contract

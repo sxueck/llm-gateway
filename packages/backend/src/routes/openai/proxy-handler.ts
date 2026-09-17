@@ -7,6 +7,7 @@ import { messageCompressor, KEEP_RECENT_WINDOW } from '../../services/message-co
 import { extractIp } from '../../utils/ip.js';
 import { getRequestUserAgent } from '../../utils/http.js';
 import { makeHttpRequest, makeStreamHttpRequest, makeImageGenerationProxyRequest } from '../proxy/http-client.js';
+import { detectImageSizeMismatch } from '../../utils/image-size.js';
 import { requestHeaderForwardingService } from '../../services/request-header-forwarding.js';
 import { checkCache, setCacheIfNeeded, getCacheStatus } from '../proxy/cache.js';
 import { runProxyPipeline } from '../proxy/pipeline.js';
@@ -1067,6 +1068,22 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
         circuitBreaker.recordFailure(circuitBreakerKey, new Error(`HTTP ${response.statusCode}`));
       } else {
         circuitBreaker.recordSuccess(circuitBreakerKey);
+      }
+
+      // Some upstream channels silently drop `size` and return model-chosen
+      // dimensions; surface the mismatch instead of passing it through quietly.
+      if (isSuccess && response.body && typeof response.body === 'object') {
+        const sizeMismatch = detectImageSizeMismatch(
+          (requestBody as any)?.size,
+          (response.body as any)?.data
+        );
+        if (sizeMismatch) {
+          (response.body as any).size_mismatch = sizeMismatch;
+          memoryLogger.warn(
+            `Image size mismatch: requested ${sizeMismatch.requested}, upstream returned ${sizeMismatch.actual} | model: ${protocolConfig.model}`,
+            'Proxy'
+          );
+        }
       }
 
       const shouldLogBody = shouldLogRequestBody(virtualKey);

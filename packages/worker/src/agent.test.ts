@@ -221,4 +221,21 @@ describe('runSearchAgent', () => {
     const report = calls.find((c) => c.url.endsWith('/report'));
     expect(report?.body.kind).toBe('budget_exceeded');
   });
+
+  it('injects a depth-2 repo structure map into the first user message', async () => {
+    const { impl, calls } = fakeFetch([
+      () => jsonRes(assistantToolCall([{ id: 't1', name: 'grep_search', args: { pattern: '401' } }])),
+      () => jsonRes(assistantToolCall([{ id: 't2', name: 'submit_result', args: { result: validResult } }])),
+    ]);
+    await run(impl);
+
+    const first = calls.filter((c) => c.url.endsWith('/completions'))[0];
+    const user = first.body.messages.find(
+      (m: any) => m.role === 'user' && !m.content.includes('Convergence phase'),
+    );
+    expect(user.content).toContain('<repo_structure>');
+    expect(user.content).toContain('src/');
+    expect(user.content).toContain('src/a.ts');
+    expect(user.content).toContain('<search_string>\nfind the 401\n</search_string>');
+  });
 });

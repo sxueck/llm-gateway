@@ -28,9 +28,6 @@ export class Budget {
     public readonly maxFilesRead: number,
     public readonly maxTotalReadLines: number,
   ) {}
-  exhausted(): boolean {
-    return this.filesRead >= this.maxFilesRead || this.totalReadLines >= this.maxTotalReadLines;
-  }
   tryReserveFileRead(): boolean {
     if (this.filesRead >= this.maxFilesRead) return false;
     this.filesRead += 1;
@@ -215,7 +212,6 @@ export async function grepSearch(ctx: ToolContext, params: Record<string, unknow
   }
   const scopeRel = params.path ? await resolveWithinRoot(ctx, String(params.path)) : '.';
   if (scopeRel === null) throw new ToolError(`path "${params.path}" is outside the workspace or excluded`);
-  if (ctx.budget.exhausted()) return '0 match(es)\n';
 
   // glob：用户 glob 在前，策略排除 glob 在后 —— rg 中后匹配的 glob 优先，
   // 因此策略排除始终压过用户 glob，无法重新包含被排除路径。
@@ -248,8 +244,9 @@ export async function grepSearch(ctx: ToolContext, params: Record<string, unknow
 
   // 解析 rg 输出：匹配行 `rel:LINE:text`、上下文行 `rel-LINE-text`、`--` 块分隔。
   // 每文件最多保留 MAX_MATCHES_PER_FILE 个匹配（含其上下文行），其余以计数尾注带出，
-  // 防止单文件热点灌满结果窗口；尾注行同样计入行预算。预算按文件分组原子预留
-  // （同步 ⇒ 并发下不会超额）。
+  // 防止单文件热点灌满结果窗口。grep 不占 read budget——命中行曾计入 filesRead，
+  // 一次宽 grep 就能烧光全部文件额度使后续 read_file 全部失败；输出体量由
+  // MAX_GREP_RESULTS / MAX_MATCHES_PER_FILE / MAX_TOOL_OUTPUT_CHARS 兜底。
   const perFile: { rel: string; entries: { text: string; isMatch: boolean }[]; matchTotal: number }[] = [];
   let total = 0;
   for (const raw of res.stdout.split('\n')) {
@@ -274,7 +271,6 @@ export async function grepSearch(ctx: ToolContext, params: Record<string, unknow
   let returnedMatches = 0;
   let fileCapped = false;
   for (const group of perFile) {
-    if (ctx.budget.exhausted()) break;
     const kept: string[] = [];
     let keptMatches = 0;
     for (const entry of group.entries) {
@@ -286,7 +282,6 @@ export async function grepSearch(ctx: ToolContext, params: Record<string, unknow
       fileCapped = true;
       kept.push(`… ${group.matchTotal - keptMatches} more match(es) in ${group.rel}`);
     }
-    if (!ctx.budget.tryNoteFileRead(kept.length)) break; // 原子预留；失败即到此为止
     hits.push(...kept);
     returnedMatches += keptMatches;
   }
@@ -368,6 +363,43 @@ export async function globFiles(ctx: ToolContext, params: Record<string, unknown
     .map((f) => f.rel);
   const header = `${matches.length} match(es)${matches.length >= MAX_GLOB_RESULTS ? ' (capped)' : ''}\n`;
   return truncateOutput(header + matches.join('\n')).text;
+}
+
+// ============ repo structure（首消息的深度 2 全局地图） ============
+
+/** 扁平相对路径列表（目录带 `/` 后缀），供 agent 首消息瞄准检索，省掉根目录盲探索。 */
+export async function listRepoStructure(ctx: ToolContext, maxDepth: number, cap: number): Promise<string> {
+  const lines: string[] = ['.'];
+  let omitted = 0;
+  const visit = async (dirRel: string, depth: number): Promise<void> => {
+    if (depth > maxDepth) return;
+    const absDir = dirRel ? path.join(ctx.root, dirRel) : ctx.root;
+    let entries: Dirent[];
+    try {
+      entries = await readdir(absDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const rel = dirRel ? `${dirRel}/${entry.name}` : entry.name;
+      // 目录需连带子树一起判排除：`node_modules/**` 不匹配目录本身，但匹配其子路径
+      if (isExcluded(ctx, rel) || (entry.isDirectory() && isExcluded(ctx, `${rel}/`))) continue;
+      if (lines.length >= cap) {
+        omitted++;
+        continue;
+      }
+      if (entry.isDirectory()) {
+        lines.push(`${rel}/`);
+        await visit(rel, depth + 1);
+      } else if (entry.isFile()) {
+        lines.push(rel);
+      }
+    }
+  };
+  await visit('', 1);
+  if (omitted > 0) lines.push(`… ${omitted} more entries (truncated at ${cap})`);
+  return lines.join('\n');
 }
 
 export const TOOL_IMPLEMENTATIONS: Record<string, (ctx: ToolContext, params: Record<string, unknown>) => Promise<string>> = {
