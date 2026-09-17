@@ -116,6 +116,38 @@ describe('workspace containment', () => {
     expect(tight.budget.filesRead).toBe(1);
   });
 
+  it('grep caps matches per file and notes the remainder', async () => {
+    await writeFile(
+      path.join(root, 'src', 'many.ts'),
+      `${Array.from({ length: 8 }, (_, i) => `const v${i} = 401;`).join('\n')}\n`,
+    );
+
+    const out = await grepSearch(ctx, { pattern: '401', path: 'src', glob: 'many.ts' });
+
+    expect(out.match(/many\.ts:\d+:/g)).toHaveLength(5);
+    expect(out).toContain('3 more match(es) in src/many.ts');
+    expect(out).toContain('(capped)');
+    expect(ctx.budget.filesRead).toBe(1);
+    // 5 条匹配 + 1 条尾注都进入结果，同样计入行预算
+    expect(ctx.budget.totalReadLines).toBe(6);
+  });
+
+  it('grep returns context lines that consume the line budget', async () => {
+    const tight = createToolContext(root, EXCLUDES, new Budget(1, 10), Date.now() + 30_000);
+
+    const out = await grepSearch(tight, { pattern: '401', glob: 'a.ts', context_lines: 1 });
+
+    expect(out).toContain('src/a.ts-1-');
+    expect(out).toContain('src/a.ts:2:');
+    expect(out).toContain('src/a.ts-3-');
+    expect(tight.budget.filesRead).toBe(1);
+    expect(tight.budget.totalReadLines).toBe(3);
+  });
+
+  it('grep rejects context_lines above the maximum', async () => {
+    await expect(grepSearch(ctx, { pattern: '401', context_lines: 4 })).rejects.toBeInstanceOf(ToolError);
+  });
+
   it('read_file returns numbered lines and honors offset/limit', async () => {
     const out = await readFileTool(ctx, { path: 'src/a.ts', offset: 2, limit: 1 });
     expect(out).toContain('2:   return 401;');

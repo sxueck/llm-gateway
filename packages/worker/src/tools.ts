@@ -6,6 +6,8 @@ import { globToRegExp } from '@llm-gateway/shared';
 
 const MAX_TOOL_OUTPUT_CHARS = 24_000;
 const MAX_GREP_RESULTS = 200;
+const MAX_MATCHES_PER_FILE = 5;
+const MAX_GREP_CONTEXT_LINES = 3;
 const MAX_GREP_FILE_BYTES = 1024 * 1024;
 const MAX_LIST_ENTRIES = 500;
 const MAX_GLOB_RESULTS = 500;
@@ -203,6 +205,7 @@ export async function grepSearch(ctx: ToolContext, params: Record<string, unknow
     { name: 'pattern', type: 'string', required: true },
     { name: 'path', type: 'string' },
     { name: 'glob', type: 'string' },
+    { name: 'context_lines', type: 'number', min: 0, max: MAX_GREP_CONTEXT_LINES },
   ]);
   const pattern = String(params.pattern);
   try {
@@ -224,6 +227,8 @@ export async function grepSearch(ctx: ToolContext, params: Record<string, unknow
     '--max-filesize', `${Math.floor(MAX_GREP_FILE_BYTES / (1024 * 1024))}M`,
   ];
   if (params.glob) args.push('-g', String(params.glob));
+  const contextLines = params.context_lines === undefined ? 0 : Math.floor(Number(params.context_lines));
+  if (contextLines > 0) args.push('-C', String(contextLines));
   for (const g of ctx.excludeGlobs) {
     args.push('-g', `!${g}`);
     if (g.includes('/') && !g.startsWith('**/')) args.push('-g', `!**/${g}`); // 任意深度排除，对齐旧后缀匹配语义
@@ -241,32 +246,53 @@ export async function grepSearch(ctx: ToolContext, params: Record<string, unknow
     throw new ToolError(`invalid regex or search error: ${res.stderr.trim().split('\n')[0] || 'ripgrep exited with 2'}`);
   }
 
-  // 解析 `rel:line:text`；预算按文件分组原子预留（同步 ⇒ 并发下不会超额）。
-  const perFile: { rel: string; lines: string[] }[] = [];
+  // 解析 rg 输出：匹配行 `rel:LINE:text`、上下文行 `rel-LINE-text`、`--` 块分隔。
+  // 每文件最多保留 MAX_MATCHES_PER_FILE 个匹配（含其上下文行），其余以计数尾注带出，
+  // 防止单文件热点灌满结果窗口；尾注行同样计入行预算。预算按文件分组原子预留
+  // （同步 ⇒ 并发下不会超额）。
+  const perFile: { rel: string; entries: { text: string; isMatch: boolean }[]; matchTotal: number }[] = [];
   let total = 0;
   for (const raw of res.stdout.split('\n')) {
     if (!raw || total >= MAX_GREP_RESULTS) break;
-    const m = raw.match(/^(.+?):(\d+):(.*)$/);
+    const m = raw.match(/^(.+?)([:\-])(\d+)([:\-])(.*)$/);
     if (!m) continue;
     const rel = m[1];
-    const text = `${rel}:${m[2]}: ${m[3].slice(0, 300)}`;
+    const isMatch = m[2] === ':' && m[4] === ':';
+    if (!isMatch && !(m[2] === '-' && m[4] === '-')) continue;
+    if (isMatch) total++;
+    const text = `${rel}${m[2]}${m[3]}${m[4]} ${m[5].slice(0, 300)}`;
     const last = perFile[perFile.length - 1];
-    if (last && last.rel === rel) last.lines.push(text);
-    else perFile.push({ rel, lines: [text] });
-    total++;
+    if (last && last.rel === rel) {
+      last.entries.push({ text, isMatch });
+      if (isMatch) last.matchTotal++;
+    } else {
+      perFile.push({ rel, entries: [{ text, isMatch }], matchTotal: isMatch ? 1 : 0 });
+    }
   }
 
   const hits: string[] = [];
+  let returnedMatches = 0;
+  let fileCapped = false;
   for (const group of perFile) {
-    const allowance = Math.min(group.lines.length, MAX_GREP_RESULTS - hits.length);
-    if (allowance <= 0) break;
-    const slice = group.lines.slice(0, allowance);
-    if (!ctx.budget.tryNoteFileRead(slice.length)) break; // 原子预留；失败即到此为止
-    hits.push(...slice);
+    if (ctx.budget.exhausted()) break;
+    const kept: string[] = [];
+    let keptMatches = 0;
+    for (const entry of group.entries) {
+      if (entry.isMatch && keptMatches >= MAX_MATCHES_PER_FILE) break;
+      if (entry.isMatch) keptMatches++;
+      kept.push(entry.text);
+    }
+    if (group.matchTotal > keptMatches) {
+      fileCapped = true;
+      kept.push(`… ${group.matchTotal - keptMatches} more match(es) in ${group.rel}`);
+    }
+    if (!ctx.budget.tryNoteFileRead(kept.length)) break; // 原子预留；失败即到此为止
+    hits.push(...kept);
+    returnedMatches += keptMatches;
   }
 
-  const capped = hits.length >= MAX_GREP_RESULTS || res.aborted;
-  const header = `${hits.length} match(es)${capped ? ' (capped)' : ''}\n`;
+  const capped = total >= MAX_GREP_RESULTS || res.aborted || fileCapped;
+  const header = `${returnedMatches} match(es)${capped ? ' (capped)' : ''}\n`;
   return truncateOutput(header + hits.join('\n')).text;
 }
 
@@ -363,6 +389,10 @@ export const TOOL_DEFINITIONS = [
           pattern: { type: 'string', description: 'JavaScript regular expression' },
           path: { type: 'string', description: 'Optional directory scope (workspace-relative)' },
           glob: { type: 'string', description: 'Optional file glob filter, e.g. "*.ts"' },
+          context_lines: {
+            type: 'integer',
+            description: 'Lines of context around each match (0-3, default 0). Context lines are prefixed with the file path and a dash separator.',
+          },
         },
         required: ['pattern'],
         additionalProperties: false,

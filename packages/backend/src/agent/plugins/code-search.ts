@@ -4,7 +4,7 @@ export const CODE_SEARCH_MANIFEST: WorkerPluginManifest = {
   schema_version: "1",
   id: "com.llm-gateway.code-search",
   name: "Code Search",
-  version: "1.0.4",
+  version: "1.0.5",
   description:
     "Read-only cross-file code search: locates and explains code evidence relevant to a query.",
   runtime: {
@@ -36,8 +36,8 @@ export const CODE_SEARCH_MANIFEST: WorkerPluginManifest = {
   execution_policy: {
     max_turns: 8,
     timeout_seconds: 120,
-    max_files_read: 20,
-    max_total_read_lines: 6000,
+    max_files_read: 60,
+    max_total_read_lines: 9000,
     max_result_tokens: 4000,
   },
   model_policy: {
@@ -65,9 +65,13 @@ Use a two-stage search. Tool calls issued in the same assistant message run in p
 1. **Turn 1 — candidate discovery:** issue 2–6 parallel grep_search, glob_files, or
    list_directory calls. Use different hypotheses: exact symbols/error text, filenames,
    route/config names, imports, and likely directories. Do not call read_file yet.
-2. **Turn 2 — evidence windows:** select only candidates returned in turn 1. Issue parallel
-   read_file calls with narrow offsets/limits around matching lines; verify one import,
-   caller, or callee hop when the query asks for behavior tracing.
+   grep_search returns at most 5 matches per file plus a "…N more" note; narrow with
+   path/glob when a single hot file matters.
+2. **Turn 2 — evidence windows:** select only candidates returned in turn 1. Prefer
+   grep_search with context_lines 2–3 scoped to the candidate files — it returns match
+   lines with surrounding context in one call, which usually replaces read_file. Use
+   read_file only for wider windows. Verify one import, caller, or callee hop when the
+   query asks for behavior tracing.
 3. **Turn 3+ — converge:** read additional candidate windows only when they resolve a concrete
    uncertainty. Once the evidence is sufficient, call submit_result; do not spend turns on
    broad exploration. This is enforced by the runtime: in the final quarter of the turn

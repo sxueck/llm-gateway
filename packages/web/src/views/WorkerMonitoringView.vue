@@ -2,38 +2,59 @@
   <div class="worker-monitoring-view">
     <div class="page-header">
       <div>
-        <h1>Worker 监控</h1>
-        <p>查看 Gateway 托管 Worker 的运行状态、Token 用量、成本与执行耗时。</p>
+        <h1 class="page-title">{{ t("workerMonitoring.title") }}</h1>
+        <p class="page-subtitle">{{ t("workerMonitoring.subtitle") }}</p>
       </div>
       <n-space align="center">
-        <n-tag type="success" round>每 10 秒自动刷新</n-tag>
-        <n-button :loading="loading" @click="load">
+        <span class="refresh-badge"
+          ><span class="refresh-dot" />{{ t("workerMonitoring.autoRefresh") }}</span
+        >
+        <n-button size="small" :loading="loading" @click="load">
           <template #icon
             ><n-icon><RefreshOutline /></n-icon
           ></template>
-          刷新
+          {{ t("common.refresh") }}
         </n-button>
       </n-space>
     </div>
 
-    <n-grid :cols="4" :x-gap="16" :y-gap="16" responsive="screen">
-      <n-gi v-for="card in statCards" :key="card.label" span="2 s:2 m:1">
-        <n-card><n-statistic :label="card.label" :value="card.value" /></n-card>
-      </n-gi>
-    </n-grid>
+    <div class="stat-panel">
+      <section
+        v-for="group in statGroups"
+        :key="group.title"
+        class="stat-group"
+      >
+        <div class="stat-group-title">{{ group.title }}</div>
+        <div class="stat-grid">
+          <div
+            v-for="item in group.items"
+            :key="item.label"
+            class="stat-cell"
+          >
+            <div class="stat-label">
+              <span v-if="item.tone" class="stat-dot" :class="item.tone" />{{
+                item.label
+              }}
+            </div>
+            <div class="stat-value">{{ item.value }}</div>
+          </div>
+        </div>
+      </section>
+    </div>
 
-    <n-card title="执行记录" style="margin-top: 24px">
+    <n-card class="runs-card" :title="t('workerMonitoring.runs')">
       <template #header-extra>
         <n-select
           v-model:value="status"
           clearable
-          placeholder="全部状态"
+          :placeholder="t('workerMonitoring.allStatuses')"
           :options="statusOptions"
           style="width: 160px"
           @update:value="handleStatusChange"
         />
       </template>
       <n-data-table
+        size="small"
         :columns="columns"
         :data="data?.items ?? []"
         :loading="loading"
@@ -53,16 +74,14 @@ import {
   NButton,
   NCard,
   NDataTable,
-  NGi,
-  NGrid,
   NIcon,
   NSelect,
   NSpace,
-  NStatistic,
   NTag,
   useMessage,
 } from "naive-ui";
 import { RefreshOutline } from "@vicons/ionicons5";
+import { useI18n } from "vue-i18n";
 import {
   configApi,
   type AgentRunMonitoringItem,
@@ -71,6 +90,7 @@ import {
 } from "@/api/config";
 
 const message = useMessage();
+const { t } = useI18n();
 const loading = ref(false);
 const status = ref<AgentRunStatus | null>(null);
 const data = ref<AgentRunMonitoringResponse | null>(null);
@@ -78,31 +98,93 @@ const page = ref(1);
 const pageSize = 20;
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
 
-const statCards = computed(() => {
+type StatTone = "info" | "warning" | "success";
+interface StatItem {
+  label: string;
+  value: string;
+  tone?: StatTone;
+}
+interface StatGroup {
+  title: string;
+  items: StatItem[];
+}
+
+const statGroups = computed<StatGroup[]>(() => {
   const s = data.value?.summary;
   const reuseRate =
     s && s.total > 0
       ? `${((s.snapshot_runs / s.total) * 100).toFixed(1)}%`
       : "—";
   return [
-    { label: "全部任务", value: formatNumber(s?.total ?? 0) },
-    { label: "运行中", value: formatNumber(s?.running ?? 0) },
-    { label: "排队中", value: formatNumber(s?.queued ?? 0) },
-    { label: "已完成", value: formatNumber(s?.completed ?? 0) },
-    { label: "输入 Token", value: formatNumber(s?.input_tokens ?? 0) },
-    { label: "输出 Token", value: formatNumber(s?.output_tokens ?? 0) },
-    { label: "累计成本", value: formatCost(s?.cost ?? 0) },
     {
-      label: "平均耗时",
-      value:
-        s?.avg_duration_ms == null
-          ? "—"
-          : formatDuration(Math.round(s.avg_duration_ms)),
+      title: t("workerMonitoring.groups.tasks"),
+      items: [
+        {
+          label: t("workerMonitoring.stats.totalTasks"),
+          value: formatNumber(s?.total ?? 0),
+        },
+        {
+          label: t("workerMonitoring.stats.running"),
+          value: formatNumber(s?.running ?? 0),
+          tone: "info",
+        },
+        {
+          label: t("workerMonitoring.stats.queued"),
+          value: formatNumber(s?.queued ?? 0),
+          tone: "warning",
+        },
+        {
+          label: t("workerMonitoring.stats.completed"),
+          value: formatNumber(s?.completed ?? 0),
+          tone: "success",
+        },
+      ],
     },
-    { label: "已缓存快照", value: formatNumber(s?.snapshots.ready ?? 0) },
-    { label: "快照大小", value: formatSize(s?.snapshots.total_size ?? 0) },
-    { label: "文件总数", value: formatNumber(s?.snapshots.file_count ?? 0) },
-    { label: "快照复用率", value: reuseRate },
+    {
+      title: t("workerMonitoring.groups.usage"),
+      items: [
+        {
+          label: t("workerMonitoring.stats.inputTokens"),
+          value: formatNumber(s?.input_tokens ?? 0),
+        },
+        {
+          label: t("workerMonitoring.stats.outputTokens"),
+          value: formatNumber(s?.output_tokens ?? 0),
+        },
+        {
+          label: t("workerMonitoring.stats.totalCost"),
+          value: formatCost(s?.cost ?? 0),
+        },
+        {
+          label: t("workerMonitoring.stats.avgDuration"),
+          value:
+            s?.avg_duration_ms == null
+              ? "—"
+              : formatDuration(Math.round(s.avg_duration_ms)),
+        },
+      ],
+    },
+    {
+      title: t("workerMonitoring.groups.snapshots"),
+      items: [
+        {
+          label: t("workerMonitoring.stats.snapshotsReady"),
+          value: formatNumber(s?.snapshots.ready ?? 0),
+        },
+        {
+          label: t("workerMonitoring.stats.snapshotSize"),
+          value: formatSize(s?.snapshots.total_size ?? 0),
+        },
+        {
+          label: t("workerMonitoring.stats.fileCount"),
+          value: formatNumber(s?.snapshots.file_count ?? 0),
+        },
+        {
+          label: t("workerMonitoring.stats.reuseRate"),
+          value: reuseRate,
+        },
+      ],
+    },
   ];
 });
 
@@ -116,27 +198,23 @@ const pagination = computed(() => ({
   },
 }));
 
-const statusOptions = [
-  { label: "排队中", value: "queued" },
-  { label: "运行中", value: "running" },
-  { label: "已完成", value: "completed" },
-  { label: "失败", value: "failed" },
-  { label: "已取消", value: "cancelled" },
-  { label: "超时", value: "timed_out" },
-  { label: "预算耗尽", value: "budget_exceeded" },
-  { label: "已过期", value: "expired" },
-];
-
-const statusLabels: Record<AgentRunStatus, string> = {
-  queued: "排队中",
-  running: "运行中",
-  completed: "已完成",
-  failed: "失败",
-  cancelled: "已取消",
-  timed_out: "超时",
-  budget_exceeded: "预算耗尽",
-  expired: "已过期",
-};
+const statusOptions = computed(() =>
+  (
+    [
+      "queued",
+      "running",
+      "completed",
+      "failed",
+      "cancelled",
+      "timed_out",
+      "budget_exceeded",
+      "expired",
+    ] as AgentRunStatus[]
+  ).map((value) => ({
+    label: t(`workerMonitoring.status.${value}`),
+    value,
+  })),
+);
 
 const statusTypes: Record<
   AgentRunStatus,
@@ -178,9 +256,9 @@ function formatTime(value: number): string {
   return new Date(value).toLocaleString();
 }
 
-const columns: DataTableColumns<AgentRunMonitoringItem> = [
+const columns = computed<DataTableColumns<AgentRunMonitoringItem>>(() => [
   {
-    title: "Worker / 插件",
+    title: t("workerMonitoring.table.plugin"),
     key: "plugin_id",
     minWidth: 210,
     render: (row) =>
@@ -194,61 +272,61 @@ const columns: DataTableColumns<AgentRunMonitoringItem> = [
       ]),
   },
   {
-    title: "状态",
+    title: t("workerMonitoring.table.status"),
     key: "status",
     width: 110,
     render: (row) =>
       h(
         NTag,
         { type: statusTypes[row.status], bordered: false },
-        { default: () => statusLabels[row.status] },
+        { default: () => t(`workerMonitoring.status.${row.status}`) },
       ),
   },
   {
-    title: "创建时间",
+    title: t("workerMonitoring.table.createdAt"),
     key: "created_at",
     width: 180,
     render: (row) => formatTime(row.created_at),
   },
   {
-    title: "运行时长",
+    title: t("workerMonitoring.table.duration"),
     key: "duration_ms",
     width: 110,
     render: (row) => formatDuration(row.duration_ms),
   },
   {
-    title: "输入 Token",
+    title: t("workerMonitoring.table.inputTokens"),
     key: "input",
     width: 110,
     render: (row) => formatNumber(row.usage?.input_tokens ?? 0),
   },
   {
-    title: "输出 Token",
+    title: t("workerMonitoring.table.outputTokens"),
     key: "output",
     width: 110,
     render: (row) => formatNumber(row.usage?.output_tokens ?? 0),
   },
   {
-    title: "轮次 / 工具",
+    title: t("workerMonitoring.table.turnsTools"),
     key: "turns",
     width: 120,
     render: (row) =>
       `${row.usage?.turn_count ?? 0} / ${row.usage?.tool_call_count ?? 0}`,
   },
   {
-    title: "成本",
+    title: t("workerMonitoring.table.cost"),
     key: "cost",
     width: 100,
     render: (row) => formatCost(row.usage?.cost ?? 0),
   },
   {
-    title: "错误",
+    title: t("workerMonitoring.table.error"),
     key: "error_message",
     minWidth: 180,
     ellipsis: { tooltip: true },
     render: (row) => row.error_message || "—",
   },
-];
+]);
 
 async function load() {
   if (loading.value) return;
@@ -260,7 +338,7 @@ async function load() {
       offset: (page.value - 1) * pageSize,
     });
   } catch (error: any) {
-    message.error(error?.message || "加载 Worker 监控数据失败");
+    message.error(error?.message || t("workerMonitoring.loadFailed"));
   } finally {
     loading.value = false;
   }
@@ -293,15 +371,106 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
 }
-h1 {
-  margin: 0;
-  font-size: 28px;
+
+/* 仅本视图内抹平全局卡片的阴影与大圆角，换成 hairline 扁平风 */
+.worker-monitoring-view :deep(.n-card) {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: none;
 }
-p {
-  margin: 8px 0 0;
-  color: #666;
+.worker-monitoring-view :deep(.n-card:hover) {
+  box-shadow: none;
+}
+
+.refresh-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: #fff;
+  font-size: 12px;
+  color: #595959;
+}
+.refresh-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success);
+}
+
+.stat-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+.stat-group {
+  min-width: 0;
+  padding: 14px 20px 16px;
+}
+.stat-group + .stat-group {
+  border-left: 1px solid #e5e7eb;
+}
+.stat-group-title {
+  margin-bottom: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #8c8c8c;
+}
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+.stat-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #8c8c8c;
+  white-space: nowrap;
+}
+.stat-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.stat-dot.info {
+  background: var(--color-info);
+}
+.stat-dot.warning {
+  background: var(--color-warning);
+}
+.stat-dot.success {
+  background: var(--color-success);
+}
+.stat-value {
+  margin-top: 2px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f1f1f;
+  font-variant-numeric: tabular-nums;
+}
+
+.runs-card {
+  margin-top: 16px;
+}
+
+@media (max-width: 960px) {
+  .stat-panel {
+    grid-template-columns: 1fr;
+  }
+  .stat-group + .stat-group {
+    border-left: none;
+    border-top: 1px solid #e5e7eb;
+  }
 }
 </style>

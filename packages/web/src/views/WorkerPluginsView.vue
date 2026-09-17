@@ -172,17 +172,51 @@ async function submitPublish() {
   }
 }
 
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+const latestVersionByPlugin = computed(() => {
+  const map = new Map<string, string>();
+  for (const plugin of plugins.value) {
+    const current = map.get(plugin.id);
+    if (!current || compareVersions(plugin.version, current) > 0) {
+      map.set(plugin.id, plugin.version);
+    }
+  }
+  return map;
+});
+
+function rowClassName(row: WorkerPluginVersion) {
+  return row.status === "revoked" ? "plugin-row-revoked" : "";
+}
+
 const columns: DataTableColumns<WorkerPluginVersion> = [
   {
     title: "插件版本",
     key: "name",
     minWidth: 230,
-    render: (row) =>
-      h("div", { class: "plugin-identity" }, [
-        h("strong", null, row.name),
-        h("code", null, row.id),
-        h(NTag, { size: "small", bordered: false }, { default: () => `v${row.version}` }),
-      ]),
+    render: (row) => {
+      const isLatest =
+        latestVersionByPlugin.value.get(row.id) === row.version &&
+        row.status !== "revoked";
+      return h("div", { class: "plugin-identity" }, [
+        h("div", { class: "plugin-identity-main" }, [
+          h("strong", null, row.name),
+          h(NTag, { size: "small", bordered: false }, { default: () => `v${row.version}` }),
+          ...(isLatest
+            ? [h(NTag, { size: "small", type: "primary", bordered: false }, { default: () => "最新" })]
+            : []),
+        ]),
+        h("code", { class: "plugin-identity-id" }, row.id),
+      ]);
+    },
   },
   {
     title: "状态",
@@ -201,7 +235,7 @@ const columns: DataTableColumns<WorkerPluginVersion> = [
     minWidth: 190,
     render: (row) =>
       h("div", { class: "configuration-summary" }, [
-        h("span", null, row.model_profile),
+        h("code", { class: "configuration-profile" }, row.model_profile),
         h("span", null, `${row.tools.length} 个工具`),
         h("span", null, `${row.max_turns} 轮 · ${row.timeout_seconds}s`),
       ]),
@@ -282,6 +316,7 @@ onMounted(load);
         :bordered="false"
         :single-line="false"
         size="small"
+        :row-class-name="rowClassName"
         :row-key="(row: WorkerPluginVersion) => `${row.id}@${row.version}`"
       />
     </NCard>
@@ -388,7 +423,7 @@ onMounted(load);
       v-model:show="showPublishModal"
       preset="card"
       title="发布插件版本"
-      class="publish-modal"
+      :style="{ width: '720px', maxWidth: '92vw' }"
     >
       <NSpace vertical size="large">
         <NAlert type="warning" :show-icon="true">
@@ -466,40 +501,11 @@ onMounted(load);
   margin-bottom: 16px;
 }
 
-.plugin-identity {
-  display: grid;
-  gap: 4px;
-}
-
-.plugin-identity strong {
-  color: var(--n-text-color-1);
-  font-weight: 600;
-}
-
-.plugin-identity code,
 .plugin-id,
 .digest-value {
   color: var(--n-text-color-3);
   font-size: 12px;
   overflow-wrap: anywhere;
-}
-
-.configuration-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  color: var(--n-text-color-3);
-  font-size: 12px;
-}
-
-.configuration-summary span:not(:last-child)::after {
-  margin-left: 8px;
-  color: var(--n-divider-color);
-  content: "·";
-}
-
-.muted-value {
-  color: var(--n-text-color-disabled);
 }
 
 .drawer-title {
@@ -547,10 +553,6 @@ onMounted(load);
   color: var(--n-error-color);
 }
 
-.publish-modal {
-  width: min(720px, calc(100vw - 32px));
-}
-
 @media (max-width: 700px) {
   .page-toolbar {
     display: grid;
@@ -564,5 +566,68 @@ onMounted(load);
   .page-toolbar h2 {
     font-size: 21px;
   }
+}
+</style>
+
+<style>
+/*
+ * 列 render 函数（h()）生成的单元格 DOM 不携带本组件的 scoped data-v attribute，
+ * 表格内样式必须全局作用域；全部挂在 .worker-plugins-view 下避免泄漏。
+ */
+.worker-plugins-view .plugin-identity {
+  display: grid;
+  gap: 2px;
+}
+
+.worker-plugins-view .plugin-identity-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.worker-plugins-view .plugin-identity-main strong {
+  color: var(--n-text-color-1);
+  font-weight: 600;
+}
+
+.worker-plugins-view .plugin-identity-id {
+  color: var(--n-text-color-3);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.worker-plugins-view .configuration-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--n-text-color-3);
+  font-size: 12px;
+}
+
+.worker-plugins-view .configuration-summary > :not(:last-child)::after {
+  margin-left: 8px;
+  color: var(--n-divider-color);
+  content: "·";
+}
+
+.worker-plugins-view .configuration-profile {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--n-code-color);
+  font-size: 12px;
+}
+
+.worker-plugins-view .muted-value {
+  color: var(--n-text-color-disabled);
+}
+
+.worker-plugins-view .plugin-row-revoked {
+  opacity: 0.55;
+}
+
+.worker-plugins-view .plugin-row-revoked:hover {
+  opacity: 0.8;
 }
 </style>
