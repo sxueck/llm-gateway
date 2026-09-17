@@ -285,6 +285,24 @@ export const virtualKeyRepository = {
     }
   },
 
+  // Dedicated credential write path: update() intentionally excludes key_value/key_hash.
+  async rotate(id: string, keyValue: string, keyHash: string): Promise<VirtualKey | undefined> {
+    const now = Date.now();
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      await conn.query('UPDATE virtual_keys SET key_value = ?, key_hash = ?, updated_at = ? WHERE id = ?', [
+        keyValue,
+        keyHash,
+        now,
+        id,
+      ]);
+      return this.getById(id);
+    } finally {
+      conn.release();
+    }
+  },
+
   async delete(id: string): Promise<void> {
     const pool = getDatabase();
     const conn = await pool.getConnection();

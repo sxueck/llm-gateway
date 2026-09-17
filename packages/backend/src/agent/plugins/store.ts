@@ -166,6 +166,12 @@ export async function resolvePlugin(
   version: string,
   options: { allowRevoked?: boolean } = {},
 ): Promise<ResolvedPlugin | undefined> {
+  if (version === "latest") {
+    // Request-time reference only: run records persist the concrete version resolved here.
+    const latest = await workerPluginDb.getLatestRunnableByPluginId(id);
+    if (!latest) return undefined;
+    version = latest.version;
+  }
   const row = await workerPluginDb.getByIdVersion(id, version);
   if (!row || row.status === "draft") return undefined;
   if (row.status === "revoked" && !options.allowRevoked) {

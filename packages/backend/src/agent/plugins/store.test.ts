@@ -20,6 +20,14 @@ const mocks = vi.hoisted(() => {
       getByIdVersion: vi.fn(async (id: string, version: string) =>
         rows.get(`${id}@${version}`),
       ),
+      getLatestRunnableByPluginId: vi.fn(async (id: string) => {
+        const candidates = [...rows.values()].filter(
+          (row: any) =>
+            row.id === id && row.status !== "draft" && row.status !== "revoked",
+        );
+        candidates.sort((a: any, b: any) => b.created_at - a.created_at);
+        return candidates[0];
+      }),
       listAll: vi.fn(async () => [...rows.values()]),
       setStatus: vi.fn(async (id: string, version: string, status: string) => {
         const row = rows.get(`${id}@${version}`);
@@ -153,6 +161,25 @@ describe("plugin store: resolve", () => {
     await expect(resolvePlugin(PLUGIN_ID, FIXTURE_VERSION)).rejects.toThrow(
       /does not match its digest/,
     );
+  });
+  it('resolves the version ref "latest" to the newest runnable version', async () => {
+    await seedBuiltinPlugins();
+    const newVersion = nextVersion();
+    const input = validPublishInput();
+    input.manifest.version = newVersion;
+    await publishPlugin(input);
+    mocks.rows.get(`${PLUGIN_ID}@${newVersion}`).created_at =
+      mocks.rows.get(FIXTURE_KEY).created_at + 1_000;
+
+    const plugin = await resolvePlugin(PLUGIN_ID, "latest");
+    expect(plugin).toBeDefined();
+    expect(plugin!.manifest.version).toBe(newVersion);
+  });
+
+  it('excludes revoked versions from "latest" resolution', async () => {
+    await seedBuiltinPlugins();
+    await setPluginStatus(PLUGIN_ID, FIXTURE_VERSION, "revoked");
+    expect(await resolvePlugin(PLUGIN_ID, "latest")).toBeUndefined();
   });
 });
 

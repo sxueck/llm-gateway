@@ -52,6 +52,11 @@ const validateKeySchema = z.object({
   customKey: z.string(),
 });
 
+const rotateVirtualKeySchema = z.object({
+  keyType: z.enum(['auto', 'custom']),
+  customKey: z.string().optional(),
+});
+
 export async function virtualKeyRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
 
@@ -335,6 +340,50 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       promptCaptureEnabled: updated.prompt_capture_enabled === 1,
       contextNormalizationEnabled: updated.context_normalization_enabled === 1,
       createdAt: updated.created_at,
+      updatedAt: updated.updated_at,
+    };
+  });
+
+  fastify.post('/:id/rotate', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = rotateVirtualKeySchema.parse(request.body);
+
+    const vk = await virtualKeyDb.getById(id);
+    if (!vk) {
+      return reply.code(404).send({ error: '虚拟密钥不存在' });
+    }
+
+    let keyValue: string;
+    if (body.keyType === 'auto') {
+      keyValue = `vk_${nanoid(21)}`;
+    } else {
+      if (!body.customKey) {
+        return reply.code(400).send({ error: '自定义密钥值不能为空' });
+      }
+
+      const validation = validateCustomKey(body.customKey);
+      if (!validation.valid) {
+        return reply.code(400).send({ error: validation.message });
+      }
+
+      const existing = await virtualKeyDb.getByKeyValue(body.customKey);
+      if (existing) {
+        return reply.code(400).send({ error: '密钥值已存在' });
+      }
+
+      keyValue = body.customKey;
+    }
+
+    const updated = await virtualKeyDb.rotate(id, keyValue, hashKey(keyValue));
+    if (!updated) {
+      throw new Error('虚拟密钥不存在');
+    }
+
+    // 旧值缓存不清除的话，旧密钥在缓存 TTL 内仍可通过认证
+    hotConfigCache.invalidateVirtualKey(vk.key_value);
+
+    return {
+      keyValue: updated.key_value,
       updatedAt: updated.updated_at,
     };
   });

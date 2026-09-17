@@ -112,7 +112,7 @@ curl -X POST http://localhost:3000/api/agent/searches \
   -H "Authorization: Bearer $VKEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "plugin": { "id": "com.llm-gateway.code-search", "version": "1.0.5" },
+    "plugin": { "id": "com.llm-gateway.code-search", "version": "latest" },
     "source": { "type": "snapshot", "snapshot_id": "snap_xxx" },
     "query": "请求从 /v1/chat/completions 进入后是如何路由到具体 provider 的？",
     "options": {}
@@ -121,7 +121,7 @@ curl -X POST http://localhost:3000/api/agent/searches \
 
 字段说明：
 
-- `plugin.id` / `plugin.version`：插件坐标，版本必须与已发布的一致。
+- `plugin.id` / `plugin.version`：插件坐标；`version` 传具体已发布版本，或 `"latest"`（服务端解析为最新可运行版本——非 draft/revoked 中 created_at 最新者；run 记录保存解析后的具体版本）。
 - `source.type`：目前仅支持 `"snapshot"`。
 - `query`：检索问题（1–8000 字符）。好的 query 是具体的行为/调用链问题，而不是关键词堆砌。
 - `options.model_profile`：一般不要传；插件固定 `search-fast` 且禁止覆盖，传了会返回 `model_profile_override_forbidden`（403）。

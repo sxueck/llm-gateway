@@ -62,6 +62,24 @@ export const workerPluginRepository = {
     }
   },
 
+  async getLatestRunnableByPluginId(
+    id: string,
+  ): Promise<WorkerPluginRow | undefined> {
+    // Runnable set mirrors resolvePlugin (draft/revoked excluded); newest row wins.
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query(
+        "SELECT * FROM worker_plugins WHERE id = ? AND status <> 'draft' AND status <> 'revoked' ORDER BY created_at DESC LIMIT 1",
+        [id],
+      );
+      const result = rows as any[];
+      return result.length === 0 ? undefined : (result[0] as WorkerPluginRow);
+    } finally {
+      conn.release();
+    }
+  },
+
   async listAll(): Promise<WorkerPluginRow[]> {
     const pool = getDatabase();
     const conn = await pool.getConnection();

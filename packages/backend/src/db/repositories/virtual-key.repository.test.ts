@@ -50,3 +50,18 @@ describe('virtualKeyRepository.create', () => {
     expect((sql.match(/\?/g) || [])).toHaveLength(values.length);
   });
 });
+
+describe('virtualKeyRepository.rotate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.connection.query.mockResolvedValue([[]]);
+  });
+
+  it('updates key_value, key_hash and updated_at in one statement', async () => {
+    await virtualKeyRepository.rotate('vk-1', 'sk-rotated', 'hash-rotated');
+
+    const [sql, values] = mocks.connection.query.mock.calls[0];
+    expect(sql).toContain('UPDATE virtual_keys SET key_value = ?, key_hash = ?, updated_at = ?');
+    expect(values).toEqual(['sk-rotated', 'hash-rotated', expect.any(Number), 'vk-1']);
+  });
+});

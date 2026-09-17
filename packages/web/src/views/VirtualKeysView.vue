@@ -162,11 +162,11 @@
     <n-modal
       v-model:show="showKeyModal"
       preset="card"
-      title="虚拟密钥已创建"
+      :title="keyModalTitle"
       style="width: 500px; max-width: 92vw"
     >
       <n-space vertical>
-        <n-alert type="success">密钥创建成功！请妥善保管密钥值。</n-alert>
+        <n-alert type="success">{{ keyModalMessage }}</n-alert>
         <n-input-group>
           <n-input :value="createdKeyValue" readonly />
           <n-button @click="copyKey">复制</n-button>
@@ -175,6 +175,44 @@
       <template #footer>
         <n-space justify="end">
           <n-button type="primary" @click="showKeyModal = false">确定</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <n-modal
+      v-model:show="showRotateModal"
+      preset="card"
+      title="轮转密钥"
+      style="width: 480px; max-width: 92vw"
+    >
+      <n-space vertical>
+        <n-alert type="warning">
+          轮转后将生成新的密钥值，旧密钥立即失效，请及时更新使用该密钥的客户端。
+        </n-alert>
+        <n-form label-placement="left" label-width="90" size="small">
+          <n-form-item label="生成方式">
+            <n-radio-group v-model:value="rotateForm.keyType" size="small">
+              <n-space :size="12">
+                <n-radio value="auto">自动生成</n-radio>
+                <n-radio value="custom">自定义</n-radio>
+              </n-space>
+            </n-radio-group>
+          </n-form-item>
+          <n-form-item v-if="rotateForm.keyType === 'custom'" label="自定义密钥">
+            <n-input
+              v-model:value="rotateForm.customKey"
+              placeholder="8-64字符,仅支持字母、数字、下划线、连字符"
+              size="small"
+            />
+          </n-form-item>
+        </n-form>
+      </n-space>
+      <template #footer>
+        <n-space justify="end" :size="8">
+          <n-button @click="showRotateModal = false" size="small">取消</n-button>
+          <n-button type="primary" :loading="rotating" @click="handleRotate" size="small">
+            确认轮转
+          </n-button>
         </n-space>
       </template>
     </n-modal>
@@ -204,7 +242,7 @@ import {
   NInputGroup,
   NIcon
 } from 'naive-ui'
-import { EditOutlined, DeleteOutlined, ContentCopyOutlined } from '@vicons/material'
+import { EditOutlined, DeleteOutlined, ContentCopyOutlined, AutorenewOutlined } from '@vicons/material'
 import { useVirtualKeyStore } from '@/stores/virtual-key'
 import { useModelStore } from '@/stores/model'
 import { useModelOptions } from '@/composables/useModelOptions'
@@ -223,6 +261,15 @@ const formRef = ref()
 const submitting = ref(false)
 const editingId = ref<string | null>(null)
 const createdKeyValue = ref('')
+const keyModalTitle = ref('虚拟密钥已创建')
+const keyModalMessage = ref('密钥创建成功！请妥善保管密钥值。')
+const showRotateModal = ref(false)
+const rotating = ref(false)
+const rotatingKey = ref<VirtualKey | null>(null)
+const rotateForm = ref<{ keyType: 'auto' | 'custom'; customKey: string }>({
+  keyType: 'auto',
+  customKey: ''
+})
 
 const formValue = ref(createDefaultVirtualKeyForm())
 
@@ -351,7 +398,7 @@ const columns = [
   {
     title: '操作',
     key: 'actions',
-    width: 150,
+    width: 185,
     render: (row: VirtualKey) =>
       h(
         NSpace,
@@ -369,6 +416,19 @@ const columns = [
               },
               {
                 icon: () => h(NIcon, null, { default: () => h(ContentCopyOutlined) })
+              }
+            ),
+            h(
+              NButton,
+              {
+                'size': 'small',
+                'quaternary': true,
+                'circle': true,
+                'aria-label': '轮转密钥',
+                'onClick': () => handleRotateClick(row)
+              },
+              {
+                icon: () => h(NIcon, null, { default: () => h(AutorenewOutlined) })
               }
             ),
             h(
@@ -484,6 +544,8 @@ async function handleSubmit() {
       }
       const result = await virtualKeyApi.create(createData)
       createdKeyValue.value = result.keyValue
+      keyModalTitle.value = '虚拟密钥已创建'
+      keyModalMessage.value = '密钥创建成功！请妥善保管密钥值。'
       showModal.value = false
       showKeyModal.value = true
     }
@@ -510,6 +572,40 @@ function copyKeyValue(keyValue: string) {
 
 function copyKey() {
   copyToClipboard(createdKeyValue.value)
+}
+
+function handleRotateClick(vk: VirtualKey) {
+  rotatingKey.value = vk
+  rotateForm.value = { keyType: 'auto', customKey: '' }
+  showRotateModal.value = true
+}
+
+async function handleRotate() {
+  if (!rotatingKey.value) return
+  if (rotateForm.value.keyType === 'custom' && !rotateForm.value.customKey) {
+    message.error('请输入自定义密钥')
+    return
+  }
+
+  try {
+    rotating.value = true
+    const result = await virtualKeyApi.rotate(rotatingKey.value.id, {
+      keyType: rotateForm.value.keyType,
+      customKey: rotateForm.value.keyType === 'custom' ? rotateForm.value.customKey : undefined
+    })
+    createdKeyValue.value = result.keyValue
+    keyModalTitle.value = '密钥已轮转'
+    keyModalMessage.value = '密钥轮转成功，旧密钥已立即失效。请妥善保管新密钥值。'
+    showRotateModal.value = false
+    showKeyModal.value = true
+    await virtualKeyStore.fetchVirtualKeys()
+  } catch (error: any) {
+    if (error.message) {
+      message.error(error.message)
+    }
+  } finally {
+    rotating.value = false
+  }
 }
 
 onMounted(async () => {

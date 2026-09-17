@@ -259,7 +259,8 @@ export const TERMINAL_RUN_STATUSES: readonly SearchRunStatus[] = [
 export const createSearchRunRequestSchema = z.object({
   plugin: z.object({
     id: z.string().min(1),
-    version: z.string().regex(/^\d+\.\d+\.\d+$/),
+    // "latest" resolves server-side to the newest runnable version; run records always store the resolved concrete version.
+    version: z.union([z.string().regex(/^\d+\.\d+\.\d+$/), z.literal("latest")]),
   }),
   source: z.discriminatedUnion("type", [
     z.object({

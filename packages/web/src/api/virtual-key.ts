@@ -4,6 +4,7 @@ import type { CreateVirtualKeyRequest, UpdateVirtualKeyRequest, VirtualKey } fro
 type VirtualKeyListResponse = { virtualKeys: VirtualKey[] };
 type VirtualKeyCreateResponse = { virtualKey: VirtualKey; keyValue: string };
 type VirtualKeyDeleteResponse = { success: boolean };
+type VirtualKeyRotateResponse = { keyValue: string };
 type VirtualKeyValidateResponse = { valid: boolean; message?: string };
 
 const ADMIN_VIRTUAL_KEYS_PATH = '/admin/virtual-keys';
@@ -26,6 +27,13 @@ export const virtualKeyApi = {
 
   update(id: string, data: UpdateVirtualKeyRequest): Promise<VirtualKey> {
     return request.put(virtualKeyPath(id), data);
+  },
+
+  rotate(
+    id: string,
+    data: { keyType: 'auto' | 'custom'; customKey?: string }
+  ): Promise<VirtualKeyRotateResponse> {
+    return request.post(`${virtualKeyPath(id)}/rotate`, data);
   },
 
   delete(id: string): Promise<VirtualKeyDeleteResponse> {
