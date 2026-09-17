@@ -185,6 +185,34 @@ describe('runSearchAgent', () => {
     expect(denialMessage.content).toContain('not allowed by plugin tool policy');
   });
 
+  it('hard-disables discovery tools in the convergence phase but still allows read_file', async () => {
+    const { impl, calls } = fakeFetch([
+      () => jsonRes(assistantToolCall([{ id: 'g1', name: 'grep_search', args: { pattern: '401' } }])),
+      () => jsonRes(assistantToolCall([{ id: 'g2', name: 'grep_search', args: { pattern: 'refresh' } }])),
+      () => jsonRes(assistantToolCall([
+        { id: 'g3', name: 'grep_search', args: { pattern: 'late wandering' } },
+        { id: 'r1', name: 'read_file', args: { path: 'src/a.ts', offset: 1, limit: 1 } },
+      ])),
+      () => jsonRes(assistantToolCall([{ id: 's1', name: 'submit_result', args: { result: validResult } }])),
+    ]);
+    await run(impl);
+
+    const completions = calls.filter((call) => call.url.endsWith('/completions'));
+    // manifest fixture has max_turns 4 -> convergeTurn 3; grep at turn 3 is denied, read_file is not
+    const nudge = completions[2].body.messages.find(
+      (m: any) => m.role === 'user' && m.content.includes('Convergence phase'),
+    );
+    expect(nudge).toBeDefined();
+    const denied = completions[3].body.messages.find((m: any) => m.tool_call_id === 'g3');
+    expect(denied.content).toContain('discovery tools are disabled from turn 3');
+    const read = completions[3].body.messages.find((m: any) => m.tool_call_id === 'r1');
+    expect(read.content).toContain('src/a.ts lines 1-1');
+    // early grep was NOT denied
+    const early = completions[2].body.messages.find((m: any) => m.tool_call_id === 'g2');
+    expect(early.content).not.toContain('disabled');
+    expect(calls.find((c) => c.url.endsWith('/report'))?.body.kind).toBe('completed');
+  });
+
   it('ends with budget_exceeded when turns run out', async () => {
     const { impl, calls } = fakeFetch([
       () => jsonRes(assistantToolCall([{ id: 't', name: 'glob_files', args: { pattern: '*.ts' } }])),

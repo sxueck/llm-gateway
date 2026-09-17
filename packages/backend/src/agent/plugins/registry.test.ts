@@ -35,6 +35,14 @@ describe("plugin registry", () => {
     expect(validatePluginBundle(validBundle())).toEqual([]);
   });
 
+  it("ships a version newer than 1.0.3 with convergence enforcement documented", () => {
+    // 1.0.3 is immutable in plugin storage; any prompt/policy change must ship as a new semver.
+    const [major, minor, patch] = CODE_SEARCH_MANIFEST.version.split(".").map(Number);
+    expect(major * 10000 + minor * 100 + patch).toBeGreaterThan(1 * 10000 + 0 * 100 + 3);
+    expect(CODE_SEARCH_PROMPT_MD).toContain("final quarter of the turn");
+    expect(CODE_SEARCH_PROMPT_MD).toContain("submit_result");
+  });
+
   it("rejects path traversal in role file references", () => {
     const b = validBundle();
     (b.manifest.role as any).system_prompt = "../../etc/passwd";

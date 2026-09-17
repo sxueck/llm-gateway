@@ -227,11 +227,23 @@ export interface AgentRunMonitoringResponse {
   summary: {
     total: number;
     active: number;
+    queued: number;
+    running: number;
     completed: number;
     failed: number;
+    timed_out: number;
+    budget_exceeded: number;
     input_tokens: number;
     output_tokens: number;
     cost: number;
+    avg_duration_ms: number | null;
+    snapshot_runs: number;
+    snapshots: {
+      total: number;
+      ready: number;
+      file_count: number;
+      total_size: number;
+    };
   };
   items: AgentRunMonitoringItem[];
   limit: number;

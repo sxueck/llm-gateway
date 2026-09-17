@@ -4,7 +4,7 @@ export const CODE_SEARCH_MANIFEST: WorkerPluginManifest = {
   schema_version: "1",
   id: "com.llm-gateway.code-search",
   name: "Code Search",
-  version: "1.0.3",
+  version: "1.0.4",
   description:
     "Read-only cross-file code search: locates and explains code evidence relevant to a query.",
   runtime: {
@@ -70,7 +70,10 @@ Use a two-stage search. Tool calls issued in the same assistant message run in p
    caller, or callee hop when the query asks for behavior tracing.
 3. **Turn 3+ — converge:** read additional candidate windows only when they resolve a concrete
    uncertainty. Once the evidence is sufficient, call submit_result; do not spend turns on
-   broad exploration.
+   broad exploration. This is enforced by the runtime: in the final quarter of the turn
+   budget, discovery tools (grep_search, glob_files, list_directory) are disabled and calls
+   to them are rejected. In those turns only read_file (narrow windows) and submit_result
+   are available — plan your remaining reads accordingly.
 4. Prefer verifying call relationships over listing semantically similar files. A file is
    relevant only if you can explain its connection to the query.
 5. Respect the read budget: if you cannot verify something within it, say so in

@@ -83,6 +83,17 @@ export async function runSearchAgent(config: WorkerRunConfig): Promise<void> {
   let repairAttempted = false;
   const stats: WorkerRunStats = { turns: 0, toolCalls: 0 };
 
+  // Convergence enforcement: discovery tools are hard-disabled in the final quarter of
+  // the turn budget so late-turn wandering cannot consume the remaining budget.
+  const DISCOVERY_TOOLS = new Set(['grep_search', 'glob_files', 'list_directory']);
+  const convergeTurn = Math.max(2, Math.ceil(exec.max_turns * 0.75));
+  let convergeNudged = false;
+  const rejectDiscovery = () =>
+    `error: discovery tools are disabled from turn ${convergeTurn} (turn budget: ${exec.max_turns}); converge now: read narrow windows with read_file or call submit_result`;
+  interface DiscoveryCall { id: string; function: { name: string } }
+  const isDiscoveryCall = (call: DiscoveryCall, currentTurn: number) =>
+    currentTurn >= convergeTurn && DISCOVERY_TOOLS.has(call.function.name);
+
   const failRun = async (errorCode: string, errorMessage: string) => {
     await reporter.report({
       kind: 'failed',
@@ -98,6 +109,14 @@ export async function runSearchAgent(config: WorkerRunConfig): Promise<void> {
       return;
     }
     stats.turns = turn;
+
+    if (turn === convergeTurn && !convergeNudged) {
+      convergeNudged = true;
+      messages.push({
+        role: 'user',
+        content: `Convergence phase: ${exec.max_turns - turn + 1} turn(s) remain. Discovery tools (grep_search, glob_files, list_directory) are now disabled. Read only the candidate windows you already have and submit_result.`,
+      });
+    }
 
     const choice = await callModel(fetchImpl, config, messages, [...allowedTools, SUBMIT_TOOL_DEF], turn, deadline);
     if (choice === null) {
@@ -136,6 +155,10 @@ export async function runSearchAgent(config: WorkerRunConfig): Promise<void> {
       const overflow = toolCalls.slice(limit);
       const results = await Promise.all(
         accepted.map(async (call) => {
+          if (isDiscoveryCall(call, turn)) {
+            stats.toolCalls++;
+            return { id: call.id, output: rejectDiscovery() };
+          }
           const impl = TOOL_IMPLEMENTATIONS[call.function.name];
           stats.toolCalls++;
           if (!impl || !config.manifest.tool_policy.allow.includes(call.function.name)) {
@@ -204,6 +227,11 @@ export async function runSearchAgent(config: WorkerRunConfig): Promise<void> {
       }
 
       // 普通工具调用：白名单 + 预算 + 截断
+      if (isDiscoveryCall(call, turn)) {
+        stats.toolCalls++;
+        messages.push(toolResult(call.id, rejectDiscovery()));
+        continue;
+      }
       const impl = TOOL_IMPLEMENTATIONS[call.function.name];
       if (!impl || !config.manifest.tool_policy.allow.includes(call.function.name)) {
         stats.toolCalls++;

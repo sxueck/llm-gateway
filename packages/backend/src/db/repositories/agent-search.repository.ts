@@ -1,8 +1,15 @@
-import { getDatabase } from '../connection.js';
-import { AgentSearchRun, AgentSearchRunEventRow, AgentSearchUsage, RepositorySnapshot } from '../types.js';
+import { getDatabase } from "../connection.js";
+import {
+  AgentSearchRun,
+  AgentSearchRunEventRow,
+  AgentSearchUsage,
+  RepositorySnapshot,
+} from "../types.js";
 
 export const repositorySnapshotRepository = {
-  async create(snapshot: Omit<RepositorySnapshot, 'deleted_at'>): Promise<RepositorySnapshot> {
+  async create(
+    snapshot: Omit<RepositorySnapshot, "deleted_at">,
+  ): Promise<RepositorySnapshot> {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
@@ -40,9 +47,14 @@ export const repositorySnapshotRepository = {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
-      const [rows] = await conn.query('SELECT * FROM repository_snapshots WHERE id = ?', [id]);
+      const [rows] = await conn.query(
+        "SELECT * FROM repository_snapshots WHERE id = ?",
+        [id],
+      );
       const result = rows as any[];
-      return result.length === 0 ? undefined : (result[0] as RepositorySnapshot);
+      return result.length === 0
+        ? undefined
+        : (result[0] as RepositorySnapshot);
     } finally {
       conn.release();
     }
@@ -66,8 +78,8 @@ export const repositorySnapshotRepository = {
     const conn = await pool.getConnection();
     try {
       await conn.query(
-        'UPDATE repository_snapshots SET status = ?, deleted_at = ? WHERE id = ?',
-        ['deleted', Date.now(), id],
+        "UPDATE repository_snapshots SET status = ?, deleted_at = ? WHERE id = ?",
+        ["deleted", Date.now(), id],
       );
     } finally {
       conn.release();
@@ -92,10 +104,15 @@ export const repositorySnapshotRepository = {
 };
 
 export const agentSearchRunRepository = {
-  async create(run: Omit<
-    AgentSearchRun,
-    'started_at' | 'completed_at' | 'cancellation_requested_at' | 'result_encrypted'
-  >): Promise<AgentSearchRun> {
+  async create(
+    run: Omit<
+      AgentSearchRun,
+      | "started_at"
+      | "completed_at"
+      | "cancellation_requested_at"
+      | "result_encrypted"
+    >,
+  ): Promise<AgentSearchRun> {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
@@ -126,7 +143,7 @@ export const agentSearchRunRepository = {
       );
       return {
         ...run,
-        status: 'queued',
+        status: "queued",
         started_at: null,
         completed_at: null,
         cancellation_requested_at: null,
@@ -141,7 +158,10 @@ export const agentSearchRunRepository = {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
-      const [rows] = await conn.query('SELECT * FROM agent_search_runs WHERE id = ?', [id]);
+      const [rows] = await conn.query(
+        "SELECT * FROM agent_search_runs WHERE id = ?",
+        [id],
+      );
       const result = rows as any[];
       return result.length === 0 ? undefined : (result[0] as AgentSearchRun);
     } finally {
@@ -151,9 +171,17 @@ export const agentSearchRunRepository = {
 
   async update(
     id: string,
-    updates: Partial<Pick<AgentSearchRun,
-      'status' | 'started_at' | 'completed_at' | 'result_encrypted' | 'error_code' | 'error_message'
-    >>,
+    updates: Partial<
+      Pick<
+        AgentSearchRun,
+        | "status"
+        | "started_at"
+        | "completed_at"
+        | "result_encrypted"
+        | "error_code"
+        | "error_message"
+      >
+    >,
   ): Promise<void> {
     const pool = getDatabase();
     const conn = await pool.getConnection();
@@ -168,7 +196,10 @@ export const agentSearchRunRepository = {
       }
       if (fields.length === 0) return;
       values.push(id);
-      await conn.query(`UPDATE agent_search_runs SET ${fields.join(', ')} WHERE id = ?`, values);
+      await conn.query(
+        `UPDATE agent_search_runs SET ${fields.join(", ")} WHERE id = ?`,
+        values,
+      );
     } finally {
       conn.release();
     }
@@ -191,12 +222,14 @@ export const agentSearchRunRepository = {
     }
   },
 
-  async findByServiceTokenHash(tokenHash: string): Promise<AgentSearchRun | undefined> {
+  async findByServiceTokenHash(
+    tokenHash: string,
+  ): Promise<AgentSearchRun | undefined> {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
       const [rows] = await conn.query(
-        'SELECT * FROM agent_search_runs WHERE service_token_hash = ?',
+        "SELECT * FROM agent_search_runs WHERE service_token_hash = ?",
         [tokenHash],
       );
       const result = rows as any[];
@@ -253,7 +286,7 @@ export const agentSearchRunRepository = {
 };
 
 export interface AgentRunMonitoringFilters {
-  status?: AgentSearchRun['status'];
+  status?: AgentSearchRun["status"];
   activeOnly?: boolean;
   limit: number;
   offset: number;
@@ -263,9 +296,9 @@ export interface AgentRunMonitoringItem {
   id: string;
   plugin_id: string;
   plugin_version: string;
-  source_type: AgentSearchRun['source_type'];
+  source_type: AgentSearchRun["source_type"];
   model_profile: string;
-  status: AgentSearchRun['status'];
+  status: AgentSearchRun["status"];
   created_at: number;
   started_at: number | null;
   completed_at: number | null;
@@ -284,11 +317,23 @@ export interface AgentRunMonitoringItem {
 export interface AgentRunMonitoringSummary {
   total: number;
   active: number;
+  queued: number;
+  running: number;
   completed: number;
   failed: number;
+  timed_out: number;
+  budget_exceeded: number;
   input_tokens: number;
   output_tokens: number;
   cost: number;
+  avg_duration_ms: number | null;
+  snapshot_runs: number;
+  snapshots: {
+    total: number;
+    ready: number;
+    file_count: number;
+    total_size: number;
+  };
 }
 
 // 只读取管理端监控所需的非敏感列，绝不返回 query/result/token 或加密字段
@@ -305,10 +350,10 @@ export const agentRunMonitoringRepository = {
       if (filters.activeOnly) {
         where.push("r.status IN ('queued', 'running')");
       } else if (filters.status) {
-        where.push('r.status = ?');
+        where.push("r.status = ?");
         params.push(filters.status);
       }
-      const whereSql = where.length > 0 ? ` WHERE ${where.join(' AND ')}` : '';
+      const whereSql = where.length > 0 ? ` WHERE ${where.join(" AND ")}` : "";
 
       const [rows] = await conn.query(
         `SELECT r.id, r.plugin_id, r.plugin_version, r.source_type, r.model_profile,
@@ -332,7 +377,8 @@ export const agentRunMonitoringRepository = {
           status: row.status,
           created_at: Number(row.created_at),
           started_at: row.started_at === null ? null : Number(row.started_at),
-          completed_at: row.completed_at === null ? null : Number(row.completed_at),
+          completed_at:
+            row.completed_at === null ? null : Number(row.completed_at),
           duration_ms:
             row.started_at !== null
               ? Number(row.completed_at ?? Date.now()) - Number(row.started_at)
@@ -354,24 +400,59 @@ export const agentRunMonitoringRepository = {
       const [summaryRows] = await conn.query(
         `SELECT COUNT(*) AS total,
                 COALESCE(SUM(r.status IN ('queued', 'running')), 0) AS active,
+                COALESCE(SUM(r.status = 'queued'), 0) AS queued,
+                COALESCE(SUM(r.status = 'running'), 0) AS running,
                 COALESCE(SUM(r.status = 'completed'), 0) AS completed,
                 COALESCE(SUM(r.status IN ('failed', 'timed_out', 'budget_exceeded', 'cancelled')), 0) AS failed,
+                COALESCE(SUM(r.status = 'timed_out'), 0) AS timed_out,
+                COALESCE(SUM(r.status = 'budget_exceeded'), 0) AS budget_exceeded,
                 COALESCE(SUM(u.input_tokens), 0) AS input_tokens,
                 COALESCE(SUM(u.output_tokens), 0) AS output_tokens,
-                COALESCE(SUM(u.cost), 0) AS cost
+                COALESCE(SUM(u.cost), 0) AS cost,
+                AVG(CASE WHEN r.started_at IS NOT NULL AND r.completed_at IS NOT NULL
+                         THEN r.completed_at - r.started_at END) AS avg_duration_ms,
+                COALESCE(SUM(r.snapshot_id IS NOT NULL), 0) AS snapshot_runs
          FROM agent_search_runs r
          LEFT JOIN agent_search_usage u ON u.run_id = r.id${whereSql}`,
         params,
       );
       const s = (summaryRows as any[])[0] ?? {};
+
+      // 快照是独立资源，数量/体积不受 run 状态筛选影响
+      const [snapshotRows] = await conn.query(
+        `SELECT COUNT(*) AS total,
+                COALESCE(SUM(status = 'ready' AND expires_at > ?), 0) AS ready,
+                COALESCE(SUM(file_count), 0) AS file_count,
+                COALESCE(SUM(total_size), 0) AS total_size
+         FROM repository_snapshots
+         WHERE deleted_at IS NULL`,
+        [Date.now()],
+      );
+      const snap = (snapshotRows as any[])[0] ?? {};
+
       const summary: AgentRunMonitoringSummary = {
         total: Number(s.total ?? 0),
         active: Number(s.active ?? 0),
+        queued: Number(s.queued ?? 0),
+        running: Number(s.running ?? 0),
         completed: Number(s.completed ?? 0),
         failed: Number(s.failed ?? 0),
+        timed_out: Number(s.timed_out ?? 0),
+        budget_exceeded: Number(s.budget_exceeded ?? 0),
         input_tokens: Number(s.input_tokens ?? 0),
         output_tokens: Number(s.output_tokens ?? 0),
         cost: Number(s.cost ?? 0),
+        avg_duration_ms:
+          s.avg_duration_ms === null || s.avg_duration_ms === undefined
+            ? null
+            : Number(s.avg_duration_ms),
+        snapshot_runs: Number(s.snapshot_runs ?? 0),
+        snapshots: {
+          total: Number(snap.total ?? 0),
+          ready: Number(snap.ready ?? 0),
+          file_count: Number(snap.file_count ?? 0),
+          total_size: Number(snap.total_size ?? 0),
+        },
       };
       return { items, summary };
     } finally {
@@ -405,7 +486,7 @@ export const agentSearchRunEventRepository = {
     const conn = await pool.getConnection();
     try {
       const [rows] = await conn.query(
-        'SELECT MAX(seq) AS max_seq FROM agent_search_run_events WHERE run_id = ?',
+        "SELECT MAX(seq) AS max_seq FROM agent_search_run_events WHERE run_id = ?",
         [runId],
       );
       const result = rows as any[];
@@ -415,7 +496,11 @@ export const agentSearchRunEventRepository = {
     }
   },
 
-  async listAfter(runId: string, afterSeq: number, limit = 500): Promise<AgentSearchRunEventRow[]> {
+  async listAfter(
+    runId: string,
+    afterSeq: number,
+    limit = 500,
+  ): Promise<AgentSearchRunEventRow[]> {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
@@ -435,7 +520,7 @@ export const agentSearchRunEventRepository = {
     const conn = await pool.getConnection();
     try {
       await conn.query(
-        `DELETE FROM agent_search_run_events WHERE run_id IN (${runIds.map(() => '?').join(',')})`,
+        `DELETE FROM agent_search_run_events WHERE run_id IN (${runIds.map(() => "?").join(",")})`,
         runIds,
       );
     } finally {
@@ -478,7 +563,10 @@ export const agentSearchUsageRepository = {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
-      const [rows] = await conn.query('SELECT * FROM agent_search_usage WHERE run_id = ?', [runId]);
+      const [rows] = await conn.query(
+        "SELECT * FROM agent_search_usage WHERE run_id = ?",
+        [runId],
+      );
       const result = rows as any[];
       return result.length === 0 ? undefined : (result[0] as AgentSearchUsage);
     } finally {
