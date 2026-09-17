@@ -22,7 +22,9 @@ RUN bun run --cwd=packages/worker build
 
 FROM node:22-alpine
 
-RUN addgroup -S worker && adduser -S worker -G worker
+# ripgrep：grep_search 工具的运行时依赖（以参数数组 spawn，无 shell）
+RUN apk add --no-cache ripgrep \
+ && addgroup -S worker && adduser -S worker -G worker
 WORKDIR /app
 
 COPY --from=build /app/packages/worker/dist/index.js /app/index.js

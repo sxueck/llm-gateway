@@ -129,6 +129,38 @@ export async function runSearchAgent(config: WorkerRunConfig): Promise<void> {
       continue;
     }
 
+    // 检索轮不含 submit_result 时，同一轮工具调用并发执行；最终提交保留原有串行验证路径。
+    if (!toolCalls.some((call) => call.function.name === 'submit_result')) {
+      const limit = config.manifest.tool_policy.max_parallel_calls;
+      const accepted = toolCalls.slice(0, limit);
+      const overflow = toolCalls.slice(limit);
+      const results = await Promise.all(
+        accepted.map(async (call) => {
+          const impl = TOOL_IMPLEMENTATIONS[call.function.name];
+          stats.toolCalls++;
+          if (!impl || !config.manifest.tool_policy.allow.includes(call.function.name)) {
+            return { id: call.id, output: `error: tool "${call.function.name}" is not allowed by plugin tool policy` };
+          }
+          if (now() > deadline) return { id: call.id, output: 'error: run deadline exceeded' };
+          await reporter.event('tool.started', { tool: call.function.name });
+          let output: string;
+          try {
+            output = await impl(toolCtx, safeParseParams(call.function.arguments));
+          } catch (e) {
+            output = e instanceof ToolError ? `error: ${e.message}` : `error: ${e instanceof Error ? e.message : String(e)}`;
+          }
+          await reporter.event('tool.completed', { tool: call.function.name, bytes: output.length });
+          return { id: call.id, output };
+        }),
+      );
+      for (const result of results) messages.push(toolResult(result.id, result.output));
+      for (const call of overflow) {
+        stats.toolCalls++;
+        messages.push(toolResult(call.id, `error: max_parallel_calls is ${limit}`));
+      }
+      continue;
+    }
+
     for (const call of toolCalls) {
       if (call.function.name === 'submit_result') {
         const extracted = extractJson(call.function.arguments);

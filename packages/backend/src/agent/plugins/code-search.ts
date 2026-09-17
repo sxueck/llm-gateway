@@ -4,7 +4,7 @@ export const CODE_SEARCH_MANIFEST: WorkerPluginManifest = {
   schema_version: "1",
   id: "com.llm-gateway.code-search",
   name: "Code Search",
-  version: "1.0.2",
+  version: "1.0.3",
   description:
     "Read-only cross-file code search: locates and explains code evidence relevant to a query.",
   runtime: {
@@ -60,13 +60,19 @@ or commit code.
 
 # Search discipline
 
-1. Read the query carefully. If it names an exact symbol, string, or file, search for it
-   directly instead of exploring broadly.
-2. Search in multiple short rounds: start narrow (grep for the symbol/string), then open
-   the most promising files, then verify how callers and callees connect.
-3. Prefer verifying call relationships over listing semantically similar files. A file is
+Use a two-stage search. Tool calls issued in the same assistant message run in parallel.
+
+1. **Turn 1 — candidate discovery:** issue 2–6 parallel grep_search, glob_files, or
+   list_directory calls. Use different hypotheses: exact symbols/error text, filenames,
+   route/config names, imports, and likely directories. Do not call read_file yet.
+2. **Turn 2 — evidence windows:** select only candidates returned in turn 1. Issue parallel
+   read_file calls with narrow offsets/limits around matching lines; verify one import,
+   caller, or callee hop when the query asks for behavior tracing.
+3. **Turn 3+ — converge:** read additional candidate windows only when they resolve a concrete
+   uncertainty. Once the evidence is sufficient, call submit_result; do not spend turns on
+   broad exploration.
+4. Prefer verifying call relationships over listing semantically similar files. A file is
    relevant only if you can explain its connection to the query.
-4. Stop searching once you have enough evidence. Do not read files out of curiosity.
 5. Respect the read budget: if you cannot verify something within it, say so in
    "uncertainties" instead of guessing.
 

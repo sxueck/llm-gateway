@@ -49,6 +49,9 @@ services:
       # worker 在默认 bridge 网络，经 host-gateway 回连网关发布端口（13030）
       - AGENT_WORKER_GATEWAY_URL=${AGENT_WORKER_GATEWAY_URL:-http://host.docker.internal:13030}
       - AGENT_WORKSPACE_DIR=${AGENT_WORKSPACE_DIR:-/opt/llm-gateway/agent-workspaces}
+      # 快照对象存储目录：代码默认值是 cwd 相对路径（/app/packages/backend/data/agent-snapshots），
+      # 不在 ../data 挂载卷内，容器重建即丢失；必须显式指到 /app/data 下
+      - AGENT_SNAPSHOT_STORAGE_DIR=${AGENT_SNAPSHOT_STORAGE_DIR:-/app/data/agent-snapshots}
     # 需与宿主机 docker 组 gid 一致（getent group docker | cut -d: -f3），用于读写 docker.sock
     group_add:
       - "${DOCKER_GID:-999}"

@@ -41,11 +41,13 @@ interface RecordedCall {
 
 function fakeFetch(script: Array<(call: RecordedCall) => Response>) {
   const calls: RecordedCall[] = [];
+  let completionCalls = 0;
   const impl: typeof fetch = async (input, init) => {
     const body = JSON.parse(String(init?.body ?? '{}'));
     const call = { url: String(input), body };
     calls.push(call);
-    const step = script[Math.min(calls.length - 1, script.length - 1)];
+    if (!call.url.endsWith('/completions')) return jsonRes({});
+    const step = script[Math.min(completionCalls++, script.length - 1)];
     return step(call);
   };
   return { impl, calls };
@@ -121,6 +123,24 @@ describe('runSearchAgent', () => {
 
     const toolEvents = calls.filter((c) => c.url.endsWith('/events'));
     expect(toolEvents.map((c) => c.body.type)).toContain('tool.started');
+  });
+
+  it('runs parallel discovery before reading a candidate window and submitting', async () => {
+    const { impl, calls } = fakeFetch([
+      () => jsonRes(assistantToolCall([
+        { id: 'g1', name: 'grep_search', args: { pattern: '401' } },
+        { id: 'g2', name: 'glob_files', args: { pattern: 'src/*.ts' } },
+      ])),
+      () => jsonRes(assistantToolCall([{ id: 'r1', name: 'read_file', args: { path: 'src/a.ts', offset: 1, limit: 1 } }])),
+      () => jsonRes(assistantToolCall([{ id: 's1', name: 'submit_result', args: { result: validResult } }])),
+    ]);
+    await run(impl);
+
+    const completions = calls.filter((call) => call.url.endsWith('/completions'));
+    expect(completions).toHaveLength(3);
+    expect(completions[1].body.messages.map((message: any) => message.tool_call_id)).toEqual(expect.arrayContaining(['g1', 'g2']));
+    expect(completions[2].body.messages.find((message: any) => message.tool_call_id === 'r1').content).toContain('src/a.ts lines 1-1');
+    expect(calls.find((call) => call.url.endsWith('/report'))?.body.kind).toBe('completed');
   });
 
   it('performs one repair round then accepts the corrected result', async () => {

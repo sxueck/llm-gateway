@@ -1,3 +1,4 @@
+import { spawn } from 'child_process';
 import { readdir, readFile, realpath, stat } from 'fs/promises';
 import type { Dirent } from 'fs';
 import path from 'path';
@@ -28,14 +29,29 @@ export class Budget {
   exhausted(): boolean {
     return this.filesRead >= this.maxFilesRead || this.totalReadLines >= this.maxTotalReadLines;
   }
-  noteFileRead(lines: number): void {
+  tryReserveFileRead(): boolean {
+    if (this.filesRead >= this.maxFilesRead) return false;
+    this.filesRead += 1;
+    return true;
+  }
+  tryNoteReadLines(lines: number): boolean {
+    if (this.totalReadLines + lines > this.maxTotalReadLines) return false;
+    this.totalReadLines += lines;
+    return true;
+  }
+  tryNoteFileRead(lines: number): boolean {
+    if (this.filesRead >= this.maxFilesRead || this.totalReadLines + lines > this.maxTotalReadLines) {
+      return false;
+    }
     this.filesRead += 1;
     this.totalReadLines += lines;
+    return true;
   }
 }
 
 export interface ToolContext {
   root: string;
+  excludeGlobs: string[];
   excludeMatchers: RegExp[];
   budget: Budget;
   deadline: number;
@@ -44,6 +60,7 @@ export interface ToolContext {
 export function createToolContext(root: string, excludeGlobs: string[], budget: Budget, deadline: number): ToolContext {
   return {
     root,
+    excludeGlobs,
     excludeMatchers: excludeGlobs.map((g) => globToRegExp(g)),
     budget,
     deadline,
@@ -146,60 +163,110 @@ function assertParams(obj: Record<string, unknown>, keys: { name: string; type: 
 
 // ============ grep_search ============
 
+const MAX_RG_STDOUT_BYTES = 8 * 1024 * 1024;
+
+interface RgResult {
+  stdout: string;
+  stderr: string;
+  code: number | null;
+  aborted: boolean;
+}
+
+/** 通过参数数组调用 rg，无 shell；stdout 有上限、进程受 ctx.deadline 约束。 */
+function spawnRg(args: string[], cwd: string, timeoutMs: number): Promise<RgResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('rg', args, { cwd, timeout: Math.max(1, timeoutMs), killSignal: 'SIGKILL' });
+    let stdout = '';
+    let stderr = '';
+    let aborted = false;
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+      if (stdout.length > MAX_RG_STDOUT_BYTES && !aborted) {
+        aborted = true;
+        child.kill('SIGKILL');
+      }
+    });
+    child.stderr.on('data', (chunk: string) => {
+      if (stderr.length < 4096) stderr += chunk;
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      resolve({ stdout, stderr, code, aborted });
+    });
+  });
+}
+
 export async function grepSearch(ctx: ToolContext, params: Record<string, unknown>): Promise<string> {
   assertParams(params, [
     { name: 'pattern', type: 'string', required: true },
     { name: 'path', type: 'string' },
     { name: 'glob', type: 'string' },
   ]);
-  let regex: RegExp;
+  const pattern = String(params.pattern);
   try {
-    regex = new RegExp(String(params.pattern));
+    new RegExp(pattern); // 保留原有 JS 正则校验语义
   } catch (e) {
     throw new ToolError(`invalid regex: ${e instanceof Error ? e.message : String(e)}`);
   }
-  const scopeRel = params.path ? await resolveWithinRoot(ctx, String(params.path)) : '';
-  if (params.path && scopeRel === null) throw new ToolError(`path "${params.path}" is outside the workspace or excluded`);
-  const glob = params.glob ? String(params.glob) : null;
-  const globRe = glob ? globToRegExp(glob) : null;
+  const scopeRel = params.path ? await resolveWithinRoot(ctx, String(params.path)) : '.';
+  if (scopeRel === null) throw new ToolError(`path "${params.path}" is outside the workspace or excluded`);
+  if (ctx.budget.exhausted()) return '0 match(es)\n';
 
-  const files: WalkedFile[] = [];
-  await walkFiles(ctx, scopeRel ?? '', files, 5000);
+  // glob：用户 glob 在前，策略排除 glob 在后 —— rg 中后匹配的 glob 优先，
+  // 因此策略排除始终压过用户 glob，无法重新包含被排除路径。
+  const args: string[] = [
+    '--line-number',
+    '--no-heading',
+    '--color', 'never',
+    '--no-ignore',
+    '--max-filesize', `${Math.floor(MAX_GREP_FILE_BYTES / (1024 * 1024))}M`,
+  ];
+  if (params.glob) args.push('-g', String(params.glob));
+  for (const g of ctx.excludeGlobs) {
+    args.push('-g', `!${g}`);
+    if (g.includes('/') && !g.startsWith('**/')) args.push('-g', `!**/${g}`); // 任意深度排除，对齐旧后缀匹配语义
+  }
+  args.push('-e', pattern);
+  args.push('--', scopeRel);
+
+  let res: RgResult;
+  try {
+    res = await spawnRg(args, ctx.root, Math.max(0, ctx.deadline - Date.now()));
+  } catch (e) {
+    throw new ToolError(`grep_search failed: ripgrep unavailable (${e instanceof Error ? e.message : String(e)})`);
+  }
+  if (res.code === 2 && !res.aborted) {
+    throw new ToolError(`invalid regex or search error: ${res.stderr.trim().split('\n')[0] || 'ripgrep exited with 2'}`);
+  }
+
+  // 解析 `rel:line:text`；预算按文件分组原子预留（同步 ⇒ 并发下不会超额）。
+  const perFile: { rel: string; lines: string[] }[] = [];
+  let total = 0;
+  for (const raw of res.stdout.split('\n')) {
+    if (!raw || total >= MAX_GREP_RESULTS) break;
+    const m = raw.match(/^(.+?):(\d+):(.*)$/);
+    if (!m) continue;
+    const rel = m[1];
+    const text = `${rel}:${m[2]}: ${m[3].slice(0, 300)}`;
+    const last = perFile[perFile.length - 1];
+    if (last && last.rel === rel) last.lines.push(text);
+    else perFile.push({ rel, lines: [text] });
+    total++;
+  }
 
   const hits: string[] = [];
-  let scanned = 0;
-  for (const file of files) {
-    if (
-      hits.length >= MAX_GREP_RESULTS ||
-      Date.now() > ctx.deadline ||
-      ctx.budget.exhausted()
-    )
-      break;
-    if (globRe && !globRe.test(file.rel) && !globRe.test(file.rel.split('/').pop()!)) continue;
-    if (file.size > MAX_GREP_FILE_BYTES || file.size === 0) continue;
-    let content: Buffer;
-    try {
-      content = await readFile(file.abs);
-    } catch {
-      continue;
-    }
-    if (content.includes(0)) {
-      ctx.budget.noteFileRead(0);
-      continue;
-    }
-    const remainingLines =
-      ctx.budget.maxTotalReadLines - ctx.budget.totalReadLines;
-    const lines = content.toString('utf8').split('\n').slice(0, remainingLines);
-    ctx.budget.noteFileRead(lines.length);
-    scanned++;
-    for (let i = 0; i < lines.length; i++) {
-      if (regex.test(lines[i])) {
-        hits.push(`${file.rel}:${i + 1}: ${lines[i].slice(0, 300)}`);
-        if (hits.length >= MAX_GREP_RESULTS) break;
-      }
-    }
+  for (const group of perFile) {
+    const allowance = Math.min(group.lines.length, MAX_GREP_RESULTS - hits.length);
+    if (allowance <= 0) break;
+    const slice = group.lines.slice(0, allowance);
+    if (!ctx.budget.tryNoteFileRead(slice.length)) break; // 原子预留；失败即到此为止
+    hits.push(...slice);
   }
-  const header = `${hits.length} match(es)${scanned ? ` in ${scanned} file(s)` : ''}${hits.length >= MAX_GREP_RESULTS ? ' (capped)' : ''}\n`;
+
+  const capped = hits.length >= MAX_GREP_RESULTS || res.aborted;
+  const header = `${hits.length} match(es)${capped ? ' (capped)' : ''}\n`;
   return truncateOutput(header + hits.join('\n')).text;
 }
 
@@ -211,11 +278,11 @@ export async function readFileTool(ctx: ToolContext, params: Record<string, unkn
     { name: 'offset', type: 'number', min: 1 },
     { name: 'limit', type: 'number', min: 1, max: MAX_READ_LINES },
   ]);
-  if (ctx.budget.exhausted()) {
-    throw new ToolError(`read budget exhausted (max ${ctx.budget.maxFilesRead} files / ${ctx.budget.maxTotalReadLines} lines)`);
-  }
   const rel = await resolveWithinRoot(ctx, String(params.path));
   if (rel === null) throw new ToolError(`path "${params.path}" is outside the workspace or excluded`);
+  if (!ctx.budget.tryReserveFileRead()) {
+    throw new ToolError(`read budget exhausted (max ${ctx.budget.maxFilesRead} files / ${ctx.budget.maxTotalReadLines} lines)`);
+  }
 
   let content: string;
   try {
@@ -226,9 +293,14 @@ export async function readFileTool(ctx: ToolContext, params: Record<string, unkn
   const lines = content.split('\n');
   const offset = params.offset ? Math.floor(Number(params.offset)) : 1;
   const limit = params.limit ? Math.floor(Number(params.limit)) : DEFAULT_READ_LINES;
-  const slice = lines.slice(offset - 1, offset - 1 + limit);
-
-  ctx.budget.noteFileRead(slice.length);
+  const remainingLines = ctx.budget.maxTotalReadLines - ctx.budget.totalReadLines;
+  if (remainingLines <= 0) {
+    throw new ToolError(`read budget exhausted (max ${ctx.budget.maxFilesRead} files / ${ctx.budget.maxTotalReadLines} lines)`);
+  }
+  const slice = lines.slice(offset - 1, offset - 1 + Math.min(limit, remainingLines));
+  if (!ctx.budget.tryNoteReadLines(slice.length)) {
+    throw new ToolError(`read budget exhausted (max ${ctx.budget.maxFilesRead} files / ${ctx.budget.maxTotalReadLines} lines)`);
+  }
 
   const numbered = slice.map((line, i) => `${offset + i}: ${line.slice(0, 400)}`).join('\n');
   const header = `${rel} lines ${offset}-${offset + slice.length - 1} of ${lines.length}\n`;

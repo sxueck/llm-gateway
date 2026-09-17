@@ -78,6 +78,7 @@ docker-compose logs -f
 | `MYSQL_PASSWORD`                 | MySQL root 密码                                | your-mysql-password                            |
 | `DOCKER_GID`                     | 宿主机 docker 组 gid,用于读写 docker.sock      | 999                                            |
 | `AGENT_WORKSPACE_DIR`            | Agent Search worker workspace 目录(两侧同路径) | /opt/llm-gateway/agent-workspaces              |
+| `AGENT_SNAPSHOT_STORAGE_DIR`     | Agent Search 快照对象存储目录(须位于 /app/data 挂载卷内) | /app/data/agent-snapshots            |
 | `AGENT_WORKER_IMAGE`             | craft-worker 镜像                              | ghcr.io/sxueck/llm-gateway/craft-worker:latest |
 | `AGENT_WORKER_GATEWAY_URL`       | worker 回连网关的地址                          | http://host.docker.internal:13030              |
 
@@ -97,7 +98,25 @@ sudo chown -R 1001:1001 /opt/llm-gateway/agent-workspaces
 
 如需换目录,同步修改 `.env` 中的 `AGENT_WORKSPACE_DIR` 即可(compose 会自动两侧同路径挂载)。
 
-### 2. 配置 docker.sock 权限
+### 2. 快照存储持久化
+
+Agent Search 的代码快照对象默认存储在 `/app/data/agent-snapshots`(compose 已挂载 `../data:/app/data` 并设置 `AGENT_SNAPSHOT_STORAGE_DIR`,无需额外操作)。
+
+> **注意**:快照文件必须落在宿主机挂载卷覆盖的路径内。若自行把 `AGENT_SNAPSHOT_STORAGE_DIR` 改到未挂载路径,对象会写入容器临时层,`docker compose up -d` 重建容器后全部丢失,发起搜索时报 `workspace_preparation_failed ... .enc (ENOENT)`。
+
+### 3. 准备 worker 镜像
+
+网关通过 Docker SDK 直接 `createContainer` 拉起 worker,**不会自动拉取镜像**,宿主机上必须提前备好 `AGENT_WORKER_IMAGE` 指向的镜像,否则发起搜索时报 `No such image`:
+
+```bash
+# 拉取官方镜像(私有包需先 docker login ghcr.io)
+docker pull ghcr.io/sxueck/llm-gateway/craft-worker:latest
+
+# 或从仓库本地构建
+docker build -t ghcr.io/sxueck/llm-gateway/craft-worker:latest packages/worker
+```
+
+### 4. 配置 docker.sock 权限
 
 查宿主机 docker 组 gid 并写入 `.env` 的 `DOCKER_GID`:
 
@@ -107,11 +126,11 @@ getent group docker | cut -d: -f3
 
 > 安全提示:挂载 docker.sock 等同于赋予网关容器宿主机 root 级能力,请仅在自己可信的主机上启用。
 
-### 3. 模型调用计费
+### 5. 模型调用计费
 
 无需预置内部密钥:worker 的模型调用由网关 internal 通道自动放行到**创建 run 的虚拟密钥**,用量与费用记账到该密钥。只需确保发起 Agent Search 的 virtual key 已绑定插件所需的模型(如 `search-fast`)。
 
-### 4. 启动并验证
+### 6. 启动并验证
 
 ```bash
 docker-compose up -d

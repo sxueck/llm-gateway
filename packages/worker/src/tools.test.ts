@@ -50,19 +50,70 @@ describe('workspace containment', () => {
     expect(out).not.toContain('src/b.ts');
   });
 
+  it('grep treats a scope starting with a dash as a literal path', async () => {
+    await mkdir(path.join(root, '--glob=*.env'));
+
+    const out = await grepSearch(ctx, { pattern: 'SECRET', path: '--glob=*.env' });
+
+    expect(out).toContain('0 match(es)');
+    expect(out).not.toContain('.env');
+  });
+
   it('grep rejects invalid regex with a tool error', async () => {
     await expect(grepSearch(ctx, { pattern: '(' })).rejects.toBeInstanceOf(ToolError);
   });
 
-  it('grep respects the file and line read budget', async () => {
+  it('grep scans non-matches without consuming the result read budget', async () => {
+    await mkdir(path.join(root, 'docs'));
+    await Promise.all(
+      Array.from({ length: 25 }, (_, i) =>
+        writeFile(path.join(root, 'docs', `${i}.md`), 'unrelated content\n'),
+      ),
+    );
+    await writeFile(path.join(root, 'src', 'target.ts'), 'const TARGET = true;\n');
+    const tight = createToolContext(root, EXCLUDES, new Budget(1, 2), Date.now() + 30_000);
+
+    const missed = await grepSearch(tight, { pattern: 'TARGET', path: 'docs' });
+    const found = await grepSearch(tight, { pattern: 'TARGET', path: 'src' });
+
+    expect(missed).toContain('0 match(es)');
+    expect(found).toContain('src/target.ts:1');
+    expect(tight.budget.filesRead).toBe(1);
+    expect(tight.budget.totalReadLines).toBe(1);
+  });
+
+  it('grep limits returned matches by the file and line read budget', async () => {
     const tight = createToolContext(root, EXCLUDES, new Budget(1, 2), Date.now() + 30_000);
 
     const out = await grepSearch(tight, { pattern: '401' });
 
-    expect(out).toContain('src/a.ts:2');
-    expect(out).not.toContain('src/b.ts');
+    expect(out).toMatch(/src\/[ab]\.ts:\d+:/);
+    expect(out.match(/:\d+:/g)).toHaveLength(1);
     expect(tight.budget.filesRead).toBe(1);
-    expect(tight.budget.totalReadLines).toBe(2);
+    expect(tight.budget.totalReadLines).toBe(1);
+  });
+
+  it('grep honors the user glob but never re-includes excluded paths', async () => {
+    // 用户 glob 只能看到未被排除的文件
+    const out = await grepSearch(ctx, { pattern: '401', glob: '**/*.ts' });
+    expect(out).toContain('src/a.ts:2');
+    expect(out.includes('node_modules')).toBe(false);
+    expect(out.includes('.git')).toBe(false);
+    // 排除目录整体作为 scope 时：路径仍被拒/无匹配，绝不泄漏内容
+    const excludedScope = await grepSearch(ctx, { pattern: '401', path: 'node_modules' });
+    expect(excludedScope).toContain('0 match(es)');
+  });
+
+  it('grep reserves read budget atomically across concurrent calls', async () => {
+    const tight = createToolContext(root, EXCLUDES, new Budget(1, 1), Date.now() + 30_000);
+    const [a, b] = await Promise.all([
+      grepSearch(tight, { pattern: '401' }),
+      grepSearch(tight, { pattern: '401' }),
+    ]);
+    const totalHits = (a.match(/:\d+:/g) ?? []).length + (b.match(/:\d+:/g) ?? []).length;
+    expect(totalHits).toBe(1);
+    expect(tight.budget.totalReadLines).toBe(1);
+    expect(tight.budget.filesRead).toBe(1);
   });
 
   it('read_file returns numbered lines and honors offset/limit', async () => {
@@ -82,6 +133,18 @@ describe('workspace containment', () => {
     const tight = createToolContext(root, EXCLUDES, new Budget(1, 6000), Date.now() + 30_000);
     await readFileTool(tight, { path: 'src/a.ts' });
     await expect(readFileTool(tight, { path: 'src/b.ts' })).rejects.toThrow(/budget exhausted/);
+  });
+
+  it('read_file reserves the file budget atomically across concurrent calls', async () => {
+    const tight = createToolContext(root, EXCLUDES, new Budget(1, 6000), Date.now() + 30_000);
+    const results = await Promise.allSettled([
+      readFileTool(tight, { path: 'src/a.ts' }),
+      readFileTool(tight, { path: 'src/b.ts' }),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(tight.budget.filesRead).toBe(1);
   });
 
   it('read_file rejects symlink escapes', async () => {
