@@ -23,6 +23,10 @@ const mocks = vi.hoisted(() => {
         row.deleted_at = Date.now();
       }),
       findExpired: vi.fn(async () => []),
+      extendExpiry: vi.fn(async (id: string, expiresAt: number) => {
+        const row = rows.get(id);
+        if (row) row.expires_at = Math.max(row.expires_at, expiresAt);
+      }),
     },
     systemConfigRepository: {
       get: vi.fn(async () => undefined),
@@ -46,6 +50,7 @@ import {
   finalizeSnapshot,
   putObject,
   SnapshotError,
+  touchSnapshot,
 } from './snapshot.service.js';
 import { getMasterKey } from './encryption.js';
 
@@ -62,7 +67,7 @@ function contentFor(entry: { path: string; content?: string }) {
 
 async function makeSnapshot(paths: string[]) {
   const files = paths.map((p) => file(p, `// content of ${p}\n`));
-  const row = await createSnapshot({ virtualKeyId: 'vk-1' }, {
+  const { row } = await createSnapshot({ virtualKeyId: 'vk-1' }, {
     source: 'pi_local_worktree',
     repository: { display_name: 'demo' },
     manifest: { format_version: 1, files, excluded: [] },
@@ -162,5 +167,113 @@ describe('snapshot lifecycle', () => {
     await expect(
       putObject(row.id, { virtualKeyId: 'vk-1' }, 'src/a.ts', contentFor({ path: 'src/a.ts' })),
     ).rejects.toMatchObject({ opError: { code: 'not_found' } });
+  });
+
+  it('reuses unchanged objects from a base snapshot without re-uploading them', async () => {
+    const { row: base, files } = await makeSnapshot(['src/a.ts', 'src/b.ts']);
+    for (const f of files) {
+      await putObject(base.id, { virtualKeyId: 'vk-1' }, f.path, contentFor({ path: f.path }));
+    }
+    await finalizeSnapshot(base.id, { virtualKeyId: 'vk-1' });
+
+    // a.ts 内容不变、b.ts 变更：只有 b.ts 需要上传
+    const changed = Buffer.from('// changed src/b.ts\n');
+    const next = await createSnapshot({ virtualKeyId: 'vk-1' }, {
+      source: 'pi_local_worktree',
+      repository: { display_name: 'demo' },
+      manifest: {
+        format_version: 1,
+        files: [
+          file('src/a.ts', '// content of src/a.ts\n'),
+          { path: 'src/b.ts', sha256: createHash('sha256').update(changed).digest('hex'), size: changed.length },
+        ],
+        excluded: [],
+      },
+      base_snapshot_id: base.id,
+    });
+
+    expect(next.reuse.reused).toEqual(['src/a.ts']);
+    expect(next.reuse.missing).toEqual(['src/b.ts']);
+
+    // 复用对象已以新快照的 DEK 落盘，finish 前无需再 PUT a.ts
+    await putObject(next.row.id, { virtualKeyId: 'vk-1' }, 'src/b.ts', changed);
+    await finalizeSnapshot(next.row.id, { virtualKeyId: 'vk-1' });
+
+    const ws = path.join(storageDir, 'ws-reuse');
+    await buildWorkspace(next.row.id, ws);
+    expect((await readFile(path.join(ws, 'src/a.ts'))).toString()).toContain('content of src/a.ts');
+    expect((await readFile(path.join(ws, 'src/b.ts'))).toString()).toContain('changed src/b.ts');
+
+    // 一快照一 DEK：新快照目录下的密文必须与 base 的不同
+    const objectName = createHash('sha256').update(Buffer.from('// content of src/a.ts\n')).digest('hex');
+    const baseCipher = await readFile(path.join(storageDir, base.id, 'objects', `${objectName}.enc`));
+    const nextCipher = await readFile(path.join(storageDir, next.row.id, 'objects', `${objectName}.enc`));
+    expect(nextCipher.equals(baseCipher)).toBe(false);
+  });
+
+  it('silently falls back to a full upload when the base snapshot is not reusable', async () => {
+    const { row: base, files } = await makeSnapshot(['src/a.ts']);
+    // 目标 base 仍在上传中（未 finalize）
+    const next = await createSnapshot({ virtualKeyId: 'vk-1' }, {
+      source: 'pi_local_worktree',
+      repository: { display_name: 'demo' },
+      manifest: { format_version: 1, files, excluded: [] },
+      base_snapshot_id: base.id,
+    });
+    expect(next.reuse.reused).toEqual([]);
+    expect(next.reuse.missing).toEqual(['src/a.ts']);
+
+    // 其他虚拟密钥/不存在的 base 一律降级为全量上传，不泄露存在性
+    const foreign = await createSnapshot({ virtualKeyId: 'vk-2' }, {
+      source: 'pi_local_worktree',
+      repository: { display_name: 'demo' },
+      manifest: { format_version: 1, files, excluded: [] },
+      base_snapshot_id: base.id,
+    });
+    expect(foreign.reuse).toEqual({ reused: [], missing: ['src/a.ts'] });
+
+    const missing = await createSnapshot({ virtualKeyId: 'vk-1' }, {
+      source: 'pi_local_worktree',
+      repository: { display_name: 'demo' },
+      manifest: { format_version: 1, files, excluded: [] },
+      base_snapshot_id: 'snap_does_not_exist',
+    });
+    expect(missing.reuse).toEqual({ reused: [], missing: ['src/a.ts'] });
+  });
+
+  it('reaps pre-written reuse objects when the row insert fails', async () => {
+    const { row: base, files } = await makeSnapshot(['src/a.ts']);
+    for (const f of files) {
+      await putObject(base.id, { virtualKeyId: 'vk-1' }, f.path, contentFor({ path: f.path }));
+    }
+    await finalizeSnapshot(base.id, { virtualKeyId: 'vk-1' });
+
+    mocks.repositorySnapshotRepository.create.mockRejectedValueOnce(new Error('db down'));
+    await expect(
+      createSnapshot({ virtualKeyId: 'vk-1' }, {
+        source: 'pi_local_worktree',
+        repository: { display_name: 'demo' },
+        manifest: { format_version: 1, files, excluded: [] },
+        base_snapshot_id: base.id,
+      }),
+    ).rejects.toThrow('db down');
+
+    // 只有 base 的目录留下；预写的复用对象目录已被回收，不会成为无主孤儿
+    expect(await readdir(storageDir)).toEqual([base.id]);
+  });
+
+  it('touchSnapshot only extends expiry, never shortens it', async () => {
+    const { row } = await makeSnapshot(['src/a.ts']);
+    const original = row.expires_at;
+    // 同一毫秒内续期不会改变到期时间，必须先推进时钟
+    vi.useFakeTimers({ now: Date.now() + 60_000 });
+    const renewed = await touchSnapshot(row.id);
+    vi.useRealTimers();
+    expect(renewed).toBeGreaterThan(original);
+    expect(mocks.rows.get(row.id).expires_at).toBe(renewed);
+
+    // 传入更早的时间不会把到期时间拉早
+    await mocks.repositorySnapshotRepository.extendExpiry(row.id, original - 1_000_000);
+    expect(mocks.rows.get(row.id).expires_at).toBe(renewed);
   });
 });

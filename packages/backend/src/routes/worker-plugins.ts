@@ -5,6 +5,7 @@ import {
 } from "@llm-gateway/shared";
 import { workerPluginDb, userPluginEnrollmentDb } from "../db/index.js";
 import {
+  deletePluginVersion,
   listPluginVersions,
   publishPlugin,
   setPluginStatus,
@@ -15,6 +16,7 @@ const STORE_ERROR_STATUS: Record<string, number> = {
   duplicate_plugin_version: 409,
   plugin_version_conflict: 409,
   invalid_plugin_bundle: 400,
+  plugin_in_use: 409,
 };
 
 function sendError(
@@ -148,6 +150,35 @@ export async function workerPluginRoutes(fastify: FastifyInstance) {
     },
   );
 
+  fastify.delete<{ Params: { id: string; version: string } }>(
+    "/:id/:version",
+    async (request, reply) => {
+      const { id, version } = request.params;
+      try {
+        const deleted = await deletePluginVersion(id, version);
+        if (!deleted) {
+          return sendError(
+            reply,
+            404,
+            "not_found",
+            `plugin ${id}@${version} not found`,
+          );
+        }
+        return { id, version, deleted: true };
+      } catch (e) {
+        if (e instanceof PluginStoreError) {
+          return sendError(
+            reply,
+            STORE_ERROR_STATUS[e.code] ?? 400,
+            e.code,
+            e.message,
+          );
+        }
+        throw e;
+      }
+    },
+  );
+
   fastify.put<{ Params: { pluginId: string } }>(
     "/enrollments/:pluginId",
     async (request, reply) => {
@@ -206,6 +237,22 @@ export async function workerPluginRoutes(fastify: FastifyInstance) {
         await userPluginEnrollmentDb.clearDefault(userId, pluginId, version);
       }
       return { plugin_id: pluginId, version, enabled, is_default };
+    },
+  );
+
+  fastify.delete<{ Params: { pluginId: string } }>(
+    "/enrollments/:pluginId",
+    async (request, reply) => {
+      const userId = (request as any).user?.userId as string | undefined;
+      if (!userId) {
+        return sendError(reply, 401, "unauthorized", "missing user identity");
+      }
+      const { pluginId } = request.params;
+      const deleted = await userPluginEnrollmentDb.deleteByUserAndPlugin(
+        userId,
+        pluginId,
+      );
+      return { plugin_id: pluginId, deleted };
     },
   );
 }

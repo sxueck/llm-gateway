@@ -93,6 +93,30 @@ export const workerPluginRepository = {
     }
   },
 
+  // Guard and delete in one statement: a COUNT-then-DELETE window lets a
+  // concurrent run creation or enrollment slip past the guard.
+  async deleteIfUnused(id: string, version: string): Promise<boolean> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const [result] = await conn.query(
+        `DELETE FROM worker_plugins
+         WHERE id = ? AND version = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM agent_search_runs
+             WHERE plugin_id = ? AND plugin_version = ? AND status IN ('queued', 'running')
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM user_plugin_enrollments WHERE plugin_id = ? AND version = ?
+           )`,
+        [id, version, id, version, id, version],
+      );
+      return ((result as { affectedRows?: number }).affectedRows ?? 0) > 0;
+    } finally {
+      conn.release();
+    }
+  },
+
   async setStatus(
     id: string,
     version: string,
@@ -152,6 +176,40 @@ export const userPluginEnrollmentRepository = {
         ],
       );
       return { ...enrollment, updated_at: now };
+    } finally {
+      conn.release();
+    }
+  },
+
+  async countByPluginVersion(
+    pluginId: string,
+    version: string,
+  ): Promise<number> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query(
+        "SELECT COUNT(*) AS count FROM user_plugin_enrollments WHERE plugin_id = ? AND version = ?",
+        [pluginId, version],
+      );
+      return Number((rows as { count: number | string }[])[0]?.count ?? 0);
+    } finally {
+      conn.release();
+    }
+  },
+
+  async deleteByUserAndPlugin(
+    userId: string,
+    pluginId: string,
+  ): Promise<boolean> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const [result] = await conn.query(
+        "DELETE FROM user_plugin_enrollments WHERE user_id = ? AND plugin_id = ?",
+        [userId, pluginId],
+      );
+      return ((result as { affectedRows?: number }).affectedRows ?? 0) > 0;
     } finally {
       conn.release();
     }

@@ -66,10 +66,19 @@ export interface SnapshotPrincipal {
   virtualKeyId: string;
 }
 
+/**
+ * 增量上传的复用结果：`reused` 中的路径已在新快照目录下重新加密落盘，
+ * 客户端无需再 PUT；`missing` 是需要上传的全集（含 base 中不存在的条目）。
+ */
+export interface SnapshotReuseResult {
+  reused: string[];
+  missing: string[];
+}
+
 export async function createSnapshot(
   principal: SnapshotPrincipal,
   req: CreateSnapshotRequest,
-): Promise<RepositorySnapshot> {
+): Promise<{ row: RepositorySnapshot; reuse: SnapshotReuseResult }> {
   const manifest = req.manifest;
 
   const seen = new Set<string>();
@@ -110,27 +119,107 @@ export async function createSnapshot(
   const masterKey = await getMasterKey();
   const now = Date.now();
 
-  const row = await repositorySnapshotDb.create({
-    id,
-    user_id: principal.virtualKeyId,
-    virtual_key_id: principal.virtualKeyId,
-    source_type: req.source,
-    display_name: req.repository.display_name,
-    git_remote: req.repository.git_remote ?? null,
-    head_commit: req.repository.head_commit ?? null,
-    manifest_encrypted: encryptText(dek, JSON.stringify(manifest)),
-    dek_encrypted: wrapDek(masterKey, dek),
-    file_count: manifest.files.length,
-    total_size: totalBytes,
-    storage_prefix: id,
-    status: 'uploading',
-    created_at: now,
-    expires_at: now + SNAPSHOT_RETENTION_MS,
-  });
+  // 复用必须先于建行完成：任何失败都不留下一个半成品快照行。
+  const reuse = await reuseObjects(principal, req.base_snapshot_id, manifest.files, id, dek);
+
+  let row: RepositorySnapshot;
+  try {
+    row = await repositorySnapshotDb.create({
+      id,
+      user_id: principal.virtualKeyId,
+      virtual_key_id: principal.virtualKeyId,
+      source_type: req.source,
+      display_name: req.repository.display_name,
+      git_remote: req.repository.git_remote ?? null,
+      head_commit: req.repository.head_commit ?? null,
+      manifest_encrypted: encryptText(dek, JSON.stringify(manifest)),
+      dek_encrypted: wrapDek(masterKey, dek),
+      file_count: manifest.files.length,
+      total_size: totalBytes,
+      storage_prefix: id,
+      status: 'uploading',
+      created_at: now,
+      expires_at: now + SNAPSHOT_RETENTION_MS,
+    });
+  } catch (e) {
+    // 复用先于建行写盘；建行失败时必须回收，否则无行目录不在任何清理路径内。
+    await rm(snapshotDir(id), { recursive: true, force: true }).catch(() => undefined);
+    throw e;
+  }
 
   await mkdir(path.join(snapshotDir(id), 'objects'), { recursive: true });
-  memoryLogger.info(`Snapshot ${id} created (${manifest.files.length} files)`, 'AgentSearch');
+  memoryLogger.info(
+    `Snapshot ${id} created (${manifest.files.length} files, ${reuse.reused.length} reused from ${req.base_snapshot_id})`,
+    'AgentSearch',
+  );
+  return { row, reuse };
+}
+
+/** base 只是复用提示：任何不可用形态都降级为全量上传，而非让本次同步失败。 */
+async function resolveUsableBase(
+  baseSnapshotId: string,
+  principal: SnapshotPrincipal,
+): Promise<RepositorySnapshot | null> {
+  const row = await repositorySnapshotDb.getById(baseSnapshotId);
+  // 不存在、已删除、跨密钥走同一分支，响应上不可区分（不泄露存在性）
+  if (!row || row.status === 'deleted' || row.virtual_key_id !== principal.virtualKeyId) {
+    memoryLogger.warn(
+      `base snapshot ${baseSnapshotId} unusable; falling back to a full upload`,
+      'AgentSearch',
+    );
+    return null;
+  }
+  if (row.status !== 'ready') {
+    memoryLogger.warn(
+      `base snapshot ${baseSnapshotId} is ${row.status}; falling back to a full upload`,
+      'AgentSearch',
+    );
+    return null;
+  }
   return row;
+}
+
+/**
+ * 一快照一 DEK：复用只能按字节搬运，不能跨快照共享密文——否则 base 的 DEK
+ * 泄漏会连带解开所有后继快照。这里用 base DEK 解密、新 DEK 重加密，并在写盘
+ * 前复验明文 hash，使“base 对象被篡改”无法被静默继承。
+ *
+ * 成本上限：base 中命中 sha256 的条目全量重加密。放在 create 而非 finalize，
+ * 是为了让失败点集中在一次请求内，且客户端可立即知道该传哪些文件。
+ */
+async function reuseObjects(
+  principal: SnapshotPrincipal,
+  baseSnapshotId: string | undefined,
+  files: SnapshotManifest['files'],
+  newId: string,
+  newDek: Buffer,
+): Promise<SnapshotReuseResult> {
+  const missing = files.map((file) => file.path);
+  if (!baseSnapshotId) return { reused: [], missing };
+
+  const base = await resolveUsableBase(baseSnapshotId, principal);
+  if (!base) return { reused: [], missing };
+
+  const baseDek = await loadDek(base);
+  const baseFiles = new Map((await readManifest(base)).files.map((f) => [f.path, f]));
+  const reused: string[] = [];
+  for (const file of files) {
+    const previous = baseFiles.get(file.path);
+    if (!previous || previous.sha256 !== file.sha256) continue;
+    try {
+      const plain = decryptBlob(baseDek, await readFile(objectPath(baseSnapshotId, file.sha256)));
+      if (createHash('sha256').update(plain).digest('hex') !== file.sha256) throw new Error('hash mismatch');
+      const target = objectPath(newId, file.sha256);
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, encryptBlob(newDek, plain));
+      reused.push(file.path);
+    } catch (e) {
+      // 单个对象读不到/解不开时退回上传该文件，不让整个 create 失败。
+      memoryLogger.warn(`reuse failed for ${file.path} from ${baseSnapshotId}: ${e}`, 'AgentSearch');
+    }
+  }
+  const reusedSet = new Set(reused);
+  return { reused, missing: files.map((f) => f.path).filter((p) => !reusedSet.has(p)) };
 }
 
 export async function getOwnedSnapshot(
@@ -233,6 +322,17 @@ export async function finalizeSnapshot(
   await repositorySnapshotDb.markReady(id);
   memoryLogger.info(`Snapshot ${id} ready`, 'AgentSearch');
   return { ...row, status: 'ready' };
+}
+
+/**
+ * 滑动 24h：run 真正消费快照时才续期，空闲快照照旧到期回收。
+ * 只推进不缩短（`LEAST` 由 SQL 侧的 GREATEST 语义保证），避免并发续期把
+ * 更晚的到期时间改小。
+ */
+export async function touchSnapshot(id: string): Promise<number | undefined> {
+  const expiresAt = Date.now() + SNAPSHOT_RETENTION_MS;
+  await repositorySnapshotDb.extendExpiry(id, expiresAt);
+  return expiresAt;
 }
 
 /** 幂等删除：目录与 DB 状态都清掉。 */

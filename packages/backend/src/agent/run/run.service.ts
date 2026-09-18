@@ -6,6 +6,7 @@ import { generateServiceToken } from './service-token.js';
 import {
   buildWorkspace,
   getOwnedSnapshot,
+  touchSnapshot,
   SNAPSHOT_RETENTION_MS,
 } from '../snapshot/snapshot.service.js';
 import { memoryLogger } from '../../services/logger.js';
@@ -161,4 +162,11 @@ export async function prepareWorkspace(run: AgentSearchRun, workspaceRoot: strin
     throw new RunError({ code: 'invalid_state', message: 'run has no snapshot source' });
   }
   await buildWorkspace(run.snapshot_id, workspaceRoot);
+  // 滑动 24h 只在这里续期：快照被 run 真正消费才算“在用”，仅上传不检索
+  // 不应把到期时间无限推迟。续期失败不影响已缓存 workspace 的本次检索。
+  try {
+    await touchSnapshot(run.snapshot_id);
+  } catch (e) {
+    memoryLogger.warn(`snapshot ${run.snapshot_id} expiry renewal failed: ${e}`, 'AgentSearch');
+  }
 }

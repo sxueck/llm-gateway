@@ -81,13 +81,17 @@ export async function agentSnapshotRoutes(fastify: FastifyInstance) {
         });
       }
       try {
-        const row = await createSnapshot({ virtualKeyId: auth.virtualKey.id }, parsed.data);
+        const { row, reuse } = await createSnapshot({ virtualKeyId: auth.virtualKey.id }, parsed.data);
         return reply.code(201).send({
           snapshot_id: row.id,
           status: row.status,
           file_count: row.file_count,
           total_size: row.total_size,
           expires_at: row.expires_at,
+          /** 已从 base 快照复用、无需再 PUT 的路径。 */
+          reused_paths: reuse.reused,
+          /** 仍须 PUT 的路径全集（未提供 base 时为全部条目）。 */
+          upload_paths: reuse.missing,
           object_upload_path_template: `/api/agent/snapshots/${row.id}/objects/{file_path}`,
           finalize_url: `/api/agent/snapshots/${row.id}/finalize`,
         });

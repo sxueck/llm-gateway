@@ -19,13 +19,33 @@ Agent Search 是网关提供的**只读跨文件代码检索**能力：其将一
 ## 前置条件
 
 1. **虚拟密钥**：在 Web UI 或 `/api/admin/virtual-keys` 创建一个启用状态的虚拟密钥。
-2. **内置插件已 seed**：`com.llm-gateway.code-search@1.0.5` 在后端启动时自动发布（幂等 seed），无需手动操作。可用管理端 `GET /api/admin/worker-plugins` 查看当前可用版本，创建 run 时填的 `version` 必须与已发布版本一致。
+2. **内置插件已 seed**：`com.llm-gateway.code-search@1.0.6` 在后端启动时自动发布（幂等 seed），无需手动操作。可用管理端 `GET /api/admin/worker-plugins` 查看当前可用版本，创建 run 时填的 `version` 必须与已发布版本一致。
 3. **模型 profile 已配置**：插件固定使用模型 profile `search-fast`（`allow_client_override: false`，客户端不可覆盖）。网关中必须存在一个**名称恰好为 `search-fast` 且启用**的模型（`models` 表按 `name` 精确匹配，不走别名），建议将其绑定到一个快速、非 reasoning 的模型上，否则检索会很慢。未配置时创建 run 会返回 `model_profile_not_configured`。
 4. **Docker 可用**：每个 run 由网关通过 dockerode 启动一个一次性容器（`craft-worker-<runId>`）执行。compose 部署已带 `/var/run/docker.sock` 挂载；二进制部署需要本机 Docker。
 
 ## Step 1：上传代码快照
 
-快照是检索的代码来源（当前仅支持 `pi_local_worktree` 类型，即客户端本地工作区打包上传）。快照创建后 **24 小时过期**。
+快照是检索的代码来源（当前仅支持 `pi_local_worktree` 类型，即客户端本地工作区打包上传）。快照创建后 **24 小时过期**，且每被一次检索 run 消费就会**滑动续期 24 小时**（只延长、不缩短）：持续使用的快照不会过期，空闲 24 小时后在清理任务的下一次执行时被回收。
+
+### 1.0 增量上传（可选，强烈建议）
+
+在 `POST` body 里加 `base_snapshot_id`（同一虚拟密钥名下已 `ready` 的快照 id），服务端会把 base 中 **sha256 相同**的对象直接复用到新快照，不必重传：
+
+```json
+{
+  "source": "pi_local_worktree",
+  "repository": { "display_name": "my-repo", "head_commit": "a1b2c3d" },
+  "manifest": { "format_version": 1, "files": [ /* ... */ ], "excluded": [] },
+  "base_snapshot_id": "snap_previous"
+}
+```
+
+响应多出两个字段，直接决定要 PUT 哪些文件：
+
+- `reused_paths`：服务端已从 base 复制的路径，**不要再 PUT**。
+- `upload_paths`：仍需 PUT 的路径全集（不传 base 时等于 manifest 全量）。
+
+复用是按字节重加密的（一快照一 DEK），不是共享密文。base 不满足条件时（不存在、不属于本密钥、非 `ready`）会静默降级为全量上传，`upload_paths` 即为全量。只改一个文件时 `upload_paths` 通常只有那一个文件——把上传从「整仓」降到「增量」，这是冷启动之外最大的耗时来源。
 
 ### 1.1 创建快照
 
@@ -99,7 +119,7 @@ curl -X POST http://localhost:3000/api/agent/snapshots/snap_xxx/finalize \
   -H "Authorization: Bearer $VKEY"
 ```
 
-漏传文件会返回 `incomplete`。随时可用 `GET /api/agent/snapshots/:id` 查询状态；`DELETE /api/agent/snapshots/:id` 删除。
+漏传文件会返回 `incomplete`。随时可用 `GET /api/agent/snapshots/:id` 查询状态（该响应的 `expires_at` 是服务端权威值，可能因检索消费而晚于创建时返回的那个）；`DELETE /api/agent/snapshots/:id` 删除。
 
 > 批量上传示例脚本见文末「端到端示例」。
 
@@ -132,7 +152,7 @@ curl -X POST http://localhost:3000/api/agent/searches \
 {
   "run_id": "asr_xxx",
   "status": "queued",
-  "plugin": { "id": "com.llm-gateway.code-search", "version": "1.0.5", "digest": "sha256:..." },
+  "plugin": { "id": "com.llm-gateway.code-search", "version": "1.0.6", "digest": "sha256:..." },
   "model_profile": "search-fast",
   "events_url": "/api/agent/searches/asr_xxx/events",
   "result_url": "/api/agent/searches/asr_xxx",
@@ -168,7 +188,7 @@ curl http://localhost:3000/api/agent/searches/asr_xxx \
 {
   "run_id": "asr_xxx",
   "status": "completed",
-  "plugin": { "id": "...", "version": "1.0.5", "digest": "sha256:..." },
+  "plugin": { "id": "...", "version": "1.0.6", "digest": "sha256:..." },
   "source": { "type": "snapshot", "snapshot_id": "snap_xxx", "commit": "a1b2c3d" },
   "model_profile": "search-fast",
   "created_at": 1735603200000,
@@ -198,7 +218,7 @@ curl http://localhost:3000/api/agent/searches/asr_xxx \
 }
 ```
 
-- `status` 生命周期：`queued → running → completed / failed / cancelled / timed_out / budget_exceeded`；终止态超过 `expires_at`（创建后 24h）后返回 `expired`，且 `result` 不再可读——请及时取回结果。
+- `status` 生命周期：`queued → running → completed / failed / cancelled / timed_out / budget_exceeded`；终止态超过 `expires_at`（创建后 24h，且每次 run 消费都会续期——见 Step 1）后返回 `expired`，且 `result` 不再可读——请及时取回结果。
 - `result.files[].path` 为仓库根相对路径；`start_line`/`end_line` 是 agent 实际读过的行区间。
 - `result` 只有 `completed` 时非空；失败时看 `error.code` / `error.message`。
 
@@ -232,7 +252,7 @@ curl -X POST http://localhost:3000/api/agent/searches/asr_xxx/cancel \
 
 ## 配额与行为说明
 
-由插件 `execution_policy` 决定（v1.0.5）：
+由插件 `execution_policy` 决定（v1.0.6）：
 
 - 最多 **8 轮**对话、总超时 **120 秒**。
 - 读预算：最多 **60 个文件 / 累计 9000 行**；结果输出上限 **4000 tokens**。
@@ -281,7 +301,7 @@ echo "snapshot ready"
 
 RUN=$(curl -sf -X POST "$GW/api/agent/searches" \
   -H "Authorization: Bearer $VKEY" -H "Content-Type: application/json" \
-  -d "{\"plugin\":{\"id\":\"com.llm-gateway.code-search\",\"version\":\"1.0.5\"},\"source\":{\"type\":\"snapshot\",\"snapshot_id\":\"$SNAP_ID\"},\"query\":$(python3 -c 'import json,sys;print(json.dumps(sys.argv[1]))' "$QUERY")}")
+  -d "{\"plugin\":{\"id\":\"com.llm-gateway.code-search\",\"version\":\"1.0.6\"},\"source\":{\"type\":\"snapshot\",\"snapshot_id\":\"$SNAP_ID\"},\"query\":$(python3 -c 'import json,sys;print(json.dumps(sys.argv[1]))' "$QUERY")}")
 RUN_ID=$(echo "$RUN" | python3 -c 'import sys,json;print(json.load(sys.stdin)["run_id"])')
 echo "run: $RUN_ID"
 

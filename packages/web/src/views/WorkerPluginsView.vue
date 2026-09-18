@@ -146,6 +146,37 @@ async function transition(
   }
 }
 
+function errorText(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+async function removeVersion(row: WorkerPluginVersion) {
+  try {
+    await workerPluginApi.remove(row.id, row.version);
+    message.success(`已删除 ${row.id}@${row.version}`);
+    if (
+      selectedPlugin.value?.id === row.id &&
+      selectedPlugin.value?.version === row.version
+    ) {
+      showDetails.value = false;
+      selectedPlugin.value = null;
+    }
+    await load();
+  } catch (error: any) {
+    message.error(errorText(error, "删除版本失败"));
+  }
+}
+
+async function unenroll(row: WorkerPluginVersion) {
+  try {
+    await workerPluginApi.unenroll(row.id);
+    message.success(`已取消订阅 ${row.id}`);
+    await load();
+  } catch (error: any) {
+    message.error(errorText(error, "取消订阅失败"));
+  }
+}
+
 async function submitPublish() {
   let payload: PublishPluginPayload;
   try {
@@ -305,7 +336,7 @@ onMounted(load);
       </div>
 
       <NAlert type="info" class="plugin-notice" :show-icon="true">
-        版本发布后不可变；每次 run 固定使用 id、version 与 digest。撤销版本会拒绝新的 run，已创建的 run 可继续完成。
+        版本发布后不可变；每次 run 固定使用 id、version 与 digest。撤销版本会拒绝新的 run，已创建的 run 可继续完成；删除版本会移除该版本记录，需先确保无排队/运行中的 run 与用户订阅。
       </NAlert>
 
       <NDataTable
@@ -361,15 +392,31 @@ onMounted(load);
             </NSpace>
           </section>
 
-          <section v-if="selectedPlugin.status !== 'revoked'" class="detail-section enrollment-section">
+          <section
+            v-if="selectedPlugin.status !== 'revoked' || selectedEnrollment"
+            class="detail-section enrollment-section"
+          >
             <div>
-              <span class="section-label">个人启用</span>
-              <p>{{ enrollmentState(selectedPlugin).enabled ? "当前版本可用于默认选择。" : "当前版本已禁用。" }}</p>
+              <span class="section-label">个人订阅</span>
+              <p v-if="selectedPlugin.status === 'revoked'">该版本已撤销；如需删除此版本，请先取消订阅。</p>
+              <p v-else>{{ enrollmentState(selectedPlugin).enabled ? "当前版本可用于默认选择。" : "当前版本已禁用。" }}</p>
             </div>
-            <NSwitch
-              :value="enrollmentState(selectedPlugin).enabled"
-              @update:value="(value: boolean) => toggleEnabled(selectedPlugin!, value)"
-            />
+            <NSpace align="center">
+              <NSwitch
+                v-if="selectedPlugin.status !== 'revoked'"
+                :value="enrollmentState(selectedPlugin).enabled"
+                @update:value="(value: boolean) => toggleEnabled(selectedPlugin!, value)"
+              />
+              <NPopconfirm
+                v-if="selectedEnrollment"
+                @positive-click="unenroll(selectedPlugin)"
+              >
+                <template #trigger>
+                  <NButton size="small" quaternary>取消订阅</NButton>
+                </template>
+                取消订阅会删除该插件的个人启用与默认版本设置，不影响其他用户。确认取消？
+              </NPopconfirm>
+            </NSpace>
           </section>
 
           <NButton
@@ -412,6 +459,12 @@ onMounted(load);
                   <NButton size="small" type="error" secondary>撤销版本</NButton>
                 </template>
                 撤销后不能再创建新的 run，且不可恢复。确认撤销？
+              </NPopconfirm>
+              <NPopconfirm @positive-click="removeVersion(selectedPlugin)">
+                <template #trigger>
+                  <NButton size="small" type="error">删除版本</NButton>
+                </template>
+                删除后该版本无法再被引用或恢复。存在排队/运行中的 run 或用户订阅时会拒绝删除。确认删除 {{ selectedPlugin.id }}@{{ selectedPlugin.version }}？
               </NPopconfirm>
             </NSpace>
           </section>

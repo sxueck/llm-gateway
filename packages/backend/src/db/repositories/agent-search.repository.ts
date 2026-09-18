@@ -86,6 +86,22 @@ export const repositorySnapshotRepository = {
     }
   },
 
+  /** 滑动续期：只推进不缩短，并发续期不会把更晚的到期时间改小。 */
+  async extendExpiry(id: string, expiresAt: number): Promise<void> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      await conn.query(
+        `UPDATE repository_snapshots
+         SET expires_at = GREATEST(expires_at, ?)
+         WHERE id = ? AND status = 'ready' AND deleted_at IS NULL`,
+        [expiresAt, id],
+      );
+    } finally {
+      conn.release();
+    }
+  },
+
   async findExpired(now: number, limit = 100): Promise<RepositorySnapshot[]> {
     const pool = getDatabase();
     const conn = await pool.getConnection();
@@ -279,6 +295,24 @@ export const agentSearchRunRepository = {
         `SELECT * FROM agent_search_runs WHERE status IN ('queued', 'running')`,
       );
       return rows as AgentSearchRun[];
+    } finally {
+      conn.release();
+    }
+  },
+
+  async countActiveByPluginVersion(
+    pluginId: string,
+    version: string,
+  ): Promise<number> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query(
+        `SELECT COUNT(*) AS count FROM agent_search_runs
+         WHERE plugin_id = ? AND plugin_version = ? AND status IN ('queued', 'running')`,
+        [pluginId, version],
+      );
+      return Number((rows as { count: number | string }[])[0]?.count ?? 0);
     } finally {
       conn.release();
     }

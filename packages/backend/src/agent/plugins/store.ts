@@ -11,7 +11,12 @@ import {
   CODE_SEARCH_OUTPUT_SCHEMA,
   CODE_SEARCH_PROMPT_MD,
 } from "./code-search.js";
-import { workerPluginDb } from "../../db/index.js";
+import {
+  agentSearchRunDb,
+  systemConfigDb,
+  userPluginEnrollmentDb,
+  workerPluginDb,
+} from "../../db/index.js";
 import type { WorkerPluginRow } from "../../db/types.js";
 import { memoryLogger } from "../../services/logger.js";
 
@@ -23,7 +28,8 @@ export class PluginStoreError extends Error {
       | "duplicate_plugin_version"
       | "plugin_version_conflict"
       | "invalid_plugin_bundle"
-      | "plugin_revoked",
+      | "plugin_revoked"
+      | "plugin_in_use",
     message: string,
   ) {
     super(message);
@@ -109,7 +115,25 @@ export const BUILTIN_PLUGIN_BUNDLES: PluginBundle[] = [
   ),
 ];
 
+// 记录已 seed 过的内置版本，使删除后的版本重启不被重新创建
+const BUILTIN_SEED_MARKER = "plugin_center.builtin_seeded_versions";
+
+async function readSeededVersions(): Promise<Set<string>> {
+  const config = await systemConfigDb.get(BUILTIN_SEED_MARKER);
+  if (!config?.value) return new Set();
+  try {
+    const parsed = JSON.parse(config.value);
+    return Array.isArray(parsed)
+      ? new Set(parsed.filter((v): v is string => typeof v === "string"))
+      : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
 export async function seedBuiltinPlugins(): Promise<void> {
+  const seeded = await readSeededVersions();
+  let changed = false;
   for (const b of BUILTIN_PLUGIN_BUNDLES) {
     const errors = validatePluginBundle(b);
     if (errors.length > 0) {
@@ -117,6 +141,8 @@ export async function seedBuiltinPlugins(): Promise<void> {
         `built-in plugin ${b.manifest.id}@${b.manifest.version} failed validation: ${errors.join("; ")}`,
       );
     }
+    const marker = `${b.manifest.id}@${b.manifest.version}`;
+    if (seeded.has(marker)) continue;
     const digest = computeBundleDigest(b);
     const existing = await workerPluginDb.getByIdVersion(
       b.manifest.id,
@@ -137,17 +163,23 @@ export async function seedBuiltinPlugins(): Promise<void> {
         published_at: now,
         created_at: now,
       });
-      memoryLogger.info(
-        `seeded built-in plugin ${b.manifest.id}@${b.manifest.version}`,
-        "PluginCenter",
-      );
+      memoryLogger.info(`seeded built-in plugin ${marker}`, "PluginCenter");
     } else if (existing.digest !== digest) {
       // 版本不可变：同 id+version 不同 digest 时拒绝覆盖并告警，不允许静默改写历史
       memoryLogger.error(
-        `built-in plugin ${b.manifest.id}@${b.manifest.version} digest mismatch with stored version; keeping stored version`,
+        `built-in plugin ${marker} digest mismatch with stored version; keeping stored version`,
         "PluginCenter",
       );
     }
+    seeded.add(marker);
+    changed = true;
+  }
+  if (changed) {
+    await systemConfigDb.set(
+      BUILTIN_SEED_MARKER,
+      JSON.stringify([...seeded]),
+      "Worker 插件中心已 seed 的内置插件版本",
+    );
   }
 }
 
@@ -260,4 +292,40 @@ export async function setPluginStatus(
     "PluginCenter",
   );
   return updated ? rowToInfo(updated) : undefined;
+}
+
+/**
+ * 删除插件版本。被未完成的 run 或任何用户订阅引用时拒绝，避免运行失败或订阅指向空版本。
+ */
+export async function deletePluginVersion(
+  id: string,
+  version: string,
+): Promise<boolean> {
+  const row = await workerPluginDb.getByIdVersion(id, version);
+  if (!row) return false;
+  // 守卫必须与删除在同一条语句内评估：先 COUNT 再 DELETE 的窗口可被并发 run/订阅穿过
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (await workerPluginDb.deleteIfUnused(id, version)) {
+      memoryLogger.warn(`plugin ${id}@${version} deleted`, "PluginCenter");
+      return true;
+    }
+    const [activeRuns, enrollments] = await Promise.all([
+      agentSearchRunDb.countActiveByPluginVersion(id, version),
+      userPluginEnrollmentDb.countByPluginVersion(id, version),
+    ]);
+    if (activeRuns > 0) {
+      throw new PluginStoreError(
+        "plugin_in_use",
+        `plugin ${id}@${version} still has ${activeRuns} queued or running run(s); finish or cancel them first`,
+      );
+    }
+    if (enrollments > 0) {
+      throw new PluginStoreError(
+        "plugin_in_use",
+        `plugin ${id}@${version} is still enrolled by ${enrollments} user(s); unenroll it first`,
+      );
+    }
+    // 删除未命中但计数已清零：run 恰好在语句间隙结束，重试一次
+  }
+  return false;
 }

@@ -2,8 +2,10 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const rows = new Map<string, any>();
+  const configs = new Map<string, string>();
   return {
     rows,
+    configs,
     workerPluginRepository: {
       create: vi.fn(async (row: any) => {
         const key = `${row.id}@${row.version}`;
@@ -29,6 +31,14 @@ const mocks = vi.hoisted(() => {
         return candidates[0];
       }),
       listAll: vi.fn(async () => [...rows.values()]),
+      deleteIfUnused: vi.fn(async (id: string, version: string) => {
+        const [runs, enrollments] = await Promise.all([
+          mocks.agentSearchRunRepository.countActiveByPluginVersion(id, version),
+          mocks.userPluginEnrollmentRepository.countByPluginVersion(id, version),
+        ]);
+        if (runs > 0 || enrollments > 0) return false;
+        return rows.delete(`${id}@${version}`);
+      }),
       setStatus: vi.fn(async (id: string, version: string, status: string) => {
         const row = rows.get(`${id}@${version}`);
         if (!row) return undefined;
@@ -41,11 +51,39 @@ const mocks = vi.hoisted(() => {
         return row;
       }),
     },
+    userPluginEnrollmentRepository: {
+      countByPluginVersion: vi.fn(async (_pluginId: string, _version: string) => 0),
+      deleteByUserAndPlugin: vi.fn(async () => true),
+      listByUser: vi.fn(async () => []),
+    },
+    agentSearchRunRepository: {
+      countActiveByPluginVersion: vi.fn(
+        async (_pluginId: string, _version: string) => 0,
+      ),
+    },
+    systemConfigRepository: {
+      get: vi.fn(async (key: string) =>
+        configs.has(key)
+          ? {
+              key,
+              value: configs.get(key) as string,
+              description: null,
+              updated_at: 0,
+            }
+          : undefined,
+      ),
+      set: vi.fn(async (key: string, value: string) => {
+        configs.set(key, value);
+      }),
+    },
   };
 });
 
 vi.mock("../../db/index.js", () => ({
   workerPluginDb: mocks.workerPluginRepository,
+  userPluginEnrollmentDb: mocks.userPluginEnrollmentRepository,
+  agentSearchRunDb: mocks.agentSearchRunRepository,
+  systemConfigDb: mocks.systemConfigRepository,
 }));
 vi.mock("../../services/logger.js", () => ({
   memoryLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -53,6 +91,7 @@ vi.mock("../../services/logger.js", () => ({
 
 import {
   BUILTIN_PLUGIN_BUNDLES,
+  deletePluginVersion,
   publishPlugin,
   resolvePlugin,
   seedBuiltinPlugins,
@@ -89,6 +128,7 @@ function validPublishInput() {
 
 beforeEach(() => {
   mocks.rows.clear();
+  mocks.configs.clear();
   vi.clearAllMocks();
 });
 
@@ -109,9 +149,53 @@ describe("plugin store: seed", () => {
     await seedBuiltinPlugins();
     const row = mocks.rows.get(FIXTURE_KEY);
     row.digest = "sha256:deadbeef";
+    // 旧库（无 seed 标记）重启时才走 digest 复验分支
+    mocks.configs.clear();
     await seedBuiltinPlugins();
     expect(mocks.rows.get(FIXTURE_KEY).digest).toBe("sha256:deadbeef");
     expect(mocks.workerPluginRepository.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("plugin store: delete", () => {
+  it("deletes a version and keeps it deleted across restarts", async () => {
+    await seedBuiltinPlugins();
+    expect(await deletePluginVersion(PLUGIN_ID, FIXTURE_VERSION)).toBe(true);
+    expect(mocks.rows.has(FIXTURE_KEY)).toBe(false);
+
+    await seedBuiltinPlugins();
+    expect(mocks.rows.has(FIXTURE_KEY)).toBe(false);
+    expect(await resolvePlugin(PLUGIN_ID, FIXTURE_VERSION)).toBeUndefined();
+  });
+
+  it("refuses to delete a version with queued or running runs", async () => {
+    await seedBuiltinPlugins();
+    mocks.agentSearchRunRepository.countActiveByPluginVersion.mockResolvedValue(2);
+    try {
+      await expect(
+        deletePluginVersion(PLUGIN_ID, FIXTURE_VERSION),
+      ).rejects.toMatchObject({ code: "plugin_in_use" });
+      expect(mocks.rows.has(FIXTURE_KEY)).toBe(true);
+    } finally {
+      mocks.agentSearchRunRepository.countActiveByPluginVersion.mockResolvedValue(0);
+    }
+  });
+
+  it("refuses to delete a version still enrolled by users", async () => {
+    await seedBuiltinPlugins();
+    mocks.userPluginEnrollmentRepository.countByPluginVersion.mockResolvedValue(1);
+    try {
+      await expect(
+        deletePluginVersion(PLUGIN_ID, FIXTURE_VERSION),
+      ).rejects.toMatchObject({ code: "plugin_in_use" });
+      expect(mocks.rows.has(FIXTURE_KEY)).toBe(true);
+    } finally {
+      mocks.userPluginEnrollmentRepository.countByPluginVersion.mockResolvedValue(0);
+    }
+  });
+
+  it("returns false for unknown versions", async () => {
+    expect(await deletePluginVersion("com.llm-gateway.x", "1.0.0")).toBe(false);
   });
 });
 

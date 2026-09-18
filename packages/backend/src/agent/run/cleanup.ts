@@ -55,7 +55,9 @@ async function cleanupOrphanWorkspaces(): Promise<number> {
 
 export function startAgentSearchCleanup(): void {
   if (cleanupJob) return;
-  cleanupJob = cron.schedule('*/30 * * * *', async () => {
+  // 滑动 TTL 下过期是常态而非异常，cron 频率直接决定磁盘回收滞后：
+  // 每 30 分钟一次意味着过期后最多再占 30 分钟。
+  cleanupJob = cron.schedule('*/5 * * * *', async () => {
     try {
       await runAgentSearchCleanup();
     } catch (e) {

@@ -67,6 +67,13 @@ export const workerPluginApi = {
     return request.post(`/admin/worker-plugins/${id}/${version}/revoke`);
   },
 
+  remove(
+    id: string,
+    version: string,
+  ): Promise<{ id: string; version: string; deleted: boolean }> {
+    return request.delete(`/admin/worker-plugins/${id}/${version}`);
+  },
+
   enroll(
     pluginId: string,
     payload: { version: string; enabled: boolean; is_default: boolean },
@@ -75,5 +82,9 @@ export const workerPluginApi = {
       `/admin/worker-plugins/enrollments/${pluginId}`,
       payload,
     );
+  },
+
+  unenroll(pluginId: string): Promise<{ plugin_id: string; deleted: boolean }> {
+    return request.delete(`/admin/worker-plugins/enrollments/${pluginId}`);
   },
 };

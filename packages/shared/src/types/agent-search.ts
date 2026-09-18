@@ -172,6 +172,11 @@ export const createSnapshotRequestSchema = z.object({
       .optional(),
   }),
   manifest: snapshotManifestSchema,
+  /**
+   * 增量上传：同属主的既有快照 id。其对象按 sha256 寻址，未变化文件在 create
+   * 时直接复用到新快照，客户端只需上传响应 `reused_paths` 之外的条目。
+   */
+  base_snapshot_id: z.string().min(1).max(128).optional(),
 });
 
 export type CreateSnapshotRequest = z.infer<typeof createSnapshotRequestSchema>;
