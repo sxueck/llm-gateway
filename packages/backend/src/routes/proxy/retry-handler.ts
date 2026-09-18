@@ -14,6 +14,9 @@ export interface RetryContext {
   startTime: number;
   isResponsesApi?: boolean;
   entrypointProtocol?: 'openai' | 'anthropic' | 'gemini';
+  /** Cache coalescing: lock identity of the request that dispatched this retry. */
+  cacheLockKey?: string;
+  cacheLockOwner?: string;
   /**
    * Pristine, globally-normalized request body captured by the entrypoint route before
    * any target-specific mutation (serving-cap clamp, model attributes, PII masking).
@@ -291,6 +294,8 @@ async function handleSmartRoutingRetry(
     modelAttributes: targetMutations.modelAttributes,
     effectiveMaxCompletionTokens: targetMutations.effectiveMaxCompletionTokens,
     retryBodySnapshot: context.retryBodySnapshot,
+    cacheLockKey: context.cacheLockKey,
+    cacheLockOwner: context.cacheLockOwner,
   });
   return true;
 }

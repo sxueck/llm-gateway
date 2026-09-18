@@ -233,6 +233,16 @@ export class RequestCache {
     };
   }
 
+  /**
+   * Existence check that touches neither hit/miss stats nor LRU recency.
+   * Used by the cache-lock wait loop, which polls at high frequency.
+   */
+  peek(key: string): boolean {
+    const entry = this.cache.peek(key);
+    if (!entry) return false;
+    return Date.now() - entry.timestamp <= entry.ttl;
+  }
+
   clear(): void {
     const previousSize = this.cache.size;
     const previousBytes = this.cache.totalBytes;

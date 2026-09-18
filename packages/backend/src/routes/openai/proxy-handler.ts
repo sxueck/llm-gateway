@@ -9,7 +9,7 @@ import { getRequestUserAgent } from '../../utils/http.js';
 import { makeHttpRequest, makeStreamHttpRequest, makeImageGenerationProxyRequest } from '../proxy/http-client.js';
 import { detectImageSizeMismatch } from '../../utils/image-size.js';
 import { requestHeaderForwardingService } from '../../services/request-header-forwarding.js';
-import { checkCache, setCacheIfNeeded, getCacheStatus } from '../proxy/cache.js';
+import { checkCache, setCacheIfNeeded, getCacheStatus, releaseCacheLock, tryAcquireCacheLock, waitForCacheFill } from '../proxy/cache.js';
 import { runProxyPipeline } from '../proxy/pipeline.js';
 import { calculateTokensIfNeeded } from '../proxy/token-calculator.js';
 import { circuitBreaker } from '../../services/circuit-breaker.js';
@@ -152,6 +152,13 @@ export interface ProxyRequestContext {
    * RetryContext so every smart-routing retry replays the same pristine body.
    */
   retryBodySnapshot?: any;
+  /**
+   * Identity of the response-cache lock held by this request (cache coalescing).
+   * Carried across smart-routing retries so the re-entered handler keeps
+   * leadership instead of waiting on its own lock.
+   */
+  cacheLockKey?: string;
+  cacheLockOwner?: string;
 }
 
 // ─── Smart-routing retry-safe body snapshot ─────────────────────────────────
@@ -1158,7 +1165,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
     }
   }
 
-  const cacheResult = checkCache(
+  let cacheResult = checkCache(
     virtualKey,
     false, // isStreamRequest — always false in the non-stream path
     bypassGatewayCache,
@@ -1166,8 +1173,42 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
     vkDisplay
   );
 
+  // Cache coalescing (single-flight lite): when another identical request is
+  // filling this cache entry, wait for it instead of stampeding the provider.
+  let cacheLockKey: string | undefined;
+  let cacheLockOwner: string | undefined;
+  if (!cacheResult.cached && cacheResult.shouldCache && cacheResult.cacheKey) {
+    if (ctx.cacheLockKey === cacheResult.cacheKey && ctx.cacheLockOwner) {
+      // Smart-routing retry re-entry of the lock-holding request.
+      cacheLockKey = ctx.cacheLockKey;
+      cacheLockOwner = ctx.cacheLockOwner;
+    } else {
+      let owner = tryAcquireCacheLock(cacheResult.cacheKey);
+      if (!owner) {
+        const outcome = await waitForCacheFill(cacheResult.cacheKey);
+        if (outcome === 'filled') {
+          cacheResult = checkCache(virtualKey, false, bypassGatewayCache, request.body, vkDisplay);
+        } else if (outcome === 'released') {
+          owner = tryAcquireCacheLock(cacheResult.cacheKey);
+        }
+        // 'timeout': proceed unlocked — same behavior as before the lock existed.
+      }
+      if (owner) {
+        // cacheKey was truthy at the outer guard; TS loses the narrowing across the await.
+        cacheLockKey = cacheResult.cacheKey!;
+        cacheLockOwner = owner;
+        ctx.cacheLockKey = cacheLockKey;
+        ctx.cacheLockOwner = cacheLockOwner;
+      }
+    }
+  }
+
   if (cacheResult.cached) {
     fromCache = true;
+    if (cacheLockKey && cacheLockOwner) {
+      // Retry re-entry that found the entry already filled by another request.
+      releaseCacheLock(cacheLockKey, cacheLockOwner);
+    }
     reply.headers({
       ...cacheResult.cached.headers,
       'X-Cache-Status': 'HIT'
@@ -1340,6 +1381,8 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
   if (typeof responseBody === 'string') {
     const parsed = parseResponseBody(responseBody, contentType);
     if (parsed && typeof parsed === 'object' && (parsed as any).__send === true && typeof (parsed as any).__raw === 'string') {
+      // Raw passthroughs are never cached — free waiters to take over.
+      if (cacheLockKey && cacheLockOwner) releaseCacheLock(cacheLockKey, cacheLockOwner);
       reply.header('Content-Type', contentType || 'text/plain');
       return reply.send(parsed.__raw);
     }
@@ -1461,6 +1504,8 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
         startTime,
         entrypointProtocol: 'openai',
         retryBodySnapshot: ctx.retryBodySnapshot,
+        cacheLockKey: cacheLockKey || undefined,
+        cacheLockOwner: cacheLockOwner || undefined,
       });
 
       if (retried) {
@@ -1580,6 +1625,10 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
     })}`,
     'Proxy'
   );
+
+  if (cacheLockKey && cacheLockOwner) {
+    releaseCacheLock(cacheLockKey, cacheLockOwner);
+  }
 
   return reply.send(responseData);
 }
