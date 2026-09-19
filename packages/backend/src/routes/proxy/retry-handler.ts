@@ -18,6 +18,12 @@ export interface RetryContext {
   cacheLockKey?: string;
   cacheLockOwner?: string;
   /**
+   * Logical response-cache key (see ProxyRequestContext.logicalCacheKey).
+   * Forwarded to the OpenAI non-stream re-entry so retries keep filling and
+   * polling the same cache entry as the original attempt.
+   */
+  logicalCacheKey?: string | null;
+  /**
    * Pristine, globally-normalized request body captured by the entrypoint route before
    * any target-specific mutation (serving-cap clamp, model attributes, PII masking).
    * Replayed before the retry target so it never receives the failed target's
@@ -294,6 +300,7 @@ async function handleSmartRoutingRetry(
     modelAttributes: targetMutations.modelAttributes,
     effectiveMaxCompletionTokens: targetMutations.effectiveMaxCompletionTokens,
     retryBodySnapshot: context.retryBodySnapshot,
+    logicalCacheKey: context.logicalCacheKey,
     cacheLockKey: context.cacheLockKey,
     cacheLockOwner: context.cacheLockOwner,
   });

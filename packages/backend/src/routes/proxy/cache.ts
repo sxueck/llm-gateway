@@ -37,6 +37,43 @@ export function checkCache(
   };
 }
 
+/**
+ * Logical cache key computed from the PRISTINE client request body, called in
+ * the route's afterAuth hook — before model resolution / smart routing can
+ * rewrite request.body (model, reasoning_effort, thinking, token caps). Keeps
+ * one logical request on exactly one cache key regardless of routing target.
+ */
+export function computeLogicalCacheKey(
+  virtualKey: any,
+  requestBody: any,
+  isStreamRequest: boolean,
+  bypassGatewayCache: boolean
+): string | null {
+  const eligible = virtualKey?.cache_enabled === 1 && !isStreamRequest && !bypassGatewayCache && requestBody;
+  return eligible ? generateCacheKey(requestBody, virtualKey.id) : null;
+}
+
+/**
+ * Cache lookup against a precomputed logical key. Used by the non-stream
+ * handler (and its smart-routing retry re-entry) so late lookups never
+ * regenerate a key from the routing-mutated body.
+ */
+export function checkCacheWithKey(virtualKey: any, cacheKey: string | null): CacheCheckResult {
+  if (!cacheKey || virtualKey?.cache_enabled !== 1) {
+    return { shouldCache: false, cacheKey: null, cached: null };
+  }
+  return { shouldCache: true, cacheKey, cached: requestCache.get(cacheKey) };
+}
+
+/**
+ * Stats-free existence probe for the early (afterAuth) lookup: a probe miss
+ * must not touch hit/miss counters — the authoritative count happens in
+ * handleNonStreamRequest. Only a probe hit triggers the counting lookup.
+ */
+export function hasCachedEntry(cacheKey: string | null): boolean {
+  return !!cacheKey && requestCache.peek(cacheKey);
+}
+
 export function setCacheIfNeeded(
   cacheKey: string | null,
   shouldCache: boolean,

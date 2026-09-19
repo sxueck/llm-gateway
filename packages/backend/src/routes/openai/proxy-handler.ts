@@ -9,7 +9,7 @@ import { getRequestUserAgent } from '../../utils/http.js';
 import { makeHttpRequest, makeStreamHttpRequest, makeImageGenerationProxyRequest } from '../proxy/http-client.js';
 import { detectImageSizeMismatch } from '../../utils/image-size.js';
 import { requestHeaderForwardingService } from '../../services/request-header-forwarding.js';
-import { checkCache, setCacheIfNeeded, getCacheStatus, releaseCacheLock, tryAcquireCacheLock, waitForCacheFill } from '../proxy/cache.js';
+import { checkCache, checkCacheWithKey, computeLogicalCacheKey, getCacheStatus, hasCachedEntry, releaseCacheLock, setCacheIfNeeded, tryAcquireCacheLock, waitForCacheFill } from '../proxy/cache.js';
 import { runProxyPipeline } from '../proxy/pipeline.js';
 import { calculateTokensIfNeeded } from '../proxy/token-calculator.js';
 import { circuitBreaker } from '../../services/circuit-breaker.js';
@@ -159,6 +159,13 @@ export interface ProxyRequestContext {
    */
   cacheLockKey?: string;
   cacheLockOwner?: string;
+  /**
+   * Logical response-cache key computed from the pristine client body in the
+   * route's afterAuth hook — before model resolution / smart routing rewrite
+   * request.body. Stable across retries so lookups, locks and fills share one
+   * key regardless of routing target. Null when caching is not applicable.
+   */
+  logicalCacheKey?: string | null;
 }
 
 // ─── Smart-routing retry-safe body snapshot ─────────────────────────────────
@@ -375,6 +382,8 @@ export function createOpenAIProxyHandler() {
     let parsedModelAttributes: any | undefined;
     let requestIp = 'unknown';
     let requestUserAgent = '';
+    let logicalCacheKeyForRequest: string | null | undefined;
+    let proxyCtx: ProxyRequestContext | undefined;
 
     try {
       const pipelineResult = await runProxyPipeline(request, reply, {
@@ -410,7 +419,7 @@ export function createOpenAIProxyHandler() {
             reply.code(providerConfigError.code).send(providerConfigError.body);
           },
         },
-        afterAuth: async ({ virtualKey, virtualKeyValue: vkValue }) => {
+        afterAuth: async ({ request, reply, requestIp, requestUserAgent, virtualKey, virtualKeyValue: vkValue }): Promise<boolean | void> => {
           virtualKeyValue = vkValue;
 
           // Best-effort: shrink base64 images early so cache key + payload are smaller.
@@ -426,6 +435,36 @@ export function createOpenAIProxyHandler() {
             memoryLogger.warn(`图像压缩预处理失败(已跳过): ${e?.message || e}`, 'Proxy');
           }
           capturePromptSampleAsync(virtualKey, request, 'openai');
+
+          // Response cache: compute the logical key from the pristine client body
+          // BEFORE model resolution / smart routing rewrite request.body, so one
+          // logical request maps to exactly one cache entry regardless of which
+          // target wins. A hit returns here and skips target selection entirely.
+          logicalCacheKeyForRequest = computeLogicalCacheKey(
+            virtualKey,
+            request.body,
+            (request.body as any)?.stream === true,
+            shouldBypassGatewayCache(request.url || '')
+          );
+          if (logicalCacheKeyForRequest && hasCachedEntry(logicalCacheKeyForRequest)) {
+            const early = checkCacheWithKey(virtualKey, logicalCacheKeyForRequest);
+            if (early.cached) {
+              await sendNonStreamCacheHit({
+                request,
+                reply,
+                startTime,
+                virtualKey,
+                providerId: undefined,
+                currentModel: undefined,
+                modelAttributes: undefined,
+                cached: early.cached,
+                ip: requestIp,
+                userAgent: requestUserAgent,
+              });
+              return false;
+            }
+          }
+          return;
         }
       });
       if (!pipelineResult.ok) {
@@ -562,7 +601,7 @@ export function createOpenAIProxyHandler() {
         });
       }
 
-      const proxyCtx: ProxyRequestContext = {
+      proxyCtx = {
         request,
         reply,
         protocolConfig,
@@ -577,6 +616,7 @@ export function createOpenAIProxyHandler() {
         modelAttributes: parsedModelAttributes,
         effectiveMaxCompletionTokens,
         retryBodySnapshot,
+        logicalCacheKey: logicalCacheKeyForRequest,
       };
 
       if (isStreamRequest) {
@@ -585,6 +625,11 @@ export function createOpenAIProxyHandler() {
 
       return await handleNonStreamRequest(proxyCtx);
     } catch (error: any) {
+      // A thrown request never reaches a release point; free the cache lock
+      // here or waiters poll their full wait budget before proceeding unlocked.
+      if (proxyCtx?.cacheLockKey && proxyCtx.cacheLockOwner) {
+        releaseCacheLock(proxyCtx.cacheLockKey, proxyCtx.cacheLockOwner);
+      }
       const duration = Date.now() - startTime;
 
       memoryLogger.error(
@@ -642,6 +687,7 @@ export function createOpenAIProxyHandler() {
           }
         });
       }
+      return;
     }
   };
 }
@@ -989,6 +1035,89 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
   }
 }
 
+interface NonStreamCacheHitArgs {
+  request: FastifyRequest;
+  reply: FastifyReply;
+  startTime: number;
+  virtualKey: any;
+  /** Undefined on an early hit, where model resolution was skipped entirely. */
+  providerId?: string;
+  currentModel?: any;
+  modelAttributes?: any;
+  compressionStats?: { originalTokens: number; savedTokens: number };
+  cached: { response: any; headers: Record<string, string> };
+  /** Present when a retry re-entry found the entry filled by another request. */
+  retryLock?: { key: string; owner: string };
+  ip: string;
+  userAgent: string;
+}
+
+/** Serve a non-stream response from the cache. Shared by the early hit path
+ *  (afterAuth, before routing) and the in-handler hit path (incl. retry re-entry). */
+async function sendNonStreamCacheHit(args: NonStreamCacheHitArgs): Promise<unknown> {
+  const { request, reply, startTime, virtualKey, providerId, currentModel, modelAttributes,
+    compressionStats, cached, retryLock, ip, userAgent } = args;
+
+  if (retryLock) {
+    releaseCacheLock(retryLock.key, retryLock.owner);
+  }
+  reply.headers({
+    ...cached.headers,
+    'X-Cache-Status': 'HIT'
+  });
+  reply.code(200);
+
+  // 在返回与记录前净化缓存响应，去除上游调试 instructions 字段
+  let cachedResponseForClient: any = cached.response;
+  try {
+    stripFieldRecursively(cachedResponseForClient, 'instructions');
+  } catch (_e) {
+    memoryLogger.debug(`Strip cached instructions failed: ${(_e as Error)?.message || _e}`, 'Proxy');
+  }
+
+  const duration = Date.now() - startTime;
+  const shouldLogBody = shouldLogRequestBody(virtualKey);
+
+  const fullRequestBody = buildRequestBodyForLogging(request.body, modelAttributes, shouldLogBody);
+  const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
+  const truncatedResponse = shouldLogBody ? truncateResponseBody(cachedResponseForClient) : undefined;
+
+  // 使用统一归一化解析 usage，兼容 Responses 与 Chat Completions
+  const normCached = normalizeUsageCounts(cached.response?.usage);
+  const tokenCount = await calculateTokensIfNeeded(
+    normCached.totalTokens,
+    request.body,
+    cached.response,
+    undefined,
+    normCached.promptTokens,
+    normCached.completionTokens
+  );
+
+  logApiRequestAsync({
+    virtualKey,
+    providerId,
+    model: getModelForLogging(request.body, currentModel),
+    tokenCount,
+    status: 'success',
+    responseTime: duration,
+    truncatedRequest,
+    truncatedResponse,
+    cacheHit: 1,
+    cachedTokens: normCached.cachedTokens,
+    compressionStats,
+    ip,
+    userAgent,
+    piiMaskedCount: 0,
+  });
+
+  memoryLogger.info(
+    `请求完成: 200 | ${duration}ms | tokens: ${tokenCount.totalTokens} | 缓存命中`,
+    'Proxy'
+  );
+
+  return reply.send(cachedResponseForClient);
+}
+
 export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
   const {
     request, reply, protocolConfig, path, virtualKey, providerId,
@@ -1165,13 +1294,17 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
     }
   }
 
-  let cacheResult = checkCache(
-    virtualKey,
-    false, // isStreamRequest — always false in the non-stream path
-    bypassGatewayCache,
-    request.body,
-    vkDisplay
-  );
+  // Use the logical key computed from the pristine client body (afterAuth) —
+  // request.body may already carry routing-target mutations by this point.
+  let cacheResult = ctx.logicalCacheKey != null
+    ? checkCacheWithKey(virtualKey, ctx.logicalCacheKey)
+    : checkCache(
+        virtualKey,
+        false, // isStreamRequest — always false in the non-stream path
+        bypassGatewayCache,
+        request.body,
+        vkDisplay
+      );
 
   // Cache coalescing (single-flight lite): when another identical request is
   // filling this cache entry, wait for it instead of stampeding the provider.
@@ -1187,7 +1320,9 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       if (!owner) {
         const outcome = await waitForCacheFill(cacheResult.cacheKey);
         if (outcome === 'filled') {
-          cacheResult = checkCache(virtualKey, false, bypassGatewayCache, request.body, vkDisplay);
+          cacheResult = ctx.logicalCacheKey != null
+            ? checkCacheWithKey(virtualKey, ctx.logicalCacheKey)
+            : checkCache(virtualKey, false, bypassGatewayCache, request.body, vkDisplay);
         } else if (outcome === 'released') {
           owner = tryAcquireCacheLock(cacheResult.cacheKey);
         }
@@ -1205,65 +1340,20 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
 
   if (cacheResult.cached) {
     fromCache = true;
-    if (cacheLockKey && cacheLockOwner) {
-      // Retry re-entry that found the entry already filled by another request.
-      releaseCacheLock(cacheLockKey, cacheLockOwner);
-    }
-    reply.headers({
-      ...cacheResult.cached.headers,
-      'X-Cache-Status': 'HIT'
-    });
-    reply.code(200);
-
-    // 在返回与记录前净化缓存响应，去除上游调试 instructions 字段
-    let cachedResponseForClient: any = cacheResult.cached.response;
-    try {
-      stripFieldRecursively(cachedResponseForClient, 'instructions');
-    } catch (_e) {
-      memoryLogger.debug(`Strip cached instructions failed: ${(_e as Error)?.message || _e}`, 'Proxy');
-    }
-
-    const duration = Date.now() - startTime;
-    const shouldLogBody = shouldLogRequestBody(virtualKey);
-
-    const fullRequestBody = buildRequestBodyForLogging(request.body, modelAttributes, shouldLogBody);
-    const truncatedRequest = shouldLogBody ? truncateRequestBody(fullRequestBody) : undefined;
-    const truncatedResponse = shouldLogBody ? truncateResponseBody(cachedResponseForClient) : undefined;
-
-    // 使用统一归一化解析 usage，兼容 Responses 与 Chat Completions
-    const normCached = normalizeUsageCounts(cacheResult.cached.response?.usage);
-    const tokenCount = await calculateTokensIfNeeded(
-      normCached.totalTokens,
-      request.body,
-      cacheResult.cached.response,
-      undefined,
-      normCached.promptTokens,
-      normCached.completionTokens
-    );
-
-    logApiRequestAsync({
+    return await sendNonStreamCacheHit({
+      request,
+      reply,
+      startTime,
       virtualKey,
       providerId,
-      model: getModelForLogging(request.body, currentModel),
-      tokenCount,
-      status: 'success',
-      responseTime: duration,
-      truncatedRequest,
-      truncatedResponse,
-      cacheHit: 1,
-      cachedTokens: normCached.cachedTokens,
+      currentModel,
+      modelAttributes,
       compressionStats,
+      cached: cacheResult.cached,
+      retryLock: cacheLockKey && cacheLockOwner ? { key: cacheLockKey, owner: cacheLockOwner } : undefined,
       ip: nonStreamRequestIp,
       userAgent: nonStreamRequestUserAgent,
-      piiMaskedCount: 0,
     });
-
-    memoryLogger.info(
-      `请求完成: 200 | ${duration}ms | tokens: ${tokenCount.totalTokens} | 缓存命中`,
-      'Proxy'
-    );
-
-    return reply.send(cachedResponseForClient);
   }
 
   const abortController = new AbortController();
@@ -1504,6 +1594,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
         startTime,
         entrypointProtocol: 'openai',
         retryBodySnapshot: ctx.retryBodySnapshot,
+        logicalCacheKey: ctx.logicalCacheKey,
         cacheLockKey: cacheLockKey || undefined,
         cacheLockOwner: cacheLockOwner || undefined,
       });

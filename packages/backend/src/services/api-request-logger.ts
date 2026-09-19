@@ -6,7 +6,8 @@ import { memoryLogger } from './logger.js';
 
 export interface ApiLogParams {
   virtualKey: VirtualKey;
-  providerId: string;
+  /** Undefined on early cache hits, where model/provider resolution never ran. */
+  providerId: string | undefined;
   model: string;
   tokenCount: TokenCalculationResult; // { promptTokens, completionTokens, totalTokens }
   status: 'success' | 'error';
