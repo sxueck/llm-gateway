@@ -341,6 +341,7 @@ type SystemSettingsResponse = {
   corsEnabled: boolean;
   publicUrl: string;
   litellmCompatEnabled: boolean;
+  streamResumeEnabled: boolean;
   healthMonitoringEnabled: boolean;
   persistentMonitoringEnabled: boolean;
   developerDebugEnabled: boolean;
@@ -365,6 +366,7 @@ type UpdateSystemSettingsRequest = {
   corsEnabled?: boolean;
   publicUrl?: string;
   litellmCompatEnabled?: boolean;
+  streamResumeEnabled?: boolean;
   healthMonitoringEnabled?: boolean;
   persistentMonitoringEnabled?: boolean;
   developerDebugEnabled?: boolean;

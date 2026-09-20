@@ -343,6 +343,8 @@ export default {
     },
     protocolCompat: 'Protocol Compatibility Mode',
     protocolCompatDesc: 'When enabled, you can select protocol type in tools like RooCode / KiloCode, automatically reusing context size and feature support configurations from the preset library.',
+    streamResume: 'Stream Resume',
+    streamResumeDesc: 'When an upstream stream breaks unexpectedly, automatically send one continuation request carrying the partial output to complete the reply (text phase only; not during tool calls)',
     litellmCompatEnabled: {
       title: 'Protocol Compatibility Mode Enabled',
       content: 'The /v1/model/info endpoint is enabled, returning model information in protocol format. Can be used in tools that support protocols like Roo Code, Continue, etc., automatically obtaining model context window size, feature support, and other configurations.',

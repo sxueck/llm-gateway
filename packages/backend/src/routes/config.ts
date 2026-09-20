@@ -152,6 +152,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     const corsEnabledCfg = await systemConfigDb.get("cors_enabled");
     const publicUrlCfg = await systemConfigDb.get("public_url");
     const litellmCompatCfg = await systemConfigDb.get("litellm_compat_enabled");
+    const streamResumeCfg = await systemConfigDb.get("stream_resume_enabled");
     const healthMonitoringCfg = await systemConfigDb.get(
       "health_monitoring_enabled",
     );
@@ -193,6 +194,9 @@ export async function configRoutes(fastify: FastifyInstance) {
       publicUrl: publicUrlCfg ? publicUrlCfg.value : appConfig.defaultPublicUrl,
       litellmCompatEnabled: litellmCompatCfg
         ? litellmCompatCfg.value === "true"
+        : false,
+      streamResumeEnabled: streamResumeCfg
+        ? streamResumeCfg.value === "true"
         : false,
       healthMonitoringEnabled: healthMonitoringCfg
         ? healthMonitoringCfg.value === "true"
@@ -316,6 +320,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       corsEnabled,
       publicUrl,
       litellmCompatEnabled,
+      streamResumeEnabled,
       healthMonitoringEnabled,
       persistentMonitoringEnabled,
       developerDebugEnabled,
@@ -330,6 +335,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       corsEnabled?: boolean;
       publicUrl?: string;
       litellmCompatEnabled?: boolean;
+      streamResumeEnabled?: boolean;
       healthMonitoringEnabled?: boolean;
       persistentMonitoringEnabled?: boolean;
       developerDebugEnabled?: boolean;
@@ -398,6 +404,25 @@ export async function configRoutes(fastify: FastifyInstance) {
         }
         memoryLogger.info(
           `LiteLLM 兼容模式已更新: ${litellmCompatEnabled ? "启用" : "禁用"}`,
+          "Config",
+        );
+      }
+
+      if (streamResumeEnabled !== undefined) {
+        await systemConfigDb.set(
+          "stream_resume_enabled",
+          streamResumeEnabled ? "true" : "false",
+          "是否启用流式断点续传：上游流中断时携带已输出内容自动续写",
+        );
+        const verify = await systemConfigDb.get("stream_resume_enabled");
+        if (
+          !verify ||
+          verify.value !== (streamResumeEnabled ? "true" : "false")
+        ) {
+          throw new Error("流式断点续传配置保存失败");
+        }
+        memoryLogger.info(
+          `流式断点续传已更新: ${streamResumeEnabled ? "启用" : "禁用"}`,
           "Config",
         );
       }

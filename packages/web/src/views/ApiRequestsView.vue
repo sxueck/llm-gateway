@@ -90,6 +90,14 @@
                   {{ selectedRequest.status === 'success' ? '成功' : '失败' }}
                 </n-tag>
               </n-descriptions-item>
+              <n-descriptions-item
+                label="断点续传"
+                v-if="getRequestParams(selectedRequest!)?.stream_resumed"
+              >
+                <n-tag type="warning" size="small">
+                  已续传 {{ getRequestParams(selectedRequest!)?.stream_resume_chars ?? 0 }} 字符
+                </n-tag>
+              </n-descriptions-item>
               <n-descriptions-item label="输入 Tokens">
                 <n-tag type="default" size="small">
                   {{ getTokens(selectedRequest!, 'input') }}

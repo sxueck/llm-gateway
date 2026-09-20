@@ -14,6 +14,7 @@ export interface DebugApiEvent {
   method: string;
   path: string;
   stream: boolean;
+  streamResumed?: boolean;
   success: boolean;
   statusCode?: number;
   fromCache?: boolean;
@@ -25,7 +26,7 @@ export interface DebugApiEvent {
   requestBody: any;
   responseBody?: any;
   error?: string;
-  requestHeaders?: Record<string, any>;
+  requestHeaders?: Record<string, unknown>;
 }
 
 /**

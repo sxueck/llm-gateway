@@ -10,6 +10,7 @@ import {
   processOpenAIResponsesStreamToSseWithRetry,
 } from '../utils/responses-stream-processor.js';
 import { filterForwardedHeaders } from '../utils/header-sanitizer.js';
+import { buildResumeMessages, isStreamResumeEnabled } from './stream-resumer.js';
 
 export type UpstreamTransport = 'http_sse' | 'websocket';
 
@@ -323,7 +324,34 @@ export class ProtocolAdapter {
 
     this.applyForwardedHeadersToRequestOptions(requestOptions, config, options);
 
+    // Stream resume (system setting `stream_resume_enabled`): on a mid-stream
+    // upstream failure the processor asks this factory for a continuation
+    // stream built from the text already delivered downstream.
+    const resumeStreamFactory = async (
+      partialText: string
+    ): Promise<AsyncIterable<any> | null> => {
+      if (!(await isStreamResumeEnabled())) return null;
+      try {
+        // SAFETY: OpenAI SDK returns a Stream<ChatCompletionChunk>-like async iterable in
+        // streaming mode; its generated union type doesn't narrow, but the resume
+        // consumer iterates the same SSE chunk objects as the primary stream.
+        return await client.chat.completions.create(
+          {
+            ...requestParams,
+            messages: buildResumeMessages(cleanedMessages, partialText),
+          },
+          Object.keys(requestOptions).length > 0 ? requestOptions : undefined
+        ) as unknown as AsyncIterable<any>;
+      } catch (resumeError: any) {
+        memoryLogger.debug(`断点续传请求创建失败: ${resumeError?.message || resumeError}`, 'Protocol');
+        return null;
+      }
+    };
+
     const upstreamRequestStartedAt = Date.now();
+    // SAFETY: OpenAI SDK returns a Stream<ChatCompletionChunk>-like async iterable in
+    // streaming mode; its generated union type doesn't narrow here, but every consumer
+    // iterates SSE chunk objects.
     const stream = await client.chat.completions.create(
       requestParams,
       Object.keys(requestOptions).length > 0 ? requestOptions : undefined
@@ -337,6 +365,7 @@ export class ProtocolAdapter {
       streamRestorer,
       skipUsageChunks: (options as any)?.stream_options?.include_usage !== true,
       logger: memoryLogger,
+      resumeStreamFactory,
     });
   }
 

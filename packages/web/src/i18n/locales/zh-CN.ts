@@ -343,6 +343,8 @@ export default {
     },
     litellmCompat: 'LiteLLM 兼容模式',
     litellmCompatDesc: '开启后可在 RooCode / KiloCode 等工具中选择协议类型，自动复用预设库中的上下文大小和功能支持等配置',
+    streamResume: '流式断点续传',
+    streamResumeDesc: '上游流式输出意外中断时，自动携带已输出内容向上游发起一次续写请求，将回复补全（仅限纯文本阶段，工具调用阶段不续传）',
     litellmCompatEnabled: {
       title: 'LiteLLM 兼容模式已启用',
       content: '已启用 /v1/model/info 端点，返回协议格式的模型信息。可在 Roo Code、Continue 等支持协议的工具中使用，自动获取模型的上下文窗口大小、功能支持等配置。',

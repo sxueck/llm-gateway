@@ -55,6 +55,16 @@
             <n-switch :value="litellmCompatEnabled" @update:value="onToggleLitellmCompat" />
           </n-space>
 
+          <n-divider style="margin: 8px 0;" />
+
+          <n-space align="center" justify="space-between">
+            <div>
+              <div>{{ $t('settings.streamResume') }}</div>
+              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.streamResumeDesc') }}</n-text>
+            </div>
+            <n-switch :value="streamResumeEnabled" @update:value="onToggleStreamResume" />
+          </n-space>
+
 
           <n-divider style="margin: 8px 0;" />
 
@@ -380,6 +390,7 @@ const dialog = useDialog();
 const allowRegistration = ref(true);
 const corsEnabled = ref(true);
 const litellmCompatEnabled = ref(false);
+const streamResumeEnabled = ref(false);
 const publicUrl = ref('');
 const publicUrlInput = ref('');
 const trafficAnalysisRegion = ref<string | null>(null);
@@ -572,6 +583,16 @@ async function onToggleLitellmCompat(val: boolean) {
   try {
     await configApi.updateSystemSettings({ litellmCompatEnabled: val });
     litellmCompatEnabled.value = val;
+    message.success(t('messages.operationSuccess'));
+  } catch (e: any) {
+    message.error(t('messages.operationFailed'));
+  }
+}
+
+async function onToggleStreamResume(val: boolean) {
+  try {
+    await configApi.updateSystemSettings({ streamResumeEnabled: val });
+    streamResumeEnabled.value = val;
     message.success(t('messages.operationSuccess'));
   } catch (e: any) {
     message.error(t('messages.operationFailed'));
@@ -805,6 +826,7 @@ onMounted(async () => {
     allowRegistration.value = s.allowRegistration;
     corsEnabled.value = s.corsEnabled;
     litellmCompatEnabled.value = s.litellmCompatEnabled;
+    streamResumeEnabled.value = s.streamResumeEnabled ?? false;
     publicUrl.value = s.publicUrl;
     publicUrlInput.value = s.publicUrl;
     trafficAnalysisRegion.value = s.trafficAnalysisRegion ?? null;

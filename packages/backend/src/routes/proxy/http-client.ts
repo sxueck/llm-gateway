@@ -26,6 +26,9 @@ export interface StreamTokenUsage {
   tffbMs?: number;
   reasoningContent?: string;
   thinkingBlocks?: ThinkingBlock[];
+  streamResumed?: boolean;
+  streamResumeAttempts?: number;
+  streamResumeChars?: number;
 }
 
 export interface RequestOptions {

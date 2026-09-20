@@ -23,6 +23,7 @@ export interface ApiLogParams {
   userAgent?: string;
   piiMaskedCount?: number;
   requestType?: string;
+  streamResume?: { attempts: number; chars: number };
 }
 
 function safeParseJson(text: string | undefined): any | null {
@@ -44,7 +45,11 @@ function compactObject(input: Record<string, unknown>): Record<string, unknown> 
   return compacted;
 }
 
-function extractRequestParamsJson(requestBody: string | undefined, piiMaskedCount?: number): string | undefined {
+function extractRequestParamsJson(
+  requestBody: string | undefined,
+  piiMaskedCount?: number,
+  streamResume?: { attempts: number; chars: number }
+): string | undefined {
   const parsed = safeParseJson(requestBody);
 
   // Even if the request body can't be parsed (truncated/invalid),
@@ -66,6 +71,9 @@ function extractRequestParamsJson(requestBody: string | undefined, piiMaskedCoun
     reasoning_effort: parsed.reasoning?.effort,
     user: parsed.user,
     pii_masked_count: piiMaskedCount,
+    stream_resumed: streamResume ? true : undefined,
+    stream_resume_attempts: streamResume?.attempts,
+    stream_resume_chars: streamResume?.chars,
   });
 
   if (Object.keys(params).length === 0) return undefined;
@@ -108,7 +116,11 @@ function normalizeErrorMessage(errorMessage: unknown): string | undefined {
 
 export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
   const normalizedErrorMessage = normalizeErrorMessage(params.errorMessage);
-  const requestParamsJson = extractRequestParamsJson(params.truncatedRequest, params.piiMaskedCount);
+  const requestParamsJson = extractRequestParamsJson(
+    params.truncatedRequest,
+    params.piiMaskedCount,
+    params.streamResume
+  );
   const responseMetaJson = extractResponseMetaJson(params.truncatedResponse);
 
     await apiRequestDb.create({

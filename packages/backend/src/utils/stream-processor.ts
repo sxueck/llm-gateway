@@ -23,7 +23,11 @@ export interface OpenAIChatStreamProcessorOptions {
 
   logger?: {
     info: (msg: string, tag?: string) => void;
+    warn?: (msg: string, tag?: string) => void;
   };
+
+  // Builds a continuation stream from delivered plain text.
+  resumeStreamFactory?: (partialText: string) => Promise<AsyncIterable<any> | null>;
 
   // When true, usage-only chunks (usage present, no meaningful choices) are
   // suppressed from the downstream SSE stream. Usage is still extracted for
@@ -51,6 +55,7 @@ export async function processOpenAIChatCompletionStreamToSse(
     streamRestorer,
     logger,
     skipUsageChunks,
+    resumeStreamFactory,
   } = options;
 
   const bufferedKeys = new Set<string>();
@@ -74,108 +79,209 @@ export async function processOpenAIChatCompletionStreamToSse(
   let thinkingBlocks: ThinkingBlock[] = [];
   let toolCalls: any[] = [];
 
+  // Stream-resume state: the first attempt's text already delivered
+  // downstream, and the continuation segment stitching onto it.
+  let activeStream: AsyncIterable<any> = stream;
+  let resumeSegment = false;
+  let resumeAttempts = 0;
+  let resumeChars = 0;
+  let resumeBaseId: string | undefined;
+  let skipNextRoleOnlyChunk = false;
+  let partialContent = '';
+  let sawNonTextDelta = false;
+  let sawNonZeroChoiceIndex = false;
+
   // TFFB (Time to First Byte) is triggered by the first upstream stream event observed by gateway.
   // This measures gateway-level first event timing, not raw TCP bytes or first content/tool_call.
 
-  try {
-    for await (const chunk of stream) {
-      // Stop work if the downstream connection is gone.
-      if (reply.raw.destroyed || reply.raw.writableEnded) {
-        logger?.info('客户端已断开连接，停止流式传输', 'Protocol');
-        break;
-      }
+  streamLoop: while (true) {
+    try {
+      for await (const chunk of activeStream) {
+        // Stop work if the downstream connection is gone.
+        if (reply.raw.destroyed || reply.raw.writableEnded) {
+          logger?.info('客户端已断开连接，停止流式传输', 'Protocol');
+          break;
+        }
 
-      if (chunk && typeof chunk === 'object' && 'instructions' in chunk) {
-        delete (chunk as any).instructions;
-      }
+        if (chunk && typeof chunk === 'object' && 'instructions' in chunk) {
+          delete (chunk as any).instructions;
+        }
 
-      // Builtin PII protection: restore masked values in stream
-      if (Array.isArray((chunk as any).choices) && streamRestorer) {
-        for (const choice of (chunk as any).choices) {
-          const idx = typeof choice?.index === 'number' ? choice.index : 0;
-          const key = `chat:${idx}:content`;
-          const content = choice?.delta?.content;
+        // Builtin PII protection: restore masked values in stream
+        if (Array.isArray((chunk as any).choices) && streamRestorer) {
+          for (const choice of (chunk as any).choices) {
+            const idx = typeof choice?.index === 'number' ? choice.index : 0;
+            const key = `chat:${idx}:content`;
+            const content = choice?.delta?.content;
 
-          if (typeof content === 'string') {
-            bufferedKeys.add(key);
-            choice.delta.content = streamRestorer.process(key, content);
-          }
-
-          // If upstream signals completion, flush any pending placeholder fragments into THIS chunk.
-          if (choice?.finish_reason) {
-            bufferedKeys.add(key);
-            const flushText = streamRestorer.flush(key);
-            if (flushText) {
-              if (!choice.delta || typeof choice.delta !== 'object') {
-                choice.delta = { content: flushText };
-              } else if (typeof choice.delta.content === 'string') {
-                choice.delta.content += flushText;
-              } else {
-                choice.delta.content = flushText;
-              }
+            if (typeof content === 'string') {
+              bufferedKeys.add(key);
+              choice.delta.content = streamRestorer.process(key, content);
             }
-            finishedByChoiceIndex.add(idx);
+
+            // If upstream signals completion, flush any pending placeholder fragments into THIS chunk.
+            if (choice?.finish_reason) {
+              bufferedKeys.add(key);
+              const flushText = streamRestorer.flush(key);
+              if (flushText) {
+                if (!choice.delta || typeof choice.delta !== 'object') {
+                  choice.delta = { content: flushText };
+                } else if (typeof choice.delta.content === 'string') {
+                  choice.delta.content += flushText;
+                } else {
+                  choice.delta.content = flushText;
+                }
+              }
+              finishedByChoiceIndex.add(idx);
+            }
           }
         }
+
+        // Stream-resume bookkeeping on what has already been delivered.
+        if (Array.isArray((chunk as any).choices)) {
+          for (const choice of (chunk as any).choices) {
+            const delta: any = choice?.delta;
+            if (!delta || typeof delta !== 'object') continue;
+            if (
+              Object.keys(delta).some(
+                (key) =>
+                  key !== 'role' &&
+                  key !== 'content' &&
+                  delta[key] !== undefined
+              )
+            ) {
+              sawNonTextDelta = true;
+            }
+            if (typeof choice?.index === 'number' && choice.index > 0) {
+              sawNonZeroChoiceIndex = true;
+            }
+            if (!resumeSegment && typeof delta.content === 'string') {
+              partialContent += delta.content;
+            }
+          }
+        }
+
+        if (resumeSegment) {
+          // Remove the continuation's leading role so downstream accumulators
+          // append role-and-content chunks instead of starting a new message.
+          if (skipNextRoleOnlyChunk) {
+            const delta: any = (chunk as any).choices?.[0]?.delta;
+            if (delta && typeof delta === 'object' && delta.role !== undefined) {
+              const isRoleOnlyChunk = Object.keys(delta).every(
+                (key) => key === 'role' || (key === 'content' && !delta.content)
+              );
+              delta.role = undefined;
+              skipNextRoleOnlyChunk = false;
+              if (isRoleOnlyChunk) {
+                continue;
+              }
+            } else if (Array.isArray((chunk as any).choices) && (chunk as any).choices.length > 0) {
+              skipNextRoleOnlyChunk = false;
+            }
+          }
+          if (resumeBaseId && (chunk as any).id) {
+            (chunk as any).id = resumeBaseId;
+          }
+        }
+
+        if ((chunk as any)?.id) lastChunkId = String((chunk as any).id);
+        if ((chunk as any)?.model) lastChunkModel = String((chunk as any).model);
+
+        // Record TFFB on first upstream stream event observed
+        if (tffbMs === undefined && upstreamRequestStartedAt) {
+          tffbMs = Date.now() - upstreamRequestStartedAt;
+        }
+
+        // Suppress usage-only chunks when the downstream client did not request
+        // include_usage. Usage extraction for billing still runs unconditionally below.
+        if (!(skipUsageChunks && isUsageOnlyChunk(chunk))) {
+          const chunkData = JSON.stringify(chunk);
+          const sseData = `data: ${chunkData}\n\n`;
+          chunkRecorder.record(sseData);
+
+          if (!reply.raw.write(sseData)) {
+            await new Promise<void>((resolve) => {
+              reply.raw.once('drain', resolve);
+            });
+          }
+        }
+
+        if ((chunk as any).usage) {
+          const norm = normalizeUsageCounts((chunk as any).usage);
+          if (!resumeSegment) {
+            if (typeof norm.promptTokens === 'number' && norm.promptTokens > 0) {
+              promptTokens = norm.promptTokens;
+            }
+            if (typeof norm.completionTokens === 'number' && norm.completionTokens > 0) {
+              completionTokens = norm.completionTokens;
+            }
+            if (typeof norm.totalTokens === 'number' && norm.totalTokens > 0) {
+              totalTokens = norm.totalTokens;
+            } else if (promptTokens > 0 || completionTokens > 0) {
+              totalTokens = promptTokens + completionTokens;
+            }
+            if (typeof norm.cachedTokens === 'number' && norm.cachedTokens > 0) {
+              cachedTokens = norm.cachedTokens;
+            }
+          }
+        }
+
+        if ((chunk as any).choices && (chunk as any).choices[0]) {
+          const extraction = extractReasoningFromChoice(
+            (chunk as any).choices[0],
+            reasoningContent,
+            thinkingBlocks,
+            toolCalls
+          );
+          reasoningContent = extraction.reasoningContent;
+          thinkingBlocks = extraction.thinkingBlocks as ThinkingBlock[];
+          toolCalls = extraction.toolCalls || [];
+        }
+      }
+    } catch (error: any) {
+      if (error.name === 'AbortError' || abortSignal?.aborted) {
+        logger?.info('流式请求被用户取消', 'Protocol');
+        throw error;
       }
 
-      if ((chunk as any)?.id) lastChunkId = String((chunk as any).id);
-      if ((chunk as any)?.model) lastChunkModel = String((chunk as any).model);
-
-      // Record TFFB on first upstream stream event observed
-      if (tffbMs === undefined && upstreamRequestStartedAt) {
-        tffbMs = Date.now() - upstreamRequestStartedAt;
-      }
-
-      // Suppress usage-only chunks when the downstream client did not request
-      // include_usage. Usage extraction for billing still runs unconditionally below.
-      if (!(skipUsageChunks && isUsageOnlyChunk(chunk))) {
-        const chunkData = JSON.stringify(chunk);
-        const sseData = `data: ${chunkData}\n\n`;
-        chunkRecorder.record(sseData);
-
-        if (!reply.raw.write(sseData)) {
-          await new Promise<void>((resolve) => {
-            reply.raw.once('drain', resolve);
-          });
+      // Stream resume: the upstream died mid-flight after plain-text deltas
+      // were already flushed. Ask the factory for a continuation stream
+      // exactly once; a second failure or ineligible state stays terminal.
+      if (
+        resumeStreamFactory &&
+        resumeAttempts === 0 &&
+        partialContent.length > 0 &&
+        !sawNonTextDelta &&
+        !sawNonZeroChoiceIndex &&
+        finishedByChoiceIndex.size === 0 &&
+        !reply.raw.destroyed &&
+        !reply.raw.writableEnded
+      ) {
+        let nextStream: AsyncIterable<any> | null = null;
+        try {
+          nextStream = await resumeStreamFactory(partialContent);
+        } catch {
+          nextStream = null;
+        }
+        if (nextStream) {
+          resumeAttempts += 1;
+          resumeChars = partialContent.length;
+          resumeBaseId = lastChunkId;
+          skipNextRoleOnlyChunk = true;
+          resumeSegment = true;
+          logger?.warn?.(
+            `断点续传: 上游流中断(已输出 ${partialContent.length} 字符)，发起续写请求`,
+            'Protocol'
+          );
+          activeStream = nextStream;
+          continue streamLoop;
         }
       }
 
-      if ((chunk as any).usage) {
-        const norm = normalizeUsageCounts((chunk as any).usage);
-        if (typeof norm.promptTokens === 'number' && norm.promptTokens > 0) {
-          promptTokens = norm.promptTokens;
-        }
-        if (typeof norm.completionTokens === 'number' && norm.completionTokens > 0) {
-          completionTokens = norm.completionTokens;
-        }
-        if (typeof norm.totalTokens === 'number' && norm.totalTokens > 0) {
-          totalTokens = norm.totalTokens;
-        } else if (promptTokens > 0 || completionTokens > 0) {
-          totalTokens = promptTokens + completionTokens;
-        }
-        if (typeof norm.cachedTokens === 'number' && norm.cachedTokens > 0) {
-          cachedTokens = norm.cachedTokens;
-        }
-      }
-
-      if ((chunk as any).choices && (chunk as any).choices[0]) {
-        const extraction = extractReasoningFromChoice(
-          (chunk as any).choices[0],
-          reasoningContent,
-          thinkingBlocks,
-          toolCalls
-        );
-        reasoningContent = extraction.reasoningContent;
-        thinkingBlocks = extraction.thinkingBlocks as ThinkingBlock[];
-        toolCalls = extraction.toolCalls || [];
-      }
+      throw error;
     }
-  } catch (error: any) {
-    if (error.name === 'AbortError' || abortSignal?.aborted) {
-      logger?.info('流式请求被用户取消', 'Protocol');
-    }
-    throw error;
+
+    break;
   }
 
   // Flush placeholder tails that did not coincide with an upstream finish_reason.
@@ -222,12 +328,17 @@ export async function processOpenAIChatCompletionStreamToSse(
   }
 
   return {
-    promptTokens,
-    completionTokens,
-    totalTokens,
-    cachedTokens,
+    // A resumed request has no complete first-attempt usage to combine with
+    // the continuation's usage. Callers must count the stitched stream.
+    promptTokens: resumeAttempts > 0 ? 0 : promptTokens,
+    completionTokens: resumeAttempts > 0 ? 0 : completionTokens,
+    totalTokens: resumeAttempts > 0 ? 0 : totalTokens,
+    cachedTokens: resumeAttempts > 0 ? 0 : cachedTokens,
     streamChunks: chunkRecorder.chunks,
     tffbMs,
+    streamResumed: resumeAttempts > 0,
+    streamResumeAttempts: resumeAttempts > 0 ? resumeAttempts : undefined,
+    streamResumeChars: resumeAttempts > 0 ? resumeChars : undefined,
     reasoningContent: reasoningContent || undefined,
     thinkingBlocks: thinkingBlocks.length > 0 ? thinkingBlocks : undefined,
   };

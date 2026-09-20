@@ -845,12 +845,12 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
     const duration = Date.now() - startTime;
 
     const tokenCount = await calculateTokensIfNeeded(
-      tokenUsage.totalTokens,
+      tokenUsage.streamResumed ? 0 : tokenUsage.totalTokens,
       request.body,
       undefined,
       tokenUsage.streamChunks,
-      tokenUsage.promptTokens,
-      tokenUsage.completionTokens
+      tokenUsage.streamResumed ? undefined : tokenUsage.promptTokens,
+      tokenUsage.streamResumed ? undefined : tokenUsage.completionTokens
     );
 
     circuitBreaker.recordSuccess(circuitBreakerKey);
@@ -884,6 +884,9 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
       ip: streamRequestIp,
       userAgent: streamRequestUserAgent,
       piiMaskedCount,
+      streamResume: tokenUsage.streamResumed
+        ? { attempts: tokenUsage.streamResumeAttempts ?? 1, chars: tokenUsage.streamResumeChars ?? 0 }
+        : undefined,
     });
 
     // Broadcast full, untruncated event to debug WebSocket clients when debug mode is active
@@ -899,6 +902,7 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
           stream: true,
           success: true,
           statusCode: 200,
+          streamResumed: tokenUsage.streamResumed === true,
           fromCache: false,
           virtualKeyId: virtualKey.id,
           virtualKeyName: (virtualKey as any).name,
