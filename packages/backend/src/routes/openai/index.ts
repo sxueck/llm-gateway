@@ -1,6 +1,7 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, RouteHandlerMethod } from 'fastify';
 import { memoryLogger } from '../../services/logger.js';
 import { createOpenAIProxyHandler } from './proxy-handler.js';
+import { createDecisionsProxyHandler } from './decisions-handler.js';
 import { registerResponsesWebSocketRoutes } from './ws-handler.js';
 
 interface RouteConfig {
@@ -25,6 +26,7 @@ const API_GROUPS: Record<string, ApiGroup> = {
       { path: '/audio/*', method: 'ALL', handler: 'proxy' },
       { path: '/images/*', method: 'ALL', handler: 'proxy' },
       { path: '/moderations', method: 'ALL', handler: 'proxy' },
+      { path: '/systemone', method: 'POST', handler: 'decisions' },
     ],
     withV1Prefix: true,
   },
@@ -33,7 +35,7 @@ const API_GROUPS: Record<string, ApiGroup> = {
 function registerApiGroup(
   fastify: FastifyInstance,
   group: ApiGroup,
-  handlers: Record<string, any>
+  handlers: Record<string, RouteHandlerMethod>
 ) {
   group.routes.forEach(route => {
     const handler = handlers[route.handler];
@@ -54,8 +56,9 @@ function registerApiGroup(
 }
 
 export async function openaiRoutes(fastify: FastifyInstance) {
-  const handlers: Record<string, any> = {
+  const handlers: Record<string, RouteHandlerMethod> = {
     proxy: createOpenAIProxyHandler(),
+    decisions: createDecisionsProxyHandler(),
   };
 
   registerApiGroup(fastify, API_GROUPS.proxy, handlers);
