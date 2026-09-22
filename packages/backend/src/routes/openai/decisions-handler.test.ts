@@ -1,5 +1,10 @@
 import { beforeEach, expect, test, vi } from 'vitest';
 
+vi.hoisted(() => {
+  process.env.MYSQL_PASSWORD ??= 'vitest-placeholder';
+  process.env.JWT_SECRET ??= 'vitest-placeholder-secret-32-chars!!';
+});
+
 import { createDecisionsProxyHandler, stripTrailingV1 } from './decisions-handler.js';
 import { runProxyPipeline } from '../proxy/pipeline.js';
 import { makeImageGenerationProxyRequest } from '../proxy/http-client.js';

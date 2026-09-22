@@ -518,7 +518,10 @@ export function createOpenAIProxyHandler() {
               (request.body as any).messages = compaction.messages;
               memoryLogger.info(
                 `历史摘要压缩 | 虚拟密钥: ${vkDisplay} | ${compaction.merged ? '摘要已合并更新' : '复用缓存摘要,增量原样下发'} | ` +
-                `Token 节省: ${compaction.originalTokens - compaction.compactedTokens}`,
+                `Token 节省: ${compaction.originalTokens - compaction.compactedTokens}` +
+                (compaction.summarizerTokens
+                  ? ` | summarizer: ${compaction.summarizerTokens.promptTokens}+${compaction.summarizerTokens.completionTokens} tokens`
+                  : ''),
                 'Proxy'
               );
             }

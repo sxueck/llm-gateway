@@ -8,6 +8,9 @@ interface RouteConfig {
   path: string;
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'ALL';
   handler: string;
+  /** 仅注册 /v1 前缀路由：用于上游路径固定含 /v1 的端点（如 systemone），
+   *  无前缀路由会拼出错误的非 /v1 上游 URL */
+  v1Only?: boolean;
 }
 
 interface ApiGroup {
@@ -26,7 +29,7 @@ const API_GROUPS: Record<string, ApiGroup> = {
       { path: '/audio/*', method: 'ALL', handler: 'proxy' },
       { path: '/images/*', method: 'ALL', handler: 'proxy' },
       { path: '/moderations', method: 'ALL', handler: 'proxy' },
-      { path: '/systemone', method: 'POST', handler: 'decisions' },
+      { path: '/systemone', method: 'POST', handler: 'decisions', v1Only: true },
     ],
     withV1Prefix: true,
   },
@@ -45,9 +48,11 @@ function registerApiGroup(
     }
 
     const method = route.method.toLowerCase() as 'get' | 'post' | 'put' | 'delete' | 'patch' | 'all';
-    fastify[method](route.path, handler);
+    if (!route.v1Only) {
+      fastify[method](route.path, handler);
+    }
 
-    if (group.withV1Prefix) {
+    if (group.withV1Prefix || route.v1Only) {
       fastify[method](`/v1${route.path}`, handler);
     }
 

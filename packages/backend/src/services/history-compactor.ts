@@ -8,6 +8,10 @@ const SUMMARY_TIMEOUT_MS = 60_000;
 const SUMMARY_MAX_TOKENS = 2048;
 // 单条消息进入摘要 prompt 的上限：巨型工具输出只保留头部，避免撑爆 summarizer 输入
 const MESSAGE_SNIPPET_CHARS = 6000;
+// 桶指纹深度/桶容量：指纹取前 K 条消息哈希跨轮稳定；同桶内分叉会话靠多槽共存，
+// 避免共享开场消息的不同会话互相挤掉摘要、退化成每轮全量重摘要
+const BUCKET_FINGERPRINT_DEPTH = 8;
+const BUCKET_MAX_ENTRIES = 3;
 
 const SUMMARIZER_SYSTEM_PROMPT = `You compress long LLM conversations into a compact handoff summary inside an API gateway. Merge the previous summary (if any) and the new messages into one updated summary. Preserve: user goals and constraints, key decisions with their rationale, important facts and identifiers, file/resource state changes, errors and unresolved issues, and immediate next steps. Drop pleasantries and redundant detail. Output plain text with short bullet sections. Reply with the summary only.`;
 
@@ -65,13 +69,15 @@ export interface CompactionResult {
   fired: boolean;
   /** 本次是否调用了 LLM 更新摘要（false 表示复用缓存摘要 + 未合并增量原样下发） */
   merged: boolean;
+  /** 本次 summarizer 调用的用量（仅在 merged 时存在；上游未返回 usage 则缺省） */
+  summarizerTokens?: { promptTokens: number; completionTokens: number };
   originalTokens: number;
   compactedTokens: number;
 }
 
 export class HistoryCompactor {
   private readonly config: CompactorConfig;
-  private readonly cache = new Map<string, ConversationEntry>();
+  private readonly cache = new Map<string, ConversationEntry[]>();
   private readonly locks = new Map<string, Promise<void>>();
 
   constructor(config: CompactorConfig = compactorConfigFromEnv()) {
@@ -114,12 +120,16 @@ export class HistoryCompactor {
       return unchanged(originalTokens);
 
     const hashes = history.map((m) => this.hash(JSON.stringify(m)));
-    const cacheKey = this.hash(
-      `${this.config.model}|${this.config.thresholdTokens}|${this.config.keepRecent}|${this.config.minDeltaTokens}\n${hashes[0]}`,
+    // 历史不足 K 条时指纹随增长而变、会多付一次全量摘要；触发阈值 32k tokens
+    // 时历史几乎必然已超过 K 条，该退化实际不可达
+    const bucketKey = this.hash(
+      `${this.config.model}|${this.config.thresholdTokens}|${this.config.keepRecent}|${this.config.minDeltaTokens}\n${hashes
+        .slice(0, BUCKET_FINGERPRINT_DEPTH)
+        .join("\n")}`,
     );
 
-    return this.withLock(cacheKey, async () => {
-      const entry = this.findEntry(cacheKey, hashes);
+    return this.withLock(bucketKey, async () => {
+      const entry = this.findEntry(bucketKey, hashes);
       const covered = entry ? entry.hashes.length : 0;
       const delta = history.slice(covered);
       const deltaTokens = countTokensForMessages(delta);
@@ -129,9 +139,12 @@ export class HistoryCompactor {
       const needsMerge = !entry || deltaTokens >= this.config.minDeltaTokens;
       let summary = entry?.summary ?? "";
       const merged = needsMerge;
+      let summarizerTokens: { promptTokens: number; completionTokens: number } | undefined;
       if (needsMerge) {
-        summary = await this.summarize(entry?.summary ?? null, delta);
-        this.storeEntry(cacheKey, {
+        const outcome = await this.summarize(entry?.summary ?? null, delta);
+        summary = outcome.summary;
+        summarizerTokens = outcome.usage;
+        this.storeEntry(bucketKey, {
           hashes: [...hashes],
           summary,
           lastAccess: Date.now(),
@@ -152,6 +165,7 @@ export class HistoryCompactor {
         messages: out,
         fired: true,
         merged,
+        summarizerTokens,
         originalTokens,
         compactedTokens: countTokensForMessages(out),
       };
@@ -166,7 +180,10 @@ export class HistoryCompactor {
   private async summarize(
     previous: string | null,
     delta: any[],
-  ): Promise<string> {
+  ): Promise<{
+    summary: string;
+    usage?: { promptTokens: number; completionTokens: number };
+  }> {
     const transcript = delta
       .map((m) => `${m?.role ?? "unknown"}: ${this.snippet(m)}`)
       .join("\n\n");
@@ -205,7 +222,18 @@ export class HistoryCompactor {
     if (!content) {
       throw new Error("compaction summarize returned empty summary");
     }
-    return content;
+    // summarizer 用量只上抛到日志、不写入 api_requests：记入会混入该虚拟密钥
+    // 的上游模型成本统计；需要精确计费时的升级路径是独立的 bookkeeping
+    const usage = result.usage;
+    const promptTokens = typeof usage?.prompt_tokens === "number" ? usage.prompt_tokens : undefined;
+    const completionTokens = typeof usage?.completion_tokens === "number" ? usage.completion_tokens : undefined;
+    return {
+      summary: content,
+      usage:
+        promptTokens !== undefined && completionTokens !== undefined
+          ? { promptTokens, completionTokens }
+          : undefined,
+    };
   }
 
   private snippet(message: any): string {
@@ -218,19 +246,30 @@ export class HistoryCompactor {
       : raw;
   }
 
-  /** 找到与当前历史前缀匹配的缓存条目；顺带清理过期条目 */
+  /** 找到与当前历史前缀匹配的缓存条目（多条命中取覆盖最长者）；顺带清理过期条目 */
   private findEntry(
-    cacheKey: string,
+    bucketKey: string,
     hashes: string[],
   ): ConversationEntry | null {
-    const entry = this.cache.get(cacheKey);
-    if (!entry) return null;
+    const bucket = this.cache.get(bucketKey);
+    if (!bucket) return null;
     const now = Date.now();
-    if (now - entry.lastAccess > this.config.cacheTtlMs) {
-      this.cache.delete(cacheKey);
-      return null;
+    let matched: ConversationEntry | null = null;
+    for (let i = bucket.length - 1; i >= 0; i--) {
+      const entry = bucket[i]!;
+      if (now - entry.lastAccess > this.config.cacheTtlMs) {
+        bucket.splice(i, 1);
+        continue;
+      }
+      if (
+        this.isPrefixMatch(entry.hashes, hashes) &&
+        (!matched || entry.hashes.length > matched.hashes.length)
+      ) {
+        matched = entry;
+      }
     }
-    return this.isPrefixMatch(entry.hashes, hashes) ? entry : null;
+    if (bucket.length === 0) this.cache.delete(bucketKey);
+    return matched;
   }
 
   private isPrefixMatch(stored: string[], current: string[]): boolean {
@@ -241,21 +280,55 @@ export class HistoryCompactor {
     return true;
   }
 
-  private storeEntry(cacheKey: string, entry: ConversationEntry): void {
-    this.cache.delete(cacheKey);
-    this.cache.set(cacheKey, entry);
-    // 容量 <=256，按绝对 lastAccess 时间戳 O(n) 逐出，避免活跃摘要被误删
-    while (this.cache.size > this.config.cacheSize) {
-      let oldestKey: string | null = null;
+  private storeEntry(bucketKey: string, entry: ConversationEntry): void {
+    let bucket = this.cache.get(bucketKey);
+    if (!bucket) {
+      bucket = [];
+      this.cache.set(bucketKey, bucket);
+    }
+    // 同一会话摘要增长（旧 hashes 是新条目前缀）时原位替换；分叉会话各自占槽
+    const successorIndex = bucket.findIndex((cached) =>
+      this.isPrefixMatch(cached.hashes, entry.hashes),
+    );
+    if (successorIndex >= 0) {
+      bucket[successorIndex] = entry;
+    } else {
+      bucket.unshift(entry);
+    }
+    while (bucket.length > BUCKET_MAX_ENTRIES) {
+      let oldestIndex = 0;
+      for (let i = 1; i < bucket.length; i++) {
+        if (bucket[i]!.lastAccess < bucket[oldestIndex]!.lastAccess) oldestIndex = i;
+      }
+      bucket.splice(oldestIndex, 1);
+    }
+    // 全局容量按条目数计，按绝对 lastAccess 时间戳 O(n) 逐出，避免活跃摘要被误删
+    this.evictOverCapacity();
+  }
+
+  private evictOverCapacity(): void {
+    const countEntries = () => {
+      let total = 0;
+      for (const bucket of this.cache.values()) total += bucket.length;
+      return total;
+    };
+    while (countEntries() > this.config.cacheSize) {
+      let oldestBucketKey: string | null = null;
+      let oldestIndex = -1;
       let oldestAccess = Infinity;
-      for (const [key, cached] of this.cache) {
-        if (cached.lastAccess < oldestAccess) {
-          oldestKey = key;
-          oldestAccess = cached.lastAccess;
+      for (const [key, bucket] of this.cache) {
+        for (let i = 0; i < bucket.length; i++) {
+          if (bucket[i]!.lastAccess < oldestAccess) {
+            oldestAccess = bucket[i]!.lastAccess;
+            oldestBucketKey = key;
+            oldestIndex = i;
+          }
         }
       }
-      if (oldestKey === null) break;
-      this.cache.delete(oldestKey);
+      if (oldestBucketKey === null) break;
+      const bucket = this.cache.get(oldestBucketKey)!;
+      bucket.splice(oldestIndex, 1);
+      if (bucket.length === 0) this.cache.delete(oldestBucketKey);
     }
   }
 

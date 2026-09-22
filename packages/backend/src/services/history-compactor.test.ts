@@ -142,6 +142,49 @@ describe("HistoryCompactor.compactIfNeeded", () => {
     expect(result.messages[0].content).not.toContain("new1-");
   });
 
+  it("同桶分叉会话不互相挤掉摘要缓存", async () => {
+    fetchMock
+      .mockResolvedValueOnce(summaryResponse("SUM-A") as any)
+      .mockResolvedValueOnce(summaryResponse("SUM-B") as any);
+    const compactor = new HistoryCompactor(makeConfig());
+    // A 与 B 共享前 8 条消息（同桶），其后分叉
+    const a1 = makeMessages(20);
+    await compactor.compactIfNeeded(a1);
+    const b1 = [...makeMessages(8), ...makeMessages(12, 500)];
+    await compactor.compactIfNeeded(b1);
+
+    // A 下一轮应复用自己的 SUM-A，而不是被 B 的重建挤掉后重新摘要
+    const a2 = [...a1, { role: "user", content: "next-" + "x".repeat(400) }];
+    const result = await compactor.compactIfNeeded(a2);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.merged).toBe(false);
+    expect(result.messages[0].content).toContain("SUM-A");
+  });
+
+  it("summarizer 用量随结果上抛，复用缓存时不产生", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: "SUM-U" } }],
+        usage: { prompt_tokens: 1200, completion_tokens: 80 },
+      }),
+    } as any);
+    const compactor = new HistoryCompactor(makeConfig());
+    const fired = await compactor.compactIfNeeded(makeMessages(10));
+    expect(fired.summarizerTokens).toEqual({
+      promptTokens: 1200,
+      completionTokens: 80,
+    });
+
+    // 小增量复用缓存：无 summarizer 用量
+    const reused = await compactor.compactIfNeeded([
+      ...makeMessages(10),
+      { role: "user", content: "new-" + "x".repeat(400) },
+    ]);
+    expect(reused.summarizerTokens).toBeUndefined();
+  });
+
   it("客户端编辑历史导致前缀失配时重建摘要", async () => {
     fetchMock
       .mockResolvedValueOnce(summaryResponse("SUM-1") as any)
