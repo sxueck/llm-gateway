@@ -21,7 +21,7 @@ import { virtualKeyRoutes } from "./routes/virtual-keys.js";
 import { configRoutes } from "./routes/config.js";
 import { publicConfigRoutes } from "./routes/public-config.js";
 import { proxyRoutes } from "./routes/proxy.js";
-import { anthropicRoutes } from "./routes/anthropic.js";
+import { anthropicRoutes } from "./routes/anthropic/index.js";
 import { openaiRoutes } from "./routes/openai.js";
 import { geminiRoutes } from "./routes/gemini.js";
 import { modelPresetsRoutes } from "./routes/model-presets.js";

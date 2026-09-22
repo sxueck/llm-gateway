@@ -42,7 +42,7 @@ export function parseAnthropicUpstreamBody(body: string | undefined | null): { d
   if (typeof body === 'string') {
     try {
       return { data: JSON.parse(body), parseFailed: false };
-    } catch (_e) {
+    } catch {
       // fall through to the fallback envelope below
     }
   }
@@ -67,20 +67,6 @@ function createAnthropicError(message: string, type: string = 'invalid_request_e
       message,
     },
   };
-}
-
-async function calculateAnthropicStreamTokenCount(
-  requestBody: AnthropicRequest,
-  tokenUsage: { totalTokens: number; promptTokens: number; completionTokens: number; streamChunks: string[] }
-) {
-  return calculateTokensIfNeeded(
-    tokenUsage.totalTokens,
-    requestBody,
-    undefined,
-    tokenUsage.streamChunks,
-    tokenUsage.promptTokens,
-    tokenUsage.completionTokens
-  );
 }
 
 /** Aggregated request state for the Anthropic stream/non-stream handlers. */
@@ -449,7 +435,7 @@ export async function handleAnthropicNonStreamRequest(ctx: AnthropicProxyRequest
   });
 
   try {
-    const response = await makeAnthropicRequest(protocolConfig, requestBody, forwardedHeaders);
+    const response = await makeAnthropicRequest(protocolConfig, requestBody, forwardedHeaders, abortController.signal);
 
     const duration = Date.now() - startTime;
     const isSuccess = response.statusCode >= 200 && response.statusCode < 300;
@@ -668,14 +654,22 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
       requestBody,
       reply,
       forwardedHeaders,
-      piiResult.context
+      piiResult.context,
+      abortController.signal
     );
 
     const duration = Date.now() - startTime;
     circuitBreaker.recordSuccess(circuitBreakerKey);
 
     const shouldLogBody = shouldLogRequestBody(virtualKey);
-    const tokenCount = await calculateAnthropicStreamTokenCount(requestBody, tokenUsage);
+    const tokenCount = await calculateTokensIfNeeded(
+      tokenUsage.totalTokens,
+      requestBody,
+      undefined,
+      tokenUsage.streamChunks,
+      tokenUsage.promptTokens,
+      tokenUsage.completionTokens
+    );
 
     logApiRequestAsync({
       virtualKey,
