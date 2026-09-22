@@ -205,3 +205,36 @@ describe('normalizeAnthropicRequest', () => {
     });
   });
 });
+
+describe('non-core thinking field stripping for compat upstreams', () => {
+  it('strips display from thinking for non-Claude models', () => {
+    const result = normalizeAnthropicRequest('mimo-v2.6-pro', {
+      ...baseRequest,
+      model: 'mimo-v2.6-pro',
+      thinking: { type: 'enabled', budget_tokens: 8192, display: 'summarized' } as any,
+    });
+    expect(result.thinking).toEqual({ type: 'enabled', budget_tokens: 8192 });
+  });
+
+  it('keeps the core thinking contract untouched for non-Claude models', () => {
+    const thinking = { type: 'enabled' as const, budget_tokens: 4096 };
+    expect(normalizeAnthropicRequest('mimo-v2.6-pro', {
+      ...baseRequest,
+      model: 'mimo-v2.6-pro',
+      thinking,
+    }).thinking).toBe(thinking);
+  });
+
+  it('keeps display for Claude family models', () => {
+    const result = normalizeAnthropicRequest('claude-haiku-4-5', {
+      ...baseRequest,
+      thinking: { type: 'enabled', budget_tokens: 8192, display: 'summarized' } as any,
+    });
+    expect(result.thinking).toEqual({ type: 'enabled', budget_tokens: 8192, display: 'summarized' } as any);
+  });
+
+  it('passes requests without thinking through unchanged for non-Claude models', () => {
+    const request = { ...baseRequest, model: 'mimo-v2.6-pro' };
+    expect(normalizeAnthropicRequest('mimo-v2.6-pro', request)).toBe(request);
+  });
+});

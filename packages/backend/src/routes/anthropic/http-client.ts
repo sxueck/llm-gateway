@@ -13,6 +13,7 @@ import { upstreamSslConfigService } from '../../services/upstream-ssl-config.js'
 import { getProxyConfigFromEnv, getProxyUrlForTarget } from '../../utils/upstream-proxy.js';
 import { normalizeAnthropicRequest } from '../../utils/anthropic-request-normalizer.js';
 import { BoundedChunkRecorder } from '../../utils/bounded-chunk-recorder.js';
+import { AnthropicStreamNormalizer } from './stream-normalizer.js';
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 
@@ -31,20 +32,20 @@ export interface StreamTokenUsage {
 
 function shouldUseUpstreamFetch(baseUrl: string | undefined): boolean {
   const skipVerify = upstreamSslConfigService.isSkipVerify();
-  if (skipVerify) return true
+  if (skipVerify) return true;
 
-  if (!baseUrl) return false
+  if (!baseUrl) return false;
 
   const proxyConfig = getProxyConfigFromEnv();
   const proxyUrl = getProxyUrlForTarget(baseUrl, proxyConfig);
-  return !!proxyUrl
+  return !!proxyUrl;
 }
 
 function getAnthropicClient(baseUrl: string | undefined, apiKey: string, headers?: Record<string, string>): Anthropic {
   const clientConfig: any = {
     apiKey,
     maxRetries: 0,
-    timeout: DEFAULT_TIMEOUT_MS,
+    timeout: DEFAULT_TIMEOUT_MS
   };
 
   if (baseUrl) {
@@ -59,10 +60,7 @@ function getAnthropicClient(baseUrl: string | undefined, apiKey: string, headers
   const sanitizedHeaders = sanitizeCustomHeaders(headers);
   if (sanitizedHeaders && Object.keys(sanitizedHeaders).length > 0) {
     clientConfig.defaultHeaders = sanitizedHeaders;
-    memoryLogger.debug(
-      `添加自定义请求头 | headers: ${JSON.stringify(sanitizedHeaders)}`,
-      'Anthropic'
-    );
+    memoryLogger.debug(`添加自定义请求头 | headers: ${JSON.stringify(sanitizedHeaders)}`, 'Anthropic');
   }
 
   return new Anthropic(clientConfig);
@@ -72,7 +70,7 @@ function buildRequestParams(config: any, requestBody: AnthropicRequest, stream: 
   const requestParams: any = {
     model: config.model,
     messages: requestBody.messages,
-    max_tokens: requestBody.max_tokens,
+    max_tokens: requestBody.max_tokens
   };
 
   // Some Anthropic-compatible providers implement /v1/messages by internally bridging to
@@ -117,7 +115,7 @@ function buildRequestParams(config: any, requestBody: AnthropicRequest, stream: 
     'output_config',
     'metadata',
     'tool_choice',
-    'thinking',
+    'thinking'
   ];
 
   // 批量处理可选参数
@@ -135,7 +133,10 @@ function buildRequestParams(config: any, requestBody: AnthropicRequest, stream: 
   return requestParams;
 }
 
-function normalizeError(error: any): { statusCode: number; errorResponse: any } {
+function normalizeError(error: any): {
+  statusCode: number;
+  errorResponse: any;
+} {
   const norm = normalizeAnthropicError(error);
 
   return {
@@ -144,16 +145,13 @@ function normalizeError(error: any): { statusCode: number; errorResponse: any } 
       type: 'error',
       error: {
         type: norm.errorType,
-        message: norm.message,
-      },
-    },
+        message: norm.message
+      }
+    }
   };
 }
 
-const DEFAULT_ANTHROPIC_EMPTY_RETRY_LIMIT = Math.max(
-  parseInt(process.env.ANTHROPIC_STREAM_EMPTY_RETRY_LIMIT || '1', 10),
-  0
-);
+const DEFAULT_ANTHROPIC_EMPTY_RETRY_LIMIT = Math.max(parseInt(process.env.ANTHROPIC_STREAM_EMPTY_RETRY_LIMIT || '1', 10), 0);
 
 function getAnthropicEmptyRetryLimit(config: any): number {
   const configured = config.modelAttributes?.anthropic_empty_retry_limit;
@@ -200,11 +198,7 @@ function getAnthropicBetaHeaders(requestBody: AnthropicRequest): Record<string, 
   return { 'anthropic-beta': betas.join(',') };
 }
 
-function buildAnthropicRequestOptions(
-  defaultHeaders: unknown,
-  forwardedHeaders: Record<string, string> | undefined,
-  requestBody: AnthropicRequest
-): any {
+function buildAnthropicRequestOptions(defaultHeaders: unknown, forwardedHeaders: Record<string, string> | undefined, requestBody: AnthropicRequest): any {
   const betaHeaders = getAnthropicBetaHeaders(requestBody);
   const clientForwarded = filterForwardedHeaders(defaultHeaders, forwardedHeaders);
 
@@ -215,8 +209,8 @@ function buildAnthropicRequestOptions(
   return {
     headers: {
       ...(clientForwarded || {}),
-      ...(betaHeaders || {}),
-    },
+      ...(betaHeaders || {})
+    }
   } as any;
 }
 
@@ -225,50 +219,28 @@ function hasAnthropicBetas(requestBody: AnthropicRequest): boolean {
   return Array.isArray(betas) && betas.length > 0;
 }
 
-async function createAnthropicMessage(
-  client: Anthropic,
-  requestParams: any,
-  requestBody: AnthropicRequest,
-  requestOpts: any
-): Promise<any> {
+async function createAnthropicMessage(client: Anthropic, requestParams: any, requestBody: AnthropicRequest, requestOpts: any): Promise<any> {
   if (!hasAnthropicBetas(requestBody)) {
     return client.messages.create(requestParams, requestOpts);
   }
 
   try {
-    return await (client as any).beta?.messages?.create(
-      { ...requestParams, betas: (requestBody as any).betas },
-      requestOpts
-    );
+    return await (client as any).beta?.messages?.create({ ...requestParams, betas: (requestBody as any).betas }, requestOpts);
   } catch (error: any) {
-    memoryLogger.debug(
-      `Anthropic beta messages.create 调用失败，回退到标准 messages.create | error: ${error?.message || String(error)}`,
-      'Anthropic'
-    );
+    memoryLogger.debug(`Anthropic beta messages.create 调用失败，回退到标准 messages.create | error: ${error?.message || String(error)}`, 'Anthropic');
     return client.messages.create(requestParams, requestOpts);
   }
 }
 
-function createAnthropicMessageStream(
-  client: Anthropic,
-  requestParams: any,
-  requestBody: AnthropicRequest,
-  requestOpts: any
-): any {
+function createAnthropicMessageStream(client: Anthropic, requestParams: any, requestBody: AnthropicRequest, requestOpts: any): any {
   if (!hasAnthropicBetas(requestBody)) {
     return client.messages.stream(requestParams, requestOpts);
   }
 
   try {
-    return (client as any).beta?.messages?.stream(
-      { ...requestParams, betas: (requestBody as any).betas },
-      requestOpts
-    );
+    return (client as any).beta?.messages?.stream({ ...requestParams, betas: (requestBody as any).betas }, requestOpts);
   } catch (error: any) {
-    memoryLogger.debug(
-      `Anthropic beta messages.stream 调用失败，回退到标准 messages.stream | error: ${error?.message || String(error)}`,
-      'Anthropic'
-    );
+    memoryLogger.debug(`Anthropic beta messages.stream 调用失败，回退到标准 messages.stream | error: ${error?.message || String(error)}`, 'Anthropic');
     return client.messages.stream(requestParams, requestOpts);
   }
 }
@@ -278,7 +250,7 @@ function ensureSseHeaders(reply: FastifyReply): void {
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
+      Connection: 'keep-alive'
     });
   }
 }
@@ -303,10 +275,12 @@ function buildAnthropicPiiFlushEvent(key: AnthropicPiiDeltaKey, text: string): A
   return {
     type: 'content_block_delta',
     index: key.blockIndex,
-    delta: key.deltaType === 'text_delta'
-      ? { type: 'text_delta', text }
-      : { type: 'thinking_delta', thinking: text },
+    delta: key.deltaType === 'text_delta' ? { type: 'text_delta', text } : { type: 'thinking_delta', thinking: text }
   };
+}
+
+function serializeSseEvent(event: { type: string }): string {
+  return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
 export async function consumeAnthropicStreamAttempt(
@@ -327,6 +301,8 @@ export async function consumeAnthropicStreamAttempt(
   // Initialize PII stream restorer if context is provided
   const piiRestorer = piiCtx ? new PiiStreamRestorer(piiCtx) : null;
   const usedPiiKeys = new Map<string, AnthropicPiiDeltaKey>();
+
+  const streamNormalizer = new AnthropicStreamNormalizer();
 
   const flushPendingChunks = () => {
     if (!buffering) return;
@@ -359,7 +335,7 @@ export async function consumeAnthropicStreamAttempt(
     if (!flushedText) return;
 
     const flushEvent = buildAnthropicPiiFlushEvent(keyMeta, flushedText);
-    writeChunk(`event: ${flushEvent.type}\ndata: ${JSON.stringify(flushEvent)}\n\n`);
+    writeChunk(serializeSseEvent(flushEvent));
   };
 
   const flushPiiKeysForBlock = (blockIndex: number | undefined) => {
@@ -377,35 +353,17 @@ export async function consumeAnthropicStreamAttempt(
     }
   };
 
-  for await (const event of stream) {
-    const eventData = event as AnthropicStreamEvent;
-
+  const emitNormalizedEvent = (eventData: AnthropicStreamEvent) => {
     if (!hasAssistantContent && hasAnthropicContent(eventData)) {
       hasAssistantContent = true;
       flushPendingChunks();
-    }
-
-    if (eventData.type === 'message_start') {
-      if (eventData.message?.usage) {
-        inputTokens = eventData.message.usage.input_tokens || 0;
-        const anyUsage: any = eventData.message.usage as any;
-        cacheCreationInputTokens = anyUsage?.cache_creation_input_tokens || 0;
-        cacheReadInputTokens = anyUsage?.cache_read_input_tokens || 0;
-      }
-    } else if (eventData.type === 'message_delta') {
-      const anyUsage: any = (eventData as any).usage;
-      if (anyUsage && anyUsage.output_tokens !== undefined) {
-        outputTokens = anyUsage.output_tokens as number;
-      }
     }
 
     if (piiRestorer) {
       const shouldFlushBlockKeys =
         eventData.type === 'content_block_stop' ||
         eventData.type === 'message_stop' ||
-        (eventData.type === 'content_block_delta' &&
-          eventData.delta?.type !== 'text_delta' &&
-          eventData.delta?.type !== 'thinking_delta');
+        (eventData.type === 'content_block_delta' && eventData.delta?.type !== 'text_delta' && eventData.delta?.type !== 'thinking_delta');
 
       if (shouldFlushBlockKeys && eventData.type === 'message_stop') {
         flushAllPiiKeys();
@@ -414,31 +372,47 @@ export async function consumeAnthropicStreamAttempt(
       }
     }
 
-    // PII protection: restore masked values in stream text deltas
-    // Only restore text/thinking deltas, NOT input_json_delta or signature_delta
     if (piiRestorer && eventData.type === 'content_block_delta' && eventData.delta) {
+      const fieldByDeltaType = {
+        text_delta: 'text',
+        thinking_delta: 'thinking'
+      } as const;
+      const deltaType = eventData.delta.type as keyof typeof fieldByDeltaType;
+      const field = fieldByDeltaType[deltaType];
       const blockIndex = eventData.index ?? 0;
-
-      // Restore text_delta content
-      if (eventData.delta.type === 'text_delta' && typeof eventData.delta.text === 'string') {
-        const key = buildAnthropicPiiDeltaKey(blockIndex, 'text_delta');
-        usedPiiKeys.set(key, { blockIndex, deltaType: 'text_delta' });
-        eventData.delta.text = piiRestorer.process(key, eventData.delta.text);
+      if (field && typeof (eventData.delta as any)[field] === 'string') {
+        const key = buildAnthropicPiiDeltaKey(blockIndex, deltaType);
+        usedPiiKeys.set(key, { blockIndex, deltaType });
+        (eventData.delta as any)[field] = piiRestorer.process(key, (eventData.delta as any)[field]);
       }
-
-      // Restore thinking_delta content
-      if (eventData.delta.type === 'thinking_delta' && typeof eventData.delta.thinking === 'string') {
-        const key = buildAnthropicPiiDeltaKey(blockIndex, 'thinking_delta');
-        usedPiiKeys.set(key, { blockIndex, deltaType: 'thinking_delta' });
-        eventData.delta.thinking = piiRestorer.process(key, eventData.delta.thinking);
-      }
-
-      // Note: We explicitly do NOT restore input_json_delta or signature_delta
-      // as these are structured payloads that should not be mutated
     }
 
-    const sseData = `event: ${eventData.type}\ndata: ${JSON.stringify(eventData)}\n\n`;
-    writeChunk(sseData);
+    writeChunk(serializeSseEvent(eventData));
+  };
+
+  for await (const event of stream) {
+    const sourceEvent = event as AnthropicStreamEvent;
+
+    if (sourceEvent.type === 'message_start') {
+      if (sourceEvent.message?.usage) {
+        inputTokens = sourceEvent.message.usage.input_tokens || 0;
+        const anyUsage: any = sourceEvent.message.usage as any;
+        cacheCreationInputTokens = anyUsage?.cache_creation_input_tokens || 0;
+        cacheReadInputTokens = anyUsage?.cache_read_input_tokens || 0;
+      }
+    } else if (sourceEvent.type === 'message_delta') {
+      const anyUsage: any = (sourceEvent as any).usage;
+      if (anyUsage && anyUsage.output_tokens !== undefined) {
+        outputTokens = anyUsage.output_tokens as number;
+      }
+    }
+
+    for (const eventData of streamNormalizer.push(sourceEvent)) {
+      emitNormalizedEvent(eventData);
+    }
+  }
+  for (const eventData of streamNormalizer.finish()) {
+    emitNormalizedEvent(eventData);
   }
 
   // Flush any pending PII restoration buffers
@@ -455,10 +429,7 @@ export async function consumeAnthropicStreamAttempt(
       cacheReadInputTokens = finalMessage.usage.cache_read_input_tokens ?? cacheReadInputTokens;
     }
   } catch (error: any) {
-    memoryLogger.debug(
-      `Anthropic finalMessage usage 获取失败，保留流式事件统计值 | error: ${error?.message || String(error)}`,
-      'Anthropic'
-    );
+    memoryLogger.debug(`Anthropic finalMessage usage 获取失败，保留流式事件统计值 | error: ${error?.message || String(error)}`, 'Anthropic');
   }
 
   if (hasAssistantContent || flushOnEmptyOutput) {
@@ -476,15 +447,11 @@ export async function consumeAnthropicStreamAttempt(
     promptTokens,
     completionTokens,
     hasAssistantContent,
-    streamChunks: streamChunks.chunks,
+    streamChunks: streamChunks.chunks
   };
 }
 
-export async function makeAnthropicRequest(
-  config: any,
-  requestBody: AnthropicRequest,
-  forwardedHeaders?: Record<string, string>
-): Promise<HttpResponse> {
+export async function makeAnthropicRequest(config: any, requestBody: AnthropicRequest, forwardedHeaders?: Record<string, string>): Promise<HttpResponse> {
   try {
     const headers = config.modelAttributes?.headers;
     const client = getAnthropicClient(config.baseUrl, config.apiKey, headers);
@@ -517,51 +484,35 @@ export async function makeAnthropicStreamRequest(
   piiCtx?: PiiProtectionContext | null
 ): Promise<StreamTokenUsage> {
   const headers = config.modelAttributes?.headers;
-  const requestOpts = buildAnthropicRequestOptions(headers, forwardedHeaders, requestBody);
-
+  const normalizedRequest = normalizeAnthropicRequest(config.model, requestBody);
+  const requestParams = buildRequestParams(config, normalizedRequest, true);
+  const requestOpts = buildAnthropicRequestOptions(headers, forwardedHeaders, normalizedRequest);
   const totalAttempts = Math.max(1, getAnthropicEmptyRetryLimit(config) + 1);
   let lastEmptyError: EmptyOutputError | null = null;
 
   for (let attempt = 1; attempt <= totalAttempts; attempt++) {
     const client = getAnthropicClient(config.baseUrl, config.apiKey, headers);
-    const normalizedRequest = normalizeAnthropicRequest(config.model, requestBody);
-    const requestParams = buildRequestParams(config, normalizedRequest, true);
 
     try {
       const stream = createAnthropicMessageStream(client, requestParams, normalizedRequest, requestOpts);
-      const attemptResult = await consumeAnthropicStreamAttempt(
-        stream,
-        reply,
-        attempt === totalAttempts,
-        piiCtx
-      );
+      const attemptResult = await consumeAnthropicStreamAttempt(stream, reply, attempt === totalAttempts, piiCtx);
 
       if (!attemptResult.hasAssistantContent) {
         if (attempt < totalAttempts) {
-          memoryLogger.warn(
-            `Anthropic 流式无实际输出，准备重试 | attempt ${attempt}/${totalAttempts}`,
-            'Anthropic'
-          );
-          lastEmptyError = new EmptyOutputError(
-            'Anthropic stream completed without assistant output',
-            { source: 'claude', attempt, totalAttempts }
-          );
+          memoryLogger.warn(`Anthropic 流式无实际输出，准备重试 | attempt ${attempt}/${totalAttempts}`, 'Anthropic');
+          lastEmptyError = new EmptyOutputError('Anthropic stream completed without assistant output', { source: 'claude', attempt, totalAttempts });
           continue;
         }
 
-        throw lastEmptyError || new EmptyOutputError(
-          'Anthropic stream ended without assistant output',
-          { source: 'claude', totalAttempts }
-        );
+        throw lastEmptyError || new EmptyOutputError('Anthropic stream ended without assistant output', { source: 'claude', totalAttempts });
       }
 
       return {
         promptTokens: attemptResult.promptTokens,
         completionTokens: attemptResult.completionTokens,
         totalTokens: attemptResult.promptTokens + attemptResult.completionTokens,
-        streamChunks: attemptResult.streamChunks,
+        streamChunks: attemptResult.streamChunks
       };
-
     } catch (error: any) {
       if (error instanceof EmptyOutputError) {
         // The empty-output terminal state may have already flushed buffered
@@ -570,11 +521,7 @@ export async function makeAnthropicStreamRequest(
         throw error;
       }
 
-      memoryLogger.error(
-        `Anthropic stream request failed: ${error.message}`,
-        'Anthropic',
-        { error: error.stack }
-      );
+      memoryLogger.error(`Anthropic stream request failed: ${error.message}`, 'Anthropic', { error: error.stack });
 
       // OpenAI transport contract parity: do NOT write the error response to
       // the client here. Enrich the thrown error with the normalized upstream

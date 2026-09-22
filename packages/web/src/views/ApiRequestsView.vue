@@ -48,6 +48,7 @@
             :pagination="pagination"
             :row-key="(row: ApiRequest) => row.id"
             :row-props="rowProps"
+            :row-class-name="rowClassName"
             :scroll-x="1180"
             remote
             striped
@@ -223,6 +224,7 @@ import { apiRequestApi, type ApiRequest } from '@/api/api-request'
 import { virtualKeyApi } from '@/api/virtual-key'
 import type { DataTableColumns, PaginationProps } from 'naive-ui'
 import { formatJson, formatTimestamp } from '@/utils/common'
+import { isSessionStartBody } from '@/utils/session-start'
 import { extractRequestPreview, extractResponsePreview } from '@/utils/content-truncator'
 import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize'
 
@@ -531,6 +533,9 @@ const rowProps = (row: ApiRequest) => {
   }
 }
 
+const rowClassName = (row: ApiRequest) =>
+  isSessionStartBody(row.request_body) ? 'session-start-row' : ''
+
 const handleCleanLogs = async () => {
   cleanLoading.value = true
   try {
@@ -669,6 +674,15 @@ onMounted(() => {
 .token-line-saving {
   color: var(--color-primary);
   font-weight: 600;
+}
+
+.api-requests-view :deep(.session-start-row .table-time),
+.api-requests-view :deep(.session-start-row .table-model),
+.api-requests-view :deep(.session-start-row .table-latency),
+.api-requests-view :deep(.session-start-row .table-placeholder),
+.api-requests-view :deep(.session-start-row .table-preview),
+.api-requests-view :deep(.session-start-row .token-line) {
+  color: #ea580c;
 }
 
 .clean-dialog-modal .modal-content-wrapper {

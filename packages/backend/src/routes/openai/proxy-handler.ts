@@ -4,6 +4,7 @@ import { memoryLogger } from '../../services/logger.js';
 import { debugModeService } from '../../services/debug-mode.js';
 import { truncateRequestBody, truncateResponseBody, accumulateStreamResponse, buildFullRequestBody, accumulateResponsesStream, stripFieldRecursively } from '../../utils/request-logger.js';
 import { messageCompressor, KEEP_RECENT_WINDOW } from '../../services/message-compressor.js';
+import { historyCompactor, type CompactionResult } from '../../services/history-compactor.js';
 import { extractIp } from '../../utils/ip.js';
 import { getRequestUserAgent } from '../../utils/http.js';
 import { makeHttpRequest, makeStreamHttpRequest, makeImageGenerationProxyRequest } from '../proxy/http-client.js';
@@ -177,10 +178,10 @@ export function cloneOpenAIRetryBody(body: any): any {
   if (body === undefined || body === null) return body;
   try {
     return structuredClone(body);
-  } catch (_e) {
+  } catch {
     try {
       return JSON.parse(JSON.stringify(body));
-    } catch (_e2) {
+    } catch {
       return undefined;
     }
   }
@@ -510,6 +511,24 @@ export function createOpenAIProxyHandler() {
         const shouldCompressMessages = approxTokens >= MESSAGE_COMPRESSION_MIN_TOKENS;
 
         if (virtualKey.dynamic_compression_enabled === 1 && shouldCompressMessages) {
+          let compaction: CompactionResult | undefined;
+          try {
+            compaction = await historyCompactor.compactIfNeeded((request.body as any).messages);
+            if (compaction.fired) {
+              (request.body as any).messages = compaction.messages;
+              memoryLogger.info(
+                `历史摘要压缩 | 虚拟密钥: ${vkDisplay} | ${compaction.merged ? '摘要已合并更新' : '复用缓存摘要,增量原样下发'} | ` +
+                `Token 节省: ${compaction.originalTokens - compaction.compactedTokens}`,
+                'Proxy'
+              );
+            }
+          } catch (compactionError: any) {
+            memoryLogger.error(
+              `历史摘要压缩失败，回退去重压缩: ${compactionError.message}`,
+              'Proxy'
+            );
+          }
+
           try {
             const { messages: compressedMessages, stats, cache: compressionCache } =
               await messageCompressor.compressMessages(
@@ -518,9 +537,12 @@ export function createOpenAIProxyHandler() {
 
             (request.body as any).messages = compressedMessages;
 
+            const baseTokens = compaction?.fired
+              ? compaction.originalTokens
+              : stats.originalTokenEstimate;
             compressionStats = {
-              originalTokens: stats.originalTokenEstimate,
-              savedTokens: stats.originalTokenEstimate - stats.compressedTokenEstimate
+              originalTokens: baseTokens,
+              savedTokens: baseTokens - stats.compressedTokenEstimate
             };
 
             memoryLogger.info(

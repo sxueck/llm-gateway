@@ -99,15 +99,24 @@ LLM Gateway 的运行时配置只有两个真实来源：**环境变量**（部�
 
 ## 消息压缩与上下文规范化
 
-| 变量                                         | 默认值  | 说明                                             |
-| -------------------------------------------- | ------- | ------------------------------------------------ |
-| `KEEP_RECENT_MESSAGES`                       | `5`     | 压缩历史消息时保留不压缩的最新消息条数。         |
-| `MIN_TEXT_LENGTH`                            | `200`   | 文本块达到该长度才参与压缩。                     |
-| `MIN_CODE_LENGTH`                            | `100`   | 代码块达到该长度才参与压缩。                     |
-| `MESSAGE_COMPRESSION_MIN_TOKENS`             | `2048`  | 请求估算 token 数达到该阈值才触发消息压缩。      |
-| `CONTEXT_NORMALIZATION_IDLE_TTL_SECONDS`     | `1800`  | 上下文规范化绑定的空闲 TTL（同指纹命中即续期）。 |
-| `CONTEXT_NORMALIZATION_ABSOLUTE_TTL_SECONDS` | `86400` | 上下文规范化绑定的绝对生命周期上限。             |
-| `CONTEXT_NORMALIZATION_EVENT_RETENTION_DAYS` | `30`    | 上下文规范化事件保留天数（过期清理）。           |
+| 变量                                         | 默认值    | 说明                                                |
+| -------------------------------------------- | --------- | --------------------------------------------------- |
+| `KEEP_RECENT_MESSAGES`                       | `5`       | 压缩历史消息时保留不压缩的最新消息条数。            |
+| `MIN_TEXT_LENGTH`                            | `200`     | 文本块达到该长度才参与压缩。                        |
+| `MIN_CODE_LENGTH`                            | `100`     | 代码块达到该长度才参与压缩。                        |
+| `MESSAGE_COMPRESSION_MIN_TOKENS`             | `2048`    | 请求估算 token 数达到该阈值才触发消息压缩。         |
+| `CONTEXT_NORMALIZATION_IDLE_TTL_SECONDS`     | `1800`    | 上下文规范化绑定的空闲 TTL（同指纹命中即续期）。    |
+| `CONTEXT_NORMALIZATION_ABSOLUTE_TTL_SECONDS` | `86400`   | 上下文规范化绑定的绝对生命周期上限。                |
+| `CONTEXT_NORMALIZATION_EVENT_RETENTION_DAYS` | `30`      | 上下文规范化事件保留天数（过期清理）。              |
+| `COMPACT_ENABLED`                            | `1`       | 历史摘要压缩总开关（还需配置 summarizer 三件套）。  |
+| `COMPACT_THRESHOLD_TOKENS`                   | `32768`   | 历史窗口 token 达到该阈值才触发摘要压缩。           |
+| `COMPACT_KEEP_RECENT`                        | `6`       | 摘要压缩保留不合并的最新消息条数。                  |
+| `COMPACT_MIN_DELTA_TOKENS`                   | `4096`    | 未合并增量达到该大小才重新调用 LLM 更新摘要。       |
+| `COMPACT_MODEL`                              | -         | summarizer 模型名（OpenAI 兼容 chat completions）。 |
+| `COMPACT_BASE_URL`                           | -         | summarizer 上游 base URL。                          |
+| `COMPACT_API_KEY`                            | -         | summarizer 上游 API Key。                           |
+| `COMPACT_CACHE_SIZE`                         | `256`     | 摘要会话缓存容量（LRU）。                           |
+| `COMPACT_CACHE_TTL_MS`                       | `1800000` | 摘要会话缓存 TTL（毫秒）。                          |
 
 ## PII 防护（性能调优）
 
