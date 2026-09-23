@@ -145,7 +145,7 @@ const mainMenuParentByKey: Record<string, string> = {
   'worker-plugins': 'experimental-features',
   'cost-analysis': 'experimental-features',
   'worker-monitoring': 'monitoring',
-  'performance-monitoring': 'monitoring',
+  'operations-monitoring': 'monitoring',
   'traffic-analysis': 'monitoring',
   'api-guide': 'tools',
   logs: 'tools',
@@ -243,8 +243,8 @@ const menuOptions = computed(() => [
         icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
       },
       {
-        label: t('menu.performanceMonitoring'),
-        key: 'performance-monitoring',
+        label: t('menu.operationsMonitoring'),
+        key: 'operations-monitoring',
         icon: () => h(NIcon, null, { default: () => h(SpeedometerOutline) }),
       },
       {

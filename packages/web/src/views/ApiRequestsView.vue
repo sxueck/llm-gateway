@@ -21,7 +21,26 @@
               placeholder="虚拟密钥"
               clearable
               filterable
-              @update:value="loadRequests"
+              @update:value="resetPageAndLoad"
+            />
+            <n-select
+              v-model:value="filterProviderId"
+              :options="providerOptions"
+              class="filter-control filter-provider-select"
+              placeholder="供应商"
+              clearable
+              filterable
+              @update:value="resetPageAndLoad"
+            />
+            <n-select
+              v-model:value="filterModel"
+              :options="modelOptions"
+              class="filter-control filter-model-select"
+              placeholder="模型"
+              clearable
+              filterable
+              tag
+              @update:value="resetPageAndLoad"
             />
             <n-select
               v-model:value="filterStatus"
@@ -29,8 +48,11 @@
               class="filter-control filter-status-select"
               placeholder="状态"
               clearable
-              @update:value="loadRequests"
+              @update:value="resetPageAndLoad"
             />
+            <n-button class="filter-action-btn" :disabled="!hasActiveFilters" @click="clearFilters">
+              清除筛选
+            </n-button>
             <n-button class="filter-action-btn" @click="loadRequests" :loading="loading">
               刷新
             </n-button>
@@ -201,6 +223,7 @@
 
 <script setup lang="ts">
 import { ref, computed, h, onMounted, reactive } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   useMessage,
   NSpace,
@@ -222,6 +245,8 @@ import {
 } from 'naive-ui'
 import { apiRequestApi, type ApiRequest } from '@/api/api-request'
 import { virtualKeyApi } from '@/api/virtual-key'
+import { providerApi } from '@/api/provider'
+import { modelApi } from '@/api/model'
 import type { DataTableColumns, PaginationProps } from 'naive-ui'
 import { formatJson, formatTimestamp } from '@/utils/common'
 import { isSessionStartBody } from '@/utils/session-start'
@@ -236,7 +261,66 @@ const selectedRequest = ref<ApiRequest | null>(null)
 const timeRange = ref<[number, number] | null>(null)
 const filterStatus = ref<string | undefined>(undefined)
 const filterVirtualKeyId = ref<string | undefined>(undefined)
+const filterProviderId = ref<string | undefined>(undefined)
+const filterModel = ref<string | undefined>(undefined)
 const virtualKeyOptions = ref<Array<{ label: string; value: string }>>([])
+const providerOptions = ref<Array<{ label: string; value: string }>>([])
+const modelOptions = ref<Array<{ label: string; value: string }>>([])
+
+const route = useRoute()
+const router = useRouter()
+
+const hasActiveFilters = computed(
+  () =>
+    !!timeRange.value ||
+    !!filterStatus.value ||
+    !!filterVirtualKeyId.value ||
+    !!filterProviderId.value ||
+    !!filterModel.value
+)
+
+// Drill-down entry: ops monitoring pushes startTime/endTime/virtualKeyId/
+// providerId/model/status as query params; the controls must reflect them,
+// not just forward them to the API.
+const applyRouteQuery = () => {
+  const q = route.query
+  const start = Number(q.startTime)
+  const end = Number(q.endTime)
+  if (Number.isFinite(start) && start > 0 && Number.isFinite(end) && end > start) {
+    timeRange.value = [start, end]
+  }
+  if (typeof q.virtualKeyId === 'string' && q.virtualKeyId) {
+    filterVirtualKeyId.value = q.virtualKeyId
+  }
+  if (typeof q.providerId === 'string' && q.providerId) {
+    filterProviderId.value = q.providerId
+  }
+  if (typeof q.model === 'string' && q.model) {
+    filterModel.value = q.model
+  }
+  if (q.status === 'success' || q.status === 'error') {
+    filterStatus.value = q.status
+  }
+}
+
+const clearFilters = () => {
+  timeRange.value = null
+  filterStatus.value = undefined
+  filterVirtualKeyId.value = undefined
+  filterProviderId.value = undefined
+  filterModel.value = undefined
+  // 清除过滤后重置分页；同时移除钻取携带的 URL 参数
+  pagination.page = 1
+  if (Object.keys(route.query).length > 0) {
+    router.replace({ path: route.path })
+  }
+  loadRequests()
+}
+
+const resetPageAndLoad = () => {
+  pagination.page = 1
+  loadRequests()
+}
 const showCleanDialog = ref(false)
 const cleanDays = ref(30)
 const cleanLoading = ref(false)
@@ -498,6 +582,14 @@ const loadRequests = async () => {
       params.virtualKeyId = filterVirtualKeyId.value
     }
 
+    if (filterProviderId.value) {
+      params.providerId = filterProviderId.value
+    }
+
+    if (filterModel.value) {
+      params.model = filterModel.value
+    }
+
     const response = await apiRequestApi.getAll(params)
     requests.value = response.data
     pagination.itemCount = response.total
@@ -561,11 +653,52 @@ const loadVirtualKeys = async () => {
     message.error(error.message || '加载虚拟密钥列表失败')
   }
 }
+const loadProviderAndModelOptions = async () => {
+  try {
+    const [providerRes, modelRes] = await Promise.all([
+      providerApi.getAll(),
+      modelApi.getAll()
+    ])
+    providerOptions.value = providerRes.providers.map(p => ({
+      label: p.name,
+      value: p.id
+    }))
+    modelOptions.value = modelRes.models.map(m => ({
+      label: m.name,
+      value: m.name
+    }))
+    ensureDrilledOptionPresent()
+  } catch (error: any) {
+    message.error(error.message || '加载筛选选项失败')
+  }
+}
+
+// 钻取携带的模型/供应商可能不在已配置列表（实际模型、已删除供应商），
+// 保留为选项以保证控件能回显参数值
+const ensureDrilledOptionPresent = () => {
+  if (filterProviderId.value && !providerOptions.value.some(o => o.value === filterProviderId.value)) {
+    providerOptions.value = [
+      { label: filterProviderId.value, value: filterProviderId.value },
+      ...providerOptions.value
+    ]
+  }
+  if (filterModel.value && !modelOptions.value.some(o => o.value === filterModel.value)) {
+    modelOptions.value = [
+      { label: filterModel.value, value: filterModel.value },
+      ...modelOptions.value
+    ]
+  }
+}
+
 onMounted(() => {
+  applyRouteQuery()
   const now = Date.now()
   const oneDayAgo = now - 24 * 60 * 60 * 1000
-  timeRange.value = [oneDayAgo, now]
+  if (!timeRange.value) {
+    timeRange.value = [oneDayAgo, now]
+  }
   loadVirtualKeys()
+  loadProviderAndModelOptions()
   loadRequests()
 })
 </script>
@@ -598,6 +731,14 @@ onMounted(() => {
 
 .filter-key-select {
   width: 200px;
+}
+
+.filter-provider-select {
+  width: 170px;
+}
+
+.filter-model-select {
+  width: 180px;
 }
 
 .filter-status-select {
@@ -769,6 +910,11 @@ onMounted(() => {
   .filter-key-select {
     width: 180px;
   }
+
+  .filter-provider-select,
+  .filter-model-select {
+    width: 150px;
+  }
 }
 
 @media (max-width: 768px) {
@@ -782,6 +928,8 @@ onMounted(() => {
 
   .filter-date-picker,
   .filter-key-select,
+  .filter-provider-select,
+  .filter-model-select,
   .filter-status-select {
     width: 100%;
   }
