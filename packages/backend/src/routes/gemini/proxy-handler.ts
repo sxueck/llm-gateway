@@ -1,23 +1,26 @@
-import { FastifyRequest, FastifyReply } from 'fastify';
-import { memoryLogger } from '../../services/logger.js';
-import { runProxyPipeline } from '../proxy/pipeline.js';
-import { logApiRequestAsync } from '../../services/api-request-logger.js';
-import { handleGeminiNativeNonStreamRequest, handleGeminiNativeStreamRequest } from './gemini-native.js';
-import { shouldLogRequestBody } from '../proxy/handlers/shared.js';
-import { parseModelAttributes } from '../proxy/model-handlers.js';
-import { cloneSmartRoutingRetryBody } from '../proxy/retry-handler.js';
-import { applyDisableThinking } from '../../utils/thinking-control.js';
-import { capturePromptSampleAsync } from '../../services/prompt-capture-service.js';
-import { applyContextNormalization } from '../../services/context-normalization/index.js';
+import { FastifyRequest, FastifyReply } from "fastify";
+import { memoryLogger } from "../../services/logger.js";
+import { runProxyPipeline } from "../proxy/pipeline.js";
+import { logApiRequestAsync } from "../../services/api-request-logger.js";
+import {
+  handleGeminiNativeNonStreamRequest,
+  handleGeminiNativeStreamRequest,
+} from "./gemini-native.js";
+import { shouldLogRequestBody } from "../proxy/handlers/shared.js";
+import { parseModelAttributes } from "../proxy/model-handlers.js";
+import { cloneSmartRoutingRetryBody } from "../proxy/retry-handler.js";
+import { applyDisableThinking } from "../../utils/thinking-control.js";
+import { capturePromptSampleAsync } from "../../services/prompt-capture-service.js";
+import { applyContextNormalization } from "../../services/context-normalization/index.js";
 
 /** Extract the model name from a Gemini-native URL (e.g. /v1beta/models/gemini-pro:generateContent). */
 export function extractGeminiModelFromUrl(url: string): string {
-  const pathParts = url.split('/');
-  const modelsIndex = pathParts.indexOf('models');
+  const pathParts = url.split("/");
+  const modelsIndex = pathParts.indexOf("models");
   if (modelsIndex !== -1 && pathParts[modelsIndex + 1]) {
-    return pathParts[modelsIndex + 1].split(':')[0];
+    return pathParts[modelsIndex + 1].split(":")[0];
   }
-  return '';
+  return "";
 }
 
 export interface GeminiDispatchArgs {
@@ -33,6 +36,8 @@ export interface GeminiDispatchArgs {
   isStreamRequest: boolean;
   virtualKeyValue?: string;
   retryBodySnapshot?: any;
+  /** Shared exactly-one-row guard across dispatch and the outer catch. */
+  auditState?: { auditLogged?: boolean };
 }
 
 /**
@@ -43,7 +48,9 @@ export interface GeminiDispatchArgs {
  * retries re-enter here with the retry target's config, never through another
  * protocol's handlers.
  */
-export async function dispatchGeminiRequest(args: GeminiDispatchArgs): Promise<void> {
+export async function dispatchGeminiRequest(
+  args: GeminiDispatchArgs,
+): Promise<void> {
   const {
     request,
     reply,
@@ -57,31 +64,42 @@ export async function dispatchGeminiRequest(args: GeminiDispatchArgs): Promise<v
     isStreamRequest,
     virtualKeyValue,
     retryBodySnapshot,
+    auditState,
   } = args;
 
   const modelAttributes = parseModelAttributes(currentModel?.model_attributes);
-  if (modelAttributes?.disable_thinking && applyDisableThinking(request.body, 'gemini')) {
-    memoryLogger.info(`已禁用思考 (disable_thinking) | 模型: ${currentModel?.name}`, 'Gemini');
+  if (
+    modelAttributes?.disable_thinking &&
+    applyDisableThinking(request.body, "gemini")
+  ) {
+    memoryLogger.info(
+      `已禁用思考 (disable_thinking) | 模型: ${currentModel?.name}`,
+      "Gemini",
+    );
   }
 
   const modelFromUrl = extractGeminiModelFromUrl(request.url);
   const resolvedModelIdentifier = currentModel?.model_identifier;
   let upstreamUrl = request.url;
 
-  if (resolvedModelIdentifier && modelFromUrl && modelFromUrl !== resolvedModelIdentifier) {
+  if (
+    resolvedModelIdentifier &&
+    modelFromUrl &&
+    modelFromUrl !== resolvedModelIdentifier
+  ) {
     upstreamUrl = request.url.replace(
       new RegExp(`/models/${modelFromUrl}([:/?]|$)`),
-      `/models/${resolvedModelIdentifier}$1`
+      `/models/${resolvedModelIdentifier}$1`,
     );
     memoryLogger.info(
       `Gemini 模型标识转换: URL模型名="${modelFromUrl}" -> model_identifier="${resolvedModelIdentifier}"`,
-      'Gemini'
+      "Gemini",
     );
   }
 
   memoryLogger.info(
-    `Gemini 请求: 解析模型="${currentModel?.name || 'unknown'}" | model_identifier="${resolvedModelIdentifier || modelFromUrl}" | stream: ${isStreamRequest} | virtual key: ${vkDisplay}`,
-    'Gemini'
+    `Gemini 请求: 解析模型="${currentModel?.name || "unknown"}" | model_identifier="${resolvedModelIdentifier || modelFromUrl}" | stream: ${isStreamRequest} | virtual key: ${vkDisplay}`,
+    "Gemini",
   );
 
   // Thread the pipeline circuit key so every terminal upstream outcome inside
@@ -91,6 +109,7 @@ export async function dispatchGeminiRequest(args: GeminiDispatchArgs): Promise<v
     modelResult,
     virtualKeyValue,
     retryBodySnapshot,
+    auditState,
   };
 
   if (isStreamRequest) {
@@ -104,7 +123,7 @@ export async function dispatchGeminiRequest(args: GeminiDispatchArgs): Promise<v
       startTime,
       vkDisplay,
       currentModel,
-      nativeOptions
+      nativeOptions,
     );
   }
 
@@ -118,7 +137,7 @@ export async function dispatchGeminiRequest(args: GeminiDispatchArgs): Promise<v
     startTime,
     vkDisplay,
     currentModel,
-    nativeOptions
+    nativeOptions,
   );
 }
 
@@ -128,19 +147,38 @@ export function createGeminiProxyHandler() {
     let virtualKeyValue: string | undefined;
     let providerId: string | undefined;
     let currentModel: any | undefined;
-    let requestIp = 'unknown';
-    let requestUserAgent = '';
-    let modelFromUrl = '';
+    let requestIp = "unknown";
+    let requestUserAgent = "";
+    let modelFromUrl = "";
+    // Exactly-one-row guard shared with the native handlers: once an audit row
+    // has been written inside dispatch, the outer catch must not add a second.
+    const auditState: { auditLogged?: boolean } = {};
 
     try {
       const pipelineResult = await runProxyPipeline(request, reply, {
-        protocol: 'gemini',
+        protocol: "gemini",
         handlers: {
           onManualBlock: ({ reply }) => {
-            reply.code(403).send({ error: { message: 'Access denied: IP blocked', code: 403, status: 'PERMISSION_DENIED' } });
+            reply
+              .code(403)
+              .send({
+                error: {
+                  message: "Access denied: IP blocked",
+                  code: 403,
+                  status: "PERMISSION_DENIED",
+                },
+              });
           },
           onAntiBotBlock: ({ reply }) => {
-            reply.code(403).send({ error: { message: 'Access denied: Bot detected', code: 403, status: 'PERMISSION_DENIED' } });
+            reply
+              .code(403)
+              .send({
+                error: {
+                  message: "Access denied: Bot detected",
+                  code: 403,
+                  status: "PERMISSION_DENIED",
+                },
+              });
           },
           onAuthError: ({ reply, authError }) => {
             reply.code(authError.code).send(authError.body);
@@ -159,14 +197,14 @@ export function createGeminiProxyHandler() {
           modelFromUrl = extractGeminiModelFromUrl(request.url);
 
           // Ensure model is available for model resolver.
-          if (!request.body || typeof request.body !== 'object') {
+          if (!request.body || typeof request.body !== "object") {
             request.body = {} as any;
           }
           if (modelFromUrl && !(request.body as any).model) {
             (request.body as any).model = modelFromUrl;
           }
 
-          capturePromptSampleAsync(virtualKey, request, 'gemini');
+          capturePromptSampleAsync(virtualKey, request, "gemini");
 
           return true;
         },
@@ -194,7 +232,7 @@ export function createGeminiProxyHandler() {
       currentModel = resolvedModel;
 
       const normalization = await applyContextNormalization({
-        protocol: 'gemini',
+        protocol: "gemini",
         request,
         body: request.body,
         providerId: resolvedProviderId,
@@ -225,32 +263,39 @@ export function createGeminiProxyHandler() {
         isStreamRequest,
         virtualKeyValue: vkValue,
         retryBodySnapshot,
+        auditState,
       });
     } catch (error: any) {
       const duration = Date.now() - startTime;
-       memoryLogger.error(
+      memoryLogger.error(
         `Gemini proxy request failed: ${error.message}`,
-        'Gemini',
-        { error: error.stack }
+        "Gemini",
+        { error: error.stack },
       );
 
       // Best-effort audit of the failed request. Fire-and-forget and fully guarded:
       // an audit/logging outage must never change the response delivered to the client.
       try {
-        if (virtualKeyValue && providerId) {
-          const { virtualKeyDb } = await import('../../db/index.js');
+        if (virtualKeyValue && providerId && !auditState.auditLogged) {
+          const { virtualKeyDb } = await import("../../db/index.js");
           const virtualKey = await virtualKeyDb.getByKeyValue(virtualKeyValue);
           if (virtualKey) {
             const shouldLogBody = shouldLogRequestBody(virtualKey);
             logApiRequestAsync({
               virtualKey,
               providerId,
-              model: currentModel?.name || 'unknown',
-              tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-              status: 'error',
+              model: currentModel?.name || "unknown",
+              tokenCount: {
+                promptTokens: 0,
+                completionTokens: 0,
+                totalTokens: 0,
+              },
+              status: "error",
               responseTime: duration,
               errorMessage: error.message,
-              truncatedRequest: shouldLogBody ? JSON.stringify(request.body) : undefined,
+              truncatedRequest: shouldLogBody
+                ? JSON.stringify(request.body)
+                : undefined,
               cacheHit: 0,
               ip: requestIp,
               userAgent: requestUserAgent,
@@ -258,11 +303,22 @@ export function createGeminiProxyHandler() {
           }
         }
       } catch (auditError: any) {
-        memoryLogger.warn(`失败请求审计记录异常(已忽略): ${auditError?.message || auditError}`, 'Gemini');
+        memoryLogger.warn(
+          `失败请求审计记录异常(已忽略): ${auditError?.message || auditError}`,
+          "Gemini",
+        );
       }
 
       if (!reply.sent) {
-        return reply.code(500).send({ error: { message: error.message || 'Internal server error', code: 500, status: 'INTERNAL' } });
+        return reply
+          .code(500)
+          .send({
+            error: {
+              message: error.message || "Internal server error",
+              code: 500,
+              status: "INTERNAL",
+            },
+          });
       }
     }
   };

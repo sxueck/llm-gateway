@@ -1,12 +1,12 @@
 import { getDatabase } from "./connection.js";
 
 export async function createTables() {
-    const pool = getDatabase();
-    const conn = await pool.getConnection();
+  const pool = getDatabase();
+  const conn = await pool.getConnection();
 
-    try {
-        // 用户表
-        await conn.query(`
+  try {
+    // 用户表
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS users (
         id VARCHAR(255) PRIMARY KEY,
         username VARCHAR(255) NOT NULL UNIQUE,
@@ -17,8 +17,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 提供商表
-        await conn.query(`
+    // 提供商表
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS providers (
         id VARCHAR(255) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -34,8 +34,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 模型表
-        await conn.query(`
+    // 模型表
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS models (
         id VARCHAR(255) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -61,8 +61,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 虚拟密钥表
-        await conn.query(`
+    // 虚拟密钥表
+    await conn.query(`
 	      CREATE TABLE IF NOT EXISTS virtual_keys (
 	        id VARCHAR(255) PRIMARY KEY,
 	        key_value VARCHAR(255) NOT NULL UNIQUE,
@@ -95,21 +95,21 @@ export async function createTables() {
 	      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 	    `);
 
-        // 系统配置表
-        await conn.query(
-            `
+    // 系统配置表
+    await conn.query(
+      `
       CREATE TABLE IF NOT EXISTS system_config (
         ` +
-                "`key`" +
-                ` VARCHAR(255) PRIMARY KEY,
+        "`key`" +
+        ` VARCHAR(255) PRIMARY KEY,
         value TEXT NOT NULL,
         description TEXT,
         updated_at BIGINT NOT NULL
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `,
-        );
+    );
 
-        await conn.query(`
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS prompt_samples (
         id VARCHAR(255) PRIMARY KEY,
         virtual_key_id VARCHAR(255) NOT NULL,
@@ -125,8 +125,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // API 请求日志表
-        await conn.query(`
+    // API 请求日志表
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS api_requests (
         id VARCHAR(255) PRIMARY KEY,
         virtual_key_id VARCHAR(255),
@@ -165,7 +165,7 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        await conn.query(`
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS api_request_payloads (
         request_id VARCHAR(255) PRIMARY KEY,
         request_body MEDIUMTEXT,
@@ -176,7 +176,7 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        await conn.query(`
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS blocked_ips (
         ip VARCHAR(45) PRIMARY KEY,
         reason VARCHAR(255) DEFAULT NULL,
@@ -186,8 +186,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 路由配置表
-        await conn.query(`
+    // 路由配置表
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS routing_configs (
         id VARCHAR(255) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -202,8 +202,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 专家路由配置表
-        await conn.query(`
+    // 专家路由配置表
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS expert_routing_configs (
         id VARCHAR(255) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -217,8 +217,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 专家路由日志表
-        await conn.query(`
+    // 专家路由日志表
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS expert_routing_logs (
         id VARCHAR(255) PRIMARY KEY,
         virtual_key_id VARCHAR(255),
@@ -244,8 +244,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 意图分类日志表（/v1/intent/classify API 调用；专家路由分类记录在 expert_routing_logs）
-        await conn.query(`
+    // 意图分类日志表（/v1/intent/classify API 调用；专家路由分类记录在 expert_routing_logs）
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS intent_classify_logs (
         id VARCHAR(255) PRIMARY KEY,
         virtual_key_id VARCHAR(255) DEFAULT NULL,
@@ -260,10 +260,10 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 专家路由会话绑定表（持久化，跨重启/副本可用）
-        // 复合主键 (expert_routing_id, virtual_key_scope, session_id)；
-        // virtual_key_scope 为虚拟密钥 ID 或非空匿名哨兵，避免 MySQL 可空唯一键产生重复匿名绑定。
-        await conn.query(`
+    // 专家路由会话绑定表（持久化，跨重启/副本可用）
+    // 复合主键 (expert_routing_id, virtual_key_scope, session_id)；
+    // virtual_key_scope 为虚拟密钥 ID 或非空匿名哨兵，避免 MySQL 可空唯一键产生重复匿名绑定。
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS expert_routing_session_bindings (
         expert_routing_id VARCHAR(255) NOT NULL,
         virtual_key_scope VARCHAR(255) NOT NULL,
@@ -281,8 +281,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 模型切换上下文规范化：每 (virtual_key_scope, session_id) 最近一次上下文指纹
-        await conn.query(`
+    // 模型切换上下文规范化：每 (virtual_key_scope, session_id) 最近一次上下文指纹
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS session_context_bindings (
         virtual_key_scope VARCHAR(255) NOT NULL,
         session_id VARCHAR(256) NOT NULL,
@@ -299,8 +299,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 模型切换上下文规范化：切换审计事件（不含清洗掉的 reasoning 原文）
-        await conn.query(`
+    // 模型切换上下文规范化：切换审计事件（不含清洗掉的 reasoning 原文）
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS context_switch_events (
         id VARCHAR(255) PRIMARY KEY,
         virtual_key_id VARCHAR(255) DEFAULT NULL,
@@ -320,7 +320,7 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        await conn.query(`
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS expert_routing_training_records (
         id VARCHAR(255) PRIMARY KEY,
         expert_routing_id VARCHAR(255) NOT NULL,
@@ -345,8 +345,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 健康检查目标表
-        await conn.query(`
+    // 健康检查目标表
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS health_targets (
         id VARCHAR(255) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -365,8 +365,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 健康检查运行记录表
-        await conn.query(`
+    // 健康检查运行记录表
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS health_runs (
         id VARCHAR(255) PRIMARY KEY,
         target_id VARCHAR(255) NOT NULL,
@@ -383,8 +383,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 健康检查汇总表
-        await conn.query(`
+    // 健康检查汇总表
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS health_summaries (
         id VARCHAR(255) PRIMARY KEY,
         target_id VARCHAR(255) NOT NULL,
@@ -404,8 +404,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 成本映射规则表
-        await conn.query(`
+    // 成本映射规则表
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS cost_mappings (
         id VARCHAR(255) PRIMARY KEY,
         pattern VARCHAR(255) NOT NULL,
@@ -419,8 +419,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 熔断器触发统计表（持久化存储每个 Provider 的触发次数）
-        await conn.query(`
+    // 熔断器触发统计表（持久化存储每个 Provider 的触发次数）
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS circuit_breaker_stats (
         provider_id VARCHAR(255) PRIMARY KEY,
         trigger_count INT NOT NULL DEFAULT 0,
@@ -432,8 +432,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 熔断器触发事件表（记录每次触发的详细事件，用于时间范围统计）
-        await conn.query(`
+    // 熔断器触发事件表（记录每次触发的详细事件，用于时间范围统计）
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS circuit_breaker_events (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         provider_id VARCHAR(255) NOT NULL,
@@ -444,8 +444,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 备份记录表
-        await conn.query(`
+    // 备份记录表
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS backup_records (
         id VARCHAR(255) PRIMARY KEY,
         backup_key VARCHAR(255) NOT NULL,
@@ -467,8 +467,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // 恢复记录表
-        await conn.query(`
+    // 恢复记录表
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS restore_records (
         id VARCHAR(255) PRIMARY KEY,
         backup_record_id VARCHAR(255) NOT NULL,
@@ -487,8 +487,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // Agent Search：仓库快照（加密存储，24h 保留）
-        await conn.query(`
+    // Agent Search：仓库快照（加密存储，24h 保留）
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS repository_snapshots (
         id VARCHAR(255) PRIMARY KEY,
         user_id VARCHAR(255) NOT NULL,
@@ -512,8 +512,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // Agent Search：检索 run
-        await conn.query(`
+    // Agent Search：检索 run
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS agent_search_runs (
         id VARCHAR(255) PRIMARY KEY,
         user_id VARCHAR(255) NOT NULL,
@@ -545,8 +545,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // Agent Search：run 事件（SSE 重放）
-        await conn.query(`
+    // Agent Search：run 事件（SSE 重放）
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS agent_search_run_events (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         run_id VARCHAR(255) NOT NULL,
@@ -559,8 +559,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // Agent Search：用量（run 终态后保留，是匿名聚合指标）
-        await conn.query(`
+    // Agent Search：用量（run 终态后保留，是匿名聚合指标）
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS agent_search_usage (
         run_id VARCHAR(255) PRIMARY KEY,
         turn_count INT NOT NULL DEFAULT 0,
@@ -574,8 +574,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // Worker Plugin Center：官方插件版本（不可变，id+version 唯一）
-        await conn.query(`
+    // Worker Plugin Center：官方插件版本（不可变，id+version 唯一）
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS worker_plugins (
         id VARCHAR(255) NOT NULL,
         version VARCHAR(64) NOT NULL,
@@ -598,8 +598,8 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // Worker Plugin Center：用户启用状态与默认版本
-        await conn.query(`
+    // Worker Plugin Center：用户启用状态与默认版本
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS user_plugin_enrollments (
         user_id VARCHAR(255) NOT NULL,
         plugin_id VARCHAR(255) NOT NULL,
@@ -612,9 +612,9 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-        // API 请求按天汇总表（支持 7 天外的统计查询，天边界为 Asia/Shanghai 时区）
-        // Nullable 维度使用空字符串作为 sentinel 值以满足唯一键约束
-        await conn.query(`
+    // API 请求按天汇总表（支持 7 天外的统计查询，天边界为 Asia/Shanghai 时区）
+    // Nullable 维度使用空字符串作为 sentinel 值以满足唯一键约束
+    await conn.query(`
       CREATE TABLE IF NOT EXISTS api_request_daily_summaries (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         summary_date DATE NOT NULL COMMENT 'Asia/Shanghai 时区的汇总日期',
@@ -634,6 +634,11 @@ export async function createTables() {
         response_time_count INT NOT NULL DEFAULT 0 COMMENT '参与 total_response_time 统计的请求数',
         total_effective_time BIGINT NOT NULL DEFAULT 0 COMMENT '请求级有效响应时间总和：tffb_ms > 0 用 tffb_ms，否则回退 response_time(毫秒)',
         effective_time_count INT NOT NULL DEFAULT 0 COMMENT '参与 total_effective_time 统计的请求数',
+        total_tffb_ms BIGINT NOT NULL DEFAULT 0 COMMENT 'tffb_ms >= 0 的总和(毫秒)',
+        tffb_count INT NOT NULL DEFAULT 0 COMMENT 'tffb_ms >= 0 的请求数',
+        total_output_speed DOUBLE NOT NULL DEFAULT 0 COMMENT '逐请求有效输出速度总和(tokens/s)',
+        speed_count INT NOT NULL DEFAULT 0 COMMENT '有效输出速度样本数',
+        last_used_at BIGINT NOT NULL DEFAULT 0 COMMENT '当日 MAX(created_at)',
         created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
         updated_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
         UNIQUE KEY uk_daily_summary_dimensions (summary_date, virtual_key_id, provider_id, model),
@@ -643,7 +648,42 @@ export async function createTables() {
         INDEX idx_summary_model (model, summary_date)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-    } finally {
-        conn.release();
-    }
+
+    // 小时级聚合表：精确滚动窗口的查询优化；边界部分小时由明细精确计算。
+    // 口径与 v45 迁移保持一致。
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS api_request_hourly_summaries (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        bucket_hour BIGINT NOT NULL COMMENT 'UTC 毫秒整小时桶起点',
+        virtual_key_id VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
+        provider_id VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
+        model VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
+        request_count INT NOT NULL DEFAULT 0,
+        success_count INT NOT NULL DEFAULT 0 COMMENT 'status = success 的计数',
+        error_count INT NOT NULL DEFAULT 0 COMMENT 'status != success 的计数',
+        prompt_tokens BIGINT NOT NULL DEFAULT 0 COMMENT '仅 cache_hit = 0 的请求',
+        completion_tokens BIGINT NOT NULL DEFAULT 0 COMMENT '仅 cache_hit = 0 的请求',
+        total_tokens BIGINT NOT NULL DEFAULT 0 COMMENT '仅 cache_hit = 0 的请求',
+        cached_tokens BIGINT NOT NULL DEFAULT 0 COMMENT '全部请求的 prompt cache tokens',
+        cache_hit_count INT NOT NULL DEFAULT 0 COMMENT 'cache_hit = 1 的计数',
+        prompt_cache_hit_count INT NOT NULL DEFAULT 0 COMMENT 'cached_tokens > 0 的计数',
+        total_tffb_ms BIGINT NOT NULL DEFAULT 0 COMMENT 'tffb_ms >= 0 的总和(毫秒)',
+        tffb_count INT NOT NULL DEFAULT 0 COMMENT 'tffb_ms >= 0 的请求数',
+        total_response_time BIGINT NOT NULL DEFAULT 0 COMMENT 'response_time > 0 的总和(毫秒)',
+        response_time_count INT NOT NULL DEFAULT 0 COMMENT 'response_time > 0 的请求数',
+        total_output_speed DOUBLE NOT NULL DEFAULT 0 COMMENT '逐请求有效输出速度总和(tokens/s)，与 performance-metrics 同口径',
+        speed_count INT NOT NULL DEFAULT 0 COMMENT '有效输出速度样本数',
+        last_used_at BIGINT NOT NULL DEFAULT 0 COMMENT '桶内 MAX(created_at)',
+        created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+        updated_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+        UNIQUE KEY uk_hourly_summary_dimensions (bucket_hour, virtual_key_id, provider_id, model),
+        INDEX idx_hourly_bucket (bucket_hour),
+        INDEX idx_hourly_vk (virtual_key_id, bucket_hour),
+        INDEX idx_hourly_provider (provider_id, bucket_hour),
+        INDEX idx_hourly_model (model, bucket_hour)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+  } finally {
+    conn.release();
+  }
 }

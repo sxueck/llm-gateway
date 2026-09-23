@@ -1,37 +1,58 @@
-import { FastifyRequest, FastifyReply } from 'fastify';
-import { memoryLogger } from '../../services/logger.js';
-import { extractIp } from '../../utils/ip.js';
-import { getRequestUserAgent } from '../../utils/http.js';
-import { runProxyPipeline } from '../proxy/pipeline.js';
-import { circuitBreaker } from '../../services/circuit-breaker.js';
-import { shouldRetrySmartRouting } from '../proxy/routing.js';
-import { cloneSmartRoutingRetryBody } from '../proxy/retry-handler.js';
-import { isAnthropicProtocolConfig } from '../../utils/protocol-utils.js';
-import type { VirtualKey } from '../../types/index.js';
-import type { AnthropicRequest, AnthropicError } from '../../types/anthropic.js';
-import { makeAnthropicRequest, makeAnthropicStreamRequest } from './http-client.js';
-import { logApiRequestAsync } from '../../services/api-request-logger.js';
-import { calculateTokensIfNeeded } from '../proxy/token-calculator.js';
-import { maybeCompressImagesInAnthropicRequestBodyInPlace, logImageCompressionStats } from '../../services/image-compression.js';
-import { requestHeaderForwardingService } from '../../services/request-header-forwarding.js';
+import { FastifyRequest, FastifyReply } from "fastify";
+import { memoryLogger } from "../../services/logger.js";
+import { extractIp } from "../../utils/ip.js";
+import { getRequestUserAgent } from "../../utils/http.js";
+import { runProxyPipeline } from "../proxy/pipeline.js";
+import { circuitBreaker } from "../../services/circuit-breaker.js";
+import { shouldRetrySmartRouting } from "../proxy/routing.js";
+import { cloneSmartRoutingRetryBody } from "../proxy/retry-handler.js";
+import { isAnthropicProtocolConfig } from "../../utils/protocol-utils.js";
+import type { VirtualKey } from "../../types/index.js";
+import type {
+  AnthropicRequest,
+  AnthropicError,
+} from "../../types/anthropic.js";
+import {
+  makeAnthropicRequest,
+  makeAnthropicStreamRequest,
+} from "./http-client.js";
+import { logApiRequestAsync } from "../../services/api-request-logger.js";
+import { calculateTokensIfNeeded } from "../proxy/token-calculator.js";
+import {
+  maybeCompressImagesInAnthropicRequestBodyInPlace,
+  logImageCompressionStats,
+} from "../../services/image-compression.js";
+import { requestHeaderForwardingService } from "../../services/request-header-forwarding.js";
 import {
   maskRequestBodyInPlace,
   restoreResponseBodyInPlace,
-} from '../../services/pii-protection-service.js';
-import { capturePromptSampleAsync } from '../../services/prompt-capture-service.js';
-import { applyContextNormalization } from '../../services/context-normalization/index.js';
-import { clampMaxTokensFields, resolveServingLimits } from '../../utils/serving-limits.js';
-import { applyDisableThinking } from '../../utils/thinking-control.js';
-import { parseModelAttributes } from '../proxy/model-handlers.js';
+} from "../../services/pii-protection-service.js";
+import { capturePromptSampleAsync } from "../../services/prompt-capture-service.js";
+import { applyContextNormalization } from "../../services/context-normalization/index.js";
+import {
+  clampMaxTokensFields,
+  resolveServingLimits,
+} from "../../utils/serving-limits.js";
+import { applyDisableThinking } from "../../utils/thinking-control.js";
+import { parseModelAttributes } from "../proxy/model-handlers.js";
+import {
+  CLIENT_ABORTED_MESSAGE,
+  isClientAbort,
+} from "../../utils/client-abort.js";
 
 function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
   return !virtualKey.disable_logging;
 }
 
-function anthropicForwardedHeaders(request: FastifyRequest): Record<string, string> {
-  const headers = requestHeaderForwardingService.buildForwardedHeaders(request.headers as any);
-  const beta = request.headers['anthropic-beta'];
-  if (typeof beta === 'string' && beta && !/[\r\n]/.test(beta)) headers['anthropic-beta'] = beta;
+function anthropicForwardedHeaders(
+  request: FastifyRequest,
+): Record<string, string> {
+  const headers = requestHeaderForwardingService.buildForwardedHeaders(
+    request.headers as any,
+  );
+  const beta = request.headers["anthropic-beta"];
+  if (typeof beta === "string" && beta && !/[\r\n]/.test(beta))
+    headers["anthropic-beta"] = beta;
   return headers;
 }
 
@@ -45,8 +66,11 @@ function anthropicForwardedHeaders(request: FastifyRequest): Record<string, stri
  * back to a synthetic Anthropic error envelope so the upstream status passes
  * through with a single breaker verdict.
  */
-export function parseAnthropicUpstreamBody(body: string | undefined | null): { data: any; parseFailed: boolean } {
-  if (typeof body === 'string') {
+export function parseAnthropicUpstreamBody(body: string | undefined | null): {
+  data: any;
+  parseFailed: boolean;
+} {
+  if (typeof body === "string") {
     try {
       return { data: JSON.parse(body), parseFailed: false };
     } catch {
@@ -56,19 +80,22 @@ export function parseAnthropicUpstreamBody(body: string | undefined | null): { d
 
   return {
     data: {
-      type: 'error',
+      type: "error",
       error: {
-        type: 'api_error',
-        message: 'Upstream returned a non-JSON response',
+        type: "api_error",
+        message: "Upstream returned a non-JSON response",
       },
     },
     parseFailed: true,
   };
 }
 
-function createAnthropicError(message: string, type: string = 'invalid_request_error'): AnthropicError {
+function createAnthropicError(
+  message: string,
+  type: string = "invalid_request_error",
+): AnthropicError {
   return {
-    type: 'error',
+    type: "error",
     error: {
       type: type as any,
       message,
@@ -96,6 +123,14 @@ export interface AnthropicProxyRequestContext {
    * through RetryContext so every smart-routing retry replays the same body.
    */
   retryBodySnapshot?: any;
+  /**
+   * Exactly-once audit guard (PRD: unified api_requests logging): set as soon
+   * as this attempt has written its audit row. The route's outer catch
+   * consults it so a rethrown/late error never produces a second row for the
+   * same attempt — the richer inner-context row (with piiResult.maskedCount)
+   * wins, the outer catch stays the fallback for pre-dispatch throws.
+   */
+  auditLogged?: boolean;
 }
 
 /**
@@ -105,7 +140,11 @@ export interface AnthropicProxyRequestContext {
  * retries so a retried target receives the same transformation semantics as a
  * first attempt. Mutates request.body in place.
  */
-export function applyAnthropicTargetModelMutations(request: FastifyRequest, reply: FastifyReply, currentModel?: any): any {
+export function applyAnthropicTargetModelMutations(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  currentModel?: any,
+): any {
   const modelAttributes = parseModelAttributes(currentModel?.model_attributes);
   const servingLimits = resolveServingLimits(modelAttributes);
   const requestBody = request.body as AnthropicRequest;
@@ -114,21 +153,33 @@ export function applyAnthropicTargetModelMutations(request: FastifyRequest, repl
   if (clampMaxTokensFields(requestBody, servingLimits.maxCompletionTokens)) {
     memoryLogger.info(
       `max_tokens ${requestedMaxTokens} exceeds serving cap, clamped to ${servingLimits.maxCompletionTokens} | 模型: ${currentModel?.name}`,
-      'Anthropic'
+      "Anthropic",
     );
   }
   if (servingLimits.maxCompletionTokens !== undefined) {
     // Streams are written via reply.raw.writeHead(), which skips Fastify-managed
     // headers; setHeader on the raw response survives both stream and non-stream sends.
-    reply.header('X-Max-Completion-Tokens', String(servingLimits.maxCompletionTokens));
-    reply.raw.setHeader('X-Max-Completion-Tokens', String(servingLimits.maxCompletionTokens));
+    reply.header(
+      "X-Max-Completion-Tokens",
+      String(servingLimits.maxCompletionTokens),
+    );
+    reply.raw.setHeader(
+      "X-Max-Completion-Tokens",
+      String(servingLimits.maxCompletionTokens),
+    );
   } else {
-    reply.removeHeader('X-Max-Completion-Tokens');
-    reply.raw.removeHeader('X-Max-Completion-Tokens');
+    reply.removeHeader("X-Max-Completion-Tokens");
+    reply.raw.removeHeader("X-Max-Completion-Tokens");
   }
 
-  if (modelAttributes?.disable_thinking && applyDisableThinking(requestBody, 'anthropic')) {
-    memoryLogger.info(`已禁用思考 (disable_thinking) | 模型: ${currentModel?.name}`, 'Anthropic');
+  if (
+    modelAttributes?.disable_thinking &&
+    applyDisableThinking(requestBody, "anthropic")
+  ) {
+    memoryLogger.info(
+      `已禁用思考 (disable_thinking) | 模型: ${currentModel?.name}`,
+      "Anthropic",
+    );
   }
 
   return modelAttributes;
@@ -146,6 +197,13 @@ export interface AnthropicDispatchArgs {
   protocolConfig: any;
   vkDisplay: string;
   retryBodySnapshot?: any;
+  /**
+   * Pre-built request context from the entrypoint route. When provided, the
+   * dispatch reuses this exact object so the entrypoint's outer catch can
+   * consult ctx.auditLogged (exactly-once audit). Smart-routing retries omit
+   * it and build a fresh per-target context instead.
+   */
+  ctx?: AnthropicProxyRequestContext;
 }
 
 /**
@@ -155,7 +213,9 @@ export interface AnthropicDispatchArgs {
  * here with the retry target's config, never through another protocol's
  * handlers.
  */
-export async function dispatchAnthropicRequest(args: AnthropicDispatchArgs): Promise<void> {
+export async function dispatchAnthropicRequest(
+  args: AnthropicDispatchArgs,
+): Promise<void> {
   const {
     request,
     reply,
@@ -174,8 +234,8 @@ export async function dispatchAnthropicRequest(args: AnthropicDispatchArgs): Pro
 
   if (!isAnthropicProtocolConfig(protocolConfig)) {
     const error = createAnthropicError(
-      'Provider does not support Anthropic protocol. Only Anthropic-compatible providers are supported for /v1/messages endpoint.',
-      'invalid_request_error'
+      "Provider does not support Anthropic protocol. Only Anthropic-compatible providers are supported for /v1/messages endpoint.",
+      "invalid_request_error",
     );
     reply.code(400).send(error);
     return;
@@ -185,10 +245,12 @@ export async function dispatchAnthropicRequest(args: AnthropicDispatchArgs): Pro
 
   memoryLogger.info(
     `Anthropic 请求: ${currentModel?.model_identifier || (request.body as AnthropicRequest)?.model} | stream: ${isStreamRequest} | virtual key: ${vkDisplay}`,
-    'Anthropic'
+    "Anthropic",
   );
 
-  const ctx: AnthropicProxyRequestContext = {
+  // Hoisted entrypoint context keeps its object identity so the entrypoint's
+  // outer catch can read ctx.auditLogged; retry re-entries build a fresh one.
+  const ctx: AnthropicProxyRequestContext = args.ctx ?? {
     request,
     reply,
     protocolConfig,
@@ -216,39 +278,52 @@ export function createAnthropicProxyHandler() {
     let virtualKeyValue: string | undefined;
     let providerId: string | undefined;
     let currentModel: any | undefined;
-    let requestIp = 'unknown';
-    let requestUserAgent = '';
+    let requestIp = "unknown";
+    let requestUserAgent = "";
+    // Hoisted dispatch context so the catch below can consult
+    // ctx.auditLogged: once the inner handlers have written their (richer)
+    // audit row for this attempt, the outer fallback audit is skipped —
+    // exactly one api_requests row per thrown error.
+    let dispatchCtx: AnthropicProxyRequestContext | undefined;
 
     try {
       const pipelineResult = await runProxyPipeline(request, reply, {
-        protocol: 'anthropic',
+        protocol: "anthropic",
         handlers: {
           onManualBlock: ({ reply }) => {
-            const anthropicError = createAnthropicError('Access denied: IP blocked', 'authentication_error');
+            const anthropicError = createAnthropicError(
+              "Access denied: IP blocked",
+              "authentication_error",
+            );
             reply.code(403).send(anthropicError);
           },
           onAntiBotBlock: ({ reply }) => {
-            const anthropicError = createAnthropicError('Access denied: Bot detected', 'authentication_error');
+            const anthropicError = createAnthropicError(
+              "Access denied: Bot detected",
+              "authentication_error",
+            );
             reply.code(403).send(anthropicError);
           },
           onAuthError: ({ reply, authError }) => {
             const anthropicError = createAnthropicError(
               authError.body.error.message,
-              authError.body.error.code === 'missing_authorization' ? 'authentication_error' : 'permission_error'
+              authError.body.error.code === "missing_authorization"
+                ? "authentication_error"
+                : "permission_error",
             );
             reply.code(authError.code).send(anthropicError);
           },
           onModelError: ({ reply, modelError }) => {
             const anthropicError = createAnthropicError(
-              modelError.body.error?.message || 'Model resolution failed',
-              'invalid_request_error'
+              modelError.body.error?.message || "Model resolution failed",
+              "invalid_request_error",
             );
             reply.code(modelError.code).send(anthropicError);
           },
           onProviderConfigError: ({ reply, providerConfigError }) => {
             const anthropicError = createAnthropicError(
-              providerConfigError.body.error?.message || 'Configuration failed',
-              'api_error'
+              providerConfigError.body.error?.message || "Configuration failed",
+              "api_error",
             );
             reply.code(providerConfigError.code).send(anthropicError);
           },
@@ -259,36 +334,56 @@ export function createAnthropicProxyHandler() {
 
           // Best-effort: shrink base64 images early (payload + downstream prompt caching stability).
           try {
-            const vkDisplayPre = virtualKey.key_value && virtualKey.key_value.length > 10
-              ? `${virtualKey.key_value.slice(0, 6)}...${virtualKey.key_value.slice(-4)}`
-              : virtualKey.key_value;
-            const imageStats = await maybeCompressImagesInAnthropicRequestBodyInPlace(requestBody as any, virtualKey as any);
+            const vkDisplayPre =
+              virtualKey.key_value && virtualKey.key_value.length > 10
+                ? `${virtualKey.key_value.slice(0, 6)}...${virtualKey.key_value.slice(-4)}`
+                : virtualKey.key_value;
+            const imageStats =
+              await maybeCompressImagesInAnthropicRequestBodyInPlace(
+                requestBody as any,
+                virtualKey as any,
+              );
             if (imageStats) {
-              logImageCompressionStats(imageStats, { vkDisplay: vkDisplayPre, protocol: 'anthropic' });
+              logImageCompressionStats(imageStats, {
+                vkDisplay: vkDisplayPre,
+                protocol: "anthropic",
+              });
             }
           } catch (e: any) {
-            memoryLogger.warn(`图像压缩预处理失败(已跳过): ${e?.message || e}`, 'Anthropic');
+            memoryLogger.warn(
+              `图像压缩预处理失败(已跳过): ${e?.message || e}`,
+              "Anthropic",
+            );
           }
 
           if (!requestBody?.model) {
-            const error = createAnthropicError('Missing required field: model', 'invalid_request_error');
+            const error = createAnthropicError(
+              "Missing required field: model",
+              "invalid_request_error",
+            );
             reply.code(400).send(error);
             return false;
           }
 
           if (!requestBody.messages || !Array.isArray(requestBody.messages)) {
-            const error = createAnthropicError('Missing required field: messages', 'invalid_request_error');
+            const error = createAnthropicError(
+              "Missing required field: messages",
+              "invalid_request_error",
+            );
             reply.code(400).send(error);
             return false;
           }
 
           if (!requestBody.max_tokens) {
-            const error = createAnthropicError('Missing required field: max_tokens', 'invalid_request_error');
+            const error = createAnthropicError(
+              "Missing required field: max_tokens",
+              "invalid_request_error",
+            );
             reply.code(400).send(error);
             return false;
           }
 
-          capturePromptSampleAsync(virtualKey, request, 'anthropic');
+          capturePromptSampleAsync(virtualKey, request, "anthropic");
           return true;
         },
       });
@@ -315,7 +410,7 @@ export function createAnthropicProxyHandler() {
       currentModel = resolvedModel;
 
       const normalization = await applyContextNormalization({
-        protocol: 'anthropic',
+        protocol: "anthropic",
         request,
         body: request.body,
         providerId: resolvedProviderId,
@@ -335,6 +430,21 @@ export function createAnthropicProxyHandler() {
       // instead of the failed target's residue.
       const retryBodySnapshot = cloneSmartRoutingRetryBody(request.body);
 
+      dispatchCtx = {
+        request,
+        reply,
+        protocolConfig,
+        virtualKey,
+        providerId: resolvedProviderId,
+        circuitBreakerKey: modelResult?.circuitBreakerKey || resolvedProviderId,
+        startTime,
+        currentModel,
+        modelResult,
+        virtualKeyValue: vkValue,
+        vkDisplay,
+        retryBodySnapshot,
+      };
+
       return await dispatchAnthropicRequest({
         request,
         reply,
@@ -347,26 +457,33 @@ export function createAnthropicProxyHandler() {
         protocolConfig,
         vkDisplay,
         retryBodySnapshot,
+        ctx: dispatchCtx,
       });
     } catch (error: any) {
       const duration = Date.now() - startTime;
 
       memoryLogger.error(
         `Anthropic proxy request failed: ${error.message}`,
-        'Anthropic',
-        { error: error.stack }
+        "Anthropic",
+        { error: error.stack },
       );
 
       // Best-effort audit of the failed request. Fire-and-forget and fully guarded:
       // an audit/logging outage must never change the response delivered to the client.
+      // Skipped when the dispatch handlers already audited this attempt
+      // (ctx.auditLogged) so a thrown error produces exactly one row.
       try {
-        if (virtualKeyValue && providerId) {
-          const { virtualKeyDb } = await import('../../db/index.js');
+        if (virtualKeyValue && providerId && !dispatchCtx?.auditLogged) {
+          const { virtualKeyDb } = await import("../../db/index.js");
           const virtualKey = await virtualKeyDb.getByKeyValue(virtualKeyValue);
           if (virtualKey) {
             const shouldLogBody = shouldLogRequestBody(virtualKey);
             const requestBody = request.body as AnthropicRequest;
-            const modelForLogging = currentModel?.model_identifier || currentModel?.name || requestBody?.model || 'unknown';
+            const modelForLogging =
+              currentModel?.model_identifier ||
+              currentModel?.name ||
+              requestBody?.model ||
+              "unknown";
 
             const tokenCount = await calculateTokensIfNeeded(0, requestBody);
 
@@ -375,10 +492,12 @@ export function createAnthropicProxyHandler() {
               providerId,
               model: modelForLogging,
               tokenCount,
-              status: 'error',
+              status: "error",
               responseTime: duration,
               errorMessage: error.message,
-              truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
+              truncatedRequest: shouldLogBody
+                ? JSON.stringify(requestBody)
+                : undefined,
               cacheHit: 0,
               ip: requestIp,
               userAgent: requestUserAgent,
@@ -387,13 +506,16 @@ export function createAnthropicProxyHandler() {
           }
         }
       } catch (auditError: any) {
-        memoryLogger.warn(`失败请求审计记录异常(已忽略): ${auditError?.message || auditError}`, 'Anthropic');
+        memoryLogger.warn(
+          `失败请求审计记录异常(已忽略): ${auditError?.message || auditError}`,
+          "Anthropic",
+        );
       }
 
       if (!reply.sent) {
         const anthropicError = createAnthropicError(
-          error.message || 'Internal server error',
-          'api_error'
+          error.message || "Internal server error",
+          "api_error",
         );
         return reply.code(500).send(anthropicError);
       }
@@ -401,7 +523,9 @@ export function createAnthropicProxyHandler() {
   };
 }
 
-export async function handleAnthropicNonStreamRequest(ctx: AnthropicProxyRequestContext) {
+export async function handleAnthropicNonStreamRequest(
+  ctx: AnthropicProxyRequestContext,
+) {
   const {
     request,
     reply,
@@ -418,7 +542,8 @@ export async function handleAnthropicNonStreamRequest(ctx: AnthropicProxyRequest
   } = ctx;
 
   const requestBody = request.body as AnthropicRequest;
-  const modelForLogging = currentModel?.model_identifier || currentModel?.name || requestBody.model;
+  const modelForLogging =
+    currentModel?.model_identifier || currentModel?.name || requestBody.model;
   const requestUserAgent = getRequestUserAgent(request);
   const requestIp = extractIp(request);
   const forwardedHeaders = anthropicForwardedHeaders(request);
@@ -432,17 +557,56 @@ export async function handleAnthropicNonStreamRequest(ctx: AnthropicProxyRequest
   if (piiResult.context) {
     memoryLogger.debug(
       `PII protection masked ${piiResult.maskedCount} items for Anthropic non-stream request`,
-      'PII'
+      "PII",
     );
   }
 
   const abortController = new AbortController();
-  request.raw.on('close', () => {
+  request.raw.on("close", () => {
     abortController.abort();
   });
 
   try {
-    const response = await makeAnthropicRequest(protocolConfig, requestBody, forwardedHeaders, abortController.signal);
+    const response = await makeAnthropicRequest(
+      protocolConfig,
+      requestBody,
+      forwardedHeaders,
+      abortController.signal,
+    );
+
+    // Client abort (unified api_requests logging): the client socket closed
+    // before the upstream answered. Write exactly one error row, record no
+    // breaker verdict (a disconnect is not an upstream failure) and never
+    // dispatch a smart-routing retry — the client is gone.
+    if (abortController.signal.aborted) {
+      const abortDuration = Date.now() - startTime;
+      const abortShouldLogBody = shouldLogRequestBody(virtualKey);
+      const abortTokenCount = await calculateTokensIfNeeded(0, requestBody);
+
+      logApiRequestAsync({
+        virtualKey,
+        providerId,
+        model: modelForLogging,
+        tokenCount: abortTokenCount,
+        status: "error",
+        responseTime: abortDuration,
+        errorMessage: CLIENT_ABORTED_MESSAGE,
+        truncatedRequest: abortShouldLogBody
+          ? JSON.stringify(requestBody)
+          : undefined,
+        cacheHit: 0,
+        ip: requestIp,
+        userAgent: requestUserAgent,
+        piiMaskedCount: piiResult.maskedCount,
+      });
+      ctx.auditLogged = true;
+
+      memoryLogger.info(
+        `Anthropic 非流式请求被取消（客户端断开）`,
+        "Anthropic",
+      );
+      return;
+    }
 
     const duration = Date.now() - startTime;
     const isSuccess = response.statusCode >= 200 && response.statusCode < 300;
@@ -454,7 +618,10 @@ export async function handleAnthropicNonStreamRequest(ctx: AnthropicProxyRequest
       if (parsedUpstreamBody.parseFailed) {
         // 2xx with a non-JSON payload (e.g., HTML interceptor page): pass the raw
         // payload and upstream status through instead of failing into a 500.
-        memoryLogger.error(`Anthropic 上游返回非 JSON 响应体 (HTTP ${response.statusCode})，已原样透传`, 'Anthropic');
+        memoryLogger.error(
+          `Anthropic 上游返回非 JSON 响应体 (HTTP ${response.statusCode})，已原样透传`,
+          "Anthropic",
+        );
 
         const shouldLogBody = shouldLogRequestBody(virtualKey);
         logApiRequestAsync({
@@ -462,19 +629,26 @@ export async function handleAnthropicNonStreamRequest(ctx: AnthropicProxyRequest
           providerId,
           model: modelForLogging,
           tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-          status: 'error',
+          status: "error",
           responseTime: duration,
           errorMessage: `Non-JSON upstream response (HTTP ${response.statusCode})`,
-          truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
-          truncatedResponse: shouldLogBody ? String(response.body).substring(0, 500) : undefined,
+          truncatedRequest: shouldLogBody
+            ? JSON.stringify(requestBody)
+            : undefined,
+          truncatedResponse: shouldLogBody
+            ? String(response.body).substring(0, 500)
+            : undefined,
           cacheHit: 0,
           ip: requestIp,
           userAgent: requestUserAgent,
           piiMaskedCount: piiResult.maskedCount,
         });
+        ctx.auditLogged = true;
 
-        const upstreamContentType = String((response.headers as any)?.['content-type'] || 'text/plain');
-        reply.header('Content-Type', upstreamContentType);
+        const upstreamContentType = String(
+          (response.headers as any)?.["content-type"] || "text/plain",
+        );
+        reply.header("Content-Type", upstreamContentType);
         return reply.code(response.statusCode).send(response.body);
       }
 
@@ -485,45 +659,64 @@ export async function handleAnthropicNonStreamRequest(ctx: AnthropicProxyRequest
         try {
           restoreResponseBodyInPlace(responseData, piiResult.context);
         } catch (e: any) {
-          memoryLogger.error(`PII restore failed: ${e.message}`, 'Anthropic');
+          memoryLogger.error(`PII restore failed: ${e.message}`, "Anthropic");
         }
       }
 
       const shouldLogBody = shouldLogRequestBody(virtualKey);
-      const tokenCount = await calculateTokensIfNeeded(0, requestBody, responseData);
+      const tokenCount = await calculateTokensIfNeeded(
+        0,
+        requestBody,
+        responseData,
+      );
 
       logApiRequestAsync({
         virtualKey,
         providerId,
         model: modelForLogging,
         tokenCount,
-        status: 'success',
+        status: "success",
         responseTime: duration,
-        truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
-        truncatedResponse: shouldLogBody ? JSON.stringify(responseData) : undefined,
+        truncatedRequest: shouldLogBody
+          ? JSON.stringify(requestBody)
+          : undefined,
+        truncatedResponse: shouldLogBody
+          ? JSON.stringify(responseData)
+          : undefined,
         cacheHit: 0,
         ip: requestIp,
         userAgent: requestUserAgent,
         piiMaskedCount: piiResult.maskedCount,
       });
+      ctx.auditLogged = true;
 
       memoryLogger.info(
         `Anthropic 请求完成: ${response.statusCode} | ${duration}ms | tokens: ${(responseData.usage?.input_tokens || 0) + (responseData.usage?.output_tokens || 0)}`,
-        'Anthropic'
+        "Anthropic",
       );
 
-      reply.header('Content-Type', 'application/json');
+      reply.header("Content-Type", "application/json");
       return reply.code(response.statusCode).send(responseData);
     } else {
-      circuitBreaker.recordFailure(circuitBreakerKey, new Error(`HTTP ${response.statusCode}`));
+      circuitBreaker.recordFailure(
+        circuitBreakerKey,
+        new Error(`HTTP ${response.statusCode}`),
+      );
 
       const parsedUpstreamBody = parseAnthropicUpstreamBody(response.body);
       if (parsedUpstreamBody.parseFailed) {
-        memoryLogger.error(`Anthropic 上游错误响应为非 JSON (HTTP ${response.statusCode})，已返回规范化错误`, 'Anthropic');
+        memoryLogger.error(
+          `Anthropic 上游错误响应为非 JSON (HTTP ${response.statusCode})，已返回规范化错误`,
+          "Anthropic",
+        );
       }
       const errorData = parsedUpstreamBody.data;
       const shouldLogBody = shouldLogRequestBody(virtualKey);
-      const tokenCount = await calculateTokensIfNeeded(0, requestBody, errorData);
+      const tokenCount = await calculateTokensIfNeeded(
+        0,
+        requestBody,
+        errorData,
+      );
 
       // The failed target is accounted and audited up front, BEFORE any retry
       // dispatch, so its breaker failure and audit row exist even when the
@@ -534,47 +727,64 @@ export async function handleAnthropicNonStreamRequest(ctx: AnthropicProxyRequest
         providerId,
         model: modelForLogging,
         tokenCount,
-        status: 'error',
+        status: "error",
         responseTime: duration,
         errorMessage: JSON.stringify(errorData),
-        truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
+        truncatedRequest: shouldLogBody
+          ? JSON.stringify(requestBody)
+          : undefined,
         cacheHit: 0,
         ip: requestIp,
         userAgent: requestUserAgent,
         piiMaskedCount: piiResult.maskedCount,
       });
+      ctx.auditLogged = true;
 
       memoryLogger.error(
         `Anthropic 请求失败: ${response.statusCode} | ${duration}ms`,
-        'Anthropic'
+        "Anthropic",
       );
 
       // Smart-routing retry (OpenAI parity): switch to the next target while the
       // response is still unsent. The retry re-enters the Anthropic handlers with
       // a pristine body snapshot, never another protocol's handlers.
-      if (modelResult?.canRetry && virtualKeyValue && shouldRetrySmartRouting(response.statusCode) && !reply.sent) {
+      if (
+        modelResult?.canRetry &&
+        virtualKeyValue &&
+        shouldRetrySmartRouting(response.statusCode) &&
+        !reply.sent
+      ) {
         try {
-          const { handleNonStreamRetry } = await import('../proxy/retry-handler.js');
-          const retried = await handleNonStreamRetry(request, reply, response.statusCode, {
-            virtualKey,
-            virtualKeyValue,
-            vkDisplay: vkDisplay || modelForLogging,
-            modelResult,
-            currentModel,
-            startTime,
-            entrypointProtocol: 'anthropic',
-            retryBodySnapshot,
-          });
+          const { handleNonStreamRetry } =
+            await import("../proxy/retry-handler.js");
+          const retried = await handleNonStreamRetry(
+            request,
+            reply,
+            response.statusCode,
+            {
+              virtualKey,
+              virtualKeyValue,
+              vkDisplay: vkDisplay || modelForLogging,
+              modelResult,
+              currentModel,
+              startTime,
+              entrypointProtocol: "anthropic",
+              retryBodySnapshot,
+            },
+          );
           if (retried) {
             return;
           }
-          memoryLogger.warn(`智能路由重试失败: 没有更多可用目标`, 'Anthropic');
+          memoryLogger.warn(`智能路由重试失败: 没有更多可用目标`, "Anthropic");
         } catch (retryError: any) {
-          memoryLogger.warn(`智能路由重试分发异常(已忽略): ${retryError?.message || retryError}`, 'Anthropic');
+          memoryLogger.warn(
+            `智能路由重试分发异常(已忽略): ${retryError?.message || retryError}`,
+            "Anthropic",
+          );
         }
       }
 
-      reply.header('Content-Type', 'application/json');
+      reply.header("Content-Type", "application/json");
       return reply.code(response.statusCode).send(errorData);
     }
   } catch (error: any) {
@@ -590,7 +800,7 @@ export async function handleAnthropicNonStreamRequest(ctx: AnthropicProxyRequest
       providerId,
       model: modelForLogging,
       tokenCount,
-      status: 'error',
+      status: "error",
       responseTime: duration,
       errorMessage: error.message,
       truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
@@ -599,6 +809,10 @@ export async function handleAnthropicNonStreamRequest(ctx: AnthropicProxyRequest
       userAgent: requestUserAgent,
       piiMaskedCount: piiResult.maskedCount,
     });
+    // This richer inner-context row (with piiResult.maskedCount) is the single
+    // audit row for this attempt; the flag keeps the outer route catch from
+    // writing a second one after the rethrow below.
+    ctx.auditLogged = true;
 
     throw error;
   }
@@ -621,14 +835,17 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
   } = ctx;
 
   const requestBody = request.body as AnthropicRequest;
-  const modelForLogging = currentModel?.model_identifier || currentModel?.name || requestBody.model;
-  const vkDisplayResolved = vkDisplay || (virtualKey.key_value && virtualKey.key_value.length > 10
-    ? `${virtualKey.key_value.slice(0, 6)}...${virtualKey.key_value.slice(-4)}`
-    : virtualKey.key_value);
+  const modelForLogging =
+    currentModel?.model_identifier || currentModel?.name || requestBody.model;
+  const vkDisplayResolved =
+    vkDisplay ||
+    (virtualKey.key_value && virtualKey.key_value.length > 10
+      ? `${virtualKey.key_value.slice(0, 6)}...${virtualKey.key_value.slice(-4)}`
+      : virtualKey.key_value);
 
   memoryLogger.info(
     `Anthropic 流式请求开始: ${modelForLogging} | virtual key: ${vkDisplayResolved}`,
-    'Anthropic'
+    "Anthropic",
   );
 
   const streamUserAgent = getRequestUserAgent(request);
@@ -644,12 +861,12 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
   if (piiResult.context) {
     memoryLogger.debug(
       `PII protection masked ${piiResult.maskedCount} items for Anthropic stream request`,
-      'PII'
+      "PII",
     );
   }
 
   const abortController = new AbortController();
-  reply.raw.on('close', () => {
+  reply.raw.on("close", () => {
     if (!reply.raw.writableEnded) {
       abortController.abort();
     }
@@ -662,7 +879,7 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
       reply,
       forwardedHeaders,
       piiResult.context,
-      abortController.signal
+      abortController.signal,
     );
 
     const duration = Date.now() - startTime;
@@ -675,7 +892,7 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
       undefined,
       tokenUsage.streamChunks,
       tokenUsage.promptTokens,
-      tokenUsage.completionTokens
+      tokenUsage.completionTokens,
     );
 
     logApiRequestAsync({
@@ -683,29 +900,65 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
       providerId,
       model: modelForLogging,
       tokenCount,
-      status: 'success',
+      status: "success",
       responseTime: duration,
       truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
-      truncatedResponse: shouldLogBody ? tokenUsage.streamChunks.join('') : undefined,
+      truncatedResponse: shouldLogBody
+        ? tokenUsage.streamChunks.join("")
+        : undefined,
       cacheHit: 0,
       ip: streamIp,
       userAgent: streamUserAgent,
       piiMaskedCount: piiResult.maskedCount,
+      tffbMs: tokenUsage.tffbMs,
     });
+    ctx.auditLogged = true;
 
     memoryLogger.info(
       `Anthropic 流式请求完成: ${duration}ms | tokens: ${tokenUsage.totalTokens}`,
-      'Anthropic'
+      "Anthropic",
     );
     return;
   } catch (streamError: any) {
     const duration = Date.now() - startTime;
+
+    // Client abort (unified api_requests logging): exactly one error row, no
+    // breaker verdict and no smart-routing retry — the client is gone. The
+    // abort signal is driven exclusively by the client-close listener here, so
+    // an upstream timeout (which aborts through its own controller) keeps the
+    // normal error handling below.
+    if (isClientAbort(streamError, abortController.signal)) {
+      const abortShouldLogBody = shouldLogRequestBody(virtualKey);
+      const abortTokenCount = await calculateTokensIfNeeded(0, requestBody);
+
+      logApiRequestAsync({
+        virtualKey,
+        providerId,
+        model: modelForLogging,
+        tokenCount: abortTokenCount,
+        status: "error",
+        responseTime: duration,
+        errorMessage: CLIENT_ABORTED_MESSAGE,
+        truncatedRequest: abortShouldLogBody
+          ? JSON.stringify(requestBody)
+          : undefined,
+        cacheHit: 0,
+        ip: streamIp,
+        userAgent: streamUserAgent,
+        piiMaskedCount: piiResult.maskedCount,
+      });
+      ctx.auditLogged = true;
+
+      memoryLogger.info("Anthropic 流式请求被取消（客户端断开）", "Anthropic");
+      return;
+    }
+
     circuitBreaker.recordFailure(circuitBreakerKey, streamError);
 
     memoryLogger.error(
       `Anthropic 流式请求失败: ${streamError.message}`,
-      'Anthropic',
-      { error: streamError.stack }
+      "Anthropic",
+      { error: streamError.stack },
     );
 
     const shouldLogBody = shouldLogRequestBody(virtualKey);
@@ -719,7 +972,7 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
       providerId,
       model: requestBody.model,
       tokenCount,
-      status: 'error',
+      status: "error",
       responseTime: duration,
       errorMessage: streamError.message,
       truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
@@ -728,38 +981,59 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
       userAgent: streamUserAgent,
       piiMaskedCount: piiResult.maskedCount,
     });
+    ctx.auditLogged = true;
 
-    const statusForRetry = (streamError?.statusCode || streamError?.status || 500) as number;
+    const statusForRetry = (streamError?.statusCode ||
+      streamError?.status ||
+      500) as number;
 
     // Smart-routing retry is only safe while nothing has been written to the
     // client (no SSE headers, response not ended). The transport no longer
     // writes error responses itself, so this decision belongs here.
-    if (modelResult?.canRetry && virtualKeyValue && shouldRetrySmartRouting(statusForRetry) && !reply.sent && !reply.raw.headersSent && !reply.raw.writableEnded) {
+    if (
+      modelResult?.canRetry &&
+      virtualKeyValue &&
+      shouldRetrySmartRouting(statusForRetry) &&
+      !reply.sent &&
+      !reply.raw.headersSent &&
+      !reply.raw.writableEnded
+    ) {
       try {
-        const { handleStreamRetry } = await import('../proxy/retry-handler.js');
-        const retried = await handleStreamRetry(request, reply, statusForRetry, {
-          virtualKey,
-          virtualKeyValue,
-          vkDisplay: vkDisplayResolved,
-          modelResult,
-          currentModel,
-          startTime,
-          entrypointProtocol: 'anthropic',
-          retryBodySnapshot,
-        });
+        const { handleStreamRetry } = await import("../proxy/retry-handler.js");
+        const retried = await handleStreamRetry(
+          request,
+          reply,
+          statusForRetry,
+          {
+            virtualKey,
+            virtualKeyValue,
+            vkDisplay: vkDisplayResolved,
+            modelResult,
+            currentModel,
+            startTime,
+            entrypointProtocol: "anthropic",
+            retryBodySnapshot,
+          },
+        );
         if (retried) {
           return;
         }
-        memoryLogger.warn(`智能路由重试(流式)失败: 没有更多可用目标`, 'Anthropic');
+        memoryLogger.warn(
+          `智能路由重试(流式)失败: 没有更多可用目标`,
+          "Anthropic",
+        );
       } catch (retryError: any) {
-        memoryLogger.warn(`智能路由重试(流式)分发异常(已忽略): ${retryError?.message || retryError}`, 'Anthropic');
+        memoryLogger.warn(
+          `智能路由重试(流式)分发异常(已忽略): ${retryError?.message || retryError}`,
+          "Anthropic",
+        );
       }
     }
 
     // Terminal error delivery. Wire format is identical to the previous
     // in-transport write: status line + `data:` error payload when nothing was
     // sent yet, `event: error` SSE frame when the stream already started.
-    if (streamError?.name === 'EmptyOutputError') {
+    if (streamError?.name === "EmptyOutputError") {
       if (!reply.raw.writableEnded) {
         reply.raw.end();
       }
@@ -767,15 +1041,17 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
     }
 
     const errorResponse = streamError?.errorResponse || {
-      type: 'error',
+      type: "error",
       error: {
-        type: 'api_error',
-        message: streamError?.message || 'Stream request failed',
+        type: "api_error",
+        message: streamError?.message || "Stream request failed",
       },
     };
 
     if (!reply.raw.headersSent) {
-      reply.raw.writeHead(statusForRetry, { 'Content-Type': 'application/json' });
+      reply.raw.writeHead(statusForRetry, {
+        "Content-Type": "application/json",
+      });
       const errorData = `data: ${JSON.stringify(errorResponse)}\n\n`;
       reply.raw.write(errorData);
       reply.raw.end();
