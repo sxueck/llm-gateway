@@ -1,5 +1,10 @@
 import { beforeEach, expect, test, vi } from "vitest";
 
+vi.hoisted(() => {
+  process.env.MYSQL_PASSWORD ??= "vitest-placeholder";
+  process.env.JWT_SECRET ??= "vitest-placeholder-secret-32-chars!!";
+});
+
 import {
   applyAnthropicTargetModelMutations,
   dispatchAnthropicRequest,
@@ -510,4 +515,86 @@ test("stream empty-output terminal ends the response without synthesizing an err
   expect(raw.write).not.toHaveBeenCalled();
   expect(raw.writeHead).not.toHaveBeenCalled();
   expect(circuitBreaker.recordFailure).toHaveBeenCalledTimes(1);
+});
+
+test("non-stream abort listener registers on reply.raw and ignores close after normal completion", async () => {
+  vi.mocked(makeAnthropicRequest).mockResolvedValue({
+    statusCode: 200,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      type: "message",
+      content: [{ type: "text", text: "hi" }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    }),
+  } as any);
+
+  const { request, reply } = makeNonStreamArgs();
+  await handleAnthropicNonStreamRequest({
+    request,
+    reply,
+    protocolConfig: { protocol: "anthropic", model: "claude-real-a", baseUrl: "https://upstream.test" },
+    virtualKey: makeVirtualKey(),
+    providerId: "provider-1",
+    circuitBreakerKey: CIRCUIT_KEY,
+    startTime: Date.now(),
+  });
+
+  expect(request.raw.on).not.toHaveBeenCalled();
+  expect(reply.raw.on).toHaveBeenCalledWith("close", expect.any(Function));
+
+  // Body completion closes the raw socket: this is NOT a client disconnect.
+  (reply.raw as any).writableEnded = true;
+  const closeCb = vi
+    .mocked(reply.raw.on)
+    .mock.calls.find(([event]: [string, ...unknown[]]) => event === "close")?.[1] as () => void;
+  closeCb();
+
+  const signal = vi.mocked(makeAnthropicRequest).mock.calls[0][3] as AbortSignal;
+  expect(signal.aborted).toBe(false);
+  expect(logApiRequestAsync).not.toHaveBeenCalledWith(
+    expect.objectContaining({ errorMessage: "Client aborted" }),
+  );
+});
+
+test("non-stream client disconnect aborts upstream and writes exactly one Client aborted row", async () => {
+  let resolveUpstream!: (value: any) => void;
+  vi.mocked(makeAnthropicRequest).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveUpstream = resolve;
+      }) as any,
+  );
+
+  const { request, reply } = makeNonStreamArgs();
+  const handlerPromise = handleAnthropicNonStreamRequest({
+    request,
+    reply,
+    protocolConfig: { protocol: "anthropic", model: "claude-real-a", baseUrl: "https://upstream.test" },
+    virtualKey: makeVirtualKey(),
+    providerId: "provider-1",
+    circuitBreakerKey: CIRCUIT_KEY,
+    startTime: Date.now(),
+  });
+
+  // Real disconnect: socket closed before the reply finished writing.
+  (reply.raw as any).writableEnded = false;
+  const closeCb = vi
+    .mocked(reply.raw.on)
+    .mock.calls.find(([event]: [string, ...unknown[]]) => event === "close")?.[1] as () => void;
+  closeCb();
+
+  resolveUpstream!({
+    statusCode: 200,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "message", content: [] }),
+  });
+  await handlerPromise;
+
+  expect(reply.send).not.toHaveBeenCalled();
+  expect(logApiRequestAsync).toHaveBeenCalledTimes(1);
+  expect(logApiRequestAsync).toHaveBeenCalledWith(
+    expect.objectContaining({ status: "error", errorMessage: "Client aborted" }),
+  );
+  expect(circuitBreaker.recordSuccess).not.toHaveBeenCalled();
+  expect(circuitBreaker.recordFailure).not.toHaveBeenCalled();
 });

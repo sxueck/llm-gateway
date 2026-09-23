@@ -405,3 +405,142 @@ test("stream upstream failure without retry eligibility writes the error respons
   });
   expect(reply.raw.end).toHaveBeenCalled();
 });
+
+test("stream success logs a defined tffbMs in the api request log", async () => {
+  vi.mocked(shouldRetrySmartRouting).mockReturnValue(false);
+  const sseBody = [
+    'data: {"candidates":[{"content":{"parts":[{"text":"hi"}]}}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}}',
+    "",
+    "",
+  ].join("\n");
+  vi.mocked(upstreamFetch).mockResolvedValue({
+    status: 200,
+    headers: new Headers({ "content-type": "text/event-stream" }),
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(sseBody));
+        controller.close();
+      },
+    }),
+  } as any);
+
+  const reply = makeStreamReply();
+  await handleGeminiNativeStreamRequest(
+    makeStreamRequest(),
+    reply,
+    PROTOCOL_CONFIG,
+    "/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse",
+    makeVirtualKey(),
+    PROVIDER_ID,
+    Date.now() - 5,
+    "vk-disp",
+    { name: "gemini-a" },
+    { circuitBreakerKey: CIRCUIT_KEY },
+  );
+
+  expect(circuitBreaker.recordSuccess).toHaveBeenCalledWith(CIRCUIT_KEY);
+  expect(logApiRequestAsync).toHaveBeenCalledWith(
+    expect.objectContaining({
+      status: "success",
+      tffbMs: expect.any(Number),
+    }),
+  );
+});
+
+test("non-stream: reply.raw close before completion aborts upstream and writes exactly one Client aborted row", async () => {
+  const abortError = new Error("The operation was aborted");
+  abortError.name = "AbortError";
+  vi.mocked(upstreamFetch).mockRejectedValue(abortError);
+
+  const reply = makeNonStreamReply();
+  const handlerPromise = handleGeminiNativeNonStreamRequest(
+    makeNonStreamRequest(),
+    reply,
+    PROTOCOL_CONFIG,
+    "/v1beta/models/gemini-2.0-flash:generateContent",
+    makeVirtualKey(),
+    PROVIDER_ID,
+    Date.now() - 5,
+    "vk-disp",
+    { name: "gemini-a" },
+    { circuitBreakerKey: CIRCUIT_KEY },
+  );
+
+  // Simulate a real client disconnect: reply not finished writing.
+  (reply.raw as any).writableEnded = false;
+  const closeCb = vi
+    .mocked(reply.raw.on)
+    .mock.calls.find(([event]: [string, ...unknown[]]) => event === "close")?.[1] as () => void;
+  closeCb();
+
+  await handlerPromise;
+
+  const signal = vi.mocked(upstreamFetch).mock.calls[0][1]?.signal;
+  expect(signal?.aborted).toBe(true);
+  expect(reply.send).not.toHaveBeenCalled();
+  expect(logApiRequestAsync).toHaveBeenCalledTimes(1);
+  expect(logApiRequestAsync).toHaveBeenCalledWith(
+    expect.objectContaining({ status: "error", errorMessage: "Client aborted" }),
+  );
+  expect(circuitBreaker.recordSuccess).not.toHaveBeenCalled();
+  expect(circuitBreaker.recordFailure).not.toHaveBeenCalled();
+});
+
+test("non-stream: upstream AbortError without a client close records a breaker failure", async () => {
+  const timeoutError = new Error("Upstream timed out");
+  timeoutError.name = "AbortError";
+  vi.mocked(upstreamFetch).mockRejectedValue(timeoutError);
+
+  const reply = makeNonStreamReply();
+  await handleGeminiNativeNonStreamRequest(
+    makeNonStreamRequest(), reply, PROTOCOL_CONFIG,
+    "/v1beta/models/gemini-2.0-flash:generateContent", makeVirtualKey(),
+    PROVIDER_ID, Date.now() - 5, "vk-disp", { name: "gemini-a" },
+    { circuitBreakerKey: CIRCUIT_KEY },
+  );
+
+  expect(circuitBreaker.recordFailure).toHaveBeenCalledTimes(1);
+  expect(logApiRequestAsync).toHaveBeenCalledWith(
+    expect.objectContaining({ status: "error", errorMessage: "Upstream timed out" }),
+  );
+});
+
+test("non-stream: close after a completed response must NOT abort the upstream", async () => {
+  vi.mocked(upstreamFetch).mockResolvedValue({
+    status: 200,
+    headers: new Headers({ "content-type": "application/json" }),
+    text: async () =>
+      JSON.stringify({
+        candidates: [{ content: { parts: [{ text: "hi there" }] } }],
+      }),
+  } as any);
+
+  const reply = makeNonStreamReply();
+  await handleGeminiNativeNonStreamRequest(
+    makeNonStreamRequest(),
+    reply,
+    PROTOCOL_CONFIG,
+    "/v1beta/models/gemini-2.0-flash:generateContent",
+    makeVirtualKey(),
+    PROVIDER_ID,
+    Date.now() - 5,
+    "vk-disp",
+    { name: "gemini-a" },
+    { circuitBreakerKey: CIRCUIT_KEY },
+  );
+
+  // Node 22 fires IncomingMessage 'close' on body completion; the reply-side
+  // listener must treat a finished response as a normal end, not a disconnect.
+  (reply.raw as any).writableEnded = true;
+  const closeCb = vi
+    .mocked(reply.raw.on)
+    .mock.calls.find(([event]: [string, ...unknown[]]) => event === "close")?.[1] as () => void;
+  closeCb();
+
+  const signal = vi.mocked(upstreamFetch).mock.calls[0][1]?.signal;
+  expect(signal?.aborted).toBe(false);
+  expect(reply.send).toHaveBeenCalledTimes(1);
+  expect(logApiRequestAsync).toHaveBeenCalledWith(
+    expect.objectContaining({ status: "success" }),
+  );
+});

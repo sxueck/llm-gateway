@@ -282,8 +282,12 @@ export async function handleGeminiNativeNonStreamRequest(
   }
 
   const abortController = new AbortController();
-  request.raw.on("close", () => {
-    abortController.abort();
+  // IncomingMessage 'close' fires on body completion in Node >= 16; only a
+  // disconnect before the reply finished writing should cancel the upstream.
+  reply.raw.on("close", () => {
+    if (!reply.raw.writableEnded) {
+      abortController.abort();
+    }
   });
 
   try {
@@ -423,11 +427,16 @@ export async function handleGeminiNativeNonStreamRequest(
 
     // A client disconnect is not an upstream failure: no breaker verdict, but
     // the consumed attempt still gets exactly one unified abort row.
-    if (error.name === "AbortError" || abortController.signal.aborted) {
+    if (abortController.signal.aborted) {
       memoryLogger.info(
         "Gemini 非流式请求被取消（客户端断开）",
         "GeminiNative",
       );
+      // Never write a second row if one was already audited before
+      // reply.send threw into this catch.
+      if (options?.auditState?.auditLogged) {
+        return;
+      }
       logApiRequestAsync({
         virtualKey,
         providerId,
@@ -813,7 +822,7 @@ export async function handleGeminiNativeStreamRequest(
         headersSent = true;
       }
 
-      const attemptResult = await streamGeminiAttempt(
+      attemptResult = await streamGeminiAttempt(
         upstreamResponse,
         reply,
         abortController.signal,

@@ -153,8 +153,12 @@ export function createDecisionsProxyHandler() {
     );
 
     const abortController = new AbortController();
-    request.raw.on("close", () => {
-      abortController.abort();
+    // Listen on the reply socket: request.raw 'close' also fires on normal
+    // body completion, which must not abort the upstream request.
+    reply.raw.on("close", () => {
+      if (!reply.raw.writableEnded) {
+        abortController.abort();
+      }
     });
 
     // Exactly-one-row guard: an audit row already written inside the try block
@@ -232,9 +236,14 @@ export function createDecisionsProxyHandler() {
       reply.code(response.statusCode);
       return reply.send(response.body);
     } catch (error: any) {
-      if (error?.name === "AbortError" || abortController.signal.aborted) {
+      if (abortController.signal.aborted) {
         memoryLogger.info("Decisions 请求被客户端取消", "Proxy");
         // Unified abort semantics: exactly one error row, no breaker verdict.
+        // If a success row was already written before reply.send threw into
+        // this catch, never write a second one.
+        if (auditLogged) {
+          return;
+        }
         logApiRequestAsync({
           virtualKey,
           providerId: providerId!,
