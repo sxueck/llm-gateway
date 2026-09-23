@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   getOpsOverview,
   getOpsTrend,
@@ -38,33 +38,33 @@ export async function opsMetricsRoutes(fastify: FastifyInstance) {
   // Same admin authentication scope as /api/admin/config routes.
   fastify.addHook("onRequest", fastify.authenticate);
 
-  fastify.get("/ops-metrics/overview", async (request) => {
+  fastify.get("/ops-metrics/overview", async (request, reply) => {
     const parsed = parseWindowAndFilters(request.query as OpsQueryParams);
     if ("error" in parsed) {
-      return reply400(fastify, parsed.error);
+      return reply400(reply, parsed.error);
     }
     // endTime is fixed once per refresh so every card/chart of this request
     // samples the same instant.
     return getOpsOverview(resolveWindow(parsed.period), parsed.filters);
   });
 
-  fastify.get("/ops-metrics/trend", async (request) => {
+  fastify.get("/ops-metrics/trend", async (request, reply) => {
     const parsed = parseWindowAndFilters(request.query as OpsQueryParams);
     if ("error" in parsed) {
-      return reply400(fastify, parsed.error);
+      return reply400(reply, parsed.error);
     }
     return getOpsTrend(resolveWindow(parsed.period), parsed.filters);
   });
 
-  fastify.get("/ops-metrics/dimensions/:dimension", async (request) => {
+  fastify.get("/ops-metrics/dimensions/:dimension", async (request, reply) => {
     const parsed = parseWindowAndFilters(request.query as OpsQueryParams);
     if ("error" in parsed) {
-      return reply400(fastify, parsed.error);
+      return reply400(reply, parsed.error);
     }
     const { dimension } = request.params as { dimension: string };
     if (!DIMENSIONS.has(dimension as OpsDimension)) {
       return reply400(
-        fastify,
+        reply,
         "dimension must be one of virtualKey, model, provider",
       );
     }
@@ -87,8 +87,13 @@ export async function opsMetricsRoutes(fastify: FastifyInstance) {
   });
 }
 
-function reply400(_fastify: FastifyInstance, message: string) {
-  const err = new Error(message) as Error & { statusCode?: number };
-  err.statusCode = 400;
-  throw err;
+function reply400(reply: FastifyReply, message: string) {
+  return reply.code(400).send({
+    error: {
+      message,
+      type: "invalid_request_error",
+      param: null,
+      code: "invalid_ops_metrics_query",
+    },
+  });
 }

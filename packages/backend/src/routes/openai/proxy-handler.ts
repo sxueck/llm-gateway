@@ -1496,8 +1496,12 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
     }
 
     const abortController = new AbortController();
-    request.raw.on("close", () => {
-      abortController.abort();
+    // reply.raw 'close' with the writableEnded guard isolates real client
+    // disconnects; request.raw 'close' also fires on body completion.
+    reply.raw.on("close", () => {
+      if (!reply.raw.writableEnded) {
+        abortController.abort();
+      }
     });
 
     try {
@@ -1585,13 +1589,17 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
     } catch (error: any) {
       const duration = Date.now() - startTime;
 
-      if (error.name === "AbortError" || abortController.signal.aborted) {
+      if (abortController.signal.aborted) {
         memoryLogger.info(
           "Image generation request cancelled by client",
           "Proxy",
         );
         // Unified abort semantics: the client is gone, but the consumed attempt
         // still gets exactly one error row; no breaker verdict, no retry.
+        // A row already written before reply.send threw must not be doubled.
+        if (ctx.auditLogged) {
+          return;
+        }
         logApiRequestAsync({
           virtualKey,
           providerId,
@@ -1724,8 +1732,12 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
   }
 
   const abortController = new AbortController();
-  request.raw.on("close", () => {
-    abortController.abort();
+  // request.raw 'close' fires on body completion in Node 22; only a socket
+  // closing before the reply finished writing is a real client disconnect.
+  reply.raw.on("close", () => {
+    if (!reply.raw.writableEnded) {
+      abortController.abort();
+    }
   });
   let response: any;
   let piiResult: { applied: boolean; context: any; maskedCount: number } = {
@@ -1770,7 +1782,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       false,
       input,
       false,
-      undefined,
+      abortController.signal,
       true,
     );
 
@@ -1793,6 +1805,8 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       options,
       true,
       input,
+      false,
+      abortController.signal,
     );
   } else {
     const messages = (request.body as any)?.messages || [];
@@ -1833,7 +1847,44 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
 
     applyGeminiNativeFields(options, request.body as any);
 
-    response = await makeHttpRequest(protocolConfig, messages, options, false);
+    response = await makeHttpRequest(
+      protocolConfig,
+      messages,
+      options,
+      false,
+      undefined,
+      false,
+      abortController.signal,
+    );
+  }
+
+  // Client abort (unified api_requests logging): the client socket closed
+  // before the upstream answered. Write exactly one error row before any
+  // breaker verdict or smart-routing retry dispatch — the client is gone.
+  if (abortController.signal.aborted && !ctx.auditLogged) {
+    const abortShouldLogBody = shouldLogRequestBody(virtualKey);
+    logApiRequestAsync({
+      virtualKey,
+      providerId,
+      model: getModelForLogging(request.body, currentModel),
+      tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      status: "error",
+      responseTime: Date.now() - startTime,
+      errorMessage: CLIENT_ABORTED_MESSAGE,
+      truncatedRequest: abortShouldLogBody
+        ? truncateRequestBody(request.body)
+        : undefined,
+      cacheHit: fromCache ? 1 : 0,
+      ip: nonStreamRequestIp,
+      userAgent: nonStreamRequestUserAgent,
+      piiMaskedCount: piiResult.maskedCount,
+    });
+    ctx.auditLogged = true;
+    if (cacheLockKey && cacheLockOwner) {
+      releaseCacheLock(cacheLockKey, cacheLockOwner);
+    }
+    memoryLogger.info("OpenAI 非流式请求被取消（客户端断开）", "Proxy");
+    return;
   }
 
   const responseHeaders = filterResponseHeaders(response.headers, true);

@@ -562,8 +562,13 @@ export async function handleAnthropicNonStreamRequest(
   }
 
   const abortController = new AbortController();
-  request.raw.on("close", () => {
-    abortController.abort();
+  // Node's IncomingMessage 'close' fires on body completion, not just client
+  // disconnect; use the ServerResponse socket state instead so a normally
+  // completed response never aborts the upstream request.
+  reply.raw.on("close", () => {
+    if (!reply.raw.writableEnded) {
+      abortController.abort();
+    }
   });
 
   try {

@@ -119,8 +119,14 @@ function createReply() {
     code: vi.fn().mockReturnThis(),
     send: vi.fn().mockReturnThis(),
     sent: false,
+    raw: { on: vi.fn(), writableEnded: false },
   };
   return reply;
+}
+
+function replyCloseListener(reply: any): () => void {
+  const calls = (reply.raw.on as any).mock.calls as [string, () => void][];
+  return calls.find(([event]) => event === 'close')![1];
 }
 
 beforeEach(() => {
@@ -269,7 +275,61 @@ test('upstream network error returns a 500 error envelope', async () => {
   );
 });
 
-test('client abort cancels upstream and sends no response', async () => {
+test('reply.raw close after a completed response does not abort the upstream', async () => {
+  mockPipelineSuccess();
+  vi.mocked(makeImageGenerationProxyRequest).mockResolvedValue({
+    statusCode: 200,
+    headers: { 'content-type': 'application/json' },
+    body: { answers: {}, usage: { input_tokens: 1 } },
+  } as any);
+  const handler = createDecisionsProxyHandler();
+  const reply = createReply();
+
+  await handler(createRequest({ state: 's', questions: { q: { type: 'noul' } } }), reply);
+
+  expect(reply.raw.on).toHaveBeenCalledWith('close', expect.any(Function));
+  (reply.raw as any).writableEnded = true;
+  replyCloseListener(reply)();
+  const signal = vi.mocked(makeImageGenerationProxyRequest).mock.calls[0][4] as AbortSignal;
+  expect(signal.aborted).toBe(false);
+  expect(logApiRequestAsync).toHaveBeenCalledWith(
+    expect.objectContaining({ status: 'success' }),
+  );
+});
+
+test('reply.raw close before completion aborts upstream and writes exactly one Client aborted row', async () => {
+  mockPipelineSuccess();
+  const abortError = new Error('The operation was aborted');
+  abortError.name = 'AbortError';
+  // Reject only once the disconnect is simulated, like a real aborted fetch.
+  let rejectUpstream!: (e: Error) => void;
+  vi.mocked(makeImageGenerationProxyRequest).mockImplementation(
+    () => new Promise((_resolve, reject) => { rejectUpstream = reject; }) as any,
+  );
+  const handler = createDecisionsProxyHandler();
+  const reply = createReply();
+
+  const handlerPromise = handler(createRequest({ state: 's', questions: { q: { type: 'noul' } } }), reply);
+  // Let the handler reach the reply.raw.on('close') registration (after the
+  // mocked pipeline microtask) before simulating the disconnect.
+  await new Promise((resolve) => setImmediate(resolve));
+  (reply.raw as any).writableEnded = false;
+  replyCloseListener(reply)();
+  rejectUpstream(abortError);
+  await handlerPromise;
+
+  const signal = vi.mocked(makeImageGenerationProxyRequest).mock.calls[0][4] as AbortSignal;
+  expect(signal.aborted).toBe(true);
+  expect(reply.send).not.toHaveBeenCalled();
+  expect(logApiRequestAsync).toHaveBeenCalledTimes(1);
+  expect(logApiRequestAsync).toHaveBeenCalledWith(
+    expect.objectContaining({ status: 'error', errorMessage: 'Client aborted' }),
+  );
+  expect(circuitBreaker.recordSuccess).not.toHaveBeenCalled();
+  expect(circuitBreaker.recordFailure).not.toHaveBeenCalled();
+});
+
+test('upstream AbortError without client disconnect remains an upstream failure', async () => {
   mockPipelineSuccess();
   const abortError = new Error('The operation was aborted');
   abortError.name = 'AbortError';
@@ -279,6 +339,10 @@ test('client abort cancels upstream and sends no response', async () => {
 
   await handler(createRequest({ state: 's', questions: { q: { type: 'noul' } } }), reply);
 
-  expect(reply.code).not.toHaveBeenCalled();
-  expect(reply.send).not.toHaveBeenCalled();
+  expect(reply.code).toHaveBeenCalledWith(500);
+  expect(reply.send).toHaveBeenCalledTimes(1);
+  expect(circuitBreaker.recordFailure).toHaveBeenCalledTimes(1);
+  expect(logApiRequestAsync).toHaveBeenCalledWith(
+    expect.objectContaining({ status: 'error', errorMessage: abortError.message }),
+  );
 });

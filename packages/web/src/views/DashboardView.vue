@@ -23,6 +23,10 @@
         </n-space>
       </div>
 
+      <n-alert v-if="stats?.legacyTokenSemantics || (isTokenCardFlipped && statsAllTime?.legacyTokenSemantics)" type="warning" :show-icon="true">
+        历史汇总中存在旧版缓存命中 Token 口径；相关统计可能偏高，已清理的明细无法精确回算。
+      </n-alert>
+
       <n-grid :cols="gridCols" :x-gap="gridGap" :y-gap="gridGap">
         <n-gi class="stagger-item" style="--delay: 0ms">
           <div class="switchable-card" @click="toggleTokenCard">

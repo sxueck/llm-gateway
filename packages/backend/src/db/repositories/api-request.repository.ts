@@ -130,11 +130,16 @@ export const apiRequestRepository = {
       let effectiveTimeCount = 0;
       let cacheHits = 0;
       let promptCacheHits = 0;
+      let legacyTokenSemantics = false;
 
       if (needsSummary) {
-        const summaryLoggingCondition =
-          getDisableLoggingConditionForSummary("s");
         const lastSummaryDay = new Date(detailStart - 1);
+        // 按 PRD（docs/operations-monitoring.md §3「禁用日志」）：聚合统计纳入
+        // disable_logging 密钥（正文已在写入侧禁用，聚合不暴露敏感元数据）。
+        // 历史口径缺口：旧版汇总 SQL 排除了 disable_logging 密钥，相关日汇总行
+        // 不存在，明细已清理后无法回补，不做推测性回填（PRD §4.2）。
+        // 旧汇总行可能计入 cache_hit = 1 的 Tokens；明细已删除时无法回算，
+        // 使用迁移时间和存量汇总的创建时间标记可能偏高的结果。
 
         const [summaryRows] = await conn.query(
           `SELECT
@@ -147,6 +152,9 @@ export const apiRequestRepository = {
             SUM(s.cached_tokens) as cached_tokens,
             SUM(s.cache_hit_count) as cache_hits,
             SUM(s.prompt_cache_hit_count) as prompt_cache_hits,
+            MAX(CASE WHEN s.cache_hit_count > 0
+              AND s.created_at < (SELECT applied_at FROM schema_migrations WHERE version = 45)
+              THEN 1 ELSE 0 END) as legacy_token_semantics,
             SUM(CASE
               WHEN s.effective_time_count > 0 THEN s.total_effective_time
               ELSE s.total_response_time
@@ -158,8 +166,7 @@ export const apiRequestRepository = {
           FROM api_request_daily_summaries s
           LEFT JOIN virtual_keys vk ON s.virtual_key_id = vk.id
           WHERE s.summary_date >= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
-            AND s.summary_date <= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
-            AND ${summaryLoggingCondition}`,
+            AND s.summary_date <= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)`,
           [startTime, lastSummaryDay.getTime()],
         );
 
@@ -178,13 +185,13 @@ export const apiRequestRepository = {
           effectiveTimeCount += Number(summary.effective_time_count) || 0;
           cacheHits += Number(summary.cache_hits) || 0;
           promptCacheHits += Number(summary.prompt_cache_hits) || 0;
+          legacyTokenSemantics = Number(summary.legacy_token_semantics) > 0;
         }
       }
 
       // Query detail table for recent data
       if (needsDetail) {
         const detailStartTime = Math.max(startTime, detailStart);
-        const loggingCondition = getDisableLoggingCondition();
 
         const [detailRows] = await conn.query(
           `SELECT
@@ -205,7 +212,7 @@ export const apiRequestRepository = {
             SUM(CASE WHEN ar.cached_tokens > 0 THEN 1 ELSE 0 END) as prompt_cache_hits
           FROM api_requests ar
           LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-          WHERE ar.created_at >= ? AND ar.created_at < ? AND ${loggingCondition}`,
+          WHERE ar.created_at >= ? AND ar.created_at < ?`,
           [detailStartTime, endTime],
         );
 
@@ -240,6 +247,7 @@ export const apiRequestRepository = {
         cacheHits,
         promptCacheHits,
         cacheSavedTokens: 0,
+        legacyTokenSemantics,
       };
     } finally {
       conn.release();
@@ -296,8 +304,6 @@ export const apiRequestRepository = {
       if (needsSummary) {
         const lastSummaryDay = new Date(detailStart - 1);
         const summaryEndTimestamp = lastSummaryDay.getTime();
-        const summaryLoggingCondition =
-          getDisableLoggingConditionForSummary("s");
 
         const [summaryRows] = await conn.query(
           `SELECT
@@ -312,7 +318,6 @@ export const apiRequestRepository = {
           LEFT JOIN virtual_keys vk ON s.virtual_key_id = vk.id
           WHERE s.summary_date >= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
             AND s.summary_date <= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
-            AND ${summaryLoggingCondition}
           GROUP BY s.summary_date, s.virtual_key_id`,
           [startTime, summaryEndTimestamp],
         );
@@ -352,8 +357,6 @@ export const apiRequestRepository = {
         const detailStartTime = useMixedRead
           ? Math.max(startTime, detailStart)
           : startTime;
-        const loggingCondition = getDisableLoggingCondition();
-
         const bucketExpression = isDayInterval
           ? `FLOOR((ar.created_at + ${8 * 60 * 60 * 1000}) / ?) * ? - ${8 * 60 * 60 * 1000}`
           : "FLOOR(ar.created_at / ?) * ?";
@@ -367,10 +370,10 @@ export const apiRequestRepository = {
             COUNT(*) as count,
             SUM(CASE WHEN ar.status = 'success' THEN 1 ELSE 0 END) as success_count,
             SUM(CASE WHEN ar.status = 'error' THEN 1 ELSE 0 END) as error_count,
-            SUM(ar.total_tokens) as total_tokens
+            SUM(CASE WHEN ar.cache_hit = 0 THEN ar.total_tokens ELSE 0 END) as total_tokens
           FROM api_requests ar
           LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-          WHERE ar.created_at >= ? AND ar.created_at < ? AND ${loggingCondition}
+          WHERE ar.created_at >= ? AND ar.created_at < ?
           GROUP BY time_bucket, ar.virtual_key_id, vk.name
           HAVING time_bucket IS NOT NULL
           ORDER BY time_bucket ASC, ar.virtual_key_id ASC`,
@@ -501,8 +504,8 @@ export const apiRequestRepository = {
       }
 
       if (options?.endTime) {
-        countQuery += " AND ar.created_at <= ?";
-        dataQuery += " AND ar.created_at <= ?";
+        countQuery += " AND ar.created_at < ?";
+        dataQuery += " AND ar.created_at < ?";
         params.push(options.endTime);
       }
 

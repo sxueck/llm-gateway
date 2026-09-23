@@ -56,6 +56,7 @@ export interface ApiStats {
   cacheHits: number;
   promptCacheHits: number;
   cacheSavedTokens: number;
+  legacyTokenSemantics?: boolean;
   dbSize?: number;
   dbUptime?: number;
 }
