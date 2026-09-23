@@ -1,25 +1,35 @@
-import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { WebSocket as WsWebSocket } from '@fastify/websocket';
-import { WebSocket } from 'ws';
-import { runProxyPreflight, type ProxyPreflightContext } from '../proxy/pipeline.js';
-import { resolveModelAndProvider } from '../proxy/model-resolver.js';
-import { buildProviderConfig } from '../proxy/provider-config-builder.js';
-import { memoryLogger } from '../../services/logger.js';
-import { debugModeService } from '../../services/debug-mode.js';
-import { logApiRequestAsync } from '../../services/api-request-logger.js';
-import { capturePromptSampleAsync } from '../../services/prompt-capture-service.js';
-import { nanoid } from 'nanoid';
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { WebSocket as WsWebSocket } from "@fastify/websocket";
+import { WebSocket } from "ws";
+import {
+  runProxyPreflight,
+  type ProxyPreflightContext,
+} from "../proxy/pipeline.js";
+import { resolveModelAndProvider } from "../proxy/model-resolver.js";
+import { buildProviderConfig } from "../proxy/provider-config-builder.js";
+import { memoryLogger } from "../../services/logger.js";
+import { debugModeService } from "../../services/debug-mode.js";
+import { logApiRequestAsync } from "../../services/api-request-logger.js";
+import { capturePromptSampleAsync } from "../../services/prompt-capture-service.js";
+import { nanoid } from "nanoid";
 import {
   parseClientWebSocketEvent,
   normalizeResponseCreate,
   buildErrorEvent,
   ERROR_CODES,
   WS_CLOSE_CODES,
-} from '../../services/responses-transport/index.js';
-import { resolveTransportMode } from '../../services/responses-transport/mode-resolver.js';
-import { runResponsesTransport } from '../../services/responses-transport/orchestrator.js';
-import { writeEventsToWebSocket } from '../../services/responses-transport/downstream-ws-writer.js';
-import type { NormalizedResponsesRequest, ResponsesStreamResult } from '../../services/responses-transport/types.js';
+} from "../../services/responses-transport/index.js";
+import { resolveTransportMode } from "../../services/responses-transport/mode-resolver.js";
+import { runResponsesTransport } from "../../services/responses-transport/orchestrator.js";
+import { writeEventsToWebSocket } from "../../services/responses-transport/downstream-ws-writer.js";
+import type {
+  NormalizedResponsesRequest,
+  ResponsesStreamResult,
+} from "../../services/responses-transport/types.js";
+import {
+  CLIENT_ABORTED_MESSAGE,
+  isClientAbort,
+} from "../../utils/client-abort.js";
 
 export interface WsTurnConfig {
   provider: any;
@@ -29,26 +39,28 @@ export interface WsTurnConfig {
   path: string;
 }
 
-export async function registerResponsesWebSocketRoutes(fastify: FastifyInstance) {
+export async function registerResponsesWebSocketRoutes(
+  fastify: FastifyInstance,
+) {
   const preHandler = async (request: FastifyRequest, reply: any) => {
     const result = await runProxyPreflight(request, reply, {
       onManualBlock: ({ reply: r }) => {
         r.code(403).send({
           error: {
-            message: 'Access denied: IP blocked',
-            type: 'access_denied',
-            param: 'ip',
-            code: 'ip_blocked',
+            message: "Access denied: IP blocked",
+            type: "access_denied",
+            param: "ip",
+            code: "ip_blocked",
           },
         });
       },
       onAntiBotBlock: ({ reply: r }) => {
         r.code(403).send({
           error: {
-            message: 'Access denied: Bot detected',
-            type: 'access_denied',
-            param: 'user-agent',
-            code: 'bot_detected',
+            message: "Access denied: Bot detected",
+            type: "access_denied",
+            param: "user-agent",
+            code: "bot_detected",
           },
         });
       },
@@ -67,39 +79,37 @@ export async function registerResponsesWebSocketRoutes(fastify: FastifyInstance)
   const wsHandler = async (socket: WsWebSocket, request: FastifyRequest) => {
     const context = (request as any).wsProxyContext;
     if (!context) {
-      socket.close(WS_CLOSE_CODES.INTERNAL_ERROR, 'missing_proxy_context');
+      socket.close(WS_CLOSE_CODES.INTERNAL_ERROR, "missing_proxy_context");
       return;
     }
 
     await handleResponsesWebSocket(socket, request, context);
   };
 
-  fastify.get('/responses', { websocket: true, preHandler }, wsHandler);
-  fastify.get('/v1/responses', { websocket: true, preHandler }, wsHandler);
+  fastify.get("/responses", { websocket: true, preHandler }, wsHandler);
+  fastify.get("/v1/responses", { websocket: true, preHandler }, wsHandler);
 }
 
 export async function handleResponsesWebSocket(
   socket: WsWebSocket,
   request: FastifyRequest,
-  context: ProxyPreflightContext
+  context: ProxyPreflightContext,
 ): Promise<void> {
-  const {
-    requestIp,
-    requestUserAgent,
-    virtualKey,
-    virtualKeyValue,
-  } = context;
+  const { requestIp, requestUserAgent, virtualKey, virtualKeyValue } = context;
 
-  const vkDisplay = virtualKeyValue && virtualKeyValue.length > 10
-    ? `${virtualKeyValue.slice(0, 6)}...${virtualKeyValue.slice(-4)}`
-    : virtualKeyValue;
+  const vkDisplay =
+    virtualKeyValue && virtualKeyValue.length > 10
+      ? `${virtualKeyValue.slice(0, 6)}...${virtualKeyValue.slice(-4)}`
+      : virtualKeyValue;
 
   const logPrefix = `WS handler | vk=${vkDisplay}`;
 
-  const pendingMessages: Array<{ data: WebSocket.RawData; isBinary: boolean }> = [];
-  let dispatchMessage: ((data: WebSocket.RawData, isBinary: boolean) => void) | null = null;
+  const pendingMessages: Array<{ data: WebSocket.RawData; isBinary: boolean }> =
+    [];
+  let dispatchMessage:
+    ((data: WebSocket.RawData, isBinary: boolean) => void) | null = null;
 
-  socket.on('message', (data: WebSocket.RawData, isBinary: boolean) => {
+  socket.on("message", (data: WebSocket.RawData, isBinary: boolean) => {
     if (dispatchMessage) {
       dispatchMessage(data, isBinary);
     } else {
@@ -108,7 +118,9 @@ export async function handleResponsesWebSocket(
   });
 
   let socketClosedEarly = false;
-  socket.once('close', () => { socketClosedEarly = true; });
+  socket.once("close", () => {
+    socketClosedEarly = true;
+  });
 
   try {
     if (socketClosedEarly) return;
@@ -124,7 +136,12 @@ export async function handleResponsesWebSocket(
       idleTimer = setTimeout(() => {
         try {
           if (socket.readyState === WebSocket.OPEN) {
-            sendErrorAndClose(socket, 'Idle timeout', ERROR_CODES.IDLE_TIMEOUT, WS_CLOSE_CODES.INTERNAL_ERROR);
+            sendErrorAndClose(
+              socket,
+              "Idle timeout",
+              ERROR_CODES.IDLE_TIMEOUT,
+              WS_CLOSE_CODES.INTERNAL_ERROR,
+            );
           }
         } catch (_e) {}
       }, idleTimeoutMs);
@@ -132,11 +149,18 @@ export async function handleResponsesWebSocket(
 
     async function handleCancel() {
       if (!inFlight) {
-        sendGatewayError(socket, 'No response is in progress', ERROR_CODES.NOTHING_TO_CANCEL);
+        sendGatewayError(
+          socket,
+          "No response is in progress",
+          ERROR_CODES.NOTHING_TO_CANCEL,
+        );
         return;
       }
 
-      memoryLogger.info(`${logPrefix} | Cancelling in-flight response`, 'WebSocket');
+      memoryLogger.info(
+        `${logPrefix} | Cancelling in-flight response`,
+        "WebSocket",
+      );
       if (activeAbortController) {
         activeAbortController.abort();
       }
@@ -145,7 +169,11 @@ export async function handleResponsesWebSocket(
 
     async function handleResponseCreate(requestBody: any) {
       if (inFlight) {
-        sendGatewayError(socket, 'A response is already in progress on this WebSocket', ERROR_CODES.RESPONSE_IN_PROGRESS);
+        sendGatewayError(
+          socket,
+          "A response is already in progress on this WebSocket",
+          ERROR_CODES.RESPONSE_IN_PROGRESS,
+        );
         return;
       }
 
@@ -154,7 +182,7 @@ export async function handleResponsesWebSocket(
       const abortController = new AbortController();
       activeAbortController = abortController;
       const closeAbortHandler = () => abortController.abort();
-      socket.once('close', closeAbortHandler);
+      socket.once("close", closeAbortHandler);
 
       let result: ResponsesStreamResult | undefined;
       let success = false;
@@ -162,28 +190,47 @@ export async function handleResponsesWebSocket(
 
       try {
         const normalizedRequest = normalizeResponseCreate(requestBody);
-        capturePromptSampleAsync(virtualKey, { body: normalizedRequest.body }, 'openai');
+        capturePromptSampleAsync(
+          virtualKey,
+          { body: normalizedRequest.body },
+          "openai",
+        );
         turnConfig = await resolveWebSocketTurnConfig(
           request,
           virtualKey,
           virtualKeyValue,
-          normalizedRequest
+          normalizedRequest,
         );
         const { protocolConfig, path, providerId } = turnConfig;
         const providerLogPrefix = `${logPrefix} | provider=${providerId}`;
-        const mode = resolveTransportMode(true, protocolConfig.upstreamTransport ?? 'http_sse');
+        const mode = resolveTransportMode(
+          true,
+          protocolConfig.upstreamTransport ?? "http_sse",
+        );
 
-        memoryLogger.info(`${providerLogPrefix} | Transport mode: ${mode}`, 'WebSocket');
+        memoryLogger.info(
+          `${providerLogPrefix} | Transport mode: ${mode}`,
+          "WebSocket",
+        );
 
-        const maxDurationTimer = maxDurationMs > 0
-          ? setTimeout(() => {
-              memoryLogger.info(`${providerLogPrefix} | Max duration reached, aborting`, 'WebSocket');
-              abortController.abort();
-            }, maxDurationMs)
-          : undefined;
+        const maxDurationTimer =
+          maxDurationMs > 0
+            ? setTimeout(() => {
+                memoryLogger.info(
+                  `${providerLogPrefix} | Max duration reached, aborting`,
+                  "WebSocket",
+                );
+                abortController.abort();
+              }, maxDurationMs)
+            : undefined;
 
         try {
-          const eventStream = runResponsesTransport(mode, protocolConfig, normalizedRequest, abortController.signal);
+          const eventStream = runResponsesTransport(
+            mode,
+            protocolConfig,
+            normalizedRequest,
+            abortController.signal,
+          );
           result = await writeEventsToWebSocket(eventStream, {
             socket,
             closeOnTerminal: false,
@@ -198,11 +245,11 @@ export async function handleResponsesWebSocket(
         if (debugModeService.isActive()) {
           try {
             debugModeService.broadcast({
-              type: 'api_request',
+              type: "api_request",
               id: nanoid(),
               timestamp: Date.now(),
-              protocol: 'openai-responses-ws',
-              method: 'WS',
+              protocol: "openai-responses-ws",
+              method: "WS",
               path,
               stream: true,
               success,
@@ -211,7 +258,7 @@ export async function handleResponsesWebSocket(
               virtualKeyId: virtualKey.id,
               virtualKeyName: (virtualKey as any).name,
               providerId,
-              model: protocolConfig.model || 'unknown',
+              model: protocolConfig.model || "unknown",
               durationMs: duration,
               requestBody: undefined,
               responseBody: undefined,
@@ -223,51 +270,76 @@ export async function handleResponsesWebSocket(
         logApiRequestAsync({
           virtualKey,
           providerId,
-          model: protocolConfig.model || 'unknown',
+          model: protocolConfig.model || "unknown",
           tokenCount: result?.tokenUsage
-            ? { promptTokens: result.tokenUsage.promptTokens, completionTokens: result.tokenUsage.completionTokens, totalTokens: result.tokenUsage.totalTokens }
+            ? {
+                promptTokens: result.tokenUsage.promptTokens,
+                completionTokens: result.tokenUsage.completionTokens,
+                totalTokens: result.tokenUsage.totalTokens,
+              }
             : { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           cachedTokens: result?.tokenUsage.cachedTokens,
-          status: success ? 'success' : 'error',
+          status: success ? "success" : "error",
           responseTime: duration,
-          requestType: 'openai-responses-ws',
+          tffbMs: result?.tffbMs,
+          requestType: "openai-responses-ws",
           ip: requestIp,
           userAgent: requestUserAgent,
         });
       } catch (err: any) {
-        memoryLogger.error(`${logPrefix} | Response error: ${err?.message || String(err)}`, 'WebSocket');
+        memoryLogger.error(
+          `${logPrefix} | Response error: ${err?.message || String(err)}`,
+          "WebSocket",
+        );
 
         const duration = Date.now() - turnStartTime;
+        // Client-gone turns get the unified literal message, never free text.
+        const clientAborted = isClientAbort(
+          err,
+          undefined,
+          socket.readyState !== WebSocket.OPEN,
+        );
         logApiRequestAsync({
           virtualKey,
-          providerId: turnConfig?.providerId || 'unknown',
-          model: turnConfig?.protocolConfig?.model || normalizedModelFromRequest(requestBody) || 'unknown',
+          providerId: turnConfig?.providerId || "unknown",
+          model:
+            turnConfig?.protocolConfig?.model ||
+            normalizedModelFromRequest(requestBody) ||
+            "unknown",
           tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-          status: 'error',
+          status: "error",
           responseTime: duration,
-          requestType: 'openai-responses-ws',
+          errorMessage: clientAborted ? CLIENT_ABORTED_MESSAGE : err?.message,
+          requestType: "openai-responses-ws",
           ip: requestIp,
           userAgent: requestUserAgent,
         });
 
         if (socket.readyState === WebSocket.OPEN) {
           try {
-            socket.send(JSON.stringify(buildErrorEvent(
-              err?.message || 'Response error',
-              err?.code || ERROR_CODES.HANDLER_ERROR
-            )));
+            socket.send(
+              JSON.stringify(
+                buildErrorEvent(
+                  err?.message || "Response error",
+                  err?.code || ERROR_CODES.HANDLER_ERROR,
+                ),
+              ),
+            );
           } catch (_e) {}
-          socket.close(WS_CLOSE_CODES.INTERNAL_ERROR, 'response_error');
+          socket.close(WS_CLOSE_CODES.INTERNAL_ERROR, "response_error");
         }
       } finally {
-        socket.off('close', closeAbortHandler);
+        socket.off("close", closeAbortHandler);
         inFlight = false;
         activeAbortController = undefined;
         resetIdleTimer();
       }
     }
 
-    async function handleClientMessage(data: WebSocket.RawData, isBinary: boolean) {
+    async function handleClientMessage(
+      data: WebSocket.RawData,
+      isBinary: boolean,
+    ) {
       resetIdleTimer();
 
       let clientEvent;
@@ -275,14 +347,15 @@ export async function handleResponsesWebSocket(
         clientEvent = parseClientWebSocketEvent(data, isBinary);
       } catch (err: any) {
         const code = (err as any).code || ERROR_CODES.HANDLER_ERROR;
-        const wsCloseCode = (err as any).wsCloseCode || WS_CLOSE_CODES.INTERNAL_ERROR;
+        const wsCloseCode =
+          (err as any).wsCloseCode || WS_CLOSE_CODES.INTERNAL_ERROR;
         sendErrorAndClose(socket, err.message, code, wsCloseCode);
         return;
       }
 
-      if (clientEvent.type === 'response.create') {
+      if (clientEvent.type === "response.create") {
         await handleResponseCreate(clientEvent);
-      } else if (clientEvent.type === 'response.cancel') {
+      } else if (clientEvent.type === "response.cancel") {
         await handleCancel();
       }
     }
@@ -291,8 +364,16 @@ export async function handleResponsesWebSocket(
 
     dispatchMessage = (data, isBinary) => {
       handleClientMessage(data, isBinary).catch((err: any) => {
-        memoryLogger.error(`${logPrefix} | ${err?.message || String(err)}`, 'WebSocket');
-        sendErrorAndClose(socket, err?.message || 'Handler error', ERROR_CODES.HANDLER_ERROR, WS_CLOSE_CODES.INTERNAL_ERROR);
+        memoryLogger.error(
+          `${logPrefix} | ${err?.message || String(err)}`,
+          "WebSocket",
+        );
+        sendErrorAndClose(
+          socket,
+          err?.message || "Handler error",
+          ERROR_CODES.HANDLER_ERROR,
+          WS_CLOSE_CODES.INTERNAL_ERROR,
+        );
       });
     };
     for (const pending of pendingMessages) {
@@ -300,18 +381,22 @@ export async function handleResponsesWebSocket(
     }
 
     await new Promise<void>((resolve) => {
-      socket.once('close', () => {
+      socket.once("close", () => {
         if (idleTimer) clearTimeout(idleTimer);
         resolve();
       });
     });
-
   } catch (err: any) {
     const errorMessage = err?.message || String(err);
-    memoryLogger.error(`${logPrefix} | ${errorMessage}`, 'WebSocket');
+    memoryLogger.error(`${logPrefix} | ${errorMessage}`, "WebSocket");
 
     if (socket.readyState === WebSocket.OPEN) {
-      sendErrorAndClose(socket, errorMessage, ERROR_CODES.HANDLER_ERROR, WS_CLOSE_CODES.INTERNAL_ERROR);
+      sendErrorAndClose(
+        socket,
+        errorMessage,
+        ERROR_CODES.HANDLER_ERROR,
+        WS_CLOSE_CODES.INTERNAL_ERROR,
+      );
     }
   }
 }
@@ -320,30 +405,54 @@ export async function resolveWebSocketTurnConfig(
   request: FastifyRequest,
   virtualKey: any,
   virtualKeyValue: string,
-  normalizedRequest: NormalizedResponsesRequest
+  normalizedRequest: NormalizedResponsesRequest,
 ): Promise<WsTurnConfig> {
   const turnRequest = buildTurnRequest(request, normalizedRequest.body);
-  const modelResult = await resolveModelAndProvider(virtualKey, turnRequest, virtualKeyValue);
+  const modelResult = await resolveModelAndProvider(
+    virtualKey,
+    turnRequest,
+    virtualKeyValue,
+  );
 
-  if ('code' in modelResult) {
-    throw errorFromGatewayPayload(modelResult.body.error.message, ERROR_CODES.UNSUPPORTED_CLIENT_EVENT);
+  if ("code" in modelResult) {
+    throw errorFromGatewayPayload(
+      modelResult.body.error.message,
+      ERROR_CODES.UNSUPPORTED_CLIENT_EVENT,
+    );
   }
 
   const { provider, providerId, currentModel } = modelResult;
-  const configResult = await buildProviderConfig(provider, virtualKey, virtualKeyValue, providerId, turnRequest, currentModel, 'openai');
+  const configResult = await buildProviderConfig(
+    provider,
+    virtualKey,
+    virtualKeyValue,
+    providerId,
+    turnRequest,
+    currentModel,
+    "openai",
+  );
 
-  if ('code' in configResult) {
-    throw errorFromGatewayPayload(configResult.body.error.message, ERROR_CODES.PROVIDER_CONFIG_ERROR);
+  if ("code" in configResult) {
+    throw errorFromGatewayPayload(
+      configResult.body.error.message,
+      ERROR_CODES.PROVIDER_CONFIG_ERROR,
+    );
   }
 
   const { protocolConfig, path } = configResult;
 
   if (!protocolConfig.baseUrl) {
-    throw errorFromGatewayPayload('Provider has no base URL configured', ERROR_CODES.MISSING_UPSTREAM);
+    throw errorFromGatewayPayload(
+      "Provider has no base URL configured",
+      ERROR_CODES.MISSING_UPSTREAM,
+    );
   }
 
   if (!protocolConfig.apiKey) {
-    throw errorFromGatewayPayload('Provider has no API key configured', ERROR_CODES.MISSING_UPSTREAM);
+    throw errorFromGatewayPayload(
+      "Provider has no API key configured",
+      ERROR_CODES.MISSING_UPSTREAM,
+    );
   }
 
   return {
@@ -361,7 +470,7 @@ function buildTurnRequest(request: FastifyRequest, body: any): FastifyRequest {
     headers: request.headers,
     url: request.url,
     method: request.method,
-    protocol: 'openai',
+    protocol: "openai",
   } as any;
 }
 
@@ -372,10 +481,16 @@ function errorFromGatewayPayload(message: string, code: string): Error {
 }
 
 function normalizedModelFromRequest(requestBody: any): string | undefined {
-  if (requestBody?.type === 'response.create' && requestBody?.response && typeof requestBody.response === 'object') {
-    return typeof requestBody.response.model === 'string' ? requestBody.response.model : undefined;
+  if (
+    requestBody?.type === "response.create" &&
+    requestBody?.response &&
+    typeof requestBody.response === "object"
+  ) {
+    return typeof requestBody.response.model === "string"
+      ? requestBody.response.model
+      : undefined;
   }
-  return typeof requestBody?.model === 'string' ? requestBody.model : undefined;
+  return typeof requestBody?.model === "string" ? requestBody.model : undefined;
 }
 
 function sendGatewayError(socket: WsWebSocket, message: string, code: string) {
@@ -385,7 +500,12 @@ function sendGatewayError(socket: WsWebSocket, message: string, code: string) {
   } catch (_e) {}
 }
 
-function sendErrorAndClose(socket: WsWebSocket, message: string, code: string, wsCloseCode: number) {
+function sendErrorAndClose(
+  socket: WsWebSocket,
+  message: string,
+  code: string,
+  wsCloseCode: number,
+) {
   if (socket.readyState === WebSocket.OPEN) {
     try {
       socket.send(JSON.stringify(buildErrorEvent(message, code)));

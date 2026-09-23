@@ -1,4 +1,4 @@
-import type { Connection } from "mysql2/promise";
+import type { Connection, ResultSetHeader } from "mysql2/promise";
 
 export interface Migration {
   version: number;
@@ -809,6 +809,124 @@ export const migrations: Migration[] = [
     down: async (conn: Connection) => {
       await conn.query("DROP TABLE IF EXISTS user_plugin_enrollments");
       await conn.query("DROP TABLE IF EXISTS worker_plugins");
+    },
+  },
+  {
+    version: 45,
+    name: "add_hourly_summaries_and_summary_perf_columns",
+    up: async (conn: Connection) => {
+      const hasColumn = async (tableName: string, columnName: string) => {
+        const [rows] = await conn.query(
+          `SELECT COUNT(*) AS cnt
+           FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = ?
+             AND COLUMN_NAME = ?`,
+          [tableName, columnName],
+        );
+        const result = rows as any[];
+        return Number(result?.[0]?.cnt || 0) > 0;
+      };
+
+      // 小时级聚合：精确滚动窗口（24h/7d/30d）的查询优化，
+      // 窗口内部整小时读此表，边界不足一小时的部分由尚存明细精确计算。
+      // Token 口径与首页明细一致：prompt/completion/total 仅统计 cache_hit = 0 的请求。
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS api_request_hourly_summaries (
+          id BIGINT AUTO_INCREMENT PRIMARY KEY,
+          bucket_hour BIGINT NOT NULL COMMENT 'UTC 毫秒整小时桶起点',
+          virtual_key_id VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
+          provider_id VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
+          model VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
+          request_count INT NOT NULL DEFAULT 0,
+          success_count INT NOT NULL DEFAULT 0 COMMENT 'status = success 的计数',
+          error_count INT NOT NULL DEFAULT 0 COMMENT 'status != success 的计数',
+          prompt_tokens BIGINT NOT NULL DEFAULT 0 COMMENT '仅 cache_hit = 0 的请求',
+          completion_tokens BIGINT NOT NULL DEFAULT 0 COMMENT '仅 cache_hit = 0 的请求',
+          total_tokens BIGINT NOT NULL DEFAULT 0 COMMENT '仅 cache_hit = 0 的请求',
+          cached_tokens BIGINT NOT NULL DEFAULT 0 COMMENT '全部请求的 prompt cache tokens',
+          cache_hit_count INT NOT NULL DEFAULT 0 COMMENT 'cache_hit = 1 的计数',
+          prompt_cache_hit_count INT NOT NULL DEFAULT 0 COMMENT 'cached_tokens > 0 的计数',
+          total_tffb_ms BIGINT NOT NULL DEFAULT 0 COMMENT 'tffb_ms >= 0 的总和(毫秒)',
+          tffb_count INT NOT NULL DEFAULT 0 COMMENT 'tffb_ms >= 0 的请求数',
+          total_response_time BIGINT NOT NULL DEFAULT 0 COMMENT 'response_time > 0 的总和(毫秒)',
+          response_time_count INT NOT NULL DEFAULT 0 COMMENT 'response_time > 0 的请求数',
+          total_output_speed DOUBLE NOT NULL DEFAULT 0 COMMENT '逐请求有效输出速度总和(tokens/s)，与 performance-metrics 同口径',
+          speed_count INT NOT NULL DEFAULT 0 COMMENT '有效输出速度样本数',
+          last_used_at BIGINT NOT NULL DEFAULT 0 COMMENT '桶内 MAX(created_at)',
+          created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+          updated_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+          UNIQUE KEY uk_hourly_summary_dimensions (bucket_hour, virtual_key_id, provider_id, model),
+          INDEX idx_hourly_bucket (bucket_hour),
+          INDEX idx_hourly_vk (virtual_key_id, bucket_hour),
+          INDEX idx_hourly_provider (provider_id, bucket_hour),
+          INDEX idx_hourly_model (model, bucket_hour)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      console.log("[迁移] 已创建 api_request_hourly_summaries 表");
+
+      // 日汇总扩展：纯 TFFB 口径、逐请求速度与最近使用时间，
+      // 保留原 total_effective_time 列供存量首页读取。
+      const dailyColumns: Array<[string, string, string]> = [
+        [
+          "total_tffb_ms",
+          "BIGINT NOT NULL DEFAULT 0",
+          "tffb_ms >= 0 的总和(毫秒)",
+        ],
+        ["tffb_count", "INT NOT NULL DEFAULT 0", "tffb_ms >= 0 的请求数"],
+        [
+          "total_output_speed",
+          "DOUBLE NOT NULL DEFAULT 0",
+          "逐请求有效输出速度总和(tokens/s)",
+        ],
+        ["speed_count", "INT NOT NULL DEFAULT 0", "有效输出速度样本数"],
+        ["last_used_at", "BIGINT NOT NULL DEFAULT 0", "当日 MAX(created_at)"],
+      ];
+      for (const [column, definition, comment] of dailyColumns) {
+        if (!(await hasColumn("api_request_daily_summaries", column))) {
+          await conn.query(
+            `ALTER TABLE api_request_daily_summaries
+             ADD COLUMN ${column} ${definition} COMMENT '${comment}'`,
+          );
+          console.log(
+            `[迁移] 已添加 api_request_daily_summaries.${column} 字段`,
+          );
+        }
+      }
+
+      // disable_logging 密钥的存量明细清洗：写入侧自此不再保存这三类敏感字段，
+      // 存量行按同一约定置空。条件天然幂等，可重复执行。
+      const [cleanResult] = await conn.query(`
+        UPDATE api_requests ar
+        INNER JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        SET ar.ip = NULL,
+            ar.user_agent = NULL,
+            ar.error_message = NULL
+        WHERE vk.disable_logging = 1
+          AND (ar.ip IS NOT NULL OR ar.user_agent IS NOT NULL OR ar.error_message IS NOT NULL)
+      `);
+      const cleaned = (cleanResult as ResultSetHeader).affectedRows || 0;
+      console.log(
+        `[迁移] 已清洗 disable_logging 密钥存量敏感字段 ${cleaned} 行`,
+      );
+    },
+    down: async (conn: Connection) => {
+      await conn.query("DROP TABLE IF EXISTS api_request_hourly_summaries");
+      for (const column of [
+        "last_used_at",
+        "speed_count",
+        "total_output_speed",
+        "tffb_count",
+        "total_tffb_ms",
+      ]) {
+        try {
+          await conn.query(
+            `ALTER TABLE api_request_daily_summaries DROP COLUMN IF EXISTS ${column}`,
+          );
+        } catch (e: any) {
+          console.warn(`[迁移] 删除 ${column} 字段失败:`, e.message);
+        }
+      }
     },
   },
 ];

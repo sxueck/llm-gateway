@@ -1,16 +1,27 @@
-import { getDatabase } from '../connection.js';
-import type { ResultSetHeader } from 'mysql2';
-import { ApiRequestBuffer } from '../types.js';
-import { addToBuffer, shouldFlush, flushApiRequestBuffer } from '../utils/buffer.js';
-import { generateTimeBuckets, generateShanghaiDayBuckets, initializeTimeBuckets, getShanghaiDayStart } from '../utils/time-buckets.js';
-import { debugModeService } from '../../services/debug-mode.js';
-import { appConfig } from '../../config/index.js';
+import { getDatabase } from "../connection.js";
+import type { ResultSetHeader } from "mysql2";
+import { ApiRequestBuffer } from "../types.js";
+import {
+  addToBuffer,
+  shouldFlush,
+  flushApiRequestBuffer,
+} from "../utils/buffer.js";
+import {
+  generateTimeBuckets,
+  generateShanghaiDayBuckets,
+  initializeTimeBuckets,
+  getShanghaiDayStart,
+} from "../utils/time-buckets.js";
+import { debugModeService } from "../../services/debug-mode.js";
+import { appConfig } from "../../config/index.js";
 
 function getDisableLoggingCondition(): string {
-  return '(ar.virtual_key_id IS NULL OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)';
+  return "(ar.virtual_key_id IS NULL OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)";
 }
 
-function getDisableLoggingConditionForSummary(tableAlias: string = 's'): string {
+function getDisableLoggingConditionForSummary(
+  tableAlias: string = "s",
+): string {
   return `(${tableAlias}.virtual_key_id = '' OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)`;
 }
 
@@ -25,7 +36,7 @@ export const apiRequestRepository = {
     }
 
     addToBuffer(request);
- 
+
     if (shouldFlush()) {
       await flushApiRequestBuffer();
     }
@@ -44,7 +55,7 @@ export const apiRequestRepository = {
          WHERE ar.ip = ? AND ${loggingCondition}
          ORDER BY ar.created_at DESC
          LIMIT 1`,
-        [ip]
+        [ip],
       );
       const result = rows as any[];
       if (result.length === 0) return null;
@@ -59,7 +70,7 @@ export const apiRequestRepository = {
     const conn = await pool.getConnection();
     try {
       const [rows] = await conn.query(
-        `SELECT ip, created_at, user_agent FROM api_requests ORDER BY created_at DESC LIMIT 1`
+        `SELECT ip, created_at, user_agent FROM api_requests ORDER BY created_at DESC LIMIT 1`,
       );
       const result = rows as any[];
       if (result.length === 0) return null;
@@ -75,7 +86,7 @@ export const apiRequestRepository = {
     try {
       const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
       const loggingCondition = getDisableLoggingCondition();
-      
+
       const [rows] = await conn.query(
         `SELECT
           ar.ip,
@@ -87,7 +98,7 @@ export const apiRequestRepository = {
          GROUP BY ar.ip
          ORDER BY last_seen DESC
          LIMIT ?`,
-        [cutoff, limit]
+        [cutoff, limit],
       );
       return rows as any[];
     } finally {
@@ -97,7 +108,7 @@ export const apiRequestRepository = {
 
   async getStats(options?: { startTime?: number; endTime?: number }) {
     const now = Date.now();
-    const startTime = options?.startTime ?? (now - 24 * 60 * 60 * 1000);
+    const startTime = options?.startTime ?? now - 24 * 60 * 60 * 1000;
     const endTime = options?.endTime || now;
 
     const pool = getDatabase();
@@ -121,7 +132,8 @@ export const apiRequestRepository = {
       let promptCacheHits = 0;
 
       if (needsSummary) {
-        const summaryLoggingCondition = getDisableLoggingConditionForSummary('s');
+        const summaryLoggingCondition =
+          getDisableLoggingConditionForSummary("s");
         const lastSummaryDay = new Date(detailStart - 1);
 
         const [summaryRows] = await conn.query(
@@ -148,7 +160,7 @@ export const apiRequestRepository = {
           WHERE s.summary_date >= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
             AND s.summary_date <= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
             AND ${summaryLoggingCondition}`,
-          [startTime, lastSummaryDay.getTime()]
+          [startTime, lastSummaryDay.getTime()],
         );
 
         const summary = (summaryRows as any[])[0];
@@ -193,8 +205,8 @@ export const apiRequestRepository = {
             SUM(CASE WHEN ar.cached_tokens > 0 THEN 1 ELSE 0 END) as prompt_cache_hits
           FROM api_requests ar
           LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-          WHERE ar.created_at >= ? AND ar.created_at <= ? AND ${loggingCondition}`,
-          [detailStartTime, endTime]
+          WHERE ar.created_at >= ? AND ar.created_at < ? AND ${loggingCondition}`,
+          [detailStartTime, endTime],
         );
 
         const detail = (detailRows as any[])[0];
@@ -213,7 +225,8 @@ export const apiRequestRepository = {
         }
       }
 
-      const avgResponseTime = effectiveTimeCount > 0 ? totalEffectiveTime / effectiveTimeCount : 0;
+      const avgResponseTime =
+        effectiveTimeCount > 0 ? totalEffectiveTime / effectiveTimeCount : 0;
 
       return {
         totalRequests,
@@ -244,7 +257,7 @@ export const apiRequestRepository = {
          WHERE ar.virtual_key_id = ? AND ${getDisableLoggingCondition()}
          ORDER BY ar.created_at DESC
          LIMIT ?`,
-        [virtualKeyId, limit]
+        [virtualKeyId, limit],
       );
       return rows;
     } finally {
@@ -252,14 +265,19 @@ export const apiRequestRepository = {
     }
   },
 
-  async getTrend(options?: { startTime?: number; endTime?: number; interval?: 'hour' | 'day' }) {
+  async getTrend(options?: {
+    startTime?: number;
+    endTime?: number;
+    interval?: "hour" | "day";
+  }) {
     const now = Date.now();
-    const startTime = options?.startTime ?? (now - 24 * 60 * 60 * 1000);
+    const startTime = options?.startTime ?? now - 24 * 60 * 60 * 1000;
     const endTime = options?.endTime || now;
-    const interval = options?.interval || 'hour';
+    const interval = options?.interval || "hour";
 
-    const intervalMs = interval === 'hour' ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-    const isDayInterval = interval === 'day';
+    const intervalMs =
+      interval === "hour" ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+    const isDayInterval = interval === "day";
 
     const pool = getDatabase();
     const conn = await pool.getConnection();
@@ -278,7 +296,8 @@ export const apiRequestRepository = {
       if (needsSummary) {
         const lastSummaryDay = new Date(detailStart - 1);
         const summaryEndTimestamp = lastSummaryDay.getTime();
-        const summaryLoggingCondition = getDisableLoggingConditionForSummary('s');
+        const summaryLoggingCondition =
+          getDisableLoggingConditionForSummary("s");
 
         const [summaryRows] = await conn.query(
           `SELECT
@@ -295,12 +314,12 @@ export const apiRequestRepository = {
             AND s.summary_date <= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
             AND ${summaryLoggingCondition}
           GROUP BY s.summary_date, s.virtual_key_id`,
-          [startTime, summaryEndTimestamp]
+          [startTime, summaryEndTimestamp],
         );
 
-        (summaryRows as any[]).forEach(row => {
-          const keyId = row.virtual_key_id || 'unknown';
-          const keyName = row.virtual_key_name || '未知密钥';
+        (summaryRows as any[]).forEach((row) => {
+          const keyId = row.virtual_key_id || "unknown";
+          const keyName = row.virtual_key_name || "未知密钥";
 
           if (!virtualKeyMap.has(keyId)) {
             virtualKeyMap.set(keyId, { id: keyId, name: keyName });
@@ -320,21 +339,24 @@ export const apiRequestRepository = {
             keyBuckets.set(bucket, {
               timestamp: bucket,
               requestCount: existing.requestCount + (Number(row.count) || 0),
-              successCount: existing.successCount + (Number(row.success_count) || 0),
+              successCount:
+                existing.successCount + (Number(row.success_count) || 0),
               errorCount: existing.errorCount + (Number(row.error_count) || 0),
-              tokenCount: existing.tokenCount + (Number(row.total_tokens) || 0)
+              tokenCount: existing.tokenCount + (Number(row.total_tokens) || 0),
             });
           }
         });
       }
 
       if (needsDetail) {
-        const detailStartTime = useMixedRead ? Math.max(startTime, detailStart) : startTime;
+        const detailStartTime = useMixedRead
+          ? Math.max(startTime, detailStart)
+          : startTime;
         const loggingCondition = getDisableLoggingCondition();
 
         const bucketExpression = isDayInterval
           ? `FLOOR((ar.created_at + ${8 * 60 * 60 * 1000}) / ?) * ? - ${8 * 60 * 60 * 1000}`
-          : 'FLOOR(ar.created_at / ?) * ?';
+          : "FLOOR(ar.created_at / ?) * ?";
         const queryParams = [intervalMs, intervalMs, detailStartTime, endTime];
 
         const [detailRows] = await conn.query(
@@ -348,16 +370,16 @@ export const apiRequestRepository = {
             SUM(ar.total_tokens) as total_tokens
           FROM api_requests ar
           LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-          WHERE ar.created_at >= ? AND ar.created_at <= ? AND ${loggingCondition}
+          WHERE ar.created_at >= ? AND ar.created_at < ? AND ${loggingCondition}
           GROUP BY time_bucket, ar.virtual_key_id, vk.name
           HAVING time_bucket IS NOT NULL
           ORDER BY time_bucket ASC, ar.virtual_key_id ASC`,
-          queryParams
+          queryParams,
         );
 
-        (detailRows as any[]).forEach(row => {
-          const keyId = row.virtual_key_id || 'unknown';
-          const keyName = row.virtual_key_name || '未知密钥';
+        (detailRows as any[]).forEach((row) => {
+          const keyId = row.virtual_key_id || "unknown";
+          const keyName = row.virtual_key_name || "未知密钥";
 
           if (!virtualKeyMap.has(keyId)) {
             virtualKeyMap.set(keyId, { id: keyId, name: keyName });
@@ -377,9 +399,10 @@ export const apiRequestRepository = {
             keyBuckets.set(bucket, {
               timestamp: bucket,
               requestCount: existing.requestCount + (Number(row.count) || 0),
-              successCount: existing.successCount + (Number(row.success_count) || 0),
+              successCount:
+                existing.successCount + (Number(row.success_count) || 0),
               errorCount: existing.errorCount + (Number(row.error_count) || 0),
-              tokenCount: existing.tokenCount + (Number(row.total_tokens) || 0)
+              tokenCount: existing.tokenCount + (Number(row.total_tokens) || 0),
             });
           }
         });
@@ -387,8 +410,10 @@ export const apiRequestRepository = {
 
       return Array.from(dataByKey.entries()).map(([keyId, buckets]) => ({
         virtualKeyId: keyId,
-        virtualKeyName: virtualKeyMap.get(keyId)?.name || '未知密钥',
-        data: Array.from(buckets.values()).sort((a, b) => a.timestamp - b.timestamp)
+        virtualKeyName: virtualKeyMap.get(keyId)?.name || "未知密钥",
+        data: Array.from(buckets.values()).sort(
+          (a, b) => a.timestamp - b.timestamp,
+        ),
       }));
     } finally {
       conn.release();
@@ -452,50 +477,50 @@ export const apiRequestRepository = {
       const params: any[] = [];
 
       if (options?.virtualKeyId) {
-        countQuery += ' AND ar.virtual_key_id = ?';
-        dataQuery += ' AND ar.virtual_key_id = ?';
+        countQuery += " AND ar.virtual_key_id = ?";
+        dataQuery += " AND ar.virtual_key_id = ?";
         params.push(options.virtualKeyId);
       }
 
       if (options?.providerId) {
-        countQuery += ' AND ar.provider_id = ?';
-        dataQuery += ' AND ar.provider_id = ?';
+        countQuery += " AND ar.provider_id = ?";
+        dataQuery += " AND ar.provider_id = ?";
         params.push(options.providerId);
       }
 
       if (options?.model) {
-        countQuery += ' AND ar.model = ?';
-        dataQuery += ' AND ar.model = ?';
+        countQuery += " AND ar.model = ?";
+        dataQuery += " AND ar.model = ?";
         params.push(options.model);
       }
 
       if (options?.startTime) {
-        countQuery += ' AND ar.created_at >= ?';
-        dataQuery += ' AND ar.created_at >= ?';
+        countQuery += " AND ar.created_at >= ?";
+        dataQuery += " AND ar.created_at >= ?";
         params.push(options.startTime);
       }
 
       if (options?.endTime) {
-        countQuery += ' AND ar.created_at <= ?';
-        dataQuery += ' AND ar.created_at <= ?';
+        countQuery += " AND ar.created_at <= ?";
+        dataQuery += " AND ar.created_at <= ?";
         params.push(options.endTime);
       }
 
       if (options?.status) {
-        countQuery += ' AND ar.status = ?';
-        dataQuery += ' AND ar.status = ?';
+        countQuery += " AND ar.status = ?";
+        dataQuery += " AND ar.status = ?";
         params.push(options.status);
       }
 
       const [countRows] = await conn.query(countQuery, params);
       const total = (countRows as any[])[0].total;
 
-      dataQuery += ' ORDER BY ar.created_at DESC LIMIT ? OFFSET ?';
+      dataQuery += " ORDER BY ar.created_at DESC LIMIT ? OFFSET ?";
       const dataParams = [...params, limit, offset];
 
       const [rows] = await conn.query(dataQuery, dataParams);
 
-      const normalizedRows = (rows as any[]).map(row => {
+      const normalizedRows = (rows as any[]).map((row) => {
         const { payload_request_body, ...rest } = row;
         return { ...rest, request_body: payload_request_body ?? null };
       });
@@ -505,7 +530,7 @@ export const apiRequestRepository = {
         total,
         page: Math.floor(offset / limit) + 1,
         pageSize: limit,
-        totalPages: Math.ceil(total / limit)
+        totalPages: Math.ceil(total / limit),
       };
     } finally {
       conn.release();
@@ -522,11 +547,12 @@ export const apiRequestRepository = {
          LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
          LEFT JOIN api_request_payloads ap ON ap.request_id = ar.id
          WHERE ar.id = ? AND ${getDisableLoggingCondition()}`,
-        [id]
+        [id],
       );
       const result = rows as any[];
       if (result.length === 0) return undefined;
-      const { payload_request_body, payload_response_body, ...rest } = result[0];
+      const { payload_request_body, payload_response_body, ...rest } =
+        result[0];
       return {
         ...rest,
         request_body: payload_request_body ?? rest.request_body,
@@ -537,7 +563,13 @@ export const apiRequestRepository = {
     }
   },
 
-  async cleanOldRecords(daysToKeep: number = 7): Promise<{ summarizedCount: number; deletedPayloadCount: number; deletedRequestCount: number; deletedCount: number }> {
+  async cleanOldRecords(daysToKeep: number = 7): Promise<{
+    summarizedCount: number;
+    deletedPayloadCount: number;
+    deletedRequestCount: number;
+    deletedCount: number;
+    lockSkipped?: boolean;
+  }> {
     const now = new Date();
     const shanghaiOffset = 8 * 60 * 60 * 1000;
     const shanghaiNow = new Date(now.getTime() + shanghaiOffset);
@@ -552,117 +584,180 @@ export const apiRequestRepository = {
     const conn = await pool.getConnection();
 
     try {
-      await conn.beginTransaction();
-
-      const [candidateCountResult] = await conn.query(
-        `SELECT COUNT(*) as candidate_count
-         FROM api_requests ar
-         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-         WHERE ar.created_at < ?
-           AND (ar.virtual_key_id IS NULL OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)`,
-        [cutoffTime]
+      // Named lock prevents overlapping runs (auto vs manual, or two processes):
+      // the accumulating upsert below would double-count whole days otherwise.
+      const [lockResult] = await conn.query(
+        "SELECT GET_LOCK('api_request_cleanup', 0) AS locked",
       );
-      const summarizedCount = Number((candidateCountResult as any[])[0]?.candidate_count) || 0;
+      const locked = Number((lockResult as any[])[0]?.locked) === 1;
+      if (!locked) {
+        return {
+          summarizedCount: 0,
+          deletedPayloadCount: 0,
+          deletedRequestCount: 0,
+          deletedCount: 0,
+          lockSkipped: true,
+        };
+      }
 
-      await conn.query(
-        `INSERT INTO api_request_daily_summaries (
-          summary_date,
-          virtual_key_id,
-          provider_id,
-          model,
-          request_count,
-          success_count,
-          error_count,
-          total_tokens,
-          prompt_tokens,
-          completion_tokens,
-          cached_tokens,
-          cache_hit_count,
-          prompt_cache_hit_count,
-          total_response_time,
-          response_time_count,
-          total_effective_time,
-          effective_time_count,
-          created_at,
-          updated_at
-        )
-        SELECT
-          DATE(FROM_UNIXTIME(ar.created_at / 1000) + INTERVAL 8 HOUR) AS summary_date,
-          COALESCE(ar.virtual_key_id, '') AS virtual_key_id,
-          COALESCE(ar.provider_id, '') AS provider_id,
-          COALESCE(ar.model, '') AS model,
-          COUNT(*) AS request_count,
-          SUM(CASE WHEN ar.status = 'success' THEN 1 ELSE 0 END) AS success_count,
-          SUM(CASE WHEN ar.status != 'success' THEN 1 ELSE 0 END) AS error_count,
-          SUM(COALESCE(ar.total_tokens, 0)) AS total_tokens,
-          SUM(COALESCE(ar.prompt_tokens, 0)) AS prompt_tokens,
-          SUM(COALESCE(ar.completion_tokens, 0)) AS completion_tokens,
-          SUM(COALESCE(ar.cached_tokens, 0)) AS cached_tokens,
-          SUM(CASE WHEN ar.cache_hit = 1 THEN 1 ELSE 0 END) AS cache_hit_count,
-          SUM(CASE WHEN ar.cached_tokens > 0 THEN 1 ELSE 0 END) AS prompt_cache_hit_count,
-          SUM(COALESCE(ar.response_time, 0)) AS total_response_time,
-          COUNT(CASE WHEN ar.response_time > 0 THEN 1 END) AS response_time_count,
-          SUM(CASE
-            WHEN ar.tffb_ms > 0 THEN ar.tffb_ms
-            WHEN ar.response_time > 0 THEN ar.response_time
-            ELSE 0
-          END) AS total_effective_time,
-          COUNT(CASE WHEN ar.tffb_ms > 0 OR ar.response_time > 0 THEN 1 END) AS effective_time_count,
-          UNIX_TIMESTAMP() * 1000 AS created_at,
-          UNIX_TIMESTAMP() * 1000 AS updated_at
-        FROM api_requests ar
-        LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-        WHERE ar.created_at < ?
-          AND (ar.virtual_key_id IS NULL OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)
-        GROUP BY
-          DATE(FROM_UNIXTIME(ar.created_at / 1000) + INTERVAL 8 HOUR),
-          COALESCE(ar.virtual_key_id, ''),
-          COALESCE(ar.provider_id, ''),
-          COALESCE(ar.model, '')
-        ON DUPLICATE KEY UPDATE
-          request_count = request_count + VALUES(request_count),
-          success_count = success_count + VALUES(success_count),
-          error_count = error_count + VALUES(error_count),
-          total_tokens = total_tokens + VALUES(total_tokens),
-          prompt_tokens = prompt_tokens + VALUES(prompt_tokens),
-          completion_tokens = completion_tokens + VALUES(completion_tokens),
-          cached_tokens = cached_tokens + VALUES(cached_tokens),
-          cache_hit_count = cache_hit_count + VALUES(cache_hit_count),
-          prompt_cache_hit_count = prompt_cache_hit_count + VALUES(prompt_cache_hit_count),
-          total_response_time = total_response_time + VALUES(total_response_time),
-          response_time_count = response_time_count + VALUES(response_time_count),
-          total_effective_time = total_effective_time + VALUES(total_effective_time),
-          effective_time_count = effective_time_count + VALUES(effective_time_count),
-          updated_at = UNIX_TIMESTAMP() * 1000`,
-        [cutoffTime]
-      );
+      try {
+        await conn.beginTransaction();
 
-      const [payloadDeleteResult] = await conn.query(
-        `DELETE ap
+        const [candidateCountResult] = await conn.query(
+          `SELECT COUNT(*) as candidate_count
+           FROM api_requests ar
+           WHERE ar.created_at < ?`,
+          [cutoffTime],
+        );
+        const summarizedCount =
+          Number((candidateCountResult as any[])[0]?.candidate_count) || 0;
+
+        // Token 口径与首页明细一致：prompt/completion/total 仅统计 cache_hit = 0 的请求；
+        // cached_tokens 与 cache_hit_count 统计全部请求。disable_logging 密钥按 PRD
+        // 纳入统计（敏感元数据已在写入侧/迁移置空）。
+        await conn.query(
+          `INSERT INTO api_request_daily_summaries (
+            summary_date,
+            virtual_key_id,
+            provider_id,
+            model,
+            request_count,
+            success_count,
+            error_count,
+            total_tokens,
+            prompt_tokens,
+            completion_tokens,
+            cached_tokens,
+            cache_hit_count,
+            prompt_cache_hit_count,
+            total_response_time,
+            response_time_count,
+            total_effective_time,
+            effective_time_count,
+            total_tffb_ms,
+            tffb_count,
+            total_output_speed,
+            speed_count,
+            last_used_at,
+            created_at,
+            updated_at
+          )
+          SELECT
+            DATE(FROM_UNIXTIME(ar.created_at / 1000) + INTERVAL 8 HOUR) AS summary_date,
+            COALESCE(ar.virtual_key_id, '') AS virtual_key_id,
+            COALESCE(ar.provider_id, '') AS provider_id,
+            COALESCE(ar.model, '') AS model,
+            COUNT(*) AS request_count,
+            SUM(CASE WHEN ar.status = 'success' THEN 1 ELSE 0 END) AS success_count,
+            SUM(CASE WHEN ar.status != 'success' THEN 1 ELSE 0 END) AS error_count,
+            SUM(CASE WHEN ar.cache_hit = 0 THEN COALESCE(ar.total_tokens, 0) ELSE 0 END) AS total_tokens,
+            SUM(CASE WHEN ar.cache_hit = 0 THEN COALESCE(ar.prompt_tokens, 0) ELSE 0 END) AS prompt_tokens,
+            SUM(CASE WHEN ar.cache_hit = 0 THEN COALESCE(ar.completion_tokens, 0) ELSE 0 END) AS completion_tokens,
+            SUM(COALESCE(ar.cached_tokens, 0)) AS cached_tokens,
+            SUM(CASE WHEN ar.cache_hit = 1 THEN 1 ELSE 0 END) AS cache_hit_count,
+            SUM(CASE WHEN ar.cached_tokens > 0 THEN 1 ELSE 0 END) AS prompt_cache_hit_count,
+            SUM(CASE WHEN ar.response_time > 0 THEN ar.response_time ELSE 0 END) AS total_response_time,
+            COUNT(CASE WHEN ar.response_time > 0 THEN 1 END) AS response_time_count,
+            SUM(CASE
+              WHEN ar.tffb_ms > 0 THEN ar.tffb_ms
+              WHEN ar.response_time > 0 THEN ar.response_time
+              ELSE 0
+            END) AS total_effective_time,
+            COUNT(CASE WHEN ar.tffb_ms > 0 OR ar.response_time > 0 THEN 1 END) AS effective_time_count,
+            SUM(CASE WHEN ar.tffb_ms >= 0 THEN ar.tffb_ms ELSE 0 END) AS total_tffb_ms,
+            COUNT(CASE WHEN ar.tffb_ms >= 0 THEN 1 END) AS tffb_count,
+            COALESCE(SUM(CASE
+              WHEN ar.completion_tokens > 0 AND ar.response_time > 0
+              THEN CASE
+                WHEN ar.tffb_ms IS NOT NULL AND ar.tffb_ms >= 0 AND (ar.response_time - ar.tffb_ms) > 0
+                  AND ar.completion_tokens / ((ar.response_time - ar.tffb_ms) / 1000.0) <= 1000
+                THEN ar.completion_tokens / ((ar.response_time - ar.tffb_ms) / 1000.0)
+                WHEN (ar.tffb_ms IS NULL OR ar.tffb_ms < 0 OR (ar.response_time - ar.tffb_ms) <= 0)
+                  AND ar.completion_tokens / (ar.response_time / 1000.0) <= 1000
+                THEN ar.completion_tokens / (ar.response_time / 1000.0)
+                ELSE NULL
+              END
+              ELSE NULL
+            END), 0) AS total_output_speed,
+            COUNT(CASE
+              WHEN ar.completion_tokens > 0 AND ar.response_time > 0
+              THEN CASE
+                WHEN ar.tffb_ms IS NOT NULL AND ar.tffb_ms >= 0 AND (ar.response_time - ar.tffb_ms) > 0
+                  AND ar.completion_tokens / ((ar.response_time - ar.tffb_ms) / 1000.0) <= 1000
+                THEN 1
+                WHEN (ar.tffb_ms IS NULL OR ar.tffb_ms < 0 OR (ar.response_time - ar.tffb_ms) <= 0)
+                  AND ar.completion_tokens / (ar.response_time / 1000.0) <= 1000
+                THEN 1
+                ELSE NULL
+              END
+              ELSE NULL
+            END) AS speed_count,
+            MAX(ar.created_at) AS last_used_at,
+            UNIX_TIMESTAMP() * 1000 AS created_at,
+            UNIX_TIMESTAMP() * 1000 AS updated_at
+          FROM api_requests ar
+          WHERE ar.created_at < ?
+          GROUP BY
+            DATE(FROM_UNIXTIME(ar.created_at / 1000) + INTERVAL 8 HOUR),
+            COALESCE(ar.virtual_key_id, ''),
+            COALESCE(ar.provider_id, ''),
+            COALESCE(ar.model, '')
+          ON DUPLICATE KEY UPDATE
+            request_count = request_count + VALUES(request_count),
+            success_count = success_count + VALUES(success_count),
+            error_count = error_count + VALUES(error_count),
+            total_tokens = total_tokens + VALUES(total_tokens),
+            prompt_tokens = prompt_tokens + VALUES(prompt_tokens),
+            completion_tokens = completion_tokens + VALUES(completion_tokens),
+            cached_tokens = cached_tokens + VALUES(cached_tokens),
+            cache_hit_count = cache_hit_count + VALUES(cache_hit_count),
+            prompt_cache_hit_count = prompt_cache_hit_count + VALUES(prompt_cache_hit_count),
+            total_response_time = total_response_time + VALUES(total_response_time),
+            response_time_count = response_time_count + VALUES(response_time_count),
+            total_effective_time = total_effective_time + VALUES(total_effective_time),
+            effective_time_count = effective_time_count + VALUES(effective_time_count),
+            total_tffb_ms = total_tffb_ms + VALUES(total_tffb_ms),
+            tffb_count = tffb_count + VALUES(tffb_count),
+            total_output_speed = total_output_speed + VALUES(total_output_speed),
+            speed_count = speed_count + VALUES(speed_count),
+            last_used_at = GREATEST(last_used_at, VALUES(last_used_at)),
+            updated_at = UNIX_TIMESTAMP() * 1000`,
+          [cutoffTime],
+        );
+
+        const [payloadDeleteResult] = await conn.query(
+          `DELETE ap
          FROM api_request_payloads ap
          INNER JOIN api_requests ar ON ar.id = ap.request_id
          WHERE ar.created_at < ?`,
-        [cutoffTime]
-      );
+          [cutoffTime],
+        );
 
-      const [requestDeleteResult] = await conn.query(
-        `DELETE ar
+        const [requestDeleteResult] = await conn.query(
+          `DELETE ar
          FROM api_requests ar
          WHERE ar.created_at < ?`,
-        [cutoffTime]
-      );
+          [cutoffTime],
+        );
 
-      await conn.commit();
+        await conn.commit();
 
-      const deletedPayloadCount = (payloadDeleteResult as ResultSetHeader).affectedRows || 0;
-      const deletedRequestCount = (requestDeleteResult as ResultSetHeader).affectedRows || 0;
+        const deletedPayloadCount =
+          (payloadDeleteResult as ResultSetHeader).affectedRows || 0;
+        const deletedRequestCount =
+          (requestDeleteResult as ResultSetHeader).affectedRows || 0;
 
-      return {
-        summarizedCount,
-        deletedPayloadCount,
-        deletedRequestCount,
-        deletedCount: deletedRequestCount
-      };
+        return {
+          summarizedCount,
+          deletedPayloadCount,
+          deletedRequestCount,
+          deletedCount: deletedRequestCount,
+        };
+      } finally {
+        await conn.query(
+          "SELECT RELEASE_LOCK('api_request_cleanup') AS unlocked",
+        );
+      }
     } catch (error) {
       await conn.rollback();
       throw error;
@@ -674,7 +769,7 @@ export const apiRequestRepository = {
   async getModelStats(options: {
     startTime: number;
     endTime: number;
-    sortBy?: 'requests' | 'tokens';
+    sortBy?: "requests" | "tokens";
     limit?: number;
   }) {
     const { startTime, endTime } = options;
@@ -685,17 +780,21 @@ export const apiRequestRepository = {
       const needsSummary = startTime < detailStart;
       const needsDetail = endTime >= detailStart;
 
-      const modelStats = new Map<string, {
-        model: string;
-        providerName: string;
-        requestCount: number;
-        totalTokens: number;
-        totalResponseTime: number;
-        responseTimeCount: number;
-      }>();
+      const modelStats = new Map<
+        string,
+        {
+          model: string;
+          providerName: string;
+          requestCount: number;
+          totalTokens: number;
+          totalResponseTime: number;
+          responseTimeCount: number;
+        }
+      >();
 
       if (needsSummary) {
-        const summaryLoggingCondition = getDisableLoggingConditionForSummary('s');
+        const summaryLoggingCondition =
+          getDisableLoggingConditionForSummary("s");
         const lastSummaryDay = new Date(detailStart - 1);
 
         const [summaryRows] = await conn.query(
@@ -715,14 +814,14 @@ export const apiRequestRepository = {
             AND s.model != ''
             AND ${summaryLoggingCondition}
           GROUP BY s.model, p.name, s.provider_id`,
-          [startTime, lastSummaryDay.getTime()]
+          [startTime, lastSummaryDay.getTime()],
         );
 
-        (summaryRows as any[]).forEach(row => {
+        (summaryRows as any[]).forEach((row) => {
           const key = `${row.model}|${row.provider_name}`;
           modelStats.set(key, {
             model: row.model,
-            providerName: row.provider_name || '未知供应商',
+            providerName: row.provider_name || "未知供应商",
             requestCount: Number(row.request_count) || 0,
             totalTokens: Number(row.total_tokens) || 0,
             totalResponseTime: Number(row.total_response_time) || 0,
@@ -748,14 +847,14 @@ export const apiRequestRepository = {
           FROM api_requests ar
           LEFT JOIN providers p ON ar.provider_id = p.id
           LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-          WHERE ar.created_at >= ? AND ar.created_at <= ?
+          WHERE ar.created_at >= ? AND ar.created_at < ?
             AND ar.model IS NOT NULL AND ${loggingCondition}
           GROUP BY ar.model, p.name`,
-          [detailStartTime, endTime]
+          [detailStartTime, endTime],
         );
 
-        (detailRows as any[]).forEach(row => {
-          const key = `${row.model}|${row.provider_name || '未知供应商'}`;
+        (detailRows as any[]).forEach((row) => {
+          const key = `${row.model}|${row.provider_name || "未知供应商"}`;
           const existing = modelStats.get(key);
 
           if (existing) {
@@ -766,7 +865,7 @@ export const apiRequestRepository = {
           } else {
             modelStats.set(key, {
               model: row.model,
-              providerName: row.provider_name || '未知供应商',
+              providerName: row.provider_name || "未知供应商",
               requestCount: Number(row.request_count) || 0,
               totalTokens: Number(row.total_tokens) || 0,
               totalResponseTime: Number(row.total_response_time) || 0,
@@ -776,23 +875,24 @@ export const apiRequestRepository = {
         });
       }
 
-      const sortBy = options.sortBy ?? 'requests';
+      const sortBy = options.sortBy ?? "requests";
       const limit = options.limit ?? 10;
 
       return Array.from(modelStats.values())
-        .map(stat => ({
+        .map((stat) => ({
           model: stat.model,
           provider_name: stat.providerName,
           request_count: stat.requestCount,
           total_tokens: stat.totalTokens,
-          avg_response_time: stat.responseTimeCount > 0
-            ? stat.totalResponseTime / stat.responseTimeCount
-            : 0,
+          avg_response_time:
+            stat.responseTimeCount > 0
+              ? stat.totalResponseTime / stat.responseTimeCount
+              : 0,
         }))
         .sort((a, b) =>
-          sortBy === 'tokens'
+          sortBy === "tokens"
             ? b.total_tokens - a.total_tokens
-            : b.request_count - a.request_count
+            : b.request_count - a.request_count,
         )
         .slice(0, limit);
     } finally {
@@ -800,7 +900,10 @@ export const apiRequestRepository = {
     }
   },
 
-  async getModelResponseTimeStats(options: { startTime: number; endTime: number }) {
+  async getModelResponseTimeStats(options: {
+    startTime: number;
+    endTime: number;
+  }) {
     const { startTime, endTime } = options;
     const pool = getDatabase();
     const conn = await pool.getConnection();
@@ -813,13 +916,13 @@ export const apiRequestRepository = {
           ar.response_time
         FROM api_requests ar
         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-        WHERE ar.created_at >= ? AND ar.created_at <= ?
+        WHERE ar.created_at >= ? AND ar.created_at < ?
           AND ar.status = 'success'
           AND ar.response_time > 0
           AND ${loggingCondition}
         ORDER BY ar.created_at DESC
         LIMIT 2000`,
-        [startTime, endTime]
+        [startTime, endTime],
       );
       return rows as any[];
     } finally {
@@ -835,7 +938,7 @@ export const apiRequestRepository = {
         `SELECT
           ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb
         FROM information_schema.TABLES
-        WHERE table_schema = DATABASE()`
+        WHERE table_schema = DATABASE()`,
       );
       const result = rows as any[];
       if (result.length === 0) return 0;
@@ -858,9 +961,12 @@ export const apiRequestRepository = {
     }
   },
 
-  async getPiiProtectionCount(options?: { startTime?: number; endTime?: number }): Promise<number> {
+  async getPiiProtectionCount(options?: {
+    startTime?: number;
+    endTime?: number;
+  }): Promise<number> {
     const now = Date.now();
-    const startTime = options?.startTime ?? (now - 24 * 60 * 60 * 1000);
+    const startTime = options?.startTime ?? now - 24 * 60 * 60 * 1000;
     const endTime = options?.endTime || now;
 
     const pool = getDatabase();
@@ -871,10 +977,10 @@ export const apiRequestRepository = {
         `SELECT COUNT(*) as pii_protection_count
          FROM api_requests ar
          LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-         WHERE ar.created_at >= ? AND ar.created_at <= ?
+         WHERE ar.created_at >= ? AND ar.created_at < ?
            AND ${loggingCondition}
            AND JSON_EXTRACT(ar.request_params_json, '$.pii_masked_count') > 0`,
-        [startTime, endTime]
+        [startTime, endTime],
       );
       const result = rows as any[];
       if (result.length === 0) return 0;
@@ -938,27 +1044,34 @@ export const apiRequestRepository = {
         LEFT JOIN providers p ON ar.provider_id = p.id
         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
         LEFT JOIN models m ON vk.model_id = m.id
-        WHERE ar.created_at >= ? AND ar.created_at <= ? AND ar.model IS NOT NULL AND ${loggingCondition}
+        WHERE ar.created_at >= ? AND ar.created_at < ? AND ar.model IS NOT NULL AND ${loggingCondition}
           AND (m.is_virtual IS NULL OR m.is_virtual = 0)
           AND (m.expert_routing_id IS NULL)
         GROUP BY ar.provider_id, ar.model, p.name
         ORDER BY request_count DESC`,
-        [startTime, endTime]
+        [startTime, endTime],
       );
 
-      const items = (rows as any[]).map(row => ({
+      const items = (rows as any[]).map((row) => ({
         providerId: row.provider_id,
-        providerName: row.provider_name || '未知供应商',
+        providerName: row.provider_name || "未知供应商",
         model: row.model,
         requestCount: Number(row.request_count) || 0,
         successCount: Number(row.success_count) || 0,
         failureCount: Number(row.failure_count) || 0,
-        availability: row.request_count > 0 ? Number(row.success_count) / Number(row.request_count) : 0,
+        availability:
+          row.request_count > 0
+            ? Number(row.success_count) / Number(row.request_count)
+            : 0,
         avgTffbMs: row.avg_tffb_ms !== null ? Number(row.avg_tffb_ms) : null,
         validTffbCount: Number(row.valid_tffb_count) || 0,
-        avgResponseTimeMs: row.avg_response_time_ms !== null ? Number(row.avg_response_time_ms) : null,
+        avgResponseTimeMs:
+          row.avg_response_time_ms !== null
+            ? Number(row.avg_response_time_ms)
+            : null,
         validResponseTimeCount: Number(row.valid_response_time_count) || 0,
-        avgOutputSpeed: row.avg_output_speed !== null ? Number(row.avg_output_speed) : null,
+        avgOutputSpeed:
+          row.avg_output_speed !== null ? Number(row.avg_output_speed) : null,
         validSpeedCount: Number(row.valid_speed_count) || 0,
         promptTokens: Number(row.prompt_tokens) || 0,
         completionTokens: Number(row.completion_tokens) || 0,
@@ -967,36 +1080,65 @@ export const apiRequestRepository = {
       }));
 
       // Calculate summary from items
-      const totalRequests = items.reduce((sum, item) => sum + item.requestCount, 0);
-      const successCount = items.reduce((sum, item) => sum + item.successCount, 0);
-      const failureCount = items.reduce((sum, item) => sum + item.failureCount, 0);
+      const totalRequests = items.reduce(
+        (sum, item) => sum + item.requestCount,
+        0,
+      );
+      const successCount = items.reduce(
+        (sum, item) => sum + item.successCount,
+        0,
+      );
+      const failureCount = items.reduce(
+        (sum, item) => sum + item.failureCount,
+        0,
+      );
 
       // Calculate overall averages (weighted by valid sample count, not request count)
-      const validTffbItems = items.filter(i => i.avgTffbMs !== null && i.validTffbCount > 0);
-      const validResponseTimeItems = items.filter(i => i.avgResponseTimeMs !== null && i.validResponseTimeCount > 0);
-      const validSpeedItems = items.filter(i => i.avgOutputSpeed !== null && i.validSpeedCount > 0);
+      const validTffbItems = items.filter(
+        (i) => i.avgTffbMs !== null && i.validTffbCount > 0,
+      );
+      const validResponseTimeItems = items.filter(
+        (i) => i.avgResponseTimeMs !== null && i.validResponseTimeCount > 0,
+      );
+      const validSpeedItems = items.filter(
+        (i) => i.avgOutputSpeed !== null && i.validSpeedCount > 0,
+      );
 
-      const avgTffbMs = validTffbItems.length > 0
-        ? validTffbItems.reduce((sum, i) => sum + ((i.avgTffbMs ?? 0) * i.validTffbCount), 0) /
-          validTffbItems.reduce((sum, i) => sum + i.validTffbCount, 0)
-        : null;
+      const avgTffbMs =
+        validTffbItems.length > 0
+          ? validTffbItems.reduce(
+              (sum, i) => sum + (i.avgTffbMs ?? 0) * i.validTffbCount,
+              0,
+            ) / validTffbItems.reduce((sum, i) => sum + i.validTffbCount, 0)
+          : null;
 
-      const avgResponseTimeMs = validResponseTimeItems.length > 0
-        ? validResponseTimeItems.reduce((sum, i) => sum + ((i.avgResponseTimeMs ?? 0) * i.validResponseTimeCount), 0) /
-          validResponseTimeItems.reduce((sum, i) => sum + i.validResponseTimeCount, 0)
-        : null;
+      const avgResponseTimeMs =
+        validResponseTimeItems.length > 0
+          ? validResponseTimeItems.reduce(
+              (sum, i) =>
+                sum + (i.avgResponseTimeMs ?? 0) * i.validResponseTimeCount,
+              0,
+            ) /
+            validResponseTimeItems.reduce(
+              (sum, i) => sum + i.validResponseTimeCount,
+              0,
+            )
+          : null;
 
-      const avgOutputSpeed = validSpeedItems.length > 0
-        ? validSpeedItems.reduce((sum, i) => sum + ((i.avgOutputSpeed ?? 0) * i.validSpeedCount), 0) /
-          validSpeedItems.reduce((sum, i) => sum + i.validSpeedCount, 0)
-        : null;
+      const avgOutputSpeed =
+        validSpeedItems.length > 0
+          ? validSpeedItems.reduce(
+              (sum, i) => sum + (i.avgOutputSpeed ?? 0) * i.validSpeedCount,
+              0,
+            ) / validSpeedItems.reduce((sum, i) => sum + i.validSpeedCount, 0)
+          : null;
 
       // Generate filters from items (same source ensures consistency)
       const providerMap = new Map<string, { label: string; value: string }>();
       const modelSet = new Set<string>();
 
       for (const item of items) {
-        const providerValue = item.providerId ?? '__unknown_provider__';
+        const providerValue = item.providerId ?? "__unknown_provider__";
         if (!providerMap.has(providerValue)) {
           providerMap.set(providerValue, {
             label: item.providerName,
@@ -1006,8 +1148,12 @@ export const apiRequestRepository = {
         modelSet.add(item.model);
       }
 
-      const providers = Array.from(providerMap.values()).sort((a, b) => a.label.localeCompare(b.label));
-      const models = Array.from(modelSet).map(m => ({ label: m, value: m })).sort((a, b) => a.label.localeCompare(b.label));
+      const providers = Array.from(providerMap.values()).sort((a, b) =>
+        a.label.localeCompare(b.label),
+      );
+      const models = Array.from(modelSet)
+        .map((m) => ({ label: m, value: m }))
+        .sort((a, b) => a.label.localeCompare(b.label));
 
       return {
         items,
@@ -1017,7 +1163,10 @@ export const apiRequestRepository = {
           failureCount,
           successRate: totalRequests > 0 ? successCount / totalRequests : 0,
           avgTffbMs,
-          validTffbCount: validTffbItems.reduce((sum, i) => sum + i.validTffbCount, 0),
+          validTffbCount: validTffbItems.reduce(
+            (sum, i) => sum + i.validTffbCount,
+            0,
+          ),
           avgOutputSpeed,
           avgResponseTimeMs,
         },
@@ -1031,7 +1180,9 @@ export const apiRequestRepository = {
     }
   },
 
-  async getHourlyTrainingData(options: { days: number }): Promise<{ timestampMs: number; count: number }[]> {
+  async getHourlyTrainingData(options: {
+    days: number;
+  }): Promise<{ timestampMs: number; count: number }[]> {
     if (!Number.isFinite(options.days) || options.days <= 0) {
       return [];
     }
@@ -1052,9 +1203,9 @@ export const apiRequestRepository = {
         WHERE ar.created_at >= ? AND ${loggingCondition}
         GROUP BY hour_bucket
         ORDER BY hour_bucket ASC`,
-        [startMs]
+        [startMs],
       );
-      return (rows as any[]).map(r => ({
+      return (rows as any[]).map((r) => ({
         timestampMs: Number(r.hour_bucket),
         count: Number(r.cnt),
       }));
@@ -1063,7 +1214,10 @@ export const apiRequestRepository = {
     }
   },
 
-  async getHourlyActual(options: { startTime: number; endTime: number }): Promise<{ timestampMs: number; count: number }[]> {
+  async getHourlyActual(options: {
+    startTime: number;
+    endTime: number;
+  }): Promise<{ timestampMs: number; count: number }[]> {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
@@ -1079,9 +1233,9 @@ export const apiRequestRepository = {
         WHERE ar.created_at >= ? AND ar.created_at < ? AND ${loggingCondition}
         GROUP BY hour_bucket
         ORDER BY hour_bucket ASC`,
-        [options.startTime, options.endTime]
+        [options.startTime, options.endTime],
       );
-      return (rows as any[]).map(r => ({
+      return (rows as any[]).map((r) => ({
         timestampMs: Number(r.hour_bucket),
         count: Number(r.cnt),
       }));

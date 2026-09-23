@@ -51,12 +51,13 @@ export async function configRoutes(fastify: FastifyInstance) {
 
     switch (period) {
       case "7d":
-        // Align to Shanghai natural-day window: 7 complete days before today
-        return { now, startTime: getShanghaiDayStart(-7) };
+        // 与运维监控对齐：精确滚动窗口（半开区间 [now-7d, now)），
+        // 不再按上海自然日零点近似，保证首页与运维页同标签同数字。
+        return { now, startTime: now - 7 * 24 * 60 * 60 * 1000 };
       case "30d":
-        // Align to Shanghai natural-day window: 30 complete days before today
-        return { now, startTime: getShanghaiDayStart(-30) };
+        return { now, startTime: now - 30 * 24 * 60 * 60 * 1000 };
       case "all":
+        // 历史全量口径保持独立：自然日汇总服务此入口，不宣称精确滚动。
         return { now, startTime: 0 };
       default:
         return { now, startTime: now - 24 * 60 * 60 * 1000 };
@@ -923,9 +924,10 @@ export async function configRoutes(fastify: FastifyInstance) {
       { startTime, endTime: now },
     );
     // 熔断器统计改为从数据库获取持久化结果，并传递时间范围参数
-    const circuitBreakerStats = await import(
-      "../db/repositories/circuit-breaker-stats.repository.js"
-    ).then((m) => m.circuitBreakerStatsRepository.getGlobalStats(startTime));
+    const circuitBreakerStats =
+      await import("../db/repositories/circuit-breaker-stats.repository.js").then(
+        (m) => m.circuitBreakerStatsRepository.getGlobalStats(startTime),
+      );
 
     const lastRequest = await apiRequestDb.getLastRequest();
     const manualLastBlocked = manualIpBlocklist.getLastBlocked();
@@ -1106,10 +1108,20 @@ export async function configRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post("/api-requests/clean", async (request) => {
-    const { daysToKeep = 7 } = request.body as { daysToKeep?: number };
+    const body = (request.body || {}) as { daysToKeep?: number };
+    // 精确 30d 滚动窗口要求明细留存覆盖边界：手工清理不允许击穿留存下限。
+    const retentionFloor = appConfig.apiRequestLogRetentionDays;
+    const requested = body.daysToKeep ?? retentionFloor;
+    const daysToKeep = Math.max(requested, retentionFloor);
 
     try {
       const result = await apiRequestDb.cleanOldRecords(daysToKeep);
+      if (result.lockSkipped) {
+        return {
+          success: false,
+          message: "另一个清理任务正在运行，请稍后重试",
+        };
+      }
       memoryLogger.info(
         `清理旧请求日志: 汇总 ${result.summarizedCount} 条，删除明细 ${result.deletedRequestCount} 条 (保留 ${daysToKeep} 天)`,
         "Config",
@@ -1121,7 +1133,10 @@ export async function configRoutes(fastify: FastifyInstance) {
         deletedPayloadCount: result.deletedPayloadCount,
         deletedRequestCount: result.deletedRequestCount,
         deletedCount: result.deletedCount, // For backward compatibility with frontend
-        message: `已汇总 ${result.summarizedCount} 条并删除 ${result.deletedRequestCount} 条超过 ${daysToKeep} 天的请求明细`,
+        message:
+          daysToKeep !== requested
+            ? `保留天数已按留存下限调整为 ${daysToKeep} 天；已汇总 ${result.summarizedCount} 条并删除 ${result.deletedRequestCount} 条请求明细`
+            : `已汇总 ${result.summarizedCount} 条并删除 ${result.deletedRequestCount} 条超过 ${daysToKeep} 天的请求明细`,
       };
     } catch (error: any) {
       memoryLogger.error(`清理请求日志失败: ${error.message}`, "Config");
@@ -1574,12 +1589,10 @@ export async function configRoutes(fastify: FastifyInstance) {
 
   fastify.get("/stats/traffic-analysis", async (_request, reply) => {
     try {
-      const { workdayCalendarService } = await import(
-        "../services/workday-calendar.js"
-      );
-      const { trafficPredictionService } = await import(
-        "../services/traffic-prediction.js"
-      );
+      const { workdayCalendarService } =
+        await import("../services/workday-calendar.js");
+      const { trafficPredictionService } =
+        await import("../services/traffic-prediction.js");
 
       // Ensure holiday modules are loaded (idempotent after first call)
       await workdayCalendarService.initialize();
@@ -1786,12 +1799,10 @@ export async function configRoutes(fastify: FastifyInstance) {
         const dayOffset = Math.floor(
           Math.min(6, Math.max(0, Number(request.query.dayOffset) || 0)),
         );
-        const { workdayCalendarService } = await import(
-          "../services/workday-calendar.js"
-        );
-        const { trafficPredictionService } = await import(
-          "../services/traffic-prediction.js"
-        );
+        const { workdayCalendarService } =
+          await import("../services/workday-calendar.js");
+        const { trafficPredictionService } =
+          await import("../services/traffic-prediction.js");
 
         await workdayCalendarService.initialize();
 
@@ -1878,9 +1889,8 @@ export async function configRoutes(fastify: FastifyInstance) {
 
   fastify.get("/traffic-analysis-regions", async (_request, reply) => {
     try {
-      const { workdayCalendarService } = await import(
-        "../services/workday-calendar.js"
-      );
+      const { workdayCalendarService } =
+        await import("../services/workday-calendar.js");
       await workdayCalendarService.initialize();
       const countries = workdayCalendarService.getCountries();
       const cn = countries.find((c) => c.code === "CN");

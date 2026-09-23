@@ -19,6 +19,7 @@ import { providerRoutes } from "./routes/providers.js";
 import { modelRoutes } from "./routes/models.js";
 import { virtualKeyRoutes } from "./routes/virtual-keys.js";
 import { configRoutes } from "./routes/config.js";
+import { opsMetricsRoutes } from "./routes/ops-metrics.js";
 import { publicConfigRoutes } from "./routes/public-config.js";
 import { proxyRoutes } from "./routes/proxy.js";
 import { anthropicRoutes } from "./routes/anthropic/index.js";
@@ -44,6 +45,7 @@ import { getBackupScheduler } from "./services/backup-scheduler.js";
 import {
   healthRunDb,
   systemConfigDb as systemConfigDbForDebug,
+  apiRequestHourlyDb,
 } from "./db/index.js";
 import { debugModeService } from "./services/debug-mode.js";
 import { manualIpBlocklist } from "./services/manual-ip-blocklist.js";
@@ -156,16 +158,20 @@ startContextNormalizationCleanup();
 // Agent Search：固定执行器并恢复重启前遗留的 run（确定性失败，不挂起）。
 if (process.env.AGENT_WORKER_IMAGE) {
   const { createDockerExecutor } = await import("./agent/run/executors.js");
-  searchRunScheduler.setExecutor(createDockerExecutor(process.env.AGENT_WORKER_IMAGE));
+  searchRunScheduler.setExecutor(
+    createDockerExecutor(process.env.AGENT_WORKER_IMAGE),
+  );
   memoryLogger.info(
     `Agent search executor: docker (${process.env.AGENT_WORKER_IMAGE})`,
     "AgentSearch",
   );
 } else if (process.env.AGENT_WORKER_LOCAL === "1") {
-  const { createLocalProcessExecutor } = await import("./agent/run/executors.js");
+  const { createLocalProcessExecutor } =
+    await import("./agent/run/executors.js");
   searchRunScheduler.setExecutor(createLocalProcessExecutor());
   process.env.AGENT_WORKER_GATEWAY_URL =
-    process.env.AGENT_WORKER_GATEWAY_URL || `http://127.0.0.1:${appConfig.port}`;
+    process.env.AGENT_WORKER_GATEWAY_URL ||
+    `http://127.0.0.1:${appConfig.port}`;
   memoryLogger.info("Agent search executor: local process", "AgentSearch");
 } else {
   memoryLogger.warn(
@@ -251,6 +257,7 @@ await fastify.register(providerRoutes, { prefix: "/api/admin/providers" });
 await fastify.register(modelRoutes, { prefix: "/api/admin/models" });
 await fastify.register(virtualKeyRoutes, { prefix: "/api/admin/virtual-keys" });
 await fastify.register(configRoutes, { prefix: "/api/admin/config" });
+await fastify.register(opsMetricsRoutes, { prefix: "/api/admin/config" });
 await fastify.register(modelPresetsRoutes, {
   prefix: "/api/admin/model-presets",
 });
@@ -272,7 +279,9 @@ await fastify.register(backupRoutes);
 await fastify.register(agentSnapshotRoutes, { prefix: "/api/agent/snapshots" });
 await fastify.register(agentSearchRoutes, { prefix: "/api/agent/searches" });
 await fastify.register(agentInternalRoutes, { prefix: "/api/internal/agent" });
-await fastify.register(agentMonitoringRoutes, { prefix: "/api/admin/agent-runs" });
+await fastify.register(agentMonitoringRoutes, {
+  prefix: "/api/admin/agent-runs",
+});
 
 memoryLogger.info("Routes registered", "System");
 
@@ -382,6 +391,13 @@ async function cleanOldApiRequests() {
     const result = await apiRequestDb.cleanOldRecords(
       appConfig.apiRequestLogRetentionDays,
     );
+    if (result.lockSkipped) {
+      memoryLogger.warn(
+        "检测到其他清理任务正在运行，本次自动清理已跳过",
+        "System",
+      );
+      return;
+    }
     if (result.deletedRequestCount > 0 || result.summarizedCount > 0) {
       memoryLogger.info(
         `自动清理旧请求日志: 汇总 ${result.summarizedCount} 条，删除明细 ${result.deletedRequestCount} 条 (保留 ${appConfig.apiRequestLogRetentionDays} 天)`,
@@ -390,6 +406,22 @@ async function cleanOldApiRequests() {
     }
   } catch (error: any) {
     memoryLogger.error(`自动清理请求日志失败: ${error.message}`, "System");
+  }
+}
+
+// 小时聚合先于清理执行：封桶完成后对应明细才允许删除，
+// 保证已存小时桶与明细读侧不重叠、不双计。
+async function runHourlyAggregationPass() {
+  try {
+    const result = await apiRequestHourlyDb.aggregateSealedBuckets();
+    if (result.from !== null) {
+      memoryLogger.info(
+        `小时级聚合完成: [${new Date(result.from).toISOString()} ~ ${result.to ? new Date(result.to).toISOString() : ""}) 触及 ${result.touchedRows} 行`,
+        "System",
+      );
+    }
+  } catch (error: any) {
+    memoryLogger.error(`小时级聚合失败: ${error.message}`, "System");
   }
 }
 
@@ -431,6 +463,13 @@ try {
     `已启动请求日志自动清理任务，每 24 小时执行一次，保留 ${appConfig.apiRequestLogRetentionDays} 天`,
     "System",
   );
+
+  // 启动即执行一次聚合+清理：不再依赖 24h 后的首跑，
+  // 否则上次留存边界的明细会在启动后继续滞留。
+  await runHourlyAggregationPass();
+  await cleanOldApiRequests();
+  setInterval(runHourlyAggregationPass, 10 * 60 * 1000);
+  memoryLogger.info("已启动小时级聚合任务，每 10 分钟执行一次", "System");
 
   await checkAndUpdateModelPresets();
 

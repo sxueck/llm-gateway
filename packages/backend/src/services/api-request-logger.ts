@@ -1,8 +1,8 @@
-import { nanoid } from 'nanoid';
-import { apiRequestDb } from '../db/index.js';
-import type { VirtualKey } from '../types/index.js';
-import type { TokenCalculationResult } from '../routes/proxy/token-calculator.js';
-import { memoryLogger } from './logger.js';
+import { nanoid } from "nanoid";
+import { apiRequestDb } from "../db/index.js";
+import type { VirtualKey } from "../types/index.js";
+import type { TokenCalculationResult } from "../routes/proxy/token-calculator.js";
+import { memoryLogger } from "./logger.js";
 
 export interface ApiLogParams {
   virtualKey: VirtualKey;
@@ -10,7 +10,7 @@ export interface ApiLogParams {
   providerId: string | undefined;
   model: string;
   tokenCount: TokenCalculationResult; // { promptTokens, completionTokens, totalTokens }
-  status: 'success' | 'error';
+  status: "success" | "error";
   responseTime: number;
   tffbMs?: number;
   errorMessage?: unknown;
@@ -35,7 +35,9 @@ function safeParseJson(text: string | undefined): any | null {
   }
 }
 
-function compactObject(input: Record<string, unknown>): Record<string, unknown> {
+function compactObject(
+  input: Record<string, unknown>,
+): Record<string, unknown> {
   const compacted: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
     if (value !== undefined && value !== null) {
@@ -48,13 +50,13 @@ function compactObject(input: Record<string, unknown>): Record<string, unknown> 
 function extractRequestParamsJson(
   requestBody: string | undefined,
   piiMaskedCount?: number,
-  streamResume?: { attempts: number; chars: number }
+  streamResume?: { attempts: number; chars: number },
 ): string | undefined {
   const parsed = safeParseJson(requestBody);
 
   // Even if the request body can't be parsed (truncated/invalid),
   // we still need to persist pii_masked_count for dashboard stats
-  if (!parsed || typeof parsed !== 'object') {
+  if (!parsed || typeof parsed !== "object") {
     if (piiMaskedCount && piiMaskedCount > 0) {
       return JSON.stringify({ pii_masked_count: piiMaskedCount });
     }
@@ -80,9 +82,11 @@ function extractRequestParamsJson(
   return JSON.stringify(params);
 }
 
-function extractResponseMetaJson(responseBody: string | undefined): string | undefined {
+function extractResponseMetaJson(
+  responseBody: string | undefined,
+): string | undefined {
   const parsed = safeParseJson(responseBody);
-  if (!parsed || typeof parsed !== 'object') return undefined;
+  if (!parsed || typeof parsed !== "object") return undefined;
 
   const usage = parsed.usage ?? {};
   const finishReason = parsed.choices?.[0]?.finish_reason;
@@ -91,7 +95,9 @@ function extractResponseMetaJson(responseBody: string | undefined): string | und
     finish_reason: finishReason,
     input_tokens: usage.input_tokens ?? usage.prompt_tokens,
     output_tokens: usage.output_tokens ?? usage.completion_tokens,
-    cached_tokens: usage.input_tokens_details?.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens,
+    cached_tokens:
+      usage.input_tokens_details?.cached_tokens ??
+      usage.prompt_tokens_details?.cached_tokens,
   });
 
   if (Object.keys(meta).length === 0) return undefined;
@@ -103,7 +109,7 @@ function normalizeErrorMessage(errorMessage: unknown): string | undefined {
     return undefined;
   }
 
-  if (typeof errorMessage === 'string') {
+  if (typeof errorMessage === "string") {
     return errorMessage;
   }
 
@@ -119,15 +125,22 @@ export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
   const requestParamsJson = extractRequestParamsJson(
     params.truncatedRequest,
     params.piiMaskedCount,
-    params.streamResume
+    params.streamResume,
   );
   const responseMetaJson = extractResponseMetaJson(params.truncatedResponse);
 
-    await apiRequestDb.create({
+  // disable_logging：除已抑制的正文/参数外，ip、user_agent 和错误文本同属敏感元数据，
+  // 写入侧直接置空（错误体可能回显 prompt 片段），读出侧另有字段白名单。
+  const suppressSensitiveMetadata = !!params.virtualKey.disable_logging;
+  const safeErrorMessage = suppressSensitiveMetadata
+    ? undefined
+    : normalizedErrorMessage;
+
+  await apiRequestDb.create({
     id: nanoid(),
     virtual_key_id: params.virtualKey.id,
     provider_id: params.providerId,
-    model: params.model || 'unknown',
+    model: params.model || "unknown",
     prompt_tokens: params.tokenCount.promptTokens,
     completion_tokens: params.tokenCount.completionTokens,
     total_tokens: params.tokenCount.totalTokens,
@@ -135,7 +148,7 @@ export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
     status: params.status,
     response_time: params.responseTime,
     tffb_ms: params.tffbMs,
-    error_message: normalizedErrorMessage,
+    error_message: safeErrorMessage,
     request_body: params.truncatedRequest,
     response_body: params.truncatedResponse,
     request_params_json: requestParamsJson,
@@ -144,13 +157,16 @@ export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
     request_type: params.requestType,
     compression_original_tokens: params.compressionStats?.originalTokens,
     compression_saved_tokens: params.compressionStats?.savedTokens,
-    ip: params.ip,
-    user_agent: params.userAgent,
+    ip: suppressSensitiveMetadata ? undefined : params.ip,
+    user_agent: suppressSensitiveMetadata ? undefined : params.userAgent,
   });
 }
 
 export function logApiRequestAsync(params: ApiLogParams): void {
   logApiRequestToDb(params).catch((e) => {
-    memoryLogger.error(`API log write failed: ${e instanceof Error ? e.message : String(e)}`, 'ApiRequestLogger');
+    memoryLogger.error(
+      `API log write failed: ${e instanceof Error ? e.message : String(e)}`,
+      "ApiRequestLogger",
+    );
   });
 }
