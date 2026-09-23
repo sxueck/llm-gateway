@@ -141,6 +141,96 @@ test('resolves a suffix request to its base model and records the forced effort'
   expect(result).toMatchObject({ forcedReasoningEffort: 'high' });
 });
 
+test('resolves a suffix request on the Responses API entry to reasoning.effort', async () => {
+  const model = { id: 'model-1', name: 'gpt-5', model_identifier: 'gpt-5', provider_id: 'provider-1' };
+  const provider = { id: 'provider-1', name: 'provider-1' };
+  vi.mocked(reasoningEffortSuffixesCache.getSuffixes).mockReturnValue(['high']);
+  vi.mocked(hotConfigCache.getModelById).mockResolvedValue(model as any);
+  vi.mocked(hotConfigCache.getProviderById).mockResolvedValue(provider as any);
+  vi.mocked(resolveProviderFromModel).mockResolvedValue({ provider, providerId: 'provider-1' } as any);
+
+  const request = {
+    body: { model: 'gpt-5-high', stream: true },
+    headers: {},
+    protocol: 'openai',
+    url: '/v1/responses',
+  } as any;
+
+  const result = await resolveModelAndProvider(
+    { id: 'vk-1', model_ids: JSON.stringify(['model-1']) },
+    request,
+    'vk-value'
+  );
+
+  expect(request.body).toMatchObject({ model: 'gpt-5', stream: true, reasoning: { effort: 'high' } });
+  expect(request.body.reasoning_effort).toBeUndefined();
+  expect(result).toMatchObject({ forcedReasoningEffort: 'high' });
+});
+
+test('suffix effort merges into an existing Responses reasoning object', async () => {
+  const model = { id: 'model-1', name: 'gpt-5', model_identifier: 'gpt-5', provider_id: 'provider-1' };
+  const provider = { id: 'provider-1', name: 'provider-1' };
+  vi.mocked(reasoningEffortSuffixesCache.getSuffixes).mockReturnValue(['low']);
+  vi.mocked(hotConfigCache.getModelById).mockResolvedValue(model as any);
+  vi.mocked(hotConfigCache.getProviderById).mockResolvedValue(provider as any);
+  vi.mocked(resolveProviderFromModel).mockResolvedValue({ provider, providerId: 'provider-1' } as any);
+
+  const request = {
+    body: { model: 'gpt-5-low', reasoning: { effort: 'high', summary: 'auto' } },
+    headers: {},
+    protocol: 'openai',
+    url: '/v1/responses',
+  } as any;
+
+  await resolveModelAndProvider(
+    { id: 'vk-1', model_ids: JSON.stringify(['model-1']) },
+    request,
+    'vk-value'
+  );
+
+  expect(request.body.reasoning).toEqual({ effort: 'low', summary: 'auto' });
+});
+
+test('suffix parsing stays disabled for the Responses compact entry', async () => {
+  vi.mocked(reasoningEffortSuffixesCache.getSuffixes).mockReturnValue(['high']);
+  vi.mocked(hotConfigCache.getModelById).mockResolvedValue(undefined as any);
+
+  const request = {
+    body: { model: 'gpt-5-high' },
+    headers: {},
+    protocol: 'openai',
+    url: '/v1/responses/compact',
+  } as any;
+
+  const result = await resolveModelAndProvider(
+    { id: 'vk-1', model_ids: JSON.stringify(['model-1']) },
+    request,
+    'vk-value'
+  );
+
+  expect((result as any).code).toBe(404);
+});
+
+test('suffix parsing stays disabled for non chat/responses OpenAI endpoints', async () => {
+  vi.mocked(reasoningEffortSuffixesCache.getSuffixes).mockReturnValue(['high']);
+  vi.mocked(hotConfigCache.getModelById).mockResolvedValue(undefined as any);
+
+  const request = {
+    body: { model: 'gpt-5-high' },
+    headers: {},
+    protocol: 'openai',
+    url: '/v1/embeddings',
+  } as any;
+
+  const result = await resolveModelAndProvider(
+    { id: 'vk-1', model_ids: JSON.stringify(['model-1']) },
+    request,
+    'vk-value'
+  );
+
+  expect((result as any).code).toBe(404);
+});
+
 test('skips forced effort when the matched model has disable_thinking', async () => {
   const model = {
     id: 'model-1',

@@ -111,6 +111,34 @@ describe('makeAnthropicRequest', () => {
     expect(JSON.parse(result.body).id).toBe('msg_1');
   });
 
+  test('preserves native and provider-specific request fields while replacing upstream model and auth', async () => {
+    fetchMock.mockResolvedValue(textResponse(200, '{}'));
+    const body = {
+      ...REQUEST_BODY,
+      model: 'public-alias',
+      stream: false,
+      tools: [],
+      thinking: { type: 'enabled', budget_tokens: 1000, display: 'summarized' },
+      output_config: { effort: 'high', format: { type: 'json_schema' } },
+      reasoning_effort: 'max',
+      vendor_extension: { enabled: true },
+      betas: ['body-beta'],
+    } as any;
+    await makeAnthropicRequest(
+      { ...CONFIG, model: 'glm-5.3', modelAttributes: { headers: { Authorization: 'Bearer unsafe', 'X-Api-Key': 'unsafe', 'anthropic-beta': 'model-beta' } } },
+      body,
+      { 'anthropic-beta': 'client-beta', Authorization: 'Bearer virtual-key', origin: 'https://example.org' }
+    );
+    const [, init] = fetchMock.mock.calls[0] as [string, any];
+    expect(JSON.parse(init.body)).toEqual({ ...body, model: 'glm-5.3', betas: undefined });
+    expect(init.headers['anthropic-beta']).toBe('model-beta,client-beta,body-beta');
+    expect(init.headers['x-api-key']).toBe('sk-ant-test');
+    expect(Object.keys(init.headers).filter((key: string) => key.toLowerCase() === 'authorization')).toEqual([]);
+    expect(Object.keys(init.headers).filter((key: string) => key.toLowerCase() === 'x-api-key')).toEqual(['x-api-key']);
+    expect(init.headers.origin).toBe('https://example.org');
+    expect(body.model).toBe('public-alias');
+  });
+
   test('strips trailing /v1 from provider baseUrl before appending /v1/messages', async () => {
     fetchMock.mockResolvedValue(textResponse(200, '{}'));
     await makeAnthropicRequest({ ...CONFIG, baseUrl: 'https://compat.example/v1/' }, REQUEST_BODY);
@@ -168,6 +196,19 @@ describe('makeAnthropicStreamRequest', () => {
     expect(written).toContain('"text":"Hello"');
     expect(written).toContain('event: message_stop');
     expect(reply.raw.end).toHaveBeenCalled();
+  });
+
+  test('preserves native fields and forces streaming without mutating the client body', async () => {
+    fetchMock.mockResolvedValue(sseResponse([
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\n\n',
+      'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+    ]));
+    const body = { ...REQUEST_BODY, stream: false, vendor_extension: { mode: 'native' }, tools: [] } as any;
+    await makeAnthropicStreamRequest({ ...CONFIG, model: 'glm-5.3' }, body, createReply(), { 'anthropic-beta': 'client-beta' });
+    const [, init] = fetchMock.mock.calls[0] as [string, any];
+    expect(JSON.parse(init.body)).toEqual({ ...body, model: 'glm-5.3', stream: true });
+    expect(init.headers['anthropic-beta']).toBe('client-beta');
+    expect(body.stream).toBe(false);
   });
 
   test('upstream non-2xx enriches the thrown error with status and envelope', async () => {

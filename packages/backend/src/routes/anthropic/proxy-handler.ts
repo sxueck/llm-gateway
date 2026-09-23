@@ -28,6 +28,13 @@ function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
   return !virtualKey.disable_logging;
 }
 
+function anthropicForwardedHeaders(request: FastifyRequest): Record<string, string> {
+  const headers = requestHeaderForwardingService.buildForwardedHeaders(request.headers as any);
+  const beta = request.headers['anthropic-beta'];
+  if (typeof beta === 'string' && beta && !/[\r\n]/.test(beta)) headers['anthropic-beta'] = beta;
+  return headers;
+}
+
 /**
  * Defensively parse an upstream (non-stream) response body.
  *
@@ -414,7 +421,7 @@ export async function handleAnthropicNonStreamRequest(ctx: AnthropicProxyRequest
   const modelForLogging = currentModel?.model_identifier || currentModel?.name || requestBody.model;
   const requestUserAgent = getRequestUserAgent(request);
   const requestIp = extractIp(request);
-  const forwardedHeaders = requestHeaderForwardingService.buildForwardedHeaders(request.headers as any);
+  const forwardedHeaders = anthropicForwardedHeaders(request);
 
   // PII protection: mask request before sending to upstream
   const piiEnabled = virtualKey?.pii_protection_enabled === 1;
@@ -626,7 +633,7 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
 
   const streamUserAgent = getRequestUserAgent(request);
   const streamIp = extractIp(request);
-  const forwardedHeaders = requestHeaderForwardingService.buildForwardedHeaders(request.headers as any);
+  const forwardedHeaders = anthropicForwardedHeaders(request);
 
   // PII protection: mask request before sending to upstream
   const piiEnabled = virtualKey?.pii_protection_enabled === 1;

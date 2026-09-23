@@ -206,14 +206,14 @@ describe('normalizeAnthropicRequest', () => {
   });
 });
 
-describe('non-core thinking field stripping for compat upstreams', () => {
-  it('strips display from thinking for non-Claude models', () => {
+describe('native thinking passthrough for compatible upstreams', () => {
+  it('preserves vendor-specific thinking fields for non-Claude models', () => {
     const result = normalizeAnthropicRequest('mimo-v2.6-pro', {
       ...baseRequest,
       model: 'mimo-v2.6-pro',
       thinking: { type: 'enabled', budget_tokens: 8192, display: 'summarized' } as any,
     });
-    expect(result.thinking).toEqual({ type: 'enabled', budget_tokens: 8192 });
+    expect(result.thinking).toEqual({ type: 'enabled', budget_tokens: 8192, display: 'summarized' });
   });
 
   it('keeps the core thinking contract untouched for non-Claude models', () => {

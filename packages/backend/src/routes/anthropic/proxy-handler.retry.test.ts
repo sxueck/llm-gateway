@@ -186,6 +186,27 @@ test("dispatch clamps max_tokens to the target serving cap before calling the up
   expect(reply.code).toHaveBeenCalledWith(200);
 });
 
+test("forwards client anthropic-beta header without forwarding virtual-key auth", async () => {
+  vi.mocked(makeAnthropicRequest).mockResolvedValue({
+    statusCode: 200,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "message", content: [{ type: "text", text: "hi" }], usage: { input_tokens: 1, output_tokens: 1 } }),
+  } as any);
+  const { request, reply } = makeNonStreamArgs();
+  request.headers["anthropic-beta"] = "context-management-2025-06-27";
+  request.headers.authorization = "Bearer virtual-key";
+  await handleAnthropicNonStreamRequest({
+    request,
+    reply,
+    protocolConfig: { protocol: "anthropic", model: "glm-5.3", baseUrl: "https://upstream.test" },
+    virtualKey: makeVirtualKey(),
+    providerId: "provider-1",
+    circuitBreakerKey: CIRCUIT_KEY,
+    startTime: Date.now(),
+  });
+  expect(vi.mocked(makeAnthropicRequest).mock.calls[0][2]).toEqual({ "anthropic-beta": "context-management-2025-06-27" });
+});
+
 test("retry target without a serving cap clears the prior target cap header", () => {
   const request = { body: { max_tokens: 100, messages: [] } } as any;
   const raw = { setHeader: vi.fn(), removeHeader: vi.fn() };

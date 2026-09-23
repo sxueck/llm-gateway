@@ -771,6 +771,16 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
       const input = (request.body as any)?.input;
 
       const options = buildResponsesOptions((request.body as any), true);
+      // 模型名后缀解析的强制思考深度：覆盖客户端传入的 reasoning.effort，
+      // 并像 Chat 分支一样原样透传上游错误
+      if (modelResult?.forcedReasoningEffort) {
+        const existingReasoning = options.reasoning;
+        options.reasoning = {
+          ...(existingReasoning && typeof existingReasoning === 'object' ? existingReasoning : {}),
+          effort: modelResult.forcedReasoningEffort,
+        };
+        (options as any).__skipErrorNormalization = true;
+      }
       (options as any).__forwardedHeaders = forwardedHeaders;
 
       if (piiResult.context) {

@@ -24,35 +24,11 @@ const THINKING_UNSET_ONLY_MODEL_PATTERNS = ['claude-fable-5', 'claude-mythos-5']
 
 const SONNET_WITH_ADAPTIVE_THINKING_PATTERNS = ['claude-sonnet-5', 'claude-sonnet-4-6'];
 
-/**
- * Third-party Anthropic-compatible endpoints implement at most the core
- * thinking contract ({type, budget_tokens}). Forwarding newer Anthropic-only
- * sub-fields has caused real failures: one compat endpoint rendered
- * `display: "summarized"` as paraphrased reasoning copies in the text
- * channel. Unless the upstream model is Claude family, strip the thinking
- * object down to the core contract.
- */
-function stripNonCoreThinkingForCompatModel(isClaudeModel: boolean, request: AnthropicRequest): AnthropicRequest {
-  if (isClaudeModel) return request;
-  const thinking = request.thinking as any;
-  if (!thinking || typeof thinking !== 'object') return request;
-  if (Object.keys(thinking).every(key => key === 'type' || key === 'budget_tokens')) return request;
-
-  if (thinking.type === 'adaptive') return { ...request, thinking: { type: 'adaptive' } };
-  if (thinking.type === 'enabled' && typeof thinking.budget_tokens === 'number') {
-    return {
-      ...request,
-      thinking: { type: 'enabled', budget_tokens: thinking.budget_tokens }
-    };
-  }
-  return request;
-}
-
 export function normalizeAnthropicRequest(model: string, request: AnthropicRequest): AnthropicRequest {
   const normalizedModel = model.toLowerCase();
   const adaptiveOnlyModel = matchesModelPattern(normalizedModel, ADAPTIVE_ONLY_MODEL_PATTERNS);
   const sonnetWithAdaptiveThinking = matchesModelPattern(normalizedModel, SONNET_WITH_ADAPTIVE_THINKING_PATTERNS);
-  let normalized = stripNonCoreThinkingForCompatModel(normalizedModel.includes('claude'), request);
+  let normalized = request;
 
   if (!adaptiveOnlyModel && !sonnetWithAdaptiveThinking) return normalized;
 

@@ -42,83 +42,33 @@ function buildUpstreamHeaders(
 ): Record<string, string> {
   const modelAttrHeaders = sanitizeCustomHeaders(config.modelAttributes?.headers);
   const clientForwarded = filterForwardedHeaders(config.modelAttributes?.headers, forwardedHeaders);
-  const betas = (requestBody as any)?.betas;
-  const betaHeaders =
-    Array.isArray(betas) && betas.length > 0 ? { 'anthropic-beta': betas.join(',') } : undefined;
-
-  return {
+  const clientBeta = Object.entries(forwardedHeaders || {}).find(([name]) => name.toLowerCase() === 'anthropic-beta')?.[1];
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: stream ? 'text/event-stream' : 'application/json',
-    'x-api-key': config.apiKey,
     'anthropic-version': ANTHROPIC_VERSION,
-    ...(modelAttrHeaders || {}),
-    ...(clientForwarded || {}),
-    ...(betaHeaders || {})
   };
+  const betas: string[] = [];
+  for (const source of [modelAttrHeaders, clientForwarded]) {
+    for (const [name, value] of Object.entries(source || {})) {
+      const key = name.toLowerCase();
+      if (key === 'anthropic-beta') {
+        if (source === modelAttrHeaders && !/[\r\n]/.test(value)) betas.push(value);
+      } else if (key !== 'authorization' && key !== 'x-api-key' && key !== 'proxy-authorization' && key !== 'content-type' && key !== 'accept') {
+        headers[name] = value;
+      }
+    }
+  }
+  if (clientBeta && !/[\r\n]/.test(clientBeta)) betas.push(clientBeta);
+  if (Array.isArray(requestBody.betas)) betas.push(...requestBody.betas.filter((beta): beta is string => typeof beta === 'string' && !/[\r\n]/.test(beta)));
+  if (betas.length) headers['anthropic-beta'] = betas.join(',');
+  headers['x-api-key'] = config.apiKey;
+  return headers;
 }
 
 function buildRequestParams(config: any, requestBody: AnthropicRequest, stream: boolean = false): any {
-  const requestParams: any = {
-    model: config.model,
-    messages: requestBody.messages,
-    max_tokens: requestBody.max_tokens
-  };
-
-  // Some Anthropic-compatible providers implement /v1/messages by internally bridging to
-  // OpenAI-style chat/tooling. When `thinking` is enabled, they may require
-  // `reasoning_content` to exist on assistant tool-call messages.
-  const thinking = requestBody.thinking;
-  const thinkingEnabled = !!thinking && (thinking.type === 'enabled' || thinking.type === 'adaptive');
-  if (thinkingEnabled) {
-    try {
-      if (Array.isArray(requestParams.messages)) {
-        for (const msg of requestParams.messages) {
-          if (!msg || typeof msg !== 'object') continue;
-          if ((msg as any).role !== 'assistant') continue;
-          if (!Array.isArray((msg as any).tool_calls) || (msg as any).tool_calls.length === 0) continue;
-          const rc = (msg as any).reasoning_content;
-          if (rc === undefined || rc === null || typeof rc !== 'string') (msg as any).reasoning_content = '';
-        }
-      }
-    } catch {
-      // Best-effort compatibility; ignore.
-    }
-  }
-
-  if (stream) {
-    requestParams.stream = true;
-  }
-
-  const optionalParams: Array<keyof AnthropicRequest> = [
-    'system',
-    'temperature',
-    'top_p',
-    'top_k',
-    'stop_sequences',
-    'service_tier',
-    'speed',
-    'inference_geo',
-    'cache_control',
-    'container',
-    'context_management',
-    'mcp_servers',
-    'output_config',
-    'metadata',
-    'tool_choice',
-    'thinking'
-  ];
-
-  for (const param of optionalParams) {
-    if (requestBody[param] !== undefined) {
-      requestParams[param] = requestBody[param];
-    }
-  }
-
-  if (requestBody.tools && Array.isArray(requestBody.tools) && requestBody.tools.length > 0) {
-    requestParams.tools = requestBody.tools;
-  }
-
-  return requestParams;
+  const { betas: _betas, ...body } = requestBody;
+  return { ...body, model: config.model, ...(stream ? { stream: true } : {}) };
 }
 
 /** 优先保留上游返回的 Anthropic 错误 envelope，缺失时按 HTTP 状态归一。 */

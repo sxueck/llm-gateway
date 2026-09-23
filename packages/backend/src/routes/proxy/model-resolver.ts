@@ -7,7 +7,7 @@ import {
 } from '../../agent/run/loopback-token.js';
 import { memoryLogger } from '../../services/logger.js';
 import { reasoningEffortSuffixesCache } from '../../services/reasoning-effort-suffixes.js';
-import { isChatCompletionsPath } from '../../utils/path-detector.js';
+import { isChatCompletionsPath, isResponsesApiPath, isResponsesCompactPath } from '../../utils/path-detector.js';
 import { maskKey } from '../../utils/crypto.js';
 import { resolveProviderFromModel } from './routing.js';
 import { parseModelAttributes } from './model-handlers.js';
@@ -417,12 +417,12 @@ export async function resolveModelAndProvider(
         const matchedModels = await collectModelMatches(parsedModelIds, requestedModel);
 
         if (matchedModels.length === 0) {
-          // FR-1: 仅当入口协议为 OpenAI 且请求目标为 Chat Completions 时，才尝试模型名后缀解析
-          const isOpenAiChatCompletions =
-            (request as any).protocol === 'openai' &&
-            isChatCompletionsPath((request as any).url || '');
-
-          const parsed = isOpenAiChatCompletions
+          // FR-1: 仅当入口协议为 OpenAI 且请求目标为 Chat Completions / Responses（非 compact）时，
+          // 才尝试模型名后缀解析
+          const isOpenAiProtocol = (request as any).protocol === 'openai';
+          const entryUrl = (request as any).url || '';
+          const isResponsesEntry = isResponsesApiPath(entryUrl) && !isResponsesCompactPath(entryUrl);
+          const parsed = isOpenAiProtocol && (isChatCompletionsPath(entryUrl) || isResponsesEntry)
             ? parseModelSuffix(requestedModel, reasoningEffortSuffixesCache.getSuffixes())
             : null;
 
@@ -444,10 +444,20 @@ export async function resolveModelAndProvider(
                 );
               } else {
                 forcedReasoningEffort = parsed.reasoningEffort;
-                (request.body as any).reasoning_effort = parsed.reasoningEffort;
+                if (isResponsesEntry) {
+                  // Responses API 的原生思考深度参数是 reasoning.effort；扁平的 reasoning_effort 不会被转发
+                  const existing = (request.body as any)?.reasoning;
+                  (request.body as any).reasoning = {
+                    ...(existing && typeof existing === 'object' ? existing : {}),
+                    effort: parsed.reasoningEffort,
+                  };
+                } else {
+                  (request.body as any).reasoning_effort = parsed.reasoningEffort;
+                }
                 const providerInfo = matched.provider ? matched.provider.name : '智能路由';
+                const effortParam = isResponsesEntry ? 'reasoning.effort' : 'reasoning_effort';
                 memoryLogger.debug(
-                  `模型后缀解析: ${requestedModel} -> 基础模型 ${matched.model.name} (${providerInfo}) + reasoning_effort=${parsed.reasoningEffort}`,
+                  `模型后缀解析: ${requestedModel} -> 基础模型 ${matched.model.name} (${providerInfo}) + ${effortParam}=${parsed.reasoningEffort}`,
                   'ModelResolver'
                 );
               }
