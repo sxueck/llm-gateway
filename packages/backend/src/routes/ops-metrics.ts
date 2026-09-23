@@ -19,19 +19,34 @@ interface OpsQueryParams {
   virtualKeyId?: string;
   model?: string;
   providerId?: string;
+  endTime?: string;
 }
+
+const CLOCK_SKEW_MS = 60_000;
 
 function parseWindowAndFilters(
   query: OpsQueryParams,
-): { period: OpsPeriod; filters: OpsFilters } | { error: string } {
+):
+  | { period: OpsPeriod; filters: OpsFilters; endTime?: number }
+  | { error: string } {
   if (!isOpsPeriod(query.period)) {
     return { error: "period must be one of 24h, 7d, 30d" };
+  }
+  let endTime: number | undefined;
+  if (query.endTime) {
+    endTime = Number(query.endTime);
+    if (!Number.isFinite(endTime) || endTime <= 0) {
+      return { error: "endTime must be a positive millisecond timestamp" };
+    }
+    if (endTime > Date.now() + CLOCK_SKEW_MS) {
+      return { error: "endTime must not be in the future" };
+    }
   }
   const filters: OpsFilters = {};
   if (query.virtualKeyId) filters.virtualKeyId = String(query.virtualKeyId);
   if (query.model) filters.model = String(query.model);
   if (query.providerId) filters.providerId = String(query.providerId);
-  return { period: query.period, filters };
+  return { period: query.period, filters, endTime };
 }
 
 export async function opsMetricsRoutes(fastify: FastifyInstance) {
@@ -43,9 +58,12 @@ export async function opsMetricsRoutes(fastify: FastifyInstance) {
     if ("error" in parsed) {
       return reply400(reply, parsed.error);
     }
-    // endTime is fixed once per refresh so every card/chart of this request
-    // samples the same instant.
-    return getOpsOverview(resolveWindow(parsed.period), parsed.filters);
+    // The client pins endTime once per refresh so every card/chart of the
+    // same refresh cycle samples the same instant.
+    return getOpsOverview(
+      resolveWindow(parsed.period, parsed.endTime),
+      parsed.filters,
+    );
   });
 
   fastify.get("/ops-metrics/trend", async (request, reply) => {
@@ -53,7 +71,10 @@ export async function opsMetricsRoutes(fastify: FastifyInstance) {
     if ("error" in parsed) {
       return reply400(reply, parsed.error);
     }
-    return getOpsTrend(resolveWindow(parsed.period), parsed.filters);
+    return getOpsTrend(
+      resolveWindow(parsed.period, parsed.endTime),
+      parsed.filters,
+    );
   });
 
   fastify.get("/ops-metrics/dimensions/:dimension", async (request, reply) => {
@@ -75,7 +96,7 @@ export async function opsMetricsRoutes(fastify: FastifyInstance) {
       page?: string;
       pageSize?: string;
     };
-    return getOpsDimensionList(resolveWindow(parsed.period), {
+    return getOpsDimensionList(resolveWindow(parsed.period, parsed.endTime), {
       dimension: dimension as OpsDimension,
       filters: parsed.filters,
       search: q.search ? String(q.search) : undefined,

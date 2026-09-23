@@ -78,9 +78,15 @@ const router = createRouter({
           component: () => import('@/views/CostAnalysisView.vue'),
         },
         {
+          path: 'operations-monitoring',
+          name: 'OperationsMonitoring',
+          component: () => import('@/views/OperationsMonitoringView.vue'),
+        },
+        {
+          // Legacy bookmark compat: the old performance page was merged into
+          // operations monitoring; keep one entry, not two metric systems.
           path: 'performance-monitoring',
-          name: 'PerformanceMonitoring',
-          component: () => import('@/views/PerformanceMonitoringView.vue'),
+          redirect: '/operations-monitoring',
         },
         {
           path: 'traffic-analysis',
