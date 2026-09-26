@@ -35,7 +35,7 @@ describe('resolveWebSocketTurnConfig', () => {
       return {
         provider: { id: 'gpt-provider' },
         providerId: 'gpt-provider',
-        currentModel: { name: 'gpt-5.5', supported_protocols: JSON.stringify(['openai']), health_check_protocol: 'openai' },
+        currentModel: { name: 'gpt-5.5', supported_protocols: JSON.stringify(['openai']) },
       } as any;
     });
 

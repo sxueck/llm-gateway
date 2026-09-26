@@ -119,7 +119,7 @@
               size="small"
             />
           </n-form-item>
-          <n-form-item label="支持/探测协议">
+          <n-form-item label="支持协议">
             <div class="protocol-row">
               <n-select
                 v-model:value="formValue.supportedProtocols"
@@ -128,14 +128,6 @@
                 size="small"
                 multiple
                 class="protocol-select-supported"
-              />
-              <n-select
-                v-model:value="formValue.healthCheckProtocol"
-                :options="healthCheckProtocolOptions"
-                placeholder="探测协议"
-                size="small"
-                clearable
-                class="protocol-select-probe"
               />
             </div>
           </n-form-item>
@@ -370,7 +362,6 @@ const formValue = ref<{
   providerId: string;
   modelIdentifier: string;
   supportedProtocols: string[];
-  healthCheckProtocol: string | null;
   enabled: boolean;
   modelAttributes?: ModelAttributes;
 }>({
@@ -378,7 +369,6 @@ const formValue = ref<{
   providerId: '',
   modelIdentifier: '',
   supportedProtocols: ['openai'],
-  healthCheckProtocol: 'openai',
   enabled: true,
   modelAttributes: undefined,
 });
@@ -399,20 +389,6 @@ const providerOptions = computed(() => {
 });
 
 const protocolOptions = PROTOCOL_OPTIONS;
-
-const healthCheckProtocolOptions = computed(() => {
-  return (formValue.value.supportedProtocols || []).map((p) => {
-    const info = getProtocolInfo(p);
-    return { label: info.label, value: p };
-  });
-});
-
-watch(() => formValue.value.supportedProtocols, (newVal) => {
-  if (!newVal || newVal.length === 0) return;
-  if (formValue.value.healthCheckProtocol && !newVal.includes(formValue.value.healthCheckProtocol)) {
-    formValue.value.healthCheckProtocol = newVal[0];
-  }
-}, { deep: true });
 
 const columns: DataTableColumns<Model> = [
   {
@@ -571,7 +547,6 @@ function handleEdit(model: Model) {
     providerId: model.providerId,
     modelIdentifier: model.modelIdentifier,
     supportedProtocols: model.supportedProtocols || ['openai'],
-    healthCheckProtocol: model.healthCheckProtocol || null,
     enabled: model.enabled,
     modelAttributes: model.modelAttributes || undefined,
   };
@@ -600,7 +575,6 @@ async function handleSubmit() {
       name: formValue.value.name,
       modelIdentifier: formValue.value.modelIdentifier,
       supportedProtocols: formValue.value.supportedProtocols,
-      healthCheckProtocol: formValue.value.healthCheckProtocol || undefined,
       enabled: formValue.value.enabled,
       modelAttributes: formValue.value.modelAttributes,
     };
@@ -635,7 +609,6 @@ function resetForm() {
     providerId: '',
     modelIdentifier: '',
     supportedProtocols: ['openai'],
-    healthCheckProtocol: 'openai',
     enabled: true,
     modelAttributes: undefined,
   };
@@ -792,10 +765,6 @@ onMounted(async () => {
 
 .protocol-select-supported {
   flex: 1.6;
-}
-
-.protocol-select-probe {
-  flex: 1;
 }
 
 .model-modal :deep(.n-card) {

@@ -28,16 +28,12 @@ const RESTORABLE_TABLES = new Set([
   'expert_routing_configs',
   'api_requests',
   'expert_routing_logs',
-  'health_runs',
-  'health_summaries',
   'prompt_samples',
 ]);
 
 const LOG_TABLES = new Set([
   'api_requests',
   'expert_routing_logs',
-  'health_runs',
-  'health_summaries',
   'prompt_samples',
 ]);
 

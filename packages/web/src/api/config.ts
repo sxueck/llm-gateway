@@ -389,8 +389,6 @@ type SystemSettingsResponse = {
   publicUrl: string;
   litellmCompatEnabled: boolean;
   streamResumeEnabled: boolean;
-  healthMonitoringEnabled: boolean;
-  persistentMonitoringEnabled: boolean;
   developerDebugEnabled: boolean;
   developerDebugExpiresAt: number | null;
   dashboardHideRequestSourceCard: boolean;
@@ -414,8 +412,6 @@ type UpdateSystemSettingsRequest = {
   publicUrl?: string;
   litellmCompatEnabled?: boolean;
   streamResumeEnabled?: boolean;
-  healthMonitoringEnabled?: boolean;
-  persistentMonitoringEnabled?: boolean;
   developerDebugEnabled?: boolean;
   dashboardHideRequestSourceCard?: boolean;
   forwardClientUserAgent?: boolean;
@@ -483,8 +479,6 @@ export interface TrafficAnalysisHistoryDayResponse {
   isWorkday: boolean;
 }
 
-type HealthTargetsResponse = { targets: any[] };
-
 export interface RoutingTargetStatus {
   targetKey: string;
   circuitState: "CLOSED" | "OPEN" | "HALF_OPEN";
@@ -504,20 +498,6 @@ export interface RoutingStatusResponse {
   };
 }
 
-type CreateHealthTargetRequest = {
-  type: "model" | "virtual_model";
-  target_id: string;
-  check_interval_seconds?: number;
-  check_prompt?: string;
-};
-
-type UpdateHealthTargetRequest = {
-  display_title?: string | null;
-  enabled?: boolean;
-  check_interval_seconds?: number;
-  check_prompt?: string;
-};
-
 const adminConfigPath = (suffix: string) =>
   `${ADMIN_CONFIG_BASE_PATH}${suffix}`;
 
@@ -531,7 +511,6 @@ const ADMIN_REQUEST_SOURCES_BLOCK_PATH = adminConfigPath(
 );
 const ADMIN_ROUTING_CONFIGS_PATH = adminConfigPath("/routing-configs");
 const ADMIN_SYSTEM_SETTINGS_PATH = adminConfigPath("/system-settings");
-const ADMIN_HEALTH_TARGETS_PATH = adminConfigPath("/health-targets");
 const ADMIN_PERFORMANCE_METRICS_PATH = adminConfigPath("/performance-metrics");
 const ADMIN_AGENT_RUNS_PATH = "/admin/agent-runs";
 const ADMIN_ROUTING_STATUS_PATH = adminConfigPath("/routing-status");
@@ -602,25 +581,6 @@ export const configApi = {
     data: UpdateSystemSettingsRequest,
   ): Promise<DeleteResponse> {
     return request.post(ADMIN_SYSTEM_SETTINGS_PATH, data);
-  },
-
-  getHealthTargets(): Promise<HealthTargetsResponse> {
-    return request.get(ADMIN_HEALTH_TARGETS_PATH);
-  },
-
-  createHealthTarget(data: CreateHealthTargetRequest): Promise<any> {
-    return request.post(ADMIN_HEALTH_TARGETS_PATH, data);
-  },
-
-  updateHealthTarget(
-    id: string,
-    data: UpdateHealthTargetRequest,
-  ): Promise<any> {
-    return request.put(withId(ADMIN_HEALTH_TARGETS_PATH, id), data);
-  },
-
-  deleteHealthTarget(id: string): Promise<DeleteResponse> {
-    return request.delete(withId(ADMIN_HEALTH_TARGETS_PATH, id));
   },
 
   getPerformanceMetrics(): Promise<PerformanceMetricsResponse> {

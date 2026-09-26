@@ -4,7 +4,6 @@ export interface Model {
   provider_id: string | null;
   model_identifier: string;
   supported_protocols: string | null; // JSON array of 'openai' | 'anthropic' | 'google' - 模型支持的协议白名单
-  health_check_protocol: string | null; // 网关主动探测使用的协议
   is_virtual: number;
   routing_config_id: string | null;
   expert_routing_id?: string | null;
@@ -14,31 +13,6 @@ export interface Model {
   compression_config: string | null;
   created_at: number;
   updated_at: number;
-}
-
-export interface HealthTarget {
-  id: string;
-  name: string;
-  display_title: string | null;
-  type: 'model' | 'virtual_model';
-  target_id: string;
-  enabled: number;
-  check_interval_seconds: number;
-  check_prompt: string | null;
-  check_config: string | null;
-  created_at: number;
-  updated_at: number;
-}
-
-export interface HealthRun {
-  id: string;
-  target_id: string;
-  status: 'success' | 'error';
-  latency_ms: number;
-  error_type: string | null;
-  error_message: string | null;
-  request_id: string | null;
-  created_at: number;
 }
 
 export interface CostMapping {

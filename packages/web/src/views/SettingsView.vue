@@ -156,73 +156,6 @@
             </n-text>
           </n-space>
 
-          <n-divider style="margin: 8px 0;" />
-
-          <n-space vertical :size="16">
-            <div style="font-size: 14px; font-weight: 500;">
-              {{ $t('healthMonitoring.title') }}            </div>
-
-            <n-space align="center" justify="space-between">
-              <div>
-                <div>{{ $t('healthMonitoring.enablePersistentMonitoring') }}</div>
-                <n-text depth="3" style="font-size: 12px;">{{ $t('healthMonitoring.enablePersistentMonitoringDesc') }}</n-text>
-              </div>
-              <n-switch :value="persistentMonitoringEnabled" @update:value="onTogglePersistentMonitoring" />
-            </n-space>
-
-            <n-alert v-if="!persistentMonitoringEnabled" type="warning">
-              {{ $t('healthMonitoring.persistentMonitoringRequired') }}
-            </n-alert>
-
-            <n-space align="center" justify="space-between">
-              <div>
-                <div>{{ $t('healthMonitoring.enablePublicPage') }}</div>
-                <n-text depth="3" style="font-size: 12px;">{{ $t('healthMonitoring.enablePublicPageDesc') }}</n-text>
-              </div>
-              <n-switch :value="healthMonitoringEnabled" :disabled="!persistentMonitoringEnabled" @update:value="onToggleHealthMonitoring" />
-            </n-space>
-
-            <n-alert v-if="healthMonitoringEnabled" type="info">
-              <template #header>
-              </template>
-              <n-text style="font-size: 13px;">
-                {{ $t('healthMonitoring.publicPageUrlDesc', { url: publicStatusUrl }) }}
-              </n-text>
-              <div style="margin-top: 8px;">
-                <n-button text type="primary" @click="copyStatusUrl">
-                  {{ $t('common.copy') }}
-                </n-button>
-                <n-button text type="primary" @click="openStatusPage" style="margin-left: 8px;">
-                  {{ $t('healthMonitoring.openInNewTab') }}
-                </n-button>
-              </div>
-            </n-alert>
-
-            <n-divider style="margin: 8px 0;" />
-
-            <div>
-              <n-space justify="space-between" align="center" style="margin-bottom: 12px;">
-                <div>
-                  <div style="font-size: 16px; font-weight: 500;">{{ $t('healthMonitoring.monitoredTargets') }}</div>
-                  <n-text depth="3" style="font-size: 12px;">{{ $t('healthMonitoring.monitoredTargetsDesc') }}</n-text>
-                </div>
-                <n-button type="primary" @click="showAddTargetModal = true">
-                  {{ $t('healthMonitoring.addTarget') }}
-                </n-button>
-              </n-space>
-
-              <n-spin :show="loadingTargets">
-                <n-data-table
-                  :columns="targetColumns"
-                  :data="healthTargets"
-                  :pagination="false"
-                  :bordered="false"
-                  size="small"
-                />
-              </n-spin>
-            </div>
-          </n-space>
-
         </n-space>
       </n-card>
 
@@ -253,121 +186,12 @@
         </n-descriptions>
       </n-card>
     </n-space>
-
-    <n-modal
-      v-model:show="showEditModal"
-      preset="dialog"
-      :title="$t('common.edit')"
-      :positive-text="$t('common.confirm')"
-      :negative-text="$t('common.cancel')"
-      @positive-click="handleEditTarget"
-    >
-      <n-form
-        ref="editFormRef"
-        :model="editForm"
-        label-placement="left"
-        label-width="120"
-        style="margin-top: 16px;"
-      >
-        <n-form-item :label="$t('healthMonitoring.targetName')" path="name">
-          <n-input :value="editForm.name" disabled />
-        </n-form-item>
-
-        <n-form-item label="显示标题" path="display_title">
-          <n-input
-            v-model:value="editForm.display_title"
-            placeholder="留空使用默认名称"
-          />
-        </n-form-item>
-
-        <n-form-item :label="$t('healthMonitoring.checkInterval')" path="check_interval_seconds">
-          <n-input-number
-            v-model:value="editForm.check_interval_seconds"
-            :min="30"
-            :max="3600"
-            :step="30"
-            style="width: 100%"
-          >
-            <template #suffix>{{ $t('healthMonitoring.seconds') }}</template>
-          </n-input-number>
-        </n-form-item>
-
-        <n-form-item :label="$t('healthMonitoring.checkPrompt')" path="check_prompt">
-          <n-input
-            v-model:value="editForm.check_prompt"
-            type="textarea"
-            :rows="3"
-            placeholder="留空使用默认提示词"
-          />
-        </n-form-item>
-
-        <n-form-item :label="$t('common.status')" path="enabled">
-          <n-switch v-model:value="editForm.enabled" />
-        </n-form-item>
-      </n-form>
-    </n-modal>
-
-    <n-modal
-      v-model:show="showAddTargetModal"
-      preset="dialog"
-      :title="$t('healthMonitoring.addTarget')"
-      :positive-text="$t('common.confirm')"
-      :negative-text="$t('common.cancel')"
-      @positive-click="handleAddTarget"
-    >
-      <n-form
-        ref="addTargetFormRef"
-        :model="addTargetForm"
-        label-placement="left"
-        label-width="120"
-        style="margin-top: 16px;"
-      >
-        <n-form-item :label="$t('healthMonitoring.targetType')" path="type">
-          <n-select
-            v-model:value="addTargetForm.type"
-            :options="targetTypeOptions"
-            @update:value="handleTypeChange"
-          />
-        </n-form-item>
-
-        <n-form-item :label="$t('healthMonitoring.selectModel')" path="target_id">
-          <n-select
-            v-model:value="addTargetForm.target_id"
-            :options="availableModelsOptions"
-            :loading="loadingModels"
-            filterable
-          />
-        </n-form-item>
-
-        <n-form-item :label="$t('healthMonitoring.checkInterval')" path="check_interval_seconds">
-          <n-input-number
-            v-model:value="addTargetForm.check_interval_seconds"
-            :min="60"
-            :max="3600"
-            :step="60"
-            style="width: 100%"
-          >
-            <template #suffix>{{ $t('healthMonitoring.seconds') }}</template>
-          </n-input-number>
-        </n-form-item>
-
-        <n-form-item :label="$t('healthMonitoring.checkPrompt')" path="check_prompt">
-          <n-input
-            v-model:value="addTargetForm.check_prompt"
-            type="textarea"
-            :rows="2"
-            :placeholder="$t('healthMonitoring.checkPromptPlaceholder')"
-          />
-        </n-form-item>
-      </n-form>
-    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, ref } from 'vue';
-import { NSpace, NCard, NDescriptions, NDescriptionsItem, NSwitch, NAlert, NText, NDivider, NInput, NButton, NDataTable, NSpin, NModal, NForm, NFormItem, NSelect, NInputNumber, NTag, useMessage, useDialog } from 'naive-ui';
-import type { DataTableColumns } from 'naive-ui';
+import { computed, onMounted, ref } from 'vue';
+import { NSpace, NCard, NDescriptions, NDescriptionsItem, NSwitch, NAlert, NText, NDivider, NInput, NButton, NSelect, useMessage, useDialog } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/auth';
 import { useProviderStore } from '@/stores/provider';
@@ -377,7 +201,6 @@ import { useSystemConfig } from '@/composables/useSystemConfig';
  
 import { configApi } from '@/api/config';
 import { authApi } from '@/api/auth';
-import { modelApi } from '@/api/model';
  
 const { t } = useI18n();
 const authStore = useAuthStore();
@@ -402,140 +225,6 @@ const reasoningEffortSuffixesInput = ref('');
 const reasoningEffortSuffixesOriginal = ref('');
 const savingReasoningEffortSuffixes = ref(false);
 const isReasoningEffortSuffixesChanged = computed(() => reasoningEffortSuffixesInput.value !== reasoningEffortSuffixesOriginal.value);
-
-// Health monitoring state moved from HealthMonitoringSettingsView
-const healthMonitoringEnabled = ref(false);
-const persistentMonitoringEnabled = ref(false);
-const loadingTargets = ref(false);
-const loadingModels = ref(false);
-const healthTargets = ref<any[]>([]);
-const showAddTargetModal = ref(false);
-const showEditModal = ref(false);
-const addTargetFormRef = ref();
-const editFormRef = ref();
-const availableModels = ref<any[]>([]);
-const availableVirtualModels = ref<any[]>([]);
-
-const addTargetForm = ref({
-  type: 'model' as 'model' | 'virtual_model',
-  target_id: null as string | null,
-  check_interval_seconds: 300,
-  check_prompt: "Say 'OK'",
-});
-
-const editForm = ref({
-  id: '',
-  name: '',
-  display_title: '',
-  check_interval_seconds: 300,
-  check_prompt: '',
-  enabled: true,
-});
-
-const publicStatusUrl = computed(() => {
-  if (typeof window !== 'undefined') {
-    return `${window.location.origin}/status`;
-  }
-  return '/status';
-});
-
-const targetTypeOptions = computed(() => [
-  { label: t('healthMonitoring.realModel'), value: 'model' },
-  { label: t('healthMonitoring.virtualModel'), value: 'virtual_model' },
-]);
-
-const availableModelsOptions = computed(() => {
-  const models = addTargetForm.value.type === 'virtual_model'
-    ? availableVirtualModels.value
-    : availableModels.value;
-
-  return models.map((m: any) => ({
-    label: m?.providerName ? `${m.name}(${m.providerName})` : m.name,
-    value: m.id,
-  }));
-});
-
-const targetColumns: DataTableColumns<any> = [
-  {
-    title: () => t('healthMonitoring.targetName'),
-    key: 'name',
-  },
-  {
-    title: () => '显示标题',
-    key: 'display_title',
-    render(row) {
-      return row.display_title || h(NText, { depth: 3 }, { default: () => '(默认)' });
-    },
-  },
-  {
-    title: () => t('healthMonitoring.targetType'),
-    key: 'type',
-    render(row) {
-      return h(NTag, {
-        type: row.type === 'virtual_model' ? 'info' : 'default',
-        size: 'small',
-      }, {
-        default: () => row.type === 'virtual_model'
-          ? t('healthMonitoring.virtualModel')
-          : t('healthMonitoring.realModel')
-      });
-    },
-  },
-  {
-    title: () => t('healthMonitoring.checkInterval'),
-    key: 'check_interval_seconds',
-    render(row) {
-      return `${row.check_interval_seconds} ${t('healthMonitoring.seconds')}`;
-    },
-  },
-  {
-    title: () => t('common.status'),
-    key: 'enabled',
-    render(row) {
-      return h(NTag, {
-        type: row.enabled ? 'success' : 'default',
-        size: 'small',
-        bordered: false,
-      }, {
-        default: () => row.enabled ? t('common.enabled') : t('common.disabled')
-      });
-    },
-  },
-  {
-    title: () => t('common.actions'),
-    key: 'actions',
-    render(row) {
-      return h(NSpace, {}, {
-        default: () => [
-          h(NButton, {
-            size: 'small',
-            text: true,
-            type: 'info',
-            onClick: () => openEditModal(row),
-          }, {
-            default: () => t('common.edit')
-          }),
-          h(NButton, {
-            size: 'small',
-            text: true,
-            type: 'primary',
-            onClick: () => toggleTargetEnabled(row.id, !row.enabled),
-          }, {
-            default: () => row.enabled ? t('common.disabled') : t('common.enabled')
-          }),
-          h(NButton, {
-            size: 'small',
-            text: true,
-            type: 'error',
-            onClick: () => deleteTarget(row.id),
-          }, {
-            default: () => t('common.delete')
-          }),
-        ]
-      });
-    },
-  },
-];
 
 const isPublicUrlChanged = computed(() => {
   return publicUrlInput.value.trim() !== '' && publicUrlInput.value !== publicUrl.value;
@@ -675,151 +364,6 @@ const enabledKeysCount = computed(() => {
   return virtualKeyStore.virtualKeys.filter(k => k.enabled).length;
 });
 
-async function onToggleHealthMonitoring(val: boolean) {
-  try {
-    if (!persistentMonitoringEnabled.value) {
-      message.warning(t('healthMonitoring.persistentMonitoringRequired'));
-      return;
-    }
-    await configApi.updateSystemSettings({ healthMonitoringEnabled: val });
-    healthMonitoringEnabled.value = val;
-    message.success(t('messages.operationSuccess'));
-  } catch (e: any) {
-    message.error(t('messages.operationFailed'));
-  }
-}
-
-async function onTogglePersistentMonitoring(val: boolean) {
-  try {
-    await configApi.updateSystemSettings({ persistentMonitoringEnabled: val });
-    persistentMonitoringEnabled.value = val;
-    message.success(t('messages.operationSuccess'));
-  } catch (e: any) {
-    message.error(t('messages.operationFailed'));
-  }
-}
-
-function copyStatusUrl() {
-  navigator.clipboard.writeText(publicStatusUrl.value);
-  message.success(t('messages.copied'));
-}
-
-function openStatusPage() {
-  window.open(publicStatusUrl.value, '_blank');
-}
-
-async function loadHealthTargets() {
-  try {
-    loadingTargets.value = true;
-    const response = await configApi.getHealthTargets();
-    healthTargets.value = response.targets || [];
-  } catch (error: any) {
-    message.error(error.message || t('messages.loadFailed'));
-  } finally {
-    loadingTargets.value = false;
-  }
-}
-
-async function loadAvailableModels() {
-  try {
-    loadingModels.value = true;
-    const data = await modelApi.getAll();
-    const allModels = data.models || [];
-
-    availableModels.value = allModels.filter((m: any) => !m.isVirtual);
-    availableVirtualModels.value = allModels.filter((m: any) => m.isVirtual);
-  } catch (error: any) {
-    message.error(error.message || t('messages.loadFailed'));
-  } finally {
-    loadingModels.value = false;
-  }
-}
-
-function handleTypeChange() {
-  addTargetForm.value.target_id = null;
-}
-
-async function handleAddTarget() {
-  try {
-    if (!addTargetForm.value.target_id) {
-      message.error('请选择目标模型');
-      return;
-    }
-    await configApi.createHealthTarget({
-      type: addTargetForm.value.type,
-      target_id: addTargetForm.value.target_id,
-      check_interval_seconds: addTargetForm.value.check_interval_seconds,
-      check_prompt: addTargetForm.value.check_prompt,
-    });
-    message.success(t('messages.operationSuccess'));
-    showAddTargetModal.value = false;
-    await loadHealthTargets();
-    addTargetForm.value = {
-      type: 'model',
-      target_id: null,
-      check_interval_seconds: 300,
-      check_prompt: "Say 'OK'",
-    };
-  } catch (error: any) {
-    message.error(error.message || t('messages.operationFailed'));
-  }
-}
-
-async function handleEditTarget() {
-  try {
-    const updates: any = {
-      display_title: editForm.value.display_title || null,
-      check_interval_seconds: editForm.value.check_interval_seconds,
-      enabled: editForm.value.enabled,
-    };
-
-    if (editForm.value.check_prompt) {
-      updates.check_prompt = editForm.value.check_prompt;
-    }
-
-    await configApi.updateHealthTarget(editForm.value.id, updates);
-    message.success(t('messages.operationSuccess'));
-    showEditModal.value = false;
-    await loadHealthTargets();
-  } catch (error: any) {
-    message.error(error.message || t('messages.operationFailed'));
-  }
-}
-
-// Health target management (toggle / delete) stays here so the table actions work.
-
-async function toggleTargetEnabled(targetId: string, enabled: boolean) {
-  try {
-    await configApi.updateHealthTarget(targetId, { enabled });
-    message.success(t('messages.operationSuccess'));
-    await loadHealthTargets();
-  } catch (error: any) {
-    message.error(error.message || t('messages.operationFailed'));
-  }
-}
-
-async function deleteTarget(targetId: string) {
-  try {
-    await configApi.deleteHealthTarget(targetId);
-    message.success(t('messages.operationSuccess'));
-    await loadHealthTargets();
-  } catch (error: any) {
-    message.error(error.message || t('messages.operationFailed'));
-  }
-}
-
-function openEditModal(target: any) {
-  editForm.value = {
-    id: target.id,
-    name: target.name,
-    display_title: target.display_title || '',
-    check_interval_seconds: target.check_interval_seconds,
-    check_prompt: target.check_prompt || '',
-    enabled: target.enabled === 1 || target.enabled === true,
-  };
-  showEditModal.value = true;
-}
-
 onMounted(async () => {
   try {
     const s = await configApi.getSystemSettings();
@@ -831,8 +375,6 @@ onMounted(async () => {
     publicUrlInput.value = s.publicUrl;
     trafficAnalysisRegion.value = s.trafficAnalysisRegion ?? null;
     dashboardHideRequestSourceCard.value = s.dashboardHideRequestSourceCard || false;
-    healthMonitoringEnabled.value = s.healthMonitoringEnabled || false;
-    persistentMonitoringEnabled.value = s.persistentMonitoringEnabled || false;
 
     const suffixesText = (s.reasoningEffortModelSuffixes || []).join('\n');
     reasoningEffortSuffixesInput.value = suffixesText;
@@ -844,12 +386,10 @@ onMounted(async () => {
       console.error('获取用户列表失败:', error);
     }
 
-    // 并行加载提供商、虚拟密钥、监控目标和可用模型
+    // 并行加载提供商、虚拟密钥、地域列表
     await Promise.all([
       providerStore.fetchProviders(),
       virtualKeyStore.fetchVirtualKeys(),
-      loadHealthTargets(),
-      loadAvailableModels(),
       loadTrafficAnalysisRegions(),
     ]);
   } catch (error: any) {

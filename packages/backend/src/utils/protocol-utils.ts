@@ -38,12 +38,9 @@ export function parseSupportedProtocols(raw: string | null | undefined): string[
 }
 
 /**
- * 确定探测使用的协议：优先 health_check_protocol，否则取 supported_protocols 第一项。
+ * 确定探测使用的协议：取 supported_protocols 第一项。
  */
-export function resolveProbeProtocol(model: { supported_protocols: string | null; health_check_protocol: string | null }): string {
-  if (model.health_check_protocol) {
-    return model.health_check_protocol;
-  }
+export function resolveProbeProtocol(model: { supported_protocols: string | null }): string {
   const supported = parseSupportedProtocols(model.supported_protocols);
   return supported[0];
 }

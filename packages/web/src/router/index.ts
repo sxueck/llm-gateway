@@ -18,12 +18,6 @@ const router = createRouter({
       meta: { requiresAuth: false },
     },
     {
-      path: '/status',
-      name: 'HealthStatus',
-      component: () => import('@/views/HealthStatusView.vue'),
-      meta: { requiresAuth: false },
-    },
-    {
       path: '/',
       component: () => import('@/layouts/MainLayout.vue'),
       meta: { requiresAuth: true },

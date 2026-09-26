@@ -174,13 +174,6 @@ export const migrations: Migration[] = [
         console.log("[迁移] 已添加 models.supported_protocols 字段");
       }
 
-      if (!(await hasColumn("health_check_protocol"))) {
-        await conn.query(
-          `ALTER TABLE models ADD COLUMN health_check_protocol VARCHAR(50)`,
-        );
-        console.log("[迁移] 已添加 models.health_check_protocol 字段");
-      }
-
       if (await hasColumn("protocol")) {
         // Migrate existing protocol values into supported_protocols JSON array
         await conn.query(`
@@ -188,15 +181,9 @@ export const migrations: Migration[] = [
           SET supported_protocols = CASE
             WHEN protocol IS NULL OR protocol = '' THEN '["openai"]'
             ELSE CONCAT('["', protocol, '"]')
-          END,
-          health_check_protocol = CASE
-            WHEN protocol IS NULL OR protocol = '' THEN 'openai'
-            ELSE protocol
           END
         `);
-        console.log(
-          "[迁移] 已迁移 models.protocol 到 supported_protocols 和 health_check_protocol",
-        );
+        console.log("[迁移] 已迁移 models.protocol 到 supported_protocols");
 
         if (await hasIndex("idx_models_protocol")) {
           await conn.query(`DROP INDEX idx_models_protocol ON models`);
@@ -212,14 +199,7 @@ export const migrations: Migration[] = [
           SET supported_protocols = '["openai"]'
           WHERE supported_protocols IS NULL OR supported_protocols = ''
         `);
-        await conn.query(`
-          UPDATE models
-          SET health_check_protocol = COALESCE(JSON_UNQUOTE(JSON_EXTRACT(supported_protocols, '$[0]')), 'openai')
-          WHERE health_check_protocol IS NULL OR health_check_protocol = ''
-        `);
-        console.log(
-          "[迁移] 已回填 models.supported_protocols 和 health_check_protocol 默认值",
-        );
+        console.log("[迁移] 已回填 models.supported_protocols 默认值");
       }
     },
     down: async (conn: Connection) => {
@@ -273,14 +253,7 @@ export const migrations: Migration[] = [
       if (await hasColumn("supported_protocols")) {
         await conn.query(`ALTER TABLE models DROP COLUMN supported_protocols`);
       }
-      if (await hasColumn("health_check_protocol")) {
-        await conn.query(
-          `ALTER TABLE models DROP COLUMN health_check_protocol`,
-        );
-      }
-      console.log(
-        "[迁移] 已删除 supported_protocols 和 health_check_protocol 字段",
-      );
+      console.log("[迁移] 已删除 supported_protocols 字段");
     },
   },
   {
@@ -930,33 +903,6 @@ export const migrations: Migration[] = [
     },
   },
   {
-    version: 46,
-    name: "add_health_runs_target_created_at_index",
-    up: async (conn: Connection) => {
-      const [rows] = await conn.query(
-        `SELECT COUNT(*) AS cnt
-         FROM INFORMATION_SCHEMA.STATISTICS
-         WHERE TABLE_SCHEMA = DATABASE()
-           AND TABLE_NAME = 'health_runs'
-           AND INDEX_NAME = 'idx_health_runs_target_created_at'`,
-      );
-      if (Number((rows as any[])[0]?.cnt || 0) === 0) {
-        await conn.query(
-          "ALTER TABLE health_runs ADD INDEX idx_health_runs_target_created_at (target_id, created_at)",
-        );
-      }
-    },
-    down: async (conn: Connection) => {
-      try {
-        await conn.query(
-          "ALTER TABLE health_runs DROP INDEX idx_health_runs_target_created_at",
-        );
-      } catch (error: any) {
-        console.warn("[迁移] 删除 health_runs 联合索引失败:", error.message);
-      }
-    },
-  },
-  {
     version: 47,
     // v2 未发布批次合并迁移：expert-routing 难度列 + api_requests.run_id 关联。
     // 注意 runner 按 version > current 过滤（不看 name）：已应用过 v47 的库
@@ -1060,6 +1006,106 @@ export const migrations: Migration[] = [
         } catch (error: any) {
           console.warn(`[迁移] 删除 ${table}.${column} 列失败:`, error.message);
         }
+      }
+    },
+  },
+  {
+    version: 48,
+    // 模型主动监控已整体移除：清理 health_* 表、models.health_check_protocol 列、
+    // 监控配置键与监控专用虚拟密钥。down 仅重建空结构，监控数据与配置键不恢复。
+    name: "drop_model_proactive_monitoring",
+    up: async (conn: Connection) => {
+      // 子表先删，避免外键约束（health_runs/health_summaries 引用 health_targets）
+      await conn.query(`DROP TABLE IF EXISTS health_summaries`);
+      await conn.query(`DROP TABLE IF EXISTS health_runs`);
+      await conn.query(`DROP TABLE IF EXISTS health_targets`);
+
+      const [columnRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'models'
+           AND COLUMN_NAME = 'health_check_protocol'`,
+      );
+      if (Number((columnRows as any[])[0]?.cnt || 0) > 0) {
+        await conn.query(`ALTER TABLE models DROP COLUMN health_check_protocol`);
+        console.log("[迁移] 已删除 models.health_check_protocol 字段");
+      }
+
+      await conn.query(
+        "DELETE FROM system_config WHERE `key` IN ('health_monitoring_enabled', 'persistent_monitoring_enabled', 'monitoring_virtual_key_id')",
+      );
+      await conn.query(
+        "DELETE FROM virtual_keys WHERE name = 'System Monitoring Key'",
+      );
+      console.log("[迁移] 已清理监控配置键与监控专用虚拟密钥");
+    },
+    down: async (conn: Connection) => {
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS health_targets (
+          id VARCHAR(255) PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          display_title VARCHAR(255) DEFAULT NULL COMMENT '显示标题(可自定义)',
+          type ENUM('model', 'virtual_model') NOT NULL,
+          target_id VARCHAR(255) NOT NULL COMMENT '模型或虚拟模型的ID',
+          enabled TINYINT DEFAULT 1,
+          check_interval_seconds INT DEFAULT 300 COMMENT '检查频率(秒)',
+          check_prompt TEXT DEFAULT NULL COMMENT '健康检查使用的提示词',
+          check_config TEXT DEFAULT NULL COMMENT 'JSON配置: 超时、重试、并发等',
+          created_at BIGINT NOT NULL,
+          updated_at BIGINT NOT NULL,
+          INDEX idx_health_targets_type (type),
+          INDEX idx_health_targets_enabled (enabled),
+          INDEX idx_health_targets_target_id (target_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS health_runs (
+          id VARCHAR(255) PRIMARY KEY,
+          target_id VARCHAR(255) NOT NULL,
+          status ENUM('success', 'error') NOT NULL,
+          latency_ms INT NOT NULL COMMENT '总耗时(毫秒)',
+          error_type VARCHAR(100) DEFAULT NULL COMMENT '错误类型',
+          error_message TEXT DEFAULT NULL COMMENT '错误摘要',
+          request_id VARCHAR(255) DEFAULT NULL COMMENT '请求ID,对齐api_requests',
+          created_at BIGINT NOT NULL,
+          FOREIGN KEY (target_id) REFERENCES health_targets(id) ON DELETE CASCADE,
+          INDEX idx_health_runs_target (target_id),
+          INDEX idx_health_runs_created_at (created_at),
+          INDEX idx_health_runs_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS health_summaries (
+          id VARCHAR(255) PRIMARY KEY,
+          target_id VARCHAR(255) NOT NULL,
+          window_start BIGINT NOT NULL COMMENT '时间窗口起点',
+          window_end BIGINT NOT NULL COMMENT '时间窗口终点',
+          total_checks INT DEFAULT 0,
+          success_count INT DEFAULT 0,
+          error_count INT DEFAULT 0,
+          avg_latency_ms INT DEFAULT 0,
+          p50_latency_ms INT DEFAULT 0,
+          p95_latency_ms INT DEFAULT 0,
+          p99_latency_ms INT DEFAULT 0,
+          created_at BIGINT NOT NULL,
+          FOREIGN KEY (target_id) REFERENCES health_targets(id) ON DELETE CASCADE,
+          INDEX idx_health_summaries_target (target_id),
+          INDEX idx_health_summaries_window (window_start, window_end)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+
+      const [columnRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'models'
+           AND COLUMN_NAME = 'health_check_protocol'`,
+      );
+      if (Number((columnRows as any[])[0]?.cnt || 0) === 0) {
+        await conn.query(
+          `ALTER TABLE models ADD COLUMN health_check_protocol VARCHAR(50)`,
+        );
       }
     },
   },

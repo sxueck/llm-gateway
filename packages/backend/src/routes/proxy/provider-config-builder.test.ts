@@ -26,7 +26,6 @@ function modelWithProtocols(protocols: string[]) {
     name: 'configured-model',
     model_identifier: 'upstream-model',
     supported_protocols: JSON.stringify(protocols),
-    health_check_protocol: protocols[0] ?? null,
     model_attributes: null,
   };
 }

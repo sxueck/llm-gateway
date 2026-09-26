@@ -18,9 +18,6 @@
 <p align="center">
   <img width="80%" alt="Dashboard" src="https://github.com/user-attachments/assets/a69d7e89-5225-4c2e-bae3-d11faddc9b56" />
 </p>
-<p align="center">
-  <img width="80%" alt="Health Monitoring" src="https://github.com/user-attachments/assets/196adf78-2346-41f9-903b-a18920464486" />
-</p>
 
 <p align="center">
   <a href="./docs/screenshot.md">更多截图</a>
@@ -30,7 +27,6 @@
 
 - [特性](#特性)
 - [快速开始](#快速开始)
-- [健康监控](#健康监控)
 - [意图路由分类器](#意图路由分类器)
 - [贡献](#贡献)
 - [许可证](#许可证)
@@ -45,7 +41,6 @@
 | **路由配置** | 负载均衡和故障转移策略，提高服务可用性 |
 | **模型管理** | 统一管理所有提供商的模型，支持批量导入和自定义配置 |
 | **多端点支持** | 兼容 `/v1/chat/completions`、`/v1/responses`、`/v1/messages` 等端点 |
-| **健康监控** | 免登录健康检查页面，实时展示模型可用率、延迟分位数（P50/P95）和错误分布 |
 | **用户认证** | 基于 JWT 的安全认证机制 |
 | **实时监控** | 仪表盘展示系统状态和配置信息 |
 | **中转站支持** | 隔离 Codex 等上游强制注入的提示词，使下游应用对 Prompt 遵循更规范 |
@@ -145,14 +140,6 @@ bun run start
 3. **创建虚拟密钥** - 用于访问 LLM Gateway 的 API
 4. **(可选) 配置 Prompt 管理规则** - 实现 prompt 的动态修改和增强
 5. **使用虚拟密钥访问 API** - 在应用中调用 LLM Gateway
-
-
-### 限流保护
-
-健康监控 API 默认启用限流保护：
-
-- 每个 IP 每分钟最多 60 个请求
-- 超过限制将返回 429 错误
 
 
 ## Jev 专家路由

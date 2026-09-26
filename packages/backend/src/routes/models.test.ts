@@ -1,6 +1,30 @@
 import { describe, expect, it } from "vitest";
 
-import { modelAttributesSchema } from "./models.js";
+import { modelAttributesSchema, resolveTestProbeProtocol } from "./models.js";
+
+describe("resolveTestProbeProtocol", () => {
+  const multiProtocol = { supported_protocols: '["openai","anthropic"]' };
+
+  it("falls back to the first supported protocol when none is requested", () => {
+    expect(resolveTestProbeProtocol(multiProtocol, undefined)).toBe("openai");
+  });
+
+  it("honours an explicit protocol that belongs to supportedProtocols", () => {
+    expect(resolveTestProbeProtocol(multiProtocol, "anthropic")).toBe(
+      "anthropic",
+    );
+  });
+
+  it("rejects a protocol outside supportedProtocols", () => {
+    expect(resolveTestProbeProtocol(multiProtocol, "google")).toBeNull();
+  });
+
+  it("defaults to openai when the model has no protocol list", () => {
+    expect(resolveTestProbeProtocol({ supported_protocols: null })).toBe(
+      "openai",
+    );
+  });
+});
 
 describe("modelAttributesSchema", () => {
   it("preserves capability metadata from upstream /v1/models entries", () => {

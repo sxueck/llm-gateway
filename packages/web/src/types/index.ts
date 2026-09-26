@@ -58,7 +58,6 @@ export interface Model {
   providerName?: string;
   modelIdentifier: string;
   supportedProtocols?: string[];
-  healthCheckProtocol?: string | null;
   isVirtual?: boolean;
   routingConfigId?: string | null;
   expertRoutingId?: string | null;
@@ -139,7 +138,6 @@ export interface CreateModelRequest {
   providerId: string;
   modelIdentifier: string;
   supportedProtocols?: string[];
-  healthCheckProtocol?: string;
   isVirtual?: boolean;
   routingConfigId?: string;
   enabled?: boolean;
@@ -150,7 +148,6 @@ export interface UpdateModelRequest {
   name?: string;
   modelIdentifier?: string;
   supportedProtocols?: string[];
-  healthCheckProtocol?: string;
   enabled?: boolean;
   modelAttributes?: ModelAttributes;
 }

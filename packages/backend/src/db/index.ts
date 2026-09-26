@@ -11,8 +11,6 @@ import {
 // Re-export types (type-only to avoid runtime import)
 export type {
   Model,
-  HealthTarget,
-  HealthRun,
   ApiRequestBuffer,
 } from "./types.js";
 
@@ -37,8 +35,6 @@ import { routingConfigRepository } from "./repositories/routing-config.repositor
 import { expertRoutingConfigRepository } from "./repositories/expert-routing-config.repository.js";
 import { expertRoutingLogRepository } from "./repositories/expert-routing-log.repository.js";
 import { expertRoutingSessionBindingRepository } from "./repositories/expert-routing-session-binding.repository.js";
-import { healthTargetRepository } from "./repositories/health-target.repository.js";
-import { healthRunRepository } from "./repositories/health-run.repository.js";
 import { costMappingRepository } from "./repositories/cost-mapping.repository.js";
 import { circuitBreakerStatsRepository } from "./repositories/circuit-breaker-stats.repository.js";
 import { blockedIpRepository } from "./repositories/blocked-ip.repository.js";
@@ -68,8 +64,6 @@ export const expertRoutingConfigDb = expertRoutingConfigRepository;
 export const expertRoutingLogDb = expertRoutingLogRepository;
 export const expertRoutingSessionBindingDb =
   expertRoutingSessionBindingRepository;
-export const healthTargetDb = healthTargetRepository;
-export const healthRunDb = healthRunRepository;
 export const costMappingDb = costMappingRepository;
 export const circuitBreakerStatsDb = circuitBreakerStatsRepository;
 export const blockedIpDb = blockedIpRepository;

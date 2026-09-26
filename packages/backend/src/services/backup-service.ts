@@ -23,8 +23,6 @@ const BACKUP_TABLES = [
 const LOG_TABLES = [
   'api_requests',
   'expert_routing_logs',
-  'health_runs',
-  'health_summaries',
   'prompt_samples'
 ];
 
