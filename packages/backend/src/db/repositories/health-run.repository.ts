@@ -1,6 +1,13 @@
 import { getDatabase } from '../connection.js';
 import { HealthRun } from '../types.js';
 
+const HEALTH_RUN_STATS_COLUMNS = `COUNT(*) AS total_checks,
+                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_count,
+                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS error_count,
+                AVG(latency_ms) AS avg_latency,
+                MIN(latency_ms) AS min_latency,
+                MAX(latency_ms) AS max_latency`;
+
 export const healthRunRepository = {
   async create(run: Omit<HealthRun, 'created_at'>): Promise<HealthRun> {
     const now = Date.now();
@@ -31,6 +38,55 @@ export const healthRunRepository = {
     }
   },
 
+  async getTargetPage(
+    targetId: string,
+    startTime: number,
+    endTime: number,
+    limit: number,
+    offset: number,
+  ): Promise<HealthRun[]> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const windowSql = startTime > 0 ? ' AND created_at >= ? AND created_at <= ?' : '';
+      const params = startTime > 0
+        ? [targetId, startTime, endTime, limit, offset]
+        : [targetId, limit, offset];
+      const [rows] = await conn.query(
+        `SELECT * FROM health_runs
+         WHERE target_id = ?${windowSql}
+         ORDER BY created_at DESC
+         LIMIT ? OFFSET ?`,
+        params,
+      );
+      return rows as HealthRun[];
+    } finally {
+      conn.release();
+    }
+  },
+
+  async countByTarget(
+    targetId: string,
+    startTime: number,
+    endTime: number,
+  ): Promise<number> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const windowSql = startTime > 0 ? ' AND created_at >= ? AND created_at <= ?' : '';
+      const params = startTime > 0 ? [targetId, startTime, endTime] : [targetId];
+      const [rows] = await conn.query(
+        `SELECT COUNT(*) AS total
+         FROM health_runs
+         WHERE target_id = ?${windowSql}`,
+        params,
+      );
+      return Number((rows as any[])[0]?.total || 0);
+    } finally {
+      conn.release();
+    }
+  },
+
   async getByTimeWindow(targetId: string, startTime: number, endTime: number): Promise<HealthRun[]> {
     const pool = getDatabase();
     const conn = await pool.getConnection();
@@ -45,18 +101,126 @@ export const healthRunRepository = {
     }
   },
 
+  async getByTargetsTimeWindow(
+    targetIds: string[],
+    startTime: number,
+    endTime: number,
+  ): Promise<Map<string, HealthRun[]>> {
+    const result = new Map<string, HealthRun[]>();
+    if (targetIds.length === 0) return result;
+
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const placeholders = targetIds.map(() => '?').join(',');
+      const [rows] = await conn.query(
+        `SELECT * FROM health_runs
+         WHERE target_id IN (${placeholders})
+           AND created_at >= ? AND created_at <= ?
+         ORDER BY target_id ASC, created_at ASC`,
+        [...targetIds, startTime, endTime],
+      );
+      for (const row of rows as HealthRun[]) {
+        const runs = result.get(row.target_id);
+        if (runs) runs.push(row);
+        else result.set(row.target_id, [row]);
+      }
+      return result;
+    } finally {
+      conn.release();
+    }
+  },
+
+  async getRecentByTargets(
+    targetIds: string[],
+    limit: number,
+  ): Promise<Map<string, HealthRun[]>> {
+    const result = new Map<string, HealthRun[]>();
+    if (targetIds.length === 0 || limit <= 0) return result;
+
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const placeholders = targetIds.map(() => '?').join(',');
+      const [rows] = await conn.query(
+        `SELECT id, target_id, status, latency_ms, error_type, error_message, request_id, created_at
+         FROM (
+           SELECT hr.*,
+                  ROW_NUMBER() OVER (PARTITION BY target_id ORDER BY created_at DESC) AS row_num
+           FROM health_runs hr
+           WHERE target_id IN (${placeholders})
+         ) ranked
+         WHERE row_num <= ?
+         ORDER BY target_id ASC, created_at DESC`,
+        [...targetIds, limit],
+      );
+      for (const row of rows as HealthRun[]) {
+        const runs = result.get(row.target_id);
+        if (runs) runs.push(row);
+        else result.set(row.target_id, [row]);
+      }
+      return result;
+    } finally {
+      conn.release();
+    }
+  },
+
+  async getStatsByTargets(
+    targetIds: string[],
+    startTime: number,
+    endTime: number,
+  ): Promise<Map<string, {
+    totalChecks: number;
+    successCount: number;
+    errorCount: number;
+    avgLatency: number;
+    minLatency: number;
+    maxLatency: number;
+  }>> {
+    const result = new Map<string, {
+      totalChecks: number;
+      successCount: number;
+      errorCount: number;
+      avgLatency: number;
+      minLatency: number;
+      maxLatency: number;
+    }>();
+    if (targetIds.length === 0) return result;
+
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const placeholders = targetIds.map(() => '?').join(',');
+      const [rows] = await conn.query(
+        `SELECT target_id, ${HEALTH_RUN_STATS_COLUMNS}
+         FROM health_runs
+         WHERE target_id IN (${placeholders})
+           AND created_at >= ? AND created_at <= ?
+         GROUP BY target_id`,
+        [...targetIds, startTime, endTime],
+      );
+      for (const row of rows as any[]) {
+        result.set(row.target_id, {
+          totalChecks: Number(row.total_checks) || 0,
+          successCount: Number(row.success_count) || 0,
+          errorCount: Number(row.error_count) || 0,
+          avgLatency: Math.round(Number(row.avg_latency) || 0),
+          minLatency: Number(row.min_latency) || 0,
+          maxLatency: Number(row.max_latency) || 0,
+        });
+      }
+      return result;
+    } finally {
+      conn.release();
+    }
+  },
+
   async getStats(targetId: string, startTime: number, endTime: number) {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
       const [rows] = await conn.query(
-        `SELECT
-          COUNT(*) as total_checks,
-          SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success_count,
-          SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error_count,
-          AVG(latency_ms) as avg_latency,
-          MIN(latency_ms) as min_latency,
-          MAX(latency_ms) as max_latency
+        `SELECT ${HEALTH_RUN_STATS_COLUMNS}
         FROM health_runs
         WHERE target_id = ? AND created_at >= ? AND created_at <= ?`,
         [targetId, startTime, endTime]

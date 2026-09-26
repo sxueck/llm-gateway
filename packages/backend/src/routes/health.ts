@@ -57,6 +57,19 @@ setInterval(() => {
   rateLimiter.cleanup();
 }, 600000);
 
+function parseRunsPagination(page: string, pageSize: string) {
+  if (!/^\d+$/.test(page) || !/^\d+$/.test(pageSize)) return null;
+  const pageNum = Number(page);
+  const requestedSize = Number(pageSize);
+  if (!Number.isSafeInteger(pageNum) || !Number.isSafeInteger(requestedSize)) return null;
+
+  const safePage = Math.max(1, pageNum);
+  const safeSize = Math.min(100, Math.max(1, requestedSize));
+  const start = (safePage - 1) * safeSize;
+  if (!Number.isSafeInteger(start)) return null;
+  return { pageNum: safePage, pageSize: safeSize, start };
+}
+
 export async function healthRoutes(fastify: FastifyInstance) {
   // 公开接口开关门控（仅作用于 /public/health 与 /api/public/health）
   fastify.addHook('preHandler', async (request, reply) => {
@@ -239,19 +252,32 @@ export async function healthRoutes(fastify: FastifyInstance) {
         });
         return;
       }
+      if (window !== '1h' && window !== '24h' && window !== '7d') {
+        return reply.code(400).send({
+          error: {
+            message: 'window 必须是 1h、24h 或 7d',
+            type: 'invalid_request_error',
+            code: 'invalid_window',
+          },
+        });
+      }
 
-      const pageNum = Math.max(1, parseInt(page));
-      const pageSize = Math.min(100, Math.max(1, parseInt(page_size)));
-
-      const allRuns = await healthAggregatorService.getTargetRuns(target_id, {
+      const pagination = parseRunsPagination(page, page_size);
+      if (!pagination) {
+        return reply.code(400).send({
+          error: {
+            message: 'page 和 page_size 必须是有效的整数',
+            type: 'invalid_request_error',
+            code: 'invalid_pagination',
+          },
+        });
+      }
+      const { pageNum, pageSize, start } = pagination;
+      const { runs: paginatedRuns, total } = await healthAggregatorService.getTargetRunsPage(target_id, {
         window,
-        limit: 1000, // 最多查询1000条
+        limit: pageSize,
+        offset: start,
       });
-
-      const total = allRuns.length;
-      const start = (pageNum - 1) * pageSize;
-      const end = start + pageSize;
-      const paginatedRuns = allRuns.slice(start, end);
 
       reply.header('Cache-Control', 'public, max-age=30');
       return {
@@ -395,19 +421,32 @@ export async function healthRoutes(fastify: FastifyInstance) {
         });
         return;
       }
+      if (window !== '1h' && window !== '24h' && window !== '7d') {
+        return reply.code(400).send({
+          error: {
+            message: 'window 必须是 1h、24h 或 7d',
+            type: 'invalid_request_error',
+            code: 'invalid_window',
+          },
+        });
+      }
 
-      const pageNum = Math.max(1, parseInt(page));
-      const pageSize = Math.min(100, Math.max(1, parseInt(page_size)));
-
-      const allRuns = await healthAggregatorService.getTargetRuns(target_id, {
+      const pagination = parseRunsPagination(page, page_size);
+      if (!pagination) {
+        return reply.code(400).send({
+          error: {
+            message: 'page 和 page_size 必须是有效的整数',
+            type: 'invalid_request_error',
+            code: 'invalid_pagination',
+          },
+        });
+      }
+      const { pageNum, pageSize, start } = pagination;
+      const { runs: paginatedRuns, total } = await healthAggregatorService.getTargetRunsPage(target_id, {
         window,
-        limit: 1000,
+        limit: pageSize,
+        offset: start,
       });
-
-      const total = allRuns.length;
-      const start = (pageNum - 1) * pageSize;
-      const end = start + pageSize;
-      const paginatedRuns = allRuns.slice(start, end);
 
       reply.header('Cache-Control', 'public, max-age=30');
       return {

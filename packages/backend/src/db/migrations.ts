@@ -929,6 +929,33 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 46,
+    name: "add_health_runs_target_created_at_index",
+    up: async (conn: Connection) => {
+      const [rows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'health_runs'
+           AND INDEX_NAME = 'idx_health_runs_target_created_at'`,
+      );
+      if (Number((rows as any[])[0]?.cnt || 0) === 0) {
+        await conn.query(
+          "ALTER TABLE health_runs ADD INDEX idx_health_runs_target_created_at (target_id, created_at)",
+        );
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(
+          "ALTER TABLE health_runs DROP INDEX idx_health_runs_target_created_at",
+        );
+      } catch (error: any) {
+        console.warn("[迁移] 删除 health_runs 联合索引失败:", error.message);
+      }
+    },
+  },
 ];
 
 async function hasProviderForeignKey(

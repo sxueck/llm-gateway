@@ -378,6 +378,7 @@ export async function createTables() {
         created_at BIGINT NOT NULL,
         FOREIGN KEY (target_id) REFERENCES health_targets(id) ON DELETE CASCADE,
         INDEX idx_health_runs_target (target_id),
+        INDEX idx_health_runs_target_created_at (target_id, created_at),
         INDEX idx_health_runs_created_at (created_at),
         INDEX idx_health_runs_status (status)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci

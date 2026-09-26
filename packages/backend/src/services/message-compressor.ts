@@ -21,6 +21,17 @@ interface MessageContent {
   [key: string]: any;
 }
 
+interface ExtractedBlock {
+  content: string;
+  start: number;
+  end: number;
+}
+
+interface Replacement extends ExtractedBlock {
+  replacement: string;
+  length: number;
+}
+
 interface CompressionStats {
   originalMessageCount: number;
   compressedMessageCount: number;
@@ -272,10 +283,7 @@ export class MessageCompressor {
       if (!msg.content) return { message: msg, duplicatesFound: 0 };
 
       const replacements = this.collectReplacements(msg.content, index, firstOccurrences);
-      let out = msg.content;
-      for (const { content, replacement } of replacements) {
-        if (out.includes(content)) out = out.replace(content, replacement);
-      }
+      const out = this.applyReplacements(msg.content, replacements);
       if (out === msg.content) return { message: msg, duplicatesFound: replacements.length };
 
       if (out.trim().length === 0) {
@@ -297,10 +305,7 @@ export class MessageCompressor {
         }
         const replacements = this.collectReplacements(part.text, index, firstOccurrences);
         duplicatesFound += replacements.length;
-        let out = part.text;
-        for (const { content, replacement } of replacements) {
-          if (out.includes(content)) out = out.replace(content, replacement);
-        }
+        const out = this.applyReplacements(part.text, replacements);
         if (out === part.text) return part;
         changed = true;
         return { ...part, text: out };
@@ -320,6 +325,45 @@ export class MessageCompressor {
     return { message: msg, duplicatesFound: 0 };
   }
 
+  private applyReplacements(text: string, replacements: Replacement[]): string {
+    if (replacements.length === 0) return text;
+
+    const selected: Replacement[] = [];
+    for (const replacement of replacements) {
+      let low = 0;
+      let high = selected.length;
+      while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        if (selected[middle].start < replacement.start) low = middle + 1;
+        else high = middle;
+      }
+
+      const previous = selected[low - 1];
+      const next = selected[low];
+      if (
+        (previous && previous.end > replacement.start) ||
+        (next && next.start < replacement.end)
+      ) {
+        continue;
+      }
+      selected.splice(low, 0, replacement);
+    }
+
+    if (selected.length === 0) return text;
+
+    const fragments: string[] = [];
+    let cursor = 0;
+    for (const replacement of selected) {
+      if (replacement.start > cursor) {
+        fragments.push(text.slice(cursor, replacement.start));
+      }
+      fragments.push(replacement.replacement);
+      cursor = replacement.end;
+    }
+    if (cursor < text.length) fragments.push(text.slice(cursor));
+    return fragments.join('');
+  }
+
   /**
    * 提取文本中的可压缩块，登记首次出现索引，返回需要替换的重复块列表。
    * 同一消息内出现的相同块不互相替换（与旧实现一致），只跨消息去重。
@@ -328,12 +372,12 @@ export class MessageCompressor {
     text: string,
     index: number,
     firstOccurrences: Map<string, number>
-  ): Array<{ content: string; replacement: string; length: number }> {
-    const replacements: Array<{ content: string; replacement: string; length: number }> = [];
+  ): Replacement[] {
+    const replacements: Replacement[] = [];
     const seenInThisMessage = new Set<string>();
 
     for (const block of this.extractBlocks(text)) {
-      const hash = this.generateHash(block);
+      const hash = this.generateHash(block.content);
       if (seenInThisMessage.has(hash)) continue;
       seenInThisMessage.add(hash);
 
@@ -342,9 +386,9 @@ export class MessageCompressor {
         firstOccurrences.set(hash, index);
       } else if (first < index) {
         replacements.push({
-          content: block,
+          ...block,
           replacement: `[... #${first + 1}]`,
-          length: block.length
+          length: block.content.length,
         });
       }
     }
@@ -354,14 +398,15 @@ export class MessageCompressor {
   }
 
   /** 提取全部可压缩块：完整围栏代码块 + 内部代码/XML/environment_details 内容 */
-  private extractBlocks(text: string): string[] {
-    const blocks: string[] = [];
+  private extractBlocks(text: string): ExtractedBlock[] {
+    const blocks: ExtractedBlock[] = [];
     for (const fenced of this.extractCodeBlocks(text)) {
-      if (fenced.length >= this.MIN_CODE_LENGTH) blocks.push(fenced);
+      if (fenced.content.length >= this.MIN_CODE_LENGTH) blocks.push(fenced);
     }
     for (const inner of this.extractTextBlocks(text)) {
-      if (inner.length >= this.MIN_TEXT_LENGTH) blocks.push(inner);
+      if (inner.content.length >= this.MIN_TEXT_LENGTH) blocks.push(inner);
     }
+    blocks.sort((a, b) => a.start - b.start || b.end - a.end);
     return blocks;
   }
 
@@ -369,8 +414,8 @@ export class MessageCompressor {
    * 高效提取代码块 - 使用字符串解析替代正则表达式
    * 时间复杂度: O(n)，空间复杂度: O(k) 其中 k 是代码块数量
    */
-  private extractCodeBlocks(text: string): string[] {
-    const codeBlocks: string[] = [];
+  private extractCodeBlocks(text: string): ExtractedBlock[] {
+    const codeBlocks: ExtractedBlock[] = [];
     let i = 0;
     const len = text.length;
 
@@ -381,8 +426,11 @@ export class MessageCompressor {
       const endIdx = text.indexOf('```', startIdx + 3);
       if (endIdx === -1) break;
 
-      const codeBlock = text.substring(startIdx, endIdx + 3);
-      codeBlocks.push(codeBlock);
+      codeBlocks.push({
+        content: text.substring(startIdx, endIdx + 3),
+        start: startIdx,
+        end: endIdx + 3,
+      });
 
       i = endIdx + 3;
     }
@@ -399,8 +447,8 @@ export class MessageCompressor {
    * 4. <content>标签包裹的完整内容
    * 5. <environment_details>标签中的文件列表部分
    */
-  private extractTextBlocks(text: string): string[] {
-    const blocks: string[] = [];
+  private extractTextBlocks(text: string): ExtractedBlock[] {
+    const blocks: ExtractedBlock[] = [];
 
     let i = 0;
     const len = text.length;
@@ -414,9 +462,16 @@ export class MessageCompressor {
       const endIdx = text.indexOf('```', langEndIdx);
       if (endIdx === -1) break;
 
-      const codeContent = text.substring(langEndIdx + 1, endIdx).trim();
+      const rawCodeContent = text.substring(langEndIdx + 1, endIdx);
+      const codeContent = rawCodeContent.trim();
       if (codeContent.length >= this.MIN_TEXT_LENGTH) {
-        blocks.push(codeContent);
+        const leadingWhitespace = rawCodeContent.length - rawCodeContent.trimStart().length;
+        const contentStart = langEndIdx + 1 + leadingWhitespace;
+        blocks.push({
+          content: codeContent,
+          start: contentStart,
+          end: contentStart + codeContent.length,
+        });
       }
 
       i = endIdx + 3;
@@ -442,7 +497,11 @@ export class MessageCompressor {
 
         const tagContent = text.substring(startIdx, closeIdx + tag.end.length);
         if (tagContent.length >= this.MIN_TEXT_LENGTH) {
-          blocks.push(tagContent);
+          blocks.push({
+            content: tagContent,
+            start: startIdx,
+            end: closeIdx + tag.end.length,
+          });
         }
 
         i = closeIdx + tag.end.length;
@@ -460,8 +519,8 @@ export class MessageCompressor {
    * 支持提取所有 # 开头的部分（如 VSCode Visible Files、Current Workspace Directory 等）
    * 并对提取的内容进行去重
    */
-  private extractEnvironmentDetailsFileList(text: string): string[] {
-    const blocks: string[] = [];
+  private extractEnvironmentDetailsFileList(text: string): ExtractedBlock[] {
+    const blocks: ExtractedBlock[] = [];
     const seenHashes = new Set<string>();
     let i = 0;
     const len = text.length;
@@ -478,11 +537,15 @@ export class MessageCompressor {
       const sections = this.extractSectionsByHash(envContent);
 
       for (const section of sections) {
-        if (section.length >= this.MIN_TEXT_LENGTH) {
-          const hash = this.generateHash(section);
+        if (section.content.length >= this.MIN_TEXT_LENGTH) {
+          const hash = this.generateHash(section.content);
           if (!seenHashes.has(hash)) {
             seenHashes.add(hash);
-            blocks.push(section);
+            blocks.push({
+              ...section,
+              start: envStartIdx + section.start,
+              end: envStartIdx + section.end,
+            });
           }
         }
       }
@@ -497,8 +560,8 @@ export class MessageCompressor {
    * 提取文本中所有以 # 为边界的部分
    * 每个部分从 # 开始，到下一个 # 或文本结束为止
    */
-  private extractSectionsByHash(text: string): string[] {
-    const sections: string[] = [];
+  private extractSectionsByHash(text: string): ExtractedBlock[] {
+    const sections: ExtractedBlock[] = [];
     let i = 0;
     const len = text.length;
 
@@ -520,9 +583,16 @@ export class MessageCompressor {
         }
       }
 
-      const section = text.substring(sectionStart, sectionEnd).trim();
+      const rawSection = text.substring(sectionStart, sectionEnd);
+      const section = rawSection.trim();
       if (section.length > 0) {
-        sections.push(section);
+        const leadingWhitespace = rawSection.length - rawSection.trimStart().length;
+        const contentStart = sectionStart + leadingWhitespace;
+        sections.push({
+          content: section,
+          start: contentStart,
+          end: contentStart + section.length,
+        });
       }
 
       i = sectionEnd;

@@ -1,4 +1,5 @@
 import { healthTargetDb, healthRunDb } from '../db/index.js';
+import type { HealthRun, HealthTarget } from '../db/types.js';
 
 interface TargetSummary {
   targetId: string;
@@ -66,7 +67,7 @@ function calculatePercentiles(values: number[], percentile: number): number {
   return sorted[Math.max(0, index)];
 }
 
-function determineStatus(runs: any[], windowMs: number): 'ok' | 'degraded' | 'down' | 'unknown' {
+function determineStatus(runs: HealthRun[], windowMs: number): 'ok' | 'degraded' | 'down' | 'unknown' {
   if (runs.length === 0) return 'unknown';
 
   const now = Date.now();
@@ -95,6 +96,8 @@ class HealthAggregatorService {
     timestamp: number;
   } = { data: null, timestamp: 0 };
 
+  private summaryPromise: Promise<TargetSummary[]> | null = null;
+
   private readonly CACHE_TTL_MS = 15000; // 15秒缓存
 
   /**
@@ -107,17 +110,48 @@ class HealthAggregatorService {
       return this.summaryCache.data;
     }
 
-    const targets = await healthTargetDb.getEnabled();
-    const summaries: TargetSummary[] = [];
-
-    for (const target of targets) {
-      const summary = await this.getTargetSummary(target.id);
-      summaries.push(summary);
+    if (useCache && this.summaryPromise) {
+      return this.summaryPromise;
     }
 
-    this.summaryCache.data = summaries;
-    this.summaryCache.timestamp = now;
+    const load = this.loadAllTargetsSummary();
+    if (!useCache) return load;
 
+    this.summaryPromise = load;
+    try {
+      return await load;
+    } finally {
+      if (this.summaryPromise === load) {
+        this.summaryPromise = null;
+      }
+    }
+  }
+
+  private async loadAllTargetsSummary(): Promise<TargetSummary[]> {
+    const now = Date.now();
+    const targets = await healthTargetDb.getEnabled();
+    const targetIds = targets.map(target => target.id);
+    const window24h = 24 * 60 * 60 * 1000;
+    const window7d = 7 * 24 * 60 * 60 * 1000;
+
+    const [runsByTarget, stats7dByTarget, recentRunsByTarget] = await Promise.all([
+      healthRunDb.getByTargetsTimeWindow(targetIds, now - window24h, now),
+      healthRunDb.getStatsByTargets(targetIds, now - window7d, now),
+      healthRunDb.getRecentByTargets(targetIds, 100),
+    ]);
+
+    const summaries = targets.map(target =>
+      this.buildTargetSummary(
+        target,
+        runsByTarget.get(target.id) || [],
+        stats7dByTarget.get(target.id),
+        recentRunsByTarget.get(target.id) || [],
+        now,
+      ),
+    );
+
+    this.summaryCache.data = summaries;
+    this.summaryCache.timestamp = Date.now();
     return summaries;
   }
 
@@ -131,39 +165,54 @@ class HealthAggregatorService {
     }
 
     const now = Date.now();
-    const window1h = 60 * 60 * 1000;
     const window24h = 24 * 60 * 60 * 1000;
     const window7d = 7 * 24 * 60 * 60 * 1000;
+    const [runs24h, stats7dRaw, recentRuns] = await Promise.all([
+      healthRunDb.getByTimeWindow(targetId, now - window24h, now),
+      healthRunDb.getStats(targetId, now - window7d, now),
+      healthRunDb.getByTargetId(targetId, 100),
+    ]);
 
-    // 获取最近24小时的数据
-    const runs24h = await healthRunDb.getByTimeWindow(targetId, now - window24h, now);
+    return this.buildTargetSummary(target, runs24h, stats7dRaw, recentRuns, now);
+  }
+
+  private buildTargetSummary(
+    target: HealthTarget,
+    runs24h: HealthRun[],
+    stats7dRaw: {
+      totalChecks: number;
+      successCount: number;
+      errorCount: number;
+      avgLatency: number;
+    } | undefined,
+    recentRuns: HealthRun[],
+    now: number,
+  ): TargetSummary {
+    const window1h = 60 * 60 * 1000;
     const runs1h = runs24h.filter(r => r.created_at >= now - window1h);
-
-    // 聚合查询，避免逐条统计
-    const stats7dRaw = await healthRunDb.getStats(targetId, now - window7d, now);
-    const stats7d = {
-      totalChecks: stats7dRaw.totalChecks,
-      successCount: stats7dRaw.successCount,
-      errorCount: stats7dRaw.errorCount,
-      availability: stats7dRaw.totalChecks > 0 ? (stats7dRaw.successCount / stats7dRaw.totalChecks) * 100 : 0,
-      avgLatency: stats7dRaw.avgLatency,
-      p50Latency: 0, // 聚合查询不返回百分位数
-      p95Latency: 0, // 聚合查询不返回百分位数
+    const raw = stats7dRaw || {
+      totalChecks: 0,
+      successCount: 0,
+      errorCount: 0,
+      avgLatency: 0,
     };
-    stats7d.availability = Math.round(stats7d.availability * 100) / 100;
-
-    // 获取最近100次检查记录用于可视化时间轴
-    const recentRuns = await healthRunDb.getByTargetId(targetId, 100);
+    const availability = raw.totalChecks > 0
+      ? (raw.successCount / raw.totalChecks) * 100
+      : 0;
+    const stats7d = {
+      totalChecks: raw.totalChecks,
+      successCount: raw.successCount,
+      errorCount: raw.errorCount,
+      availability: Math.round(availability * 100) / 100,
+      avgLatency: raw.avgLatency,
+      p50Latency: 0,
+      p95Latency: 0,
+    };
 
     const stats1h = this.calculateStats(runs1h);
-
     const stats24h = this.calculateStats(runs24h);
-
     const latestRun = runs24h.length > 0 ? runs24h[runs24h.length - 1] : null;
-
-    // 基于最近1小时的数据确定当前状态
     const currentStatus = determineStatus(runs1h, window1h);
-
     const healthHistory = recentRuns.map(run => ({
       status: run.status,
       timestamp: run.created_at,
@@ -237,35 +286,38 @@ class HealthAggregatorService {
     return globalSummary;
   }
 
-  /**
-   * 获取目标的详细检查历史
-   */
-  async getTargetRuns(targetId: string, options?: { limit?: number; window?: string }) {
-    const limit = options?.limit || 50;
-    const window = options?.window || '24h';
-
+  async getTargetRunsPage(
+    targetId: string,
+    options: { limit: number; offset: number; window?: string },
+  ): Promise<{ runs: HealthRun[]; total: number }> {
+    const window = options.window || '24h';
+    const endTime = Date.now();
     let startTime = 0;
     if (window === '1h') {
-      startTime = Date.now() - 60 * 60 * 1000;
+      startTime = endTime - 60 * 60 * 1000;
     } else if (window === '24h') {
-      startTime = Date.now() - 24 * 60 * 60 * 1000;
+      startTime = endTime - 24 * 60 * 60 * 1000;
     } else if (window === '7d') {
-      startTime = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      startTime = endTime - 7 * 24 * 60 * 60 * 1000;
     }
 
-    const runs = await healthRunDb.getByTargetId(targetId, limit);
-
-    if (startTime > 0) {
-      return runs.filter(r => r.created_at >= startTime);
-    }
-
-    return runs;
+    const [runs, total] = await Promise.all([
+      healthRunDb.getTargetPage(
+        targetId,
+        startTime,
+        endTime,
+        options.limit,
+        options.offset,
+      ),
+      healthRunDb.countByTarget(targetId, startTime, endTime),
+    ]);
+    return { runs, total };
   }
 
   /**
    * 计算统计数据
    */
-  private calculateStats(runs: any[]) {
+  private calculateStats(runs: HealthRun[]) {
     if (runs.length === 0) {
       return {
         totalChecks: 0,

@@ -25,77 +25,56 @@ interface RoutingTarget {
   [key: string]: any;
 }
 
-/**
- * Check if a model matches a routing target.
- * Matching logic follows runtime resolver semantics:
- * - provider must match
- * - override_params.model must match model_identifier or name
- */
-function modelMatchesTarget(model: ModelReferenceInfo, target: RoutingTarget): boolean {
-  if (!target.provider || !model.provider_id) return false;
-  if (target.provider !== model.provider_id) return false;
-
-  const overrideModel = target.override_params?.model;
-  if (!overrideModel || typeof overrideModel !== 'string') return false;
-
-  return overrideModel === model.model_identifier || overrideModel === model.name;
+function routingTargetKey(providerId: string, modelName: string): string {
+  return `${providerId}\u0000${modelName}`;
 }
 
-/**
- * Parse routing_config and extract all targets array safely.
- * Returns empty array for any malformed data.
- */
-function safeExtractTargets(routingConfig: string | null | undefined): RoutingTarget[] {
-  if (!routingConfig) return [];
-
-  try {
-    const parsed = JSON.parse(routingConfig);
-    if (!parsed || typeof parsed !== 'object') return [];
-    if (!Array.isArray(parsed.targets)) return [];
-    return parsed.targets as RoutingTarget[];
-  } catch {
-    return [];
-  }
+interface VirtualKeyReferences {
+  modelIds: Set<string>;
+  routingTargets: Set<string>;
 }
 
-/**
- * Check if a virtual key references a model through any path:
- * - model_id (single binding)
- * - model_ids (multi binding)
- * - routing_config.targets[].override_params.model
- *
- * Uses per-virtual-key deduplication: returns true at most once per (virtualKey, model) pair.
- */
-function virtualKeyReferencesModel(
-  virtualKey: Pick<VirtualKey, 'id' | 'model_id' | 'model_ids' | 'routing_config'>,
-  model: ModelReferenceInfo
-): boolean {
-  // 1) Check direct binding via model_id
-  if (virtualKey.model_id === model.id) {
-    return true;
-  }
+function parseVirtualKeyReferences(virtualKey: {
+  model_id: string | null;
+  model_ids: string | null;
+  routing_config: string | null;
+}): VirtualKeyReferences {
+  const modelIds = new Set<string>();
+  const routingTargets = new Set<string>();
 
-  // 2) Check multi-model binding via model_ids JSON array
+  if (virtualKey.model_id) modelIds.add(virtualKey.model_id);
+
   if (virtualKey.model_ids) {
     try {
       const parsed = JSON.parse(virtualKey.model_ids);
       if (Array.isArray(parsed)) {
-        if (parsed.some((id: unknown) => typeof id === 'string' && id === model.id)) {
-          return true;
+        for (const id of parsed) {
+          if (typeof id === 'string') modelIds.add(id);
         }
       }
     } catch {
-      // Malformed JSON - skip this path
+      // Malformed JSON - skip this path.
     }
   }
 
-  // 3) Check routing config targets
-  const targets = safeExtractTargets(virtualKey.routing_config);
-  if (targets.some(target => modelMatchesTarget(model, target))) {
-    return true;
+  if (virtualKey.routing_config) {
+    try {
+      const parsed = JSON.parse(virtualKey.routing_config);
+      if (parsed && typeof parsed === 'object' && Array.isArray(parsed.targets)) {
+        for (const target of parsed.targets as RoutingTarget[]) {
+          const provider = target.provider;
+          const model = target.override_params?.model;
+          if (typeof provider === 'string' && typeof model === 'string' && model) {
+            routingTargets.add(routingTargetKey(provider, model));
+          }
+        }
+      }
+    } catch {
+      // Malformed JSON - skip this path.
+    }
   }
 
-  return false;
+  return { modelIds, routingTargets };
 }
 
 /**
@@ -137,12 +116,33 @@ async function countVirtualKeysByModels(
       result.set(model.id, 0);
     }
 
-    // Count references with per-virtual-key deduplication
+    const modelsByRoutingTarget = new Map<string, string[]>();
+    for (const model of models) {
+      if (!model.provider_id) continue;
+      for (const modelName of [model.model_identifier, model.name]) {
+        const key = routingTargetKey(model.provider_id, modelName);
+        const modelIds = modelsByRoutingTarget.get(key);
+        if (modelIds) modelIds.push(model.id);
+        else modelsByRoutingTarget.set(key, [model.id]);
+      }
+    }
+
+    // Parse each virtual key once and deduplicate references before incrementing.
     for (const virtualKey of virtualKeys) {
-      for (const model of models) {
-        if (virtualKeyReferencesModel(virtualKey, model)) {
-          result.set(model.id, (result.get(model.id) || 0) + 1);
+      const references = parseVirtualKeyReferences(virtualKey);
+      const referencedModelIds = new Set<string>();
+
+      for (const modelId of references.modelIds) {
+        if (result.has(modelId)) referencedModelIds.add(modelId);
+      }
+      for (const targetKey of references.routingTargets) {
+        for (const modelId of modelsByRoutingTarget.get(targetKey) || []) {
+          referencedModelIds.add(modelId);
         }
+      }
+
+      for (const modelId of referencedModelIds) {
+        result.set(modelId, result.get(modelId)! + 1);
       }
     }
 
