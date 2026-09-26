@@ -107,8 +107,8 @@
                     >
                       <FilterOutline />
                     </n-icon>
-                    {{ t("expertRouting.classifier") }}:
-                    {{ getClassifierLabel(config.config.llm_second_pass) }}
+                    {{ t("expertRouting.choiceThreshold", "置信度阈值") }}:
+                    {{ config.config.choice_threshold ?? 0.6 }}
                   </n-text>
                   <n-text depth="3" style="font-size: 12px">
                     <n-icon
@@ -135,16 +135,6 @@
                     <n-icon><BarChartOutlined /></n-icon>
                   </template>
                   {{ t("expertRouting.statistics") }}
-                </n-button>
-                <n-button
-                  text
-                  size="small"
-                  @click.stop="handleShowTrainingRecords(config.id)"
-                >
-                  <template #icon>
-                    <n-icon><DocumentTextOutline /></n-icon>
-                  </template>
-                  {{ t("expertRouting.trainingRecords") }}
                 </n-button>
                 <n-button text size="small" @click.stop="handleEdit(config)">
                   <template #icon>
@@ -201,22 +191,6 @@
     </n-modal>
 
     <n-modal
-      v-model:show="showTrainingRecordsModal"
-      preset="card"
-      :title="t('expertRouting.trainingRecordsReview')"
-      class="training-records-modal"
-      :style="{ width: '960px', maxWidth: '95%', maxHeight: '85vh' }"
-      :segmented="{ content: 'soft' }"
-    >
-      <div class="modal-content-wrapper">
-        <ExpertRoutingTrainingRecords
-          v-if="showTrainingRecordsModal"
-          :config-id="selectedTrainingConfigId"
-        />
-      </div>
-    </n-modal>
-
-    <n-modal
       v-model:show="showStatisticsModal"
       preset="card"
       :title="t('expertRouting.statistics')"
@@ -241,15 +215,6 @@
 .expert-routing-modal :deep(.n-card__content) {
   padding: 0;
   overflow: hidden;
-}
-
-.training-records-modal :deep(.n-card__content) {
-  padding: 0;
-  overflow: hidden;
-}
-
-.training-records-modal .modal-content-wrapper {
-  overflow-y: auto;
 }
 
 .modal-content-wrapper {
@@ -310,8 +275,7 @@
 
 @media (max-width: 768px) {
   .expert-routing-modal :deep(.n-card__content),
-  .statistics-modal :deep(.n-card__content),
-  .training-records-modal :deep(.n-card__content) {
+  .statistics-modal :deep(.n-card__content) {
     padding: 0;
     overflow: hidden;
   }
@@ -353,7 +317,6 @@ import {
   RefreshOutline,
   FilterOutline,
   CubeOutline,
-  DocumentTextOutline,
 } from "@vicons/ionicons5";
 import {
   EditOutlined,
@@ -368,7 +331,6 @@ import {
 import ExpertRoutingEditor from "@/components/ExpertRoutingEditor.vue";
 import ExpertRoutingVisualization from "@/components/ExpertRoutingVisualization.vue";
 import ExpertRoutingStatistics from "@/components/ExpertRoutingStatistics.vue";
-import ExpertRoutingTrainingRecords from "@/components/ExpertRoutingTrainingRecords.vue";
 import { useProviderStore } from "@/stores/provider";
 import { useModelStore } from "@/stores/model";
 import { createDefaultExpertRoutingConfig } from "@/utils/expert-routing";
@@ -397,13 +359,11 @@ const showEditorModal = ref(false);
 // Delay mounting the editor until after modal is visible to avoid jank during transition.
 const renderEditor = ref(false);
 const showStatisticsModal = ref(false);
-const showTrainingRecordsModal = ref(false);
 const editingId = ref<string | null>(null);
 const editingConfig = ref<CreateExpertRoutingRequest>(
   createDefaultExpertRoutingConfig(),
 );
 const selectedConfigId = ref<string>("");
-const selectedTrainingConfigId = ref<string>("");
 const saving = ref(false);
 const showExperimentalAlert = ref(
   localStorage.getItem(EXPERIMENTAL_ALERT_KEY) !== "true",
@@ -418,22 +378,6 @@ function blurActiveElement() {
 function handleCloseExperimentalAlert() {
   showExperimentalAlert.value = false;
   localStorage.setItem(EXPERIMENTAL_ALERT_KEY, "true");
-}
-
-function getClassifierLabel(secondPass: any): string {
-  if (!secondPass) return t("expertRouting.realModel");
-  if (secondPass.type === "virtual") {
-    const virtualModel = modelStore.models.find(
-      (m) => m.id === secondPass.model_id,
-    );
-    return (
-      virtualModel?.name ||
-      secondPass.model_id ||
-      t("expertRouting.virtualModel")
-    );
-  } else {
-    return secondPass.model || t("expertRouting.realModel");
-  }
 }
 
 async function loadConfigs() {
@@ -462,7 +406,6 @@ function handleEdit(config: ExpertRouting) {
     name: config.name,
     description: config.description,
     enabled: config.enabled,
-    llm_second_pass: config.config.llm_second_pass,
     preprocessing: config.config.preprocessing ?? {
       strip_tools: false,
       strip_files: false,
@@ -470,6 +413,7 @@ function handleEdit(config: ExpertRouting) {
       strip_system_prompt: false,
     },
     experts: config.config.experts,
+    choice_threshold: config.config.choice_threshold ?? 0.6,
     fallback: config.config.fallback,
     session_binding_policy: config.config.session_binding_policy,
   };
@@ -480,12 +424,6 @@ function handleShowStatistics(configId: string) {
   blurActiveElement();
   selectedConfigId.value = configId;
   showStatisticsModal.value = true;
-}
-
-function handleShowTrainingRecords(configId: string) {
-  blurActiveElement();
-  selectedTrainingConfigId.value = configId;
-  showTrainingRecordsModal.value = true;
 }
 
 async function handleSave(data: CreateExpertRoutingRequest) {

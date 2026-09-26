@@ -3,23 +3,12 @@ import {
   DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
 } from "@llm-gateway/shared";
 import type {
-  LlmSecondPassConfig,
   SessionBindingPolicy,
   CreateExpertRoutingRequest,
 } from "@/api/expert-routing";
+import { DEFAULT_CHOICE_THRESHOLD } from "@/api/expert-routing";
 
-export function createDefaultLlmSecondPassConfig(): LlmSecondPassConfig {
-  return {
-    type: "real",
-    max_tokens: 200,
-    temperature: 0,
-    timeout: 10000,
-    ignore_system_messages: false,
-    max_messages_to_classify: 0,
-    enable_structured_output: true,
-    enable_adaptive_thinking: false,
-  };
-}
+export { DEFAULT_CHOICE_THRESHOLD };
 
 export function createDefaultSessionBindingPolicy(): SessionBindingPolicy {
   return {
@@ -33,7 +22,7 @@ export function createDefaultExpertRoutingConfig(): CreateExpertRoutingRequest {
     name: "",
     description: "",
     enabled: true,
-    llm_second_pass: createDefaultLlmSecondPassConfig(),
+    choice_threshold: DEFAULT_CHOICE_THRESHOLD,
     session_binding_policy: createDefaultSessionBindingPolicy(),
     preprocessing: {
       strip_tools: false,

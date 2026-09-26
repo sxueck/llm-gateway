@@ -155,61 +155,20 @@ bun run start
 - 超过限制将返回 429 错误
 
 
-## 意图路由分类器
+## Jev 专家路由
 
-LLM Gateway 的专家路由（Expert Routing）使用独立部署的 Intent Router API 作为第一级路由决策器。它将用户意图分类到 21 个标签（coding 9 类 + ops 8 类 + general_control 3 类 + out_of_scope）；被拒判、无可用专家映射或服务不可用时，网关回退到 LLM 二次分类。
+专家路由使用 Jev 的 `choice` 决策在已配置的候选模型之间选择：把候选 ID、类别和用途描述发给 Jev，按返回的概率降序选择可用目标。最高概率低于路由配置的 `choice_threshold`（默认 0.6）、Jev 不可用或候选均不可用时，使用显式配置的 fallback；不调用 LLM 二次分类。有效会话绑定仍会直接复用先前选择。
 
-### 配置外置分类服务
-
-设置 `INTENT_ROUTER_API_URL` 为绝对 HTTP(S) 地址；容器编排中可直接使用服务名，例如 `http://intent-router:8000`。服务启用认证时，设置可选的 `INTENT_ROUTER_API_KEY`；`INTENT_ROUTER_API_TIMEOUT_MS` 默认为 5000 毫秒。
+在后端部署环境中配置完整的 Jev Decisions 请求 URL、密钥及上游模型名：
 
 ```bash
-INTENT_ROUTER_API_URL=https://intent-api.sxueck.com
-# INTENT_ROUTER_API_KEY=change-me
+JEV_API_URL=https://api.typesafe.ai/v1/systemone
+JEV_API_KEY=<server-side-key>
+JEV_MODEL=jev-1.13.0
+# JEV_API_TIMEOUT_MS=3000
 ```
 
-网关不再下载或加载 ONNX 模型。未配置或无法访问该服务时，专家路由继续走 LLM 二次分类 / fallback，而 `/v1/intent/classify` 返回 `503`。
-
-### 意图分类 API
-
-本地分类器同时以外部 API 形式开放，返回原始信号量（完整 label→score 分布，按分数降序），不做专家映射、拒绝决策或会话绑定。鉴权使用任意启用的虚拟密钥（Bearer）。
-
-```bash
-curl -X POST http://your-gateway-url/v1/intent/classify \
-  -H "Authorization: Bearer <你的虚拟密钥>" \
-  -H "Content-Type: application/json" \
-  -d '{"input": "帮我写一个快排", "top_n": 5}'
-```
-
-**请求参数：**
-
-| 参数 | 类型 | 说明 | 默认值 |
-| ------ | ------ | ------ | -------- |
-| `input` | string | 待分类文本（必填，非空，直接送分类器，不做路由预处理） | - |
-| `top_n` | int | 截取前 N 个标签；超过标签总数时返回全量 | 返回全量（21） |
-| `max_tokens` | int | 分词器截断上限 | 1024 |
-
-**响应示例：**
-
-```json
-{
-  "object": "intent_classification",
-  "model": "snival/intent-router-zh-setfit-v2",
-  "revision": "44b7e54f38c4657708c59a0ea7b4dfbf7226cf61",
-  "labels": [
-    { "label": "coding", "score": 0.92 },
-    { "label": "general_control", "score": 0.03 }
-  ],
-  "total_labels": 21,
-  "seq_len": 8,
-  "input_truncated": false,
-  "latency_ms": 12
-}
-```
-
-**错误码：** `401`（鉴权失败）、`400`（参数校验失败）、`503`（分类器未就绪，模型资产未加载）、`500`（推理失败）。
-
-> 注意：外部输入不经过专家路由的 `SignalBuilder` 去噪，与内部路由的分类结果可能不同；该端点为原始信号接口
+OpenRouter 可使用 `JEV_API_URL=https://openrouter.ai/api/alpha/decisions` 和 `JEV_MODEL=typesafe/jev-1.13`。不要将密钥放入前端；已有启用的专家路由但未配置 Jev 时，服务启动会输出警告日志，运行时 Jev 不可用的请求使用 fallback。旧的 `/v1/intent/classify` 已移除；通用 `/v1/systemone` 代理端点保留。历史专家日志和旧配置不被自动删除，新配置不再需要 `llm_second_pass`。
 
 ## Cloud SubAgent
 

@@ -244,7 +244,7 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-    // 意图分类日志表（/v1/intent/classify API 调用；专家路由分类记录在 expert_routing_logs）
+    // 历史意图分类日志表：保留旧数据供迁移与审计；新专家路由仅写 expert_routing_logs。
     await conn.query(`
       CREATE TABLE IF NOT EXISTS intent_classify_logs (
         id VARCHAR(255) PRIMARY KEY,

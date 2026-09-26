@@ -62,10 +62,7 @@
         <div class="stage-header">
           <n-tag type="info" round size="small">Step 2</n-tag>
           <span class="stage-title">{{
-            tr(
-              "expertRouting.localClassifierTitle",
-              "外置 Intent Router API (主分类)",
-            )
+            tr("expertRouting.jevChoiceTitle", "Jev 候选专家选择")
           }}</span>
           <n-tooltip trigger="hover">
             <template #trigger>
@@ -75,8 +72,8 @@
             </template>
             {{
               tr(
-                "expertRouting.localClassifierTooltip",
-                "由部署环境配置的 Intent Router API 执行主分类。",
+                "expertRouting.jevChoiceTooltip",
+                "Jev 直接在各候选专家之间做出选择，按选择概率降序取最优候选。",
               )
             }}
           </n-tooltip>
@@ -87,83 +84,40 @@
         <n-text depth="3" class="stage-desc">
           {{
             tr(
-              "expertRouting.localClassifierDesc",
-              "主分类由外置 Intent Router API 完成。被拒判、ops、out_of_scope 或服务不可用时，将进入下方 LLM 二次分类。",
-            )
-          }}
-        </n-text>
-      </div>
-    </n-card>
-
-    <div class="pipeline-arrow">
-      <n-icon size="24"><ArrowDownOutline /></n-icon>
-    </div>
-
-    <n-card class="pipeline-stage" :bordered="false">
-      <template #header>
-        <div class="stage-header">
-          <n-tag type="success" round size="small">Step 3</n-tag>
-          <span class="stage-title">{{
-            tr("expertRouting.llmSecondPassTitle", "LLM 二次分类 (Second Pass)")
-          }}</span>
-          <n-tooltip trigger="hover">
-            <template #trigger>
-              <n-icon size="16" class="info-icon"
-                ><InformationCircleOutline
-              /></n-icon>
-            </template>
-            {{
-              tr(
-                "expertRouting.classificationTooltip",
-                "当本地分类被拒判、返回不支持的 ops/out_of_scope 标签或缺少专家映射时调用",
-              )
-            }}
-          </n-tooltip>
-        </div>
-      </template>
-
-      <div class="stage-content">
-        <n-text depth="3" class="stage-desc">
-          {{
-            tr(
-              "expertRouting.classificationDesc",
-              "配置二次分类器模型和提示词，以处理本地分类无法决策的请求。",
+              "expertRouting.jevChoiceDesc",
+              "各候选专家的 category 作为稳定选择键，description 作为选择依据。Jev 按选择概率降序直接选出专家；低于置信度阈值时进入 fallback。",
             )
           }}
         </n-text>
 
         <n-divider style="margin: 12px 0" />
 
-        <ModelSelector
-          v-model:type="llmSecondPass.type"
-          v-model:model-id="llmSecondPass.model_id"
-          v-model:provider-id="llmSecondPass.provider_id"
-          v-model:model="llmSecondPass.model"
-          :provider-options="providerOptions"
-          :virtual-model-options="virtualModelOptions"
-        />
-
-        <n-form-item style="margin-top: 12px; margin-bottom: 0">
-          <n-checkbox v-model:checked="llmSecondPass.enable_adaptive_thinking">
-            {{ t("expertRouting.enableAdaptiveThinking") }}
-          </n-checkbox>
+        <n-form-item :label="tr('expertRouting.choiceThreshold', '置信度阈值')" :show-feedback="false">
+          <n-input-number
+            :value="choiceThreshold ?? 0.6"
+            :min="0"
+            :max="1"
+            :step="0.05"
+            @update:value="(v: number | null) => emit('update:choiceThreshold', v ?? 0.6)"
+          />
           <n-tooltip trigger="hover">
             <template #trigger>
               <n-icon
                 size="16"
                 class="info-icon"
-                style="margin-left: 6px; vertical-align: middle"
+                style="margin-left: 6px"
               >
                 <InformationCircleOutline />
               </n-icon>
             </template>
-            {{ t("expertRouting.enableAdaptiveThinkingHint") }}
+            {{
+              tr(
+                "expertRouting.choiceThresholdHint",
+                "最优候选的选择概率低于该阈值时，请求路由到 fallback。默认 0.6。",
+              )
+            }}
           </n-tooltip>
         </n-form-item>
-
-        <n-alert type="info" :show-icon="false" style="margin-top: 12px">
-          {{ t("expertRouting.stableLabelPromptHint") }}
-        </n-alert>
       </div>
     </n-card>
   </div>
@@ -180,15 +134,13 @@ import {
   NGrid,
   NGi,
   NFormItem,
+  NInputNumber,
   NTooltip,
-  NAlert,
   NCheckbox,
 } from "naive-ui";
 import { InformationCircleOutline, ArrowDownOutline } from "@vicons/ionicons5";
-import ModelSelector from "./ModelSelector.vue";
 import type {
   ExpertTarget,
-  LlmSecondPassConfig,
   PreprocessingConfig,
 } from "@/api/expert-routing";
 
@@ -199,15 +151,17 @@ function tr(key: string, fallback: string) {
 }
 
 interface Props {
-  llmSecondPass: LlmSecondPassConfig;
+  choiceThreshold?: number;
   preprocessing: PreprocessingConfig;
   experts: ExpertTarget[];
-  providerOptions: any[];
-  virtualModelOptions: any[];
 }
 
-defineProps<Props>();
-defineEmits(["update:llmSecondPass", "update:preprocessing"]);
+const props = defineProps<Props>();
+const emit = defineEmits([
+  "update:choiceThreshold",
+  "update:preprocessing",
+]);
+void props;
 </script>
 
 <style scoped>

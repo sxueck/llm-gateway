@@ -91,14 +91,14 @@ export interface ExpertRoutingConfig {
     strip_code_blocks?: boolean;
     strip_system_prompt?: boolean;
   };
-  llm_second_pass: import("./expert-routing.js").LlmSecondPassConfig;
+  choice_threshold?: number;
   experts: import("./expert-routing.js").ExpertTarget[];
   fallback?: {
     type: "virtual" | "real";
     model_id?: string;
     provider_id?: string;
     model?: string;
-  };
+  } | null;
   session_binding_policy: import("./expert-routing.js").SessionBindingPolicy;
 }
 

@@ -4,15 +4,13 @@
       <n-tabs type="line" animated>
         <n-tab-pane name="basic" :tab="t('expertRouting.basicInfo')">
           <n-form-item :label="t('expertRouting.expertCategory')" required>
-            <n-select
+            <n-input
               v-model:value="formValue.category"
-              :options="eligibleLabelOptions"
               :placeholder="t('expertRouting.expertCategoryPlaceholder')"
-              filterable
             />
             <template #feedback>
               <n-text depth="3" style="font-size: 12px">
-                {{ t('expertRouting.eligibleLabelsHint', '仅支持 coding 与 general_control 域的 12 个意图标签；ops/out_of_scope 不可直接映射。') }}
+                {{ t('expertRouting.categoryChoiceKeyHint', 'category 作为 Jev 的稳定选择键；description 描述该专家的适用标准，供 Jev 选择时参考。') }}
               </n-text>
             </template>
           </n-form-item>
@@ -119,16 +117,10 @@ import {
   NTabs,
   NTabPane,
 } from 'naive-ui';
-import { EXPERT_ROUTING_ELIGIBLE_LABELS } from '@llm-gateway/shared';
 import type { ExpertTarget } from '@/api/expert-routing';
 import { useProviderModels } from '@/composables/useProviderModels';
 
 const { t } = useI18n();
-
-const eligibleLabelOptions = EXPERT_ROUTING_ELIGIBLE_LABELS.map((l) => ({
-  label: `${l.displayName} (${l.label})`,
-  value: l.label,
-}));
 
 interface Props {
   expert: ExpertTarget;

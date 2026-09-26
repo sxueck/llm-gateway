@@ -9,7 +9,6 @@ import {
   expertRoutingLogDb,
   healthTargetDb,
   virtualKeyDb,
-  intentClassifyLogDb,
 } from "../db/index.js";
 import { hotConfigCache } from "../services/hot-config-cache.js";
 import { nanoid } from "nanoid";
@@ -894,26 +893,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       endTime: now,
     });
 
-    // Intent classification stats aggregate both sources: the external
-    // /v1/intent/classify API and every Expert Router classification.
-    const [expertRoutingStats, intentApiStats] = await Promise.all([
-      expertRoutingLogDb.getGlobalStatistics(startTime),
-      intentClassifyLogDb.getGlobalStatistics(startTime),
-    ]);
-    const totalClassifications =
-      expertRoutingStats.totalRequests + intentApiStats.totalRequests;
-    // Weighted average: reconstruct each source's total latency from its own
-    // count × average, then divide by the combined count.
-    const totalLatencyMs =
-      expertRoutingStats.avgClassificationTime *
-        expertRoutingStats.totalRequests +
-      intentApiStats.avgClassificationTime * intentApiStats.totalRequests;
-    const intentClassifyStats = {
-      totalRequests: totalClassifications,
-      avgClassificationTime: totalClassifications
-        ? Math.round(totalLatencyMs / totalClassifications)
-        : 0,
-    };
+    const intentClassifyStats = await expertRoutingLogDb.getGlobalStatistics(startTime);
     const modelStats = await apiRequestDb.getModelStats({
       startTime,
       endTime: now,

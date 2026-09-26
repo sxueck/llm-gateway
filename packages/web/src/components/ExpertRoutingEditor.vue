@@ -53,7 +53,6 @@
 
         <ExpertRoutingVisualization
           v-model:experts="formValue.experts"
-          :classifier-config="formValue.llm_second_pass"
           :provider-options="providerOptions"
           :virtual-model-options="virtualModelOptions"
           editable
@@ -72,11 +71,9 @@
         </div>
 
         <RoutingPipelineConfig
-          v-model:llm-second-pass="formValue.llm_second_pass"
+          v-model:choice-threshold="formValue.choice_threshold"
           :preprocessing="formValue.preprocessing"
           :experts="formValue.experts"
-          :provider-options="providerOptions"
-          :virtual-model-options="virtualModelOptions"
         />
 
         <n-divider />
@@ -152,8 +149,19 @@
             <n-descriptions-item :label="t('expertRouting.expertCount')">
               {{ formValue.experts.length }}
             </n-descriptions-item>
-            <n-descriptions-item :label="t('expertRouting.classifierModel')">
-              {{ getModelLabel(formValue.llm_second_pass) }}
+            <n-descriptions-item
+              :label="t('expertRouting.choiceThreshold', '置信度阈值')"
+            >
+              {{ formValue.choice_threshold ?? 0.6 }}
+            </n-descriptions-item>
+            <n-descriptions-item
+              :label="t('expertRouting.fallbackStrategy')"
+            >
+              {{
+                enableFallback
+                  ? fallbackModel || fallbackModelId || "-"
+                  : t("common.disabled")
+              }}
             </n-descriptions-item>
           </n-descriptions>
         </n-form>
@@ -198,11 +206,11 @@ import {
 } from "naive-ui";
 import { useProviderStore } from "@/stores/provider";
 import { useModelStore } from "@/stores/model";
-import type {
-  CreateExpertRoutingRequest,
-  LlmSecondPassConfig,
-} from "@/api/expert-routing";
-import { createDefaultSessionBindingPolicy } from "@/utils/expert-routing";
+import type { CreateExpertRoutingRequest } from "@/api/expert-routing";
+import {
+  createDefaultSessionBindingPolicy,
+  DEFAULT_CHOICE_THRESHOLD,
+} from "@/utils/expert-routing";
 import ExpertRoutingVisualization from "./ExpertRoutingVisualization.vue";
 import RoutingPipelineConfig from "./RoutingPipelineConfig.vue";
 import ModelSelector from "./ModelSelector.vue";
@@ -242,6 +250,13 @@ function normalizeForm(target: CreateExpertRoutingRequest) {
   if (!target.session_binding_policy) {
     target.session_binding_policy = createDefaultSessionBindingPolicy();
   }
+  if (
+    target.choice_threshold === undefined ||
+    target.choice_threshold === null ||
+    Number.isNaN(target.choice_threshold)
+  ) {
+    target.choice_threshold = DEFAULT_CHOICE_THRESHOLD;
+  }
 }
 
 normalizeForm(formValue.value);
@@ -270,16 +285,6 @@ const virtualModelOptions = computed(() =>
     })),
 );
 
-function getModelLabel(config: LlmSecondPassConfig) {
-  if (config.type === "virtual") {
-    const m = virtualModelOptions.value.find(
-      (v) => v.value === config.model_id,
-    );
-    return m ? `Virtual: ${m.label}` : config.model_id;
-  }
-  return config.model || "Unknown";
-}
-
 function handlePrevious() {
   if (currentStep.value > 1) {
     currentStep.value--;
@@ -303,7 +308,7 @@ function handleSave() {
       model: fallbackType.value === "real" ? fallbackModel.value : undefined,
     };
   } else {
-    formValue.value.fallback = undefined;
+    formValue.value.fallback = null;
   }
 
   emit("save", formValue.value);

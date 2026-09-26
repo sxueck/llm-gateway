@@ -10,9 +10,11 @@ import {
   initDatabase,
   apiRequestDb,
   systemConfigDb,
+  expertRoutingConfigDb,
   shutdownDatabase,
 } from "./db/index.js";
 import { startSessionBindingCleanup } from "./services/expert-router.js";
+import { getJevConfiguration } from "./services/expert-router/jev-client.js";
 import { startContextNormalizationCleanup } from "./services/context-normalization/index.js";
 import { authRoutes } from "./routes/auth.js";
 import { providerRoutes } from "./routes/providers.js";
@@ -27,7 +29,6 @@ import { openaiRoutes } from "./routes/openai.js";
 import { geminiRoutes } from "./routes/gemini.js";
 import { modelPresetsRoutes } from "./routes/model-presets.js";
 import { expertRoutingRoutes } from "./routes/expert-routing.js";
-import { intentRoutes } from "./routes/intent.js";
 import { healthRoutes } from "./routes/health.js";
 import { costMappingRoutes } from "./routes/cost-mapping.js";
 import { promptSampleRoutes } from "./routes/prompt-samples.js";
@@ -140,6 +141,18 @@ fastify.get("/api/admin/config/debug-stream", (_request, reply) => {
 });
 
 await initDatabase();
+// 与运行时行为保持一致：Jev 未配置不阻断启动，只警告；实际请求会走 fallback。
+const expertConfigs = await expertRoutingConfigDb.getAll() as Array<{ enabled: number }>;
+if (expertConfigs.some((config) => config.enabled === 1)) {
+  try {
+    getJevConfiguration();
+  } catch (error) {
+    memoryLogger.warn(
+      `Expert routing is enabled but Jev is not configured; requests will fall back until JEV_API_URL/JEV_API_KEY/JEV_MODEL are set: ${error instanceof Error ? error.message : error}`,
+      "ExpertRouter",
+    );
+  }
+}
 
 // Plugin Center：内置官方插件幂等 seed 到 worker_plugins（版本不可变，不覆盖已存在版本）
 {
@@ -264,7 +277,6 @@ await fastify.register(modelPresetsRoutes, {
 await fastify.register(expertRoutingRoutes, {
   prefix: "/api/admin/expert-routing",
 });
-await fastify.register(intentRoutes, { prefix: "/v1/intent" });
 await fastify.register(costMappingRoutes, {
   prefix: "/api/admin/cost-mappings",
 });

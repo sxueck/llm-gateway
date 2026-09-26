@@ -344,7 +344,7 @@ const cleaningEfficiency = computed(() => {
   return Math.max(0, Math.round((reduction / estimatedOriginalChars) * 100));
 });
 
-type RouteSource = "session" | "intent_api" | "llm_second_pass" | "fallback";
+type RouteSource = "session" | "jev" | "intent_api" | "llm_second_pass" | "fallback";
 type NaiveTagType =
   "info" | "success" | "warning" | "error" | "default" | "primary";
 
@@ -353,6 +353,7 @@ const ROUTE_SOURCE_META: Record<
   { label: string; color: string; tag: NaiveTagType }
 > = {
   session: { label: "Session Reuse", color: "#8a2be2", tag: "info" },
+  jev: { label: "Jev", color: "#18a058", tag: "success" },
   intent_api: { label: "Intent Router API", color: "#2080f0", tag: "info" },
   llm_second_pass: {
     label: "LLM Second Pass",
@@ -366,9 +367,10 @@ const distributionBars = computed(() => {
   const dist = statistics.value.routeSourceDistribution || {};
   const count = (source: RouteSource) => dist[source] || 0;
 
-  // Report the Intent Router API and LLM second pass separately.
+  // Keep historical route sources visible alongside Jev.
   const order: RouteSource[] = [
     "session",
+    "jev",
     "intent_api",
     "llm_second_pass",
     "fallback",
@@ -384,12 +386,12 @@ const distributionBars = computed(() => {
     }
   }
 
-  // Always show the primary classifier source if empty
+  // Show the current route source when statistics are empty.
   if (bars.length === 0) {
     bars.push({
-      source: "intent_api",
-      label: ROUTE_SOURCE_META.intent_api.label,
-      color: ROUTE_SOURCE_META.intent_api.color,
+      source: "jev",
+      label: ROUTE_SOURCE_META.jev.label,
+      color: ROUTE_SOURCE_META.jev.color,
     });
   }
 
@@ -412,7 +414,6 @@ function formatRouteSource(source?: string) {
   if (!source) return "-";
   if (source in ROUTE_SOURCE_META)
     return ROUTE_SOURCE_META[source as RouteSource].label;
-  // Legacy layer sources roll up to LLM second pass.
   return source.replace(/_/g, " ");
 }
 

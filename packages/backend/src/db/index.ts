@@ -36,9 +36,7 @@ import { hourlySummaryRepository } from "./repositories/hourly-summary.repositor
 import { routingConfigRepository } from "./repositories/routing-config.repository.js";
 import { expertRoutingConfigRepository } from "./repositories/expert-routing-config.repository.js";
 import { expertRoutingLogRepository } from "./repositories/expert-routing-log.repository.js";
-import { intentClassifyLogRepository } from "./repositories/intent-classify-log.repository.js";
 import { expertRoutingSessionBindingRepository } from "./repositories/expert-routing-session-binding.repository.js";
-import { expertRoutingTrainingRecordRepository } from "./repositories/expert-routing-training-record.repository.js";
 import { healthTargetRepository } from "./repositories/health-target.repository.js";
 import { healthRunRepository } from "./repositories/health-run.repository.js";
 import { costMappingRepository } from "./repositories/cost-mapping.repository.js";
@@ -68,11 +66,8 @@ export const apiRequestHourlyDb = hourlySummaryRepository;
 export const routingConfigDb = routingConfigRepository;
 export const expertRoutingConfigDb = expertRoutingConfigRepository;
 export const expertRoutingLogDb = expertRoutingLogRepository;
-export const intentClassifyLogDb = intentClassifyLogRepository;
 export const expertRoutingSessionBindingDb =
   expertRoutingSessionBindingRepository;
-export const expertRoutingTrainingRecordDb =
-  expertRoutingTrainingRecordRepository;
 export const healthTargetDb = healthTargetRepository;
 export const healthRunDb = healthRunRepository;
 export const costMappingDb = costMappingRepository;

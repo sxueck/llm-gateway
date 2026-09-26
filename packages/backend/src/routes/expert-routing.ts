@@ -5,7 +5,6 @@ import {
   expertRoutingConfigDb,
   expertRoutingLogDb,
   expertRoutingSessionBindingDb,
-  expertRoutingTrainingRecordDb,
   modelDb,
   systemConfigDb,
   virtualKeyDb,
@@ -14,39 +13,19 @@ import { hotConfigCache } from "../services/hot-config-cache.js";
 import { memoryLogger } from "../services/logger.js";
 import { expertTemplates } from "../data/expert-templates.js";
 import {
-  isEligibleExpertRoutingLabel,
-  isExpertRoutingLabel,
   DEFAULT_SESSION_IDLE_TTL_SECONDS,
   DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
 } from "@llm-gateway/shared";
 
 const expertTargetSchema = z.object({
   id: z.string(),
-  category: z
-    .string()
-    .refine(isEligibleExpertRoutingLabel, "必须是可直接路由的稳定意图标签"),
+  category: z.string().trim().min(1),
   type: z.enum(["virtual", "real"]),
   model_id: z.string().optional(),
   provider_id: z.string().optional(),
   model: z.string().optional(),
   description: z.string().optional(),
   color: z.string().optional(),
-});
-
-// LLM second-pass model wiring (replaces the legacy primary classifier).
-const llmSecondPassSchema = z.object({
-  type: z.enum(["virtual", "real"]),
-  model_id: z.string().optional(),
-  provider_id: z.string().optional(),
-  model: z.string().optional(),
-  max_tokens: z.number().optional(),
-  temperature: z.number().optional(),
-  timeout: z.number().optional(),
-  ignore_system_messages: z.boolean().optional(),
-  max_messages_to_classify: z.number().optional(),
-  ignored_tags: z.array(z.string()).optional(),
-  enable_structured_output: z.boolean().optional(),
-  enable_adaptive_thinking: z.boolean().optional(),
 });
 
 const sessionBindingPolicySchema = z.object({
@@ -69,6 +48,7 @@ const fallbackConfigSchema = z
     provider_id: z.string().optional(),
     model: z.string().optional(),
   })
+  .nullable()
   .optional();
 
 const preprocessingSchema = z
@@ -80,17 +60,11 @@ const preprocessingSchema = z
   })
   .optional();
 
-const trainingRecordStatusSchema = z.enum([
-  "pending_review",
-  "accepted",
-  "rejected",
-]);
-
 const createExpertRoutingSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   enabled: z.boolean().optional(),
-  llm_second_pass: llmSecondPassSchema,
+  choice_threshold: z.number().min(0).max(1).optional(),
   preprocessing: preprocessingSchema,
   experts: z.array(expertTargetSchema),
   fallback: fallbackConfigSchema,
@@ -104,7 +78,7 @@ const updateExpertRoutingSchema = z.object({
   name: z.string().optional(),
   description: z.string().nullable().optional(),
   enabled: z.boolean().optional(),
-  llm_second_pass: llmSecondPassSchema.optional(),
+  choice_threshold: z.number().min(0).max(1).optional(),
   preprocessing: preprocessingSchema,
   experts: z.array(expertTargetSchema).optional(),
   fallback: fallbackConfigSchema,
@@ -138,28 +112,6 @@ async function validateModelConfig(
   }
 }
 
-async function validateLlmSecondPassConfig(secondPass: any): Promise<void> {
-  await validateModelConfig(secondPass, "LLM 二次分类");
-
-  if (secondPass.type === "virtual") {
-    const virtualModel = await modelDb.getById(secondPass.model_id);
-
-    if (virtualModel!.expert_routing_id) {
-      throw new Error(
-        `LLM 二次分类不能使用专家路由虚拟模型 "${virtualModel!.name}"。` +
-          `二次分类需要直接调用 LLM API,请使用真实模型或智能路由虚拟模型。`,
-      );
-    }
-
-    if (!virtualModel!.routing_config_id && !virtualModel!.provider_id) {
-      throw new Error(
-        `LLM 二次分类虚拟模型 "${virtualModel!.name}" 没有配置智能路由或供应商。` +
-          `请为该模型配置供应商或智能路由。`,
-      );
-    }
-  }
-}
-
 function validateSessionBindingPolicy(policy: any): void {
   const idle = Number(policy?.idle_ttl_seconds);
   const absolute = Number(policy?.absolute_ttl_seconds);
@@ -180,14 +132,6 @@ async function validateExpertConfig(
   expert: any,
   currentExpertRoutingId?: string,
 ): Promise<void> {
-  // FR-2: expert categories must map to a production-eligible intent label.
-  // ops labels and out_of_scope MUST be rejected.
-  if (!isEligibleExpertRoutingLabel(String(expert.category))) {
-    throw new Error(
-      `专家分类 "${expert.category}" 不是受支持的意图标签。仅允许 coding 和 general_control 域的 12 个标签。`,
-    );
-  }
-
   await validateModelConfig(expert, `专家 "${expert.category}"`);
 
   if (expert.type === "virtual") {
@@ -234,13 +178,14 @@ async function validateExpertRoutingConfig(
   config: any,
   currentExpertRoutingId?: string,
 ): Promise<void> {
-  await validateLlmSecondPassConfig(config.llm_second_pass);
-
   if (!Array.isArray(config.experts) || config.experts.length === 0) {
     throw new Error("至少需要配置一个专家映射");
   }
 
+  const ids = new Set<string>();
   for (const expert of config.experts) {
+    if (ids.has(expert.id)) throw new Error(`重复的候选模型 ID: ${expert.id}`);
+    ids.add(expert.id);
     await validateExpertConfig(expert, currentExpertRoutingId);
   }
 
@@ -259,6 +204,7 @@ function normalizeRouteSource(raw: string | null): string | null {
   if (!raw) return null;
   if (
     raw === "session" ||
+    raw === "jev" ||
     raw === "intent_api" ||
     raw === "llm_second_pass" ||
     raw === "fallback"
@@ -280,7 +226,7 @@ function buildConfigData(body: any, current?: any): any {
       absolute_ttl_seconds: DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
     };
   return {
-    llm_second_pass: body.llm_second_pass || current?.llm_second_pass,
+    choice_threshold: body.choice_threshold ?? current?.choice_threshold ?? 0.6,
     preprocessing:
       body.preprocessing !== undefined
         ? body.preprocessing
@@ -309,6 +255,7 @@ async function invalidateBindingsForExpertChanges(
       changedOrRemoved.push(id);
     } else if (
       prev.category !== next.category ||
+      prev.description !== next.description ||
       prev.type !== next.type ||
       prev.model_id !== next.model_id ||
       prev.provider_id !== next.provider_id ||
@@ -529,7 +476,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       let configData;
       const currentConfig = JSON.parse(existingConfig.config);
       if (
-        body.llm_second_pass ||
+        body.choice_threshold !== undefined ||
         body.experts ||
         body.fallback !== undefined ||
         body.preprocessing !== undefined ||
@@ -697,9 +644,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       if ((routeStats as any[]).length > 0) {
         for (const row of routeStats as any[]) {
           const raw = row.route_source ? String(row.route_source) : null;
-          // FR-14/AC-8: report distinct route sources; do NOT collapse local
-          // ONNX and LLM second-pass into a single bucket. Legacy layer sources
-          // (l1_/l2_/l3_/llm) roll up to llm_second_pass.
+          // Keep historical route sources distinct from Jev decisions.
           const normalized = normalizeRouteSource(raw);
           if (normalized) {
             routeSourceDistribution[normalized] =
@@ -719,7 +664,9 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         for (const row of modelStats as any[]) {
           const model = String(row.classifier_model || "");
           const count = Number(row.count);
-          const source = model === "fallback" ? "fallback" : "llm_second_pass";
+          let source = "llm_second_pass";
+          if (model === "fallback") source = "fallback";
+          else if (model.includes("jev")) source = "jev";
           routeSourceDistribution[source] =
             (routeSourceDistribution[source] || 0) + count;
         }
@@ -783,71 +730,6 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       );
       throw error;
     }
-  });
-
-  fastify.get("/:id/training-records", async (request) => {
-    const { id } = request.params as { id: string };
-    const query = z
-      .object({
-        status: trainingRecordStatusSchema.optional(),
-        limit: z.coerce.number().int().min(1).max(500).default(100),
-      })
-      .parse(request.query);
-    const config = await expertRoutingConfigDb.getById(id);
-    if (!config) throw new Error("专家路由配置不存在");
-    return {
-      records: await expertRoutingTrainingRecordDb.getByConfigId(
-        id,
-        query.status,
-        query.limit,
-      ),
-    };
-  });
-
-  fastify.patch("/:id/training-records/:recordId", async (request) => {
-    const { id, recordId } = request.params as { id: string; recordId: string };
-    const body = z
-      .object({
-        status: trainingRecordStatusSchema,
-        final_intent_label: z
-          .string()
-          .refine(isExpertRoutingLabel, "必须是稳定意图标签"),
-      })
-      .parse(request.body);
-    const updated = await expertRoutingTrainingRecordDb.updateReview(
-      id,
-      recordId,
-      body.status,
-      body.final_intent_label,
-    );
-    if (!updated) throw new Error("训练样本不存在");
-    return { success: true };
-  });
-
-  fastify.get("/:id/training-records/export", async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const config = await expertRoutingConfigDb.getById(id);
-    if (!config) throw new Error("专家路由配置不存在");
-    const records = await expertRoutingTrainingRecordDb.getByConfigId(
-      id,
-      "accepted",
-    );
-    const jsonl = records
-      .map((record) =>
-        JSON.stringify({
-          text: record.input_text,
-          label: record.final_intent_label,
-          source: "llm_judge_reviewed",
-          judge_prompt_version: record.judge_prompt_version,
-        }),
-      )
-      .join("\n");
-    reply.header("Content-Type", "application/x-ndjson; charset=utf-8");
-    reply.header(
-      "Content-Disposition",
-      `attachment; filename="expert-routing-${id}-accepted.jsonl"`,
-    );
-    return jsonl ? `${jsonl}\n` : "";
   });
 
   fastify.get("/:id/logs/category/:category", async (request) => {

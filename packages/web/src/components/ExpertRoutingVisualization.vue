@@ -39,9 +39,9 @@
         </div>
         <div class="node-body">
           <n-text depth="3" style="font-size: 12px"
-            >外置 Intent Router API</n-text
+            >Jev 候选专家选择</n-text
           >
-          <n-tag size="tiny" type="success">intent-router</n-tag>
+          <n-tag size="tiny" type="success">jev-router</n-tag>
         </div>
       </div>
 
@@ -219,7 +219,6 @@ import {
 } from "@vicons/ionicons5";
 import type {
   ExpertTarget,
-  LlmSecondPassConfig,
   ExpertTemplate,
 } from "@/api/expert-routing";
 import { useDebouncedWindowSize } from "@/composables/useDebouncedWindowSize";
@@ -236,7 +235,6 @@ const dialog = useDialog();
 interface Props {
   experts?: ExpertTarget[];
   routes?: { category: string; utterances: string[] }[];
-  classifierConfig?: LlmSecondPassConfig;
   providerOptions?: Array<{ label: string; value: string }>;
   virtualModelOptions?: Array<{ label: string; value: string }>;
   config?: any;

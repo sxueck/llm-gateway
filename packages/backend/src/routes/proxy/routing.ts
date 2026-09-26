@@ -39,7 +39,7 @@ export interface ResolveProviderResult {
 export interface ProxyRequest {
   body: any;
   protocol?: 'openai' | 'anthropic';
-  headers?: Record<string, any>;
+  headers?: Record<string, unknown>;
 }
 
 interface AffinityState {
@@ -236,14 +236,12 @@ export function countExplicitSessionBindings(configId: string, targetKey: string
 }
 
 function extractAffinityScopeKey(request?: any): string | undefined {
-  const headers: Record<string, any> = (request?.headers as any) || {};
+  const headers: Record<string, unknown> = request?.headers || {};
   const body: any = request?.body || {};
 
-  const header = (name: string): unknown => headers[name] ?? headers[name.toLowerCase()];
-
   const candidates: unknown[] = [
-    header('x-session-id'),
-    header('x-session-affinity'),
+    headers['x-session-id'],
+    headers['x-session-affinity'],
     body?.session_id,
     body?.sessionId,
     body?.metadata?.session_id,
@@ -824,32 +822,6 @@ export async function resolveExpertRouting(
       }
     } else if (result.expert.model_id) {
       resolvedModel = await hotConfigCache.getModelById(result.expert.model_id);
-    }
-
-    if (result.enable_adaptive_thinking === true && result.thinking_enabled !== undefined) {
-      request.body = request.body || {};
-      const body = request.body;
-      const hasExplicitThinking = body.thinking !== undefined;
-      const hasExplicitReasoning = body.reasoning !== undefined;
-      const hasExplicitReasoningEffort = body.reasoning_effort !== undefined;
-
-      if (!hasExplicitThinking && !hasExplicitReasoning && !hasExplicitReasoningEffort) {
-        const protocol = request.protocol || 'openai';
-        if (result.thinking_enabled === true) {
-          if (protocol === 'anthropic') {
-            body.thinking = { type: 'enabled', budget_tokens: 1024 };
-            if (!body.max_tokens && !body.max_completion_tokens) {
-              body.max_tokens = 4096;
-            }
-          } else {
-            body.thinking = { type: 'enabled' };
-          }
-          memoryLogger.debug(`thinking=enabled (${protocol || 'auto'})`, 'ExpertRouter');
-        } else {
-          body.thinking = { type: 'disabled' };
-          memoryLogger.debug(`thinking=disabled (${protocol || 'auto'})`, 'ExpertRouter');
-        }
-      }
     }
 
     return {
