@@ -175,9 +175,8 @@ export default {
     servingParams: 'Serving Limits',
     featureSupport: 'Feature Support',
     itemsPerPage: 'Items per page:',
-    groupByModelName: 'Group by model name:',
-    groupByProvider: 'Group by provider:',
-    modelCount: '{count} models',
+    groupByModelName: 'By Model Name',
+    groupByProvider: 'By Provider',
     virtualModel: 'Virtual Model',
     expertModel: 'Expert Model',
     pageSizeOptions: {

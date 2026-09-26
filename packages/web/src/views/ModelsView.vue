@@ -39,56 +39,39 @@
                 style="width: 100px;"
               />
             </n-space>
-            <n-space :size="24" align="center">
-              <n-space :size="8" align="center">
-                <span style="font-size: 13px; color: #666;">{{ t('models.groupByModelName') }}</span>
-                <n-switch v-model:value="groupByModelName" size="small" />
-              </n-space>
-              <n-space :size="8" align="center">
-                <span style="font-size: 13px; color: #666;">{{ t('models.groupByProvider') }}</span>
-                <n-switch v-model:value="groupByProvider" size="small" />
-              </n-space>
-            </n-space>
+            <n-radio-group v-model:value="groupMode" size="small">
+              <n-radio-button value="provider">{{ t('models.groupByProvider') }}</n-radio-button>
+              <n-radio-button value="name">{{ t('models.groupByModelName') }}</n-radio-button>
+            </n-radio-group>
           </n-space>
         </template>
 
-        <div v-if="isGroupedView">
-          <div v-for="group in groupedModels" :key="group.groupKey" class="model-group">
-            <div 
-              class="group-header" 
-              @click="toggleGroup(group.groupKey)"
-              style="cursor: pointer; user-select: none;"
+        <div class="models-split-layout">
+          <div class="group-sidebar">
+            <div
+              v-for="group in groupedModels"
+              :key="group.groupKey"
+              class="group-list-item"
+              :class="{ active: group.groupKey === selectedGroupKey }"
+              @click="selectedGroupKey = group.groupKey"
             >
-              <n-space align="center">
-                <n-icon :component="collapsedGroups.has(group.groupKey) ? KeyboardArrowRightOutlined : KeyboardArrowDownOutlined" />
-                <span class="group-name">{{ group.groupLabel }}</span>
-                <span class="model-count">{{ t('models.modelCount', { count: group.models.length }) }}</span>
-              </n-space>
+              <span class="group-item-name">{{ group.groupLabel }}</span>
+              <span class="group-item-count">{{ group.models.length }}</span>
             </div>
-            <n-collapse-transition :show="!collapsedGroups.has(group.groupKey)">
-              <n-data-table
-                :columns="columns"
-                :data="group.models"
-                :loading="modelStore.loading"
-                :pagination="false"
-                :scroll-x="900"
-                :bordered="false"
-                size="small"
-              />
-            </n-collapse-transition>
+          </div>
+          <div class="group-table-area">
+            <n-data-table
+              :key="selectedGroupKey ?? undefined"
+              :columns="columns"
+              :data="selectedGroupModels"
+              :loading="modelStore.loading"
+              :pagination="paginationConfig"
+              :scroll-x="900"
+              :bordered="false"
+              size="small"
+            />
           </div>
         </div>
-
-        <n-data-table
-          v-else
-          :columns="columns"
-          :data="visibleModels"
-          :loading="modelStore.loading"
-          :pagination="paginationConfig"
-          :scroll-x="900"
-          :bordered="false"
-          size="small"
-        />
       </n-card>
     </n-space>
 
@@ -216,8 +199,8 @@
 
 <script setup lang="ts">
 import { ref, h, computed, onMounted, watch } from 'vue';
-import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NPopconfirm, NDivider, NIcon, NTooltip, NText, NCollapseTransition } from 'naive-ui';
-import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined, ContentCopyOutlined, SearchOutlined, KeyboardArrowDownOutlined, KeyboardArrowRightOutlined } from '@vicons/material';
+import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NPopconfirm, NDivider, NIcon, NTooltip, NText, NRadioGroup, NRadioButton } from 'naive-ui';
+import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined, ContentCopyOutlined, SearchOutlined } from '@vicons/material';
 import { useI18n } from 'vue-i18n';
 import { useModelStore } from '@/stores/model';
 import { useProviderStore } from '@/stores/provider';
@@ -250,24 +233,16 @@ const editingId = ref<string | null>(null);
 const batchProviderId = ref<string>('');
 const testingModel = ref<Model | null>(null);
 const pageSize = ref(20);
-const groupByModelName = ref(localStorage.getItem('groupByModelName') === 'true');
-const groupByProvider = ref(localStorage.getItem('groupByProvider') === 'true' && !groupByModelName.value);
+type GroupMode = 'provider' | 'name';
 const searchQuery = ref('');
-const collapsedGroups = ref<Set<string>>(new Set());
+const groupMode = ref<GroupMode>(localStorage.getItem('modelsGroupMode') === 'name' ? 'name' : 'provider');
+const selectedGroupKey = ref<string | null>(null);
 const statusLoadingMap = ref<Record<string, boolean>>({});
+['groupByModelName', 'groupByProvider'].forEach(k => localStorage.removeItem(k));
 
-watch(groupByModelName, (newValue) => {
-  localStorage.setItem('groupByModelName', newValue.toString());
-  if (newValue) {
-    groupByProvider.value = false;
-  }
-});
-
-watch(groupByProvider, (newValue) => {
-  localStorage.setItem('groupByProvider', newValue.toString());
-  if (newValue) {
-    groupByModelName.value = false;
-  }
+watch(groupMode, (mode) => {
+  localStorage.setItem('modelsGroupMode', mode);
+  selectedGroupKey.value = null;
 });
 
 const pageSizeOptions = [
@@ -280,8 +255,6 @@ const pageSizeOptions = [
 const paginationConfig = computed(() => ({
   pageSize: pageSize.value,
 }));
-
-const isGroupedView = computed(() => groupByModelName.value || groupByProvider.value);
 
 // 仅展示可见模型：虚拟模型始终可见；普通模型需供应商已启用
 const visibleModels = computed(() => {
@@ -306,14 +279,10 @@ const visibleModels = computed(() => {
 });
 
 const groupedModels = computed(() => {
-  if (!isGroupedView.value) {
-    return [];
-  }
-
   const groups = new Map<string, { groupKey: string; rawKey: string; groupLabel: string; models: Model[] }>();
 
   visibleModels.value.forEach(model => {
-    if (groupByProvider.value) {
+    if (groupMode.value === 'provider') {
       const providerId = model.providerId || 'virtual';
       const groupKey = `provider:${providerId}`;
       const providerName = model.providerName || t('models.virtualModel');
@@ -349,13 +318,24 @@ const groupedModels = computed(() => {
   });
 
   return Array.from(groups.values()).sort((a, b) => {
-    if (groupByProvider.value) {
+    if (groupMode.value === 'provider') {
       if (a.rawKey === 'virtual') return 1;
       if (b.rawKey === 'virtual') return -1;
     }
     return a.groupLabel.localeCompare(b.groupLabel);
   });
 });
+
+const selectedGroupModels = computed(() =>
+  groupedModels.value.find(g => g.groupKey === selectedGroupKey.value)?.models ?? []
+);
+
+// 选中的分组被搜索过滤掉或分组模式切换后，回退到第一个分组（默认选中第一项）
+watch(groupedModels, (groups) => {
+  if (!groups.some(g => g.groupKey === selectedGroupKey.value)) {
+    selectedGroupKey.value = groups[0]?.groupKey ?? null;
+  }
+}, { immediate: true });
 
 const formValue = ref<{
   name: string;
@@ -515,14 +495,6 @@ const columns: DataTableColumns<Model> = [
     }),
   },
 ];
-
-function toggleGroup(groupKey: string) {
-  if (collapsedGroups.value.has(groupKey)) {
-    collapsedGroups.value.delete(groupKey);
-  } else {
-    collapsedGroups.value.add(groupKey);
-  }
-}
 
 async function handleStatusChange(row: Model, value: boolean) {
   try {
@@ -799,32 +771,64 @@ onMounted(async () => {
   border-bottom: 1px solid #e8e8e8;
 }
 
-.model-group {
-  margin-bottom: 24px;
+.models-split-layout {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
 }
 
-.model-group:last-child {
-  margin-bottom: 0;
+.group-sidebar {
+  flex: 0 0 220px;
+  max-height: 640px;
+  overflow-y: auto;
+  padding-right: 4px;
+  border-right: 1px solid #f0f0f0;
 }
 
-.group-header {
+.group-list-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  background: #f5f5f5;
+  gap: 8px;
+  padding: 8px 12px;
   border-radius: 8px;
-  margin-bottom: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s ease;
 }
 
-.group-name {
-  font-size: 14px;
-  font-weight: 600;
+.group-list-item:hover {
+  background: #f5f5f5;
+}
+
+.group-list-item.active {
+  background: rgba(15, 107, 74, 0.08);
+}
+
+.group-item-name {
+  font-size: 13px;
   color: #262626;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.model-count {
+.group-list-item.active .group-item-name {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.group-item-count {
+  flex-shrink: 0;
   font-size: 12px;
   color: #8c8c8c;
+  background: #f0f0f0;
+  border-radius: 10px;
+  padding: 1px 8px;
+}
+
+.group-table-area {
+  flex: 1;
+  min-width: 0;
 }
 </style>

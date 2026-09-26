@@ -175,9 +175,8 @@ export default {
     servingParams: '服务限制',
     featureSupport: '功能支持',
     itemsPerPage: '每页显示：',
-    groupByModelName: '按模型名称分组：',
-    groupByProvider: '按供应商分组：',
-    modelCount: '{count} 个模型',
+    groupByModelName: '按模型名称',
+    groupByProvider: '按供应商',
     virtualModel: '虚拟模型',
     expertModel: '专家模型',
     pageSizeOptions: {
