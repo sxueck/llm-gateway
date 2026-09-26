@@ -92,6 +92,13 @@ export interface ExpertRoutingConfig {
     strip_system_prompt?: boolean;
   };
   choice_threshold?: number;
+  /** PR-2: terminal behaviour when the fallback chain is exhausted
+   * (default "fallback"). "error" preserves the legacy throw. */
+  fail_open?: import("./expert-routing.js").FailOpenMode;
+  /** PR-1: "expert" (default) classifies into expert candidates;
+   * "difficulty" classifies into fixed low/medium/high then resolves a
+   * candidate by band price. */
+  classification_mode?: import("./expert-routing.js").ClassificationMode;
   experts: import("./expert-routing.js").ExpertTarget[];
   fallback?: {
     type: "virtual" | "real";

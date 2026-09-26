@@ -44,14 +44,22 @@
 
     <n-card class="runs-card" :title="t('workerMonitoring.runs')">
       <template #header-extra>
-        <n-select
-          v-model:value="status"
-          clearable
-          :placeholder="t('workerMonitoring.allStatuses')"
-          :options="statusOptions"
-          style="width: 160px"
-          @update:value="handleStatusChange"
-        />
+        <n-space align="center">
+          <n-select
+            v-model:value="status"
+            clearable
+            :placeholder="t('workerMonitoring.allStatuses')"
+            :options="statusOptions"
+            style="width: 160px"
+            @update:value="handleStatusChange"
+          />
+          <n-button size="small" :loading="exporting" @click="exportCsv">
+            <template #icon
+              ><n-icon><DownloadOutline /></n-icon
+            ></template>
+            {{ t("workerMonitoring.exportCsv") }}
+          </n-button>
+        </n-space>
       </template>
       <n-data-table
         size="small"
@@ -60,8 +68,9 @@
         :loading="loading"
         :bordered="false"
         :row-key="(row: AgentRunMonitoringItem) => row.id"
+        :row-props="rowProps"
         :pagination="pagination"
-        :scroll-x="1180"
+        :scroll-x="1280"
       />
     </n-card>
   </div>
@@ -69,6 +78,7 @@
 
 <script setup lang="ts">
 import { computed, h, onBeforeUnmount, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import type { DataTableColumns } from "naive-ui";
 import {
   NButton,
@@ -80,7 +90,7 @@ import {
   NTag,
   useMessage,
 } from "naive-ui";
-import { RefreshOutline } from "@vicons/ionicons5";
+import { RefreshOutline, DownloadOutline } from "@vicons/ionicons5";
 import { useI18n } from "vue-i18n";
 import {
   configApi,
@@ -90,8 +100,10 @@ import {
 } from "@/api/config";
 
 const message = useMessage();
+const router = useRouter();
 const { t } = useI18n();
 const loading = ref(false);
+const exporting = ref(false);
 const status = ref<AgentRunStatus | null>(null);
 const data = ref<AgentRunMonitoringResponse | null>(null);
 const page = ref(1);
@@ -267,7 +279,7 @@ const columns = computed<DataTableColumns<AgentRunMonitoringItem>>(() => [
         h(
           "code",
           { style: "font-size: 12px; color: #888" },
-          `v${row.plugin_version} · ${row.model_profile}`,
+          `${row.id} · v${row.plugin_version} · ${row.model_profile}`,
         ),
       ]),
   },
@@ -326,7 +338,135 @@ const columns = computed<DataTableColumns<AgentRunMonitoringItem>>(() => [
     ellipsis: { tooltip: true },
     render: (row) => row.error_message || "—",
   },
+  {
+    title: t("workerMonitoring.table.actions"),
+    key: "actions",
+    width: 90,
+    render: (row) =>
+      h(
+        NButton,
+        {
+          size: "small",
+          quaternary: true,
+          type: "primary",
+          onClick: (e: MouseEvent) => {
+            e.stopPropagation();
+            openDetail(row);
+          },
+        },
+        { default: () => t("workerMonitoring.viewRun") },
+      ),
+  },
 ]);
+
+function openDetail(row: AgentRunMonitoringItem) {
+  router.push(`/worker-monitoring/runs/${row.id}`);
+}
+
+function rowProps(row: AgentRunMonitoringItem) {
+  return {
+    style: "cursor: pointer",
+    onClick: () => openDetail(row),
+  };
+}
+
+// 导出的是当前筛选下的全量行（分页拉取），而非仅当前已加载页；
+// 上限防住异常大的导出 —— 超出时管理员应先收窄筛选。
+const CSV_EXPORT_ROW_CAP = 2000;
+
+async function exportCsv() {
+  if (exporting.value) return;
+  exporting.value = true;
+  try {
+    const rows: AgentRunMonitoringItem[] = [];
+    for (;;) {
+      const page = await configApi.getAgentRunMonitoring({
+        status: status.value ?? undefined,
+        limit: 100,
+        offset: rows.length,
+      });
+      rows.push(...page.items);
+      if (page.items.length < 100 || rows.length >= CSV_EXPORT_ROW_CAP) break;
+    }
+    downloadCsv(rows);
+    message.success(
+      t("workerMonitoring.exportDone", { count: rows.length }),
+    );
+  } catch (error: any) {
+    message.error(error?.message || t("workerMonitoring.exportFailed"));
+  } finally {
+    exporting.value = false;
+  }
+}
+
+function csvEscape(value: unknown): string {
+  let text = value === null || value === undefined ? "" : String(value);
+  // 防 CSV 公式注入：危险前缀且非纯数字时补单引号
+  if (/^[=+\-@\t\r]/.test(text) && !/^-?\d+(\.\d+)?$/.test(text)) {
+    text = `'${text}`;
+  }
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function downloadCsv(rows: AgentRunMonitoringItem[]) {
+  const header = [
+    "run_id",
+    "plugin_id",
+    "plugin_version",
+    "model_profile",
+    "source_type",
+    "status",
+    "created_at",
+    "started_at",
+    "completed_at",
+    "duration_ms",
+    "turn_count",
+    "tool_call_count",
+    "input_tokens",
+    "output_tokens",
+    "cost_usd",
+    "error_code",
+    "error_message",
+  ];
+  const lines = [header.map(csvEscape).join(",")];
+  for (const row of rows) {
+    lines.push(
+      [
+        row.id,
+        row.plugin_id,
+        row.plugin_version,
+        row.model_profile,
+        row.source_type,
+        row.status,
+        row.created_at ? new Date(row.created_at).toISOString() : "",
+        row.started_at ? new Date(row.started_at).toISOString() : "",
+        row.completed_at ? new Date(row.completed_at).toISOString() : "",
+        row.duration_ms ?? "",
+        row.usage?.turn_count ?? "",
+        row.usage?.tool_call_count ?? "",
+        row.usage?.input_tokens ?? "",
+        row.usage?.output_tokens ?? "",
+        row.usage?.cost ?? "",
+        row.error_code ?? "",
+        row.error_message ?? "",
+      ]
+        .map(csvEscape)
+        .join(","),
+    );
+  }
+  // BOM 保证 Excel 中文不乱码
+  const blob = new Blob([`\uFEFF${lines.join("\n")}`], {
+    type: "text/csv;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  anchor.download = `agent-runs-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 
 async function load() {
   if (loading.value) return;

@@ -11,7 +11,12 @@ export interface ExpertTarget {
   /** Criteria Jev uses to prefer this candidate. */
   description?: string;
   color?: string;
+  /** Explicit price band override; otherwise inferred from blended token cost. */
+  band?: Band;
 }
+
+/** Price band used by the router to bucket experts by blended cost. */
+export type Band = "low" | "medium" | "high";
 
 export interface ExpertTemplate {
   label: string;
@@ -44,6 +49,10 @@ export interface ExpertRoutingConfig {
     strip_system_prompt?: boolean;
   };
   choice_threshold: number;
+  /** Classifier dimension; defaults to expert on the backend. */
+  classification_mode?: ClassificationMode;
+  /** Failure policy when classification errors out; defaults to fallback. */
+  fail_open?: FailOpenPolicy;
   experts: ExpertTarget[];
   fallback?: FallbackConfig | null;
   session_binding_policy: SessionBindingPolicy;
@@ -52,6 +61,9 @@ export interface ExpertRoutingConfig {
 export type PreprocessingConfig = NonNullable<
   ExpertRoutingConfig["preprocessing"]
 >;
+
+export type ClassificationMode = "expert" | "difficulty";
+export type FailOpenPolicy = "fallback" | "parent" | "error";
 
 export interface ExpertRouting {
   id: string;
@@ -76,6 +88,8 @@ export interface CreateExpertRoutingRequest {
   description?: string;
   enabled?: boolean;
   choice_threshold?: number;
+  classification_mode?: ClassificationMode;
+  fail_open?: FailOpenPolicy;
   // Editor always normalizes this; make it required to simplify v-model usage.
   preprocessing: PreprocessingConfig;
   experts: ExpertTarget[];
@@ -91,10 +105,31 @@ export interface UpdateExpertRoutingRequest {
   description?: string;
   enabled?: boolean;
   choice_threshold?: number;
+  classification_mode?: ClassificationMode;
+  fail_open?: FailOpenPolicy;
   preprocessing?: ExpertRoutingConfig["preprocessing"];
   experts?: ExpertTarget[];
   fallback?: FallbackConfig | null;
   session_binding_policy?: SessionBindingPolicy;
+}
+
+/** One row of a band preview (shape of backend computeBandPreview entries). */
+export interface BandPreviewEntry {
+  id: string;
+  category: string;
+  type: "virtual" | "real";
+  /** Explicit band override, null when inferred from cost. */
+  explicitBand: Band | null;
+  /** Blended per-token price; null/Infinity when cost info is unknown. */
+  blendedPrice: number | null;
+  inputCostPerToken: number | null;
+  outputCostPerToken: number | null;
+}
+
+export interface BandPreviewResponse {
+  bands: Record<Band, BandPreviewEntry[]>;
+  /** expert id -> assigned band. */
+  assignment: Record<string, Band>;
 }
 
 export interface ExpertRoutingStatistics {
@@ -107,6 +142,14 @@ export interface ExpertRoutingStatistics {
     avgCleanedLength: number;
     totalRequests: number;
   };
+  /** PR-3 v47 observation; empty when no persisted rows exist. */
+  difficultyDistribution?: Record<string, number>;
+  bandDistribution?: Record<string, number>;
+  /** Share of fallback fail-open requests; null when not computable. */
+  failOpenRate?: number | null;
+  /** Always null today: no actual usage tokens / full price mapping persisted. */
+  estimatedSavingVsHighBand?: number | null;
+  limitations?: string[];
 }
 
 export interface ExpertRoutingLog {
@@ -125,6 +168,10 @@ export interface ExpertRoutingLog {
   prompt_tokens?: number;
   cleaned_content_length?: number;
   semantic_score?: number;
+  difficulty?: string | null;
+  band?: string | null;
+  verdict_reused?: number;
+  classifier_time_ms?: number | null;
 }
 
 export interface ExpertRoutingLogDetail {
@@ -146,6 +193,10 @@ export interface ExpertRoutingLogDetail {
   prompt_tokens?: number;
   cleaned_content_length?: number;
   semantic_score?: number;
+  difficulty?: string | null;
+  band?: string | null;
+  verdict_reused?: number;
+  classifier_time_ms?: number | null;
 }
 
 export const expertRoutingApi = {
@@ -224,6 +275,21 @@ export const expertRoutingApi = {
 
   getTemplates(): Promise<{ templates: ExpertTemplate[] }> {
     return request.get("/admin/expert-routing/templates");
+  },
+
+  /** Band preview of the saved configuration. */
+  getBandPreview(id: string): Promise<BandPreviewResponse> {
+    return request.get(`/admin/expert-routing/${id}/bands/preview`);
+  },
+
+  previewBands(
+    id: string | null | undefined,
+    experts: ExpertTarget[],
+  ): Promise<BandPreviewResponse> {
+    const path = id
+      ? `/admin/expert-routing/${id}/bands/preview`
+      : "/admin/expert-routing/bands/preview";
+    return request.post(path, { experts });
   },
 
 };

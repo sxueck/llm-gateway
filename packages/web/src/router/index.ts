@@ -73,6 +73,11 @@ const router = createRouter({
           component: () => import('@/views/WorkerMonitoringView.vue'),
         },
         {
+          path: 'worker-monitoring/runs/:id',
+          name: 'AgentRunDetail',
+          component: () => import('@/views/AgentRunDetailView.vue'),
+        },
+        {
           path: 'cost-analysis',
           name: 'CostAnalysis',
           component: () => import('@/views/CostAnalysisView.vue'),

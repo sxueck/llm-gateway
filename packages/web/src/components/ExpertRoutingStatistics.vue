@@ -53,6 +53,63 @@
         </n-space>
       </n-card>
 
+      <n-grid :cols="2" :x-gap="12">
+        <n-gi>
+          <n-card title="Difficulty Distribution" size="small">
+            <n-space vertical :size="8">
+              <div
+                v-for="(count, level) in statistics.difficultyDistribution"
+                :key="`difficulty-${level}`"
+                class="category-item"
+              >
+                <n-text>{{ level }}</n-text>
+                <n-space align="center">
+                  <n-progress
+                    type="line"
+                    :percentage="getDistributionPercentage(statistics.difficultyDistribution, count)"
+                    :show-indicator="false"
+                    style="width: 160px"
+                  />
+                  <n-text>{{ count }}</n-text>
+                </n-space>
+              </div>
+              <n-empty
+                v-if="!hasDistributionData(statistics.difficultyDistribution)"
+                description="No difficulty observations"
+                :show-icon="false"
+              />
+            </n-space>
+          </n-card>
+        </n-gi>
+        <n-gi>
+          <n-card title="Band Distribution" size="small">
+            <n-space vertical :size="8">
+              <div
+                v-for="(count, band) in statistics.bandDistribution"
+                :key="`band-${band}`"
+                class="category-item"
+              >
+                <n-text>{{ band }}</n-text>
+                <n-space align="center">
+                  <n-progress
+                    type="line"
+                    :percentage="getDistributionPercentage(statistics.bandDistribution, count)"
+                    :show-indicator="false"
+                    style="width: 160px"
+                  />
+                  <n-text>{{ count }}</n-text>
+                </n-space>
+              </div>
+              <n-empty
+                v-if="!hasDistributionData(statistics.bandDistribution)"
+                description="No band observations"
+                :show-icon="false"
+              />
+            </n-space>
+          </n-card>
+        </n-gi>
+      </n-grid>
+
       <n-card :title="t('expertRouting.categoryDistribution')" size="small">
         <n-space vertical :size="8">
           <div
@@ -177,6 +234,24 @@
                         selectedLogDetail.cleaned_content_length ?? "-"
                       }}
                       chars
+                    </div>
+                    <div>
+                      <n-text strong>Difficulty / Band:</n-text>
+                      {{ selectedLogDetail.difficulty || "-" }} /
+                      {{ selectedLogDetail.band || "-" }}
+                    </div>
+                    <div>
+                      <n-text strong>Verdict Reused:</n-text>
+                      {{ selectedLogDetail.verdict_reused ? "Yes" : "No" }}
+                    </div>
+                    <div>
+                      <n-text strong>Classifier Latency:</n-text>
+                      {{
+                        selectedLogDetail.classifier_time_ms !== null &&
+                        selectedLogDetail.classifier_time_ms !== undefined
+                          ? selectedLogDetail.classifier_time_ms + "ms"
+                          : "-"
+                      }}
                     </div>
                   </n-space>
                 </n-gi>
@@ -320,6 +395,11 @@ const statistics = ref<ExpertRoutingStatistics>({
   categoryDistribution: {},
   routeSourceDistribution: {},
   cleaningStats: { avgPromptTokens: 0, avgCleanedLength: 0, totalRequests: 0 },
+  difficultyDistribution: {},
+  bandDistribution: {},
+  failOpenRate: null,
+  estimatedSavingVsHighBand: null,
+  limitations: [],
 });
 const logs = ref<ExpertRoutingLog[]>([]);
 const loading = ref(false);
@@ -344,7 +424,7 @@ const cleaningEfficiency = computed(() => {
   return Math.max(0, Math.round((reduction / estimatedOriginalChars) * 100));
 });
 
-type RouteSource = "session" | "jev" | "intent_api" | "llm_second_pass" | "fallback";
+type RouteSource = "session" | "jev" | "fail_open" | "intent_api" | "llm_second_pass" | "fallback";
 type NaiveTagType =
   "info" | "success" | "warning" | "error" | "default" | "primary";
 
@@ -354,6 +434,7 @@ const ROUTE_SOURCE_META: Record<
 > = {
   session: { label: "Session Reuse", color: "#8a2be2", tag: "info" },
   jev: { label: "Jev", color: "#18a058", tag: "success" },
+  fail_open: { label: "Fail-open", color: "#f0a020", tag: "warning" },
   intent_api: { label: "Intent Router API", color: "#2080f0", tag: "info" },
   llm_second_pass: {
     label: "LLM Second Pass",
@@ -371,6 +452,7 @@ const distributionBars = computed(() => {
   const order: RouteSource[] = [
     "session",
     "jev",
+    "fail_open",
     "intent_api",
     "llm_second_pass",
     "fallback",
@@ -511,6 +593,19 @@ const categoryLogColumns: DataTableColumns<ExpertRoutingLog> = [
 function getPercentage(count: number): number {
   if (statistics.value.totalRequests === 0) return 0;
   return Math.round((count / statistics.value.totalRequests) * 100);
+}
+
+function hasDistributionData(dist?: Record<string, number>): boolean {
+  return Object.keys(dist || {}).length > 0;
+}
+
+function getDistributionPercentage(
+  dist: Record<string, number> | undefined,
+  count: number,
+): number {
+  const total = Object.values(dist || {}).reduce((sum, n) => sum + Number(n), 0);
+  if (total === 0) return 0;
+  return Math.round((Number(count) / total) * 100);
 }
 
 async function loadStatistics() {

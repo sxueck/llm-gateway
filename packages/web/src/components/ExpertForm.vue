@@ -69,6 +69,20 @@
           <n-form-item :label="t('expertRouting.expertColor')">
             <n-color-picker v-model:value="formValue.color" :modes="['hex']" />
           </n-form-item>
+
+          <n-form-item :label="t('expertRouting.priceBand', '价格带宽 (Band)')">
+            <n-select
+              v-model:value="formValue.band"
+              :options="bandOptions"
+              clearable
+              :placeholder="t('expertRouting.priceBandPlaceholder', '自动 (按混合价格推断)')"
+            />
+            <template #feedback>
+              <n-text depth="3" style="font-size: 12px">
+                {{ t('expertRouting.priceBandHint', '默认按混合 token 价格自动划分 low/medium/high；显式指定可覆盖自动分带。') }}
+              </n-text>
+            </template>
+          </n-form-item>
         </n-tab-pane>
 
         <n-tab-pane
@@ -117,7 +131,7 @@ import {
   NTabs,
   NTabPane,
 } from 'naive-ui';
-import type { ExpertTarget } from '@/api/expert-routing';
+import type { Band, ExpertTarget } from '@/api/expert-routing';
 import { useProviderModels } from '@/composables/useProviderModels';
 
 const { t } = useI18n();
@@ -143,6 +157,12 @@ const { options: providerModelOptions, loading: loadingModels } = useProviderMod
   () => formValue.value.provider_id,
 );
 
+const bandOptions: Array<{ label: string; value: Band }> = [
+  { label: 'low', value: 'low' },
+  { label: 'medium', value: 'medium' },
+  { label: 'high', value: 'high' },
+];
+
 function handleProviderChange() {
   formValue.value.model = '';
 }
@@ -158,6 +178,11 @@ function handleSave() {
 watch(() => props.expert, (newExpert) => {
   formValue.value = { ...newExpert };
 }, { deep: true });
+
+// clearable n-select yields null; normalize back to undefined for the API.
+watch(() => formValue.value.band, (band) => {
+  if (band === null) formValue.value.band = undefined;
+});
 
 watch(() => props.utterances, (newUtterances) => {
   utterancesText.value = newUtterances?.join('\n') || '';

@@ -1,9 +1,11 @@
-import { modelDb, routingConfigDb, expertRoutingConfigDb } from '../../db/index.js';
+import { modelDb, routingConfigDb, expertRoutingConfigDb, virtualKeyDb } from '../../db/index.js';
+import { getDatabase } from '../../db/connection.js';
 import { hotConfigCache } from '../../services/hot-config-cache.js';
 import { memoryLogger } from '../../services/logger.js';
 import { expertRouter } from '../../services/expert-router.js';
 import { CircuitState, circuitBreaker } from '../../services/circuit-breaker.js';
 import { parsePositiveInt } from '../../utils/parse-positive-int.js';
+import { blendedPriceOf } from '../../services/expert-router/bands.js';
 
 export interface RoutingTarget {
   provider: string;
@@ -24,6 +26,226 @@ export interface RoutingConfig {
     affinityTTL?: number;
   };
   targets: RoutingTarget[];
+}
+
+export type PerRequestRoutingStrategy = 'default' | 'price' | 'throughput' | 'latency';
+
+const PER_REQUEST_ROUTING_STRATEGIES: ReadonlySet<string> = new Set([
+  'default', 'price', 'throughput', 'latency'
+]);
+
+export function normalizeRoutingStrategy(raw: unknown): PerRequestRoutingStrategy | null {
+  if (typeof raw !== 'string') return null;
+  const value = raw.trim().toLowerCase();
+  if (!value) return null;
+  if (value === 'single') return 'default';
+  if (!PER_REQUEST_ROUTING_STRATEGIES.has(value)) return null;
+  return value as PerRequestRoutingStrategy;
+}
+
+export function extractRequestRoutingStrategy(
+  request?: ProxyRequest
+): PerRequestRoutingStrategy | null {
+  const bodyStrategy = normalizeRoutingStrategy((request?.body as any)?.routing);
+  if (bodyStrategy) return bodyStrategy;
+
+  const headers = (request?.headers || {}) as Record<string, unknown>;
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() === 'x-gateway-routing') {
+      const headerStrategy = normalizeRoutingStrategy(value);
+      if (headerStrategy) return headerStrategy;
+    }
+  }
+  return null;
+}
+
+/**
+ * routing_configs default strategy, when representable. Existing config
+ * strategy modes (loadbalance/fallback/hash/affinity) do not map onto the
+ * metric strategies, so the only representable default is 'default'.
+ */
+export function resolveConfigDefaultStrategy(_config?: RoutingConfig): PerRequestRoutingStrategy {
+  return 'default';
+}
+
+/**
+ * Resolve the effective per-request routing strategy:
+ * body.routing > x-gateway-routing header > virtual_keys.routing_strategy >
+ * routing_configs default when representable ('default').
+ */
+export async function resolvePerRequestRoutingStrategy(
+  request?: ProxyRequest,
+  virtualKeyId?: string,
+  config?: RoutingConfig
+): Promise<PerRequestRoutingStrategy> {
+  const requestStrategy = extractRequestRoutingStrategy(request);
+  if (requestStrategy) return requestStrategy;
+
+  if (virtualKeyId) {
+    try {
+      const virtualKey = await virtualKeyDb.getById(virtualKeyId);
+      const vkStrategy = normalizeRoutingStrategy(virtualKey?.routing_strategy);
+      if (vkStrategy) return vkStrategy;
+    } catch (e: any) {
+      memoryLogger.warn(`Failed to load virtual key for routing strategy: ${e.message}`, 'Routing');
+    }
+  }
+
+  return resolveConfigDefaultStrategy(config);
+}
+
+export interface TargetRoutingMetric {
+  blendedPrice?: number;
+  avgSpeed?: number;
+  avgTffbMs?: number;
+}
+
+export type TargetMetricMap = Map<string, TargetRoutingMetric>;
+
+export function computeBlendedPrice(modelAttributes: any): number {
+  return blendedPriceOf(modelAttributes && typeof modelAttributes === 'object' ? modelAttributes : undefined);
+}
+
+function parseModelAttributesSafe(raw: unknown): any {
+  if (typeof raw !== 'string' || !raw) return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+function getTargetMetricKey(provider: string, model?: string): string {
+  return model ? `${provider}::${model}` : provider;
+}
+
+// no-override target 会原样派发请求的 model，故其 key 回落到 provider::<requestModel>
+function metricKeyForTarget(target: RoutingTarget, requestModel?: string): string {
+  const overrideModel = target.override_params?.model?.trim();
+  return getTargetMetricKey(target.provider, overrideModel || requestModel);
+}
+
+const METRICS_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Collect per-target metric samples for price/throughput/latency sorting.
+ * Price comes from the target's real model model_attributes; speed/tffb come
+ * from hourly request summaries (existing columns only). Targets without
+ * samples simply have no entry and keep their original order when sorting.
+ */
+export async function collectTargetRoutingMetrics(
+  targets: RoutingTarget[],
+  strategy: PerRequestRoutingStrategy,
+  requestModel?: string
+): Promise<TargetMetricMap> {
+  const metrics: TargetMetricMap = new Map();
+  if (strategy === 'default' || !targets || targets.length === 0) {
+    return metrics;
+  }
+
+  if (strategy === 'price') {
+    const providerModelsCache = new Map<string, any[]>();
+    for (const target of targets) {
+      const lookupModel = target.override_params?.model?.trim() || requestModel;
+      if (!lookupModel) continue;
+      let providerModels = providerModelsCache.get(target.provider);
+      if (!providerModels) {
+        try {
+          providerModels = await modelDb.getByProviderId(target.provider);
+        } catch {
+          providerModels = [];
+        }
+        providerModelsCache.set(target.provider, providerModels);
+      }
+      const realModel = providerModels.find(m =>
+        m.is_virtual !== 1 &&
+        (m.model_identifier === lookupModel || m.name === lookupModel)
+      );
+      const blendedPrice = computeBlendedPrice(parseModelAttributesSafe(realModel?.model_attributes));
+      metrics.set(metricKeyForTarget(target, requestModel), { blendedPrice });
+    }
+    return metrics;
+  }
+
+  try {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const since = Date.now() - METRICS_LOOKBACK_MS;
+      const [rows] = await conn.query(
+        `SELECT provider_id, model,
+                SUM(total_output_speed) AS speed_sum,
+                SUM(speed_count) AS speed_count,
+                SUM(total_tffb_ms) AS tffb_sum,
+                SUM(tffb_count) AS tffb_count
+           FROM api_request_hourly_summaries
+          WHERE bucket_hour >= ?
+          GROUP BY provider_id, model`,
+        [since]
+      );
+      for (const row of rows as any[]) {
+        const speedCount = Number(row.speed_count) || 0;
+        const tffbCount = Number(row.tffb_count) || 0;
+        const metric: TargetRoutingMetric = {};
+        if (speedCount > 0) {
+          metric.avgSpeed = Number(row.speed_sum) / speedCount;
+        }
+        if (tffbCount > 0) {
+          metric.avgTffbMs = Number(row.tffb_sum) / tffbCount;
+        }
+        metrics.set(getTargetMetricKey(String(row.provider_id || ''), String(row.model || '').trim()), metric);
+      }
+    } finally {
+      conn.release();
+    }
+  } catch (e: any) {
+    memoryLogger.warn(`Failed to load routing metrics from hourly summaries: ${e.message}`, 'Routing');
+  }
+  return metrics;
+}
+
+function pickMetricValue(
+  metric: TargetRoutingMetric | undefined,
+  strategy: PerRequestRoutingStrategy
+): number | undefined {
+  if (!metric) return undefined;
+  if (strategy === 'price') return metric.blendedPrice;
+  if (strategy === 'throughput') return metric.avgSpeed;
+  if (strategy === 'latency') return metric.avgTffbMs;
+  return undefined;
+}
+
+/**
+ * Stable sort of candidate targets for the given strategy.
+ * price: blended price ascending; throughput: avg speed descending;
+ * latency: avg tffb ascending. Targets without samples follow scored targets
+ * in their original order.
+ */
+export function sortTargetsForStrategy(
+  targets: RoutingTarget[],
+  strategy: PerRequestRoutingStrategy,
+  metrics?: TargetMetricMap,
+  requestModel?: string
+): RoutingTarget[] {
+  if (strategy === 'default' || !metrics || metrics.size === 0) {
+    return targets;
+  }
+
+  const indexed = targets.map((target, index) => ({
+    target,
+    index,
+    value: pickMetricValue(metrics.get(metricKeyForTarget(target, requestModel)), strategy),
+  }));
+
+  indexed.sort((left, right) => {
+    if (left.value === undefined || right.value === undefined) {
+      return left.value === undefined ? (right.value === undefined ? left.index - right.index : 1) : -1;
+    }
+    if (left.value === right.value) return left.index - right.index;
+    return strategy === 'throughput' ? right.value - left.value : left.value - right.value;
+  });
+
+  return indexed.map(entry => entry.target);
 }
 
 export interface ResolveProviderResult {
@@ -407,7 +629,10 @@ export function selectRoutingTarget(
   type: string,
   configId?: string,
   hashKey?: string,
-  excludeTargetKeys?: Set<string>
+  excludeTargetKeys?: Set<string>,
+  perRequestStrategy?: PerRequestRoutingStrategy,
+  strategyMetrics?: TargetMetricMap,
+  requestModel?: string
 ): RoutingTarget | null {
   if (!config.targets || config.targets.length === 0) {
     return null;
@@ -463,6 +688,10 @@ export function selectRoutingTarget(
         : (healthyTargets.length > 0 ? healthyTargets : availableTargets);
       if (shouldProbe) {
         selectedTarget = selectHalfOpenProbeTarget(targetPool, config, configId);
+      } else if (perRequestStrategy && perRequestStrategy !== 'default') {
+        // 显式 per-request 策略：确定性选择排序后的首个目标（不加权随机）。
+        const sorted = sortTargetsForStrategy(targetPool, perRequestStrategy, strategyMetrics, requestModel);
+        selectedTarget = sorted[0] || null;
       } else {
         selectedTarget = selectLoadBalanceTarget(targetPool, config, configId, localExcludeTargetKeys);
       }
@@ -479,6 +708,10 @@ export function selectRoutingTarget(
         : (healthyTargets.length > 0 ? healthyTargets : availableTargets);
       if (shouldProbe) {
         selectedTarget = selectHalfOpenProbeTarget(targetPool, config, configId);
+      } else if (perRequestStrategy && perRequestStrategy !== 'default') {
+        // 显式 per-request 策略：确定性选择排序后的首个目标。
+        const sorted = sortTargetsForStrategy(targetPool, perRequestStrategy, strategyMetrics, requestModel);
+        selectedTarget = sorted[0] || null;
       } else {
         selectedTarget = targetPool[0] || null;
       }
@@ -599,7 +832,8 @@ export async function resolveSmartRouting(
   model: any,
   request?: ProxyRequest,
   virtualKeyId?: string,
-  excludeTargetKeys?: Set<string>
+  excludeTargetKeys?: Set<string>,
+  perRequestStrategy?: PerRequestRoutingStrategy
 ): Promise<ResolveProviderResult | null> {
   if (model.is_virtual !== 1 || !model.routing_config_id) {
     return null;
@@ -650,12 +884,24 @@ export async function resolveSmartRouting(
   // 记录当前路由配置是否存在 targets，用于后续区分配置问题 vs. 熔断/负载问题
   const hasTargets = Array.isArray(config.targets) && config.targets.length > 0;
 
+  const effectiveStrategy =
+    perRequestStrategy ?? await resolvePerRequestRoutingStrategy(request, virtualKeyId, config);
+  const bodyModel = (request?.body as any)?.model;
+  const requestModel = typeof bodyModel === 'string' && bodyModel.trim() ? bodyModel.trim() : undefined;
+  const strategyMetrics =
+    effectiveStrategy !== 'default' && (mode === 'loadbalance' || mode === 'fallback')
+      ? await collectTargetRoutingMetrics(config.targets, effectiveStrategy, requestModel)
+      : undefined;
+
   const selectedTarget = selectRoutingTarget(
     config,
     routingConfig.type,
     model.routing_config_id,
     routingKey,
-    excludeTargetKeys
+    excludeTargetKeys,
+    effectiveStrategy,
+    strategyMetrics,
+    requestModel
   );
 
   if (!selectedTarget) {
@@ -763,6 +1009,7 @@ export async function resolveExpertRouting(
       modelId: model.id,
       virtualKeyId: virtualKeyId
     });
+    if (!result) return null;
 
     memoryLogger.info(
       `专家路由: 分类=${result.category} | 专家类型=${result.expertType} | 专家=${result.expertName}`,
@@ -859,7 +1106,42 @@ export async function resolveProviderFromModel(
     }
   }
 
-  const smartRoutingResult = await resolveSmartRouting(model, request, virtualKeyId);
+  // A pinned key has no target pool for a per-request sorting strategy.
+  let effectiveStrategy: PerRequestRoutingStrategy = 'default';
+  if (virtualKeyId) {
+    let virtualKey: any = null;
+    try {
+      virtualKey = await virtualKeyDb.getById(virtualKeyId);
+    } catch (e: any) {
+      memoryLogger.warn(`Failed to load virtual key for routing strategy: ${e.message}`, 'Routing');
+    }
+    effectiveStrategy =
+      extractRequestRoutingStrategy(request) ??
+      normalizeRoutingStrategy(virtualKey?.routing_strategy) ??
+      'default';
+
+    if (effectiveStrategy !== 'default' && virtualKey?.model_id && model.is_virtual !== 1) {
+      const error: any = new Error(
+        `Routing strategy '${effectiveStrategy}' is not applicable to a pinned model target. ` +
+        `Unpin the model or use the default routing strategy.`
+      );
+      error.statusCode = 400;
+      error.code = 'invalid_routing_strategy';
+      memoryLogger.warn(
+        `Per-request routing rejected: pinned target with strategy=${effectiveStrategy}`,
+        'Routing'
+      );
+      throw error;
+    }
+  }
+
+  const smartRoutingResult = await resolveSmartRouting(
+    model,
+    request,
+    virtualKeyId,
+    undefined,
+    effectiveStrategy
+  );
   if (smartRoutingResult) {
     if (smartRoutingResult.modelOverride) {
       request.body = request.body || {};

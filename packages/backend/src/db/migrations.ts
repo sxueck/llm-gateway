@@ -956,6 +956,113 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 47,
+    // v2 未发布批次合并迁移：expert-routing 难度列 + api_requests.run_id 关联。
+    // 注意 runner 按 version > current 过滤（不看 name）：已应用过 v47 的库
+    // 需先 DELETE FROM schema_migrations WHERE version = 47 才会重跑本条
+    //（块内全部幂等）补齐 run_id；未发布阶段仅开发库会命中此情况。
+    name: "add_expert_routing_difficulty_columns",
+    up: async (conn: Connection) => {
+      // Idempotent INFORMATION_SCHEMA pattern: add each column only when absent.
+      const columns: Array<{ table: string; column: string; ddl: string }> = [
+        {
+          table: "expert_routing_logs",
+          column: "difficulty",
+          ddl: "ALTER TABLE expert_routing_logs ADD COLUMN difficulty VARCHAR(16) DEFAULT NULL COMMENT '路由难度: low/medium/high'",
+        },
+        {
+          table: "expert_routing_logs",
+          column: "band",
+          ddl: "ALTER TABLE expert_routing_logs ADD COLUMN band VARCHAR(16) DEFAULT NULL COMMENT '难度分档'",
+        },
+        {
+          table: "expert_routing_logs",
+          column: "verdict_reused",
+          ddl: "ALTER TABLE expert_routing_logs ADD COLUMN verdict_reused TINYINT(1) DEFAULT 0 COMMENT '是否复用缓存判定'",
+        },
+        {
+          table: "expert_routing_logs",
+          column: "classifier_time_ms",
+          ddl: "ALTER TABLE expert_routing_logs ADD COLUMN classifier_time_ms INT DEFAULT NULL COMMENT '分类器耗时(毫秒)'",
+        },
+        {
+          table: "expert_routing_session_bindings",
+          column: "difficulty",
+          ddl: "ALTER TABLE expert_routing_session_bindings ADD COLUMN difficulty VARCHAR(16) DEFAULT NULL COMMENT '绑定时的路由难度(可选)'",
+        },
+        // agent run 关联：loopback 打标写入；无外键（api_requests 保留期与
+        // agent_search_runs 生命周期不同步，FK 会阻止行清理）。
+        {
+          table: "api_requests",
+          column: "run_id",
+          ddl: "ALTER TABLE api_requests ADD COLUMN run_id VARCHAR(255) DEFAULT NULL",
+        },
+      ];
+      for (const { table, column, ddl } of columns) {
+        const [rows] = await conn.query(
+          `SELECT COUNT(*) AS cnt
+           FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = ?
+             AND COLUMN_NAME = ?`,
+          [table, column],
+        );
+        if (Number((rows as any[])[0]?.cnt || 0) === 0) {
+          await conn.query(ddl);
+          console.log(`[迁移] 已为 ${table} 添加列 ${column}`);
+        }
+      }
+
+      const [classifierColumn] = await conn.query(
+        `SELECT IS_NULLABLE AS is_nullable
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'expert_routing_logs'
+           AND COLUMN_NAME = 'classifier_model'`,
+      );
+      if ((classifierColumn as Array<{ is_nullable: string }>)[0]?.is_nullable === 'NO') {
+        await conn.query(
+          'ALTER TABLE expert_routing_logs MODIFY COLUMN classifier_model VARCHAR(255) DEFAULT NULL',
+        );
+      }
+
+      const [indexRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'api_requests'
+           AND INDEX_NAME = 'idx_api_requests_run_id'`,
+      );
+      if (Number((indexRows as any[])[0]?.cnt || 0) === 0) {
+        await conn.query(
+          "ALTER TABLE api_requests ADD INDEX idx_api_requests_run_id (run_id)",
+        );
+        console.log("[迁移] 已为 api_requests 添加 run_id 索引");
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query("ALTER TABLE api_requests DROP INDEX idx_api_requests_run_id");
+      } catch (error: any) {
+        console.warn("[迁移] 删除 api_requests.run_id 索引失败:", error.message);
+      }
+      for (const [table, column] of [
+        ["api_requests", "run_id"],
+        ["expert_routing_logs", "difficulty"],
+        ["expert_routing_logs", "band"],
+        ["expert_routing_logs", "verdict_reused"],
+        ["expert_routing_logs", "classifier_time_ms"],
+        ["expert_routing_session_bindings", "difficulty"],
+      ] as const) {
+        try {
+          await conn.query(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+        } catch (error: any) {
+          console.warn(`[迁移] 删除 ${table}.${column} 列失败:`, error.message);
+        }
+      }
+    },
+  },
 ];
 
 async function hasProviderForeignKey(

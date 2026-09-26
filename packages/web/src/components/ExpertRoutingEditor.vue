@@ -89,6 +89,51 @@
             }}
           </p>
         </div>
+        <n-divider />
+
+        <div class="step-header-text">
+          <h3>{{ t("expertRouting.classificationMode", "分类模式") }}</h3>
+        </div>
+        <n-form :model="formValue" label-placement="left" :label-width="160">
+          <n-form-item :label="t('expertRouting.classificationMode', '分类模式')">
+            <n-radio-group v-model:value="formValue.classification_mode">
+              <n-space :size="16">
+                <n-radio value="expert">expert</n-radio>
+                <n-radio value="difficulty">difficulty</n-radio>
+              </n-space>
+            </n-radio-group>
+            <template #feedback>
+              <n-text depth="3" style="font-size: 12px">
+                {{
+                  t(
+                    "expertRouting.classificationModeHint",
+                    "expert：按专家类别分类（默认）；difficulty：按请求难度分类。",
+                  )
+                }}
+              </n-text>
+            </template>
+          </n-form-item>
+          <n-form-item :label="t('expertRouting.failOpen', '失败策略 (Fail Open)')">
+            <n-radio-group v-model:value="formValue.fail_open">
+              <n-space :size="16">
+                <n-radio value="fallback">fallback</n-radio>
+                <n-radio value="parent">parent</n-radio>
+                <n-radio value="error">error</n-radio>
+              </n-space>
+            </n-radio-group>
+            <template #feedback>
+              <n-text depth="3" style="font-size: 12px">
+                {{
+                  t(
+                    "expertRouting.failOpenHint",
+                    "分类失败时：fallback 走回退模型（默认）；parent 交回父级虚拟模型；error 直接返回错误。",
+                  )
+                }}
+              </n-text>
+            </template>
+          </n-form-item>
+        </n-form>
+
         <n-form :model="formValue" label-placement="left" :label-width="160">
           <n-form-item :label="t('expertRouting.idleTtl', '空闲过期 (秒)')">
             <n-input-number
@@ -136,6 +181,43 @@
                 :virtual-model-options="virtualModelOptions"
               />
             </template>
+          </n-card>
+
+          <div class="step-header-text">
+            <h3>{{ t("expertRouting.bandPreview", "带宽预览 (Band Preview)") }}</h3>
+            <p class="step-sub-text">
+              {{
+                t(
+                  "expertRouting.bandPreviewHint",
+                  "基于当前未保存的专家列表调用预览接口，展示 low/medium/high 分带结果。",
+                )
+              }}
+            </p>
+          </div>
+
+          <n-card :bordered="true" style="margin-bottom: 20px">
+            <template v-if="formValue.experts.length">
+              <n-space justify="end" style="margin-bottom: 12px">
+                <n-button size="small" :loading="previewLoading" @click="refreshBandPreview">
+                  {{ t("expertRouting.refreshPreview", "刷新预览") }}
+                </n-button>
+              </n-space>
+              <n-data-table
+                size="small"
+                :columns="previewColumns"
+                :data="previewRows"
+                :loading="previewLoading"
+                :bordered="true"
+              />
+            </template>
+            <n-text v-else depth="3">
+              {{
+                t(
+                  "expertRouting.bandPreviewNeedsSave",
+                  "请先添加专家，再预览分档。",
+                )
+              }}
+            </n-text>
           </n-card>
 
           <div class="step-header-text">
@@ -203,10 +285,20 @@ import {
   NDescriptions,
   NDescriptionsItem,
   NText,
+  NRadioGroup,
+  NRadio,
+  NDataTable,
+  useMessage,
+  type DataTableColumns,
 } from "naive-ui";
 import { useProviderStore } from "@/stores/provider";
 import { useModelStore } from "@/stores/model";
-import type { CreateExpertRoutingRequest } from "@/api/expert-routing";
+import type {
+  BandPreviewEntry,
+  BandPreviewResponse,
+  CreateExpertRoutingRequest,
+} from "@/api/expert-routing";
+import { expertRoutingApi } from "@/api/expert-routing";
 import {
   createDefaultSessionBindingPolicy,
   DEFAULT_CHOICE_THRESHOLD,
@@ -216,6 +308,7 @@ import RoutingPipelineConfig from "./RoutingPipelineConfig.vue";
 import ModelSelector from "./ModelSelector.vue";
 
 const { t } = useI18n();
+const message = useMessage();
 
 interface Props {
   config: CreateExpertRoutingRequest;
@@ -256,6 +349,12 @@ function normalizeForm(target: CreateExpertRoutingRequest) {
     Number.isNaN(target.choice_threshold)
   ) {
     target.choice_threshold = DEFAULT_CHOICE_THRESHOLD;
+  }
+  if (!target.classification_mode) {
+    target.classification_mode = "expert";
+  }
+  if (!target.fail_open) {
+    target.fail_open = "fallback";
   }
 }
 
@@ -313,6 +412,73 @@ function handleSave() {
 
   emit("save", formValue.value);
 }
+
+const previewLoading = ref(false);
+const previewData = ref<BandPreviewResponse | null>(null);
+
+const previewRows = computed<BandPreviewEntry[]>(() => {
+  const data = previewData.value;
+  if (!data) return [];
+  return [...data.bands.low, ...data.bands.medium, ...data.bands.high];
+});
+
+function formatPrice(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "-";
+  return value.toPrecision(4);
+}
+
+const previewColumns = computed<DataTableColumns<BandPreviewEntry>>(() => [
+  { title: "Category", key: "category" },
+  { title: "Type", key: "type" },
+  {
+    title: t("expertRouting.bandColumn", "Band"),
+    key: "band",
+    render: (row) => previewData.value?.assignment[row.id] ?? "-",
+  },
+  {
+    title: t("expertRouting.explicitBandColumn", "显式 Band"),
+    key: "explicitBand",
+    render: (row) => row.explicitBand ?? "-",
+  },
+  {
+    title: t("expertRouting.blendedPriceColumn", "混合价格/token"),
+    key: "blendedPrice",
+    render: (row) => formatPrice(row.blendedPrice),
+  },
+  {
+    title: "Input",
+    key: "inputCostPerToken",
+    render: (row) => formatPrice(row.inputCostPerToken),
+  },
+  {
+    title: "Output",
+    key: "outputCostPerToken",
+    render: (row) => formatPrice(row.outputCostPerToken),
+  },
+]);
+
+async function refreshBandPreview() {
+  if (!formValue.value.experts.length) return;
+  previewLoading.value = true;
+  try {
+    previewData.value = await expertRoutingApi.previewBands(
+      props.editingId,
+      formValue.value.experts,
+    );
+  } catch (error: any) {
+    message.error(error?.message || t("expertRouting.bandPreviewFailed", "带宽预览加载失败"));
+  } finally {
+    previewLoading.value = false;
+  }
+}
+
+watch(
+  [currentStep, () => props.editingId],
+  ([step]) => {
+    if (step === 3) void refreshBandPreview();
+  },
+  { immediate: true },
+);
 
 // Avoid refetching large provider/model lists on every modal open.
 onMounted(async () => {

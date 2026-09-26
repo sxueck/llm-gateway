@@ -1051,6 +1051,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       virtualKeyId,
       providerId,
       model,
+      runId,
     } = request.query as {
       page?: number;
       pageSize?: number;
@@ -1060,6 +1061,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       virtualKeyId?: string;
       providerId?: string;
       model?: string;
+      runId?: string;
     };
 
     const result = await apiRequestDb.getAll({
@@ -1071,6 +1073,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       virtualKeyId,
       providerId,
       model,
+      runId,
     });
 
     return result;

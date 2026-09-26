@@ -7,6 +7,8 @@ export interface SessionBindingRow {
   session_id: string;
   expert_id: string;
   route_source: string;
+  /** v47 optional column: difficulty observed when the binding was created. */
+  difficulty?: string | null;
   created_at: number;
   last_seen_at: number;
   idle_expires_at: number;
@@ -92,10 +94,12 @@ export const expertRoutingSessionBindingRepository = {
    */
   async createOrSelectBinding(
     key: SessionBindingKey,
-    candidate: { expertId: string; routeSource: string },
+    candidate: { expertId: string; routeSource: string; difficulty?: string | null },
     idleTtlSeconds: number,
     absoluteTtlSeconds: number,
-    now: number = Date.now()
+    now: number = Date.now(),
+    /** Internal: set false when retrying on pre-v47 schemas without the column. */
+    includeDifficulty: boolean = true
   ): Promise<CreateOrSelectResult> {
     const pool = getDatabase();
     const conn = await pool.getConnection();
@@ -105,24 +109,66 @@ export const expertRoutingSessionBindingRepository = {
       const absoluteExpiresAt = now + absoluteTtlSeconds * 1000;
       const idleExpiresAt = Math.min(now + idleTtlSeconds * 1000, absoluteExpiresAt);
 
-      const [insertResult] = await conn.query(
-        `INSERT INTO expert_routing_session_bindings
+      const insertColumns =
+        `expert_routing_id, virtual_key_scope, session_id, expert_id, route_source,` +
+        (includeDifficulty ? ` difficulty,` : '') +
+        ` created_at, last_seen_at, idle_expires_at, absolute_expires_at`;
+      const insertPlaceholders =
+        (includeDifficulty ? '?, ?, ?, ?, ?, ?, ?, ?, ?, ?' : '?, ?, ?, ?, ?, ?, ?, ?, ?');
+      const insertParams = includeDifficulty
+        ? [
+            key.expertRoutingId,
+            key.virtualKeyScope,
+            key.sessionId,
+            candidate.expertId,
+            candidate.routeSource,
+            candidate.difficulty || null,
+            now,
+            now,
+            idleExpiresAt,
+            absoluteExpiresAt,
+          ]
+        : [
+            key.expertRoutingId,
+            key.virtualKeyScope,
+            key.sessionId,
+            candidate.expertId,
+            candidate.routeSource,
+            now,
+            now,
+            idleExpiresAt,
+            absoluteExpiresAt,
+          ];
+
+      let insertResult: any;
+      try {
+        [insertResult] = await conn.query(
+          `INSERT INTO expert_routing_session_bindings
+           (${insertColumns})
+         VALUES (${insertPlaceholders})
+         ON DUPLICATE KEY UPDATE expert_id = expert_id`,
+          insertParams
+        );
+      } catch (e: any) {
+        const code = String(e?.code || '');
+        const message = String(e?.message || '');
+        const isMissingDifficulty =
+          code === 'ER_BAD_FIELD_ERROR' ||
+          /Unknown column\s+'difficulty'/i.test(message);
+        if (!isMissingDifficulty || !includeDifficulty) throw e;
+        // A failed statement may invalidate the transaction; restart on the same leased connection.
+        await conn.rollback();
+        await conn.beginTransaction();
+        [insertResult] = await conn.query(
+          `INSERT INTO expert_routing_session_bindings
            (expert_routing_id, virtual_key_scope, session_id, expert_id, route_source,
             created_at, last_seen_at, idle_expires_at, absolute_expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE expert_id = expert_id`,
-        [
-          key.expertRoutingId,
-          key.virtualKeyScope,
-          key.sessionId,
-          candidate.expertId,
-          candidate.routeSource,
-          now,
-          now,
-          idleExpiresAt,
-          absoluteExpiresAt,
-        ]
-      );
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE expert_id = expert_id`,
+          [key.expertRoutingId, key.virtualKeyScope, key.sessionId, candidate.expertId,
+            candidate.routeSource, now, now, idleExpiresAt, absoluteExpiresAt]
+        );
+      }
 
       const [rows] = await conn.query(
         `SELECT * FROM expert_routing_session_bindings

@@ -202,6 +202,52 @@ export type AgentRunStatus =
   | "budget_exceeded"
   | "expired";
 
+export interface AgentRunEvent {
+  seq: number;
+  type: string;
+  payload: Record<string, unknown>;
+  created_at: number;
+}
+
+export interface AgentRunDetailRun {
+  id: string;
+  user_id: number;
+  virtual_key_id: number;
+  plugin: {
+    id: string;
+    version: string;
+    digest: string;
+  };
+  source: {
+    type: "snapshot" | "public_git";
+    snapshot_id: string | null;
+    requested_ref: string | null;
+    commit: string | null;
+  };
+  model_profile: string;
+  status: AgentRunStatus;
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+  expires_at: number;
+  cancellation_requested_at: number | null;
+  duration_ms: number | null;
+  error: { code: string; message: string | null } | null;
+  usage: {
+    turn_count: number;
+    tool_call_count: number;
+    input_tokens: number;
+    output_tokens: number;
+    cost: number;
+  } | null;
+}
+
+export interface AgentRunDetailResponse {
+  run: AgentRunDetailRun;
+  events: AgentRunEvent[];
+  events_truncated: boolean;
+}
+
 export interface AgentRunMonitoringItem {
   id: string;
   plugin_id: string;
@@ -588,6 +634,10 @@ export const configApi = {
     offset?: number;
   }): Promise<AgentRunMonitoringResponse> {
     return request.get(ADMIN_AGENT_RUNS_PATH, { params });
+  },
+
+  getAgentRunDetail(id: string): Promise<AgentRunDetailResponse> {
+    return request.get(`${ADMIN_AGENT_RUNS_PATH}/${id}`);
   },
 
   getRoutingStatus(): Promise<RoutingStatusResponse> {

@@ -16,6 +16,17 @@ import {
   DEFAULT_SESSION_IDLE_TTL_SECONDS,
   DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
 } from "@llm-gateway/shared";
+import {
+  BAND_ORDER,
+  blendedPriceOf,
+  buildBands,
+} from "../services/expert-router/bands.js";
+import { resolveExpertCost } from "../services/expert-router/cost.js";
+import type {
+  CostInput,
+  ExpertTarget,
+  RoutingBand,
+} from "../types/expert-routing.js";
 
 const expertTargetSchema = z.object({
   id: z.string(),
@@ -26,6 +37,7 @@ const expertTargetSchema = z.object({
   model: z.string().optional(),
   description: z.string().optional(),
   color: z.string().optional(),
+  band: z.enum(["low", "medium", "high"]).optional(),
 });
 
 const sessionBindingPolicySchema = z.object({
@@ -65,6 +77,8 @@ const createExpertRoutingSchema = z.object({
   description: z.string().optional(),
   enabled: z.boolean().optional(),
   choice_threshold: z.number().min(0).max(1).optional(),
+  fail_open: z.enum(["fallback", "parent", "error"]).optional(),
+  classification_mode: z.enum(["expert", "difficulty"]).optional(),
   preprocessing: preprocessingSchema,
   experts: z.array(expertTargetSchema),
   fallback: fallbackConfigSchema,
@@ -79,6 +93,8 @@ const updateExpertRoutingSchema = z.object({
   description: z.string().nullable().optional(),
   enabled: z.boolean().optional(),
   choice_threshold: z.number().min(0).max(1).optional(),
+  fail_open: z.enum(["fallback", "parent", "error"]).optional(),
+  classification_mode: z.enum(["expert", "difficulty"]).optional(),
   preprocessing: preprocessingSchema,
   experts: z.array(expertTargetSchema).optional(),
   fallback: fallbackConfigSchema,
@@ -205,6 +221,7 @@ function normalizeRouteSource(raw: string | null): string | null {
   if (
     raw === "session" ||
     raw === "jev" ||
+    raw === "fail_open" ||
     raw === "intent_api" ||
     raw === "llm_second_pass" ||
     raw === "fallback"
@@ -227,6 +244,9 @@ function buildConfigData(body: any, current?: any): any {
     };
   return {
     choice_threshold: body.choice_threshold ?? current?.choice_threshold ?? 0.6,
+    fail_open: body.fail_open ?? current?.fail_open,
+    classification_mode:
+      body.classification_mode ?? current?.classification_mode,
     preprocessing:
       body.preprocessing !== undefined
         ? body.preprocessing
@@ -276,6 +296,35 @@ async function invalidateBindingsForExpertChanges(
       );
     }
   }
+}
+
+async function computeBandPreview(experts: ExpertTarget[]) {
+  const costOf = new Map<string, CostInput | undefined>();
+  for (const expert of experts) {
+    costOf.set(expert.id, await resolveExpertCost(expert));
+  }
+  const bands = buildBands(experts, (expert) => costOf.get(expert.id));
+  const bandOf = new Map<string, RoutingBand>();
+  for (const band of BAND_ORDER) {
+    for (const expert of bands[band]) bandOf.set(expert.id, band);
+  }
+  const describe = (expert: ExpertTarget) => ({
+    id: expert.id,
+    category: expert.category,
+    type: expert.type,
+    explicitBand: expert.band ?? null,
+    blendedPrice: blendedPriceOf(costOf.get(expert.id)),
+    inputCostPerToken: costOf.get(expert.id)?.input_cost_per_token ?? null,
+    outputCostPerToken: costOf.get(expert.id)?.output_cost_per_token ?? null,
+  });
+  return {
+    bands: {
+      low: bands.low.map(describe),
+      medium: bands.medium.map(describe),
+      high: bands.high.map(describe),
+    },
+    assignment: Object.fromEntries(bandOf) as Record<string, RoutingBand>,
+  };
 }
 
 export async function expertRoutingRoutes(fastify: FastifyInstance) {
@@ -477,6 +526,8 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       const currentConfig = JSON.parse(existingConfig.config);
       if (
         body.choice_threshold !== undefined ||
+        body.fail_open !== undefined ||
+        body.classification_mode !== undefined ||
         body.experts ||
         body.fallback !== undefined ||
         body.preprocessing !== undefined ||
@@ -609,6 +660,47 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     }
   });
 
+  fastify.post("/bands/preview", async (request) => {
+    const body = z.object({ experts: z.array(expertTargetSchema).min(1) }).parse(request.body);
+    return computeBandPreview(body.experts);
+  });
+
+  fastify.get("/:id/bands/preview", async (request) => {
+    try {
+      const { id } = request.params as { id: string };
+      const config = await expertRoutingConfigDb.getById(id);
+      if (!config) {
+        throw new Error("专家路由配置不存在");
+      }
+      const parsed = JSON.parse(config.config);
+      return computeBandPreview((parsed.experts || []) as ExpertTarget[]);
+    } catch (error: any) {
+      memoryLogger.error(`获取带宽预览失败: ${error.message}`, "ExpertRouting");
+      throw error;
+    }
+  });
+
+  fastify.post("/:id/bands/preview", async (request) => {
+    try {
+      const { id } = request.params as { id: string };
+      const body = z
+        .object({ experts: z.array(expertTargetSchema).optional() })
+        .parse(request.body ?? {});
+      let experts = body.experts;
+      if (!experts) {
+        const config = await expertRoutingConfigDb.getById(id);
+        if (!config) {
+          throw new Error("专家路由配置不存在");
+        }
+        experts = (JSON.parse(config.config).experts || []) as ExpertTarget[];
+      }
+      return computeBandPreview(experts);
+    } catch (error: any) {
+      memoryLogger.error(`获取带宽预览失败: ${error.message}`, "ExpertRouting");
+      throw error;
+    }
+  });
+
   fastify.get("/:id/statistics", async (request) => {
     try {
       const { id } = request.params as { id: string };
@@ -622,6 +714,10 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       const timeRangeMs = timeRange ? Number.parseInt(timeRange) : undefined;
       const stats = await expertRoutingLogDb.getStatistics(id, timeRangeMs);
       const routeStats = await expertRoutingLogDb.getRouteStats(
+        id,
+        timeRangeMs,
+      );
+      const difficultyStats = await expertRoutingLogDb.getDifficultyStats(
         id,
         timeRangeMs,
       );
@@ -687,12 +783,54 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
           ? Math.round(totalClassificationTime / totalRequests)
           : 0;
 
+      const difficultyDistribution: Record<string, number> = {};
+      const bandDistribution: Record<string, number> = {};
+      let difficultyRows = 0;
+      for (const row of difficultyStats as any[]) {
+        const count = Number(row.count) || 0;
+        difficultyRows += count;
+        const difficultyKey = row.difficulty ? String(row.difficulty) : "unclassified";
+        difficultyDistribution[difficultyKey] =
+          (difficultyDistribution[difficultyKey] || 0) + count;
+        const bandKey = row.band ? String(row.band) : "unknown";
+        bandDistribution[bandKey] = (bandDistribution[bandKey] || 0) + count;
+      }
+
+      // Parent-routing requests are not persisted here, so this is a lower bound.
+      let failOpenRate: number | null = null;
+      if ((routeStats as any[]).length > 0 && totalRequests > 0) {
+        const failOpenCount = (routeSourceDistribution["fail_open"] || 0) +
+          (routeSourceDistribution["fallback"] || 0);
+        failOpenRate = Math.round((failOpenCount / totalRequests) * 10000) / 10000;
+      }
+
+      // Estimated saving vs the high band requires actual request usage tokens
+      // and a price mapping for every expert. Only *estimated* prompt token
+      // counts are persisted (preprocessing approximation), so no saving value
+      // is computed here — the limitation is reported instead.
+      const limitations: string[] = [
+        "failOpenRate excludes parent-routed requests without expert routing logs",
+      ];
+      if (difficultyRows === 0) {
+        limitations.push(
+          "difficulty/band distributions unavailable: no persisted v47 rows",
+        );
+      }
+      limitations.push(
+        "estimatedSavingVsHighBand not computed: only estimated prompt token counts are persisted (no actual usage tokens or complete price mapping)",
+      );
+
       return {
         totalRequests,
         avgClassificationTime,
         categoryDistribution,
         routeSourceDistribution,
         cleaningStats,
+        difficultyDistribution,
+        bandDistribution,
+        failOpenRate,
+        estimatedSavingVsHighBand: null,
+        limitations,
       };
     } catch (error: any) {
       memoryLogger.error(
@@ -801,6 +939,10 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         classifier_request: safeJsonParse(log.classifier_request),
         classifier_response: safeJsonParse(log.classifier_response),
         route_source: inferredSource,
+        difficulty: log.difficulty ?? null,
+        band: log.band ?? null,
+        verdict_reused: log.verdict_reused ? 1 : 0,
+        classifier_time_ms: log.classifier_time_ms ?? null,
         prompt_tokens: log.prompt_tokens ?? undefined,
         cleaned_content_length: log.cleaned_content_length ?? undefined,
         semantic_score: inferSemanticScore(log),

@@ -1,38 +1,5 @@
 <template>
   <div class="provider-form-container">
-    <div v-if="!editingId" class="preset-section">
-      <div class="preset-header" @click="showPresetSelector = !showPresetSelector">
-        <span class="section-label" style="margin-bottom: 0">选择提供商模板</span>
-        <span v-if="!showPresetSelector" class="preset-summary">{{ presetSummary }}</span>
-        <n-icon :component="showPresetSelector ? ChevronDown : ChevronRight" />
-      </div>
-
-      <n-collapse-transition :show="showPresetSelector">
-        <div class="preset-grid">
-          <div
-            class="preset-card custom-card"
-            :class="{ active: !activePresetId }"
-            @click="selectPreset(null)"
-          >
-            <div class="preset-name">Custom / 自定义</div>
-            <div class="preset-desc">连接自定义协议服务</div>
-          </div>
-          <div
-            v-for="preset in PROVIDER_PRESETS"
-            :key="preset.id"
-            class="preset-card"
-            :class="{ active: activePresetId === preset.id }"
-            @click="selectPreset(preset)"
-          >
-            <div class="preset-name">{{ preset.name }}</div>
-            <div class="preset-tag">{{ preset.category }}</div>
-          </div>
-        </div>
-      </n-collapse-transition>
-    </div>
-
-    <n-divider v-if="!editingId" style="margin: 16px 0 24px 0" />
-
     <n-form
       ref="formRef"
       :model="formValue"
@@ -43,35 +10,24 @@
       class="main-form"
     >
       <div class="form-section">
-        <div 
-          class="section-header" 
-          @click="showAdvanced = !showAdvanced" 
-          :class="{ 'is-collapsed': !showAdvanced && activePresetId }"
-        >
+        <div class="section-header">
           <span class="section-title">基础配置</span>
-          <n-icon v-if="activePresetId" :component="showAdvanced ? ChevronDown : ChevronRight" />
-          <span v-if="activePresetId && !showAdvanced" class="summary-text">
-            {{ formValue.name }} ({{ formValue.baseUrl }})
-          </span>
         </div>
 
-        <n-collapse-transition :show="showAdvanced || !activePresetId">
-          <div class="section-content">
+        <div class="section-content">
             <n-form-item label="显示名称" path="name">
               <n-input 
                 v-model:value="formValue.name" 
                 placeholder="如: My LLM Service" 
                 size="small"
-                @input="handleNameInput" 
               />
             </n-form-item>
 
             <n-form-item label="提供商 ID" path="id">
               <n-space vertical style="width: 100%" :size="4">
-                <n-auto-complete
+                <n-input
                   v-model:value="formValue.id"
                   :disabled="!!editingId"
-                  :options="idSuggestions"
                   placeholder="唯一标识符，如: my-llm"
                   size="small"
                   :status="getFieldStatus(idValidation.isValid, formValue.id)"
@@ -90,7 +46,7 @@
                       class="field-icon field-icon--error"
                     />
                   </template>
-                </n-auto-complete>
+                </n-input>
                 <div
                   v-if="idValidation.message"
                   class="field-feedback"
@@ -173,7 +129,6 @@
               </n-form-item>
             </template>
           </div>
-        </n-collapse-transition>
       </div>
 
       <div class="form-section highlight-section">
@@ -296,7 +251,6 @@ import {
   NInput,
   NSwitch,
   NSpace,
-  NAutoComplete,
   NButton,
   NSelect,
   NText,
@@ -304,14 +258,11 @@ import {
   NIcon,
   NInputGroup,
   NTooltip,
-  NDivider,
   NCollapseTransition,
 } from 'naive-ui';
 import { 
   ClipboardOutline, 
   LinkOutline,
-  ChevronForward as ChevronRight,
-  ChevronDown,
   CheckmarkCircle,
   CloseCircle,
   InformationCircle,
@@ -319,12 +270,10 @@ import {
 import {
   validateProviderId,
   validateBaseUrl,
-  validateApiKey,
-  getProviderIdSuggestions
+  validateApiKey
 } from '@/utils/provider-validation';
 import { providerApi, type ModelInfo } from '@/api/provider';
 import type { ProtocolMapping } from '@/types';
-import { PROVIDER_PRESETS, type ProviderPreset } from '@/constants/providers';
 
 interface Props {
   modelValue: {
@@ -347,17 +296,6 @@ const emit = defineEmits<{
 
 const message = useMessage();
 const formRef = ref();
-const activePresetId = ref<string | null>(null);
-const showAdvanced = ref(true)
-const showPresetSelector = ref(false)
-
-const presetSummary = computed(() => {
-  if (activePresetId.value) {
-    const preset = PROVIDER_PRESETS.find(p => p.id === activePresetId.value)
-    return preset?.name ?? activePresetId.value
-  }
-  return 'Custom / 自定义'
-})
 
 const idValidation = ref<ReturnType<typeof validateProviderId>>({ isValid: true });
 const urlValidation = ref<ReturnType<typeof validateBaseUrl>>({ isValid: true });
@@ -426,11 +364,6 @@ function updateProtocolMappings() {
   formValue.value.baseUrl = newBaseUrl;
 }
 
-const idSuggestions = computed(() => {
-  const suggestions = getProviderIdSuggestions(formValue.value.id);
-  return suggestions.map(id => ({ label: id, value: id }));
-});
-
 const modelOptions = computed(() => {
   return availableModels.value.map(model => ({
     label: model.name,
@@ -480,45 +413,6 @@ const rules = {
     },
   ],
 };
-
-function selectPreset(preset: ProviderPreset | null) {
-  if (preset) {
-    activePresetId.value = preset.id;
-    formValue.value.id = preset.id;
-    formValue.value.name = preset.name;
-    formValue.value.baseUrl = preset.baseUrl;
-    formValue.value.description = preset.description;
-    showAdvanced.value = false;
-    idValidation.value = { isValid: true };
-    urlValidation.value = { isValid: true };
-  } else {
-    activePresetId.value = null;
-    formValue.value.id = '';
-    formValue.value.name = '';
-    formValue.value.baseUrl = '';
-    formValue.value.description = '';
-    showAdvanced.value = true;
-
-    // Avoid an overly tall modal: once user chooses custom provider,
-    // auto-collapse the preset selector section.
-    if (!props.editingId) {
-      showPresetSelector.value = false
-    }
-  }
-  formValue.value.apiKey = '';
-  availableModels.value = [];
-  selectedModels.value = [];
-  fetchError.value = '';
-}
-
-function handleNameInput(value: string) {
-  if (!activePresetId.value && !props.editingId) {
-    const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    if (!formValue.value.id) {
-      formValue.value.id = slug;
-    }
-  }
-}
 
 async function pasteApiKey() {
   try {
@@ -619,102 +513,6 @@ defineExpose({
   padding: 0 4px;
 }
 
-/* Preset Grid Styles */
-.preset-section {
-  margin-bottom: 20px;
-}
-
-.preset-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.preset-summary {
-  flex: 1;
-  min-width: 0;
-  text-align: right;
-  font-size: 11px;
-  color: #888;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.section-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #666;
-  margin-bottom: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.preset-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 12px;
-}
-
-.preset-card {
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  padding: 10px 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  background: #fff;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-height: 60px;
-}
-
-.preset-card:hover {
-  border-color: var(--color-primary);
-  background: #f7fbf9;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-}
-
-.preset-card.active {
-  border-color: var(--color-primary);
-  background: #eaf7f1;
-  box-shadow: 0 0 0 1px var(--color-primary) inset;
-}
-
-.custom-card {
-  grid-column: span 2;
-  background: #f9f9f9;
-  border-style: dashed;
-}
-
-.custom-card.active {
-  border-style: solid;
-}
-
-.preset-name {
-  font-weight: 600;
-  font-size: 13px;
-  color: #333;
-  margin-bottom: 4px;
-}
-
-.preset-tag {
-  font-size: 10px;
-  color: #888;
-  background: #f0f0f0;
-  padding: 1px 6px;
-  border-radius: 4px;
-  align-self: flex-start;
-}
-
-.preset-desc {
-  font-size: 11px;
-  color: #666;
-}
-
 /* Form Section Styles */
 .form-section {
   margin-bottom: 16px;
@@ -736,34 +534,12 @@ defineExpose({
   color: #444;
   display: flex;
   align-items: center;
-  cursor: pointer;
-  user-select: none;
   border-bottom: 1px solid transparent;
-}
-
-.section-header:hover {
-  background: #f0f0f0;
-}
-
-.section-header.is-collapsed {
-  border-bottom: none;
 }
 
 .section-content {
   padding: 16px;
   border-top: 1px solid #eee;
-}
-
-.n-collapse-transition-enter-from .section-content,
-.n-collapse-transition-leave-to .section-content {
-  border-top-color: transparent;
-}
-
-.summary-text {
-  margin-left: 8px;
-  font-weight: 400;
-  color: #888;
-  font-size: 12px;
 }
 
 /* Connection Actions */

@@ -820,6 +820,7 @@ export function createOpenAIProxyHandler() {
               compressionStats,
               ip: requestIp,
               userAgent: requestUserAgent,
+              request,
               piiMaskedCount: 0,
             });
           }
@@ -1405,6 +1406,7 @@ async function sendNonStreamCacheHit(
     truncatedResponse,
     cacheHit: 1,
     cachedTokens: normCached.cachedTokens,
+    request,
     compressionStats,
     ip,
     userAgent,
@@ -1571,6 +1573,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
               ? response.body
               : JSON.stringify(response.body)
             ).substring(0, 500),
+        request,
         truncatedRequest,
         truncatedResponse,
         cacheHit: 0,
@@ -1609,6 +1612,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
           responseTime: duration,
           errorMessage: CLIENT_ABORTED_MESSAGE,
           cacheHit: 0,
+          request,
           ip: nonStreamRequestIp,
           userAgent: nonStreamRequestUserAgent,
           piiMaskedCount: 0,
@@ -1637,6 +1641,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
         responseTime: duration,
         errorMessage: error.message,
         truncatedRequest,
+        request,
         cacheHit: 0,
         ip: nonStreamRequestIp,
         userAgent: nonStreamRequestUserAgent,
@@ -1878,6 +1883,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       ip: nonStreamRequestIp,
       userAgent: nonStreamRequestUserAgent,
       piiMaskedCount: piiResult.maskedCount,
+      request,
     });
     ctx.auditLogged = true;
     if (cacheLockKey && cacheLockOwner) {
@@ -2032,6 +2038,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
         ip: nonStreamRequestIp,
         userAgent: nonStreamRequestUserAgent,
         piiMaskedCount: piiResult?.maskedCount || 0,
+        request,
       });
       ctx.auditLogged = true;
       failedAttemptAccountedFor = true;
@@ -2102,6 +2109,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
   // above when a retry was dispatched, so only log here when no retry occurred.
   if (!failedAttemptAccountedFor) {
     logApiRequestAsync({
+      request,
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),

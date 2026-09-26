@@ -16,7 +16,22 @@ import { SignalBuilder } from "./expert-router/preprocess/index.js";
 import { resolveModelConfig } from "./expert-router/resolve.js";
 import type { ProxyRequest } from "./expert-router/types.js";
 import { extractExpertRoutingSessionId } from "./expert-router/session-binding.js";
-import { chooseExpert } from "./expert-router/jev-client.js";
+import { chooseExpert, chooseDifficulty } from "./expert-router/jev-client.js";
+import {
+  BAND_ORDER,
+  buildBands,
+  difficultyToBand,
+  resolveBandCandidates,
+} from "./expert-router/bands.js";
+import { resolveExpertCost } from "./expert-router/cost.js";
+import type {
+  ClassificationMode,
+  CostInput,
+  DifficultyLevel,
+  ExpertRoutingBands,
+  FailOpenMode,
+  RoutingBand,
+} from "../types/expert-routing.js";
 import {
   resolveBindingScope,
   type SessionBindingKey,
@@ -25,6 +40,22 @@ import {
 interface RoutingContext {
   modelId?: string;
   virtualKeyId?: string;
+}
+
+interface BandIndex {
+  bands: ExpertRoutingBands;
+  bandOf: Map<string, RoutingBand>;
+  costOf: Map<string, CostInput | undefined>;
+}
+
+interface RoutingMeta {
+  mode?: ClassificationMode;
+  verdictBand?: RoutingBand;
+  verdictConfidence?: number;
+  difficulty?: DifficultyLevel;
+  failOpen?: FailOpenMode;
+  verdictReused?: boolean;
+  classifierTimeMs?: number | null;
 }
 
 interface ExpertRoutingResult {
@@ -44,7 +75,7 @@ export class ExpertRouter {
     request: ProxyRequest,
     expertRoutingId: string,
     context: RoutingContext,
-  ): Promise<ExpertRoutingResult> {
+  ): Promise<ExpertRoutingResult | null> {
     const startTime = Date.now();
     const row = await expertRoutingConfigDb.getById(expertRoutingId);
     if (!row || row.enabled !== 1) {
@@ -59,6 +90,12 @@ export class ExpertRouter {
     if (!Array.isArray(config.experts) || config.experts.length === 0) {
       throw new Error("Expert routing has no candidate models");
     }
+    const classificationMode: ClassificationMode =
+      config.classification_mode === "difficulty" ? "difficulty" : "expert";
+    const failOpen: FailOpenMode =
+      config.fail_open === "parent" || config.fail_open === "error"
+        ? config.fail_open
+        : "fallback";
     const sessionId = extractExpertRoutingSessionId(request);
     const bindingKey: SessionBindingKey = {
       expertRoutingId,
@@ -79,7 +116,18 @@ export class ExpertRouter {
         const expert = config.experts.find((item) => item.id === binding.expert_id);
         if (expert) {
           try {
-            return await this.resolveAndLog(expert, "session", 1, "jev", [], startTime, expertRoutingId, context, request);
+            const bindingDifficulty =
+              typeof binding.difficulty === "string" && binding.difficulty
+                ? (binding.difficulty as DifficultyLevel)
+                : undefined;
+            return await this.resolveAndLog(expert, "session", 1, null, [], startTime, expertRoutingId, context, request, undefined, undefined, {
+              mode: classificationMode,
+              failOpen,
+              verdictReused: true,
+              difficulty: bindingDifficulty,
+              verdictBand: bindingDifficulty ? difficultyToBand(bindingDifficulty) : undefined,
+              classifierTimeMs: null,
+            });
           } catch {
             await expertRoutingSessionBindingDb.deleteBinding(bindingKey);
           }
@@ -91,77 +139,162 @@ export class ExpertRouter {
 
     const signal = await SignalBuilder.buildRoutingSignal(request, config.preprocessing);
     const threshold = config.choice_threshold ?? 0.6;
-    let model = "jev";
+    let model: string | null = null;
     let ranked: Array<{ expertId: string; probability: number }> = [];
+    let verdictExpertId: string | undefined;
+    let verdictBand: RoutingBand = "low";
+    let verdictConfidence = 0;
+    let difficulty: DifficultyLevel | undefined;
     let failure = "empty_input";
+    let classifierTimeMs: number | null = null;
+
+    let classified = false;
     if (signal.intentText?.trim()) {
+      const jevStart = performance.now();
       try {
-        const decision = await chooseExpert(signal.intentText, config.experts);
-        model = decision.model;
-        ranked = decision.ranked;
-        failure = "low_probability";
-        if (ranked[0]?.probability >= threshold) {
-          for (const entry of ranked) {
-            const expert = config.experts.find((candidate) => candidate.id === entry.expertId);
-            if (!expert) continue;
-            try {
-              await resolveModelConfig(expert, "Expert");
-              let selected = expert;
-              if (sessionId && policy) {
-                try {
-                  const binding = await expertRoutingSessionBindingDb.createOrSelectBinding(
-                    bindingKey,
-                    { expertId: expert.id, routeSource: "jev" },
-                    policy.idle_ttl_seconds,
-                    policy.absolute_ttl_seconds,
-                  );
-                  if (!binding.winner) {
-                    const winner = config.experts.find((candidate) => candidate.id === binding.row.expert_id);
-                    if (!winner) throw new Error("Bound expert no longer exists");
-                    selected = winner;
-                  }
-                } catch (error) {
-                  memoryLogger.warn(`Expert binding persistence failed: ${error}`, "ExpertRouter");
-                }
-              }
-              try {
-                return await this.resolveAndLog(
-                  selected, "jev", ranked.find((item) => item.expertId === selected.id)?.probability ?? entry.probability,
-                  model, ranked, startTime, expertRoutingId, context, request, signal.stats,
-                );
-              } catch (error) {
-                if (sessionId && policy) await expertRoutingSessionBindingDb.deleteBinding(bindingKey);
-                throw error;
-              }
-            } catch (error) {
-              memoryLogger.warn(`Expert candidate ${expert.id} unavailable: ${error}`, "ExpertRouter");
-              failure = "candidate_unavailable";
-            }
-          }
+        if (classificationMode === "difficulty") {
+          const decision = await chooseDifficulty(signal.intentText);
+          model = decision.model;
+          ranked = decision.ranked;
+          difficulty = decision.verdict;
+          verdictConfidence = decision.confidence;
+          verdictBand = difficultyToBand(decision.verdict);
+        } else {
+          const decision = await chooseExpert(signal.intentText, config.experts);
+          model = decision.model;
+          ranked = decision.ranked;
+          verdictConfidence = ranked[0]?.probability ?? 0;
+          verdictExpertId = ranked[0]?.expertId;
         }
+        classified = true;
+        failure = "low_probability";
       } catch (error) {
         failure = "jev_unavailable";
         memoryLogger.warn(`Jev decision failed: ${error}`, "ExpertRouter");
+      } finally {
+        classifierTimeMs = Math.round(performance.now() - jevStart);
       }
     }
 
-    if (!config.fallback) throw new Error(`Expert routing failed (${failure}): no fallback configured`);
-    const fallback: ExpertTarget = {
-      id: "fallback",
-      category: "fallback",
-      ...config.fallback,
-    };
-    return this.resolveAndLog(
-      fallback, "fallback", 0, model, ranked, startTime,
-      expertRoutingId, context, request, signal.stats, failure,
+    try {
+      const bandIndex = await this.buildBandIndex(config.experts);
+      if (classified && classificationMode !== "difficulty") {
+        verdictBand =
+          (verdictExpertId && bandIndex.bandOf.get(verdictExpertId)) || "low";
+      }
+      const ordered = resolveBandCandidates(
+        bandIndex.bands,
+        verdictBand,
+        (expert) => bandIndex.costOf.get(expert.id),
+      );
+      if (verdictExpertId && verdictConfidence >= threshold) {
+        const at = ordered.findIndex((candidate) => candidate.id === verdictExpertId);
+        if (at > 0) {
+          const [verdict] = ordered.splice(at, 1);
+          ordered.unshift(verdict);
+        }
+      }
+      // fail_open 仅表示分类器失败；低置信但成功分类仍算 jev 判定
+      const routeSource: "jev" | "fail_open" = classified ? "jev" : "fail_open";
+      const meta: RoutingMeta = {
+        mode: classificationMode,
+        verdictBand,
+        verdictConfidence,
+        difficulty,
+        failOpen,
+        verdictReused: false,
+        classifierTimeMs,
+      };
+
+      for (const expert of ordered) {
+        try {
+          await resolveModelConfig(expert, "Expert");
+          let selected = expert;
+          if (sessionId && policy) {
+            try {
+              const binding = await expertRoutingSessionBindingDb.createOrSelectBinding(
+                bindingKey,
+                { expertId: expert.id, routeSource, difficulty },
+                policy.idle_ttl_seconds,
+                policy.absolute_ttl_seconds,
+              );
+              if (!binding.winner) {
+                const winner = config.experts.find((candidate) => candidate.id === binding.row.expert_id);
+                if (!winner) throw new Error("Bound expert no longer exists");
+                selected = winner;
+              }
+            } catch (error) {
+              memoryLogger.warn(`Expert binding persistence failed: ${error}`, "ExpertRouter");
+            }
+          }
+          try {
+            return await this.resolveAndLog(
+              selected, routeSource, ranked.find((item) => item.expertId === selected.id)?.probability ?? verdictConfidence,
+              model, ranked, startTime, expertRoutingId, context, request, signal.stats, undefined, meta,
+            );
+          } catch (error) {
+            if (sessionId && policy) await expertRoutingSessionBindingDb.deleteBinding(bindingKey);
+            throw error;
+          }
+        } catch (error) {
+          memoryLogger.warn(`Expert candidate ${expert.id} unavailable: ${error}`, "ExpertRouter");
+          failure = "candidate_unavailable";
+        }
+      }
+    } catch (error) {
+      failure = "band_resolution_failed";
+      memoryLogger.warn(`Expert band resolution failed: ${error}`, "ExpertRouter");
+    }
+
+    if (failOpen !== "parent" && config.fallback) {
+      const fallback: ExpertTarget = {
+        id: "fallback",
+        category: "fallback",
+        ...config.fallback,
+      };
+      try {
+        return await this.resolveAndLog(
+          fallback, "fallback", 0, model, ranked, startTime,
+          expertRoutingId, context, request, signal.stats, failure,
+          { mode: classificationMode, failOpen, verdictReused: false, difficulty, classifierTimeMs },
+        );
+      } catch (error) {
+        memoryLogger.warn(`Configured fallback unavailable: ${error}`, "ExpertRouter");
+      }
+    }
+    if (failOpen === "error") {
+      throw new Error(`Expert routing failed (${failure}): no fallback configured`);
+    }
+    memoryLogger.warn(
+      `Expert routing exhausted (fail_open=${failOpen}, failure=${failure}); delegating to parent routing`,
+      "ExpertRouter",
     );
+    return null;
+  }
+
+  /**
+   * Hydrate per-expert token costs from the referenced model attributes and
+   * build the price bands (explicit band first, remainder auto-split).
+   * Cost lookup failures degrade to unknown (Infinity) pricing.
+   */
+  private async buildBandIndex(experts: ExpertTarget[]): Promise<BandIndex> {
+    const costOf = new Map<string, CostInput | undefined>();
+    for (const expert of experts) {
+      costOf.set(expert.id, await resolveExpertCost(expert));
+    }
+    const bands = buildBands(experts, (expert) => costOf.get(expert.id));
+    const bandOf = new Map<string, RoutingBand>();
+    for (const band of BAND_ORDER) {
+      for (const expert of bands[band]) bandOf.set(expert.id, band);
+    }
+    return { bands, bandOf, costOf };
   }
 
   private async resolveAndLog(
     expert: ExpertTarget,
-    source: "jev" | "session" | "fallback",
+    source: "jev" | "session" | "fallback" | "fail_open",
     probability: number,
-    model: string,
+    model: string | null,
     ranked: Array<{ expertId: string; probability: number }>,
     startTime: number,
     expertRoutingId: string,
@@ -169,6 +302,7 @@ export class ExpertRouter {
     request: ProxyRequest,
     stats?: { promptTokens: number; cleanedLength: number },
     failure?: string,
+    meta?: RoutingMeta,
   ): Promise<ExpertRoutingResult> {
     const resolved = await resolveModelConfig(expert, source === "fallback" ? "Fallback" : "Expert");
     const body = request.body || {};
@@ -182,6 +316,10 @@ export class ExpertRouter {
         expert_routing_id: expertRoutingId,
         request_hash: requestHash,
         classifier_model: model,
+        difficulty: meta?.difficulty ?? null,
+        band: meta?.verdictBand ?? null,
+        verdict_reused: source === "session",
+        classifier_time_ms: meta?.classifierTimeMs ?? null,
         classification_result: expert.category,
         selected_expert_id: expert.id,
         selected_expert_type: expert.type,
@@ -189,7 +327,7 @@ export class ExpertRouter {
         classification_time: Date.now() - startTime,
         original_request: undefined,
         classifier_request: undefined,
-        classifier_response: JSON.stringify({ ranked, probability, failure }),
+        classifier_response: JSON.stringify({ ranked, probability, failure, ...meta }),
         route_source: source,
         prompt_tokens: stats?.promptTokens ?? 0,
         cleaned_content_length: stats?.cleanedLength ?? 0,

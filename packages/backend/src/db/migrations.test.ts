@@ -10,6 +10,8 @@ describe('health runs index migration', () => {
     const query = vi.fn(async (sql: string) => {
       if (sql.includes('MAX(version)')) return [[{ version: 45 }]];
       if (sql.includes('INFORMATION_SCHEMA.STATISTICS')) return [[{ cnt: 0 }]];
+      if (sql.includes('IS_NULLABLE AS is_nullable')) return [[{ is_nullable: 'NO' }]];
+      if (sql.includes('INFORMATION_SCHEMA.COLUMNS')) return [[{ cnt: 0 }]];
       return [[]];
     });
     const conn = {
@@ -28,7 +30,28 @@ describe('health runs index migration', () => {
       'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
       [46, 'add_health_runs_target_created_at_index', expect.any(Number)],
     );
-    expect(conn.commit).toHaveBeenCalledOnce();
+    // v47 adds the expert-routing difficulty columns idempotently.
+    expect(query).toHaveBeenCalledWith(
+      "ALTER TABLE expert_routing_logs ADD COLUMN difficulty VARCHAR(16) DEFAULT NULL COMMENT '路由难度: low/medium/high'",
+    );
+    expect(query).toHaveBeenCalledWith(
+      "ALTER TABLE expert_routing_session_bindings ADD COLUMN difficulty VARCHAR(16) DEFAULT NULL COMMENT '绑定时的路由难度(可选)'",
+    );
+    expect(query).toHaveBeenCalledWith(
+      'ALTER TABLE expert_routing_logs MODIFY COLUMN classifier_model VARCHAR(255) DEFAULT NULL',
+    );
+    // v47 also carries the unreleased agent run correlation additions.
+    expect(query).toHaveBeenCalledWith(
+      'ALTER TABLE api_requests ADD COLUMN run_id VARCHAR(255) DEFAULT NULL',
+    );
+    expect(query).toHaveBeenCalledWith(
+      'ALTER TABLE api_requests ADD INDEX idx_api_requests_run_id (run_id)',
+    );
+    expect(query).toHaveBeenCalledWith(
+      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      [47, 'add_expert_routing_difficulty_columns', expect.any(Number)],
+    );
+    expect(conn.commit).toHaveBeenCalledTimes(2);
   });
 });
 

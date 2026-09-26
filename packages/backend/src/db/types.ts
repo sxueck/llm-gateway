@@ -74,6 +74,8 @@ export type ApiRequestBuffer = {
   compression_saved_tokens?: number;
   ip?: string;
   user_agent?: string;
+  /** agent run 关联（loopback 打标，仅内部可信来源写入） */
+  run_id?: string;
 };
 
 export interface RepositorySnapshot {

@@ -1,7 +1,7 @@
 import { describe, it, test, expect } from 'vitest';
 
 import { circuitBreaker } from '../../services/circuit-breaker.js';
-import { getTargetKey, hasAvailableRoutingTargets, selectRoutingTarget, getAnonymousAffinityTargetKey, countExplicitSessionBindings, shouldRetrySmartRouting, type RoutingConfig } from './routing.js';
+import { getTargetKey, hasAvailableRoutingTargets, selectRoutingTarget, getAnonymousAffinityTargetKey, countExplicitSessionBindings, shouldRetrySmartRouting, normalizeRoutingStrategy, extractRequestRoutingStrategy, resolveConfigDefaultStrategy, computeBlendedPrice, sortTargetsForStrategy, type RoutingConfig } from './routing.js';
 
 test('selectRoutingTarget rotates loadbalance targets without weights', () => {
   circuitBreaker.resetAll();
@@ -491,5 +491,191 @@ describe('shouldRetrySmartRouting', () => {
 
   it.each([200, 201, 301, 402, 418, 422])('does not retry non-eligible status %i', statusCode => {
     expect(shouldRetrySmartRouting(statusCode)).toBe(false);
+  });
+});
+
+describe('PR-4 per-request routing strategy', () => {
+  describe('normalizeRoutingStrategy', () => {
+    it('accepts known values case-insensitively and maps single to default', () => {
+      expect(normalizeRoutingStrategy('default')).toBe('default');
+      expect(normalizeRoutingStrategy('Price')).toBe('price');
+      expect(normalizeRoutingStrategy(' throughput ')).toBe('throughput');
+      expect(normalizeRoutingStrategy('LATENCY')).toBe('latency');
+      expect(normalizeRoutingStrategy('single')).toBe('default');
+    });
+
+    it('rejects unknown / non-string values', () => {
+      expect(normalizeRoutingStrategy('cheapest')).toBeNull();
+      expect(normalizeRoutingStrategy('')).toBeNull();
+      expect(normalizeRoutingStrategy(42)).toBeNull();
+      expect(normalizeRoutingStrategy(undefined)).toBeNull();
+    });
+  });
+
+  describe('extractRequestRoutingStrategy', () => {
+    it('prefers body.routing over the x-gateway-routing header', () => {
+      const strategy = extractRequestRoutingStrategy({
+        body: { routing: 'price' },
+        headers: { 'x-gateway-routing': 'latency' },
+      });
+      expect(strategy).toBe('price');
+    });
+
+    it('falls back to the header (case-insensitive name), ignoring invalid values', () => {
+      expect(extractRequestRoutingStrategy({
+        body: {},
+        headers: { 'X-Gateway-Routing': 'throughput' },
+      })).toBe('throughput');
+      expect(extractRequestRoutingStrategy({
+        body: { routing: 'nope' },
+        headers: { 'x-gateway-routing': 'bogus' },
+      })).toBeNull();
+      expect(extractRequestRoutingStrategy({ body: {} })).toBeNull();
+    });
+  });
+
+  it('routing_configs default is only representable as default', () => {
+    expect(resolveConfigDefaultStrategy({ strategy: { mode: 'loadbalance' }, targets: [] })).toBe('default');
+    expect(resolveConfigDefaultStrategy(undefined)).toBe('default');
+  });
+
+  describe('computeBlendedPrice', () => {
+    it('shares blended price with expert bands and prices unknown costs last', () => {
+      expect(computeBlendedPrice({ input_cost_per_token: 2, output_cost_per_token: 4 })).toBeCloseTo(2.5);
+      expect(computeBlendedPrice({ input_cost_per_token: 2 })).toBe(Infinity);
+      expect(computeBlendedPrice({ input_cost_per_token: '1', output_cost_per_token: '3' })).toBeCloseTo(1.5);
+      expect(computeBlendedPrice(null)).toBe(Infinity);
+    });
+  });
+
+  describe('sortTargetsForStrategy', () => {
+    const targets = [
+      { provider: 'a', override_params: { model: 'm-a' } },
+      { provider: 'b', override_params: { model: 'm-b' } },
+      { provider: 'c', override_params: { model: 'm-c' } },
+    ];
+    const keys = ['a::m-a', 'b::m-b', 'c::m-c'];
+
+    it('sorts by blended price ascending', () => {
+      const metrics = new Map([
+        [keys[0], { blendedPrice: 3 }],
+        [keys[1], { blendedPrice: 1 }],
+        [keys[2], { blendedPrice: 2 }],
+      ]);
+      expect(sortTargetsForStrategy(targets, 'price', metrics).map(t => t.provider))
+        .toEqual(['b', 'c', 'a']);
+    });
+
+    it('sorts by throughput descending', () => {
+      const metrics = new Map([
+        [keys[0], { avgSpeed: 10 }],
+        [keys[1], { avgSpeed: 90 }],
+        [keys[2], { avgSpeed: 50 }],
+      ]);
+      expect(sortTargetsForStrategy(targets, 'throughput', metrics).map(t => t.provider))
+        .toEqual(['b', 'c', 'a']);
+    });
+
+    it('sorts by latency ascending', () => {
+      const metrics = new Map([
+        [keys[0], { avgTffbMs: 200 }],
+        [keys[1], { avgTffbMs: 50 }],
+      ]);
+      const sorted = sortTargetsForStrategy(targets, 'latency', metrics);
+      expect(sorted[0].provider).toBe('b');
+      // missing sample keeps original relative order after sampled targets
+      expect(sorted.map(t => t.provider)).toEqual(['b', 'a', 'c']);
+    });
+
+    it('returns original order when no samples exist or strategy is default', () => {
+      expect(sortTargetsForStrategy(targets, 'price', new Map()).map(t => t.provider))
+        .toEqual(['a', 'b', 'c']);
+      expect(sortTargetsForStrategy(targets, 'default', new Map([
+        [keys[0], { blendedPrice: 1 }],
+      ])).map(t => t.provider)).toEqual(['a', 'b', 'c']);
+    });
+
+    it('matches no-override targets through the request model key', () => {
+      const mixed = [{ provider: 'a' }, { provider: 'b', override_params: { model: 'm-b' } }];
+      const metrics = new Map([
+        ['a::shared', { avgSpeed: 90 }],
+        ['b::m-b', { avgSpeed: 10 }],
+      ]);
+      expect(sortTargetsForStrategy(mixed, 'throughput', metrics, 'shared').map(t => t.provider))
+        .toEqual(['a', 'b']);
+      // without a request model the no-override target has no sample and sorts last
+      expect(sortTargetsForStrategy(mixed, 'throughput', metrics, undefined).map(t => t.provider))
+        .toEqual(['b', 'a']);
+    });
+  });
+
+  describe('selectRoutingTarget with explicit strategy', () => {
+    it('picks the deterministic cheapest target instead of round-robin', () => {
+      circuitBreaker.resetAll();
+      const config: RoutingConfig = {
+        strategy: { mode: 'loadbalance' },
+        targets: [
+          { provider: 'expensive', override_params: { model: 'm' } },
+          { provider: 'cheap', override_params: { model: 'm' } },
+          { provider: 'mid', override_params: { model: 'm' } },
+        ],
+      };
+      const metrics = new Map([
+        ['expensive::m', { blendedPrice: 9 }],
+        ['cheap::m', { blendedPrice: 1 }],
+        ['mid::m', { blendedPrice: 5 }],
+      ]);
+      const selected = [
+        selectRoutingTarget(config, 'loadbalance', 'pr4-price-test', undefined, undefined, 'price', metrics)?.provider,
+        selectRoutingTarget(config, 'loadbalance', 'pr4-price-test', undefined, undefined, 'price', metrics)?.provider,
+      ];
+      expect(selected).toEqual(['cheap', 'cheap']);
+    });
+
+    it('still respects the circuit-breaker health floor when sorting', () => {
+      circuitBreaker.resetAll();
+      const config: RoutingConfig = {
+        strategy: { mode: 'loadbalance' },
+        targets: [
+          { provider: 'cheap-but-open', override_params: { model: 'm' } },
+          { provider: 'healthy', override_params: { model: 'm' } },
+        ],
+      };
+      const metrics = new Map([
+        ['cheap-but-open::m', { blendedPrice: 1 }],
+        ['healthy::m', { blendedPrice: 5 }],
+      ]);
+      // Force the cheapest target's circuit open.
+      const originalTimeout = (circuitBreaker as any).config.timeout;
+      (circuitBreaker as any).config.timeout = 60_000;
+      try {
+        circuitBreaker.recordFailure('cheap-but-open::m');
+        circuitBreaker.recordFailure('cheap-but-open::m'); // reach failureThreshold (2)
+        const target = selectRoutingTarget(
+          config, 'loadbalance', 'pr4-health-floor-test', undefined, undefined, 'price', metrics
+        );
+        expect(target?.provider).toBe('healthy');
+      } finally {
+        (circuitBreaker as any).config.timeout = originalTimeout;
+        circuitBreaker.resetAll();
+      }
+    });
+
+    it('routes a no-override target by its request-model metric', () => {
+      circuitBreaker.resetAll();
+      const config: RoutingConfig = {
+        strategy: { mode: 'fallback' },
+        targets: [{ provider: 'slow' }, { provider: 'fast' }],
+      };
+      const metrics = new Map([
+        ['slow::gpt-x', { avgTffbMs: 800 }],
+        ['fast::gpt-x', { avgTffbMs: 90 }],
+      ]);
+      const selected = selectRoutingTarget(
+        config, 'fallback', 'pr4-request-model-key', undefined, undefined, 'latency', metrics, 'gpt-x'
+      );
+      expect(selected?.provider).toBe('fast');
+      circuitBreaker.resetAll();
+    });
   });
 });

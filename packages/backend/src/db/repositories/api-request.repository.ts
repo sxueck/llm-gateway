@@ -432,6 +432,7 @@ export const apiRequestRepository = {
     startTime?: number;
     endTime?: number;
     status?: string;
+    runId?: string;
   }) {
     const limit = options?.limit || 100;
     const offset = options?.offset || 0;
@@ -468,6 +469,7 @@ export const apiRequestRepository = {
           ar.request_type,
           ar.compression_original_tokens,
           ar.compression_saved_tokens,
+          ar.run_id,
           ar.ip,
           ar.user_agent,
           ar.created_at,
@@ -513,6 +515,12 @@ export const apiRequestRepository = {
         countQuery += " AND ar.status = ?";
         dataQuery += " AND ar.status = ?";
         params.push(options.status);
+      }
+
+      if (options?.runId) {
+        countQuery += " AND ar.run_id = ?";
+        dataQuery += " AND ar.run_id = ?";
+        params.push(options.runId);
       }
 
       const [countRows] = await conn.query(countQuery, params);

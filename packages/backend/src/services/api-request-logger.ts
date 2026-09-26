@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 import { apiRequestDb } from "../db/index.js";
+import { agentRunIdFromHeaders } from "../agent/run/loopback-token.js";
 import type { VirtualKey } from "../types/index.js";
 import type { TokenCalculationResult } from "../routes/proxy/token-calculator.js";
 import { memoryLogger } from "./logger.js";
@@ -24,13 +25,17 @@ export interface ApiLogParams {
   piiMaskedCount?: number;
   requestType?: string;
   streamResume?: { attempts: number; chars: number };
+  /** agent run 关联显式值；缺省时从 request 头提取（需有效 loopback token） */
+  agentRunId?: string;
+  /** 原始请求，仅用于提取 loopback 可信的 run 关联头部 */
+  request?: { headers: unknown };
 }
 
 function safeParseJson(text: string | undefined): any | null {
   if (!text) return null;
   try {
     return JSON.parse(text);
-  } catch (_e) {
+  } catch {
     return null;
   }
 }
@@ -115,13 +120,15 @@ function normalizeErrorMessage(errorMessage: unknown): string | undefined {
 
   try {
     return JSON.stringify(errorMessage);
-  } catch (_e) {
+  } catch {
     return String(errorMessage);
   }
 }
 
 export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
   const normalizedErrorMessage = normalizeErrorMessage(params.errorMessage);
+  const agentRunId =
+    params.agentRunId ?? agentRunIdFromHeaders(params.request?.headers);
   const requestParamsJson = extractRequestParamsJson(
     params.truncatedRequest,
     params.piiMaskedCount,
@@ -159,6 +166,7 @@ export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
     compression_saved_tokens: params.compressionStats?.savedTokens,
     ip: suppressSensitiveMetadata ? undefined : params.ip,
     user_agent: suppressSensitiveMetadata ? undefined : params.userAgent,
+    run_id: agentRunId,
   });
 }
 

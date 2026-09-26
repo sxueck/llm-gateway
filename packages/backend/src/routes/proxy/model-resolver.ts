@@ -382,7 +382,7 @@ export async function resolveModelAndProvider(
         body: {
           error: {
             message: routingError.message || 'Smart routing failed',
-            type: 'internal_error',
+            type: routingError.statusCode === 400 ? 'invalid_request_error' : 'internal_error',
             param: null,
             code: routingError.code || 'smart_routing_error'
           }
@@ -625,7 +625,7 @@ export async function resolveModelAndProvider(
           body: {
             error: {
               message: routingError.message || 'Smart routing failed',
-              type: 'internal_error',
+              type: routingError.statusCode === 400 ? 'invalid_request_error' : 'internal_error',
               param: null,
               code: routingError.code || 'smart_routing_error'
             }
