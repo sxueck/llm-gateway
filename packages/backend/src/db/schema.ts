@@ -560,6 +560,18 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    // 系统告警已读标记：按 (user_id, 告警 code) 记录，铃铛据此过滤已确认的告警。
+    // 旳行由仓库层按 read_at 过期清理。
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS alert_reads (
+        user_id VARCHAR(255) NOT NULL,
+        code VARCHAR(64) NOT NULL,
+        read_at BIGINT NOT NULL,
+        PRIMARY KEY (user_id, code),
+        INDEX idx_alert_reads_read_at (read_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
     // API 请求按天汇总表（支持 7 天外的统计查询，天边界为 Asia/Shanghai 时区）
     // Nullable 维度使用空字符串作为 sentinel 值以满足唯一键约束
     await conn.query(`

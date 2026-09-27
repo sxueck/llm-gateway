@@ -50,6 +50,7 @@ import {
   workerPluginRepository,
   userPluginEnrollmentRepository,
 } from "./repositories/worker-plugin.repository.js";
+import { alertReadRepository } from "./repositories/alert-read.repository.js";
 
 // Export repositories with backward-compatible names
 export const userDb = userRepository;
@@ -75,6 +76,7 @@ export const agentSearchRunEventDb = agentSearchRunEventRepository;
 export const agentSearchUsageDb = agentSearchUsageRepository;
 export const workerPluginDb = workerPluginRepository;
 export const userPluginEnrollmentDb = userPluginEnrollmentRepository;
+export const alertReadDb = alertReadRepository;
 
 // Enhanced initDatabase that also creates tables and runs migrations
 export async function initDatabase() {

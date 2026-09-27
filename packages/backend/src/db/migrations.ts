@@ -1139,6 +1139,27 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 50,
+    // 系统告警已读状态：按 (user_id, 告警 code) 落库，铃铛 GET 按用户过滤已确认告警。
+    name: "add_alert_reads",
+    up: async (conn: Connection) => {
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS alert_reads (
+          user_id VARCHAR(255) NOT NULL,
+          code VARCHAR(64) NOT NULL,
+          read_at BIGINT NOT NULL,
+          PRIMARY KEY (user_id, code),
+          INDEX idx_alert_reads_read_at (read_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      console.log("[迁移] 已创建 alert_reads 表");
+    },
+    down: async (conn: Connection) => {
+      await conn.query("DROP TABLE IF EXISTS alert_reads");
+      console.log("[迁移] 已删除 alert_reads 表");
+    },
+  },
 ];
 
 async function hasProviderForeignKey(

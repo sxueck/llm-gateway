@@ -730,6 +730,8 @@ export default {
   alerts: {
     title: '系统告警',
     refresh: '刷新',
+    markAllRead: '全部已读',
+    markReadFailed: '标记已读失败，请重试',
     loading: '正在检查…',
     empty: '暂无告警',
     loadFailed: '告警检查失败，稍后自动重试',

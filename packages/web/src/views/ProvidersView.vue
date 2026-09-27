@@ -681,10 +681,11 @@ onMounted(() => {
 .providers-view {
   max-width: 1400px;
   margin: 0 auto;
-  /* 高度上限就是内容区（body）本身：用 100% 而不是 calc(100vh - 魔数)，
-     否则实际内边距与估算不一致时会提前出现页面级滚动。 */
-  height: 100%;
-  min-height: 0;
+  /* n-layout-content 滚动内容层（.n-scrollbar-content）高度是 auto，
+     height:100% 解析不了，会把 flex-height 表格压成 0 行；
+     改用确定高度：100vh - 72px 页头 - 8px/24px 上下内边距。 */
+  height: calc(100vh - 104px);
+  min-height: 480px;
   display: flex;
   flex-direction: column;
 }

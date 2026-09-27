@@ -26,9 +26,20 @@
     <div class="alert-panel">
       <div class="alert-panel__head">
         <span class="alert-panel__title">{{ t('alerts.title') }}</span>
-        <n-button text size="tiny" :loading="loading" @click="load">
-          {{ t('alerts.refresh') }}
-        </n-button>
+        <span class="alert-panel__actions">
+          <n-button
+            text
+            size="tiny"
+            :disabled="alerts.length === 0"
+            :loading="marking"
+            @click="markAllRead"
+          >
+            {{ t('alerts.markAllRead') }}
+          </n-button>
+          <n-button text size="tiny" :loading="loading" @click="load">
+            {{ t('alerts.refresh') }}
+          </n-button>
+        </span>
       </div>
 
       <div v-if="loadError" class="alert-panel__state">{{ t('alerts.loadFailed') }}</div>
@@ -60,12 +71,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { NBadge, NButton, NIcon, NPopover } from 'naive-ui';
+import { NBadge, NButton, NIcon, NPopover, useMessage } from 'naive-ui';
 import { MailOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
 import { alertsApi, type SystemAlert } from '@/api/alerts';
 
 const { t, te } = useI18n();
+const message = useMessage();
 
 /** 与后端采集周期解耦：铃铛只是快照，60s 足够察觉环境漂移又不会盯着 Docker 打转。 */
 const POLL_INTERVAL_MS = 60_000;
@@ -73,6 +85,7 @@ const POLL_INTERVAL_MS = 60_000;
 const alerts = ref<SystemAlert[]>([]);
 const visible = ref(false);
 const loading = ref(false);
+const marking = ref(false);
 const loadError = ref(false);
 const checkedAt = ref<number>(0);
 
@@ -94,6 +107,20 @@ async function load() {
     console.warn('加载系统告警失败', error);
   } finally {
     loading.value = false;
+  }
+}
+
+/** 已读后告警从铃铛消失；同一告警条件若再次出现（重新采集出同 code）仍会提醒。 */
+async function markAllRead() {
+  marking.value = true;
+  try {
+    await alertsApi.markAllRead();
+    await load();
+  } catch (error) {
+    console.warn('标记告警已读失败', error);
+    message.error(t('alerts.markReadFailed'));
+  } finally {
+    marking.value = false;
   }
 }
 
@@ -154,6 +181,12 @@ onUnmounted(() => {
   font-size: 14px;
   font-weight: 600;
   color: var(--color-title);
+}
+
+.alert-panel__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .alert-panel__state {

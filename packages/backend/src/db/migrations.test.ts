@@ -63,7 +63,15 @@ describe('migration runner from v45', () => {
       'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
       [49, 'add_agent_search_runs_created_at_index', expect.any(Number)],
     );
-    expect(conn.commit).toHaveBeenCalledTimes(3);
+    // v50：系统告警已读状态表。
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('CREATE TABLE IF NOT EXISTS alert_reads'),
+    );
+    expect(query).toHaveBeenCalledWith(
+      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      [50, 'add_alert_reads', expect.any(Number)],
+    );
+    expect(conn.commit).toHaveBeenCalledTimes(4);
   });
 });
 

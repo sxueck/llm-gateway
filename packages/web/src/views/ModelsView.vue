@@ -666,9 +666,11 @@ onMounted(async () => {
 .models-view {
   max-width: 1400px;
   margin: 0 auto;
-  /* 高度上限就是内容区（body）：跟 ProvidersView 一致用 100%，不用 vh 魔数 */
-  height: 100%;
-  min-height: 0;
+  /* 同 ProvidersView：n-layout-content 滚动内容层高度是 auto，height:100% 解析不了；
+     无确定高度时侧栏会无限撑高、flex-height 表格塌缩为 0 行。
+     100vh - 72px 页头 - 8px/24px 上下内边距。 */
+  height: calc(100vh - 104px);
+  min-height: 480px;
   display: flex;
   flex-direction: column;
 }
@@ -866,5 +868,11 @@ onMounted(async () => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* flex-height 表格需要显式 flex 填充，否则 body(flex-basis:0) 高度为 0 */
+.group-table-area > :deep(.n-data-table) {
+  flex: 1;
+  min-height: 0;
 }
 </style>

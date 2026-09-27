@@ -25,4 +25,9 @@ export const alertsApi = {
   getList(): Promise<AlertsResponse> {
     return request.get(ALERTS_PATH);
   },
+
+  /** 把当前活跃告警全部标记为已读（服务端取当前集合，无请求体）。 */
+  markAllRead(): Promise<{ marked: number }> {
+    return request.post(`${ALERTS_PATH}/read`);
+  },
 };

@@ -151,3 +151,9 @@ export interface UserPluginEnrollmentRow {
   is_default: number;
   updated_at: number;
 }
+
+export interface AlertReadRow {
+  user_id: string;
+  code: string;
+  read_at: number;
+}

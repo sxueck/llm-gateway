@@ -726,6 +726,8 @@ export default {
   alerts: {
     title: 'System Alerts',
     refresh: 'Refresh',
+    markAllRead: 'Mark all read',
+    markReadFailed: 'Failed to mark alerts as read',
     loading: 'Checking…',
     empty: 'No alerts',
     loadFailed: 'Alert check failed; retrying automatically',
