@@ -189,6 +189,27 @@ describe("ExpertRouter difficulty routing", () => {
     expect(mocks.chooseDifficulty).not.toHaveBeenCalled();
   });
 
+  test("tool_result continuation turn with a binding skips classification (§5.2)", async () => {
+    mocks.expertRoutingSessionBindingDb.getActiveBinding.mockResolvedValue({
+      expert_id: "review", route_source: "jev", difficulty: "high" });
+    const continuationRequest = {
+      body: {
+        messages: [
+          { role: "user", content: "read config" },
+          { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "read" }] },
+          { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }] },
+        ],
+      },
+      headers: { "x-session-id": "session" },
+    };
+    const result = await new ExpertRouter().route(continuationRequest as any, "routing", {});
+    expect(result?.expert.id).toBe("review");
+    expect(mocks.chooseDifficulty).not.toHaveBeenCalled();
+    const payload = JSON.parse(mocks.expertRoutingLogDb.create.mock.calls[0][0].classifier_response);
+    expect(payload.continuation).toBe(true);
+    expect(payload.verdictReused).toBe(true);
+  });
+
   test("session reuse logs classifier_model=null, verdict_reused and retains the bound difficulty", async () => {
     mocks.expertRoutingSessionBindingDb.getActiveBinding.mockResolvedValue({
       expert_id: "review", route_source: "jev", difficulty: "medium",

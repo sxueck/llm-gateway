@@ -13,6 +13,7 @@ import {
   DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
 } from "@llm-gateway/shared";
 import { SignalBuilder } from "./expert-router/preprocess/index.js";
+import { isContinuationTurn } from "./expert-router/turns.js";
 import { resolveModelConfig } from "./expert-router/resolve.js";
 import type { ProxyRequest } from "./expert-router/types.js";
 import { extractExpertRoutingSessionId } from "./expert-router/session-binding.js";
@@ -45,6 +46,8 @@ interface RoutingMeta {
   failOpen?: FailOpenMode;
   verdictReused?: boolean;
   classifierTimeMs?: number | null;
+  /** §5.2: agent tool-result / assistant continuation turn. */
+  continuation?: boolean;
 }
 
 interface ExpertRoutingResult {
@@ -118,6 +121,10 @@ export class ExpertRouter {
     // (escalate_only only allows upward moves — until §5.1 lands it degrades
     // to sticky reuse, which is strictly more conservative).
     const useBindings = Boolean(sessionId) && policy.mode !== "per_turn";
+    // §5.2: continuation turns (tool results / assistant follow-ups) must
+    // never re-classify while a binding exists; without any stored decision
+    // (per_turn or expired binding) classification is the only fallback.
+    const continuationTurn = isContinuationTurn(request.body);
 
     if (useBindings) {
       const binding = await expertRoutingSessionBindingDb.getActiveBinding(
@@ -138,6 +145,7 @@ export class ExpertRouter {
               difficulty: bindingDifficulty,
               verdictBand: expert.band,
               classifierTimeMs: null,
+              continuation: continuationTurn,
             });
           } catch {
             await expertRoutingSessionBindingDb.deleteBinding(bindingKey);
@@ -188,6 +196,7 @@ export class ExpertRouter {
         failOpen,
         verdictReused: false,
         classifierTimeMs,
+        continuation: continuationTurn,
       };
 
       for (const expert of ordered) {
