@@ -42,6 +42,25 @@ export const apiRequestRepository = {
     }
   },
 
+  /** §5.8: actual token usage linked to routing decisions (expert_routing_logs ids). */
+  async getUsageByRouteLogIds(routeLogIds: string[]) {
+    if (routeLogIds.length === 0) return [];
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const placeholders = routeLogIds.map(() => "?").join(", ");
+      const [rows] = await conn.query(
+        `SELECT route_log_id, prompt_tokens, completion_tokens, cached_tokens
+         FROM api_requests
+         WHERE route_log_id IN (${placeholders})`,
+        routeLogIds,
+      );
+      return rows as any[];
+    } finally {
+      conn.release();
+    }
+  },
+
   async getLastRequestByIp(ip: string, startTime?: number, endTime?: number) {
     if (!ip) return null;
     const pool = getDatabase();

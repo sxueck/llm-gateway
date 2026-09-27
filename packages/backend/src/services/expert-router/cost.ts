@@ -26,6 +26,10 @@ export async function resolveExpertCost(
     return {
       input_cost_per_token: Number(parsed?.input_cost_per_token),
       output_cost_per_token: Number(parsed?.output_cost_per_token),
+      input_cost_per_token_cache_hit:
+        parsed?.input_cost_per_token_cache_hit !== undefined
+          ? Number(parsed?.input_cost_per_token_cache_hit)
+          : undefined,
     };
   } catch {
     return undefined;

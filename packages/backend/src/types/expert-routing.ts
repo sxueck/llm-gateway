@@ -11,6 +11,7 @@ export type DifficultyLevel = "low" | "medium" | "high";
 export interface CostInput {
   input_cost_per_token?: number;
   output_cost_per_token?: number;
+  input_cost_per_token_cache_hit?: number;
 }
 
 export interface ExpertTarget {

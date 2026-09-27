@@ -1352,6 +1352,60 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 53,
+    // §5.8：api_requests 关联路由决策（expert_routing_logs.id + 命中档位），
+    // 用于实际用量×选中模型价的节省额口径。
+    name: "add_api_requests_route_columns",
+    up: async (conn: Connection) => {
+      const [columnRows] = await conn.query(
+        `SELECT COLUMN_NAME AS name
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'api_requests'
+           AND COLUMN_NAME IN ('route_log_id', 'route_tier')`,
+      );
+      const existing = new Set(
+        (columnRows as any[]).map((row) => String(row.name)),
+      );
+      if (!existing.has("route_log_id")) {
+        await conn.query(
+          "ALTER TABLE api_requests ADD COLUMN route_log_id VARCHAR(255) DEFAULT NULL COMMENT '关联 expert_routing_logs.id'",
+        );
+      }
+      if (!existing.has("route_tier")) {
+        await conn.query(
+          "ALTER TABLE api_requests ADD COLUMN route_tier VARCHAR(16) DEFAULT NULL COMMENT '命中档位 low/medium/high'",
+        );
+      }
+      const [indexRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'api_requests'
+           AND INDEX_NAME = 'idx_api_requests_route_log_id'`,
+      );
+      if (Number((indexRows as any[])[0]?.cnt || 0) === 0) {
+        await conn.query(
+          "ALTER TABLE api_requests ADD INDEX idx_api_requests_route_log_id (route_log_id)",
+        );
+      }
+      console.log("[迁移] 已为 api_requests 添加 route_log_id/route_tier");
+    },
+    down: async (conn: Connection) => {
+      for (const ddl of [
+        "ALTER TABLE api_requests DROP INDEX idx_api_requests_route_log_id",
+        "ALTER TABLE api_requests DROP COLUMN route_log_id",
+        "ALTER TABLE api_requests DROP COLUMN route_tier",
+      ]) {
+        try {
+          await conn.query(ddl);
+        } catch (error: any) {
+          console.warn("[迁移] 回滚 api_requests 路由列失败:", error.message);
+        }
+      }
+    },
+  },
 ];
 
 async function hasProviderForeignKey(

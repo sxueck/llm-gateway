@@ -310,6 +310,28 @@ export const expertRoutingLogRepository = {
     }
   },
 
+  /** §5.8: routing decisions (id → selected expert/band) for cost correlation. */
+  async getRecentRoutingDecisions(configId: string, timeRange?: number) {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      let query = `
+        SELECT id, selected_expert_id, band
+        FROM expert_routing_logs
+        WHERE expert_routing_id = ?`;
+      const params: any[] = [configId];
+      if (timeRange) {
+        query += ' AND created_at >= ?';
+        params.push(Date.now() - timeRange);
+      }
+      query += ' ORDER BY created_at DESC LIMIT 2000';
+      const [rows] = await conn.query(query, params);
+      return rows as any[];
+    } finally {
+      conn.release();
+    }
+  },
+
   async getById(id: string) {
     const pool = getDatabase();
     const conn = await pool.getConnection();

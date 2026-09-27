@@ -27,6 +27,9 @@ export interface ApiLogParams {
   streamResume?: { attempts: number; chars: number };
   /** agent run 关联显式值；缺省时从 request 头提取（需有效 loopback token） */
   agentRunId?: string;
+  /** §5.8 难度分级路由关联：决策日志 id + 命中档位 */
+  routeLogId?: string | null;
+  routeTier?: string | null;
   /** 原始请求，仅用于提取 loopback 可信的 run 关联头部 */
   request?: { headers: unknown };
 }
@@ -167,6 +170,8 @@ export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
     ip: suppressSensitiveMetadata ? undefined : params.ip,
     user_agent: suppressSensitiveMetadata ? undefined : params.userAgent,
     run_id: agentRunId,
+    route_log_id: params.routeLogId ?? undefined,
+    route_tier: params.routeTier ?? undefined,
   });
 }
 

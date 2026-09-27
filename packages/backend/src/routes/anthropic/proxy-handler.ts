@@ -709,6 +709,8 @@ export async function handleAnthropicNonStreamRequest(
         model: modelForLogging,
         tokenCount,
         status: "success",
+        routeLogId: modelResult?.routeInfo?.logId ?? undefined,
+        routeTier: modelResult?.routeInfo?.tier ?? undefined,
         responseTime: duration,
         truncatedRequest: shouldLogBody
           ? JSON.stringify(requestBody)
@@ -956,6 +958,8 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
       model: modelForLogging,
       tokenCount,
       status: "success",
+      routeLogId: modelResult?.routeInfo?.logId ?? undefined,
+      routeTier: modelResult?.routeInfo?.tier ?? undefined,
       responseTime: duration,
       truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
       truncatedResponse: shouldLogBody

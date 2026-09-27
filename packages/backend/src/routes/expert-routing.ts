@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import {
+  apiRequestDb,
   expertRoutingConfigDb,
   expertRoutingLogDb,
   expertRoutingSessionBindingDb,
@@ -978,10 +979,89 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         failOpenRate = Math.round((failOpenCount / totalRequests) * 10000) / 10000;
       }
 
-      // Estimated saving vs the high band requires actual request usage tokens
-      // and a price mapping for every expert. Only *estimated* prompt token
-      // counts are persisted (preprocessing approximation), so no saving value
-      // is computed here — the limitation is reported instead.
+      // §5.8: saving vs all-high computed from actual api_requests tokens
+      // linked via route_log_id. Cache-hit tokens price at the selected
+      // model's cached input rate (fallback: full input price — never an
+      // imaginary discount); the baseline prices every token at the CHEAPEST
+      // high-tier expert (conservative: understates the saving).
+      const decisions = await expertRoutingLogDb.getRecentRoutingDecisions(id, timeRangeMs);
+      const configExperts = (() => {
+        try {
+          return (JSON.parse(config.config).experts || []) as any[];
+        } catch {
+          return [];
+        }
+      })();
+      const priceOf = new Map<string, CostInput | undefined>();
+      for (const expert of configExperts) {
+        priceOf.set(expert.id, await resolveExpertCost(expert));
+      }
+      const priced = (p: CostInput | undefined): p is CostInput =>
+        Number.isFinite(Number(p?.input_cost_per_token)) &&
+        Number(p?.input_cost_per_token) >= 0 &&
+        Number.isFinite(Number(p?.output_cost_per_token)) &&
+        Number(p?.output_cost_per_token) >= 0;
+      const highPrices = configExperts
+        .filter((expert) => expert.band === "high")
+        .map((expert) => priceOf.get(expert.id))
+        .filter(priced);
+      const usageRows =
+        decisions.length > 0 && highPrices.length > 0
+          ? await apiRequestDb.getUsageByRouteLogIds(
+              decisions.map((row: any) => String(row.id)),
+            )
+          : [];
+      const decisionById = new Map(
+        decisions.map((row: any) => [String(row.id), row]),
+      );
+      const roundCost = (value: number) => Math.round(value * 1e6) / 1e6;
+      let actualCost = 0;
+      let baselineCost = 0;
+      let linkedRequests = 0;
+      let cacheHitTokens = 0;
+      if (highPrices.length > 0) {
+        const baseline = highPrices.reduce((a, b) =>
+          blendedPriceOf(a) <= blendedPriceOf(b) ? a : b,
+        );
+        for (const usage of usageRows as any[]) {
+          const decision = decisionById.get(String(usage.route_log_id));
+          if (!decision) continue;
+          const price = priceOf.get(decision.selected_expert_id);
+          if (!price || !priced(price)) continue;
+          const prompt = Number(usage.prompt_tokens) || 0;
+          const completion = Number(usage.completion_tokens) || 0;
+          const cached = Math.min(Number(usage.cached_tokens) || 0, prompt);
+          const cachePrice =
+            Number.isFinite(Number(price.input_cost_per_token_cache_hit)) &&
+            Number(price.input_cost_per_token_cache_hit) >= 0
+              ? Number(price.input_cost_per_token_cache_hit)
+              : Number(price.input_cost_per_token);
+          actualCost +=
+            (prompt - cached) * Number(price.input_cost_per_token) +
+            cached * cachePrice +
+            completion * Number(price.output_cost_per_token);
+          baselineCost +=
+            prompt * Number(baseline.input_cost_per_token) +
+            completion * Number(baseline.output_cost_per_token);
+          cacheHitTokens += cached;
+          linkedRequests += 1;
+        }
+      }
+      const estimatedSavingVsHighBand =
+        highPrices.length > 0
+          ? {
+              actualCost: roundCost(actualCost),
+              baselineCost: roundCost(baselineCost),
+              saving: roundCost(baselineCost - actualCost),
+              savingPct:
+                baselineCost > 0
+                  ? Math.round(((baselineCost - actualCost) / baselineCost) * 10000) / 100
+                  : null,
+              linkedRequests,
+              cacheHitTokens,
+            }
+          : null;
+
       const limitations: string[] = [
         "failOpenRate excludes parent-routed requests without expert routing logs",
       ];
@@ -990,9 +1070,11 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
           "difficulty/band distributions unavailable: no persisted v47 rows",
         );
       }
-      limitations.push(
-        "estimatedSavingVsHighBand not computed: only estimated prompt token counts are persisted (no actual usage tokens or complete price mapping)",
-      );
+      if (!estimatedSavingVsHighBand) {
+        limitations.push(
+          "estimatedSavingVsHighBand unavailable: no priced high-tier expert to baseline against",
+        );
+      }
 
       return {
         totalRequests,
@@ -1003,7 +1085,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         difficultyDistribution,
         bandDistribution,
         failOpenRate,
-        estimatedSavingVsHighBand: null,
+        estimatedSavingVsHighBand,
         limitations,
       };
     } catch (error: any) {

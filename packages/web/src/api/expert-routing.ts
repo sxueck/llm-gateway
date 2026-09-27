@@ -151,7 +151,16 @@ export interface ExpertRoutingStatistics {
   difficultyDistribution?: Record<string, number>;
   bandDistribution?: Record<string, number>;
   failOpenRate?: number | null;
-  estimatedSavingVsHighBand?: number | null;
+  /** §5.8: computed from actual api_requests tokens linked via route_log_id;
+   * null when no priced high-tier expert exists to baseline against. */
+  estimatedSavingVsHighBand?: {
+    actualCost: number;
+    baselineCost: number;
+    saving: number;
+    savingPct: number | null;
+    linkedRequests: number;
+    cacheHitTokens: number;
+  } | null;
   limitations?: string[];
 }
 

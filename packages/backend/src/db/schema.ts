@@ -149,6 +149,8 @@ export async function createTables() {
         compression_original_tokens INT DEFAULT NULL,
         compression_saved_tokens INT DEFAULT NULL,
         run_id VARCHAR(255) DEFAULT NULL,
+        route_log_id VARCHAR(255) DEFAULT NULL COMMENT '关联 expert_routing_logs.id',
+        route_tier VARCHAR(16) DEFAULT NULL COMMENT '命中档位 low/medium/high',
         ip VARCHAR(45) DEFAULT NULL,
         user_agent VARCHAR(500) DEFAULT NULL,
         created_at BIGINT NOT NULL,

@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   expertRoutingConfigDb: { getById: vi.fn(), delete: vi.fn() },
-  expertRoutingLogDb: { getByConfigId: vi.fn(), getStatistics: vi.fn(), getRouteStats: vi.fn(), getDifficultyStats: vi.fn(), getClassifierLatencies: vi.fn(), getClassifierModelStats: vi.fn(), getById: vi.fn() },
+  expertRoutingLogDb: { getByConfigId: vi.fn(), getStatistics: vi.fn(), getRouteStats: vi.fn(), getDifficultyStats: vi.fn(), getClassifierLatencies: vi.fn(), getRecentRoutingDecisions: vi.fn(), getClassifierModelStats: vi.fn(), getById: vi.fn() },
+  apiRequestDb: { getUsageByRouteLogIds: vi.fn() },
   expertRoutingSessionBindingDb: { deleteByConfig: vi.fn() },
   modelDb: { getByExpertRoutingId: vi.fn(), update: vi.fn(), delete: vi.fn(), getById: vi.fn(), getByProviderId: vi.fn() },
   virtualKeyDb: { countByModels: vi.fn() },
@@ -12,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../db/index.js', () => ({
   expertRoutingConfigDb: mocks.expertRoutingConfigDb,
   expertRoutingLogDb: mocks.expertRoutingLogDb,
+  apiRequestDb: mocks.apiRequestDb,
   expertRoutingSessionBindingDb: mocks.expertRoutingSessionBindingDb,
   modelDb: mocks.modelDb,
   virtualKeyDb: mocks.virtualKeyDb,
@@ -181,7 +183,31 @@ describe('expertRoutingRoutes', () => {
   });
 
   it('returns difficulty/band distributions and fail-open rate from persisted stats', async () => {
-    mocks.expertRoutingConfigDb.getById.mockResolvedValue({ id: 'routing-1' });
+    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+      id: 'routing-1',
+      config: JSON.stringify({
+        experts: [
+          { id: 'cheap', band: 'low', type: 'virtual', model_id: 'm-cheap' },
+          { id: 'pro', band: 'high', type: 'virtual', model_id: 'm-pro' },
+        ],
+      }),
+    });
+    // §5.8 saving: cheap in/out 1e-6/2e-6 (cache 1e-7); high-tier baseline 1e-5/2e-5.
+    mocks.modelDb.getById.mockImplementation(async (mid: string) => ({
+      id: mid,
+      enabled: 1,
+      model_attributes: JSON.stringify(
+        mid === 'm-cheap'
+          ? { input_cost_per_token: 0.000001, output_cost_per_token: 0.000002, input_cost_per_token_cache_hit: 0.0000001 }
+          : { input_cost_per_token: 0.00001, output_cost_per_token: 0.00002 },
+      ),
+    }));
+    mocks.expertRoutingLogDb.getRecentRoutingDecisions.mockResolvedValue([
+      { id: 'log-1', selected_expert_id: 'cheap', band: 'low' },
+    ]);
+    mocks.apiRequestDb.getUsageByRouteLogIds.mockResolvedValue([
+      { route_log_id: 'log-1', prompt_tokens: 1000, completion_tokens: 200, cached_tokens: 400 },
+    ]);
     mocks.expertRoutingLogDb.getStatistics.mockResolvedValue([
       { count: 10, avg_time: 20 },
     ]);
@@ -212,13 +238,22 @@ describe('expertRoutingRoutes', () => {
     expect(response.classifierLatency).toEqual({ count: 10, p50: 50, p95: 200, avg: 65 });
     expect(response.routeSourceDistribution.fail_open).toBe(1);
     expect(response.failOpenRate).toBe(0.3);
-    // No actual usage tokens / price mapping are persisted: savings must not be invented.
-    expect(response.estimatedSavingVsHighBand).toBeNull();
-    expect(response.limitations.some((item: string) => item.includes('estimatedSavingVsHighBand'))).toBe(true);
+    // §5.8: actual = (1000-400)*1e-6 + 400*1e-7 + 200*2e-6 = 0.00104;
+    // all-high baseline = 1000*1e-5 + 200*2e-5 = 0.014 → saving 0.01296 (92.57%).
+    expect(response.estimatedSavingVsHighBand).toEqual({
+      actualCost: 0.00104,
+      baselineCost: 0.014,
+      saving: 0.01296,
+      savingPct: 92.57,
+      linkedRequests: 1,
+      cacheHitTokens: 400,
+    });
+    expect(response.limitations.some((item: string) => item.includes('estimatedSavingVsHighBand'))).toBe(false);
   });
 
   it('returns null fail-open rate and empty distributions when no stats rows exist', async () => {
-    mocks.expertRoutingConfigDb.getById.mockResolvedValue({ id: 'routing-1' });
+    mocks.expertRoutingConfigDb.getById.mockResolvedValue({ id: 'routing-1', config: JSON.stringify({ experts: [] }) });
+    mocks.expertRoutingLogDb.getRecentRoutingDecisions.mockResolvedValue([]);
     mocks.expertRoutingLogDb.getStatistics.mockResolvedValue([]);
     mocks.expertRoutingLogDb.getRouteStats.mockResolvedValue([]);
     mocks.expertRoutingLogDb.getDifficultyStats.mockResolvedValue([]);

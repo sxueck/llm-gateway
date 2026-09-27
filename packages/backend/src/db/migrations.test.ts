@@ -90,7 +90,18 @@ describe('migration runner from v45', () => {
       'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
       [52, 'add_expert_routing_binding_tier', expect.any(Number)],
     );
-    expect(conn.commit).toHaveBeenCalledTimes(6);
+    // v53：api_requests 路由关联列。
+    expect(query).toHaveBeenCalledWith(
+      "ALTER TABLE api_requests ADD COLUMN route_log_id VARCHAR(255) DEFAULT NULL COMMENT '关联 expert_routing_logs.id'",
+    );
+    expect(query).toHaveBeenCalledWith(
+      "ALTER TABLE api_requests ADD COLUMN route_tier VARCHAR(16) DEFAULT NULL COMMENT '命中档位 low/medium/high'",
+    );
+    expect(query).toHaveBeenCalledWith(
+      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      [53, 'add_api_requests_route_columns', expect.any(Number)],
+    );
+    expect(conn.commit).toHaveBeenCalledTimes(7);
   });
 });
 
