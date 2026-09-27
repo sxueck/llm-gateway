@@ -910,6 +910,14 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
     upstreamModel: protocolConfig.model ?? (request.body as any)?.model,
     providerName: ctx.providerName,
   });
+  // §4C: opt-in SSE debug comment line (default off).
+  if (modelResult?.routeInfo?.exposure?.sse_comment) {
+    protocolConfig.sseComment = `x-gateway-route ${JSON.stringify({
+      model: protocolConfig.model ?? (request.body as any)?.model ?? "",
+      tier: modelResult.routeInfo.tier ?? "",
+      source: modelResult.routeInfo.routeSource,
+    })}`;
+  }
 
   memoryLogger.info(
     `流式请求开始: ${path} | virtual key: ${vkDisplay}`,

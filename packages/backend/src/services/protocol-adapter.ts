@@ -26,6 +26,8 @@ export interface ProtocolConfig {
    * the upstream identifier byte-identical.
    */
   clientModel?: string;
+  /** §4C debug comment line for SSE streams (opt-in, exposure.sse_comment). */
+  sseComment?: string;
   protocol?: string;
   modelAttributes?: any;
   /** Preferred upstream transport for Responses API streaming.
@@ -367,6 +369,7 @@ export class ProtocolAdapter {
       stream,
       model: config.model,
       clientModel: config.clientModel,
+      sseComment: config.sseComment,
       abortSignal,
       upstreamRequestStartedAt,
       streamRestorer,

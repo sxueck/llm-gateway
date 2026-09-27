@@ -228,6 +228,21 @@ export interface RoutingSimulation {
   wouldHit: string | null;
 }
 
+/** §5.9 feedback training record (replay set). */
+export interface TrainingRecord {
+  id: string;
+  input_hash: string;
+  input_text: string;
+  judge_intent_label: string;
+  judge_confidence: number;
+  final_intent_label: string;
+  final_expert_id: string | null;
+  status: string;
+  occurrence_count: number;
+  created_at: number;
+  updated_at: number;
+}
+
 /** §5.5 classifier runtime status. */
 export interface JevStatus {
   configured: boolean;
@@ -276,6 +291,26 @@ export const expertRoutingApi = {
 
   getLogDetails(id: string, logId: string): Promise<ExpertRoutingLogDetail> {
     return request.get(`/admin/expert-routing/${id}/logs/${logId}/details`);
+  },
+
+  /** §5.9 misclassification feedback (too_low / too_high → corrected tier). */
+  submitLogFeedback(
+    id: string,
+    logId: string,
+    rating: 'too_low' | 'too_high',
+  ): Promise<{ success: boolean; corrected: string }> {
+    return request.post(
+      `/admin/expert-routing/${id}/logs/${logId}/feedback`,
+      { rating },
+    );
+  },
+
+  /** §5.9 replay-set export. */
+  getTrainingRecords(
+    id: string,
+    params?: { status?: string; limit?: number },
+  ): Promise<{ records: TrainingRecord[] }> {
+    return request.get(`/admin/expert-routing/${id}/training/records`, { params });
   },
 
   getJevStatus(): Promise<JevStatus> {

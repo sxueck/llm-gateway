@@ -18,6 +18,8 @@ export interface OpenAIChatStreamProcessorOptions {
   /** Report this model name to the client instead of the upstream identifier
    * (PRD §4 gateway_name exposure); absent = byte-identical passthrough. */
   clientModel?: string;
+  /** §4C debug comment line written right after the SSE headers (opt-in). */
+  sseComment?: string;
   abortSignal?: AbortSignal;
   upstreamRequestStartedAt?: number;
 
@@ -54,6 +56,7 @@ export async function processOpenAIChatCompletionStreamToSse(
     stream,
     model,
     clientModel,
+    sseComment,
     abortSignal,
     upstreamRequestStartedAt,
     streamRestorer,
@@ -72,6 +75,12 @@ export async function processOpenAIChatCompletionStreamToSse(
     'Cache-Control': 'no-cache, no-transform',
     'X-Accel-Buffering': 'no',
   });
+
+  // §4C: opt-in debug comment before the first event; SSE parsers must ignore
+  // lines starting with ':' per spec (pi's parser skips them too).
+  if (sseComment) {
+    reply.raw.write(`: ${sseComment}\n\n`);
+  }
 
   let promptTokens = 0;
   let completionTokens = 0;

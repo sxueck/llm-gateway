@@ -674,6 +674,13 @@ export default {
     logDetails: '日志详情',
     metaInfo: '元信息',
     continuation: '续轮请求',
+    feedbackTitle: '误判反馈',
+    judgedTooLow: '判低了',
+    judgedTooHigh: '判高了',
+    feedbackHint: '标记后自动修正一档并记入回放集',
+    feedbackRecorded: '已记录，修正为 {tier} 档',
+    feedbackFailed: '反馈提交失败',
+    exportReplaySet: '导出回放集',
 
     // 监控
     statistics: '路由统计',

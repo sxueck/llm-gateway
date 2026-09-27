@@ -9,7 +9,7 @@ import type { ExposureConfig, RoutingBand } from "../../types/expert-routing.js"
 export interface ExpertRouteInfo {
   expertRoutingId: string;
   tier?: RoutingBand;
-  routeSource: "jev" | "session" | "fallback" | "fail_open";
+  routeSource: "jev" | "session" | "fallback" | "fail_open" | "manual";
   logId: string | null;
   /** Gateway display name of the routed model (resolvedModel.name). */
   routedModelName?: string;

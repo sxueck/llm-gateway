@@ -259,6 +259,29 @@ export async function resolveModelAndProvider(
         const matchedModels = await collectModelMatches(parsedModelIds, requestedModel);
 
         if (matchedModels.length === 0) {
+          // §5.6 manual tier suffix: `<model>-auto-high|medium|low` resolves to
+          // the base model and forces that routing tier (expert-routed models
+          // only — a plain match simply routes normally, the forced tier is
+          // ignored by non-tiered targets).
+          const tierSuffix = requestedModel.match(/-auto-(low|medium|high)$/);
+          if (tierSuffix) {
+            const base = requestedModel.slice(0, requestedModel.length - tierSuffix[0].length);
+            const tierMatched = await collectModelMatches(parsedModelIds, base);
+            if (tierMatched.length === 1) {
+              const matched = tierMatched[0];
+              targetModelId = matched.modelId;
+              selectedModel = matched.model;
+              (request.body as any).model = base;
+              (request as any).__forcedTier = tierSuffix[1];
+              memoryLogger.debug(
+                `模型档位后缀解析: ${requestedModel} -> ${base} + 强制 ${tierSuffix[1]} 档`,
+                'ModelResolver'
+              );
+            }
+          }
+        }
+
+        if (matchedModels.length === 0 && !selectedModel) {
           // FR-1: 仅当入口协议为 OpenAI 且请求目标为 Chat Completions / Responses（非 compact）时，
           // 才尝试模型名后缀解析
           const isOpenAiProtocol = (request as any).protocol === 'openai';

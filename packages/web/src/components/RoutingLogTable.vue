@@ -25,6 +25,9 @@
           :placeholder="t('expertRouting.virtualKeyFilter')"
           class="filter-input"
         />
+        <n-button size="small" :loading="exporting" @click="exportTrainingRecords">
+          {{ t('expertRouting.exportReplaySet') }}
+        </n-button>
       </n-space>
 
       <n-data-table
@@ -137,6 +140,31 @@
                 </div>
               </n-space>
             </n-card>
+            <n-card size="small" :title="t('expertRouting.feedbackTitle')">
+              <n-space :size="8" align="center">
+                <n-button
+                  size="small"
+                  type="warning"
+                  :loading="feedbackLoading"
+                  :disabled="!detailLogId"
+                  @click="submitFeedback('too_low')"
+                >
+                  {{ t('expertRouting.judgedTooLow') }}
+                </n-button>
+                <n-button
+                  size="small"
+                  type="warning"
+                  :loading="feedbackLoading"
+                  :disabled="!detailLogId"
+                  @click="submitFeedback('too_high')"
+                >
+                  {{ t('expertRouting.judgedTooHigh') }}
+                </n-button>
+                <n-text depth="3" style="font-size: 12px">
+                  {{ t('expertRouting.feedbackHint') }}
+                </n-text>
+              </n-space>
+            </n-card>
           </n-space>
         </n-spin>
       </n-drawer-content>
@@ -148,6 +176,7 @@
 import { computed, h, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
+  NButton,
   NCard,
   NDataTable,
   NDrawer,
@@ -159,6 +188,8 @@ import {
   NSpace,
   NSpin,
   NTag,
+  NText,
+  useMessage,
   type DataTableColumns,
 } from 'naive-ui';
 import {
@@ -192,6 +223,10 @@ const virtualKeyFilter = ref('');
 const showDetail = ref(false);
 const detail = ref<ExpertRoutingLogDetail | null>(null);
 const detailLoading = ref(false);
+const detailLogId = ref<string | null>(null);
+const feedbackLoading = ref(false);
+const exporting = ref(false);
+const message = useMessage();
 
 const bandOptions = ['low', 'medium', 'high'].map((band) => ({
   label: t(`expertRouting.band.${band}`),
@@ -324,12 +359,56 @@ async function handleRowClick(log: ExpertRoutingLog) {
   showDetail.value = true;
   detailLoading.value = true;
   detail.value = null;
+  detailLogId.value = log.id;
   try {
     detail.value = await expertRoutingApi.getLogDetails(props.configId, log.id);
   } catch (error: any) {
     console.error('Failed to load log details:', error);
   } finally {
     detailLoading.value = false;
+  }
+}
+
+/** §5.9: mark a verdict as too low / too high; the corrected tier is persisted. */
+async function submitFeedback(rating: 'too_low' | 'too_high') {
+  if (!detailLogId.value) return;
+  feedbackLoading.value = true;
+  try {
+    const result = await expertRoutingApi.submitLogFeedback(
+      props.configId,
+      detailLogId.value,
+      rating,
+    );
+    message.success(
+      t('expertRouting.feedbackRecorded', { tier: result.corrected }),
+    );
+  } catch (error: any) {
+    message.error(error?.message || t('expertRouting.feedbackFailed'));
+  } finally {
+    feedbackLoading.value = false;
+  }
+}
+
+/** §5.9: download the replay set as JSON for classifier tuning. */
+async function exportTrainingRecords() {
+  exporting.value = true;
+  try {
+    const { records } = await expertRoutingApi.getTrainingRecords(props.configId, {
+      limit: 1000,
+    });
+    const blob = new Blob([JSON.stringify(records, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `tier-routing-replay-${props.configId}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (error: any) {
+    message.error(error?.message || t('expertRouting.feedbackFailed'));
+  } finally {
+    exporting.value = false;
   }
 }
 

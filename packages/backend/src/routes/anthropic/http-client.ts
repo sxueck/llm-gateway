@@ -286,6 +286,7 @@ export async function consumeAnthropicStreamAttempt(
   piiCtx?: PiiProtectionContext | null,
   upstreamRequestStartedAt?: number,
   clientModel?: string,
+  sseComment?: string,
 ): Promise<StreamAttemptResult> {
   let inputTokens = 0;
   let cacheCreationInputTokens = 0;
@@ -306,6 +307,10 @@ export async function consumeAnthropicStreamAttempt(
     if (!buffering) return;
     buffering = false;
     ensureSseHeaders(reply);
+    // §4C: opt-in debug comment before the first buffered event.
+    if (sseComment) {
+      reply.raw.write(`: ${sseComment}\n\n`);
+    }
     for (const chunk of pendingChunks) {
       reply.raw.write(chunk);
       streamChunks.record(chunk);
@@ -543,6 +548,7 @@ export async function makeAnthropicStreamRequest(
   piiCtx?: PiiProtectionContext | null,
   abortSignal?: AbortSignal,
   clientModel?: string,
+  sseComment?: string,
 ): Promise<StreamTokenUsage> {
   const normalizedRequest = normalizeAnthropicRequest(
     config.model,
@@ -583,6 +589,7 @@ export async function makeAnthropicStreamRequest(
         piiCtx,
         upstreamRequestStartedAt,
         clientModel,
+        sseComment,
       );
 
       if (!attemptResult.hasAssistantContent) {

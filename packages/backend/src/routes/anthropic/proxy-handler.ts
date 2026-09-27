@@ -937,6 +937,13 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
       piiResult.context,
       abortController.signal,
       protocolConfig.clientModel,
+      modelResult?.routeInfo?.exposure?.sse_comment
+        ? `x-gateway-route ${JSON.stringify({
+            model: protocolConfig?.model ?? requestBody.model ?? "",
+            tier: modelResult.routeInfo.tier ?? "",
+            source: modelResult.routeInfo.routeSource,
+          })}`
+        : undefined,
     );
 
     const duration = Date.now() - startTime;

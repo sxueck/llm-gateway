@@ -51,6 +51,7 @@ import {
   userPluginEnrollmentRepository,
 } from "./repositories/worker-plugin.repository.js";
 import { alertReadRepository } from "./repositories/alert-read.repository.js";
+import { expertRoutingTrainingRecordRepository } from "./repositories/expert-routing-training-record.repository.js";
 
 // Export repositories with backward-compatible names
 export const userDb = userRepository;
@@ -77,6 +78,7 @@ export const agentSearchUsageDb = agentSearchUsageRepository;
 export const workerPluginDb = workerPluginRepository;
 export const userPluginEnrollmentDb = userPluginEnrollmentRepository;
 export const alertReadDb = alertReadRepository;
+export const expertRoutingTrainingRecordDb = expertRoutingTrainingRecordRepository;
 
 // Enhanced initDatabase that also creates tables and runs migrations
 export async function initDatabase() {

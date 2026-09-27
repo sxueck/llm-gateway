@@ -144,9 +144,9 @@ bun run start
 5. **使用虚拟密钥访问 API** - 在应用中调用 LLM Gateway
 
 
-## Jev 专家路由
+## Jev 智能分级路由
 
-专家路由使用 Jev 的 `choice` 决策在已配置的候选模型之间选择：把候选 ID、类别和用途描述发给 Jev，按返回的概率降序选择可用目标。最高概率低于路由配置的 `choice_threshold`（默认 0.6）、Jev 不可用或候选均不可用时，使用显式配置的 fallback；不调用 LLM 二次分类。有效会话绑定仍会直接复用先前选择。
+智能分级路由（原专家路由）使用 Jev 的 `choice` 决策把请求分为 low / medium / high 三个难度档，每个档位配置一组候选模型（同一档内按配置顺序优先）。分类失败或候选均不可用时走 fail-open 链（fallback / 交回上层路由 / 报错）；`escalate_only` 会话策略下同一会话只升档不降档，agent 工具续写轮次直接复用上一轮决策；带图片/工具或超上下文窗口的请求会先按能力过滤候选再选档。
 
 在后端部署环境中配置完整的 Jev Decisions 请求 URL、密钥及上游模型名：
 
@@ -154,10 +154,23 @@ bun run start
 JEV_API_URL=https://api.typesafe.ai/v1/systemone
 JEV_API_KEY=<server-side-key>
 JEV_MODEL=jev-1.13.0
-# JEV_API_TIMEOUT_MS=3000
+# JEV_API_TIMEOUT_MS=800            # 分类器超时（默认 800ms）
+# JEV_BREAKER_THRESHOLD=3           # 连续失败熔断阈值
+# JEV_BREAKER_COOLDOWN_MS=30000     # 熔断冷却时长
 ```
 
-OpenRouter 可使用 `JEV_API_URL=https://openrouter.ai/api/alpha/decisions` 和 `JEV_MODEL=typesafe/jev-1.13`。不要将密钥放入前端；已有启用的专家路由但未配置 Jev 时，服务启动会输出警告日志，运行时 Jev 不可用的请求使用 fallback。旧的 `/v1/intent/classify` 已移除；通用 `/v1/systemone` 代理端点保留。历史专家日志和旧配置不被自动删除，新配置不再需要 `llm_second_pass`。
+OpenRouter 可使用 `JEV_API_URL=https://openrouter.ai/api/alpha/decisions` 和 `JEV_MODEL=typesafe/jev-1.13`。不要将密钥放入前端；已有启用的分级路由但未配置 Jev 时，服务启动会输出警告日志，运行时 Jev 不可用的请求走 fail-open。旧的 `/v1/intent/classify` 已移除；通用 `/v1/systemone` 代理端点保留。
+
+### 客户端可见的路由信息
+
+分级路由的响应默认携带 `X-Gateway-Routed-Model`（网关内模型名）、`X-Gateway-Upstream-Model`（实际发性上游的模型 id）、`X-Gateway-Route-Tier`（low/medium/high）、`X-Gateway-Route-Source`（jev/session/fallback/fail_open/manual/cache）与 `X-Gateway-Route-Id`（路由日志 id）。可在路由配置的「对外透出」中关闭响应头、改写 body `model` 字段口径（upstream/gateway_name）或开启 SSE 调试注释行（`exposure.sse_comment`）。
+
+### 手动指定档位
+
+- 请求头：`X-Gateway-Tier: low|medium|high`，跳过分类器直接路由到对应档；
+- 模型名后缀：对外模型名追加 `-auto-high` / `-auto-medium` / `-auto-low`（如 `my-router-auto-high`），解析为基础模型并强制档位。
+
+手动档位是显式意图：`escalate_only` 下不会强制拉回绑定档；绑定仅在手动档更高时升档。
 
 ## Cloud SubAgent
 

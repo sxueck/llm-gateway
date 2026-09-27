@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   expertRoutingConfigDb: { getById: vi.fn(), delete: vi.fn() },
   expertRoutingLogDb: { getByConfigId: vi.fn(), getStatistics: vi.fn(), getRouteStats: vi.fn(), getDifficultyStats: vi.fn(), getClassifierLatencies: vi.fn(), getRecentRoutingDecisions: vi.fn(), getClassifierModelStats: vi.fn(), getById: vi.fn() },
   apiRequestDb: { getUsageByRouteLogIds: vi.fn() },
+  expertRoutingTrainingRecordDb: { upsertFeedback: vi.fn(), listByConfig: vi.fn() },
   expertRoutingSessionBindingDb: { deleteByConfig: vi.fn() },
   modelDb: { getByExpertRoutingId: vi.fn(), update: vi.fn(), delete: vi.fn(), getById: vi.fn(), getByProviderId: vi.fn() },
   virtualKeyDb: { countByModels: vi.fn() },
@@ -14,6 +15,7 @@ vi.mock('../db/index.js', () => ({
   expertRoutingConfigDb: mocks.expertRoutingConfigDb,
   expertRoutingLogDb: mocks.expertRoutingLogDb,
   apiRequestDb: mocks.apiRequestDb,
+  expertRoutingTrainingRecordDb: mocks.expertRoutingTrainingRecordDb,
   expertRoutingSessionBindingDb: mocks.expertRoutingSessionBindingDb,
   modelDb: mocks.modelDb,
   virtualKeyDb: mocks.virtualKeyDb,
@@ -445,6 +447,63 @@ describe('expertRoutingRoutes', () => {
         body: { config: { experts: draftExperts } },
       }).catch((e: any) => e);
       expect(err.message).toContain('至少提供一个');
+    });
+  });
+
+  describe('§5.9 feedback', () => {
+    it('upserts a corrected-tier training record from a routing log', async () => {
+      mocks.expertRoutingConfigDb.getById.mockResolvedValue({ id: 'routing-1' });
+      mocks.expertRoutingLogDb.getById.mockResolvedValue({
+        id: 'log-1',
+        expert_routing_id: 'routing-1',
+        request_hash: 'hash-1',
+        difficulty: 'low',
+        band: 'low',
+        selected_expert_id: 'fast',
+        intent_text: '你好',
+        classifier_response: JSON.stringify({ verdictConfidence: 0.8 }),
+      });
+      const { postRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+
+      const response = await postRoutes.get('/:id/logs/:logId/feedback')!({
+        params: { id: 'routing-1', logId: 'log-1' },
+        body: { rating: 'too_low' },
+      });
+
+      expect(response).toEqual({ success: true, corrected: 'medium' });
+      expect(mocks.expertRoutingTrainingRecordDb.upsertFeedback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expert_routing_id: 'routing-1',
+          input_hash: 'hash-1',
+          input_text: '你好',
+          judge_intent_label: 'low',
+          judge_confidence: 0.8,
+          final_intent_label: 'medium',
+          final_expert_id: 'fast',
+        }),
+      );
+    });
+
+    it('too_high on high corrects down to medium', async () => {
+      mocks.expertRoutingConfigDb.getById.mockResolvedValue({ id: 'routing-1' });
+      mocks.expertRoutingLogDb.getById.mockResolvedValue({
+        id: 'log-2',
+        expert_routing_id: 'routing-1',
+        request_hash: 'hash-2',
+        difficulty: 'high',
+        band: 'high',
+        selected_expert_id: 'review',
+        classifier_response: '{}',
+      });
+      const { postRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+
+      const response = await postRoutes.get('/:id/logs/:logId/feedback')!({
+        params: { id: 'routing-1', logId: 'log-2' },
+        body: { rating: 'too_high' },
+      });
+      expect(response.corrected).toBe('medium');
     });
   });
 

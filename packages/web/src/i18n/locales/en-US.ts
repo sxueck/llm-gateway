@@ -672,6 +672,13 @@ export default {
     logDetails: 'Log Details',
     metaInfo: 'Meta',
     continuation: 'Continuation',
+    feedbackTitle: 'Misclassification Feedback',
+    judgedTooLow: 'Judged too low',
+    judgedTooHigh: 'Judged too high',
+    feedbackHint: 'Marks auto-correct one tier and join the replay set',
+    feedbackRecorded: 'Recorded, corrected to {tier} tier',
+    feedbackFailed: 'Feedback submission failed',
+    exportReplaySet: 'Export replay set',
 
     // Monitor
     statistics: 'Routing Statistics',

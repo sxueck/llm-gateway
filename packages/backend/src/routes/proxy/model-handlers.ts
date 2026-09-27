@@ -1,5 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { systemConfigDb } from '../../db/index.js';
+import { systemConfigDb, expertRoutingConfigDb, modelDb } from '../../db/index.js';
 import { hotConfigCache } from '../../services/hot-config-cache.js';
 import { memoryLogger } from '../../services/logger.js';
 import { authenticateVirtualKey, extractVirtualKeyAuthHeader, getModelIdsFromVirtualKey } from './auth.js';
@@ -27,6 +27,39 @@ export function buildModelBaseInfo(model: any): any {
     created: Math.floor(model.created_at / 1000),
     owned_by: 'system'
   };
+}
+
+/**
+ * §5.10: tiered-routing models expose their tier membership in /v1/models
+ * metadata so clients can display what each band contains. Best-effort — an
+ * unreadable config simply omits the field.
+ */
+async function buildRoutingTiers(expertRoutingId: string): Promise<Record<string, string[]> | null> {
+  try {
+    const row = await expertRoutingConfigDb.getById(expertRoutingId);
+    if (!row) return null;
+    const experts = (JSON.parse(row.config) as any)?.experts;
+    if (!Array.isArray(experts)) return null;
+    const names = await Promise.all(
+      (experts as any[]).map(async (expert) => {
+        if (expert.model) return expert.model;
+        if (expert.type === 'virtual' && expert.model_id) {
+          const model = await modelDb.getById(expert.model_id);
+          return model?.name || expert.id;
+        }
+        return expert.id;
+      }),
+    );
+    const tiers: Record<string, string[]> = { low: [], medium: [], high: [] };
+    experts.forEach((expert: any, index: number) => {
+      if (expert.band === 'low' || expert.band === 'medium' || expert.band === 'high') {
+        tiers[expert.band].push(names[index]);
+      }
+    });
+    return tiers;
+  } catch {
+    return null;
+  }
 }
 
 export function mergeModelAttributes(baseInfo: any, attributes: any): any {
@@ -79,6 +112,18 @@ export async function getModelsHandler(request: FastifyRequest, reply: FastifyRe
       const attributes = parseModelAttributes(model!.model_attributes);
       return applyServingLimits(mergeModelAttributes(baseInfo, attributes), attributes);
     });
+
+    // §5.10: attach tier membership for tiered-routing (expert-routed) models.
+    const tiersCache = new Map<string, Record<string, string[]> | null>();
+    for (let i = 0; i < models.length; i++) {
+      const routingId = models[i]?.expert_routing_id;
+      if (!routingId) continue;
+      if (!tiersCache.has(routingId)) {
+        tiersCache.set(routingId, await buildRoutingTiers(routingId));
+      }
+      const tiers = tiersCache.get(routingId);
+      if (tiers) modelList[i].routing_tiers = tiers;
+    }
 
     memoryLogger.info(
       `Models list query: virtual key ${virtualKeyValue.slice(0, 6)}...${virtualKeyValue.slice(-4)} | returned ${modelList.length} models`,

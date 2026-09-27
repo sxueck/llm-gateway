@@ -296,6 +296,42 @@ describe("ExpertRouter difficulty routing", () => {
     expect(payload.capabilityFiltered).toBe(true);
   });
 
+  test("X-Gateway-Tier header forces the tier without classification (§5.6)", async () => {
+    const manualRequest = {
+      body: { messages: [{ role: "user", content: "你好" }] },
+      headers: { "x-gateway-tier": "high" },
+    };
+    const result = await new ExpertRouter().route(manualRequest as any, "routing", {});
+    expect(result?.expert.id).toBe("review");
+    expect(result?.tier).toBe("high");
+    expect(result?.routeSource).toBe("manual");
+    expect(mocks.chooseDifficulty).not.toHaveBeenCalled();
+    const log = mocks.expertRoutingLogDb.create.mock.calls[0][0];
+    expect(log.route_source).toBe("manual");
+    expect(log.band).toBe("high");
+  });
+
+  test("manual tier never clamps to the escalate_only bound tier", async () => {
+    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+      id: "routing", enabled: 1,
+      config: JSON.stringify(config({
+        session_policy: { mode: "escalate_only", idle_ttl_seconds: 60, absolute_ttl_seconds: 3600 },
+      })),
+    });
+    mocks.expertRoutingSessionBindingDb.getActiveBinding.mockResolvedValue({
+      expert_id: "review", route_source: "jev", difficulty: "high", tier: "high",
+    });
+    const manualRequest = {
+      body: { messages: [{ role: "user", content: "快问快答" }] },
+      headers: { "x-gateway-tier": "low" },
+    };
+    const result = await new ExpertRouter().route(manualRequest as any, "routing", {});
+    // Explicit user intent wins even below the bound tier.
+    expect(result?.expert.id).toBe("fast");
+    expect(result?.routeSource).toBe("manual");
+    expect(mocks.expertRoutingSessionBindingDb.escalateBindingTier).not.toHaveBeenCalled();
+  });
+
   test("legacy config without bands is rejected with a migration hint", async () => {
     mocks.expertRoutingConfigDb.getById.mockResolvedValue({
       id: "routing", enabled: 1,

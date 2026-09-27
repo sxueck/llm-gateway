@@ -241,6 +241,7 @@ export async function createTables() {
         prompt_tokens INT DEFAULT 0 COMMENT '原始请求预估Token',
         cleaned_content_length INT DEFAULT 0 COMMENT '清洗后用于分类的文本长度',
         difficulty VARCHAR(16) DEFAULT NULL COMMENT '路由难度: low/medium/high',
+        intent_text MEDIUMTEXT NULL COMMENT '清洗后意图文本(截断,反馈回放用)',
         band VARCHAR(16) DEFAULT NULL COMMENT '难度分档',
         verdict_reused TINYINT(1) DEFAULT 0 COMMENT '是否复用缓存判定',
         classifier_time_ms INT DEFAULT NULL COMMENT '分类器耗时(毫秒)',

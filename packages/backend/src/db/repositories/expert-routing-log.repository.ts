@@ -24,6 +24,8 @@ export const expertRoutingLogRepository = {
     band?: string | null;
     verdict_reused?: boolean | number;
     classifier_time_ms?: number | null;
+    // v54 feedback-loop column (optional, back-compatible).
+    intent_text?: string | null;
     // Deprecated (v24 removed column). Kept for compatibility with older callers.
     semantic_score?: number | null;
   }) {
@@ -44,8 +46,8 @@ export const expertRoutingLogRepository = {
             selected_expert_type, selected_expert_name, classification_time,
             original_request, classifier_request, classifier_response, created_at,
             route_source, prompt_tokens, cleaned_content_length,
-            difficulty, band, verdict_reused, classifier_time_ms
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            difficulty, band, verdict_reused, classifier_time_ms, intent_text
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             log.id,
             log.virtual_key_id || null,
@@ -67,7 +69,8 @@ export const expertRoutingLogRepository = {
             log.difficulty || null,
             log.band || null,
             log.verdict_reused ? 1 : 0,
-            log.classifier_time_ms ?? null
+            log.classifier_time_ms ?? null,
+            log.intent_text ?? null
           ]
         );
         return;
@@ -77,7 +80,7 @@ export const expertRoutingLogRepository = {
         const code = String(e?.code || '');
         const isMissingColumn =
           code === 'ER_BAD_FIELD_ERROR' ||
-          /Unknown column\s+'(route_source|prompt_tokens|cleaned_content_length|difficulty|band|verdict_reused|classifier_time_ms)'/i.test(message);
+          /Unknown column\s+'(route_source|prompt_tokens|cleaned_content_length|difficulty|band|verdict_reused|classifier_time_ms|intent_text)'/i.test(message);
         if (!isMissingColumn) throw e;
       }
 

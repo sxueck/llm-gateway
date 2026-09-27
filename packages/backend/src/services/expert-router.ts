@@ -62,7 +62,7 @@ interface ExpertRoutingResult {
   providerId: string;
   modelOverride?: string;
   tier: RoutingBand;
-  routeSource: "jev" | "session" | "fallback" | "fail_open";
+  routeSource: "jev" | "session" | "fallback" | "fail_open" | "manual";
   logId: string | null;
   expert: ExpertTarget;
   classificationTime: number;
@@ -83,6 +83,19 @@ export function groupByBand(experts: ExpertTarget[]): ExpertRoutingBands {
     bands[expert.band].push(expert);
   }
   return bands;
+}
+
+/**
+ * §5.6 manual tier override: X-Gateway-Tier request header, or the
+ * model-suffix resolution (__forcedTier) set by model-resolver for
+ * `<model>-auto-high|medium|low` requests.
+ */
+function readManualTier(request: ProxyRequest): RoutingBand | undefined {
+  const raw =
+    (request as any).__forcedTier ??
+    (request.headers as any)?.["x-gateway-tier"];
+  const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  return value === "low" || value === "medium" || value === "high" ? value : undefined;
 }
 
 export class ExpertRouter {
@@ -200,6 +213,10 @@ export class ExpertRouter {
     }
 
     const signal = await SignalBuilder.buildRoutingSignal(request, config.preprocessing);
+    // §5.9: persist the cleaned intent text (truncated) for feedback replay.
+    const logStats = signal.stats
+      ? { ...signal.stats, intentText: signal.intentText?.slice(0, 2000) }
+      : undefined;
     let model: string | null = null;
     let ranked: Array<{ expertId: string; probability: number }> = [];
     let verdictBand: RoutingBand = "low";
@@ -209,7 +226,8 @@ export class ExpertRouter {
     let classifierTimeMs: number | null = null;
 
     let classified = false;
-    if (signal.intentText?.trim()) {
+    const manualTier = readManualTier(request);
+    if (!manualTier && signal.intentText?.trim()) {
       const jevStart = performance.now();
       try {
         const decision = await chooseDifficulty(signal.intentText);
@@ -235,7 +253,7 @@ export class ExpertRouter {
     if (escalateActive && !classified) {
       // Classifier down on a fresh turn: serve the bound tier (never degrade
       // to the fail-open low band just because the classifier is unavailable).
-      return await this.resolveAndLog(boundExpert!, "session", 1, model, ranked, startTime, expertRoutingId, context, request, signal.stats, undefined, {
+      return await this.resolveAndLog(boundExpert!, "session", 1, model, ranked, startTime, expertRoutingId, context, request, logStats, undefined, {
         failOpen,
         verdictReused: true,
         difficulty: bindingDifficulty,
@@ -244,10 +262,13 @@ export class ExpertRouter {
         continuation: continuationTurn,
       });
     }
-    const verdictRank = BAND_ORDER.indexOf(verdictBand);
+    const verdictRank = BAND_ORDER.indexOf(manualTier ?? verdictBand);
     const boundRank = boundTier !== undefined ? BAND_ORDER.indexOf(boundTier) : -1;
-    const keepBoundTier = escalateActive && classified && verdictRank <= boundRank;
-    const effectiveBand: RoutingBand = keepBoundTier ? boundTier! : verdictBand;
+    // Manual tier is explicit user intent: always serve the requested band,
+    // never the keep-bound clamp.
+    const keepBoundTier =
+      escalateActive && !manualTier && classified && verdictRank <= boundRank;
+    const effectiveBand: RoutingBand = keepBoundTier ? boundTier! : (manualTier ?? verdictBand);
 
     try {
       // §5.4 capability filter runs BEFORE tier selection: drop candidates that
@@ -286,8 +307,12 @@ export class ExpertRouter {
       } else {
         failure = "capability_filtered";
       }
-      // fail_open 仅表示分类器失败；低置信但成功分类仍算 jev 判定
-      const routeSource: "jev" | "fail_open" = classified ? "jev" : "fail_open";
+      // fail_open 仅表示分类器失败；低置信但成功分类仍算 jev 判定；手动指定为 manual
+      const routeSource: "jev" | "fail_open" | "manual" = manualTier
+        ? "manual"
+        : classified
+          ? "jev"
+          : "fail_open";
       const meta: RoutingMeta = {
         verdictBand: effectiveBand,
         verdictConfidence,
@@ -306,13 +331,13 @@ export class ExpertRouter {
           if (useBindings) {
             try {
               if (
-                escalateActive &&
-                classified &&
-                verdictRank > boundRank &&
-                effectiveBand !== boundTier
+                binding &&
+                effectiveBand !== boundTier &&
+                BAND_ORDER.indexOf(effectiveBand) > boundRank
               ) {
-                // Tier promotion: update the binding in place; a vanished row
-                // (expired mid-flight) falls back to a fresh first-writer insert.
+                // Tier promotion (manual or fresh verdict): update the binding
+                // in place; a vanished row (expired mid-flight) falls back to a
+                // fresh first-writer insert.
                 const updated = await expertRoutingSessionBindingDb.escalateBindingTier(
                   bindingKey,
                   { expertId: expert.id, tier: effectiveBand, difficulty, routeSource },
@@ -345,7 +370,7 @@ export class ExpertRouter {
           try {
             return await this.resolveAndLog(
               selected, routeSource, ranked.find((item) => item.expertId === selected.id)?.probability ?? verdictConfidence,
-              model, ranked, startTime, expertRoutingId, context, request, signal.stats, undefined, meta,
+              model, ranked, startTime, expertRoutingId, context, request, logStats, undefined, meta,
             );
           } catch (error) {
             if (useBindings) await expertRoutingSessionBindingDb.deleteBinding(bindingKey);
@@ -370,7 +395,7 @@ export class ExpertRouter {
       try {
         return await this.resolveAndLog(
           fallback, "fallback", 0, model, ranked, startTime,
-          expertRoutingId, context, request, signal.stats, failure,
+          expertRoutingId, context, request, logStats, failure,
           { failOpen, verdictReused: false, difficulty, classifierTimeMs },
         );
       } catch (error) {
@@ -389,7 +414,7 @@ export class ExpertRouter {
 
   private async resolveAndLog(
     expert: ExpertTarget,
-    source: "jev" | "session" | "fallback" | "fail_open",
+    source: "jev" | "session" | "fallback" | "fail_open" | "manual",
     probability: number,
     model: string | null,
     ranked: Array<{ expertId: string; probability: number }>,
@@ -397,7 +422,12 @@ export class ExpertRouter {
     expertRoutingId: string,
     context: RoutingContext,
     request: ProxyRequest,
-    stats?: { promptTokens: number; cleanedLength: number },
+    stats?: {
+      promptTokens: number;
+      cleanedLength: number;
+      /** §5.9: cleaned intent text (truncated) for the feedback replay set. */
+      intentText?: string;
+    },
     failure?: string,
     meta?: RoutingMeta,
   ): Promise<ExpertRoutingResult> {
@@ -429,6 +459,7 @@ export class ExpertRouter {
         route_source: source,
         prompt_tokens: stats?.promptTokens ?? 0,
         cleaned_content_length: stats?.cleanedLength ?? 0,
+        intent_text: stats?.intentText ?? null,
       });
       return {
         provider: resolved.provider!,

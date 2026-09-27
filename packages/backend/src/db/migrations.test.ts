@@ -101,7 +101,15 @@ describe('migration runner from v45', () => {
       'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
       [53, 'add_api_requests_route_columns', expect.any(Number)],
     );
-    expect(conn.commit).toHaveBeenCalledTimes(7);
+    // v54：反馈回放用意图文本列。
+    expect(query).toHaveBeenCalledWith(
+      "ALTER TABLE expert_routing_logs ADD COLUMN intent_text MEDIUMTEXT NULL COMMENT '清洗后意图文本(截断,反馈回放用)'",
+    );
+    expect(query).toHaveBeenCalledWith(
+      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      [54, 'add_expert_routing_log_intent_text', expect.any(Number)],
+    );
+    expect(conn.commit).toHaveBeenCalledTimes(8);
   });
 });
 

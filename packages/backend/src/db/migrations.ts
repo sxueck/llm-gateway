@@ -1406,6 +1406,37 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 54,
+    // §5.9 误判反馈闭环：路由日志落清洗后意图文本（截断），支撑判低/判高
+    // 标记导出回放集。注意：这是路由日志中唯一明文 prompt 内容的列，
+    // 敏感场景可通过缩短日志保留期控制暴露面。
+    name: "add_expert_routing_log_intent_text",
+    up: async (conn: Connection) => {
+      const [columnRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'expert_routing_logs'
+           AND COLUMN_NAME = 'intent_text'`,
+      );
+      if (Number((columnRows as any[])[0]?.cnt || 0) === 0) {
+        await conn.query(
+          "ALTER TABLE expert_routing_logs ADD COLUMN intent_text MEDIUMTEXT NULL COMMENT '清洗后意图文本(截断,反馈回放用)'",
+        );
+        console.log("[迁移] 已为 expert_routing_logs 添加 intent_text");
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(
+          "ALTER TABLE expert_routing_logs DROP COLUMN intent_text",
+        );
+      } catch (error: any) {
+        console.warn("[迁移] 删除 intent_text 失败:", error.message);
+      }
+    },
+  },
 ];
 
 async function hasProviderForeignKey(

@@ -6,6 +6,7 @@ import {
   expertRoutingConfigDb,
   expertRoutingLogDb,
   expertRoutingSessionBindingDb,
+  expertRoutingTrainingRecordDb,
   modelDb,
   virtualKeyDb,
 } from "../db/index.js";
@@ -280,6 +281,7 @@ function normalizeRouteSource(raw: string | null): string | null {
     raw === "session" ||
     raw === "jev" ||
     raw === "fail_open" ||
+    raw === "manual" ||
     raw === "intent_api" ||
     raw === "llm_second_pass" ||
     raw === "fallback"
@@ -1174,6 +1176,77 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       memoryLogger.error(`获取日志详情失败: ${error.message}`, "ExpertRouting");
       throw error;
     }
+  });
+
+  /**
+   * §5.9 misclassification feedback: mark a routing log as judged too low or
+   * too high; the corrected tier is persisted as a replay-set training record
+   * (reusing expert_routing_training_records, upserted by request hash).
+   */
+  fastify.post("/:id/logs/:logId/feedback", async (request) => {
+    const { id, logId } = request.params as { id: string; logId: string };
+    const body = z
+      .object({ rating: z.enum(["too_low", "too_high"]) })
+      .parse(request.body ?? {});
+    const config = await expertRoutingConfigDb.getById(id);
+    if (!config) {
+      throw new Error("专家路由配置不存在");
+    }
+    const log = await expertRoutingLogDb.getById(logId);
+    if (!log || log.expert_routing_id !== id) {
+      throw new Error("日志不存在");
+    }
+    const order: Array<"low" | "medium" | "high"> = ["low", "medium", "high"];
+    const judged = order.indexOf(
+      (String(log.difficulty || log.band || "low") as "low" | "medium" | "high"),
+    );
+    const corrected =
+      body.rating === "too_low"
+        ? order[Math.min(order.length - 1, judged + 1)]
+        : order[Math.max(0, judged - 1)];
+    let judgedConfidence = 0;
+    try {
+      const parsed = JSON.parse(String(log.classifier_response || "{}"));
+      judgedConfidence = Number(parsed?.verdictConfidence ?? parsed?.probability ?? 0) || 0;
+    } catch {
+      judgedConfidence = 0;
+    }
+    await expertRoutingTrainingRecordDb.upsertFeedback({
+      id: nanoid(),
+      expert_routing_id: id,
+      input_hash: log.request_hash,
+      input_text:
+        (log as any).intent_text ||
+        `request_hash=${log.request_hash} (intent_text 未持久化，早于 v54)`,
+      judge_intent_label: String(log.difficulty || log.band || "unknown"),
+      judge_confidence: judgedConfidence,
+      final_intent_label: corrected,
+      final_expert_id: log.selected_expert_id || null,
+    });
+    memoryLogger.info(
+      `误判反馈: ${logId} rating=${body.rating} corrected=${corrected}`,
+      "ExpertRouting",
+    );
+    return { success: true, corrected };
+  });
+
+  /** §5.9 replay-set export for classifier tuning. */
+  fastify.get("/:id/training/records", async (request) => {
+    const { id } = request.params as { id: string };
+    const { status, limit } = request.query as { status?: string; limit?: string };
+    const config = await expertRoutingConfigDb.getById(id);
+    if (!config) {
+      throw new Error("专家路由配置不存在");
+    }
+    const allowedStatus =
+      status === "pending_review" || status === "accepted" || status === "rejected"
+        ? (status as "pending_review" | "accepted" | "rejected")
+        : undefined;
+    const records = await expertRoutingTrainingRecordDb.listByConfig(id, {
+      status: allowedStatus,
+      limit: limit ? Number.parseInt(limit) : undefined,
+    });
+    return { records };
   });
 
   fastify.post("/:id/models", async (request) => {
