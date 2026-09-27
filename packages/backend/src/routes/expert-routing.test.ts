@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   expertRoutingConfigDb: { getById: vi.fn(), delete: vi.fn() },
-  expertRoutingLogDb: { getByConfigId: vi.fn(), getStatistics: vi.fn(), getRouteStats: vi.fn(), getDifficultyStats: vi.fn(), getClassifierModelStats: vi.fn(), getById: vi.fn() },
+  expertRoutingLogDb: { getByConfigId: vi.fn(), getStatistics: vi.fn(), getRouteStats: vi.fn(), getDifficultyStats: vi.fn(), getClassifierLatencies: vi.fn(), getClassifierModelStats: vi.fn(), getById: vi.fn() },
   expertRoutingSessionBindingDb: { deleteByConfig: vi.fn() },
   modelDb: { getByExpertRoutingId: vi.fn(), update: vi.fn(), delete: vi.fn(), getById: vi.fn(), getByProviderId: vi.fn() },
   virtualKeyDb: { countByModels: vi.fn() },
@@ -168,6 +168,9 @@ describe('expertRoutingRoutes', () => {
       { difficulty: 'high', band: 'high', count: 6, verdict_reused_count: 1, avg_classifier_time_ms: 12 },
       { difficulty: null, band: 'low', count: 4, verdict_reused_count: 0, avg_classifier_time_ms: null },
     ]);
+    mocks.expertRoutingLogDb.getClassifierLatencies.mockResolvedValue(
+      [10, 20, 30, 40, 50, 60, 70, 80, 90, 200],
+    );
 
     const { routes, fastify } = createFastifyStub();
     await expertRoutingRoutes(fastify);
@@ -180,6 +183,7 @@ describe('expertRoutingRoutes', () => {
     expect(mocks.expertRoutingLogDb.getDifficultyStats).toHaveBeenCalledWith('routing-1', undefined);
     expect(response.difficultyDistribution).toEqual({ high: 6, unclassified: 4 });
     expect(response.bandDistribution).toEqual({ high: 6, low: 4 });
+    expect(response.classifierLatency).toEqual({ count: 10, p50: 50, p95: 200, avg: 65 });
     expect(response.routeSourceDistribution.fail_open).toBe(1);
     expect(response.failOpenRate).toBe(0.3);
     // No actual usage tokens / price mapping are persisted: savings must not be invented.
@@ -192,6 +196,7 @@ describe('expertRoutingRoutes', () => {
     mocks.expertRoutingLogDb.getStatistics.mockResolvedValue([]);
     mocks.expertRoutingLogDb.getRouteStats.mockResolvedValue([]);
     mocks.expertRoutingLogDb.getDifficultyStats.mockResolvedValue([]);
+    mocks.expertRoutingLogDb.getClassifierLatencies.mockResolvedValue([]);
 
     mocks.expertRoutingLogDb.getClassifierModelStats.mockResolvedValue([]);
 

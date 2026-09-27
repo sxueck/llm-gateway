@@ -1,7 +1,50 @@
 import { z } from "zod";
 import { upstreamFetch } from "../../utils/upstream-fetch.js";
 
-const DEFAULT_TIMEOUT_MS = 3000;
+const DEFAULT_TIMEOUT_MS = 800;
+
+const DEFAULT_BREAKER_THRESHOLD = 3;
+const DEFAULT_BREAKER_COOLDOWN_MS = 30_000;
+
+function readPositiveIntEnv(name: string, fallback: number): number {
+  const raw = Number(process.env[name]);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : fallback;
+}
+
+interface JevBreakerState {
+  consecutiveFailures: number;
+  openUntil: number;
+  lastError: string | null;
+}
+
+let breaker: JevBreakerState = { consecutiveFailures: 0, openUntil: 0, lastError: null };
+
+/** Current breaker snapshot for monitoring endpoints. */
+export function getJevBreakerState(now: number = Date.now()) {
+  return {
+    open: breaker.openUntil > now,
+    openUntil: breaker.openUntil > now ? breaker.openUntil : null,
+    consecutiveFailures: breaker.consecutiveFailures,
+    lastError: breaker.lastError,
+  };
+}
+
+/** Test hook: reset the breaker between cases. */
+export function resetJevBreakerForTest(): void {
+  breaker = { consecutiveFailures: 0, openUntil: 0, lastError: null };
+}
+
+function recordBreakerFailure(error: unknown, now: number = Date.now()): void {
+  breaker.consecutiveFailures += 1;
+  breaker.lastError = error instanceof Error ? error.message : String(error);
+  if (breaker.consecutiveFailures >= readPositiveIntEnv("JEV_BREAKER_THRESHOLD", DEFAULT_BREAKER_THRESHOLD)) {
+    breaker.openUntil = now + readPositiveIntEnv("JEV_BREAKER_COOLDOWN_MS", DEFAULT_BREAKER_COOLDOWN_MS);
+  }
+}
+
+function recordBreakerSuccess(): void {
+  breaker = { consecutiveFailures: 0, openUntil: 0, lastError: null };
+}
 
 const choiceResponseSchema = z.object({
   model: z.string().min(1),
@@ -110,13 +153,29 @@ export function getJevConfiguration() {
  * enforces a known choice, the full probability set, and choice == argmax.
  */
 export async function chooseDifficulty(input: string): Promise<JevDifficultyDecision> {
+  const breakerState = getJevBreakerState();
+  if (breakerState.open) {
+    // §5.5: skip the network call entirely while the breaker is open so a
+    // dead Jev endpoint fails open instantly instead of burning the timeout
+    // on every request.
+    throw new Error(
+      `Jev circuit breaker open (${breakerState.consecutiveFailures} consecutive failures: ${breakerState.lastError})`,
+    );
+  }
   const { model } = getJevConfiguration();
-  const answer = await requestJevChoice(
-    input,
-    model,
-    `How complex is the user's request? ${ANTI_INJECTION_INSTRUCTION}`,
-    DIFFICULTY_CRITERIA,
-  );
+  let answer;
+  try {
+    answer = await requestJevChoice(
+      input,
+      model,
+      `How complex is the user's request? ${ANTI_INJECTION_INSTRUCTION}`,
+      DIFFICULTY_CRITERIA,
+    );
+  } catch (error) {
+    recordBreakerFailure(error);
+    throw error;
+  }
+  recordBreakerSuccess();
   if (!(DIFFICULTY_LEVELS as readonly string[]).includes(answer.choice)) {
     throw new Error("Jev returned an unknown or missing candidate");
   }

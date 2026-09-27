@@ -158,6 +158,38 @@ export const expertRoutingLogRepository = {
    * v47 difficulty/band/verdict-reuse distribution for a config.
    * Returns [] on pre-v47 schemas so callers can degrade gracefully.
    */
+  /** Raw classifier latencies (ms, ascending) for percentile monitoring (§5.5). */
+  async getClassifierLatencies(
+    configId: string,
+    timeRange?: number,
+    limit: number = 2000
+  ): Promise<number[]> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      let query = `
+        SELECT classifier_time_ms
+        FROM expert_routing_logs
+        WHERE expert_routing_id = ?
+          AND classifier_time_ms IS NOT NULL`;
+      const params: any[] = [configId];
+      if (timeRange) {
+        const cutoffTime = Date.now() - timeRange;
+        query += ' AND created_at >= ?';
+        params.push(cutoffTime);
+      }
+      query += ' ORDER BY created_at DESC LIMIT ?';
+      params.push(limit);
+      const [rows] = await conn.query(query, params);
+      return (rows as any[])
+        .map((row) => Number(row.classifier_time_ms))
+        .filter((value) => Number.isFinite(value))
+        .sort((a, b) => a - b);
+    } finally {
+      conn.release();
+    }
+  },
+
   async getDifficultyStats(configId: string, timeRange?: number) {
     const pool = getDatabase();
     const conn = await pool.getConnection();

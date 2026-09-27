@@ -10,6 +10,7 @@ import {
 } from "../db/index.js";
 import { hotConfigCache } from "../services/hot-config-cache.js";
 import { memoryLogger } from "../services/logger.js";
+import { getJevBreakerState, getJevConfiguration } from "../services/expert-router/jev-client.js";
 import {
   DEFAULT_SESSION_IDLE_TTL_SECONDS,
   DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
@@ -378,8 +379,27 @@ async function computeBandPreview(experts: BandCandidate[]) {
   };
 }
 
+/** Nearest-rank percentile over a pre-sorted ascending array. */
+function percentile(sorted: number[], p: number): number | null {
+  if (sorted.length === 0) return null;
+  const rank = Math.ceil((p / 100) * sorted.length);
+  return Math.round(sorted[Math.max(0, Math.min(sorted.length - 1, rank - 1))]);
+}
+
 export async function expertRoutingRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
+
+  // §5.5: classifier runtime status for the read-only classifier panel.
+  fastify.get("/jev/status", async () => {
+    let configured = true;
+    let model: string | null = null;
+    try {
+      model = getJevConfiguration().model;
+    } catch {
+      configured = false;
+    }
+    return { configured, model, breaker: getJevBreakerState() };
+  });
 
   function safeJsonParse(value?: string | null): any {
     if (!value) return null;
@@ -768,6 +788,19 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         id,
         timeRangeMs,
       );
+      const latencies = await expertRoutingLogDb.getClassifierLatencies(
+        id,
+        timeRangeMs,
+      );
+      const classifierLatency = {
+        count: latencies.length,
+        p50: percentile(latencies, 50),
+        p95: percentile(latencies, 95),
+        avg:
+          latencies.length > 0
+            ? Math.round(latencies.reduce((sum, v) => sum + v, 0) / latencies.length)
+            : null,
+      };
 
       let totalRequests = 0;
       let totalClassificationTime = 0;
@@ -868,6 +901,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       return {
         totalRequests,
         avgClassificationTime,
+        classifierLatency,
         routeSourceDistribution,
         cleaningStats,
         difficultyDistribution,

@@ -2,16 +2,25 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ upstreamFetch: vi.fn() }));
 vi.mock("../../utils/upstream-fetch.js", () => ({ upstreamFetch: mocks.upstreamFetch }));
-import { chooseDifficulty, getJevConfiguration } from "./jev-client.js";
+import {
+  chooseDifficulty,
+  getJevBreakerState,
+  getJevConfiguration,
+  resetJevBreakerForTest,
+} from "./jev-client.js";
 
 const originalEnv = { ...process.env };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetJevBreakerForTest();
   process.env.JEV_API_URL = "https://api.typesafe.ai/v1/systemone";
   process.env.JEV_API_KEY = "test-key";
   process.env.JEV_MODEL = "jev-1.13.0";
   delete process.env.JEV_DIFFICULTY_MODEL;
+  delete process.env.JEV_API_TIMEOUT_MS;
+  delete process.env.JEV_BREAKER_THRESHOLD;
+  delete process.env.JEV_BREAKER_COOLDOWN_MS;
   mocks.upstreamFetch.mockResolvedValue({
     ok: true,
     json: async () => ({
@@ -30,6 +39,43 @@ test("validates explicit endpoint and credentials", () => {
   expect(() => getJevConfiguration()).toThrow("valid absolute");
   delete process.env.JEV_API_KEY;
   expect(() => getJevConfiguration()).toThrow("must be configured");
+});
+
+test("default classifier timeout drops to 800ms (§5.5)", () => {
+  expect(getJevConfiguration().timeoutMs).toBe(800);
+  process.env.JEV_API_TIMEOUT_MS = "5000";
+  expect(getJevConfiguration().timeoutMs).toBe(5000);
+});
+
+describe("jev circuit breaker (§5.5)", () => {
+  test("opens after consecutive failures and skips the network call", async () => {
+    mocks.upstreamFetch.mockRejectedValue(new Error("connect ECONNREFUSED"));
+    for (let i = 0; i < 3; i++) {
+      await expect(chooseDifficulty("x")).rejects.toThrow("ECONNREFUSED");
+    }
+    expect(mocks.upstreamFetch).toHaveBeenCalledTimes(3);
+    expect(getJevBreakerState().open).toBe(true);
+    // While open, requests fail instantly without touching the network.
+    await expect(chooseDifficulty("x")).rejects.toThrow(/circuit breaker open/);
+    expect(mocks.upstreamFetch).toHaveBeenCalledTimes(3);
+  });
+
+  test("a success resets the failure counter", async () => {
+    mocks.upstreamFetch.mockRejectedValueOnce(new Error("flaky"));
+    await expect(chooseDifficulty("x")).rejects.toThrow("flaky");
+    expect(getJevBreakerState().consecutiveFailures).toBe(1);
+    await chooseDifficulty("x");
+    expect(getJevBreakerState().consecutiveFailures).toBe(0);
+    expect(getJevBreakerState().open).toBe(false);
+  });
+
+  test("threshold is configurable via env", async () => {
+    process.env.JEV_BREAKER_THRESHOLD = "2";
+    mocks.upstreamFetch.mockRejectedValue(new Error("down"));
+    await expect(chooseDifficulty("x")).rejects.toThrow("down");
+    await expect(chooseDifficulty("x")).rejects.toThrow("down");
+    expect(getJevBreakerState().open).toBe(true);
+  });
 });
 
 describe("chooseDifficulty", () => {
