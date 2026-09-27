@@ -1,6 +1,6 @@
 <template>
   <div class="models-view">
-    <n-space vertical :size="12">
+    <div class="models-stack">
       <PageHeader
         eyebrow="MODEL MANAGEMENT"
         :title="t('models.title')"
@@ -69,11 +69,12 @@
               :scroll-x="900"
               :bordered="false"
               size="small"
+              flex-height
             />
           </div>
         </div>
       </n-card>
-    </n-space>
+    </div>
 
     <n-modal
       v-model:show="showModal"
@@ -665,14 +666,42 @@ onMounted(async () => {
 .models-view {
   max-width: 1400px;
   margin: 0 auto;
+  /* 高度上限就是内容区（body）：跟 ProvidersView 一致用 100%，不用 vh 魔数 */
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.models-stack {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.models-stack > * {
+  flex-shrink: 0;
 }
 
 .table-card {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   background: #ffffff;
   border-radius: 16px;
   border: none;
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.table-card :deep(.n-card__content) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .table-card :deep(.n-data-table) {
@@ -776,11 +805,14 @@ onMounted(async () => {
   display: flex;
   gap: 16px;
   align-items: stretch;
+  /* 卡片拿到多少高度就用多少，不预留定高：超出部分交给两列各自内部滚动 */
+  flex: 1;
+  min-height: 0;
 }
 
 .group-sidebar {
   flex: 0 0 220px;
-  max-height: 640px;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
   border-right: 1px solid #f0f0f0;
@@ -831,5 +863,8 @@ onMounted(async () => {
 .group-table-area {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 </style>

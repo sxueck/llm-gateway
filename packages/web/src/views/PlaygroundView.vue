@@ -437,7 +437,7 @@ const rawResponseText = ref('');
 const rawIsJson = ref(false);
 const publicUrl = ref('');
 
-// ---- 虚拟密钥选项：label 显示名称，副文案显示掩码 key；禁用 enabled=false 的项 ----
+// ---- 虚拟密钥选项：单行 "名称 掩码 key"（两行堆叠会把选项抻高并在窄侧栏里折行）----
 // naive-ui 的 SelectMixedOption 是带 type 判别字段的联合，自定义字段须挂在 SelectOption 交叉类型上
 type VirtualKeySelectOption = SelectOption & { maskedKey?: string };
 
@@ -458,9 +458,9 @@ const virtualKeyOptions = computed<VirtualKeySelectOption[]>(() =>
 
 function renderVirtualKeyLabel(option: SelectOption): VNode {
   const opt = option as VirtualKeySelectOption;
-  return h('div', { class: 'vk-option' }, [
-    h('div', { class: 'vk-option-name' }, String(opt.label ?? '')),
-    h('div', { class: 'vk-option-key' }, opt.maskedKey ?? ''),
+  return h('span', { class: 'vk-option' }, [
+    h('span', { class: 'vk-option-name' }, String(opt.label ?? '')),
+    opt.maskedKey ? h('span', { class: 'vk-option-key' }, opt.maskedKey) : null,
   ]);
 }
 
@@ -1064,9 +1064,22 @@ onMounted(async () => {
   margin-top: 8px;
 }
 
+.vk-option {
+  /* 名称与掩码 key 同处一行；侧栏窄时裁尾而不是折行把选项抻高 */
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .vk-option-name {
   font-size: 14px;
   line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .vk-option-key {

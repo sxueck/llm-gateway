@@ -19,6 +19,8 @@ const files = [
   'src/views/OperationsMonitoringView.vue',
   'src/components/PageHeader.vue',
   'src/layouts/MainLayout.vue',
+  'src/components/AlertCenter.vue',
+  'src/views/CostAnalysisView.vue',
   'src/views/DeveloperSettingsView.vue',
 ];
 
@@ -44,6 +46,26 @@ const candidates = {
   // tabs 动态前缀只用于 DIMENSIONS 三个分支（见模板里的三元表达式）
   'operationsMonitoring.tabs.': ['virtualKeys', 'models', 'providers'],
   'operationsMonitoring.filters.search': ['VirtualKey', 'Model', 'Provider'],
+  // 告警面板按后端 code 取文案；code 集合必须与 services/alerts.ts 里_push 的保持一致
+  'alerts.codes.': [
+    'worker_executor_missing',
+    'worker_image_missing',
+    'worker_docker_unavailable',
+    'worker_run_failed',
+    'worker_queue_saturated',
+    'model_preset_unavailable',
+    'model_preset_stale',
+    'model_price_missing',
+    'model_pricing_unmapped',
+    'provider_circuit_open',
+    'provider_degraded',
+    'api_request_buffer_backlog',
+    'backup_missing',
+    'backup_stale',
+  ],
+  'alerts.level.': ['error', 'warning', 'info'],
+  'alerts.category.': ['worker', 'cost', 'provider', 'storage'],
+  'costAnalysis.prices.sources.': ['direct', 'official', 'mapping', 'approx', 'unknown'],
 };
 
 function lookup(obj, dotted) {

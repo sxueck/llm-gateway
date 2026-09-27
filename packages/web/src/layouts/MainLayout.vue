@@ -55,11 +55,7 @@
         </div>
         <div class="header-right">
           <LanguageSwitcher />
-          <n-button circle quaternary class="header-icon-btn">
-            <template #icon>
-              <n-icon size="20"><MailOutline /></n-icon>
-            </template>
-          </n-button>
+          <AlertCenter />
           <n-dropdown :options="userOptions" @select="handleUserAction">
             <div class="user-avatar">
               <n-avatar
@@ -107,7 +103,6 @@ import {
   DocumentTextOutline,
   TerminalOutline,
   CubeOutline,
-  MailOutline,
   GitNetworkOutline,
   LayersOutline,
   ConstructOutline,
@@ -124,6 +119,7 @@ import {
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
+import AlertCenter from '@/components/AlertCenter.vue';
 import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize';
 
 const router = useRouter();
@@ -548,16 +544,6 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.header-icon-btn {
-  width: 40px;
-  height: 40px;
-  color: #595959;
-}
-
-.header-icon-btn:hover {
-  background-color: rgba(0, 0, 0, 0.04);
 }
 
 .user-avatar {

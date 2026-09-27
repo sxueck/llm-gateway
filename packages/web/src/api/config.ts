@@ -41,6 +41,17 @@ export interface CostStats {
     promptTokens: number;
     completionTokens: number;
     cachedTokens: number;
+    /** 取价来源：direct 原名命中 / official 归一到官方牌价 / mapping 人工规则 / approx 同家族参考价 */
+    pricingSource?: 'direct' | 'official' | 'mapping' | 'approx';
+    pricingModel?: string;
+    pricingProvider?: string;
+  }>;
+  /** 区间内有 token 流量但取不到牌价的模型——这部分成本被记为 0 */
+  unpricedModels?: Array<{
+    model: string;
+    promptTokens: number;
+    completionTokens: number;
+    cachedTokens: number;
   }>;
 }
 

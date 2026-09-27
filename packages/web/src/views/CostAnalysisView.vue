@@ -54,9 +54,7 @@
               <div v-if="testResult" class="test-result">
                 <n-alert
                   :type="
-                    testResult.source === 'direct' || testResult.source === 'mapping'
-                      ? 'success'
-                      : 'warning'
+                    testResult.source === 'approx' ? 'warning' : 'success'
                   "
                 >
                   <template #header>
@@ -68,6 +66,22 @@
                     </div>
                     <div v-else-if="testResult.source === 'mapping'">
                       {{ t('costAnalysis.mappingMatch', { pattern: testResult.mapping_pattern }) }}
+                    </div>
+                    <div v-else-if="testResult.source === 'official'">
+                      {{
+                        t('costAnalysis.officialMatch', {
+                          model: testResult.pricing_model,
+                          provider: testResult.pricing_provider
+                        })
+                      }}
+                    </div>
+                    <div v-else-if="testResult.source === 'approx'">
+                      {{
+                        t('costAnalysis.approxMatch', {
+                          model: testResult.pricing_model,
+                          provider: testResult.pricing_provider
+                        })
+                      }}
                     </div>
 
                     <div class="cost-info">
@@ -340,6 +354,38 @@ const priceColumns = [
     sorter: (a: ModelPrice, b: ModelPrice) => (a.provider || '').localeCompare(b.provider || '')
   },
   {
+    // 取价来源：名字被归一到哪个官方预设键，直接决定这个价能不能信
+    title: t('costAnalysis.prices.pricingSource'),
+    key: 'source',
+    width: 180,
+    render(row: ModelPrice) {
+      const source = row.source || 'unknown'
+      const type =
+        source === 'unknown'
+          ? 'error'
+          : source === 'approx'
+            ? 'warning'
+            : source === 'direct'
+              ? 'default'
+              : 'success'
+      const children = [
+        h(NTag, { size: 'small', type, bordered: false }, {
+          default: () => t(`costAnalysis.prices.sources.${source}`)
+        })
+      ]
+      if (row.pricing_model && row.pricing_model !== row.model) {
+        children.push(
+          h(
+            'div',
+            { class: 'pricing-source-detail' },
+            `${row.pricing_provider || ''}${row.pricing_provider ? ' / ' : ''}${row.pricing_model}`
+          )
+        )
+      }
+      return h('div', null, children)
+    }
+  },
+  {
     title: t('costAnalysis.prices.inputCost'),
     key: 'input_cost_per_token',
     render(row: ModelPrice) {
@@ -447,7 +493,7 @@ async function handleSave() {
       fetchMappings()
       notifyCostMappingUpdated()
     } catch (error) {
-      message.error(t('common.operationFailed'))
+      message.error(t('messages.operationFailed'))
     } finally {
       saving.value = false
     }
@@ -463,7 +509,7 @@ async function handleDelete(row: CostMapping) {
     fetchMappings()
     notifyCostMappingUpdated()
   } catch (error) {
-    message.error(t('common.operationFailed'))
+    message.error(t('messages.operationFailed'))
   }
 }
 
@@ -522,6 +568,13 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.pricing-source-detail {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #8c8c8c;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
 }
 
 .search-bar {

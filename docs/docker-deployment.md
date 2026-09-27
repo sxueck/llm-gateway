@@ -108,6 +108,8 @@ Agent Search 的代码快照对象默认存储在 `/app/data/agent-snapshots`(co
 
 网关通过 Docker SDK 直接 `createContainer` 拉起 worker,**不会自动拉取镜像**,宿主机上必须提前备好 `AGENT_WORKER_IMAGE` 指向的镜像,否则发起搜索时报 `No such image`:
 
+> 配了 `AGENT_WORKER_IMAGE` 但宿主机没这个镜像、或者 `docker.sock` 没挂进来时,控制台顶部铃铛(系统告警)会直接给出 `worker_image_missing` / `worker_docker_unavailable`,不必等到 run 失败才发现。
+
 ```bash
 # 拉取官方镜像(私有包需先 docker login ghcr.io)
 docker pull ghcr.io/sxueck/llm-gateway/craft-worker:latest

@@ -159,3 +159,47 @@ describe('apiRequestRepository 首页统计口径', () => {
     expect(sql.every((q) => q.includes('disable_logging'))).toBe(true);
   });
 });
+
+describe('apiRequestRepository.getModelStats unique model option', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(FIXED_NOW));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('合并供应商重复模型并在 limit null 时返回全部模型', async () => {
+    const rows = Array.from({ length: 55 }, (_, index) => ({
+      model: `model-${index}`,
+      provider_name: 'provider-a',
+      request_count: 1,
+      total_tokens: index,
+      total_response_time: 0,
+      response_time_count: 0,
+    }));
+    rows.push({
+      model: 'model-0',
+      provider_name: 'provider-b',
+      request_count: 2,
+      total_tokens: 100,
+      total_response_time: 0,
+      response_time_count: 0,
+    });
+    mocks.connection.query.mockResolvedValueOnce([rows]);
+
+    const stats = await apiRequestRepository.getModelStats({
+      startTime: FIXED_NOW,
+      endTime: FIXED_NOW + 1,
+      sortBy: 'tokens',
+      uniqueModels: true,
+      limit: null,
+    });
+
+    expect(stats).toHaveLength(55);
+    expect(stats.find((stat) => stat.model === 'model-0')?.total_tokens).toBe(100);
+    expect(mocks.connection.release).toHaveBeenCalled();
+  });
+});

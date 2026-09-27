@@ -807,7 +807,8 @@ export const apiRequestRepository = {
     startTime: number;
     endTime: number;
     sortBy?: "requests" | "tokens";
-    limit?: number;
+    uniqueModels?: boolean;
+    limit?: number | null;
   }) {
     const { startTime, endTime } = options;
     const pool = getDatabase();
@@ -913,9 +914,26 @@ export const apiRequestRepository = {
       }
 
       const sortBy = options.sortBy ?? "requests";
-      const limit = options.limit ?? 10;
+      const limit = options.limit === undefined ? 10 : options.limit;
+      let stats = Array.from(modelStats.values());
 
-      return Array.from(modelStats.values())
+      if (options.uniqueModels) {
+        const uniqueStats = new Map<string, (typeof stats)[number]>();
+        for (const stat of stats) {
+          const existing = uniqueStats.get(stat.model);
+          if (existing) {
+            existing.requestCount += stat.requestCount;
+            existing.totalTokens += stat.totalTokens;
+            existing.totalResponseTime += stat.totalResponseTime;
+            existing.responseTimeCount += stat.responseTimeCount;
+          } else {
+            uniqueStats.set(stat.model, { ...stat, providerName: "" });
+          }
+        }
+        stats = Array.from(uniqueStats.values());
+      }
+
+      const result = stats
         .map((stat) => ({
           model: stat.model,
           provider_name: stat.providerName,
@@ -930,8 +948,9 @@ export const apiRequestRepository = {
           sortBy === "tokens"
             ? b.total_tokens - a.total_tokens
             : b.request_count - a.request_count,
-        )
-        .slice(0, limit);
+        );
+
+      return limit === null ? result : result.slice(0, limit);
     } finally {
       conn.release();
     }

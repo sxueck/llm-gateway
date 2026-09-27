@@ -16,7 +16,7 @@ import {
   validateUserAgentList,
 } from "../utils/anti-bot-config.js";
 import { debugModeService } from "../services/debug-mode.js";
-import { costMappingService } from "../services/cost-mapping.js";
+import { costMappingService, hasTokenPricing } from "../services/cost-mapping.js";
 import { runtimeSystemConfigCache } from "../services/runtime-system-config-cache.js";
 import { threatIpBlocker } from "../services/threat-ip-blocker.js";
 import { manualIpBlocklist } from "../services/manual-ip-blocklist.js";
@@ -665,11 +665,19 @@ export async function configRoutes(fastify: FastifyInstance) {
 
       let totalCost = 0;
       const modelCosts: any[] = [];
+      // 有流量但取不到牌价的模型：成本会被记成 0，必须显式暴露而不是静默丢弃。
+      const unpricedModels: Array<{
+        model: string;
+        promptTokens: number;
+        completionTokens: number;
+        cachedTokens: number;
+      }> = [];
 
       for (const [model, usage] of modelUsageMap.entries()) {
         const costInfo = await costMappingService.resolveModelCost(model);
+        const hasPricing = hasTokenPricing(costInfo?.info);
 
-        if (costInfo && costInfo.info) {
+        if (costInfo?.info) {
           const info = costInfo.info;
           let modelCost = 0;
 
@@ -700,16 +708,35 @@ export async function configRoutes(fastify: FastifyInstance) {
               promptTokens: usage.promptTokens,
               completionTokens: usage.completionTokens,
               cachedTokens: usage.cachedTokens,
+              // 取价来源：归一命中官方实验室牌价时 pricingModel 与 model 不同
+              pricingSource: costInfo.source,
+              pricingModel: costInfo.model,
+              pricingProvider: costInfo.provider,
             });
+            continue;
           }
         }
+
+        if (hasPricing) continue;
+
+        unpricedModels.push({
+          model,
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          cachedTokens: usage.cachedTokens,
+        });
       }
 
       modelCosts.sort((a, b) => b.cost - a.cost);
+      unpricedModels.sort(
+        (a, b) =>
+          b.promptTokens + b.completionTokens - (a.promptTokens + a.completionTokens),
+      );
 
       return {
         totalCost,
         modelCosts: modelCosts.slice(0, 10), // 返回前 10 个最贵的模型
+        unpricedModels,
       };
     } finally {
       conn.release();

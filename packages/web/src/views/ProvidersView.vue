@@ -681,9 +681,10 @@ onMounted(() => {
 .providers-view {
   max-width: 1400px;
   margin: 0 auto;
-  /* 72px header + 8px/24px content padding in MainLayout */
-  height: calc(100vh - 104px);
-  min-height: 480px;
+  /* 高度上限就是内容区（body）本身：用 100% 而不是 calc(100vh - 魔数)，
+     否则实际内边距与估算不一致时会提前出现页面级滚动。 */
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -696,9 +697,15 @@ onMounted(() => {
   gap: 12px;
 }
 
+/* 页头与概览不参与压缩，剩下的高度全给表格卡片 */
+.providers-stack > * {
+  flex-shrink: 0;
+}
+
 .table-card {
-  flex: 1;
-  min-height: 280px;
+  flex: 1 1 auto;
+  /* 不设 min-height：卡片只拿到“剩下”的高度，行多时在表格内部滚动 + 翻页 */
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: #ffffff;
