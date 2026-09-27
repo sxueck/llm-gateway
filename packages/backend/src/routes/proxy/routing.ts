@@ -1012,7 +1012,7 @@ export async function resolveExpertRouting(
     if (!result) return null;
 
     memoryLogger.info(
-      `专家路由: 分类=${result.category} | 专家类型=${result.expertType} | 专家=${result.expertName}`,
+      `专家路由: 档位=${result.tier} | 来源=${result.routeSource} | 专家类型=${result.expertType} | 专家=${result.expertName}`,
       'ExpertRouter'
     );
 

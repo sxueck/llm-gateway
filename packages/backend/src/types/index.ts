@@ -81,6 +81,8 @@ export interface PromptConfig {
 }
 
 export interface ExpertRoutingConfig {
+  /** v2 configs always carry version 2; missing = legacy (pre-v2) row. */
+  version?: 2;
   id: string;
   name: string;
   description?: string;
@@ -91,14 +93,9 @@ export interface ExpertRoutingConfig {
     strip_code_blocks?: boolean;
     strip_system_prompt?: boolean;
   };
-  choice_threshold?: number;
   /** PR-2: terminal behaviour when the fallback chain is exhausted
    * (default "fallback"). "error" preserves the legacy throw. */
   fail_open?: import("./expert-routing.js").FailOpenMode;
-  /** PR-1: "expert" (default) classifies into expert candidates;
-   * "difficulty" classifies into fixed low/medium/high then resolves a
-   * candidate by band price. */
-  classification_mode?: import("./expert-routing.js").ClassificationMode;
   experts: import("./expert-routing.js").ExpertTarget[];
   fallback?: {
     type: "virtual" | "real";
@@ -106,7 +103,11 @@ export interface ExpertRoutingConfig {
     provider_id?: string;
     model?: string;
   } | null;
-  session_binding_policy: import("./expert-routing.js").SessionBindingPolicy;
+  session_policy: import("./expert-routing.js").SessionPolicy;
+  /** @deprecated legacy pre-v2 key; kept so unmigrated rows still parse. */
+  session_binding_policy?: import("./expert-routing.js").SessionPolicy;
+  classifier?: import("./expert-routing.js").ClassifierConfig;
+  exposure?: import("./expert-routing.js").ExposureConfig;
 }
 
 export interface ExpertRoutingLog {

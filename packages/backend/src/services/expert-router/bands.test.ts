@@ -8,7 +8,10 @@ import {
   getJevOutputRatio,
   resolveBandCandidates,
 } from "./bands.js";
-import type { ExpertTarget } from "../../types/expert-routing.js";
+import type {
+  BandCandidate,
+} from "./bands.js";
+import type { ExpertRoutingBands, RoutingBand } from "../../types/expert-routing.js";
 
 const originalEnv = { ...process.env };
 
@@ -16,12 +19,12 @@ afterEach(() => {
   process.env = { ...originalEnv };
 });
 
-function expert(id: string, band?: string): ExpertTarget {
-  return { id, category: id, type: "real", ...(band ? { band } : {}) } as ExpertTarget;
+function expert(id: string, band?: RoutingBand): BandCandidate {
+  return { id, type: "real", ...(band ? { band } : {}) };
 }
 
-function priced(id: string, _input?: number): ExpertTarget {
-  return { id, category: id, type: "real" } as ExpertTarget;
+function priced(id: string, _input?: number): BandCandidate {
+  return { id, type: "real" };
 }
 
 describe("blendedPriceOf", () => {
@@ -68,6 +71,8 @@ describe("buildBands", () => {
     expect(bands.low.map((e) => e.id)).toEqual(["a", "b"]);
     expect(bands.medium.map((e) => e.id)).toEqual(["c", "d"]);
     expect(bands.high.map((e) => e.id)).toEqual(["explicit-high", "e", "f"]);
+    // Auto-banded candidates carry a definite band for migration/persistence.
+    expect(bands.low.every((e) => e.band === "low")).toBe(true);
   });
 
   test("unknown costs sort last and ties break by id", () => {
@@ -116,18 +121,19 @@ describe("buildBands", () => {
 });
 
 describe("resolveBandCandidates", () => {
-  const low = [expert("l2"), expert("l1")];
-  const medium = [expert("m1")];
-  const bands = { low, medium, high: [] as ExpertTarget[] };
+  const low: ExpertRoutingBands["low"] = [
+    { id: "l2", band: "low", type: "real" },
+    { id: "l1", band: "low", type: "real" },
+  ];
+  const bands: ExpertRoutingBands = { low, medium: [{ id: "m1", band: "medium", type: "real" }], high: [] };
 
-  test("returns the verdict band sorted cheapest first", () => {
-    // Unknown costs: id tie-break keeps l1 before l2.
-    expect(resolveBandCandidates(bands, "low").map((e) => e.id)).toEqual(["l1", "l2"]);
+  test("returns the verdict band in config array order", () => {
+    expect(resolveBandCandidates(bands, "low").map((e) => e.id)).toEqual(["l2", "l1"]);
   });
 
   test("escalates an empty band to the nearest cheaper neighbour first", () => {
-    expect(resolveBandCandidates({ low: [], medium, high: [] }, "low").map((e) => e.id)).toEqual(["m1"]);
-    expect(resolveBandCandidates({ low: [], medium, high: [] }, "high").map((e) => e.id)).toEqual(["m1"]);
+    expect(resolveBandCandidates({ low: [], medium: bands.medium, high: [] }, "low").map((e) => e.id)).toEqual(["m1"]);
+    expect(resolveBandCandidates({ low: [], medium: bands.medium, high: [] }, "high").map((e) => e.id)).toEqual(["m1"]);
   });
 
   test("returns empty when no band has candidates", () => {

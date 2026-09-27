@@ -3,7 +3,7 @@ import type { CostInput, ExpertTarget } from "../../types/expert-routing.js";
 
 /** 按 expert 引用的模型行取 token 单价；取不到时返回 undefined（视作最贵）。 */
 export async function resolveExpertCost(
-  expert: ExpertTarget,
+  expert: Pick<ExpertTarget, "type" | "model_id" | "provider_id" | "model">,
 ): Promise<CostInput | undefined> {
   try {
     let attributes: unknown;

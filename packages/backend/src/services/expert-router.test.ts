@@ -11,7 +11,6 @@ const mocks = vi.hoisted(() => ({
   },
   providerDb: { getById: vi.fn() },
   modelDb: { getById: vi.fn(), getByProviderId: vi.fn() },
-  chooseExpert: vi.fn(),
   chooseDifficulty: vi.fn(),
 }));
 vi.mock("../db/index.js", () => ({
@@ -22,7 +21,6 @@ vi.mock("../db/index.js", () => ({
   modelDb: mocks.modelDb,
 }));
 vi.mock("./expert-router/jev-client.js", () => ({
-  chooseExpert: mocks.chooseExpert,
   chooseDifficulty: mocks.chooseDifficulty,
 }));
 // resolveBindingScope is a pure helper but lives in the repository module,
@@ -42,21 +40,31 @@ vi.mock("./expert-router/preprocess/index.js", () => ({
 
 import { ExpertRouter } from "./expert-router.js";
 const config = (overrides: Record<string, unknown> = {}) => ({
-  choice_threshold: 0.6,
+  version: 2,
   experts: [
-    { id: "review", category: "review", description: "Review code", type: "real", provider_id: "review", model: "review", band: "low" },
-    { id: "fast", category: "simple", description: "Quick answers", type: "real", provider_id: "fast", model: "fast", band: "high" },
+    { id: "review", type: "real", provider_id: "review", model: "review", band: "high" },
+    { id: "fast", type: "real", provider_id: "fast", model: "fast", band: "low" },
   ],
   fallback: { type: "real", provider_id: "fallback", model: "fallback" },
-  session_binding_policy: { idle_ttl_seconds: 60, absolute_ttl_seconds: 3600 },
+  session_policy: { mode: "sticky", idle_ttl_seconds: 60, absolute_ttl_seconds: 3600 },
   ...overrides,
 });
 const request = (session?: string) => ({
   body: { messages: [{ role: "user", content: "review this" }] },
   headers: session ? { "x-session-id": session } : {},
 });
+const difficulty = (verdict: "low" | "medium" | "high", confidence = 0.9) => ({
+  model: "jev-difficulty",
+  verdict,
+  confidence,
+  ranked: [
+    { expertId: verdict, probability: confidence },
+    { expertId: "medium", probability: 0.07 },
+    { expertId: "low", probability: 0.03 },
+  ],
+});
 
-describe("ExpertRouter Jev decisions", () => {
+describe("ExpertRouter difficulty routing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.expertRoutingConfigDb.getById.mockResolvedValue({
@@ -66,36 +74,89 @@ describe("ExpertRouter Jev decisions", () => {
     mocks.expertRoutingSessionBindingDb.createOrSelectBinding.mockResolvedValue({ winner: true, row: {} });
     mocks.providerDb.getById.mockImplementation(async (id: string) => ({ id, name: id }));
     mocks.modelDb.getByProviderId.mockResolvedValue([]);
-    mocks.chooseExpert.mockResolvedValue({
-      model: "jev-1.13", confidence: 0.8,
-      ranked: [{ expertId: "review", probability: 0.8 }, { expertId: "fast", probability: 0.2 }],
-    });
+    mocks.chooseDifficulty.mockResolvedValue(difficulty("high"));
   });
 
-  test("chooses highest probability candidate and records ranked probabilities without the prompt", async () => {
-    const result = await new ExpertRouter().route(request(), "routing", {});
+  test("high difficulty resolves the high band candidate and logs the verdict", async () => {
+    const result = await new ExpertRouter().route(request("session"), "routing", {});
     expect(result?.expert.id).toBe("review");
+    expect(result?.tier).toBe("high");
+    expect(result?.routeSource).toBe("jev");
+    expect(mocks.expertRoutingSessionBindingDb.createOrSelectBinding).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session" }),
+      { expertId: "review", routeSource: "jev", difficulty: "high" },
+      60, 3600,
+    );
     const log = mocks.expertRoutingLogDb.create.mock.calls[0][0];
     expect(log.route_source).toBe("jev");
+    expect(log.difficulty).toBe("high");
+    expect(log.band).toBe("high");
+    expect(log.classification_result).toBe("high");
     expect(log.original_request).toBeUndefined();
-    expect(JSON.parse(log.classifier_response).ranked).toEqual([
-      { expertId: "review", probability: 0.8 }, { expertId: "fast", probability: 0.2 },
-    ]);
+    const payload = JSON.parse(log.classifier_response);
+    expect(payload.verdictBand).toBe("high");
+    expect(payload.difficulty).toBe("high");
+    expect(payload.ranked[0]).toEqual({ expertId: "high", probability: 0.9 });
   });
 
-  test("low-confidence verdict still resolves inside the verdict band", async () => {
-    mocks.chooseExpert.mockResolvedValue({ model: "jev", confidence: 0.5, ranked: [
-      { expertId: "review", probability: 0.55 }, { expertId: "fast", probability: 0.45 },
-    ] });
+  test("low difficulty resolves the low band candidate", async () => {
+    mocks.chooseDifficulty.mockResolvedValue(difficulty("low"));
     const result = await new ExpertRouter().route(request(), "routing", {});
-    expect(result?.expert.id).toBe("review");
-    expect(mocks.chooseExpert).toHaveBeenCalledOnce();
+    expect(result?.expert.id).toBe("fast");
+    expect(result?.tier).toBe("low");
   });
 
-  test("falls back to the configured fallback when the whole verdict band is unavailable", async () => {
-    mocks.providerDb.getById.mockImplementation(async (id: string) => id === "review" ? null : { id, name: id });
+  test("low-confidence but successful classification logs jev, not fail_open", async () => {
+    mocks.chooseDifficulty.mockResolvedValue(difficulty("low", 0.3));
+    const result = await new ExpertRouter().route(request("session"), "routing", {});
+    expect(result?.expert.id).toBe("fast");
+    expect(mocks.expertRoutingLogDb.create.mock.calls[0][0].route_source).toBe("jev");
+    expect(mocks.expertRoutingSessionBindingDb.createOrSelectBinding).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session" }),
+      { expertId: "fast", routeSource: "jev", difficulty: "low" },
+      60, 3600,
+    );
+  });
+
+  test("empty verdict band escalates to the nearest non-empty band", async () => {
+    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+      id: "routing", enabled: 1,
+      config: JSON.stringify(config({
+        fallback: null,
+        fail_open: "parent",
+        experts: [
+          { id: "pricey", type: "real", provider_id: "pricey", model: "p", band: "medium" },
+          { id: "premium", type: "real", provider_id: "premium", model: "x", band: "high" },
+        ],
+      })),
+    });
+    mocks.chooseDifficulty.mockResolvedValue(difficulty("low"));
+    const result = await new ExpertRouter().route(request(), "routing", {});
+    expect(result?.expert.id).toBe("pricey");
+  });
+
+  test("within a band, config array order decides priority", async () => {
+    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+      id: "routing", enabled: 1,
+      config: JSON.stringify(config({
+        fallback: null,
+        fail_open: "parent",
+        experts: [
+          { id: "first", type: "real", provider_id: "p1", model: "a", band: "low" },
+          { id: "second", type: "real", provider_id: "p1", model: "b", band: "low" },
+        ],
+      })),
+    });
+    mocks.chooseDifficulty.mockResolvedValue(difficulty("low"));
+    const result = await new ExpertRouter().route(request(), "routing", {});
+    expect(result?.expert.id).toBe("first");
+  });
+
+  test("falls back to the configured fallback when all candidates are unavailable", async () => {
+    mocks.providerDb.getById.mockImplementation(async (id: string) => id === "fallback" ? { id, name: id } : null);
     const result = await new ExpertRouter().route(request(), "routing", {});
     expect(result?.providerId).toBe("fallback");
+    expect(result?.routeSource).toBe("fallback");
   });
 
   test("follows the persisted expert when a concurrent session binding wins", async () => {
@@ -107,18 +168,15 @@ describe("ExpertRouter Jev decisions", () => {
     expect(mocks.expertRoutingLogDb.create.mock.calls[0][0].selected_expert_id).toBe("fast");
   });
 
-  test("routes the cheapest low-band candidate when Jev is unavailable, fallback otherwise", async () => {
-    mocks.chooseExpert.mockRejectedValue(new Error("unavailable"));
+  test("Jev failure fails open to the low band candidate without a classifier model", async () => {
+    mocks.chooseDifficulty.mockRejectedValue(new Error("unavailable"));
     const result = await new ExpertRouter().route(request(), "routing", {});
-    expect(result?.expert.id).toBe("review");
-    expect(mocks.expertRoutingLogDb.create.mock.calls[0][0].route_source).toBe("fail_open");
-    expect(mocks.expertRoutingLogDb.create.mock.calls[0][0].classifier_model).toBeNull();
-    // Verdict band unresolvable → configured fallback takes over.
-    mocks.providerDb.getById.mockImplementation(async (id: string) =>
-      id === "fallback" ? { id, name: id } : null,
-    );
-    const fallbackResult = await new ExpertRouter().route(request(), "routing", {});
-    expect(fallbackResult?.providerId).toBe("fallback");
+    expect(result?.expert.id).toBe("fast");
+    expect(result?.routeSource).toBe("fail_open");
+    const log = mocks.expertRoutingLogDb.create.mock.calls[0][0];
+    expect(log.route_source).toBe("fail_open");
+    expect(log.classifier_model).toBeNull();
+    expect(log.classification_result).toBe("low");
   });
 
   test("reuses a valid session binding without calling Jev", async () => {
@@ -127,7 +185,8 @@ describe("ExpertRouter Jev decisions", () => {
     });
     const result = await new ExpertRouter().route(request("session"), "routing", {});
     expect(result?.expert.id).toBe("review");
-    expect(mocks.chooseExpert).not.toHaveBeenCalled();
+    expect(result?.routeSource).toBe("session");
+    expect(mocks.chooseDifficulty).not.toHaveBeenCalled();
   });
 
   test("session reuse logs classifier_model=null, verdict_reused and retains the bound difficulty", async () => {
@@ -135,17 +194,41 @@ describe("ExpertRouter Jev decisions", () => {
       expert_id: "review", route_source: "jev", difficulty: "medium",
     });
     await new ExpertRouter().route(request("session"), "routing", {});
-    expect(mocks.chooseExpert).not.toHaveBeenCalled();
     expect(mocks.chooseDifficulty).not.toHaveBeenCalled();
     const log = mocks.expertRoutingLogDb.create.mock.calls[0][0];
     expect(log.classifier_model).toBeNull();
     expect(log.verdict_reused).toBe(true);
     expect(log.difficulty).toBe("medium");
-    expect(log.band).toBe("medium");
+    // Tier reflects the selected expert's actual band.
+    expect(log.band).toBe("high");
     expect(log.classifier_time_ms).toBeNull();
     expect(log.route_source).toBe("session");
     const payload = JSON.parse(log.classifier_response);
     expect(payload.verdictReused).toBe(true);
+  });
+
+  test("per_turn session policy skips binding reads and writes", async () => {
+    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+      id: "routing", enabled: 1,
+      config: JSON.stringify(config({
+        session_policy: { mode: "per_turn", idle_ttl_seconds: 60, absolute_ttl_seconds: 3600 },
+      })),
+    });
+    const result = await new ExpertRouter().route(request("session"), "routing", {});
+    expect(result?.expert.id).toBe("review");
+    expect(mocks.expertRoutingSessionBindingDb.getActiveBinding).not.toHaveBeenCalled();
+    expect(mocks.expertRoutingSessionBindingDb.createOrSelectBinding).not.toHaveBeenCalled();
+  });
+
+  test("legacy config without bands is rejected with a migration hint", async () => {
+    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+      id: "routing", enabled: 1,
+      config: JSON.stringify(config({
+        experts: [{ id: "legacy", type: "real", provider_id: "p", model: "m" }],
+      })),
+    });
+    await expect(new ExpertRouter().route(request(), "routing", {}))
+      .rejects.toThrow(/no valid band/);
   });
 });
 
@@ -156,21 +239,21 @@ describe("ExpertRouter PR-2 fail_open terminal chain", () => {
     mocks.expertRoutingSessionBindingDb.createOrSelectBinding.mockResolvedValue({ winner: true, row: {} });
     mocks.providerDb.getById.mockImplementation(async (id: string) => ({ id, name: id }));
     mocks.modelDb.getByProviderId.mockResolvedValue([]);
-    mocks.chooseExpert.mockRejectedValue(new Error("jev down"));
+    mocks.chooseDifficulty.mockRejectedValue(new Error("jev down"));
   });
 
   test("classifier timeout fails open without retry or latency amplification", async () => {
     mocks.expertRoutingConfigDb.getById.mockResolvedValue({
       id: "routing", enabled: 1, config: JSON.stringify(config()),
     });
-    mocks.chooseExpert.mockImplementationOnce(() => new Promise((_, reject) =>
+    mocks.chooseDifficulty.mockImplementationOnce(() => new Promise((_, reject) =>
       setTimeout(() => reject(new Error("Jev timeout")), 100),
     ));
     const start = performance.now();
     const result = await new ExpertRouter().route(request(), "routing", {});
-    expect(result?.expert.id).toBe("review");
+    expect(result?.expert.id).toBe("fast");
     expect(performance.now() - start).toBeLessThan(500);
-    expect(mocks.chooseExpert).toHaveBeenCalledTimes(1);
+    expect(mocks.chooseDifficulty).toHaveBeenCalledTimes(1);
     expect(mocks.expertRoutingLogDb.create.mock.calls[0][0].route_source).toBe("fail_open");
   });
 
@@ -200,188 +283,5 @@ describe("ExpertRouter PR-2 fail_open terminal chain", () => {
     mocks.providerDb.getById.mockResolvedValue(null);
     const result = await new ExpertRouter().route(request(), "routing", {});
     expect(result).toBeNull();
-  });
-
-  test("absent verdict resolves cheapest in the low band when escalation is needed", async () => {
-    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
-      id: "routing", enabled: 1,
-      config: JSON.stringify(config({
-        fallback: null,
-        fail_open: "parent",
-        experts: [
-          { id: "pricey", category: "deep", type: "real", provider_id: "pricey", model: "p", band: "medium" },
-          { id: "premium", category: "deep", type: "real", provider_id: "premium", model: "x", band: "high" },
-        ],
-      })),
-    });
-    const result = await new ExpertRouter().route(request(), "routing", {});
-    expect(result?.expert.id).toBe("pricey");
-  });
-});
-
-describe("ExpertRouter PR-1 difficulty classification", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
-      id: "routing", enabled: 1,
-      config: JSON.stringify(config({
-        classification_mode: "difficulty",
-        experts: [
-          { id: "review", category: "review", type: "real", provider_id: "review", model: "review", band: "high" },
-          { id: "fast", category: "simple", type: "real", provider_id: "fast", model: "fast", band: "low" },
-        ],
-      })),
-    });
-    mocks.expertRoutingSessionBindingDb.getActiveBinding.mockResolvedValue(null);
-    mocks.expertRoutingSessionBindingDb.createOrSelectBinding.mockResolvedValue({ winner: true, row: {} });
-    mocks.providerDb.getById.mockImplementation(async (id: string) => ({ id, name: id }));
-    mocks.modelDb.getByProviderId.mockResolvedValue([]);
-  });
-
-  test("high difficulty resolves the high band candidate and logs the verdict", async () => {
-    mocks.chooseDifficulty.mockResolvedValue({
-      model: "jev-difficulty", verdict: "high", confidence: 0.9,
-      ranked: [
-        { expertId: "high", probability: 0.9 },
-        { expertId: "medium", probability: 0.07 },
-        { expertId: "low", probability: 0.03 },
-      ],
-    });
-    const result = await new ExpertRouter().route(request("session"), "routing", {});
-    expect(result?.expert.id).toBe("review");
-    expect(mocks.chooseExpert).not.toHaveBeenCalled();
-    expect(mocks.expertRoutingSessionBindingDb.createOrSelectBinding).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: "session" }),
-      { expertId: "review", routeSource: "jev", difficulty: "high" },
-      60, 3600,
-    );
-    const log = mocks.expertRoutingLogDb.create.mock.calls[0][0];
-    const payload = JSON.parse(log.classifier_response);
-    expect(payload.mode).toBe("difficulty");
-    expect(payload.verdictBand).toBe("high");
-    expect(payload.difficulty).toBe("high");
-  });
-
-  test("logs Jev-only classifier latency and verdict_reused=0 on a fresh decision", async () => {
-    mocks.chooseDifficulty.mockResolvedValue({
-      model: "jev-difficulty", verdict: "high", confidence: 0.9,
-      ranked: [
-        { expertId: "high", probability: 0.9 },
-        { expertId: "medium", probability: 0.07 },
-        { expertId: "low", probability: 0.03 },
-      ],
-    });
-    await new ExpertRouter().route(request("session"), "routing", {});
-    const log = mocks.expertRoutingLogDb.create.mock.calls[0][0];
-    expect(log.classifier_model).toBe("jev-difficulty");
-    expect(log.verdict_reused).toBe(false);
-    expect(typeof log.classifier_time_ms).toBe("number");
-    expect(log.classifier_time_ms).toBeGreaterThanOrEqual(0);
-    expect(log.difficulty).toBe("high");
-    expect(log.band).toBe("high");
-  });
-
-  test("real-model cost lookup matches by model name as well as identifier", async () => {
-    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
-      id: "routing", enabled: 1,
-      config: JSON.stringify(config({
-        fallback: null,
-        fail_open: "parent",
-        experts: [
-          { id: "cheap", category: "simple", type: "real", provider_id: "p1", model: "cheap-name" },
-          { id: "pricey", category: "deep", type: "real", provider_id: "p1", model: "pricey-name" },
-        ],
-      })),
-    });
-    mocks.chooseExpert.mockRejectedValue(new Error("jev down"));
-    mocks.modelDb.getByProviderId.mockResolvedValue([
-      {
-        is_virtual: 0,
-        model_identifier: "m-cheap",
-        name: "cheap-name",
-        model_attributes: JSON.stringify({ input_cost_per_token: 0.01, output_cost_per_token: 0.03 }),
-      },
-      {
-        is_virtual: 0,
-        model_identifier: "m-pricey",
-        name: "pricey-name",
-        model_attributes: JSON.stringify({ input_cost_per_token: 0.5, output_cost_per_token: 1.5 }),
-      },
-    ]);
-    const result = await new ExpertRouter().route(request(), "routing", {});
-    expect(result?.expert.id).toBe("cheap");
-  });
-
-  test("low difficulty resolves the cheapest low-band candidate", async () => {
-    mocks.chooseDifficulty.mockResolvedValue({
-      model: "jev-difficulty", verdict: "low", confidence: 0.85,
-      ranked: [{ expertId: "low", probability: 0.85 }, { expertId: "medium", probability: 0.1 }, { expertId: "high", probability: 0.05 }],
-    });
-    const result = await new ExpertRouter().route(request(), "routing", {});
-    expect(result?.expert.id).toBe("fast");
-  });
-
-  test("unknown verdict degrades to the low band", async () => {
-    mocks.chooseDifficulty.mockResolvedValue({
-      model: "jev-difficulty", verdict: undefined, confidence: 0.4,
-      ranked: [],
-    });
-    const result = await new ExpertRouter().route(request(), "routing", {});
-    expect(result?.expert.id).toBe("fast");
-  });
-
-  test("low-confidence but successful classification logs jev, not fail_open", async () => {
-    mocks.chooseDifficulty.mockResolvedValue({
-      model: "jev-difficulty", verdict: "low", confidence: 0.3,
-      ranked: [{ expertId: "low", probability: 0.3 }, { expertId: "medium", probability: 0.1 }, { expertId: "high", probability: 0.05 }],
-    });
-    const result = await new ExpertRouter().route(request("session"), "routing", {});
-    expect(result?.expert.id).toBe("fast");
-    expect(mocks.expertRoutingLogDb.create.mock.calls[0][0].route_source).toBe("jev");
-    expect(mocks.expertRoutingSessionBindingDb.createOrSelectBinding).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: "session" }),
-      { expertId: "fast", routeSource: "jev", difficulty: "low" },
-      60, 3600,
-    );
-  });
-});
-
-describe("ExpertRouter price banding", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.expertRoutingSessionBindingDb.getActiveBinding.mockResolvedValue(null);
-    mocks.expertRoutingSessionBindingDb.createOrSelectBinding.mockResolvedValue({ winner: true, row: {} });
-    mocks.modelDb.getByProviderId.mockResolvedValue([]);
-    mocks.chooseExpert.mockRejectedValue(new Error("jev down"));
-  });
-
-  test("absent verdict picks the cheapest candidate by blended price", async () => {
-    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
-      id: "routing", enabled: 1,
-      config: JSON.stringify(config({
-        fallback: null,
-        fail_open: "parent",
-        experts: [
-          {
-            id: "cheap", category: "simple", type: "virtual", model_id: "cheap-model",
-          },
-          {
-            id: "pricey", category: "deep", type: "virtual", model_id: "pricey-model",
-          },
-        ],
-      })),
-    });
-    mocks.modelDb.getById.mockImplementation(async (id: string) => ({
-      id,
-      name: id,
-      enabled: 1,
-      model_attributes: JSON.stringify(
-        id === "cheap-model"
-          ? { input_cost_per_token: 0.01, output_cost_per_token: 0.03 }
-          : { input_cost_per_token: 0.5, output_cost_per_token: 1.5 },
-      ),
-    }));
-    const result = await new ExpertRouter().route(request(), "routing", {});
-    expect(result?.expert.id).toBe("cheap");
   });
 });

@@ -37,12 +37,27 @@ export function blendedPriceOf(
 
 export const BAND_ORDER: readonly RoutingBand[] = ["low", "medium", "high"];
 
-export type CostOfFn = (expert: ExpertTarget) => CostInput | undefined | null;
+/**
+ * Candidate whose band may still be unassigned — the auto-banding input
+ * (preview tooling and the v2 migration).
+ */
+export type BandCandidate = Omit<ExpertTarget, "band"> & { band?: RoutingBand };
+
+/** A candidate with a definite band (buildBands output). */
+export type BandedCandidate = BandCandidate & { band: RoutingBand };
+
+export interface BandAssignment {
+  low: BandedCandidate[];
+  medium: BandedCandidate[];
+  high: BandedCandidate[];
+}
+
+export type CostOfFn = (expert: BandCandidate) => CostInput | undefined | null;
 
 const defaultCostOf: CostOfFn = () => undefined;
 
-function sortByPrice(experts: ExpertTarget[], costOf: CostOfFn): ExpertTarget[] {
-  const price = new Map<ExpertTarget, number>(
+function sortByPrice(experts: BandCandidate[], costOf: CostOfFn): BandCandidate[] {
+  const price = new Map<BandCandidate, number>(
     experts.map((expert) => [expert, blendedPriceOf(costOf(expert))]),
   );
   return [...experts].sort((a, b) => {
@@ -54,19 +69,20 @@ function sortByPrice(experts: ExpertTarget[], costOf: CostOfFn): ExpertTarget[] 
 }
 
 /**
- * Partition experts into bands. Experts with an explicit `band` keep it;
- * the remainder is sorted by blended price ascending and split three-way
+ * Partition candidates into bands. Candidates with an explicit `band` keep
+ * it; the remainder is sorted by blended price ascending and split three-way
  * (cheapest third → low, middle third → medium, most expensive third → high).
+ * Returned candidates always carry a definite `band` (stamped on auto-split).
  */
 export function buildBands(
-  experts: ExpertTarget[],
+  experts: BandCandidate[],
   costOf: CostOfFn = defaultCostOf,
-): ExpertRoutingBands {
-  const bands: ExpertRoutingBands = { low: [], medium: [], high: [] };
-  const remainder: ExpertTarget[] = [];
+): BandAssignment {
+  const bands: BandAssignment = { low: [], medium: [], high: [] };
+  const remainder: BandCandidate[] = [];
   for (const expert of experts) {
     if (expert.band && (BAND_ORDER as readonly string[]).includes(expert.band)) {
-      bands[expert.band].push(expert);
+      bands[expert.band].push({ ...expert, band: expert.band });
     } else {
       remainder.push(expert);
     }
@@ -76,22 +92,24 @@ export function buildBands(
   const sorted = sortByPrice(priced, costOf);
   const lowEnd = Math.ceil(sorted.length / 3);
   const mediumEnd = lowEnd + Math.ceil((sorted.length - lowEnd) / 2);
-  bands.low.push(...sorted.slice(0, lowEnd));
-  bands.medium.push(...sorted.slice(lowEnd, mediumEnd));
-  bands.high.push(...sorted.slice(mediumEnd), ...sortByPrice(unknown, costOf));
+  bands.low.push(...sorted.slice(0, lowEnd).map((e) => ({ ...e, band: "low" as const })));
+  bands.medium.push(...sorted.slice(lowEnd, mediumEnd).map((e) => ({ ...e, band: "medium" as const })));
+  bands.high.push(
+    ...sorted.slice(mediumEnd).map((e) => ({ ...e, band: "high" as const })),
+    ...sortByPrice(unknown, costOf).map((e) => ({ ...e, band: "high" as const })),
+  );
   return bands;
 }
 
 /**
- * Ordered candidate list for a verdict band: the band's experts sorted by
- * blended price ascending. An empty band escalates to the nearest non-empty
- * band (cheaper neighbour first, then the more expensive one), so a lookup
- * never returns nothing while candidates exist.
+ * Ordered candidate list for a verdict band: the band's experts in config
+ * array order (v2 tie-break rule). An empty band escalates to the nearest
+ * non-empty band (cheaper neighbour first, then the more expensive one), so
+ * a lookup never returns nothing while candidates exist.
  */
 export function resolveBandCandidates(
   bands: ExpertRoutingBands,
   band: RoutingBand,
-  costOf: CostOfFn = defaultCostOf,
 ): ExpertTarget[] {
   const index = BAND_ORDER.indexOf(band);
   for (let offset = 0; offset < BAND_ORDER.length; offset++) {
@@ -99,7 +117,7 @@ export function resolveBandCandidates(
       const candidateIndex = index + offset * direction;
       if (candidateIndex < 0 || candidateIndex >= BAND_ORDER.length) continue;
       const candidates = bands[BAND_ORDER[candidateIndex]];
-      if (candidates.length > 0) return sortByPrice(candidates, costOf);
+      if (candidates.length > 0) return [...candidates];
     }
   }
   return [];

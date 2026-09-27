@@ -6,41 +6,40 @@ import {
   expertRoutingLogDb,
   expertRoutingSessionBindingDb,
   modelDb,
-  systemConfigDb,
   virtualKeyDb,
 } from "../db/index.js";
 import { hotConfigCache } from "../services/hot-config-cache.js";
 import { memoryLogger } from "../services/logger.js";
-import { expertTemplates } from "../data/expert-templates.js";
 import {
   DEFAULT_SESSION_IDLE_TTL_SECONDS,
   DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
 } from "@llm-gateway/shared";
 import {
-  BAND_ORDER,
   blendedPriceOf,
   buildBands,
 } from "../services/expert-router/bands.js";
 import { resolveExpertCost } from "../services/expert-router/cost.js";
 import type {
+  BandCandidate,
+} from "../services/expert-router/bands.js";
+import type {
   CostInput,
-  ExpertTarget,
   RoutingBand,
 } from "../types/expert-routing.js";
 
 const expertTargetSchema = z.object({
   id: z.string(),
-  category: z.string().trim().min(1),
   type: z.enum(["virtual", "real"]),
   model_id: z.string().optional(),
   provider_id: z.string().optional(),
   model: z.string().optional(),
-  description: z.string().optional(),
-  color: z.string().optional(),
+  // Optional here so the auto-banding preview can accept un-banded experts;
+  // persisted configs must set it (validateExpertRoutingConfig).
   band: z.enum(["low", "medium", "high"]).optional(),
 });
 
-const sessionBindingPolicySchema = z.object({
+const sessionPolicySchema = z.object({
+  mode: z.enum(["per_turn", "sticky", "escalate_only"]).default("escalate_only"),
   idle_ttl_seconds: z
     .number()
     .int()
@@ -52,6 +51,23 @@ const sessionBindingPolicySchema = z.object({
     .positive()
     .default(DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS),
 });
+
+const classifierConfigSchema = z
+  .object({
+    timeout_ms: z.number().int().positive().optional(),
+    on_low_confidence: z.enum(["escalate", "keep"]).optional(),
+    min_confidence: z.number().min(0).max(1).optional(),
+  })
+  .optional();
+
+const exposureConfigSchema = z
+  .object({
+    headers: z.boolean().optional(),
+    provider_header: z.boolean().optional(),
+    model_field: z.enum(["upstream", "gateway_name"]).optional(),
+    sse_comment: z.boolean().optional(),
+  })
+  .optional();
 
 const fallbackConfigSchema = z
   .object({
@@ -76,13 +92,13 @@ const createExpertRoutingSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   enabled: z.boolean().optional(),
-  choice_threshold: z.number().min(0).max(1).optional(),
   fail_open: z.enum(["fallback", "parent", "error"]).optional(),
-  classification_mode: z.enum(["expert", "difficulty"]).optional(),
   preprocessing: preprocessingSchema,
   experts: z.array(expertTargetSchema),
   fallback: fallbackConfigSchema,
-  session_binding_policy: sessionBindingPolicySchema.optional(),
+  session_policy: sessionPolicySchema.optional(),
+  classifier: classifierConfigSchema,
+  exposure: exposureConfigSchema,
   createVirtualModel: z.boolean().optional(),
   virtualModelName: z.string().optional(),
   modelAttributes: z.any().optional(),
@@ -92,14 +108,43 @@ const updateExpertRoutingSchema = z.object({
   name: z.string().optional(),
   description: z.string().nullable().optional(),
   enabled: z.boolean().optional(),
-  choice_threshold: z.number().min(0).max(1).optional(),
   fail_open: z.enum(["fallback", "parent", "error"]).optional(),
-  classification_mode: z.enum(["expert", "difficulty"]).optional(),
   preprocessing: preprocessingSchema,
   experts: z.array(expertTargetSchema).optional(),
   fallback: fallbackConfigSchema,
-  session_binding_policy: sessionBindingPolicySchema.optional(),
+  session_policy: sessionPolicySchema.optional(),
+  classifier: classifierConfigSchema,
+  exposure: exposureConfigSchema,
 });
+
+/**
+ * v2 removed several v1 fields. Reject them with an explicit message instead
+ * of silently stripping (zod default), so stale callers notice immediately.
+ */
+function rejectDeprecatedFields(body: any): void {
+  const removed: string[] = [];
+  if (body && typeof body === "object") {
+    if ("choice_threshold" in body) removed.push("choice_threshold");
+    if ("classification_mode" in body) removed.push("classification_mode");
+    if ("session_binding_policy" in body) removed.push("session_binding_policy");
+    if (Array.isArray(body.experts)) {
+      for (const expert of body.experts) {
+        if (expert && typeof expert === "object") {
+          for (const field of ["category", "description", "color"] as const) {
+            if (field in expert) removed.push(`experts[].${field}`);
+          }
+        }
+      }
+    }
+  }
+  if (removed.length > 0) {
+    const error = new Error(
+      `字段已废弃 (v2 已移除按类别路由): ${[...new Set(removed)].join(", ")}`,
+    );
+    (error as any).statusCode = 400;
+    throw error;
+  }
+}
 
 async function validateModelConfig(
   config: any,
@@ -128,18 +173,18 @@ async function validateModelConfig(
   }
 }
 
-function validateSessionBindingPolicy(policy: any): void {
+function validateSessionPolicy(policy: any): void {
   const idle = Number(policy?.idle_ttl_seconds);
   const absolute = Number(policy?.absolute_ttl_seconds);
   if (!Number.isFinite(idle) || idle <= 0) {
-    throw new Error("session_binding_policy.idle_ttl_seconds 必须为正整数");
+    throw new Error("session_policy.idle_ttl_seconds 必须为正整数");
   }
   if (!Number.isFinite(absolute) || absolute <= 0) {
-    throw new Error("session_binding_policy.absolute_ttl_seconds 必须为正整数");
+    throw new Error("session_policy.absolute_ttl_seconds 必须为正整数");
   }
   if (idle > absolute) {
     throw new Error(
-      "session_binding_policy.idle_ttl_seconds 不能大于 absolute_ttl_seconds",
+      "session_policy.idle_ttl_seconds 不能大于 absolute_ttl_seconds",
     );
   }
 }
@@ -148,7 +193,7 @@ async function validateExpertConfig(
   expert: any,
   currentExpertRoutingId?: string,
 ): Promise<void> {
-  await validateModelConfig(expert, `专家 "${expert.category}"`);
+  await validateModelConfig(expert, `候选模型 "${expert.id}"`);
 
   if (expert.type === "virtual") {
     const virtualModel = await modelDb.getById(expert.model_id);
@@ -159,7 +204,7 @@ async function validateExpertConfig(
         virtualModel!.expert_routing_id === currentExpertRoutingId
       ) {
         throw new Error(
-          `专家 "${expert.category}" 的虚拟模型 "${virtualModel!.name}" 引用了当前专家路由配置,会导致循环依赖。` +
+          `候选模型 "${expert.id}" 的虚拟模型 "${virtualModel!.name}" 引用了当前分级路由配置,会导致循环依赖。` +
             `请选择其他模型。`,
         );
       }
@@ -202,6 +247,13 @@ async function validateExpertRoutingConfig(
   for (const expert of config.experts) {
     if (ids.has(expert.id)) throw new Error(`重复的候选模型 ID: ${expert.id}`);
     ids.add(expert.id);
+    if (
+      expert.band !== "low" &&
+      expert.band !== "medium" &&
+      expert.band !== "high"
+    ) {
+      throw new Error(`候选模型 ${expert.id} 缺少 band (low/medium/high)`);
+    }
     await validateExpertConfig(expert, currentExpertRoutingId);
   }
 
@@ -209,7 +261,7 @@ async function validateExpertRoutingConfig(
     await validateFallbackConfig(config.fallback, currentExpertRoutingId);
   }
 
-  validateSessionBindingPolicy(config.session_binding_policy);
+  validateSessionPolicy(config.session_policy);
 }
 
 /**
@@ -237,23 +289,24 @@ function normalizeRouteSource(raw: string | null): string | null {
  * unspecified fields fall back to the existing stored values.
  */
 function buildConfigData(body: any, current?: any): any {
-  const sessionBindingPolicy = body.session_binding_policy ||
-    current?.session_binding_policy || {
+  const sessionPolicy = body.session_policy ||
+    current?.session_policy || current?.session_binding_policy || {
+      mode: "escalate_only",
       idle_ttl_seconds: DEFAULT_SESSION_IDLE_TTL_SECONDS,
       absolute_ttl_seconds: DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
     };
   return {
-    choice_threshold: body.choice_threshold ?? current?.choice_threshold ?? 0.6,
+    version: 2 as const,
     fail_open: body.fail_open ?? current?.fail_open,
-    classification_mode:
-      body.classification_mode ?? current?.classification_mode,
     preprocessing:
       body.preprocessing !== undefined
         ? body.preprocessing
         : current?.preprocessing,
     experts: body.experts || current?.experts || [],
     fallback: body.fallback !== undefined ? body.fallback : current?.fallback,
-    session_binding_policy: sessionBindingPolicy,
+    session_policy: sessionPolicy,
+    classifier: body.classifier !== undefined ? body.classifier : current?.classifier,
+    exposure: body.exposure !== undefined ? body.exposure : current?.exposure,
   };
 }
 
@@ -274,8 +327,7 @@ async function invalidateBindingsForExpertChanges(
     if (!next) {
       changedOrRemoved.push(id);
     } else if (
-      prev.category !== next.category ||
-      prev.description !== next.description ||
+      prev.band !== next.band ||
       prev.type !== next.type ||
       prev.model_id !== next.model_id ||
       prev.provider_id !== next.provider_id ||
@@ -298,32 +350,31 @@ async function invalidateBindingsForExpertChanges(
   }
 }
 
-async function computeBandPreview(experts: ExpertTarget[]) {
+async function computeBandPreview(experts: BandCandidate[]) {
   const costOf = new Map<string, CostInput | undefined>();
   for (const expert of experts) {
     costOf.set(expert.id, await resolveExpertCost(expert));
   }
   const bands = buildBands(experts, (expert) => costOf.get(expert.id));
-  const bandOf = new Map<string, RoutingBand>();
-  for (const band of BAND_ORDER) {
-    for (const expert of bands[band]) bandOf.set(expert.id, band);
-  }
-  const describe = (expert: ExpertTarget) => ({
-    id: expert.id,
-    category: expert.category,
-    type: expert.type,
-    explicitBand: expert.band ?? null,
-    blendedPrice: blendedPriceOf(costOf.get(expert.id)),
-    inputCostPerToken: costOf.get(expert.id)?.input_cost_per_token ?? null,
-    outputCostPerToken: costOf.get(expert.id)?.output_cost_per_token ?? null,
-  });
+  const assignment: Record<string, RoutingBand> = {};
+  const describe = (expert: BandCandidate) => {
+    assignment[expert.id] = expert.band!;
+    return {
+      id: expert.id,
+      type: expert.type,
+      explicitBand: expert.band ?? null,
+      blendedPrice: blendedPriceOf(costOf.get(expert.id)),
+      inputCostPerToken: costOf.get(expert.id)?.input_cost_per_token ?? null,
+      outputCostPerToken: costOf.get(expert.id)?.output_cost_per_token ?? null,
+    };
+  };
   return {
     bands: {
       low: bands.low.map(describe),
       medium: bands.medium.map(describe),
       high: bands.high.map(describe),
     },
-    assignment: Object.fromEntries(bandOf) as Record<string, RoutingBand>,
+    assignment: assignment as Record<string, RoutingBand>,
   };
 }
 
@@ -409,11 +460,6 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Expert templates are served from backend so the frontend doesn't hardcode them.
-  fastify.get("/templates", async () => {
-    return { templates: expertTemplates };
-  });
-
   fastify.get("/:id", async (request) => {
     try {
       const { id } = request.params as { id: string };
@@ -443,6 +489,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
 
   fastify.post("/", async (request) => {
     try {
+      rejectDeprecatedFields(request.body);
       const body = createExpertRoutingSchema.parse(request.body);
 
       const configData = buildConfigData(body, undefined);
@@ -514,6 +561,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
   fastify.put("/:id", async (request) => {
     try {
       const { id } = request.params as { id: string };
+      rejectDeprecatedFields(request.body);
       const body = updateExpertRoutingSchema.parse(request.body);
 
       const existingConfig = await expertRoutingConfigDb.getById(id);
@@ -524,13 +572,13 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       let configData;
       const currentConfig = JSON.parse(existingConfig.config);
       if (
-        body.choice_threshold !== undefined ||
         body.fail_open !== undefined ||
-        body.classification_mode !== undefined ||
         body.experts ||
         body.fallback !== undefined ||
         body.preprocessing !== undefined ||
-        body.session_binding_policy !== undefined
+        body.session_policy !== undefined ||
+        body.classifier !== undefined ||
+        body.exposure !== undefined
       ) {
         configData = buildConfigData(body, currentConfig);
 
@@ -672,7 +720,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         throw new Error("专家路由配置不存在");
       }
       const parsed = JSON.parse(config.config);
-      return computeBandPreview((parsed.experts || []) as ExpertTarget[]);
+      return computeBandPreview((parsed.experts || []) as BandCandidate[]);
     } catch (error: any) {
       memoryLogger.error(`获取带宽预览失败: ${error.message}`, "ExpertRouting");
       throw error;
@@ -691,7 +739,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         if (!config) {
           throw new Error("专家路由配置不存在");
         }
-        experts = (JSON.parse(config.config).experts || []) as ExpertTarget[];
+        experts = (JSON.parse(config.config).experts || []) as BandCandidate[];
       }
       return computeBandPreview(experts);
     } catch (error: any) {
@@ -721,12 +769,10 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         timeRangeMs,
       );
 
-      const categoryDistribution: Record<string, number> = {};
       let totalRequests = 0;
       let totalClassificationTime = 0;
 
       for (const row of stats as any[]) {
-        categoryDistribution[row.classification_result] = Number(row.count);
         totalRequests += Number(row.count);
         totalClassificationTime += Number(row.avg_time) * Number(row.count);
       }
@@ -822,7 +868,6 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       return {
         totalRequests,
         avgClassificationTime,
-        categoryDistribution,
         routeSourceDistribution,
         cleaningStats,
         difficultyDistribution,
@@ -865,39 +910,6 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         `获取专家路由日志失败: ${error.message}`,
         "ExpertRouting",
       );
-      throw error;
-    }
-  });
-
-  fastify.get("/:id/logs/category/:category", async (request) => {
-    try {
-      const { id, category } = request.params as {
-        id: string;
-        category: string;
-      };
-      const { limit } = request.query as { limit?: string };
-
-      const config = await expertRoutingConfigDb.getById(id);
-      if (!config) {
-        throw new Error("专家路由配置不存在");
-      }
-
-      const limitNum = limit ? Number.parseInt(limit) : 100;
-      const logs = (
-        (await expertRoutingLogDb.getByCategory(
-          id,
-          category,
-          limitNum,
-        )) as any[]
-      ).map((log) => ({
-        ...log,
-        route_source: inferRouteSource(log),
-        semantic_score: inferSemanticScore(log),
-      }));
-
-      return { logs };
-    } catch (error: any) {
-      memoryLogger.error(`获取分类日志失败: ${error.message}`, "ExpertRouting");
       throw error;
     }
   });
@@ -1010,39 +1022,6 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
       return { success: true };
     } catch (error: any) {
       memoryLogger.error(`取消模型关联失败: ${error.message}`, "ExpertRouting");
-      throw error;
-    }
-  });
-
-  fastify.post("/preferences/preview-width", async (request) => {
-    try {
-      const { width } = request.body as { width: number };
-
-      if (typeof width !== "number" || width < 400 || width > 1200) {
-        throw new Error("无效的预览宽度");
-      }
-
-      await systemConfigDb.set(
-        "expert_routing_preview_width",
-        String(width),
-        "专家路由预览宽度",
-      );
-
-      return { success: true };
-    } catch (error: any) {
-      memoryLogger.error(`保存预览宽度失败: ${error.message}`, "ExpertRouting");
-      throw error;
-    }
-  });
-
-  fastify.get("/preferences/preview-width", async () => {
-    try {
-      const config = await systemConfigDb.get("expert_routing_preview_width");
-      const width = config ? Number.parseInt(config.value, 10) : 600;
-
-      return { width };
-    } catch (error: any) {
-      memoryLogger.error(`获取预览宽度失败: ${error.message}`, "ExpertRouting");
       throw error;
     }
   });

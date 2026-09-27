@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { upstreamFetch } from "../../utils/upstream-fetch.js";
-import type { ExpertTarget } from "../../types/expert-routing.js";
 
 const DEFAULT_TIMEOUT_MS = 3000;
 
@@ -16,20 +15,14 @@ const choiceResponseSchema = z.object({
   }),
 });
 
-export interface JevDecision {
-  model: string;
-  ranked: Array<{ expertId: string; probability: number }>;
-  confidence: number;
-}
-
-export type DifficultyVerdict = "low" | "medium" | "high";
-
 export interface JevDifficultyDecision {
   model: string;
   verdict: DifficultyVerdict;
   ranked: Array<{ expertId: string; probability: number }>;
   confidence: number;
 }
+
+export type DifficultyVerdict = "low" | "medium" | "high";
 
 const DIFFICULTY_LEVELS: readonly DifficultyVerdict[] = ["low", "medium", "high"];
 
@@ -85,7 +78,12 @@ function rankedFromProbabilities(
 export function getJevConfiguration() {
   const address = process.env.JEV_API_URL?.trim();
   const apiKey = process.env.JEV_API_KEY?.trim();
-  const model = process.env.JEV_MODEL?.trim();
+  const model = process.env.JEV_MODEL?.trim() || process.env.JEV_DIFFICULTY_MODEL?.trim();
+  if (model && !process.env.JEV_MODEL?.trim()) {
+    console.warn(
+      "[Jev] JEV_DIFFICULTY_MODEL is deprecated; set JEV_MODEL instead (falling back to it for now)",
+    );
+  }
   if (!address || !apiKey || !model) {
     throw new Error("JEV_API_URL, JEV_API_KEY and JEV_MODEL must be configured");
   }
@@ -107,38 +105,12 @@ export function getJevConfiguration() {
   };
 }
 
-export async function chooseExpert(input: string, experts: ExpertTarget[]): Promise<JevDecision> {
-  const { model } = getJevConfiguration();
-  const criteria = Object.fromEntries(experts.map((expert) => [
-    expert.id,
-    `${expert.category}: ${expert.description?.trim() || expert.category}`,
-  ]));
-  const ids = experts.map((expert) => expert.id);
-  const answer = await requestJevChoice(
-    input,
-    model,
-    `Which candidate model is best suited to answer the user's request? ${ANTI_INJECTION_INSTRUCTION}`,
-    criteria,
-  );
-  if (!ids.includes(answer.choice) || ids.some((id) => answer.probabilities[id] === undefined)) {
-    throw new Error("Jev returned an unknown or missing candidate");
-  }
-  const ranked = rankedFromProbabilities(answer.probabilities, ids);
-  if (ranked[0]?.expertId !== answer.choice) {
-    throw new Error("Jev choice does not match its highest-probability candidate");
-  }
-  return { model: answer.model, ranked, confidence: answer.confidence };
-}
-
 /**
- * Classify the request into a fixed difficulty level. Uses
- * JEV_DIFFICULTY_MODEL when configured, otherwise the shared JEV model.
- * Response validation mirrors chooseExpert (known choice, full probability
- * set, choice must be the argmax).
+ * Classify the request into a fixed difficulty level. Response validation
+ * enforces a known choice, the full probability set, and choice == argmax.
  */
 export async function chooseDifficulty(input: string): Promise<JevDifficultyDecision> {
-  const { model: defaultModel } = getJevConfiguration();
-  const model = process.env.JEV_DIFFICULTY_MODEL?.trim() || defaultModel;
+  const { model } = getJevConfiguration();
   const answer = await requestJevChoice(
     input,
     model,

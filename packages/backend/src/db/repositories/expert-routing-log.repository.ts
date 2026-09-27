@@ -258,7 +258,6 @@ export const expertRoutingLogRepository = {
     try {
       let query = `
         SELECT
-          classification_result,
           COUNT(*) as count,
           AVG(classification_time) as avg_time
         FROM expert_routing_logs
@@ -272,32 +271,7 @@ export const expertRoutingLogRepository = {
         params.push(cutoffTime);
       }
 
-      query += ' GROUP BY classification_result';
-
       const [rows] = await conn.query(query, params);
-      return rows;
-    } finally {
-      conn.release();
-    }
-  },
-
-  async getByCategory(configId: string, category: string, limit: number = 100) {
-    const pool = getDatabase();
-    const conn = await pool.getConnection();
-    try {
-      const [rows] = await conn.query(
-        `SELECT
-          id, virtual_key_id, expert_routing_id, request_hash,
-          classifier_model, classification_result, selected_expert_id,
-          selected_expert_type, selected_expert_name, classification_time,
-          classifier_request, route_source, created_at,
-          difficulty, band, verdict_reused, classifier_time_ms
-        FROM expert_routing_logs
-        WHERE expert_routing_id = ? AND classification_result = ?
-        ORDER BY created_at DESC
-        LIMIT ?`,
-        [configId, category, limit]
-      );
       return rows;
     } finally {
       conn.release();

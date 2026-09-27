@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   expertRoutingConfigDb: { getById: vi.fn(), delete: vi.fn() },
-  expertRoutingLogDb: { getByConfigId: vi.fn(), getByCategory: vi.fn(), getStatistics: vi.fn(), getRouteStats: vi.fn(), getDifficultyStats: vi.fn(), getClassifierModelStats: vi.fn(), getById: vi.fn() },
+  expertRoutingLogDb: { getByConfigId: vi.fn(), getStatistics: vi.fn(), getRouteStats: vi.fn(), getDifficultyStats: vi.fn(), getClassifierModelStats: vi.fn(), getById: vi.fn() },
   expertRoutingSessionBindingDb: { deleteByConfig: vi.fn() },
   modelDb: { getByExpertRoutingId: vi.fn(), update: vi.fn(), delete: vi.fn(), getById: vi.fn(), getByProviderId: vi.fn() },
   virtualKeyDb: { countByModels: vi.fn() },
@@ -13,9 +13,7 @@ vi.mock('../db/index.js', () => ({
   expertRoutingConfigDb: mocks.expertRoutingConfigDb,
   expertRoutingLogDb: mocks.expertRoutingLogDb,
   expertRoutingSessionBindingDb: mocks.expertRoutingSessionBindingDb,
-  expertRoutingTrainingRecordDb: {},
   modelDb: mocks.modelDb,
-  systemConfigDb: {},
   virtualKeyDb: mocks.virtualKeyDb,
 }));
 
@@ -156,39 +154,10 @@ describe('expertRoutingRoutes', () => {
     });
   });
 
-  it('returns logs by category with route_source passthrough', async () => {
-    mocks.expertRoutingConfigDb.getById.mockResolvedValue({ id: 'routing-1' });
-    mocks.expertRoutingLogDb.getByCategory.mockResolvedValue([{
-      id: 'log-2',
-      expert_routing_id: 'routing-1',
-      classifier_model: 'fallback',
-      route_source: 'fallback',
-    }]);
-
-    const { routes, fastify } = createFastifyStub();
-    await expertRoutingRoutes(fastify);
-
-    const response = await routes.get('/:id/logs/category/:category')!({
-      params: { id: 'routing-1', category: 'general' },
-      query: { limit: '10' },
-    });
-
-    expect(mocks.expertRoutingLogDb.getByCategory).toHaveBeenCalledWith('routing-1', 'general', 10);
-    expect(response).toEqual({
-      logs: [{
-        id: 'log-2',
-        expert_routing_id: 'routing-1',
-        classifier_model: 'fallback',
-        route_source: 'fallback',
-        semantic_score: undefined,
-      }],
-    });
-  });
-
   it('returns difficulty/band distributions and fail-open rate from persisted stats', async () => {
     mocks.expertRoutingConfigDb.getById.mockResolvedValue({ id: 'routing-1' });
     mocks.expertRoutingLogDb.getStatistics.mockResolvedValue([
-      { classification_result: 'review', count: 10, avg_time: 20 },
+      { count: 10, avg_time: 20 },
     ]);
     mocks.expertRoutingLogDb.getRouteStats.mockResolvedValue([
       { route_source: 'jev', count: 7, avg_prompt_tokens: 10, avg_cleaned_length: 5 },
@@ -337,8 +306,8 @@ describe('expertRoutingRoutes', () => {
   });
   describe('bands preview', () => {
     const storedExperts = [
-      { id: 'cheap', category: 'simple', type: 'real', provider_id: 'prov-1', model: 'cheap-model' },
-      { id: 'pricey', category: 'deep', type: 'real', provider_id: 'prov-1', model: 'pricey-model' },
+      { id: 'cheap', type: 'real', provider_id: 'prov-1', model: 'cheap-model' },
+      { id: 'pricey', type: 'real', provider_id: 'prov-1', model: 'pricey-model' },
     ];
 
     beforeEach(() => {
@@ -393,8 +362,8 @@ describe('expertRoutingRoutes', () => {
         params: { id: 'routing-1' },
         body: {
           experts: [
-            { id: 'draft-high', category: 'deep', type: 'real', provider_id: 'prov-1', model: 'pricey-model', band: 'high' },
-            { id: 'draft-cheap', category: 'simple', type: 'real', provider_id: 'prov-1', model: 'cheap-model' },
+            { id: 'draft-high', type: 'real', provider_id: 'prov-1', model: 'pricey-model', band: 'high' },
+            { id: 'draft-cheap', type: 'real', provider_id: 'prov-1', model: 'cheap-model' },
           ],
         },
       });

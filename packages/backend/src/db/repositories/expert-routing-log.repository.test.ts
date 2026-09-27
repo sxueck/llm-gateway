@@ -31,12 +31,12 @@ describe('expertRoutingLogRepository projections', () => {
     expect(sql).toMatch(/\broute_source\b/);
   });
 
-  it('includes classifier_request in getByCategory so legacy route inference works', async () => {
-    await expertRoutingLogRepository.getByCategory('routing-1', 'code_authoring', 10);
+  it('getStatistics aggregates without category grouping', async () => {
+    await expertRoutingLogRepository.getStatistics('routing-1');
 
     const [sql] = mocks.connection.query.mock.calls[0];
-    expect(sql).toMatch(/\bclassifier_request\b/);
-    expect(sql).toMatch(/\broute_source\b/);
+    expect(sql).not.toMatch(/classification_result/);
+    expect(sql).toMatch(/COUNT\(\*\) as count/);
   });
 });
 describe('expertRoutingLogRepository v47 difficulty/classifier columns', () => {
@@ -93,18 +93,12 @@ describe('expertRoutingLogRepository v47 difficulty/classifier columns', () => {
     expect(params.filter((p: any) => p === null).length).toBeGreaterThanOrEqual(2);
   });
 
-  it('getByConfigId and getByCategory select the v47 columns', async () => {
+  it('getByConfigId selects the v47 columns', async () => {
     await expertRoutingLogRepository.getByConfigId('routing-1');
-    let [sql] = mocks.connection.query.mock.calls[0];
+    const [sql] = mocks.connection.query.mock.calls[0];
     expect(sql).toMatch(/\bdifficulty\b/);
     expect(sql).toMatch(/\bverdict_reused\b/);
     expect(sql).toMatch(/\bclassifier_time_ms\b/);
-
-    vi.clearAllMocks();
-    mocks.connection.query.mockResolvedValue([[]]);
-    await expertRoutingLogRepository.getByCategory('routing-1', 'x');
-    [sql] = mocks.connection.query.mock.calls[0];
-    expect(sql).toMatch(/\bdifficulty\b/);
   });
 
   it('getDifficultyStats groups by difficulty, band and aggregates reuse/latency', async () => {
