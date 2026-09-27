@@ -14,6 +14,11 @@ import {
 } from "@llm-gateway/shared";
 import { SignalBuilder } from "./expert-router/preprocess/index.js";
 import { isContinuationTurn } from "./expert-router/turns.js";
+import {
+  capabilitySatisfied,
+  detectRequestCapabilities,
+  resolveExpertCapabilities,
+} from "./expert-router/capabilities.js";
 import { resolveModelConfig } from "./expert-router/resolve.js";
 import type { ProxyRequest } from "./expert-router/types.js";
 import { extractExpertRoutingSessionId } from "./expert-router/session-binding.js";
@@ -48,6 +53,8 @@ interface RoutingMeta {
   classifierTimeMs?: number | null;
   /** §5.2: agent tool-result / assistant continuation turn. */
   continuation?: boolean;
+  /** §5.4: capability constraints removed at least one candidate. */
+  capabilityFiltered?: boolean;
 }
 
 interface ExpertRoutingResult {
@@ -79,6 +86,20 @@ export function groupByBand(experts: ExpertTarget[]): ExpertRoutingBands {
 }
 
 export class ExpertRouter {
+  /**
+   * §5.4: capability check for the reuse path. Only image/tool constraints
+   * apply here (synchronous caps + one metadata lookup when relevant); the
+   * context-window check needs token counting and runs on the classify path.
+   */
+  private async reuseBlockedByCapabilities(
+    expert: ExpertTarget,
+    caps: { hasImages: boolean; hasTools: boolean },
+  ): Promise<boolean> {
+    if (!caps.hasImages && !caps.hasTools) return false;
+    const metadata = await resolveExpertCapabilities(expert);
+    return !capabilitySatisfied(metadata, caps, undefined);
+  }
+
   async route(
     request: ProxyRequest,
     expertRoutingId: string,
@@ -104,7 +125,8 @@ export class ExpertRouter {
         : "fallback";
     // Hard fail on legacy configs: a missing band is a deployment bug the v2
     // migration should have fixed — fail-open here would silently route wrong.
-    const bands = groupByBand(config.experts);
+    // (Result unused: tier selection re-groups the capability-filtered pool.)
+    groupByBand(config.experts);
     const sessionId = extractExpertRoutingSessionId(request);
     const bindingKey: SessionBindingKey = {
       expertRoutingId,
@@ -123,6 +145,8 @@ export class ExpertRouter {
     // never re-classify while a binding exists; without any stored decision
     // (per_turn or expired binding) classification is the only fallback.
     const continuationTurn = isContinuationTurn(request.body);
+    // §5.4: vision/tool constraints from the request shape (cheap, sync).
+    const caps = detectRequestCapabilities(request.body);
 
     let binding: Awaited<ReturnType<typeof expertRoutingSessionBindingDb.getActiveBinding>> = null;
     if (useBindings) {
@@ -154,17 +178,24 @@ export class ExpertRouter {
       Boolean(binding && boundExpert) &&
       (policy.mode !== "escalate_only" || continuationTurn);
     if (binding && boundExpert && reuseWithoutClassification) {
-      try {
-        return await this.resolveAndLog(boundExpert, "session", 1, null, [], startTime, expertRoutingId, context, request, undefined, undefined, {
-          failOpen,
-          verdictReused: true,
-          difficulty: bindingDifficulty,
-          verdictBand: boundExpert.band,
-          classifierTimeMs: null,
-          continuation: continuationTurn,
-        });
-      } catch {
+      if (await this.reuseBlockedByCapabilities(boundExpert, caps)) {
+        // §5.4: the bound model no longer satisfies the request (e.g. a new
+        // image turn on a text-only model) — drop the binding and re-classify.
         await expertRoutingSessionBindingDb.deleteBinding(bindingKey);
+        binding = null;
+      } else {
+        try {
+          return await this.resolveAndLog(boundExpert, "session", 1, null, [], startTime, expertRoutingId, context, request, undefined, undefined, {
+            failOpen,
+            verdictReused: true,
+            difficulty: bindingDifficulty,
+            verdictBand: boundExpert.band,
+            classifierTimeMs: null,
+            continuation: continuationTurn,
+          });
+        } catch {
+          await expertRoutingSessionBindingDb.deleteBinding(bindingKey);
+        }
       }
     }
 
@@ -219,15 +250,41 @@ export class ExpertRouter {
     const effectiveBand: RoutingBand = keepBoundTier ? boundTier! : verdictBand;
 
     try {
-      const ordered = resolveBandCandidates(bands, effectiveBand);
-      if (keepBoundTier && boundExpert) {
-        // Fresh verdict confirmed the incumbent tier: prefer the bound expert
-        // (stable model choice within the tier) over re-picking by order.
-        const at = ordered.findIndex((candidate) => candidate.id === boundExpert.id);
-        if (at > 0) {
-          const [incumbent] = ordered.splice(at, 1);
-          ordered.unshift(incumbent);
+      // §5.4 capability filter runs BEFORE tier selection: drop candidates that
+      // cannot serve the request (vision/tools/context window; unknown metadata
+      // never filters), then tier-select among the survivors so an oversized or
+      // image-bearing prompt escalates to a capable tier instead of erroring.
+      const promptTokens = signal.stats?.promptTokens;
+      let pool = config.experts;
+      let capabilityFiltered = false;
+      if (caps.hasImages || caps.hasTools || (promptTokens ?? 0) > 0) {
+        const capCache = new Map(
+          await Promise.all(
+            config.experts.map(async (expert) => {
+              return [expert.id, await resolveExpertCapabilities(expert)] as const;
+            }),
+          ),
+        );
+        const survivors = pool.filter((expert) =>
+          capabilitySatisfied(capCache.get(expert.id), caps, promptTokens),
+        );
+        capabilityFiltered = survivors.length < pool.length;
+        pool = survivors;
+      }
+      let candidates: ExpertTarget[] = [];
+      if (pool.length > 0) {
+        candidates = resolveBandCandidates(groupByBand(pool), effectiveBand);
+        if (keepBoundTier && boundExpert) {
+          // Fresh verdict confirmed the incumbent tier: prefer the bound expert
+          // (stable model choice within the tier) over re-picking by order.
+          const at = candidates.findIndex((candidate) => candidate.id === boundExpert.id);
+          if (at > 0) {
+            const [incumbent] = candidates.splice(at, 1);
+            candidates.unshift(incumbent);
+          }
         }
+      } else {
+        failure = "capability_filtered";
       }
       // fail_open 仅表示分类器失败；低置信但成功分类仍算 jev 判定
       const routeSource: "jev" | "fail_open" = classified ? "jev" : "fail_open";
@@ -239,9 +296,10 @@ export class ExpertRouter {
         verdictReused: keepBoundTier,
         classifierTimeMs,
         continuation: continuationTurn,
+        capabilityFiltered,
       };
 
-      for (const expert of ordered) {
+      for (const expert of candidates) {
         try {
           await resolveModelConfig(expert, "Expert");
           let selected = expert;

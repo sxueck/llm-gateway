@@ -33,11 +33,23 @@ vi.mock("../db/repositories/expert-routing-session-binding.repository.js", () =>
 vi.mock("./expert-router/preprocess/index.js", () => ({
   SignalBuilder: {
     buildRoutingSignal: vi.fn(async (request: any) => ({
-      intentText: request.body?.messages?.[0]?.content ?? "route me",
+      intentText: intentTextOf(request.body?.messages?.[0]?.content) ?? "route me",
       stats: { promptTokens: 1, cleanedLength: 8 },
     })),
   },
 }));
+
+/** Multimodal content arrives as an array of typed parts. */
+function intentTextOf(content: unknown): string | undefined {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part: any) => (typeof part?.text === "string" ? part.text : ""))
+      .join(" ")
+      .trim() || undefined;
+  }
+  return undefined;
+}
 
 import { ExpertRouter } from "./expert-router.js";
 const config = (overrides: Record<string, unknown> = {}) => ({
@@ -240,6 +252,48 @@ describe("ExpertRouter difficulty routing", () => {
     expect(result?.expert.id).toBe("review");
     expect(mocks.expertRoutingSessionBindingDb.getActiveBinding).not.toHaveBeenCalled();
     expect(mocks.expertRoutingSessionBindingDb.createOrSelectBinding).not.toHaveBeenCalled();
+  });
+
+  test("image requests escalate past vision-incapable low-tier candidates (§5.4)", async () => {
+    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+      id: "routing", enabled: 1,
+      config: JSON.stringify(config({
+        fallback: null,
+        fail_open: "parent",
+        experts: [
+          { id: "text-only", type: "real", provider_id: "p1", model: "cheap-text", band: "low" },
+          { id: "vision-pro", type: "real", provider_id: "p2", model: "vision-model", band: "high" },
+        ],
+      })),
+    });
+    // Capabilities resolve through provider model rows; low tier is text-only.
+    mocks.modelDb.getByProviderId.mockImplementation(async (providerId: string) => [
+      {
+        is_virtual: 0,
+        provider_id: providerId,
+        model_identifier: providerId === "p1" ? "cheap-text" : "vision-model",
+        model_attributes: JSON.stringify(
+          providerId === "p1"
+            ? { supports_vision: false }
+            : { supports_vision: true },
+        ),
+      },
+    ]);
+    mocks.chooseDifficulty.mockResolvedValue(difficulty("low"));
+
+    const imageRequest = {
+      body: { messages: [{ role: "user", content: [
+        { type: "text", text: "看图" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,xxx" } },
+      ] }] },
+      headers: {},
+    };
+    const result = await new ExpertRouter().route(imageRequest as any, "routing", {});
+    // Low verdict, but the low tier cannot serve images → escalate to vision tier.
+    expect(result?.expert.id).toBe("vision-pro");
+    expect(result?.tier).toBe("high");
+    const payload = JSON.parse(mocks.expertRoutingLogDb.create.mock.calls[0][0].classifier_response);
+    expect(payload.capabilityFiltered).toBe(true);
   });
 
   test("legacy config without bands is rejected with a migration hint", async () => {

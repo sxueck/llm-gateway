@@ -289,7 +289,7 @@ export const expertRoutingApi = {
     id: string,
     input: { prompt?: string; messages?: any[] },
   ): Promise<RoutingSimulation> {
-    return request.post(`/admin/expert-routing/${id}/simulate`, input);
+    return request.post(`/admin/expert-routing/${encodeURIComponent(id)}/simulate`, input);
   },
 
   getBandPreview(id: string): Promise<BandPreviewResponse> {
