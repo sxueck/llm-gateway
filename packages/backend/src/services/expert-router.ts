@@ -65,7 +65,7 @@ interface ExpertRoutingResult {
 }
 
 /** v2: band is mandatory; array order decides priority within a band. */
-function groupByBand(experts: ExpertTarget[]): ExpertRoutingBands {
+export function groupByBand(experts: ExpertTarget[]): ExpertRoutingBands {
   const bands: ExpertRoutingBands = { low: [], medium: [], high: [] };
   for (const expert of experts) {
     if (!(BAND_ORDER as readonly string[]).includes(expert.band)) {

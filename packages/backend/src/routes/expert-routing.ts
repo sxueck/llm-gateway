@@ -11,6 +11,10 @@ import {
 import { hotConfigCache } from "../services/hot-config-cache.js";
 import { memoryLogger } from "../services/logger.js";
 import { getJevBreakerState, getJevConfiguration } from "../services/expert-router/jev-client.js";
+import { chooseDifficulty } from "../services/expert-router/jev-client.js";
+import { SignalBuilder } from "../services/expert-router/preprocess/index.js";
+import { groupByBand } from "../services/expert-router.js";
+import { difficultyToBand, resolveBandCandidates } from "../services/expert-router/bands.js";
 import {
   DEFAULT_SESSION_IDLE_TTL_SECONDS,
   DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
@@ -730,6 +734,98 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
   fastify.post("/bands/preview", async (request) => {
     const body = z.object({ experts: z.array(expertTargetSchema).min(1) }).parse(request.body);
     return computeBandPreview(body.experts);
+  });
+
+  /**
+   * §3.3 RoutingSimulator: classify a prompt against a config WITHOUT calling
+   * any upstream and WITHOUT writing session bindings or routing logs. Shared
+   * by the unsaved-config endpoint (/simulate) and the saved-config one.
+   */
+  async function simulateRouting(
+    config: { experts: any[]; preprocessing?: any },
+    requestBody: any,
+  ) {
+    const request = {
+      body: requestBody?.messages ? { messages: requestBody.messages } : { messages: [{ role: "user", content: requestBody?.prompt ?? "" }] },
+      headers: {},
+    };
+    const signal = await SignalBuilder.buildRoutingSignal(request as any, config.preprocessing);
+    const start = performance.now();
+    let decision;
+    try {
+      decision = await chooseDifficulty(signal.intentText || "");
+    } catch (error: any) {
+      const err: any = new Error(
+        `Jev 分类器不可用: ${error?.message || error}`,
+      );
+      err.statusCode = 503;
+      throw err;
+    }
+    const classifierTimeMs = Math.round(performance.now() - start);
+    const experts = config.experts as any[];
+    const bands = groupByBand(experts);
+    const band = difficultyToBand(decision.verdict);
+    const ordered = resolveBandCandidates(bands, band);
+    return {
+      intentText: signal.intentText,
+      stats: signal.stats,
+      difficulty: decision.verdict,
+      confidence: decision.confidence,
+      ranked: decision.ranked,
+      classifierModel: decision.model,
+      classifierTimeMs,
+      band,
+      candidates: ordered.map((expert) => ({
+        id: expert.id,
+        band: expert.band,
+        type: expert.type,
+      })),
+      // Without touching upstream we cannot know health/circuit state; the
+      // would-be hit is simply the first candidate in v2 order.
+      wouldHit: ordered[0]?.id ?? null,
+    };
+  }
+
+  const simulateBodySchema = z.object({
+    prompt: z.string().optional(),
+    messages: z.array(z.any()).optional(),
+    config: z
+      .object({
+        experts: z.array(expertTargetSchema).min(1),
+        preprocessing: preprocessingSchema,
+      })
+      .optional(),
+  });
+
+  fastify.post("/simulate", async (request) => {
+    const body = simulateBodySchema.parse(request.body ?? {});
+    if (!body.prompt && !body.messages) {
+      const err: any = new Error("prompt 或 messages 至少提供一个");
+      err.statusCode = 400;
+      throw err;
+    }
+    return simulateRouting(body.config!, body);
+  });
+
+  fastify.post("/:id/simulate", async (request) => {
+    const { id } = request.params as { id: string };
+    const body = simulateBodySchema.parse(request.body ?? {});
+    if (!body.prompt && !body.messages) {
+      const err: any = new Error("prompt 或 messages 至少提供一个");
+      err.statusCode = 400;
+      throw err;
+    }
+    const row = await expertRoutingConfigDb.getById(id);
+    if (!row) {
+      throw new Error("专家路由配置不存在");
+    }
+    let config: any;
+    try {
+      config = JSON.parse(row.config);
+    } catch {
+      throw new Error("专家路由配置是非法 JSON");
+    }
+    return simulateRouting(config, body);
   });
 
   fastify.get("/:id/bands/preview", async (request) => {

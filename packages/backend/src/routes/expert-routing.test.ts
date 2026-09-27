@@ -25,7 +25,33 @@ vi.mock('../services/logger.js', () => ({
   memoryLogger: { error: vi.fn(), info: vi.fn() },
 }));
 
+vi.mock('../services/expert-router/preprocess/index.js', () => ({
+  SignalBuilder: {
+    buildRoutingSignal: vi.fn(async (request: any) => ({
+      intentText: request.body?.messages?.[0]?.content ?? '',
+      stats: { promptTokens: 5, cleanedLength: 12 },
+    })),
+  },
+}));
+
+vi.mock('../services/expert-router/jev-client.js', () => ({
+  chooseDifficulty: vi.fn(),
+  getJevConfiguration: vi.fn(() => ({ model: 'jev-1.13.0' })),
+  getJevBreakerState: vi.fn(() => ({ open: false, openUntil: null, consecutiveFailures: 0, lastError: null })),
+}));
+
+vi.mock('../services/expert-router.js', () => ({
+  groupByBand: (experts: any[]) => ({
+    low: experts.filter((e) => e.band === 'low'),
+    medium: experts.filter((e) => e.band === 'medium'),
+    high: experts.filter((e) => e.band === 'high'),
+  }),
+}));
+
 import { expertRoutingRoutes } from './expert-routing.js';
+import { chooseDifficulty } from '../services/expert-router/jev-client.js';
+
+const chooseDifficultyMock = vi.mocked(chooseDifficulty);
 
 function createFastifyStub() {
   const routes = new Map<string, Function>();
@@ -309,6 +335,84 @@ describe('expertRoutingRoutes', () => {
     expect(reply.statusCode).toBe(200);
     expect(response).toEqual({ success: true });
   });
+  describe('simulate', () => {
+    const draftExperts = [
+      { id: 'fast', type: 'real', provider_id: 'p', model: 'f', band: 'low' },
+      { id: 'deep', type: 'real', provider_id: 'p', model: 'd', band: 'high' },
+    ];
+
+    beforeEach(() => {
+      chooseDifficultyMock.mockResolvedValue({
+        model: 'jev-1.13.0', verdict: 'high', confidence: 0.9,
+        ranked: [
+          { expertId: 'high', probability: 0.9 },
+          { expertId: 'medium', probability: 0.07 },
+          { expertId: 'low', probability: 0.03 },
+        ],
+      });
+    });
+
+    it('simulates an unsaved draft config without upstream calls or persistence', async () => {
+      const { postRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+
+      const response: any = await postRoutes.get('/simulate')!({
+        body: {
+          prompt: '重构这个模块',
+          config: { experts: draftExperts },
+        },
+      });
+
+      expect(response.difficulty).toBe('high');
+      expect(response.band).toBe('high');
+      expect(response.wouldHit).toBe('deep');
+      expect(response.intentText).toBe('重构这个模块');
+      expect(response.candidates.map((c: any) => c.id)).toEqual(['deep']);
+      expect(typeof response.classifierTimeMs).toBe('number');
+      // No config read, no log writes: simulate is side-effect free.
+      expect(mocks.expertRoutingConfigDb.getById).not.toHaveBeenCalled();
+      expect(mocks.expertRoutingLogDb.getById).not.toHaveBeenCalled();
+    });
+
+    it('simulates a saved config by id', async () => {
+      mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+        id: 'routing-1',
+        config: JSON.stringify({ experts: draftExperts }),
+      });
+      const { postRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+
+      const response: any = await postRoutes.get('/:id/simulate')!({
+        params: { id: 'routing-1' },
+        body: { prompt: '你好' },
+      });
+      expect(mocks.expertRoutingConfigDb.getById).toHaveBeenCalledWith('routing-1');
+      expect(response.difficulty).toBe('high');
+    });
+
+    it('surfaces classifier outages as 503', async () => {
+      chooseDifficultyMock.mockRejectedValue(new Error('circuit breaker open'));
+      const { postRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+
+      const err: any = await postRoutes.get('/simulate')!({
+        body: { prompt: 'x', config: { experts: draftExperts } },
+      }).catch((e: any) => e);
+      expect(err.message).toContain('Jev 分类器不可用');
+      expect(err.statusCode).toBe(503);
+    });
+
+    it('requires a prompt or messages', async () => {
+      const { postRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+
+      const err: any = await postRoutes.get('/simulate')!({
+        body: { config: { experts: draftExperts } },
+      }).catch((e: any) => e);
+      expect(err.message).toContain('至少提供一个');
+    });
+  });
+
   describe('bands preview', () => {
     const storedExperts = [
       { id: 'cheap', type: 'real', provider_id: 'prov-1', model: 'cheap-model' },
