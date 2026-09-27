@@ -57,6 +57,11 @@ const router = createRouter({
           component: () => import('@/views/ExpertRoutingView.vue'),
         },
         {
+          path: 'expert-routing/:id',
+          name: 'ExpertRoutingDetail',
+          component: () => import('@/views/ExpertRoutingDetailView.vue'),
+        },
+        {
           path: 'worker-plugins',
           name: 'WorkerPlugins',
           component: () => import('@/views/WorkerPluginsView.vue'),

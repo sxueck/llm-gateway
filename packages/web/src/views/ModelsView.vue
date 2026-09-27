@@ -200,6 +200,7 @@
 
 <script setup lang="ts">
 import { ref, h, computed, onMounted, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NPopconfirm, NDivider, NIcon, NTooltip, NText, NRadioGroup, NRadioButton } from 'naive-ui';
 import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined, ContentCopyOutlined, SearchOutlined } from '@vicons/material';
 import { useI18n } from 'vue-i18n';
@@ -220,6 +221,7 @@ import PageHeader from '@/components/PageHeader.vue';
 
 const { t } = useI18n();
 const message = useMessage();
+const router = useRouter();
 const modelStore = useModelStore();
 const providerStore = useProviderStore();
 
@@ -382,7 +384,13 @@ const columns: DataTableColumns<Model> = [
       if (row.isVirtual) {
         const tags: any[] = [];
         if (row.expertRoutingId) {
-          tags.push(h(NTag, { type: 'warning', size: 'small', round: true }, { default: () => t('models.expertModel') }));
+          tags.push(h(NTag, {
+            type: 'warning',
+            size: 'small',
+            round: true,
+            style: { cursor: 'pointer' },
+            onClick: () => router.push(`/expert-routing/${row.expertRoutingId}`),
+          }, { default: () => t('models.tieredRouting') }));
         } else {
           tags.push(h(NTag, { type: 'info', size: 'small', round: true }, { default: () => t('menu.virtualModels') }));
         }

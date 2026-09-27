@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="expert-routing-view">
     <n-space vertical :size="12">
       <PageHeader
         eyebrow="ROUTING"
@@ -7,13 +7,13 @@
         :subtitle="t('expertRouting.subtitle')"
       >
         <template #actions>
-          <n-button type="primary" size="small" @click="handleCreate">
+          <n-button type="primary" size="small" :loading="creating" @click="handleCreate">
             <template #icon>
               <n-icon><AddOutline /></n-icon>
             </template>
-            {{ t('expertRouting.createExpertRouting') }}
+            {{ t('expertRouting.create') }}
           </n-button>
-          <n-button size="small" @click="handleRefresh">
+          <n-button size="small" @click="loadConfigs">
             <template #icon>
               <n-icon><RefreshOutline /></n-icon>
             </template>
@@ -22,363 +22,162 @@
         </template>
       </PageHeader>
 
-      <n-alert
-        v-if="showExperimentalAlert"
-        type="info"
-        closable
-        @close="handleCloseExperimentalAlert"
-      >
-        <template #header>
-          <div style="font-size: 14px; font-weight: 500">
-            {{ t("expertRouting.experimentalFeature") }}
-          </div>
-        </template>
-        <div style="font-size: 13px">
-          {{ t("expertRouting.experimentalFeatureDesc") }}
-        </div>
-      </n-alert>
-
-      <n-spin :show="loading">
+      <n-card size="small">
+        <n-data-table
+          :columns="columns"
+          :data="configs"
+          :loading="loading"
+          :pagination="false"
+          size="small"
+        />
         <n-empty
           v-if="configs.length === 0 && !loading"
           :description="t('expertRouting.noConfigs')"
           :show-icon="false"
-          style="padding: 60px 0"
+          style="padding: 48px 0"
         >
           <template #extra>
-            <n-button type="primary" @click="handleCreate">
-              {{ t("expertRouting.createFirstConfig") }}
+            <n-button type="primary" size="small" @click="handleCreate">
+              {{ t('expertRouting.createFirstConfig') }}
             </n-button>
           </template>
         </n-empty>
-
-        <div v-else class="config-grid">
-          <n-card
-            v-for="config in configs"
-            :key="config.id"
-            class="config-card"
-            hoverable
-          >
-            <template #header>
-              <n-space justify="space-between" align="center">
-                <n-space align="center" :size="8">
-                  <n-text strong>{{ config.name }}</n-text>
-                  <n-tag
-                    :type="config.enabled ? 'success' : 'default'"
-                    size="small"
-                  >
-                    {{
-                      config.enabled
-                        ? t("common.enabled")
-                        : t("common.disabled")
-                    }}
-                  </n-tag>
-                </n-space>
-                <n-switch
-                  :value="config.enabled"
-                  @update:value="(val) => handleToggleEnabled(config.id, val)"
-                  size="small"
-                  @click.stop
-                />
-              </n-space>
-            </template>
-
-            <div class="config-card-content">
-              <div v-if="config.description" class="config-description">
-                <n-text depth="3" style="font-size: 13px">{{
-                  config.description
-                }}</n-text>
-              </div>
-
-              <div class="visualization-preview" @click="handleEdit(config)">
-                <ExpertRoutingVisualization
-                  :experts="config.config.experts"
-                  :virtual-model-options="virtualModelOptions"
-                  :editable="false"
-                />
-              </div>
-
-              <div class="config-meta">
-                <n-space :size="16">
-                  <n-text depth="3" style="font-size: 12px">
-                    <n-icon
-                      size="14"
-                      style="vertical-align: -2px; margin-right: 4px"
-                    >
-                      <FilterOutline />
-                    </n-icon>
-                    {{ t("expertRouting.choiceThreshold", "置信度阈值") }}:
-                    {{ config.config.choice_threshold ?? 0.6 }}
-                  </n-text>
-                  <n-text depth="3" style="font-size: 12px">
-                    <n-icon
-                      size="14"
-                      style="vertical-align: -2px; margin-right: 4px"
-                    >
-                      <CubeOutline />
-                    </n-icon>
-                    {{ t("expertRouting.expertCount") }}:
-                    {{ config.config.experts.length }}
-                  </n-text>
-                </n-space>
-              </div>
-            </div>
-
-            <template #footer>
-              <n-space justify="end" :size="8">
-                <n-button
-                  text
-                  size="small"
-                  @click.stop="handleShowStatistics(config.id)"
-                >
-                  <template #icon>
-                    <n-icon><BarChartOutlined /></n-icon>
-                  </template>
-                  {{ t("expertRouting.statistics") }}
-                </n-button>
-                <n-button text size="small" @click.stop="handleEdit(config)">
-                  <template #icon>
-                    <n-icon><EditOutlined /></n-icon>
-                  </template>
-                  {{ t("common.edit") }}
-                </n-button>
-                <n-popconfirm
-                  @positive-click="handleDelete(config.id)"
-                  @click.stop
-                >
-                  <template #trigger>
-                    <n-button text size="small" type="error" @click.stop>
-                      <template #icon>
-                        <n-icon><DeleteOutlined /></n-icon>
-                      </template>
-                      {{ t("common.delete") }}
-                    </n-button>
-                  </template>
-                  {{ t("expertRouting.deleteConfigConfirm") }}
-                </n-popconfirm>
-              </n-space>
-            </template>
-          </n-card>
-        </div>
-      </n-spin>
+      </n-card>
     </n-space>
-
-    <n-modal
-      v-model:show="showEditorModal"
-      preset="card"
-      :title="
-        editingId
-          ? t('expertRouting.editExpertRouting')
-          : t('expertRouting.createExpertRouting')
-      "
-      class="expert-routing-modal"
-      :style="{ width: '95%', maxWidth: '1600px', maxHeight: '90vh' }"
-      :segmented="{
-        content: 'soft',
-        footer: 'soft',
-      }"
-    >
-      <div class="modal-content-wrapper">
-        <ExpertRoutingEditor
-          v-if="renderEditor"
-          :config="editingConfig"
-          :editing-id="editingId"
-          @save="handleSave"
-          @cancel="handleCancel"
-          :saving="saving"
-        />
-      </div>
-    </n-modal>
-
-    <n-modal
-      v-model:show="showStatisticsModal"
-      preset="card"
-      :title="t('expertRouting.statistics')"
-      class="statistics-modal"
-      :style="{ width: '800px', maxWidth: '92vw', maxHeight: '85vh' }"
-      :segmented="{
-        content: 'soft',
-        footer: 'soft',
-      }"
-    >
-      <div class="modal-content-wrapper">
-        <ExpertRoutingStatistics
-          v-if="showStatisticsModal"
-          :config-id="selectedConfigId"
-        />
-      </div>
-    </n-modal>
   </div>
 </template>
 
-<style scoped>
-.expert-routing-modal :deep(.n-card__content) {
-  padding: 0;
-  overflow: hidden;
-}
-
-.modal-content-wrapper {
-  /* 估算扣除卡片头部/内边距的高度，确保内容内部滚动而非撑破模态 */
-  max-height: calc(90vh - 160px);
-  padding: 16px 20px;
-}
-
-.config-grid {
-  display: grid;
-  /* min(420px, 100%) lets cards collapse to one column on narrow viewports */
-  grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr));
-  gap: 16px;
-  margin-top: 16px;
-}
-
-.config-card {
-  min-width: 0;
-  transition: all 0.3s ease;
-}
-
-.config-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.config-card-content {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.config-description {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--n-border-color);
-}
-
-.visualization-preview {
-  position: relative;
-  cursor: pointer;
-  padding: 16px;
-  border: 1px solid var(--n-border-color);
-  border-radius: 8px;
-  background: #fafafa;
-  transition: all 0.3s ease;
-  width: 100%;
-}
-
-.visualization-preview:hover {
-  border-color: var(--color-primary);
-  background: #f0f9f4;
-}
-
-.config-meta {
-  padding-top: 8px;
-  border-top: 1px solid var(--n-border-color);
-}
-
-@media (max-width: 768px) {
-  .expert-routing-modal :deep(.n-card__content),
-  .statistics-modal :deep(.n-card__content) {
-    padding: 0;
-    overflow: hidden;
-  }
-
-  .modal-content-wrapper {
-    max-height: calc(90vh - 180px);
-    padding: 16px 20px;
-  }
-
-  .expert-routing-modal :deep(.n-card__footer),
-  .statistics-modal :deep(.n-card__footer) {
-    padding: 12px 20px;
-    border-top: 1px solid #e8e8e8;
-    background: #ffffff;
-  }
-}
-</style>
-
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from "vue";
-import { useI18n } from "vue-i18n";
-import {
-  useMessage,
-  NSpace,
-  NCard,
-  NButton,
-  NIcon,
-  NModal,
-  NAlert,
-  NSwitch,
-  NPopconfirm,
-  NSpin,
-  NEmpty,
-  NText,
-  NTag,
-} from "naive-ui";
-import {
-  AddOutline,
-  RefreshOutline,
-  FilterOutline,
-  CubeOutline,
-} from "@vicons/ionicons5";
-import {
-  EditOutlined,
-  DeleteOutlined,
-  BarChartOutlined,
-} from "@vicons/material";
-import {
-  expertRoutingApi,
-  type ExpertRouting,
-  type CreateExpertRoutingRequest,
-} from "@/api/expert-routing";
-import ExpertRoutingEditor from "@/components/ExpertRoutingEditor.vue";
-import ExpertRoutingVisualization from "@/components/ExpertRoutingVisualization.vue";
-import ExpertRoutingStatistics from "@/components/ExpertRoutingStatistics.vue";
-import PageHeader from "@/components/PageHeader.vue";
-import { useProviderStore } from "@/stores/provider";
-import { useModelStore } from "@/stores/model";
-import { createDefaultExpertRoutingConfig } from "@/utils/expert-routing";
+import { h, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
+import { useMessage, NButton, NCard, NDataTable, NIcon, NPopconfirm, NSpace, NSwitch, NTag, NText } from 'naive-ui';
+import type { DataTableColumns } from 'naive-ui';
+import { AddOutline, RefreshOutline } from '@vicons/ionicons5';
+import { expertRoutingApi, type Band, type ExpertRouting } from '@/api/expert-routing';
+import PageHeader from '@/components/PageHeader.vue';
+import { createDefaultExpertRoutingConfig } from '@/utils/expert-routing';
 
 const { t } = useI18n();
 const message = useMessage();
-const providerStore = useProviderStore();
-const modelStore = useModelStore();
-
-const virtualModels = computed(() => {
-  return modelStore.models.filter((m) => m.isVirtual);
-});
-
-const virtualModelOptions = computed(() => {
-  return virtualModels.value.map((m) => ({
-    label: m.name,
-    value: m.id,
-  }));
-});
-
-const EXPERIMENTAL_ALERT_KEY = "expert-routing-experimental-alert-closed";
+const router = useRouter();
 
 const configs = ref<ExpertRouting[]>([]);
 const loading = ref(false);
-const showEditorModal = ref(false);
-// Delay mounting the editor until after modal is visible to avoid jank during transition.
-const renderEditor = ref(false);
-const showStatisticsModal = ref(false);
-const editingId = ref<string | null>(null);
-const editingConfig = ref<CreateExpertRoutingRequest>(
-  createDefaultExpertRoutingConfig(),
-);
-const selectedConfigId = ref<string>("");
-const saving = ref(false);
-const showExperimentalAlert = ref(
-  localStorage.getItem(EXPERIMENTAL_ALERT_KEY) !== "true",
-);
+const creating = ref(false);
 
-function blurActiveElement() {
-  // Avoid Chrome blocking aria-hidden when opening naive-ui modal (focus must move off background).
-  const el = document.activeElement;
-  if (el && el instanceof HTMLElement) el.blur();
+const BAND_COLORS: Record<Band, string> = {
+  low: '#18a058',
+  medium: '#f0a020',
+  high: '#d03050',
+};
+
+function tierCounts(config: ExpertRouting): Record<Band, number> {
+  const counts: Record<Band, number> = { low: 0, medium: 0, high: 0 };
+  for (const expert of config.config.experts || []) {
+    if (expert.band && counts[expert.band] !== undefined) counts[expert.band] += 1;
+  }
+  return counts;
 }
 
-function handleCloseExperimentalAlert() {
-  showExperimentalAlert.value = false;
-  localStorage.setItem(EXPERIMENTAL_ALERT_KEY, "true");
+function renderTierRatio(config: ExpertRouting) {
+  const counts = tierCounts(config);
+  const total = counts.low + counts.medium + counts.high;
+  const summary = `${counts.low}/${counts.medium}/${counts.high}`;
+  if (total === 0) {
+    return h(NText, { depth: 3 }, { default: () => `${summary} · ${t('expertRouting.noExperts')}` });
+  }
+  const segments = (['low', 'medium', 'high'] as Band[]).map((band) =>
+    h('span', {
+      class: 'tier-ratio-segment',
+      style: {
+        width: `${(counts[band] / total) * 100}%`,
+        background: BAND_COLORS[band],
+      },
+      title: `${t(`expertRouting.band.${band}`)}: ${counts[band]}`,
+    }),
+  );
+  return h('div', { class: 'tier-ratio-cell' }, [
+    h('span', { class: 'tier-ratio-text' }, summary),
+    h('div', { class: 'tier-ratio-bar' }, segments),
+  ]);
+}
+
+const columns: DataTableColumns<ExpertRouting> = [
+  {
+    title: () => t('common.name'),
+    key: 'name',
+    render: (row) =>
+      h(
+        NButton,
+        { text: true, type: 'primary', onClick: () => goDetail(row.id) },
+        { default: () => row.name },
+      ),
+  },
+  {
+    title: () => t('expertRouting.exposedModel'),
+    key: 'virtualModel',
+    render: (row) =>
+      row.virtualModel
+        ? h(NTag, { size: 'small', bordered: false }, { default: () => row.virtualModel!.name })
+        : h(NText, { depth: 3 }, { default: () => t('expertRouting.notExposed') }),
+  },
+  {
+    title: () => t('expertRouting.tiers'),
+    key: 'tiers',
+    width: 170,
+    render: (row) => renderTierRatio(row),
+  },
+  {
+    title: () => t('expertRouting.failOpenRate'),
+    key: 'failOpenRate',
+    width: 110,
+    render: () =>
+      h(NText, { depth: 3 }, { default: () => '—' }),
+  },
+  {
+    title: () => t('common.status'),
+    key: 'enabled',
+    width: 90,
+    render: (row) =>
+      h(NSwitch, {
+        value: row.enabled,
+        size: 'small',
+        onUpdateValue: (value: boolean) => handleToggleEnabled(row.id, value),
+      }),
+  },
+  {
+    title: () => t('common.actions'),
+    key: 'actions',
+    width: 130,
+    render: (row) =>
+      h(NSpace, { size: 8, align: 'center' }, {
+        default: () => [
+          h(
+            NButton,
+            { text: true, size: 'small', type: 'primary', onClick: () => goDetail(row.id) },
+            { default: () => t('common.details') },
+          ),
+          h(
+            NPopconfirm,
+            { onPositiveClick: () => handleDelete(row.id) },
+            {
+              trigger: () =>
+                h(
+                  NButton,
+                  { text: true, size: 'small', type: 'error' },
+                  { default: () => t('common.delete') },
+                ),
+              default: () => t('expertRouting.deleteConfigConfirm'),
+            },
+          ),
+        ],
+      }),
+  },
+];
+
+function goDetail(id: string) {
+  router.push(`/expert-routing/${id}`);
 }
 
 async function loadConfigs() {
@@ -387,121 +186,80 @@ async function loadConfigs() {
     const response = await expertRoutingApi.getAll();
     configs.value = response.configs;
   } catch (error: any) {
-    message.error(error.message || t("messages.operationFailed"));
+    message.error(error.message || t('messages.operationFailed'));
   } finally {
     loading.value = false;
   }
 }
 
-function handleCreate() {
-  blurActiveElement();
-  editingId.value = null;
-  editingConfig.value = createDefaultExpertRoutingConfig();
-  showEditorModal.value = true;
-}
-
-function handleEdit(config: ExpertRouting) {
-  blurActiveElement();
-  editingId.value = config.id;
-  editingConfig.value = {
-    name: config.name,
-    description: config.description,
-    enabled: config.enabled,
-    preprocessing: config.config.preprocessing ?? {
-      strip_tools: false,
-      strip_files: false,
-      strip_code_blocks: false,
-      strip_system_prompt: false,
-    },
-    experts: config.config.experts,
-    choice_threshold: config.config.choice_threshold ?? 0.6,
-    fallback: config.config.fallback,
-    session_binding_policy: config.config.session_binding_policy,
-  };
-  showEditorModal.value = true;
-}
-
-function handleShowStatistics(configId: string) {
-  blurActiveElement();
-  selectedConfigId.value = configId;
-  showStatisticsModal.value = true;
-}
-
-async function handleSave(data: CreateExpertRoutingRequest) {
-  saving.value = true;
+async function handleCreate() {
+  creating.value = true;
   try {
-    if (editingId.value) {
-      await expertRoutingApi.update(editingId.value, data);
-      message.success(t("expertRouting.updateSuccess"));
-    } else {
-      await expertRoutingApi.create(data);
-      message.success("专家路由创建成功,已自动创建专家模型");
-    }
-
-    showEditorModal.value = false;
-    await loadConfigs();
+    const name = `${t('expertRouting.untitledName')}-${Date.now().toString(36).slice(-5)}`;
+    const created = await expertRoutingApi.create({
+      ...createDefaultExpertRoutingConfig(),
+      name,
+    });
+    message.success(t('expertRouting.createSuccess'));
+    goDetail(created.id);
   } catch (error: any) {
-    message.error(error.message || t("messages.operationFailed"));
+    message.error(error.message || t('messages.operationFailed'));
   } finally {
-    saving.value = false;
+    creating.value = false;
   }
-}
-
-function handleCancel() {
-  showEditorModal.value = false;
 }
 
 async function handleToggleEnabled(id: string, enabled: boolean) {
   try {
     await expertRoutingApi.update(id, { enabled });
-    message.success(t("messages.operationSuccess"));
+    message.success(t('messages.operationSuccess'));
     await loadConfigs();
   } catch (error: any) {
-    message.error(error.message || t("messages.operationFailed"));
+    message.error(error.message || t('messages.operationFailed'));
   }
 }
 
 async function handleDelete(id: string) {
   try {
     await expertRoutingApi.delete(id);
-    message.success(t("expertRouting.deleteSuccess"));
+    message.success(t('expertRouting.deleteSuccess'));
     await loadConfigs();
   } catch (error: any) {
-    message.error(error.message || t("messages.operationFailed"));
+    message.error(error.message || t('messages.operationFailed'));
   }
 }
 
-function handleRefresh() {
-  loadConfigs();
-}
-
-onMounted(async () => {
-  await Promise.all([providerStore.fetchProviders(), modelStore.fetchModels()]);
-  loadConfigs();
-});
-
-// Clear the deferred unmount timer before a reopen can race it: a stale
-// callback would blank a freshly re-mounted editor.
-let editorUnmountTimer: number | undefined;
-
-watch(showEditorModal, async (show) => {
-  if (show) {
-    if (editorUnmountTimer !== undefined) {
-      window.clearTimeout(editorUnmountTimer);
-      editorUnmountTimer = undefined;
-    }
-    renderEditor.value = false;
-    await nextTick();
-    requestAnimationFrame(() => {
-      renderEditor.value = true;
-    });
-  } else {
-    if (editorUnmountTimer !== undefined)
-      window.clearTimeout(editorUnmountTimer);
-    editorUnmountTimer = window.setTimeout(() => {
-      renderEditor.value = false;
-      editorUnmountTimer = undefined;
-    }, 250);
-  }
-});
+onMounted(loadConfigs);
 </script>
+
+<style scoped>
+.expert-routing-view {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+:deep(.tier-ratio-cell) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+:deep(.tier-ratio-text) {
+  font-size: 12px;
+  color: #595959;
+}
+
+:deep(.tier-ratio-bar) {
+  display: flex;
+  width: 120px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #f0f0f0;
+}
+
+:deep(.tier-ratio-segment) {
+  display: block;
+  height: 100%;
+}
+</style>

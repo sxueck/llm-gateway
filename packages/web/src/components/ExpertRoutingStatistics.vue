@@ -30,6 +30,34 @@
             </n-statistic>
           </n-card>
         </n-gi>
+        <n-gi>
+          <n-card size="small">
+            <n-statistic
+              :label="t('expertRouting.failOpenRate')"
+              :value="failOpenRateText"
+            />
+          </n-card>
+        </n-gi>
+        <n-gi>
+          <n-card size="small">
+            <n-statistic
+              :label="t('expertRouting.classifierLatencyP50')"
+              :value="statistics.classifierLatency?.p50 ?? '-'"
+            >
+              <template #suffix>ms</template>
+            </n-statistic>
+          </n-card>
+        </n-gi>
+        <n-gi>
+          <n-card size="small">
+            <n-statistic
+              :label="t('expertRouting.classifierLatencyP95')"
+              :value="statistics.classifierLatency?.p95 ?? '-'"
+            >
+              <template #suffix>ms</template>
+            </n-statistic>
+          </n-card>
+        </n-gi>
       </n-grid>
 
       <n-card :title="t('expertRouting.routingDistribution')" size="small">
@@ -110,33 +138,6 @@
         </n-gi>
       </n-grid>
 
-      <n-card :title="t('expertRouting.categoryDistribution')" size="small">
-        <n-space vertical :size="8">
-          <div
-            v-for="(count, category) in statistics.categoryDistribution"
-            :key="category"
-            class="category-item"
-            @click="handleCategoryClick(category)"
-          >
-            <n-text>{{ category }}</n-text>
-            <n-space align="center">
-              <n-progress
-                type="line"
-                :percentage="getPercentage(count)"
-                :show-indicator="false"
-                style="width: 200px"
-              />
-              <n-text>{{ count }}</n-text>
-            </n-space>
-          </div>
-          <n-empty
-            v-if="Object.keys(statistics.categoryDistribution).length === 0"
-            :description="t('common.noData')"
-            :show-icon="false"
-          />
-        </n-space>
-      </n-card>
-
       <n-card :title="t('expertRouting.logs')" size="small">
         <n-data-table
           :columns="logColumns"
@@ -147,24 +148,6 @@
         />
       </n-card>
     </n-space>
-
-    <n-modal
-      v-model:show="showCategoryDetailModal"
-      preset="card"
-      :title="
-        t('expertRouting.categoryDetails', { category: selectedCategory })
-      "
-      style="width: 900px; max-width: 92vw"
-    >
-      <n-spin :show="categoryLogsLoading">
-        <n-data-table
-          :columns="categoryLogColumns"
-          :data="categoryLogs"
-          :pagination="{ pageSize: 20 }"
-          size="small"
-        />
-      </n-spin>
-    </n-modal>
 
     <n-modal
       v-model:show="showLogDetailModal"
@@ -392,7 +375,6 @@ const props = defineProps<Props>();
 const statistics = ref<ExpertRoutingStatistics>({
   totalRequests: 0,
   avgClassificationTime: 0,
-  categoryDistribution: {},
   routeSourceDistribution: {},
   cleaningStats: { avgPromptTokens: 0, avgCleanedLength: 0, totalRequests: 0 },
   difficultyDistribution: {},
@@ -403,10 +385,6 @@ const statistics = ref<ExpertRoutingStatistics>({
 });
 const logs = ref<ExpertRoutingLog[]>([]);
 const loading = ref(false);
-const showCategoryDetailModal = ref(false);
-const selectedCategory = ref("");
-const categoryLogs = ref<ExpertRoutingLog[]>([]);
-const categoryLogsLoading = ref(false);
 const showLogDetailModal = ref(false);
 const selectedLogDetail = ref<ExpertRoutingLogDetail | null>(null);
 const logDetailLoading = ref(false);
@@ -422,6 +400,12 @@ const cleaningEfficiency = computed(() => {
   if (estimatedOriginalChars <= 0) return 0;
   const reduction = estimatedOriginalChars - stats.avgCleanedLength;
   return Math.max(0, Math.round((reduction / estimatedOriginalChars) * 100));
+});
+
+const failOpenRateText = computed(() => {
+  const rate = statistics.value.failOpenRate;
+  if (rate == null) return '-';
+  return `${(rate * 100).toFixed(2)}%`;
 });
 
 type RouteSource = "session" | "jev" | "fail_open" | "intent_api" | "llm_second_pass" | "fallback";
@@ -549,52 +533,6 @@ const logColumns: DataTableColumns<ExpertRoutingLog> = [
   },
 ];
 
-const categoryLogColumns: DataTableColumns<ExpertRoutingLog> = [
-  {
-    title: () => t("expertRouting.selectedExpert"),
-    key: "selected_expert_name",
-    ellipsis: { tooltip: true },
-  },
-  {
-    title: () => "Source",
-    key: "route_source",
-    width: 100,
-    render: (row) => row.route_source || "-",
-  },
-  {
-    title: () => t("expertRouting.classificationTime"),
-    key: "classification_time",
-    width: 100,
-    render: (row) => `${row.classification_time}ms`,
-  },
-  {
-    title: () => t("common.time"),
-    key: "created_at",
-    width: 180,
-    render: (row) => new Date(row.created_at).toLocaleString("zh-CN"),
-  },
-  {
-    title: () => t("common.actions"),
-    key: "actions",
-    width: 80,
-    render: (row) => {
-      return h(
-        NButton,
-        {
-          size: "tiny",
-          onClick: () => handleLogClick(row),
-        },
-        () => t("common.details"),
-      );
-    },
-  },
-];
-
-function getPercentage(count: number): number {
-  if (statistics.value.totalRequests === 0) return 0;
-  return Math.round((count / statistics.value.totalRequests) * 100);
-}
-
 function hasDistributionData(dist?: Record<string, number>): boolean {
   return Object.keys(dist || {}).length > 0;
 }
@@ -625,24 +563,6 @@ async function loadLogs() {
     console.error("Failed to load logs:", error);
   } finally {
     loading.value = false;
-  }
-}
-
-async function handleCategoryClick(category: string) {
-  selectedCategory.value = category;
-  showCategoryDetailModal.value = true;
-  categoryLogsLoading.value = true;
-  try {
-    const response = await expertRoutingApi.getLogsByCategory(
-      props.configId,
-      category,
-      100,
-    );
-    categoryLogs.value = response.logs;
-  } catch (error) {
-    console.error("Failed to load category logs:", error);
-  } finally {
-    categoryLogsLoading.value = false;
   }
 }
 
