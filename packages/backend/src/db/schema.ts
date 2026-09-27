@@ -249,22 +249,6 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-    // 历史意图分类日志表：保留旧数据供迁移与审计；新专家路由仅写 expert_routing_logs。
-    await conn.query(`
-      CREATE TABLE IF NOT EXISTS intent_classify_logs (
-        id VARCHAR(255) PRIMARY KEY,
-        virtual_key_id VARCHAR(255) DEFAULT NULL,
-        classifier_model VARCHAR(255) NOT NULL,
-        top_label VARCHAR(255) DEFAULT NULL,
-        latency_ms INT NOT NULL,
-        seq_len INT NOT NULL DEFAULT 0,
-        input_truncated TINYINT(1) NOT NULL DEFAULT 0,
-        created_at BIGINT NOT NULL,
-        FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
-        INDEX idx_intent_classify_logs_created_at (created_at)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    `);
-
     // 专家路由会话绑定表（持久化，跨重启/副本可用）
     // 复合主键 (expert_routing_id, virtual_key_scope, session_id)；
     // virtual_key_scope 为虚拟密钥 ID 或非空匿名哨兵，避免 MySQL 可空唯一键产生重复匿名绑定。

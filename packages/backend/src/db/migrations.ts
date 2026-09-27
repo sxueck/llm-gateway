@@ -1,10 +1,95 @@
 import type { Connection, ResultSetHeader } from "mysql2/promise";
+import {
+  BAND_ORDER,
+  buildBands,
+} from "../services/expert-router/bands.js";
+import {
+  DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
+  DEFAULT_SESSION_IDLE_TTL_SECONDS,
+} from "@llm-gateway/shared";
+import type {
+  CostInput,
+  RoutingBand,
+} from "../types/expert-routing.js";
 
 export interface Migration {
   version: number;
   name: string;
   up: (conn: Connection) => Promise<void>;
   down?: (conn: Connection) => Promise<void>;
+}
+
+/**
+ * Pure v1 → v2 config transform (PRD §2.2). Bands must already be resolved
+ * per expert (bandOf); unresolved ones degrade to `high`. Mutates and returns
+ * the config object.
+ */
+export function transformExpertRoutingConfigV2(
+  config: any,
+  bandOf: (expert: any) => RoutingBand | undefined,
+): { config: any; wasDifficulty: boolean } {
+  const wasDifficulty = config?.classification_mode === "difficulty";
+  const experts = Array.isArray(config?.experts) ? config.experts : [];
+  for (const expert of experts) {
+    if (expert && typeof expert === "object") {
+      expert.band = bandOf(expert) ?? "high";
+      delete expert.category;
+      delete expert.description;
+      delete expert.color;
+    }
+  }
+  const legacyPolicy = config?.session_binding_policy ?? {};
+  config.session_policy = {
+    mode: "escalate_only",
+    idle_ttl_seconds:
+      legacyPolicy.idle_ttl_seconds ?? DEFAULT_SESSION_IDLE_TTL_SECONDS,
+    absolute_ttl_seconds:
+      legacyPolicy.absolute_ttl_seconds ?? DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
+  };
+  delete config.session_binding_policy;
+  delete config.choice_threshold;
+  delete config.classification_mode;
+  config.version = 2;
+  return { config, wasDifficulty };
+}
+
+/** Cost lookup for migration banding — conn-scoped, mirrors resolveExpertCost. */
+async function fetchExpertCostForMigration(
+  conn: Connection,
+  expert: any,
+): Promise<CostInput | undefined> {
+  try {
+    let attributes: unknown;
+    if (expert?.type === "virtual") {
+      if (!expert.model_id) return undefined;
+      const [rows] = await conn.query(
+        "SELECT model_attributes FROM models WHERE id = ?",
+        [expert.model_id],
+      );
+      attributes = (rows as any[])[0]?.model_attributes;
+    } else {
+      if (!expert.provider_id || !expert.model) return undefined;
+      const [rows] = await conn.query(
+        "SELECT model_identifier, name, model_attributes, is_virtual FROM models WHERE provider_id = ?",
+        [expert.provider_id],
+      );
+      const match = (rows as any[])?.find(
+        (candidate) =>
+          candidate.is_virtual !== 1 &&
+          (candidate.model_identifier === expert.model ||
+            candidate.name === expert.model),
+      );
+      attributes = match?.model_attributes;
+    }
+    if (typeof attributes !== "string" || !attributes) return undefined;
+    const parsed = JSON.parse(attributes);
+    return {
+      input_cost_per_token: Number(parsed?.input_cost_per_token),
+      output_cost_per_token: Number(parsed?.output_cost_per_token),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 const legacyExpertRoutingLabels: Record<string, string> = {
@@ -1158,6 +1243,75 @@ export const migrations: Migration[] = [
     down: async (conn: Connection) => {
       await conn.query("DROP TABLE IF EXISTS alert_reads");
       console.log("[迁移] 已删除 alert_reads 表");
+    },
+  },
+  {
+    version: 51,
+    // 难度分级路由 v2：逐行升级 expert_routing_configs.config（band 必填、
+    // session_policy、version:2），缺 band 按价格三分法补齐（取价失败归 high），
+    // expert 模式配置的会话绑定一并清除。
+    name: "expert_routing_config_v2",
+    up: async (conn: Connection) => {
+      const [rows] = await conn.query(
+        "SELECT id, config FROM expert_routing_configs",
+      );
+      for (const row of rows as any[]) {
+        let config: any;
+        try {
+          config = JSON.parse(row.config);
+        } catch {
+          console.warn(
+            `[迁移] expert_routing_configs ${row.id} config 非法 JSON，跳过`,
+          );
+          continue;
+        }
+        if (config?.version === 2) continue; // 幂等：已是 v2
+
+        const experts = Array.isArray(config?.experts) ? config.experts : [];
+        const costOf = new Map<string, CostInput | undefined>();
+        for (const expert of experts) {
+          costOf.set(expert?.id, await fetchExpertCostForMigration(conn, expert));
+        }
+        const assignment = buildBands(experts, (e) => costOf.get(e?.id));
+        const bandOf = new Map<string, RoutingBand>();
+        for (const band of BAND_ORDER) {
+          for (const candidate of assignment[band]) bandOf.set(candidate.id, band);
+        }
+
+        const { wasDifficulty } = transformExpertRoutingConfigV2(
+          config,
+          (expert) => bandOf.get(expert?.id),
+        );
+        await conn.query(
+          "UPDATE expert_routing_configs SET config = ? WHERE id = ?",
+          [JSON.stringify(config), row.id],
+        );
+        if (!wasDifficulty) {
+          // expert 模式的绑定指向已删除的类别语义，清除后由 v2 重新决策。
+          await conn.query(
+            "DELETE FROM expert_routing_session_bindings WHERE expert_routing_id = ?",
+            [row.id],
+          );
+        }
+      }
+
+      // 可选清理：删表不可逆，仅 env 显式开启时执行（执行前请先备份）。
+      if (process.env.EXPERT_ROUTING_DROP_LEGACY_TABLES === "1") {
+        await conn.query("DROP TABLE IF EXISTS intent_classify_logs");
+        await conn.query(
+          "DROP TABLE IF EXISTS expert_routing_training_records",
+        );
+        console.log(
+          "[迁移] 已删除 intent_classify_logs / expert_routing_training_records（EXPERT_ROUTING_DROP_LEGACY_TABLES=1）",
+        );
+      }
+      console.log("[迁移] 专家路由配置已升级到 v2");
+    },
+    down: async () => {
+      // config JSON 结构变换不可逆，不提供回滚。
+      console.log(
+        "[迁移] expert_routing_config_v2 为结构变换，不支持回滚",
+      );
     },
   },
 ];

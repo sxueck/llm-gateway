@@ -1,9 +1,9 @@
 import type { Connection } from 'mysql2/promise';
 import { describe, expect, test, vi } from 'vitest';
-import { applyMigrations, migrations, normalizeExpertRoutingConfig } from './migrations.js';
+import { applyMigrations, migrations, normalizeExpertRoutingConfig, transformExpertRoutingConfigV2 } from './migrations.js';
 
 describe('migration runner from v45', () => {
-  test('has unique migration versions and applies v47/v48/v49 after v45', async () => {
+  test('has unique migration versions and applies v47/v48/v49/v50/v51 after v45', async () => {
     const versions = migrations.map(migration => migration.version);
     expect(new Set(versions).size).toBe(versions.length);
 
@@ -71,7 +71,56 @@ describe('migration runner from v45', () => {
       'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
       [50, 'add_alert_reads', expect.any(Number)],
     );
-    expect(conn.commit).toHaveBeenCalledTimes(4);
+    // v51：专家路由配置 v2（无配置行时仅作幂等扫表，不做 env 清理）。
+    expect(query).toHaveBeenCalledWith(
+      'SELECT id, config FROM expert_routing_configs',
+    );
+    expect(query).not.toHaveBeenCalledWith(
+      'DROP TABLE IF EXISTS intent_classify_logs',
+    );
+    expect(query).toHaveBeenCalledWith(
+      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      [51, 'expert_routing_config_v2', expect.any(Number)],
+    );
+    expect(conn.commit).toHaveBeenCalledTimes(5);
+  });
+});
+
+describe('transformExpertRoutingConfigV2', () => {
+  test('bands experts, converts session policy, strips removed fields', () => {
+    const config = {
+      classification_mode: 'expert',
+      choice_threshold: 0.6,
+      experts: [
+        { id: 'a', category: 'review', description: 'd', color: '#fff', type: 'real', provider_id: 'p', model: 'm' },
+        { id: 'b', category: 'simple', type: 'real', provider_id: 'p', model: 'm2' },
+      ],
+      session_binding_policy: { idle_ttl_seconds: 60, absolute_ttl_seconds: 3600 },
+    };
+    const { config: upgraded, wasDifficulty } = transformExpertRoutingConfigV2(
+      config,
+      (expert) => (expert.id === 'a' ? 'high' : undefined),
+    );
+    expect(wasDifficulty).toBe(false);
+    expect(upgraded.version).toBe(2);
+    expect(upgraded.experts).toEqual([
+      { id: 'a', type: 'real', provider_id: 'p', model: 'm', band: 'high' },
+      { id: 'b', type: 'real', provider_id: 'p', model: 'm2', band: 'high' },
+    ]);
+    expect(upgraded.session_policy).toEqual({
+      mode: 'escalate_only',
+      idle_ttl_seconds: 60,
+      absolute_ttl_seconds: 3600,
+    });
+    expect(upgraded.session_binding_policy).toBeUndefined();
+    expect(upgraded.choice_threshold).toBeUndefined();
+    expect(upgraded.classification_mode).toBeUndefined();
+  });
+
+  test('difficulty-mode configs keep their identity for binding retention', () => {
+    const config = { classification_mode: 'difficulty', experts: [] };
+    const { wasDifficulty } = transformExpertRoutingConfigV2(config, () => 'low');
+    expect(wasDifficulty).toBe(true);
   });
 });
 
