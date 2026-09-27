@@ -20,6 +20,12 @@ export interface ProtocolConfig {
   baseUrl?: string;
   nativeBaseUrl?: string;
   model: string;
+  /**
+   * Model name to report to the client in chunk `model` fields (PRD §4 B
+   * layer). Set only for exposure.model_field=gateway_name; absent keeps
+   * the upstream identifier byte-identical.
+   */
+  clientModel?: string;
   protocol?: string;
   modelAttributes?: any;
   /** Preferred upstream transport for Responses API streaming.
@@ -360,6 +366,7 @@ export class ProtocolAdapter {
       reply,
       stream,
       model: config.model,
+      clientModel: config.clientModel,
       abortSignal,
       upstreamRequestStartedAt,
       streamRestorer,

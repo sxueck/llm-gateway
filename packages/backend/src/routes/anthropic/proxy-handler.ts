@@ -4,6 +4,7 @@ import { extractIp } from "../../utils/ip.js";
 import { getRequestUserAgent } from "../../utils/http.js";
 import { runProxyPipeline } from "../proxy/pipeline.js";
 import { circuitBreaker } from "../../services/circuit-breaker.js";
+import { applyRouteHeaders, modelFieldForClient } from "../../services/expert-router/exposure.js";
 import { shouldRetrySmartRouting } from "../proxy/routing.js";
 import { cloneSmartRoutingRetryBody } from "../proxy/retry-handler.js";
 import { isAnthropicProtocolConfig } from "../../utils/protocol-utils.js";
@@ -110,6 +111,8 @@ export interface AnthropicProxyRequestContext {
   protocolConfig: any;
   virtualKey: any;
   providerId: string;
+  /** Display name of the serving provider (X-Gateway-Provider, opt-in). */
+  providerName?: string | null;
   /** Smart-routing circuit key (modelResult.circuitBreakerKey), not the bare provider id. */
   circuitBreakerKey: string;
   startTime: number;
@@ -397,6 +400,7 @@ export function createAnthropicProxyHandler() {
         requestUserAgent: pipelineUa,
         virtualKey,
         virtualKeyValue: vkValue,
+        provider: resolvedProvider,
         providerId: resolvedProviderId,
         currentModel: resolvedModel,
         modelResult,
@@ -408,6 +412,7 @@ export function createAnthropicProxyHandler() {
       virtualKeyValue = vkValue;
       providerId = resolvedProviderId;
       currentModel = resolvedModel;
+      const providerName = resolvedProvider?.name ?? null;
 
       const normalization = await applyContextNormalization({
         protocol: "anthropic",
@@ -423,6 +428,20 @@ export function createAnthropicProxyHandler() {
 
       const { protocolConfig, vkDisplay } = configResult;
 
+      // gateway_name exposure: rewrite message_start `model` when the route
+      // opts in; absent = upstream identifier passthrough (byte-identical).
+      const anthropicClientModel = modelFieldForClient(
+        protocolConfig?.model,
+        modelResult?.routeInfo,
+      );
+      if (
+        protocolConfig &&
+        anthropicClientModel &&
+        anthropicClientModel !== protocolConfig.model
+      ) {
+        protocolConfig.clientModel = anthropicClientModel;
+      }
+
       // Smart-routing retry safety: snapshot the globally-normalized body (context
       // normalization, image compression) BEFORE any target-specific mutation
       // (serving-cap clamp, disable_thinking, per-target PII masking in the
@@ -436,6 +455,7 @@ export function createAnthropicProxyHandler() {
         protocolConfig,
         virtualKey,
         providerId: resolvedProviderId,
+        providerName,
         circuitBreakerKey: modelResult?.circuitBreakerKey || resolvedProviderId,
         startTime,
         currentModel,
@@ -571,6 +591,14 @@ export async function handleAnthropicNonStreamRequest(
     }
   });
 
+  // Route exposure headers (PRD §4): setHeader on the raw response survives
+  // the stream writeHead inside makeAnthropicStreamRequest.
+  applyRouteHeaders(reply, {
+    routeInfo: modelResult?.routeInfo,
+    upstreamModel: protocolConfig?.model ?? requestBody.model,
+    providerName: ctx.providerName,
+  });
+
   try {
     const response = await makeAnthropicRequest(
       protocolConfig,
@@ -701,6 +729,19 @@ export async function handleAnthropicNonStreamRequest(
       );
 
       reply.header("Content-Type", "application/json");
+      // Route exposure headers + body model field (PRD §4) at the final send.
+      applyRouteHeaders(reply, {
+        routeInfo: modelResult?.routeInfo,
+        upstreamModel: protocolConfig?.model ?? requestBody.model,
+        providerName: ctx.providerName,
+      });
+      if (typeof responseData.model === "string") {
+        const modelForClient = modelFieldForClient(
+          responseData.model,
+          modelResult?.routeInfo,
+        );
+        if (modelForClient) responseData.model = modelForClient;
+      }
       return reply.code(response.statusCode).send(responseData);
     } else {
       circuitBreaker.recordFailure(
@@ -857,6 +898,14 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
   const streamIp = extractIp(request);
   const forwardedHeaders = anthropicForwardedHeaders(request);
 
+  // Route exposure headers (PRD §4): raw setHeader survives the writeHead
+  // inside makeAnthropicStreamRequest.
+  applyRouteHeaders(reply, {
+    routeInfo: modelResult?.routeInfo,
+    upstreamModel: protocolConfig?.model ?? requestBody.model,
+    providerName: ctx.providerName,
+  });
+
   // PII protection: mask request before sending to upstream
   const piiEnabled = virtualKey?.pii_protection_enabled === 1;
   const piiResult = piiEnabled
@@ -885,6 +934,7 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
       forwardedHeaders,
       piiResult.context,
       abortController.signal,
+      protocolConfig.clientModel,
     );
 
     const duration = Date.now() - startTime;

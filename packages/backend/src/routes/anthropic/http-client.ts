@@ -285,6 +285,7 @@ export async function consumeAnthropicStreamAttempt(
   flushOnEmptyOutput: boolean,
   piiCtx?: PiiProtectionContext | null,
   upstreamRequestStartedAt?: number,
+  clientModel?: string,
 ): Promise<StreamAttemptResult> {
   let inputTokens = 0;
   let cacheCreationInputTokens = 0;
@@ -403,6 +404,10 @@ export async function consumeAnthropicStreamAttempt(
     }
 
     if (sourceEvent.type === "message_start") {
+      // gateway_name exposure: report the gateway model name to the client.
+      if (clientModel && (sourceEvent.message as any)?.model) {
+        (sourceEvent.message as any).model = clientModel;
+      }
       if (sourceEvent.message?.usage) {
         inputTokens = sourceEvent.message.usage.input_tokens || 0;
         const anyUsage: any = sourceEvent.message.usage as any;
@@ -537,6 +542,7 @@ export async function makeAnthropicStreamRequest(
   forwardedHeaders?: Record<string, string>,
   piiCtx?: PiiProtectionContext | null,
   abortSignal?: AbortSignal,
+  clientModel?: string,
 ): Promise<StreamTokenUsage> {
   const normalizedRequest = normalizeAnthropicRequest(
     config.model,
@@ -576,6 +582,7 @@ export async function makeAnthropicStreamRequest(
         attempt === totalAttempts,
         piiCtx,
         upstreamRequestStartedAt,
+        clientModel,
       );
 
       if (!attemptResult.hasAssistantContent) {

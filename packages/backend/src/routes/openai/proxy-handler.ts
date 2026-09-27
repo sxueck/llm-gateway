@@ -41,6 +41,7 @@ import {
 import { runProxyPipeline } from "../proxy/pipeline.js";
 import { calculateTokensIfNeeded } from "../proxy/token-calculator.js";
 import { circuitBreaker } from "../../services/circuit-breaker.js";
+import { applyRouteHeaders, modelFieldForClient } from "../../services/expert-router/exposure.js";
 import {
   shouldLogRequestBody,
   getModelForLogging,
@@ -192,6 +193,8 @@ export interface ProxyRequestContext {
   path: string;
   virtualKey: any;
   providerId: string;
+  /** Display name of the serving provider (X-Gateway-Provider, opt-in). */
+  providerName?: string | null;
   startTime: number;
   compressionStats?: { originalTokens: number; savedTokens: number };
   currentModel?: any;
@@ -562,9 +565,11 @@ export function createOpenAIProxyHandler() {
                 startTime,
                 virtualKey,
                 providerId: undefined,
+                providerName: null,
                 currentModel: undefined,
                 modelAttributes: undefined,
                 cached: early.cached,
+                routeInfo: null,
                 ip: requestIp,
                 userAgent: requestUserAgent,
               });
@@ -583,6 +588,7 @@ export function createOpenAIProxyHandler() {
         requestUserAgent: pipelineUa,
         virtualKey,
         virtualKeyValue: vkValue,
+        provider: resolvedProvider,
         providerId: resolvedProviderId,
         currentModel: resolvedModel,
         modelResult,
@@ -594,6 +600,7 @@ export function createOpenAIProxyHandler() {
       virtualKeyValue = vkValue;
       providerId = resolvedProviderId;
       currentModel = resolvedModel;
+      const providerName = resolvedProvider?.name ?? null;
 
       const normalization = await applyContextNormalization({
         protocol: "openai",
@@ -611,6 +618,20 @@ export function createOpenAIProxyHandler() {
       parsedModelAttributes = parseModelAttributes(currentModel);
 
       const { protocolConfig, path, vkDisplay, isStreamRequest } = configResult;
+
+      // gateway_name exposure: rewrite streamed chunk `model` fields when the
+      // route opts in; absent = upstream identifier passthrough (byte-identical).
+      const openAIClientModel = modelFieldForClient(
+        protocolConfig?.model,
+        modelResult?.routeInfo,
+      );
+      if (
+        protocolConfig &&
+        openAIClientModel &&
+        openAIClientModel !== protocolConfig.model
+      ) {
+        protocolConfig.clientModel = openAIClientModel;
+      }
 
       if (
         currentModel &&
@@ -757,6 +778,7 @@ export function createOpenAIProxyHandler() {
         path,
         virtualKey,
         providerId: resolvedProviderId,
+        providerName,
         startTime,
         compressionStats,
         currentModel,
@@ -880,6 +902,14 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
     reply.header("X-Max-Completion-Tokens", capHeader);
     reply.raw.setHeader("X-Max-Completion-Tokens", capHeader);
   }
+
+  // Route exposure headers (PRD §4): written before the first byte so they
+  // survive the raw writeHead below; upstreamModel reflects any retry rewrite.
+  applyRouteHeaders(reply, {
+    routeInfo: modelResult?.routeInfo,
+    upstreamModel: protocolConfig.model ?? (request.body as any)?.model,
+    providerName: ctx.providerName,
+  });
 
   memoryLogger.info(
     `流式请求开始: ${path} | virtual key: ${vkDisplay}`,
@@ -1326,6 +1356,9 @@ interface NonStreamCacheHitArgs {
    * reply.send failure cannot produce a second row via the outer catch.
    */
   auditState?: { auditLogged?: boolean };
+  /** Difficulty-routing facts when the hit came after model resolution. */
+  routeInfo?: import("../../services/expert-router/exposure.js").ExpertRouteInfo | null;
+  providerName?: string | null;
 }
 
 /** Serve a non-stream response from the cache. Shared by the early hit path
@@ -1357,6 +1390,27 @@ async function sendNonStreamCacheHit(
     "X-Cache-Status": "HIT",
   });
   reply.code(200);
+
+  // Route exposure headers (PRD §4): cache hits report source=cache; the
+  // upstream model comes from the cached response body itself.
+  applyRouteHeaders(reply, {
+    routeInfo: args.routeInfo ?? null,
+    upstreamModel: cached.response?.model ?? null,
+    routeSourceOverride: "cache",
+    fallbackRoutedModel: (request.body as any)?.model,
+    providerName: args.providerName ?? null,
+  });
+  if (
+    cached.response &&
+    typeof cached.response === "object" &&
+    typeof cached.response.model === "string"
+  ) {
+    const modelForClient = modelFieldForClient(
+      cached.response.model,
+      args.routeInfo ?? null,
+    );
+    if (modelForClient) cached.response.model = modelForClient;
+  }
 
   // 在返回与记录前净化缓存响应，去除上游调试 instructions 字段
   let cachedResponseForClient: any = cached.response;
@@ -1722,10 +1776,12 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       startTime,
       virtualKey,
       providerId,
+      providerName: ctx.providerName,
       currentModel,
       modelAttributes,
       compressionStats,
       cached: cacheResult.cached,
+      routeInfo: modelResult?.routeInfo ?? null,
       retryLock:
         cacheLockKey && cacheLockOwner
           ? { key: cacheLockKey, owner: cacheLockOwner }
@@ -2168,6 +2224,25 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       `请求失败: ${response.statusCode} | ${duration}ms | error: ${truncatedError}`,
       "Proxy",
     );
+  }
+
+  // Route exposure headers + body model field (PRD §4): applied at the final
+  // send point so any smart-routing retry has already settled the body model.
+  applyRouteHeaders(reply, {
+    routeInfo: modelResult?.routeInfo,
+    upstreamModel: protocolConfig?.model ?? (request.body as any)?.model,
+    providerName: ctx.providerName,
+  });
+  if (
+    responseData &&
+    typeof responseData === "object" &&
+    typeof responseData.model === "string"
+  ) {
+    const modelForClient = modelFieldForClient(
+      responseData.model,
+      modelResult?.routeInfo,
+    );
+    if (modelForClient) responseData.model = modelForClient;
   }
 
   reply.header("Content-Type", "application/json");

@@ -1,6 +1,7 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import { memoryLogger } from "../../services/logger.js";
 import { circuitBreaker } from "../../services/circuit-breaker.js";
+import { applyRouteHeaders } from "../../services/expert-router/exposure.js";
 import { shouldRetrySmartRouting } from "../proxy/routing.js";
 import type { ModelResolutionResult } from "../proxy/model-resolver.js";
 import { calculateTokensIfNeeded } from "../proxy/token-calculator.js";
@@ -414,6 +415,11 @@ export async function handleGeminiNativeNonStreamRequest(
         reply.header(key, value);
       }
     });
+    // Route exposure headers (PRD §4) on the non-stream passthrough send.
+    applyRouteHeaders(reply, {
+      routeInfo: options?.modelResult?.routeInfo,
+      upstreamModel: (request.body as any)?.model,
+    });
     reply.code(upstreamResponse.status);
 
     memoryLogger.info(
@@ -814,6 +820,11 @@ export async function handleGeminiNativeStreamRequest(
       }
 
       if (!headersSent) {
+        // Route exposure headers (PRD §4): setHeader survives the writeHead.
+        applyRouteHeaders(reply, {
+          routeInfo: options?.modelResult?.routeInfo,
+          upstreamModel: (request.body as any)?.model,
+        });
         reply.raw.writeHead(upstreamResponse.status, {
           "Content-Type": "text/event-stream; charset=utf-8",
           "Cache-Control": "no-cache, no-transform",

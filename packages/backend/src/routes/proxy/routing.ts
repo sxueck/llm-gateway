@@ -3,6 +3,7 @@ import { getDatabase } from '../../db/connection.js';
 import { hotConfigCache } from '../../services/hot-config-cache.js';
 import { memoryLogger } from '../../services/logger.js';
 import { expertRouter } from '../../services/expert-router.js';
+import type { ExpertRouteInfo } from '../../services/expert-router/exposure.js';
 import { CircuitState, circuitBreaker } from '../../services/circuit-breaker.js';
 import { parsePositiveInt } from '../../utils/parse-positive-int.js';
 import { blendedPriceOf } from '../../services/expert-router/bands.js';
@@ -256,6 +257,9 @@ export interface ResolveProviderResult {
   resolvedModel?: any;
   excludeTargetKeys?: Set<string>;
   canRetry?: boolean;
+  /** Difficulty-routing facts for response exposure (PRD §4); present only
+   * when this request was routed by an expert-routing config. */
+  routeInfo?: import("../../services/expert-router/exposure.js").ExpertRouteInfo;
 }
 
 export interface ProxyRequest {
@@ -1011,6 +1015,21 @@ export async function resolveExpertRouting(
     });
     if (!result) return null;
 
+    let exposure: ExpertRouteInfo['exposure'];
+    try {
+      exposure = (JSON.parse(expertRoutingConfig.config) as any)?.exposure;
+    } catch {
+      exposure = undefined;
+    }
+    const routeInfo: ExpertRouteInfo = {
+      expertRoutingId: model.expert_routing_id,
+      tier: result.tier,
+      routeSource: result.routeSource,
+      logId: result.logId,
+      routedModelName: result.expertName,
+      exposure,
+    };
+
     memoryLogger.info(
       `专家路由: 档位=${result.tier} | 来源=${result.routeSource} | 专家类型=${result.expertType} | 专家=${result.expertName}`,
       'ExpertRouter'
@@ -1028,6 +1047,7 @@ export async function resolveExpertRouting(
       );
 
       const resolvedResult = await resolveProviderFromModel(virtualModel, request, virtualKeyId, depth + 1);
+      resolvedResult.routeInfo = routeInfo;
 
       if (resolvedResult.resolvedModel) {
         memoryLogger.debug(
@@ -1076,7 +1096,8 @@ export async function resolveExpertRouting(
       providerId: result.providerId,
       circuitBreakerKey: result.providerId,
       modelOverride: result.modelOverride,
-      resolvedModel
+      resolvedModel,
+      routeInfo
     };
 
   } catch (e: any) {

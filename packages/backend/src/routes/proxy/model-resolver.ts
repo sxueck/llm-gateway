@@ -11,6 +11,7 @@ import { isChatCompletionsPath, isResponsesApiPath, isResponsesCompactPath } fro
 import { maskKey } from '../../utils/crypto.js';
 import { resolveProviderFromModel } from './routing.js';
 import { parseModelAttributes } from './model-handlers.js';
+import type { ExpertRouteInfo } from '../../services/expert-router/exposure.js';
 
 export interface ModelResolutionResult {
   provider: any;
@@ -21,6 +22,7 @@ export interface ModelResolutionResult {
   canRetry?: boolean; // 是否支持重试（仅智能路由模式）
   modelId?: string; // 用于重试时重新解析
   forcedReasoningEffort?: string; // 由模型名后缀解析得到的强制 reasoning_effort
+  routeInfo?: ExpertRouteInfo; // 难度分级路由透出信息（PRD §4）
 }
 
 /**
@@ -157,7 +159,8 @@ export async function resolveModelAndProvider(
         currentModel: result.resolvedModel || model,
         excludeTargetKeys: result.excludeTargetKeys,
         canRetry,
-        modelId: model.id
+        modelId: model.id,
+        routeInfo: result.routeInfo
       };
     } catch (e: any) {
       memoryLogger.error(`Agent loopback provider resolution failed: ${e.message}`, 'ModelResolver');
@@ -211,7 +214,8 @@ export async function resolveModelAndProvider(
         currentModel,
         excludeTargetKeys: result.excludeTargetKeys,
         canRetry,
-        modelId: virtualKey.model_id
+        modelId: virtualKey.model_id,
+        routeInfo: result.routeInfo
       };
     } catch (routingError: any) {
       memoryLogger.error(`Smart routing failed: ${routingError.message}`, 'Proxy');
@@ -455,6 +459,7 @@ export async function resolveModelAndProvider(
           canRetry,
           modelId: targetModelId,
           forcedReasoningEffort,
+          routeInfo: result.routeInfo
         };
       } catch (routingError: any) {
         memoryLogger.error(`Smart routing failed: ${routingError.message}`, 'Proxy');

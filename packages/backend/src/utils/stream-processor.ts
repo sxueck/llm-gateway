@@ -15,6 +15,9 @@ export interface OpenAIChatStreamProcessorOptions {
   reply: FastifyReply;
   stream: AsyncIterable<any>;
   model: string;
+  /** Report this model name to the client instead of the upstream identifier
+   * (PRD §4 gateway_name exposure); absent = byte-identical passthrough. */
+  clientModel?: string;
   abortSignal?: AbortSignal;
   upstreamRequestStartedAt?: number;
 
@@ -50,6 +53,7 @@ export async function processOpenAIChatCompletionStreamToSse(
     reply,
     stream,
     model,
+    clientModel,
     abortSignal,
     upstreamRequestStartedAt,
     streamRestorer,
@@ -186,6 +190,9 @@ export async function processOpenAIChatCompletionStreamToSse(
 
         if ((chunk as any)?.id) lastChunkId = String((chunk as any).id);
         if ((chunk as any)?.model) lastChunkModel = String((chunk as any).model);
+        if (clientModel && (chunk as any)?.model) {
+          (chunk as any).model = clientModel;
+        }
 
         // Record TFFB on first upstream stream event observed
         if (tffbMs === undefined && upstreamRequestStartedAt) {
