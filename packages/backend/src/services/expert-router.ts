@@ -117,42 +117,54 @@ export class ExpertRouter {
         idle_ttl_seconds: DEFAULT_SESSION_IDLE_TTL_SECONDS,
         absolute_ttl_seconds: DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
       };
-    // per_turn skips bindings entirely; sticky/escalate_only reuse them
-    // (escalate_only only allows upward moves — until §5.1 lands it degrades
-    // to sticky reuse, which is strictly more conservative).
+    // per_turn skips bindings entirely; sticky/escalate_only reuse them.
     const useBindings = Boolean(sessionId) && policy.mode !== "per_turn";
     // §5.2: continuation turns (tool results / assistant follow-ups) must
     // never re-classify while a binding exists; without any stored decision
     // (per_turn or expired binding) classification is the only fallback.
     const continuationTurn = isContinuationTurn(request.body);
 
+    let binding: Awaited<ReturnType<typeof expertRoutingSessionBindingDb.getActiveBinding>> = null;
     if (useBindings) {
-      const binding = await expertRoutingSessionBindingDb.getActiveBinding(
+      binding = await expertRoutingSessionBindingDb.getActiveBinding(
         bindingKey,
         policy.idle_ttl_seconds,
       );
-      if (binding) {
-        const expert = config.experts.find((item) => item.id === binding.expert_id);
-        if (expert) {
-          try {
-            const bindingDifficulty =
-              typeof binding.difficulty === "string" && binding.difficulty
-                ? (binding.difficulty as DifficultyLevel)
-                : undefined;
-            return await this.resolveAndLog(expert, "session", 1, null, [], startTime, expertRoutingId, context, request, undefined, undefined, {
-              failOpen,
-              verdictReused: true,
-              difficulty: bindingDifficulty,
-              verdictBand: expert.band,
-              classifierTimeMs: null,
-              continuation: continuationTurn,
-            });
-          } catch {
-            await expertRoutingSessionBindingDb.deleteBinding(bindingKey);
-          }
-        } else {
-          await expertRoutingSessionBindingDb.deleteBinding(bindingKey);
-        }
+    }
+    const boundExpert = binding
+      ? config.experts.find((item) => item.id === binding!.expert_id)
+      : undefined;
+    if (binding && !boundExpert) {
+      await expertRoutingSessionBindingDb.deleteBinding(bindingKey);
+      binding = null;
+    }
+    const bindingDifficulty =
+      binding && typeof binding.difficulty === "string" && binding.difficulty
+        ? (binding.difficulty as DifficultyLevel)
+        : undefined;
+    const boundTier: RoutingBand | undefined = binding
+      ? binding.tier === "low" || binding.tier === "medium" || binding.tier === "high"
+        ? binding.tier
+        : difficultyToBand(bindingDifficulty)
+      : undefined;
+
+    // §5.1 sticky / §5.2 continuation: reuse the bound expert as-is.
+    // escalate_only re-classifies only on fresh user turns.
+    const reuseWithoutClassification =
+      Boolean(binding && boundExpert) &&
+      (policy.mode !== "escalate_only" || continuationTurn);
+    if (binding && boundExpert && reuseWithoutClassification) {
+      try {
+        return await this.resolveAndLog(boundExpert, "session", 1, null, [], startTime, expertRoutingId, context, request, undefined, undefined, {
+          failOpen,
+          verdictReused: true,
+          difficulty: bindingDifficulty,
+          verdictBand: boundExpert.band,
+          classifierTimeMs: null,
+          continuation: continuationTurn,
+        });
+      } catch {
+        await expertRoutingSessionBindingDb.deleteBinding(bindingKey);
       }
     }
 
@@ -185,16 +197,46 @@ export class ExpertRouter {
       }
     }
 
+    // §5.1 escalate_only with an existing binding: keep the bound tier unless
+    // the fresh verdict is strictly higher (downgrades would drop prompt-cache
+    // and break mid-loop context consistency).
+    const escalateActive = policy.mode === "escalate_only" && Boolean(binding && boundExpert);
+    if (escalateActive && !classified) {
+      // Classifier down on a fresh turn: serve the bound tier (never degrade
+      // to the fail-open low band just because the classifier is unavailable).
+      return await this.resolveAndLog(boundExpert!, "session", 1, model, ranked, startTime, expertRoutingId, context, request, signal.stats, undefined, {
+        failOpen,
+        verdictReused: true,
+        difficulty: bindingDifficulty,
+        verdictBand: boundTier ?? boundExpert!.band,
+        classifierTimeMs,
+        continuation: continuationTurn,
+      });
+    }
+    const verdictRank = BAND_ORDER.indexOf(verdictBand);
+    const boundRank = boundTier !== undefined ? BAND_ORDER.indexOf(boundTier) : -1;
+    const keepBoundTier = escalateActive && classified && verdictRank <= boundRank;
+    const effectiveBand: RoutingBand = keepBoundTier ? boundTier! : verdictBand;
+
     try {
-      const ordered = resolveBandCandidates(bands, verdictBand);
+      const ordered = resolveBandCandidates(bands, effectiveBand);
+      if (keepBoundTier && boundExpert) {
+        // Fresh verdict confirmed the incumbent tier: prefer the bound expert
+        // (stable model choice within the tier) over re-picking by order.
+        const at = ordered.findIndex((candidate) => candidate.id === boundExpert.id);
+        if (at > 0) {
+          const [incumbent] = ordered.splice(at, 1);
+          ordered.unshift(incumbent);
+        }
+      }
       // fail_open 仅表示分类器失败；低置信但成功分类仍算 jev 判定
       const routeSource: "jev" | "fail_open" = classified ? "jev" : "fail_open";
       const meta: RoutingMeta = {
-        verdictBand,
+        verdictBand: effectiveBand,
         verdictConfidence,
         difficulty,
         failOpen,
-        verdictReused: false,
+        verdictReused: keepBoundTier,
         classifierTimeMs,
         continuation: continuationTurn,
       };
@@ -205,16 +247,38 @@ export class ExpertRouter {
           let selected = expert;
           if (useBindings) {
             try {
-              const binding = await expertRoutingSessionBindingDb.createOrSelectBinding(
-                bindingKey,
-                { expertId: expert.id, routeSource, difficulty },
-                policy.idle_ttl_seconds,
-                policy.absolute_ttl_seconds,
-              );
-              if (!binding.winner) {
-                const winner = config.experts.find((candidate) => candidate.id === binding.row.expert_id);
-                if (!winner) throw new Error("Bound expert no longer exists");
-                selected = winner;
+              if (
+                escalateActive &&
+                classified &&
+                verdictRank > boundRank &&
+                effectiveBand !== boundTier
+              ) {
+                // Tier promotion: update the binding in place; a vanished row
+                // (expired mid-flight) falls back to a fresh first-writer insert.
+                const updated = await expertRoutingSessionBindingDb.escalateBindingTier(
+                  bindingKey,
+                  { expertId: expert.id, tier: effectiveBand, difficulty, routeSource },
+                );
+                if (!updated) {
+                  await expertRoutingSessionBindingDb.createOrSelectBinding(
+                    bindingKey,
+                    { expertId: expert.id, routeSource, difficulty, tier: effectiveBand },
+                    policy.idle_ttl_seconds,
+                    policy.absolute_ttl_seconds,
+                  );
+                }
+              } else if (!binding) {
+                const race = await expertRoutingSessionBindingDb.createOrSelectBinding(
+                  bindingKey,
+                  { expertId: expert.id, routeSource, difficulty, tier: effectiveBand },
+                  policy.idle_ttl_seconds,
+                  policy.absolute_ttl_seconds,
+                );
+                if (!race.winner) {
+                  const winner = config.experts.find((candidate) => candidate.id === race.row.expert_id);
+                  if (!winner) throw new Error("Bound expert no longer exists");
+                  selected = winner;
+                }
               }
             } catch (error) {
               memoryLogger.warn(`Expert binding persistence failed: ${error}`, "ExpertRouter");
@@ -294,7 +358,7 @@ export class ExpertRouter {
         classifier_model: model,
         difficulty: meta?.difficulty ?? null,
         band: meta?.verdictBand ?? null,
-        verdict_reused: source === "session",
+        verdict_reused: source === "session" || meta?.verdictReused === true,
         classifier_time_ms: meta?.classifierTimeMs ?? null,
         classification_result: meta?.difficulty ?? expert.band,
         selected_expert_id: expert.id,

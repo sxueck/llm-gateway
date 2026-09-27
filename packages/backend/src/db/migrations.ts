@@ -1314,6 +1314,44 @@ export const migrations: Migration[] = [
       );
     },
   },
+  {
+    version: 52,
+    // §5.1 escalate_only：会话绑定增加 tier 列（只升不降的档位锚点），
+    // 存量行按 v47 difficulty 回填（缺失归 low）。
+    name: "add_expert_routing_binding_tier",
+    up: async (conn: Connection) => {
+      const [columnRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'expert_routing_session_bindings'
+           AND COLUMN_NAME = 'tier'`,
+      );
+      if (Number((columnRows as any[])[0]?.cnt || 0) === 0) {
+        await conn.query(
+          "ALTER TABLE expert_routing_session_bindings ADD COLUMN tier VARCHAR(16) DEFAULT NULL COMMENT '绑定档位(escalate_only 锚点)'",
+        );
+        await conn.query(
+          `UPDATE expert_routing_session_bindings
+           SET tier = CASE difficulty
+             WHEN 'medium' THEN 'medium'
+             WHEN 'high' THEN 'high'
+             ELSE 'low'
+           END`,
+        );
+        console.log("[迁移] 已为 expert_routing_session_bindings 添加 tier 列并回填");
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(
+          "ALTER TABLE expert_routing_session_bindings DROP COLUMN tier",
+        );
+      } catch (error: any) {
+        console.warn("[迁移] 删除 tier 列失败:", error.message);
+      }
+    },
+  },
 ];
 
 async function hasProviderForeignKey(

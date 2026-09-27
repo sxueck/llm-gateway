@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   expertRoutingSessionBindingDb: {
     getActiveBinding: vi.fn(),
     createOrSelectBinding: vi.fn(),
+    escalateBindingTier: vi.fn(),
     deleteBinding: vi.fn(),
     cleanupExpired: vi.fn(),
   },
@@ -84,7 +85,7 @@ describe("ExpertRouter difficulty routing", () => {
     expect(result?.routeSource).toBe("jev");
     expect(mocks.expertRoutingSessionBindingDb.createOrSelectBinding).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: "session" }),
-      { expertId: "review", routeSource: "jev", difficulty: "high" },
+      { expertId: "review", routeSource: "jev", difficulty: "high", tier: "high" },
       60, 3600,
     );
     const log = mocks.expertRoutingLogDb.create.mock.calls[0][0];
@@ -113,7 +114,7 @@ describe("ExpertRouter difficulty routing", () => {
     expect(mocks.expertRoutingLogDb.create.mock.calls[0][0].route_source).toBe("jev");
     expect(mocks.expertRoutingSessionBindingDb.createOrSelectBinding).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: "session" }),
-      { expertId: "fast", routeSource: "jev", difficulty: "low" },
+      { expertId: "fast", routeSource: "jev", difficulty: "low", tier: "low" },
       60, 3600,
     );
   });
@@ -250,6 +251,87 @@ describe("ExpertRouter difficulty routing", () => {
     });
     await expect(new ExpertRouter().route(request(), "routing", {}))
       .rejects.toThrow(/no valid band/);
+  });
+});
+
+describe("ExpertRouter §5.1 escalate_only", () => {
+  const escalateConfig = config({
+    session_policy: { mode: "escalate_only", idle_ttl_seconds: 60, absolute_ttl_seconds: 3600 },
+  });
+  const freshUserTurn = {
+    body: { messages: [
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "hello" },
+      { role: "user", content: "重构这个模块" },
+    ] },
+    headers: { "x-session-id": "session" },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+      id: "routing", enabled: 1, config: JSON.stringify(escalateConfig) });
+    mocks.expertRoutingSessionBindingDb.getActiveBinding.mockResolvedValue({
+      expert_id: "fast", route_source: "jev", difficulty: "low", tier: "low",
+    });
+    mocks.expertRoutingSessionBindingDb.createOrSelectBinding.mockResolvedValue({ winner: true, row: {} });
+    mocks.expertRoutingSessionBindingDb.escalateBindingTier.mockResolvedValue(1);
+    mocks.providerDb.getById.mockImplementation(async (id: string) => ({ id, name: id }));
+    mocks.modelDb.getByProviderId.mockResolvedValue([]);
+    mocks.chooseDifficulty.mockResolvedValue(difficulty("high"));
+  });
+
+  test("a harder fresh turn escalates the bound tier and updates the binding", async () => {
+    const result = await new ExpertRouter().route(freshUserTurn as any, "routing", {});
+    expect(result?.expert.id).toBe("review");
+    expect(result?.tier).toBe("high");
+    expect(result?.routeSource).toBe("jev");
+    expect(mocks.expertRoutingSessionBindingDb.escalateBindingTier).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session" }),
+      { expertId: "review", tier: "high", difficulty: "high", routeSource: "jev" },
+    );
+  });
+
+  test("a lighter fresh verdict keeps the bound expert and tier (no downgrade)", async () => {
+    mocks.chooseDifficulty.mockResolvedValue(difficulty("low"));
+    const result = await new ExpertRouter().route(freshUserTurn as any, "routing", {});
+    // Bound expert (fast/low) stays even though the verdict is also low.
+    expect(result?.expert.id).toBe("fast");
+    expect(result?.tier).toBe("low");
+    expect(mocks.expertRoutingSessionBindingDb.escalateBindingTier).not.toHaveBeenCalled();
+    const log = mocks.expertRoutingLogDb.create.mock.calls[0][0];
+    expect(log.band).toBe("low");
+    expect(log.verdict_reused).toBe(true);
+  });
+
+  test("classifier outage on a fresh turn serves the bound tier instead of degrading", async () => {
+    mocks.chooseDifficulty.mockRejectedValue(new Error("jev down"));
+    const result = await new ExpertRouter().route(freshUserTurn as any, "routing", {});
+    expect(result?.expert.id).toBe("fast");
+    expect(result?.routeSource).toBe("session");
+    expect(mocks.expertRoutingLogDb.create.mock.calls[0][0].band).toBe("low");
+  });
+
+  test("first turn of an unbound session classifies and binds normally", async () => {
+    mocks.expertRoutingSessionBindingDb.getActiveBinding.mockResolvedValue(null);
+    const result = await new ExpertRouter().route(freshUserTurn as any, "routing", {});
+    expect(result?.expert.id).toBe("review");
+    expect(mocks.expertRoutingSessionBindingDb.createOrSelectBinding).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session" }),
+      { expertId: "review", routeSource: "jev", difficulty: "high", tier: "high" },
+      60, 3600,
+    );
+  });
+
+  test("v51-bound legacy binding without tier falls back to difficulty mapping", async () => {
+    mocks.expertRoutingSessionBindingDb.getActiveBinding.mockResolvedValue({
+      expert_id: "fast", route_source: "jev", difficulty: "medium", tier: null,
+    });
+    // medium verdict (== bound medium) keeps the bound expert without escalation.
+    mocks.chooseDifficulty.mockResolvedValue(difficulty("medium"));
+    const result = await new ExpertRouter().route(freshUserTurn as any, "routing", {});
+    expect(result?.expert.id).toBe("fast");
+    expect(mocks.expertRoutingSessionBindingDb.escalateBindingTier).not.toHaveBeenCalled();
   });
 });
 

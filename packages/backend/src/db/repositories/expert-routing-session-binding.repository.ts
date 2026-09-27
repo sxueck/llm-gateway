@@ -9,6 +9,8 @@ export interface SessionBindingRow {
   route_source: string;
   /** v47 optional column: difficulty observed when the binding was created. */
   difficulty?: string | null;
+  /** v52 optional column: bound tier for escalate_only sessions. */
+  tier?: string | null;
   created_at: number;
   last_seen_at: number;
   idle_expires_at: number;
@@ -94,7 +96,7 @@ export const expertRoutingSessionBindingRepository = {
    */
   async createOrSelectBinding(
     key: SessionBindingKey,
-    candidate: { expertId: string; routeSource: string; difficulty?: string | null },
+    candidate: { expertId: string; routeSource: string; difficulty?: string | null; tier?: string | null },
     idleTtlSeconds: number,
     absoluteTtlSeconds: number,
     now: number = Date.now(),
@@ -111,10 +113,11 @@ export const expertRoutingSessionBindingRepository = {
 
       const insertColumns =
         `expert_routing_id, virtual_key_scope, session_id, expert_id, route_source,` +
-        (includeDifficulty ? ` difficulty,` : '') +
+        (includeDifficulty ? ` difficulty, tier,` : '') +
         ` created_at, last_seen_at, idle_expires_at, absolute_expires_at`;
-      const insertPlaceholders =
-        (includeDifficulty ? '?, ?, ?, ?, ?, ?, ?, ?, ?, ?' : '?, ?, ?, ?, ?, ?, ?, ?, ?');
+      const insertPlaceholders = includeDifficulty
+        ? '?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?'
+        : '?, ?, ?, ?, ?, ?, ?, ?, ?';
       const insertParams = includeDifficulty
         ? [
             key.expertRoutingId,
@@ -123,6 +126,7 @@ export const expertRoutingSessionBindingRepository = {
             candidate.expertId,
             candidate.routeSource,
             candidate.difficulty || null,
+            candidate.tier || null,
             now,
             now,
             idleExpiresAt,
@@ -152,10 +156,10 @@ export const expertRoutingSessionBindingRepository = {
       } catch (e: any) {
         const code = String(e?.code || '');
         const message = String(e?.message || '');
-        const isMissingDifficulty =
+        const isMissingColumn =
           code === 'ER_BAD_FIELD_ERROR' ||
-          /Unknown column\s+'difficulty'/i.test(message);
-        if (!isMissingDifficulty || !includeDifficulty) throw e;
+          /Unknown column\s+'(difficulty|tier)'/i.test(message);
+        if (!isMissingColumn || !includeDifficulty) throw e;
         // A failed statement may invalidate the transaction; restart on the same leased connection.
         await conn.rollback();
         await conn.beginTransaction();
@@ -186,6 +190,33 @@ export const expertRoutingSessionBindingRepository = {
     } catch (e) {
       await conn.rollback();
       throw e;
+    } finally {
+      conn.release();
+    }
+  },
+
+  /**
+   * escalate_only tier promotion (PRD §5.1): update an existing binding to a
+   * higher tier / newly selected expert. Returns updated row count (0 when the
+   * binding vanished — caller falls back to createOrSelect).
+   */
+  async escalateBindingTier(
+    key: SessionBindingKey,
+    update: { expertId: string; tier: string; difficulty?: string | null; routeSource: string },
+    now: number = Date.now()
+  ): Promise<number> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const [result] = await conn.query(
+        `UPDATE expert_routing_session_bindings
+         SET expert_id = ?, tier = ?, difficulty = COALESCE(?, difficulty), route_source = ?,
+             last_seen_at = ?
+         WHERE expert_routing_id = ? AND virtual_key_scope = ? AND session_id = ?`,
+        [update.expertId, update.tier, update.difficulty ?? null, update.routeSource,
+          now, key.expertRoutingId, key.virtualKeyScope, key.sessionId]
+      );
+      return (result as any).affectedRows || 0;
     } finally {
       conn.release();
     }

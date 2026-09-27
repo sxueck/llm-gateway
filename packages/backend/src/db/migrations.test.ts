@@ -82,7 +82,15 @@ describe('migration runner from v45', () => {
       'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
       [51, 'expert_routing_config_v2', expect.any(Number)],
     );
-    expect(conn.commit).toHaveBeenCalledTimes(5);
+    // v52：escalate_only 绑定档位列。
+    expect(query).toHaveBeenCalledWith(
+      "ALTER TABLE expert_routing_session_bindings ADD COLUMN tier VARCHAR(16) DEFAULT NULL COMMENT '绑定档位(escalate_only 锚点)'",
+    );
+    expect(query).toHaveBeenCalledWith(
+      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      [52, 'add_expert_routing_binding_tier', expect.any(Number)],
+    );
+    expect(conn.commit).toHaveBeenCalledTimes(6);
   });
 });
 

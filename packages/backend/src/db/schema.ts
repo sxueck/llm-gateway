@@ -260,6 +260,7 @@ export async function createTables() {
         expert_id VARCHAR(255) NOT NULL,
         route_source VARCHAR(50) NOT NULL,
         difficulty VARCHAR(16) DEFAULT NULL COMMENT '绑定时的路由难度(可选)',
+        tier VARCHAR(16) DEFAULT NULL COMMENT '绑定档位(escalate_only 锚点)',
         created_at BIGINT NOT NULL,
         last_seen_at BIGINT NOT NULL,
         idle_expires_at BIGINT NOT NULL,
