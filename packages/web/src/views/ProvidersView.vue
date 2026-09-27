@@ -1,14 +1,12 @@
 <template>
   <div class="providers-view">
     <div class="providers-stack">
-      <n-space justify="space-between" align="center">
-        <div>
-          <h2 class="page-title">提供商管理</h2>
-          <p class="page-subtitle">
-            配置和管理 AI 模型提供商,包括 API 密钥、Base URL 等信息。支持导入导出配置
-          </p>
-        </div>
-        <n-space :size="8">
+      <PageHeader
+        eyebrow="MODEL MANAGEMENT"
+        title="提供商管理"
+        subtitle="配置和管理 AI 模型提供商,包括 API 密钥、Base URL 等信息。支持导入导出配置"
+      >
+        <template #actions>
           <n-button size="small" @click="testAllProviders" :loading="isTestingAll">
             <template #icon>
               <n-icon><SpeedTestIcon /></n-icon>
@@ -32,8 +30,8 @@
             </n-button>
           </n-upload>
           <n-button type="primary" size="small" @click="showModal = true">添加提供商</n-button>
-        </n-space>
-      </n-space>
+        </template>
+      </PageHeader>
 
       <ProviderOverview :providers="providerStore.providers" />
 
@@ -137,6 +135,7 @@ import type { ProviderFormValue } from '@/types/provider'
 import { createDefaultProviderForm } from '@/types/provider'
 import ProviderForm from '@/components/ProviderForm.vue'
 import ProviderOverview from '@/components/ProviderOverview.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { downloadProvidersConfig, parseImportFile } from '@/utils/provider-export'
 
 const message = useMessage()

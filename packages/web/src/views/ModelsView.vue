@@ -1,12 +1,12 @@
 <template>
   <div class="models-view">
     <n-space vertical :size="12">
-      <n-space justify="space-between" align="center">
-        <div>
-          <h2 class="page-title">{{ t('models.title') }}</h2>
-          <p class="page-subtitle">{{ t('models.subtitle') }}</p>
-        </div>
-        <n-space :size="8">
+      <PageHeader
+        eyebrow="MODEL MANAGEMENT"
+        :title="t('models.title')"
+        :subtitle="t('models.subtitle')"
+      >
+        <template #actions>
           <n-input
             v-model:value="searchQuery"
             :placeholder="t('common.searchPlaceholder')"
@@ -24,8 +24,8 @@
           <n-button size="small" @click="showBatchModal = true">
             {{ t('models.batchAdd') }}
           </n-button>
-        </n-space>
-      </n-space>
+        </template>
+      </PageHeader>
 
       <n-card class="table-card">
         <template #header>
@@ -215,6 +215,7 @@ import type { Model, ModelAttributes } from '@/types';
 import type { ModelPresetSearchResult } from '@/api/model-presets';
 import { PROTOCOL_OPTIONS, getProtocolInfo } from '@/utils/protocol-utils';
 import { copyToClipboard } from '@/utils/common';
+import PageHeader from '@/components/PageHeader.vue';
 
 const { t } = useI18n();
 const message = useMessage();

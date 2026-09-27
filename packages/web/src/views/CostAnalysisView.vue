@@ -1,19 +1,20 @@
 <template>
   <div class="cost-analysis-container">
-    <div class="page-header">
-      <div class="page-title-section">
-        <h1 class="page-title">{{ t('costAnalysis.title') }}</h1>
-        <div class="subtitle">{{ t('costAnalysis.subtitle') }}</div>
-      </div>
-      <div class="page-actions">
-        <n-button v-if="activeTab === 'mappings'" type="primary" @click="showAddModal">
+    <PageHeader
+      class="cost-analysis-page-header"
+      eyebrow="ANALYTICS"
+      :title="t('costAnalysis.title')"
+      :subtitle="t('costAnalysis.subtitle')"
+    >
+      <template #actions v-if="activeTab === 'mappings'">
+        <n-button type="primary" @click="showAddModal">
           <template #icon>
             <n-icon><AddOutline /></n-icon>
           </template>
           {{ t('costAnalysis.addMapping') }}
         </n-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <div class="main-content">
       <n-tabs type="line" v-model:value="activeTab">
@@ -194,6 +195,7 @@ import {
 } from 'naive-ui'
 import { costMappingApi, CostMapping, CostResolution, ModelPrice } from '@/api/cost-mapping'
 import ModelPresetSelector from '@/components/ModelPresetSelector.vue'
+import PageHeader from '@/components/PageHeader.vue'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -493,17 +495,9 @@ onMounted(() => {
   flex-direction: column;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.cost-analysis-page-header {
   margin-bottom: 24px;
   flex-shrink: 0;
-}
-
-.subtitle {
-  color: #666;
-  margin-top: 4px;
 }
 
 .main-content {

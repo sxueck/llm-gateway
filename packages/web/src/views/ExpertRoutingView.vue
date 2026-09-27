@@ -1,26 +1,26 @@
 <template>
   <div>
     <n-space vertical :size="12">
-      <n-space justify="space-between" align="center">
-        <div>
-          <h2 class="page-title">{{ t("expertRouting.title") }}</h2>
-          <p class="page-subtitle">{{ t("expertRouting.subtitle") }}</p>
-        </div>
-        <n-space :size="8">
+      <PageHeader
+        eyebrow="ROUTING"
+        :title="t('expertRouting.title')"
+        :subtitle="t('expertRouting.subtitle')"
+      >
+        <template #actions>
           <n-button type="primary" size="small" @click="handleCreate">
             <template #icon>
               <n-icon><AddOutline /></n-icon>
             </template>
-            {{ t("expertRouting.createExpertRouting") }}
+            {{ t('expertRouting.createExpertRouting') }}
           </n-button>
           <n-button size="small" @click="handleRefresh">
             <template #icon>
               <n-icon><RefreshOutline /></n-icon>
             </template>
-            {{ t("common.refresh") }}
+            {{ t('common.refresh') }}
           </n-button>
-        </n-space>
-      </n-space>
+        </template>
+      </PageHeader>
 
       <n-alert
         v-if="showExperimentalAlert"
@@ -331,6 +331,7 @@ import {
 import ExpertRoutingEditor from "@/components/ExpertRoutingEditor.vue";
 import ExpertRoutingVisualization from "@/components/ExpertRoutingVisualization.vue";
 import ExpertRoutingStatistics from "@/components/ExpertRoutingStatistics.vue";
+import PageHeader from "@/components/PageHeader.vue";
 import { useProviderStore } from "@/stores/provider";
 import { useModelStore } from "@/stores/model";
 import { createDefaultExpertRoutingConfig } from "@/utils/expert-routing";

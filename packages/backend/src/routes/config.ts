@@ -29,6 +29,7 @@ import {
   REASONING_EFFORT_SUFFIXES_CONFIG_KEY,
 } from "../services/reasoning-effort-suffixes.js";
 import { getGeoInfo, normalizeIp } from "../utils/ip.js";
+import { getRequestSourceStats } from "../services/ops-metrics.js";
 import { getShanghaiDayStart } from "../db/utils/time-buckets.js";
 import { circuitBreaker } from "../services/circuit-breaker.js";
 import {
@@ -747,105 +748,11 @@ export async function configRoutes(fastify: FastifyInstance) {
         (m) => m.circuitBreakerStatsRepository.getGlobalStats(startTime),
       );
 
-    const lastRequest = await apiRequestDb.getLastRequest();
-    const manualLastBlocked = manualIpBlocklist.getLastBlocked();
     const threatIpStats = threatIpBlocker.getStats();
-    const threatLastBlocked = threatIpStats.lastBlockedIp
-      ? {
-          ip: threatIpStats.lastBlockedIp,
-          timestamp: threatIpStats.lastBlockedAt || 0,
-          reason: null,
-          source: "threat" as const,
-        }
-      : null;
-    const lastBlockedInfo = manualLastBlocked
-      ? {
-          ip: manualLastBlocked.ip,
-          timestamp: manualLastBlocked.createdAt,
-          reason: manualLastBlocked.reason,
-          source: "manual" as const,
-        }
-      : threatLastBlocked;
-
-    const [lastRequestGeo, lastBlockedGeo] = await Promise.all([
-      getGeoInfo(lastRequest?.ip),
-      getGeoInfo(lastBlockedInfo?.ip),
-    ]);
-
-    const recentIps = await apiRequestDb.getRecentUniqueIps(50);
-    const sourceCandidates: Array<{
-      ip: string;
-      timestamp: number;
-      count: number;
-      type: "normal" | "blocked";
-    }> = recentIps
-      .filter((row: any) => !!row.ip)
-      .map((row: any) => ({
-        ip: row.ip,
-        timestamp: row.last_seen,
-        count: row.count,
-        type: "normal" as const,
-      }));
-
-    if (lastBlockedInfo?.ip) {
-      sourceCandidates.unshift({
-        ip: lastBlockedInfo.ip,
-        timestamp: lastBlockedInfo.timestamp || Date.now(),
-        count: 0,
-        type: "blocked",
-      });
-    }
-
-    sourceCandidates.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
-    const dedupedSources: typeof sourceCandidates = [];
-    const seenIps = new Set<string>();
-    for (const candidate of sourceCandidates) {
-      if (!candidate.ip || seenIps.has(candidate.ip)) continue;
-      dedupedSources.push(candidate);
-      seenIps.add(candidate.ip);
-      if (dedupedSources.length >= 10) break;
-    }
-
-    const recentSources = await Promise.all(
-      dedupedSources.map(async (entry) => {
-        const [geo, lastRequestForIp, manualBlocked] = await Promise.all([
-          getGeoInfo(entry.ip),
-          apiRequestDb.getLastRequestByIp(entry.ip),
-          manualIpBlocklist.isBlocked(entry.ip),
-        ]);
-        return {
-          ip: entry.ip,
-          timestamp: lastRequestForIp?.created_at || entry.timestamp,
-          count: entry.count,
-          type: manualBlocked ? "blocked" : entry.type,
-          geo,
-          userAgent: lastRequestForIp?.user_agent || null,
-          blockedReason: manualBlocked?.reason || null,
-        };
-      }),
-    );
-
-    const requestSourceStats = {
-      lastRequest: lastRequest
-        ? {
-            ip: lastRequest.ip,
-            geo: lastRequestGeo,
-            timestamp: lastRequest?.created_at || 0,
-            userAgent: lastRequest?.user_agent || null,
-          }
-        : null,
-      lastBlocked: lastBlockedInfo?.ip
-        ? {
-            ip: lastBlockedInfo.ip,
-            geo: lastBlockedGeo,
-            timestamp: lastBlockedInfo?.timestamp || 0,
-            reason: lastBlockedInfo.reason || null,
-            source: lastBlockedInfo.source,
-          }
-        : null,
-      recentSources,
-    };
+    // Request-source stats live in services/ops-metrics.ts so /stats and the
+    // windowed ops-metrics endpoint share one implementation. No window here:
+    // /stats keeps its historical 14-day/all-time request-source scope.
+    const requestSourceStats = await getRequestSourceStats();
 
     let costStats = null;
     try {

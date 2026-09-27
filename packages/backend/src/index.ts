@@ -22,6 +22,8 @@ import { modelRoutes } from "./routes/models.js";
 import { virtualKeyRoutes } from "./routes/virtual-keys.js";
 import { configRoutes } from "./routes/config.js";
 import { opsMetricsRoutes } from "./routes/ops-metrics.js";
+import { agentMetricsRoutes } from "./routes/agent-metrics.js";
+import { playgroundRoutes } from "./routes/playground.js";
 import { publicConfigRoutes } from "./routes/public-config.js";
 import { proxyRoutes } from "./routes/proxy.js";
 import { anthropicRoutes } from "./routes/anthropic/index.js";
@@ -268,6 +270,8 @@ await fastify.register(modelRoutes, { prefix: "/api/admin/models" });
 await fastify.register(virtualKeyRoutes, { prefix: "/api/admin/virtual-keys" });
 await fastify.register(configRoutes, { prefix: "/api/admin/config" });
 await fastify.register(opsMetricsRoutes, { prefix: "/api/admin/config" });
+await fastify.register(agentMetricsRoutes, { prefix: "/api/admin" });
+await fastify.register(playgroundRoutes, { prefix: "/api/admin" });
 await fastify.register(modelPresetsRoutes, {
   prefix: "/api/admin/model-presets",
 });

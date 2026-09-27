@@ -1109,6 +1109,36 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 49,
+    // 运维监控的 Agent 统计按 created_at 窗口聚合 agent_search_runs（一次刷新 6 个
+    // 聚合查询），该表原本只有 user/status/expires/snapshot 四个索引 → 全表扫描。
+    name: "add_agent_search_runs_created_at_index",
+    up: async (conn: Connection) => {
+      const [indexRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'agent_search_runs'
+           AND INDEX_NAME = 'idx_runs_created_at'`,
+      );
+      if (Number((indexRows as any[])[0]?.cnt || 0) === 0) {
+        await conn.query(
+          "ALTER TABLE agent_search_runs ADD INDEX idx_runs_created_at (created_at)",
+        );
+        console.log("[迁移] 已为 agent_search_runs 添加 created_at 索引");
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(
+          "ALTER TABLE agent_search_runs DROP INDEX idx_runs_created_at",
+        );
+      } catch (error: any) {
+        console.warn("[迁移] 删除 agent_search_runs.created_at 索引失败:", error.message);
+      }
+    },
+  },
 ];
 
 async function hasProviderForeignKey(

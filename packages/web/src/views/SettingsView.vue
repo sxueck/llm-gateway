@@ -1,7 +1,12 @@
 <template>
   <div>
     <n-space vertical :size="24">
-      <n-card :title="$t('settings.title')">
+      <PageHeader
+        eyebrow="SETTINGS"
+        :title="$t('settings.title')"
+        :subtitle="$t('settings.subtitle')"
+      />
+      <n-card>
         <n-space vertical :size="16">
           <n-space align="center" justify="space-between">
             <div>
@@ -198,6 +203,7 @@ import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
 import type { User } from '@/types';
 import { useSystemConfig } from '@/composables/useSystemConfig';
+import PageHeader from '@/components/PageHeader.vue';
  
 import { configApi } from '@/api/config';
 import { authApi } from '@/api/auth';

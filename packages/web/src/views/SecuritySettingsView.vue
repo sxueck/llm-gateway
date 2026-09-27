@@ -1,7 +1,8 @@
 <template>
   <div>
     <n-space vertical :size="24">
-      <n-card :title="$t('settings.security')">
+      <PageHeader eyebrow="SETTINGS" :title="$t('settings.security')" />
+      <n-card>
         <n-space vertical :size="16">
           <n-space vertical :size="16">
             <div style="font-size: 16px; font-weight: 500;">{{ $t('settings.headerForwarding.title') }}</div>
@@ -155,6 +156,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { NSpace, NCard, NSwitch, NAlert, NText, NInput, NButton, useMessage } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
+import PageHeader from '@/components/PageHeader.vue';
 
 import { configApi } from '@/api/config';
 import { handleAsyncOperation } from '@/utils/error-handler';

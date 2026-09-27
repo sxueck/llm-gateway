@@ -93,9 +93,15 @@ const router = createRouter({
           component: () => import('@/views/TrafficAnalysisView.vue'),
         },
         {
+          path: 'playground',
+          name: 'Playground',
+          component: () => import('@/views/PlaygroundView.vue'),
+        },
+        {
+          // Legacy bookmark compat: the old API guide page was replaced by
+          // the playground; keep the old path working.
           path: 'api-guide',
-          name: 'ApiGuide',
-          component: () => import('@/views/ApiGuideView.vue'),
+          redirect: '/playground',
         },
         {
           path: 'logs',

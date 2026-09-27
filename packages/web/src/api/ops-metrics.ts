@@ -89,6 +89,56 @@ export interface OpsFilters {
   providerId?: string;
 }
 
+// Field names mirror the backend RequestSourceStats 1:1 (same shape as the
+// requestSourceStats object of GET /admin/config/stats) so the card's table
+// columns keep working unchanged.
+export interface OpsRequestSourceGeoInfo {
+  ip: string;
+  country?: string;
+  province?: string;
+  city?: string;
+  isp?: string;
+  ispZh?: string;
+  locationZh: string;
+  asn?: string;
+  asOrganization?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+export interface OpsRequestSourceEntry {
+  ip: string;
+  timestamp: number;
+  count: number;
+  type: "normal" | "blocked";
+  geo: OpsRequestSourceGeoInfo | null;
+  userAgent: string | null;
+  blockedReason: string | null;
+}
+
+export interface OpsRequestSourceStats {
+  lastRequest: {
+    ip: string;
+    geo: OpsRequestSourceGeoInfo | null;
+    timestamp: number;
+    userAgent: string | null;
+  } | null;
+  lastBlocked: {
+    ip: string;
+    geo: OpsRequestSourceGeoInfo | null;
+    timestamp: number;
+    reason: string | null;
+    source: "manual" | "threat";
+  } | null;
+  recentSources: OpsRequestSourceEntry[];
+}
+
+export interface OpsRequestSourcesResponse {
+  window: OpsWindowInfo;
+  updatedAt: number;
+  requestSourceStats: OpsRequestSourceStats;
+}
+
 export interface OpsDimensionListParams extends OpsFilters {
   search?: string;
   sortBy?: string;
@@ -126,6 +176,12 @@ export const opsMetricsApi = {
 
   getTrend(query: OpsQueryBase): Promise<OpsTrendResponse> {
     return request.get(`${OPS_METRICS_PATH}/trend`, {
+      params: toBaseParams(query),
+    });
+  },
+
+  getRequestSources(query: OpsQueryBase): Promise<OpsRequestSourcesResponse> {
+    return request.get(`${OPS_METRICS_PATH}/request-sources`, {
       params: toBaseParams(query),
     });
   },

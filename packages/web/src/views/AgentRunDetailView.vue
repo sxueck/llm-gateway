@@ -1,26 +1,27 @@
 <template>
   <div class="agent-run-detail-view">
-    <div class="page-header">
-      <div class="header-main">
+    <PageHeader
+      class="agent-run-page-header"
+      eyebrow="AGENT RUNTIME"
+      :title="t('agentRunDetail.title')"
+    >
+      <template #prefix>
         <n-button size="small" quaternary circle @click="goBack">
           <template #icon><n-icon><ArrowBackOutline /></n-icon></template>
         </n-button>
-        <div class="header-title">
-          <div class="title-row">
-            <h1 class="page-title">{{ t("agentRunDetail.title") }}</h1>
-            <code class="run-id">{{ runId }}</code>
-            <n-tag v-if="run" :type="statusTypes[run.status]" :bordered="false">
-              {{ t(`workerMonitoring.status.${run.status}`) }}
-            </n-tag>
-          </div>
-          <p v-if="run" class="page-subtitle">
-            <code>{{ run.plugin.id }}@{{ run.plugin.version }}</code>
-            · {{ run.model_profile }}
-            · {{ run.source.type === "snapshot" ? "snapshot" : "public git" }}
-          </p>
-        </div>
-      </div>
-      <n-space align="center">
+      </template>
+      <template #title-extra>
+        <code class="run-id">{{ runId }}</code>
+        <n-tag v-if="run" size="small" :type="statusTypes[run.status]" :bordered="false">
+          {{ t(`workerMonitoring.status.${run.status}`) }}
+        </n-tag>
+      </template>
+      <template v-if="run" #subtitle>
+        <code>{{ run.plugin.id }}@{{ run.plugin.version }}</code>
+        · {{ run.model_profile }}
+        · {{ run.source.type === "snapshot" ? "snapshot" : "public git" }}
+      </template>
+      <template #actions>
         <span v-if="isActive" class="refresh-badge"
           ><span class="refresh-dot" />{{ t("agentRunDetail.liveBadge") }}</span
         >
@@ -30,8 +31,8 @@
           ></template>
           {{ t("common.refresh") }}
         </n-button>
-      </n-space>
-    </div>
+      </template>
+    </PageHeader>
 
     <n-alert
       v-if="run?.error"
@@ -247,7 +248,6 @@ import {
   NDescriptionsItem,
   NEmpty,
   NIcon,
-  NSpace,
   NTag,
   NTimeline,
   NTimelineItem,
@@ -257,6 +257,7 @@ import { ArrowBackOutline, RefreshOutline } from "@vicons/ionicons5";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
 import { streamSSE } from "@/utils/sse";
+import PageHeader from "@/components/PageHeader.vue";
 import {
   configApi,
   type AgentRunDetailResponse,
@@ -668,45 +669,14 @@ onBeforeUnmount(stopLive);
   margin: 0 auto;
   padding-bottom: 32px;
 }
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
+.agent-run-page-header {
   margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-.header-main {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  min-width: 0;
-}
-.header-title {
-  min-width: 0;
-}
-.title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.page-title {
-  font-size: 20px;
-  font-weight: 600;
-  margin: 0;
 }
 .run-id {
   font-size: 12px;
   color: #8c8c8c;
   word-break: break-all;
 }
-.page-subtitle {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: #595959;
-}
-
 .agent-run-detail-view :deep(.n-card) {
   border: 1px solid #e5e7eb;
   border-radius: 10px;

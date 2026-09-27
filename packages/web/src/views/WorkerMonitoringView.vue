@@ -1,11 +1,12 @@
 <template>
   <div class="worker-monitoring-view">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">{{ t("workerMonitoring.title") }}</h1>
-        <p class="page-subtitle">{{ t("workerMonitoring.subtitle") }}</p>
-      </div>
-      <n-space align="center">
+    <PageHeader
+      class="worker-monitoring-page-header"
+      eyebrow="AGENT RUNTIME"
+      :title="t('workerMonitoring.title')"
+      :subtitle="t('workerMonitoring.subtitle')"
+    >
+      <template #actions>
         <span class="refresh-badge"
           ><span class="refresh-dot" />{{ t("workerMonitoring.autoRefresh") }}</span
         >
@@ -15,8 +16,8 @@
           ></template>
           {{ t("common.refresh") }}
         </n-button>
-      </n-space>
-    </div>
+      </template>
+    </PageHeader>
 
     <div class="stat-panel">
       <section
@@ -98,6 +99,7 @@ import {
   type AgentRunMonitoringResponse,
   type AgentRunStatus,
 } from "@/api/config";
+import PageHeader from "@/components/PageHeader.vue";
 
 const message = useMessage();
 const router = useRouter();
@@ -506,13 +508,8 @@ onBeforeUnmount(() => {
   margin: 0 auto;
   padding-bottom: 32px;
 }
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
+.worker-monitoring-page-header {
   margin-bottom: 16px;
-  flex-wrap: wrap;
 }
 
 /* 仅本视图内抹平全局卡片的阴影与大圆角，换成 hairline 扁平风 */

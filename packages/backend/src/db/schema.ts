@@ -488,7 +488,8 @@ export async function createTables() {
         INDEX idx_runs_user (user_id),
         INDEX idx_runs_status (status),
         INDEX idx_runs_expires (expires_at),
-        INDEX idx_runs_snapshot (snapshot_id)
+        INDEX idx_runs_snapshot (snapshot_id),
+        INDEX idx_runs_created_at (created_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 

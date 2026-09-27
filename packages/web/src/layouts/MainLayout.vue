@@ -147,7 +147,7 @@ const mainMenuParentByKey: Record<string, string> = {
   'worker-monitoring': 'monitoring',
   'operations-monitoring': 'monitoring',
   'traffic-analysis': 'monitoring',
-  'api-guide': 'tools',
+  playground: 'tools',
   logs: 'tools',
   'api-requests': 'tools',
   'prompt-samples': 'tools',
@@ -282,9 +282,9 @@ const menuOptions = computed(() => [
     icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
     children: [
       {
-        label: t('menu.apiGuide'),
-        key: 'api-guide',
-        icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }),
+        label: t('menu.playground'),
+        key: 'playground',
+        icon: () => h(NIcon, null, { default: () => h(TerminalOutline) }),
       },
       {
         label: t('menu.logs'),

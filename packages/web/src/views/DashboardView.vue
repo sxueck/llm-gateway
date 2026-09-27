@@ -1,27 +1,29 @@
 <template>
   <div class="dashboard-view">
     <n-space vertical :size="24">
-      <div class="dashboard-header">
-        <div>
-          <h2 class="page-title dashboard-page-title">{{ t('dashboard.title') }}</h2>
-          <p class="page-subtitle dashboard-page-subtitle">{{ t('dashboard.subtitle') }}</p>
-        </div>
-        <n-space :size="12" class="dashboard-controls">
-          <n-button secondary round @click="refreshDashboard">
-            <template #icon>
-              <n-icon><RefreshOutline /></n-icon>
-            </template>
-            {{ t('common.refresh') }}
-          </n-button>
-          <n-select
-            v-model:value="selectedPeriod"
-            :options="periodOptions"
-            size="medium"
-            :style="{ width: windowWidth < 640 ? '140px' : '160px' }"
-            @update:value="() => loadStats()"
-          />
-        </n-space>
-      </div>
+      <PageHeader
+        eyebrow="OVERVIEW"
+        :title="t('dashboard.title')"
+        :subtitle="t('dashboard.subtitle')"
+      >
+        <template #actions>
+          <n-space :size="12" class="dashboard-controls">
+            <n-button secondary round @click="refreshDashboard">
+              <template #icon>
+                <n-icon><RefreshOutline /></n-icon>
+              </template>
+              {{ t('common.refresh') }}
+            </n-button>
+            <n-select
+              v-model:value="selectedPeriod"
+              :options="periodOptions"
+              size="medium"
+              :style="{ width: windowWidth < 640 ? '140px' : '160px' }"
+              @update:value="() => loadStats()"
+            />
+          </n-space>
+        </template>
+      </PageHeader>
 
       <n-alert v-if="stats?.legacyTokenSemantics || (isTokenCardFlipped && statsAllTime?.legacyTokenSemantics)" type="warning" :show-icon="true">
         历史汇总中存在旧版缓存命中 Token 口径；相关统计可能偏高，已清理的明细无法精确回算。
@@ -441,73 +443,6 @@
         </n-gi>
       </n-grid>
 
-      <n-card
-        v-if="showRequestSourceCard"
-        class="overview-card"
-        title="请求来源"
-        style="margin-bottom: 24px"
-      >
-        <n-space vertical :size="20">
-          <n-grid cols="1 s:2" :x-gap="24" :y-gap="16" responsive="screen">
-            <n-gi>
-              <div class="source-info-item">
-                <div class="source-label">上一次请求来源</div>
-                <div class="source-value">
-                  {{ formatGeoLocation(requestSourceStats?.lastRequest?.geo) }}
-                </div>
-                <div class="source-sub">
-                  {{ requestSourceStats?.lastRequest?.ip || '暂未记录' }}
-                </div>
-                <div class="source-time">
-                  {{
-                    requestSourceStats?.lastRequest?.timestamp
-                      ? formatTimestamp(requestSourceStats?.lastRequest?.timestamp || 0)
-                      : '---'
-                  }}
-                </div>
-                <div class="source-client">
-                  客户端：{{ requestSourceStats?.lastRequest?.userAgent || '未知' }}
-                </div>
-              </div>
-            </n-gi>
-            <n-gi>
-              <div class="source-info-item">
-                <div class="source-label">最近拦截 IP</div>
-                <div class="source-value source-value-danger">
-                  {{ formatGeoLocation(requestSourceStats?.lastBlocked?.geo) }}
-                </div>
-                <div class="source-sub">
-                  {{ requestSourceStats?.lastBlocked?.ip || '暂无拦截' }}
-                </div>
-                <div class="source-time">
-                  {{
-                    requestSourceStats?.lastBlocked?.timestamp
-                      ? formatTimestamp(requestSourceStats?.lastBlocked?.timestamp || 0)
-                      : '---'
-                  }}
-                </div>
-              </div>
-            </n-gi>
-          </n-grid>
-          <div>
-            <div class="source-table-header">
-              <div class="source-table-title">最近来源 IP（去重后 10 条）</div>
-              <div class="source-table-desc">包含被拦截与正常访问的来源</div>
-            </div>
-            <n-data-table
-              v-if="requestSourceTableData.length > 0"
-              :columns="requestSourceColumns"
-              :data="requestSourceTableData"
-              :bordered="false"
-              size="small"
-              :scroll-x="1100"
-              :row-key="row => row.ip"
-            />
-            <n-empty v-else description="暂无请求来源数据" :show-icon="false" />
-          </div>
-        </n-space>
-      </n-card>
-
       <n-card class="overview-card" title="系统概览">
         <div class="overview-grid">
           <div class="overview-item">
@@ -529,7 +464,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import {
   useMessage,
   NSpace,
@@ -542,13 +477,8 @@ import {
   NIcon,
   NSpin,
   NResult,
-  NDataTable,
-  NTag,
-  NTooltip,
-  NPopconfirm,
   NSkeleton
 } from 'naive-ui'
-import type { DataTableColumns } from 'naive-ui'
 import { RefreshOutline } from '@vicons/ionicons5'
 import { useI18n } from 'vue-i18n'
 import { useProviderStore } from '@/stores/provider'
@@ -560,8 +490,6 @@ import {
   type IntentClassifyStats,
   type ModelStat,
   type CostStats,
-  type RequestSourceEntry,
-  type RequestSourceStats,
   type ThreatIpStats
 } from '@/api/config'
 import {
@@ -572,17 +500,14 @@ import {
   formatTimestamp,
   formatUptime
 } from '@/utils/format'
-import { useSystemConfig } from '@/composables/useSystemConfig'
 import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize'
 import VChart from 'vue-echarts'
+import PageHeader from '@/components/PageHeader.vue'
 
 const { t } = useI18n()
 const message = useMessage()
 const providerStore = useProviderStore()
 const virtualKeyStore = useVirtualKeyStore()
-const { dashboardHideRequestSourceCard } = useSystemConfig()
-
-const showRequestSourceCard = computed(() => !dashboardHideRequestSourceCard.value)
 const stats = ref<ApiStats | null>(null)
 const statsAllTime = ref<ApiStats | null>(null)
 const isTokenCardFlipped = ref(false)
@@ -595,210 +520,8 @@ const circuitBreakerStats = ref<{
   maxTriggerCount: number
 } | null>(null)
 const costStats = ref<CostStats | null>(null)
-const requestSourceStats = ref<RequestSourceStats | null>(null)
 const threatIpStats = ref<ThreatIpStats | null>(null)
 const piiProtectionCount = ref<number>(0)
-const requestSourceTableData = computed<RequestSourceEntry[]>(
-  () => requestSourceStats.value?.recentSources || []
-)
-const lookupLoadingIp = ref<string | null>(null)
-const blockLoadingIp = ref<string | null>(null)
-const requestSourceColumns: DataTableColumns<RequestSourceEntry> = [
-  {
-    title: 'IP 地址',
-    key: 'ip',
-    minWidth: 220,
-    render(row) {
-      const tagType = row.type === 'blocked' ? 'error' : 'success'
-      const tagText = row.type === 'blocked' ? '被拦截' : '正常访问'
-      const subText =
-        row.type === 'blocked'
-          ? row.blockedReason
-            ? `拦截原因：${row.blockedReason}`
-            : '由安全策略拦截'
-          : `最近请求 ${row.count || 0} 次`
-      return h('div', { style: 'display: flex; flex-direction: column; gap: 4px;' }, [
-        h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, [
-          h(
-            'span',
-            {
-              style:
-                'font-weight: 600; color: #111827; cursor: pointer; text-decoration: underline; text-underline-offset: 4px; text-decoration-color: #d1d5db;',
-              onClick: () => handleLookupIp(row.ip),
-              title: '点击查询 IP 详细信息',
-              class: 'ip-clickable'
-            },
-            row.ip || '-'
-          ),
-          h(NTag, { size: 'small', type: tagType, bordered: false }, { default: () => tagText }),
-          lookupLoadingIp.value === row.ip ? h(NSpin, { size: 14 }) : null
-        ]),
-        h('div', { style: 'font-size: 12px; color: #6b7280;' }, subText)
-      ])
-    }
-  },
-  {
-    title: '属地',
-    key: 'location',
-    minWidth: 160,
-    render(row) {
-      return row.geo?.locationZh || '未知'
-    }
-  },
-  {
-    title: '运营商 / ISP',
-    key: 'isp',
-    minWidth: 160,
-    render(row) {
-      return row.geo?.ispZh || row.geo?.isp || '-'
-    }
-  },
-  {
-    title: '最近出现时间',
-    key: 'timestamp',
-    minWidth: 160,
-    render(row) {
-      return row.timestamp ? formatTimestamp(row.timestamp) : '-'
-    }
-  },
-  {
-    title: '客户端',
-    key: 'client',
-    minWidth: 220,
-    render(row) {
-      if (!row.userAgent) {
-        return '未知'
-      }
-      const text = row.userAgent.length > 60 ? `${row.userAgent.slice(0, 60)}...` : row.userAgent
-      return h(NTooltip, null, {
-        trigger: () =>
-          h(
-            'div',
-            { style: 'font-size: 12px; color: #374151; line-height: 1.5; word-break: break-all;' },
-            text
-          ),
-        default: () => row.userAgent
-      })
-    }
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    minWidth: 180,
-    render(row) {
-      return h(NSpace, { size: 6 }, [
-        h(
-          NPopconfirm,
-          {
-            disabled: row.type === 'blocked',
-            positiveText: '拦截',
-            negativeText: '取消',
-            onPositiveClick: () => handleBlockIp(row.ip)
-          },
-          {
-            default: () => '确定要拦截该 IP 吗？',
-            trigger: () =>
-              h(
-                NButton,
-                {
-                  size: 'tiny',
-                  type: row.type === 'blocked' ? 'default' : 'error',
-                  ghost: true,
-                  loading: blockLoadingIp.value === row.ip,
-                  disabled: row.type === 'blocked'
-                },
-                { default: () => (row.type === 'blocked' ? '已拦截' : '拦截') }
-              )
-          }
-        )
-      ])
-    }
-  }
-]
-
-function ensureRequestSourceState() {
-  if (!requestSourceStats.value) {
-    requestSourceStats.value = {
-      lastRequest: null,
-      lastBlocked: null,
-      recentSources: []
-    }
-  } else if (!requestSourceStats.value.recentSources) {
-    requestSourceStats.value = {
-      ...requestSourceStats.value,
-      recentSources: []
-    }
-  }
-}
-
-function buildUpdatedSources(ip: string, patch: Partial<RequestSourceEntry>) {
-  ensureRequestSourceState()
-  const recentSources = requestSourceStats.value!.recentSources || []
-  return recentSources.map(entry => {
-    if (entry.ip !== ip) return entry
-    return { ...entry, ...patch }
-  })
-}
-
-async function handleLookupIp(ip?: string) {
-  if (!ip) return
-  lookupLoadingIp.value = ip
-  try {
-    const result = await configApi.lookupRequestSource(ip)
-    const updatedSources = buildUpdatedSources(ip, {
-      geo: result.geo,
-      timestamp: result.lastSeen || Date.now(),
-      userAgent: result.userAgent || null,
-      type: result.blocked ? 'blocked' : 'normal',
-      blockedReason: result.blocked ? result.blockedReason : null
-    })
-    requestSourceStats.value = {
-      ...requestSourceStats.value!,
-      recentSources: updatedSources
-    }
-    const locationText = formatGeoLocation(result.geo || undefined)
-    const asnText = result.geo?.asn
-      ? `${result.geo.asn}${result.geo.asOrganization ? ` · ${result.geo.asOrganization}` : ''}`
-      : ''
-    message.success(`查询成功：${locationText}${asnText ? ` | ${asnText}` : ''}`)
-  } catch (error: any) {
-    const errorMsg = error?.response?.data?.error?.message || error?.message || '查询 IP 信息失败'
-    message.error(errorMsg)
-  } finally {
-    lookupLoadingIp.value = null
-  }
-}
-
-async function handleBlockIp(ip?: string) {
-  if (!ip) return
-  blockLoadingIp.value = ip
-  try {
-    const result = await configApi.blockRequestSource({ ip })
-    const reason = result.blocked.reason || '手动拦截'
-    const updatedSources = buildUpdatedSources(ip, {
-      type: 'blocked',
-      blockedReason: reason
-    })
-    const targetEntry = updatedSources.find(entry => entry.ip === ip)
-    requestSourceStats.value = {
-      ...requestSourceStats.value!,
-      recentSources: updatedSources,
-      lastBlocked: {
-        ip,
-        geo: targetEntry?.geo || null,
-        timestamp: result.blocked.timestamp,
-        reason,
-        source: 'manual'
-      }
-    }
-    message.success(`已拦截 IP ${ip}`)
-  } catch (error: any) {
-    const errorMsg = error?.response?.data?.error?.message || error?.message || '拦截 IP 失败'
-    message.error(errorMsg)
-  } finally {
-    blockLoadingIp.value = null
-  }
-}
 const selectedPeriod = ref<'24h' | '7d' | '30d'>('24h')
 const chartMetric = ref<'requests' | 'tokens'>('requests')
 const loading = ref(false)
@@ -1289,7 +1012,6 @@ async function loadStats(opts: { silent?: boolean } = {}) {
       maxTriggerCount: 0
     }
     costStats.value = result.costStats || null
-    requestSourceStats.value = result.requestSourceStats || null
     threatIpStats.value = result.threatIpStats || null
     piiProtectionCount.value = result.piiProtectionCount || 0
   } catch (error: any) {
@@ -1319,13 +1041,6 @@ const formatCost = (cost: number) => {
   if (cost === 0) return '0.00'
   if (cost < 0.01) return cost.toFixed(4)
   return cost.toFixed(2)
-}
-
-const formatGeoLocation = (geo: RequestSourceEntry['geo'] | undefined) => {
-  if (!geo) return '未知'
-  if (geo.locationZh) return geo.locationZh
-  const parts = [geo.country, geo.province, geo.city].filter(Boolean)
-  return parts.length > 0 ? parts.join(' · ') : '未知'
 }
 
 onMounted(async () => {

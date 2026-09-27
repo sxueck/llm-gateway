@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from 'vitest';
 import { applyMigrations, migrations, normalizeExpertRoutingConfig } from './migrations.js';
 
 describe('migration runner from v45', () => {
-  test('has unique migration versions and applies v47/v48 after v45', async () => {
+  test('has unique migration versions and applies v47/v48/v49 after v45', async () => {
     const versions = migrations.map(migration => migration.version);
     expect(new Set(versions).size).toBe(versions.length);
 
@@ -55,7 +55,15 @@ describe('migration runner from v45', () => {
       'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
       [48, 'drop_model_proactive_monitoring', expect.any(Number)],
     );
-    expect(conn.commit).toHaveBeenCalledTimes(2);
+    // v49：运维监控 Agent 统计按 created_at 窗口聚合 agent_search_runs，补索引。
+    expect(query).toHaveBeenCalledWith(
+      'ALTER TABLE agent_search_runs ADD INDEX idx_runs_created_at (created_at)',
+    );
+    expect(query).toHaveBeenCalledWith(
+      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      [49, 'add_agent_search_runs_created_at_index', expect.any(Number)],
+    );
+    expect(conn.commit).toHaveBeenCalledTimes(3);
   });
 });
 

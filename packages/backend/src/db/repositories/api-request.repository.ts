@@ -42,20 +42,29 @@ export const apiRequestRepository = {
     }
   },
 
-  async getLastRequestByIp(ip: string) {
+  async getLastRequestByIp(ip: string, startTime?: number, endTime?: number) {
     if (!ip) return null;
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
       const loggingCondition = getDisableLoggingCondition();
+      // startTime/endTime 只由窗口化的 ops-metrics 请求来源接口传入；不传时
+      // 保持原有的无界口径（老调用方行为不变）。
+      const windowSql =
+        (startTime ? "ar.created_at >= ? AND " : "") +
+        (endTime ? "ar.created_at < ? AND " : "");
+      const windowParams = [
+        ...(startTime ? [startTime] : []),
+        ...(endTime ? [endTime] : []),
+      ];
       const [rows] = await conn.query(
         `SELECT ar.created_at, ar.user_agent
          FROM api_requests ar
          LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-         WHERE ar.ip = ? AND ${loggingCondition}
+         WHERE ar.ip = ? AND ${windowSql}${loggingCondition}
          ORDER BY ar.created_at DESC
          LIMIT 1`,
-        [ip],
+        [ip, ...windowParams],
       );
       const result = rows as any[];
       if (result.length === 0) return null;
@@ -65,12 +74,25 @@ export const apiRequestRepository = {
     }
   },
 
-  async getLastRequest() {
+  async getLastRequest(startTime?: number, endTime?: number) {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
+      const conditions: string[] = [];
+      const params: number[] = [];
+      if (startTime) {
+        conditions.push("ar.created_at >= ?");
+        params.push(startTime);
+      }
+      if (endTime) {
+        conditions.push("ar.created_at < ?");
+        params.push(endTime);
+      }
+      const where =
+        conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
       const [rows] = await conn.query(
-        `SELECT ip, created_at, user_agent FROM api_requests ORDER BY created_at DESC LIMIT 1`,
+        `SELECT ip, created_at, user_agent FROM api_requests ar ${where} ORDER BY created_at DESC LIMIT 1`,
+        params,
       );
       const result = rows as any[];
       if (result.length === 0) return null;
@@ -80,12 +102,16 @@ export const apiRequestRepository = {
     }
   },
 
-  async getRecentUniqueIps(limit: number = 30) {
+  async getRecentUniqueIps(limit: number = 30, startTime?: number, endTime?: number) {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
-      const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+      // Default keeps the historical 14-day horizon; windowed callers pass
+      // their own startTime/endTime so the ops page honors its period selector
+      //（半开区间，与 ops-metrics 其他查询同一口径，不把窗口外的行显示进来）。
+      const cutoff = startTime ?? Date.now() - 14 * 24 * 60 * 60 * 1000;
       const loggingCondition = getDisableLoggingCondition();
+      const upperBound = endTime ? "AND ar.created_at < ? " : "";
 
       const [rows] = await conn.query(
         `SELECT
@@ -94,11 +120,11 @@ export const apiRequestRepository = {
           COUNT(*) as count
          FROM api_requests ar
          LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-         WHERE ar.created_at > ? AND ${loggingCondition}
+         WHERE ar.created_at >= ? ${upperBound}AND ${loggingCondition}
          GROUP BY ar.ip
          ORDER BY last_seen DESC
          LIMIT ?`,
-        [cutoff, limit],
+        endTime ? [cutoff, endTime, limit] : [cutoff, limit],
       );
       return rows as any[];
     } finally {

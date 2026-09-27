@@ -1,15 +1,15 @@
 <template>
   <div class="virtual-keys-view">
     <n-space vertical :size="12">
-      <n-space justify="space-between" align="center">
-        <div>
-          <h2 class="page-title">虚拟密钥管理</h2>
-          <p class="page-subtitle">
-            创建和管理虚拟 API 密钥,用于访问 LLM Gateway。可以设置过期时间和使用限制
-          </p>
-        </div>
-        <n-button type="primary" size="small" @click="showModal = true">创建虚拟密钥</n-button>
-      </n-space>
+      <PageHeader
+        eyebrow="ACCESS"
+        title="虚拟密钥管理"
+        subtitle="创建和管理虚拟 API 密钥,用于访问 LLM Gateway。可以设置过期时间和使用限制"
+      >
+        <template #actions>
+          <n-button type="primary" size="small" @click="showModal = true">创建虚拟密钥</n-button>
+        </template>
+      </PageHeader>
 
       <n-card class="table-card">
         <n-data-table
@@ -250,6 +250,7 @@ import { virtualKeyApi } from '@/api/virtual-key'
 import type { VirtualKey } from '@/types'
 import { copyToClipboard } from '@/utils/common'
 import { createDefaultVirtualKeyForm } from '@/types/virtual-key'
+import PageHeader from '@/components/PageHeader.vue'
 
 const message = useMessage()
 const virtualKeyStore = useVirtualKeyStore()
