@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  expertRoutingConfigDb: { getById: vi.fn(), delete: vi.fn() },
+  expertRoutingConfigDb: { getById: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
   expertRoutingLogDb: { getByConfigId: vi.fn(), getStatistics: vi.fn(), getRouteStats: vi.fn(), getDifficultyStats: vi.fn(), getClassifierLatencies: vi.fn(), getRecentRoutingDecisions: vi.fn(), getClassifierModelStats: vi.fn(), getById: vi.fn() },
   apiRequestDb: { getUsageByRouteLogIds: vi.fn() },
   expertRoutingTrainingRecordDb: { upsertFeedback: vi.fn(), listByConfig: vi.fn() },
   expertRoutingSessionBindingDb: { deleteByConfig: vi.fn() },
-  modelDb: { getByExpertRoutingId: vi.fn(), update: vi.fn(), delete: vi.fn(), getById: vi.fn(), getByProviderId: vi.fn() },
+  modelDb: { getByExpertRoutingId: vi.fn(), update: vi.fn(), delete: vi.fn(), getById: vi.fn(), getByProviderId: vi.fn(), create: vi.fn(), getAll: vi.fn() },
   virtualKeyDb: { countByModels: vi.fn() },
   invalidateModel: vi.fn(),
 }));
@@ -62,16 +62,18 @@ function createFastifyStub() {
   // Separate map: `routes.delete` would collide with Map.prototype.delete
   const deleteRoutes = new Map<string, Function>();
   const postRoutes = new Map<string, Function>();
+  const putRoutes = new Map<string, Function>();
   return {
     routes,
     deleteRoutes,
     postRoutes,
+    putRoutes,
     fastify: {
       authenticate: vi.fn(),
       addHook: vi.fn(),
       get: vi.fn((path: string, handler: Function) => routes.set(path, handler)),
       post: vi.fn((path: string, handler: Function) => postRoutes.set(path, handler)),
-      put: vi.fn(),
+      put: vi.fn((path: string, handler: Function) => putRoutes.set(path, handler)),
       patch: vi.fn(),
       delete: vi.fn((path: string, handler: Function) => deleteRoutes.set(path, handler)),
     } as any,
@@ -333,7 +335,14 @@ describe('expertRoutingRoutes', () => {
       name: 'Expert model',
     }]);
     expect(reply.statusCode).toBe(400);
-    expect(reply.payload).toMatchObject({ error: expect.stringContaining('仍被虚拟密钥引用') });
+    expect(reply.payload).toMatchObject({
+      error: {
+        message: expect.stringContaining('仍被虚拟密钥引用'),
+        type: 'invalid_request_error',
+        param: null,
+        code: 'validation_error',
+      },
+    });
     expect(mocks.expertRoutingConfigDb.delete).not.toHaveBeenCalled();
     expect(mocks.modelDb.delete).not.toHaveBeenCalled();
     expect(mocks.modelDb.update).not.toHaveBeenCalled();
@@ -596,6 +605,138 @@ describe('expertRoutingRoutes', () => {
 
       await expect(routes.get('/:id/bands/preview')!({ params: { id: 'missing' } }))
         .rejects.toThrow('专家路由配置不存在');
+    });
+  });
+
+  describe('draft create/update contract (空草稿)', () => {
+    const validExperts = [
+      { id: 'vm-1', type: 'virtual', model_id: 'vm-1', band: 'low' },
+    ];
+
+    beforeEach(() => {
+      mocks.expertRoutingConfigDb.create.mockImplementation(async (data: any) => ({
+        ...data,
+        created_at: 1,
+        updated_at: 1,
+      }));
+      mocks.modelDb.create.mockImplementation(async (data: any) => ({ ...data }));
+      mocks.modelDb.getById.mockResolvedValue({ id: 'vm-1', name: 'VM', enabled: 1 });
+    });
+
+    it('creates an empty-experts draft as disabled even when enabled is requested', async () => {
+      const { postRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+
+      const response: any = await postRoutes.get('/')!({
+        body: { name: '草稿', enabled: true, experts: [] },
+      });
+
+      expect(response.enabled).toBe(false);
+      expect(mocks.expertRoutingConfigDb.create.mock.calls[0][0]).toMatchObject({
+        name: '草稿',
+        enabled: 0,
+      });
+      // The expert virtual model is still created so the draft is reachable.
+      expect(mocks.modelDb.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('creates an enabled config when experts are present', async () => {
+      const { postRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+
+      const response: any = await postRoutes.get('/')!({
+        body: { name: '正式', experts: validExperts },
+      });
+
+      expect(response.enabled).toBe(true);
+      expect(mocks.expertRoutingConfigDb.create.mock.calls[0][0].enabled).toBe(1);
+    });
+
+    it('returns 400 (not 500) for validation failures', async () => {
+      const { postRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+      const reply = createReplyStub();
+
+      await postRoutes.get('/')!(
+        { body: { name: 'x', experts: [{ id: 'vm-1', type: 'virtual', model_id: 'vm-1' }] } },
+        reply,
+      );
+
+      expect(reply.statusCode).toBe(400);
+      expect(reply.payload).toMatchObject({
+        error: {
+          message: expect.stringContaining('band'),
+          type: 'invalid_request_error',
+          param: null,
+          code: 'validation_error',
+        },
+      });
+      expect(mocks.expertRoutingConfigDb.create).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 for malformed bodies instead of 500', async () => {
+      const { postRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+      const reply = createReplyStub();
+
+      await postRoutes.get('/')!({ body: { experts: [] } }, reply);
+
+      expect(reply.statusCode).toBe(400);
+      expect(reply.payload).toMatchObject({
+        error: {
+          message: expect.stringContaining('请求参数验证失败'),
+          type: 'invalid_request_error',
+          param: null,
+          code: 'validation_error',
+        },
+      });
+    });
+
+    it('refuses to enable an empty draft with 400', async () => {
+      mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+        id: 'routing-1',
+        name: '草稿',
+        enabled: 0,
+        config: JSON.stringify({ version: 2, experts: [] }),
+      });
+      const { putRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+      const reply = createReplyStub();
+
+      await putRoutes.get('/:id')!({ params: { id: 'routing-1' }, body: { enabled: true } }, reply);
+
+      expect(reply.statusCode).toBe(400);
+      expect(reply.payload).toMatchObject({
+        error: {
+          message: expect.stringContaining('启用前至少需要配置一个候选模型'),
+          type: 'invalid_request_error',
+          param: null,
+          code: 'validation_error',
+        },
+      });
+      expect(mocks.expertRoutingConfigDb.update).not.toHaveBeenCalled();
+    });
+
+    it('still allows disabling or saving an empty draft', async () => {
+      mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+        id: 'routing-1',
+        name: '草稿',
+        enabled: 0,
+        config: JSON.stringify({ version: 2, experts: [] }),
+      });
+      const { putRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+
+      const response: any = await putRoutes.get('/:id')!({
+        params: { id: 'routing-1' },
+        body: { enabled: false },
+      });
+
+      expect(response.id).toBe('routing-1');
+      expect(mocks.expertRoutingConfigDb.update).toHaveBeenCalledWith(
+        'routing-1',
+        expect.objectContaining({ enabled: 0 }),
+      );
     });
   });
 });

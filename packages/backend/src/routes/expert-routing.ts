@@ -128,6 +128,37 @@ const updateExpertRoutingSchema = z.object({
  * v2 removed several v1 fields. Reject them with an explicit message instead
  * of silently stripping (zod default), so stale callers notice immediately.
  */
+function httpError(statusCode: number, message: string): Error {
+  const error: Error & { statusCode?: number } = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+function errorResponse(statusCode: number, message: string) {
+  return {
+    error: {
+      message,
+      type: "invalid_request_error",
+      param: null,
+      code: statusCode === 404 ? "not_found" : "validation_error",
+    },
+  };
+}
+
+function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
+  try {
+    return schema.parse(body);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      throw httpError(
+        400,
+        `请求参数验证失败: ${error.issues.map((issue) => issue.message).join("; ")}`,
+      );
+    }
+    throw error;
+  }
+}
+
 function rejectDeprecatedFields(body: any): void {
   const removed: string[] = [];
   if (body && typeof body === "object") {
@@ -145,11 +176,10 @@ function rejectDeprecatedFields(body: any): void {
     }
   }
   if (removed.length > 0) {
-    const error = new Error(
+    throw httpError(
+      400,
       `字段已废弃 (v2 已移除按类别路由): ${[...new Set(removed)].join(", ")}`,
     );
-    (error as any).statusCode = 400;
-    throw error;
   }
 }
 
@@ -159,23 +189,23 @@ async function validateModelConfig(
 ): Promise<void> {
   if (config.type === "virtual") {
     if (!config.model_id) {
-      throw new Error(`${configType}虚拟模型未指定 model_id`);
+      throw httpError(400, `${configType}虚拟模型未指定 model_id`);
     }
 
     const virtualModel = await modelDb.getById(config.model_id);
     if (!virtualModel) {
-      throw new Error(`${configType}虚拟模型不存在: ${config.model_id}`);
+      throw httpError(400, `${configType}虚拟模型不存在: ${config.model_id}`);
     }
 
     if (!virtualModel.enabled) {
-      throw new Error(`${configType}虚拟模型 "${virtualModel.name}" 已被禁用`);
+      throw httpError(400, `${configType}虚拟模型 "${virtualModel.name}" 已被禁用`);
     }
   } else {
     if (!config.provider_id) {
-      throw new Error(`${configType}真实模型未指定 provider_id`);
+      throw httpError(400, `${configType}真实模型未指定 provider_id`);
     }
     if (!config.model) {
-      throw new Error(`${configType}真实模型未指定 model`);
+      throw httpError(400, `${configType}真实模型未指定 model`);
     }
   }
 }
@@ -184,13 +214,14 @@ function validateSessionPolicy(policy: any): void {
   const idle = Number(policy?.idle_ttl_seconds);
   const absolute = Number(policy?.absolute_ttl_seconds);
   if (!Number.isFinite(idle) || idle <= 0) {
-    throw new Error("session_policy.idle_ttl_seconds 必须为正整数");
+    throw httpError(400, "session_policy.idle_ttl_seconds 必须为正整数");
   }
   if (!Number.isFinite(absolute) || absolute <= 0) {
-    throw new Error("session_policy.absolute_ttl_seconds 必须为正整数");
+    throw httpError(400, "session_policy.absolute_ttl_seconds 必须为正整数");
   }
   if (idle > absolute) {
-    throw new Error(
+    throw httpError(
+      400,
       "session_policy.idle_ttl_seconds 不能大于 absolute_ttl_seconds",
     );
   }
@@ -210,7 +241,8 @@ async function validateExpertConfig(
         currentExpertRoutingId &&
         virtualModel!.expert_routing_id === currentExpertRoutingId
       ) {
-        throw new Error(
+        throw httpError(
+          400,
           `候选模型 "${expert.id}" 的虚拟模型 "${virtualModel!.name}" 引用了当前分级路由配置,会导致循环依赖。` +
             `请选择其他模型。`,
         );
@@ -233,7 +265,8 @@ async function validateFallbackConfig(
         currentExpertRoutingId &&
         virtualModel!.expert_routing_id === currentExpertRoutingId
       ) {
-        throw new Error(
+        throw httpError(
+          400,
           `降级虚拟模型 "${virtualModel!.name}" 引用了当前专家路由配置,会导致循环依赖。` +
             `请选择其他模型。`,
         );
@@ -242,24 +275,23 @@ async function validateFallbackConfig(
   }
 }
 
+// 空草稿契约：experts 可为空（草稿态，必须保持禁用）；非空时逐项校验。
+// 启用门搶（非空才能 enable）由 create/update 处理器执行。
 async function validateExpertRoutingConfig(
   config: any,
   currentExpertRoutingId?: string,
 ): Promise<void> {
-  if (!Array.isArray(config.experts) || config.experts.length === 0) {
-    throw new Error("至少需要配置一个专家映射");
-  }
-
+  const experts: any[] = Array.isArray(config.experts) ? config.experts : [];
   const ids = new Set<string>();
-  for (const expert of config.experts) {
-    if (ids.has(expert.id)) throw new Error(`重复的候选模型 ID: ${expert.id}`);
+  for (const expert of experts) {
+    if (ids.has(expert.id)) throw httpError(400, `重复的候选模型 ID: ${expert.id}`);
     ids.add(expert.id);
     if (
       expert.band !== "low" &&
       expert.band !== "medium" &&
       expert.band !== "high"
     ) {
-      throw new Error(`候选模型 ${expert.id} 缺少 band (low/medium/high)`);
+      throw httpError(400, `候选模型 ${expert.id} 缺少 band (low/medium/high)`);
     }
     await validateExpertConfig(expert, currentExpertRoutingId);
   }
@@ -514,21 +546,25 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.post("/", async (request) => {
+  fastify.post("/", async (request, reply) => {
     try {
       rejectDeprecatedFields(request.body);
-      const body = createExpertRoutingSchema.parse(request.body);
+      const body = parseBody(createExpertRoutingSchema, request.body);
 
       const configData = buildConfigData(body, undefined);
 
       await validateExpertRoutingConfig(configData);
+
+      // 空草稿强制以禁用状态创建：无候选模型的启用配置在代理时会直接报错。
+      const expertsEmpty = !Array.isArray(configData.experts) || configData.experts.length === 0;
+      const enabled = !expertsEmpty && body.enabled !== false ? 1 : 0;
 
       const configId = nanoid();
       const config = await expertRoutingConfigDb.create({
         id: configId,
         name: body.name,
         description: body.description,
-        enabled: body.enabled === false ? 0 : 1,
+        enabled,
         config: JSON.stringify(configData),
       });
 
@@ -581,19 +617,24 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         `创建专家路由配置失败: ${error.message}`,
         "ExpertRouting",
       );
+      if (error.statusCode && error.statusCode !== 500) {
+        return reply
+          .code(error.statusCode)
+          .send(errorResponse(error.statusCode, error.message));
+      }
       throw error;
     }
   });
 
-  fastify.put("/:id", async (request) => {
+  fastify.put("/:id", async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
       rejectDeprecatedFields(request.body);
-      const body = updateExpertRoutingSchema.parse(request.body);
+      const body = parseBody(updateExpertRoutingSchema, request.body);
 
       const existingConfig = await expertRoutingConfigDb.getById(id);
       if (!existingConfig) {
-        throw new Error("专家路由配置不存在");
+        throw httpError(404, "专家路由配置不存在");
       }
 
       let configData;
@@ -619,6 +660,14 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
             configData.experts,
           );
         }
+      }
+
+      // 启用门搶：空草稿（无候选模型）不允许启用。
+      const nextExperts = configData?.experts ?? currentConfig.experts ?? [];
+      const willEnable =
+        body.enabled !== undefined ? body.enabled : existingConfig.enabled === 1;
+      if (willEnable && nextExperts.length === 0) {
+        throw httpError(400, "启用前至少需要配置一个候选模型");
       }
 
       await expertRoutingConfigDb.update(id, {
@@ -660,6 +709,11 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         `更新专家路由配置失败: ${error.message}`,
         "ExpertRouting",
       );
+      if (error.statusCode && error.statusCode !== 500) {
+        return reply
+          .code(error.statusCode)
+          .send(errorResponse(error.statusCode, error.message));
+      }
       throw error;
     }
   });
@@ -670,7 +724,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
 
       const existingConfig = await expertRoutingConfigDb.getById(id);
       if (!existingConfig) {
-        throw new Error("专家路由配置不存在");
+        throw httpError(404, "专家路由配置不存在");
       }
 
       const associatedModels = await modelDb.getByExpertRoutingId(id);
@@ -694,9 +748,14 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         );
         if (referencedModels.length > 0) {
           const names = referencedModels.map((m) => m.name).join("、");
-          return reply.code(400).send({
-            error: `无法删除专家路由配置，${referencedModels.length} 个专家模型仍被虚拟密钥引用（${names}），请先解除引用后重试`,
-          });
+          return reply
+            .code(400)
+            .send(
+              errorResponse(
+                400,
+                `无法删除专家路由配置，${referencedModels.length} 个专家模型仍被虚拟密钥引用（${names}），请先解除引用后重试`,
+              ),
+            );
         }
       }
 
@@ -730,6 +789,11 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         `删除专家路由配置失败: ${error.message}`,
         "ExpertRouting",
       );
+      if (error.statusCode && error.statusCode !== 500) {
+        return reply
+          .code(error.statusCode)
+          .send(errorResponse(error.statusCode, error.message));
+      }
       throw error;
     }
   });
