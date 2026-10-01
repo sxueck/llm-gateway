@@ -11,7 +11,6 @@ import {
   getShanghaiDayStart,
   generateShanghaiDayBuckets,
 } from "../db/utils/time-buckets.js";
-import { manualIpBlocklist } from "../services/manual-ip-blocklist.js";
 import { threatIpBlocker } from "../services/threat-ip-blocker.js";
 import { getGeoInfo } from "../utils/ip.js";
 
@@ -534,7 +533,6 @@ export interface RequestSourceEntry {
   type: "normal" | "blocked";
   geo: RequestSourceGeoInfo | null;
   userAgent: string | null;
-  blockedReason: string | null;
 }
 
 export interface RequestSourceStats {
@@ -549,7 +547,7 @@ export interface RequestSourceStats {
     geo: RequestSourceGeoInfo | null;
     timestamp: number;
     reason: string | null;
-    source: "manual" | "threat";
+    source: "threat";
   } | null;
   recentSources: RequestSourceEntry[];
 }
@@ -568,7 +566,6 @@ export async function getRequestSourceStats(
   const endTime = window?.endTime;
 
   const lastRequest = await apiRequestDb.getLastRequest(startTime, endTime);
-  const manualLastBlocked = manualIpBlocklist.getLastBlocked();
   const threatIpStats = threatIpBlocker.getStats();
   const threatLastBlocked = threatIpStats.lastBlockedIp
     ? {
@@ -578,14 +575,7 @@ export async function getRequestSourceStats(
         source: "threat" as const,
       }
     : null;
-  let lastBlockedInfo = manualLastBlocked
-    ? {
-        ip: manualLastBlocked.ip,
-        timestamp: manualLastBlocked.createdAt,
-        reason: manualLastBlocked.reason,
-        source: "manual" as const,
-      }
-    : threatLastBlocked;
+  let lastBlockedInfo = threatLastBlocked;
   if (
     window &&
     lastBlockedInfo &&
@@ -636,19 +626,17 @@ export async function getRequestSourceStats(
 
   const recentSources = await Promise.all(
     dedupedSources.map(async (entry) => {
-      const [geo, lastRequestForIp, manualBlocked] = await Promise.all([
+      const [geo, lastRequestForIp] = await Promise.all([
         getGeoInfo(entry.ip),
         apiRequestDb.getLastRequestByIp(entry.ip, startTime, endTime),
-        manualIpBlocklist.isBlocked(entry.ip),
       ]);
       return {
         ip: entry.ip,
         timestamp: lastRequestForIp?.created_at || entry.timestamp,
         count: entry.count,
-        type: manualBlocked ? ("blocked" as const) : entry.type,
+        type: entry.type,
         geo,
         userAgent: lastRequestForIp?.user_agent || null,
-        blockedReason: manualBlocked?.reason || null,
       };
     }),
   );

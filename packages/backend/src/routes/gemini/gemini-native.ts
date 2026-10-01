@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import { memoryLogger } from "../../services/logger.js";
-import { circuitBreaker } from "../../services/circuit-breaker.js";
+import { circuitBreaker, httpFailureError } from "../../services/circuit-breaker.js";
 import { applyRouteHeaders } from "../../services/expert-router/exposure.js";
 import { shouldRetrySmartRouting } from "../proxy/routing.js";
 import type { ModelResolutionResult } from "../proxy/model-resolver.js";
@@ -343,7 +343,7 @@ export async function handleGeminiNativeNonStreamRequest(
     } else {
       circuitBreaker.recordFailure(
         circuitBreakerKey,
-        new Error(`HTTP ${upstreamResponse.status}`),
+        httpFailureError(upstreamResponse.status),
       );
     }
 
@@ -665,7 +665,7 @@ export async function handleGeminiNativeStreamRequest(
         // response write, so a retry dispatch below cannot skip accounting.
         circuitBreaker.recordFailure(
           circuitBreakerKey,
-          new Error(`HTTP ${upstreamResponse.status}`),
+          httpFailureError(upstreamResponse.status),
         );
 
         let errorResponse;

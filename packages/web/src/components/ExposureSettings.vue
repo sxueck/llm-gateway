@@ -2,12 +2,18 @@
   <n-form label-placement="left" label-width="160" size="small">
     <n-form-item :label="t('expertRouting.exposureHeaders')">
       <n-switch :value="headers" @update:value="(v) => update({ headers: v })" />
+      <template #feedback>
+        {{ t('expertRouting.exposureHeadersHint') }}
+      </template>
     </n-form-item>
     <n-form-item :label="t('expertRouting.exposureProviderHeader')">
       <n-switch
         :value="providerHeader"
         @update:value="(v) => update({ provider_header: v })"
       />
+      <template #feedback>
+        {{ t('expertRouting.exposureProviderHeaderHint') }}
+      </template>
     </n-form-item>
     <n-form-item :label="t('expertRouting.exposureModelField')">
       <n-radio-group
@@ -23,12 +29,18 @@
           </n-radio>
         </n-space>
       </n-radio-group>
+      <template #feedback>
+        {{ t('expertRouting.exposureModelFieldHint') }}
+      </template>
     </n-form-item>
     <n-form-item :label="t('expertRouting.exposureSseComment')">
       <n-switch
         :value="sseComment"
         @update:value="(v) => update({ sse_comment: v })"
       />
+      <template #feedback>
+        {{ t('expertRouting.exposureSseCommentHint') }}
+      </template>
     </n-form-item>
   </n-form>
 </template>

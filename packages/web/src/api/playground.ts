@@ -28,7 +28,6 @@ export interface PlaygroundChatRequest {
   max_tokens?: number;
   stop?: string | string[];
   stream?: boolean;
-  /** 原样浅合并进上游 body；仅 admin JWT 持有者可写。 */
   extra?: Record<string, unknown>;
 }
 

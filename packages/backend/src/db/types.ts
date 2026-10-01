@@ -3,7 +3,6 @@ export interface Model {
   name: string;
   provider_id: string | null;
   model_identifier: string;
-  supported_protocols: string | null; // JSON array of 'openai' | 'anthropic' | 'google' - 模型支持的协议白名单
   is_virtual: number;
   routing_config_id: string | null;
   expert_routing_id?: string | null;

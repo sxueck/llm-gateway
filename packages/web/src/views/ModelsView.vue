@@ -66,7 +66,7 @@
               :data="selectedGroupModels"
               :loading="modelStore.loading"
               :pagination="paginationConfig"
-              :scroll-x="900"
+              :scroll-x="1200"
               :bordered="false"
               size="small"
               flex-height
@@ -102,18 +102,6 @@
               :placeholder="t('models.modelIdPlaceholder')"
               size="small"
             />
-          </n-form-item>
-          <n-form-item label="支持协议">
-            <div class="protocol-row">
-              <n-select
-                v-model:value="formValue.supportedProtocols"
-                :options="protocolOptions"
-                placeholder="支持协议"
-                size="small"
-                multiple
-                class="protocol-select-supported"
-              />
-            </div>
           </n-form-item>
           <n-form-item :label="t('common.enabled')">
             <n-switch v-model:value="formValue.enabled" size="small" />
@@ -215,7 +203,8 @@ import BatchModelAdder from '@/components/BatchModelAdder.vue';
 import ModelTester from '@/components/ModelTester.vue';
 import type { Model, ModelAttributes } from '@/types';
 import type { ModelPresetSearchResult } from '@/api/model-presets';
-import { PROTOCOL_OPTIONS, getProtocolInfo } from '@/utils/protocol-utils';
+import { getProtocolInfo } from '@/utils/protocol-utils';
+import ModelAvailabilityCell from '@/components/ModelAvailabilityCell.vue';
 import { copyToClipboard } from '@/utils/common';
 import PageHeader from '@/components/PageHeader.vue';
 
@@ -345,14 +334,12 @@ const formValue = ref<{
   name: string;
   providerId: string;
   modelIdentifier: string;
-  supportedProtocols: string[];
   enabled: boolean;
   modelAttributes?: ModelAttributes;
 }>({
   name: '',
   providerId: '',
   modelIdentifier: '',
-  supportedProtocols: ['openai'],
   enabled: true,
   modelAttributes: undefined,
 });
@@ -371,8 +358,6 @@ const providerOptions = computed(() => {
       value: p.id,
     }));
 });
-
-const protocolOptions = PROTOCOL_OPTIONS;
 
 const columns: DataTableColumns<Model> = [
   {
@@ -427,8 +412,7 @@ const columns: DataTableColumns<Model> = [
     render: (row: Model) => {
       const protocols = row.supportedProtocols || [];
       if (protocols.length === 0) {
-        const protocolInfo = getProtocolInfo('openai');
-        return h(NTag, { type: protocolInfo.type, size: 'small' }, { default: () => protocolInfo.label });
+        return h('span', { style: 'color: #bfbfbf' }, '—');
       }
       return h(NSpace, { size: 4 }, {
         default: () => protocols.map((p) => {
@@ -437,6 +421,13 @@ const columns: DataTableColumns<Model> = [
         }),
       });
     },
+  },
+  {
+    title: () => t('models.availability'),
+    key: 'availability',
+    width: 200,
+    render: (row: Model) =>
+      h(ModelAvailabilityCell, { availability: row.availability ?? null }),
   },
   {
     title: () => t('common.status'),
@@ -528,7 +519,6 @@ function handleEdit(model: Model) {
     name: model.name,
     providerId: model.providerId,
     modelIdentifier: model.modelIdentifier,
-    supportedProtocols: model.supportedProtocols || ['openai'],
     enabled: model.enabled,
     modelAttributes: model.modelAttributes || undefined,
   };
@@ -556,7 +546,6 @@ async function handleSubmit() {
     const payload = {
       name: formValue.value.name,
       modelIdentifier: formValue.value.modelIdentifier,
-      supportedProtocols: formValue.value.supportedProtocols,
       enabled: formValue.value.enabled,
       modelAttributes: formValue.value.modelAttributes,
     };
@@ -590,7 +579,6 @@ function resetForm() {
     name: '',
     providerId: '',
     modelIdentifier: '',
-    supportedProtocols: ['openai'],
     enabled: true,
     modelAttributes: undefined,
   };
@@ -672,7 +660,7 @@ onMounted(async () => {
 
 <style scoped>
 .models-view {
-  max-width: 1400px;
+  max-width: 1760px;
   margin: 0 auto;
   /* 同 ProvidersView：n-layout-content 滚动内容层高度是 auto，height:100% 解析不了；
      无确定高度时侧栏会无限撑高、flex-height 表格塌缩为 0 行。
@@ -767,16 +755,6 @@ onMounted(async () => {
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:disabled) {
   opacity: 0.4;
   cursor: not-allowed;
-}
-
-.protocol-row {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-}
-
-.protocol-select-supported {
-  flex: 1.6;
 }
 
 .model-modal :deep(.n-card) {

@@ -1,3 +1,4 @@
+import type { PoolConnection } from 'mysql2/promise';
 import { getDatabase } from '../connection.js';
 
 export const expertRoutingConfigRepository = {
@@ -12,16 +13,18 @@ export const expertRoutingConfigRepository = {
     }
   },
 
-  async getById(id: string) {
-    const pool = getDatabase();
-    const conn = await pool.getConnection();
+  async getById(id: string, connection?: PoolConnection) {
+    const conn = connection ?? await getDatabase().getConnection();
     try {
-      const [rows] = await conn.query('SELECT * FROM expert_routing_configs WHERE id = ?', [id]);
+      const [rows] = await conn.query(
+        'SELECT * FROM expert_routing_configs WHERE id = ?' + (connection ? ' FOR UPDATE' : ''),
+        [id]
+      );
       const result = rows as any[];
       if (result.length === 0) return undefined;
       return result[0];
     } finally {
-      conn.release();
+      if (!connection) conn.release();
     }
   },
 
@@ -62,10 +65,9 @@ export const expertRoutingConfigRepository = {
     description?: string;
     enabled?: number;
     config?: string;
-  }) {
+  }, connection?: PoolConnection) {
     const now = Date.now();
-    const pool = getDatabase();
-    const conn = await pool.getConnection();
+    const conn = connection ?? await getDatabase().getConnection();
     try {
       const fields: string[] = [];
       const values: any[] = [];
@@ -87,7 +89,7 @@ export const expertRoutingConfigRepository = {
 
       await conn.query(`UPDATE expert_routing_configs SET ${fields.join(', ')} WHERE id = ?`, values);
     } finally {
-      conn.release();
+      if (!connection) conn.release();
     }
   },
 

@@ -342,21 +342,8 @@ type GetStatsSummaryResponse = {
 type LookupRequestSourceResponse = {
   ip: string;
   geo: RequestSourceGeoInfo | null;
-  blocked: boolean;
-  blockedReason: string | null;
   lastSeen: number | null;
   userAgent: string | null;
-};
-
-type BlockRequestSourceRequest = { ip: string; reason?: string };
-
-type BlockRequestSourceResponse = {
-  success: boolean;
-  blocked: {
-    ip: string;
-    reason: string | null;
-    timestamp: number;
-  };
 };
 
 type RoutingConfigsResponse = { configs: any[] };
@@ -517,9 +504,6 @@ const ADMIN_STATS_PATH = adminConfigPath("/stats");
 const ADMIN_REQUEST_SOURCES_LOOKUP_PATH = adminConfigPath(
   "/request-sources/lookup",
 );
-const ADMIN_REQUEST_SOURCES_BLOCK_PATH = adminConfigPath(
-  "/request-sources/block",
-);
 const ADMIN_ROUTING_CONFIGS_PATH = adminConfigPath("/routing-configs");
 const ADMIN_SYSTEM_SETTINGS_PATH = adminConfigPath("/system-settings");
 const ADMIN_PERFORMANCE_METRICS_PATH = adminConfigPath("/performance-metrics");
@@ -553,12 +537,6 @@ export const configApi = {
 
   lookupRequestSource(ip: string): Promise<LookupRequestSourceResponse> {
     return request.get(ADMIN_REQUEST_SOURCES_LOOKUP_PATH, { params: { ip } });
-  },
-
-  blockRequestSource(
-    data: BlockRequestSourceRequest,
-  ): Promise<BlockRequestSourceResponse> {
-    return request.post(ADMIN_REQUEST_SOURCES_BLOCK_PATH, data);
   },
 
   getRoutingConfigs(): Promise<RoutingConfigsResponse> {

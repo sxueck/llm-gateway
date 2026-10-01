@@ -15,7 +15,7 @@ export type {
 } from "./types.js";
 
 // Re-export base connection utilities
-export { getDatabase, getPool } from "./connection.js";
+export { getDatabase, getPool, withTransaction } from "./connection.js";
 
 // Re-export schema creation
 export { createTables } from "./schema.js";
@@ -37,7 +37,6 @@ import { expertRoutingLogRepository } from "./repositories/expert-routing-log.re
 import { expertRoutingSessionBindingRepository } from "./repositories/expert-routing-session-binding.repository.js";
 import { costMappingRepository } from "./repositories/cost-mapping.repository.js";
 import { circuitBreakerStatsRepository } from "./repositories/circuit-breaker-stats.repository.js";
-import { blockedIpRepository } from "./repositories/blocked-ip.repository.js";
 import { promptSampleRepository } from "./repositories/prompt-sample.repository.js";
 import { contextNormalizationRepository } from "./repositories/context-normalization.repository.js";
 import {
@@ -68,7 +67,6 @@ export const expertRoutingSessionBindingDb =
   expertRoutingSessionBindingRepository;
 export const costMappingDb = costMappingRepository;
 export const circuitBreakerStatsDb = circuitBreakerStatsRepository;
-export const blockedIpDb = blockedIpRepository;
 export const promptSampleDb = promptSampleRepository;
 export const contextNormalizationDb = contextNormalizationRepository;
 export const repositorySnapshotDb = repositorySnapshotRepository;

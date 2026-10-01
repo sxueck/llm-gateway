@@ -1,21 +1,46 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseSupportedProtocols, resolveProbeProtocol } from './protocol-utils.js';
+import { getProviderSupportedProtocols } from './protocol-utils.js';
 
-describe('protocol utils', () => {
-  it('defaults missing or empty supported protocols to OpenAI', () => {
-    expect(parseSupportedProtocols(null)).toEqual(['openai']);
-    expect(parseSupportedProtocols('   ')).toEqual(['openai']);
-    expect(parseSupportedProtocols('[]')).toEqual(['openai']);
+describe('getProviderSupportedProtocols', () => {
+  it('derives openai from base_url alone', () => {
+    expect(
+      getProviderSupportedProtocols({ base_url: 'https://api.example.com', protocol_mappings: null }),
+    ).toEqual(['openai']);
   });
 
-  it('throws a configuration error for malformed supported protocol JSON', () => {
-    expect(() => parseSupportedProtocols('[openai]')).toThrow('supported_protocols 配置错误');
+  it('merges protocols declared via protocol_mappings in canonical order', () => {
+    expect(
+      getProviderSupportedProtocols({
+        base_url: 'https://api.example.com',
+        protocol_mappings: JSON.stringify({
+          google: 'https://api.example.com/v1beta',
+          anthropic: 'https://api.example.com',
+        }),
+      }),
+    ).toEqual(['openai', 'anthropic', 'google']);
   });
 
-  it('falls back to the first supported protocol for probes', () => {
-    expect(resolveProbeProtocol({
-      supported_protocols: JSON.stringify(['google', 'openai']),
-    })).toBe('google');
+  it('ignores mapping entries with empty URLs', () => {
+    expect(
+      getProviderSupportedProtocols({
+        base_url: 'https://api.example.com',
+        protocol_mappings: JSON.stringify({ anthropic: '  ' }),
+      }),
+    ).toEqual(['openai']);
+  });
+
+  it('falls back to base_url when protocol_mappings is malformed JSON', () => {
+    expect(
+      getProviderSupportedProtocols({
+        base_url: 'https://api.example.com',
+        protocol_mappings: '{invalid',
+      }),
+    ).toEqual(['openai']);
+  });
+
+  it('returns an empty list for a provider without any usable endpoint', () => {
+    expect(getProviderSupportedProtocols(null)).toEqual([]);
+    expect(getProviderSupportedProtocols({ base_url: '', protocol_mappings: null })).toEqual([]);
   });
 });

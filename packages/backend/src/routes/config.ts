@@ -19,7 +19,6 @@ import { debugModeService } from "../services/debug-mode.js";
 import { costMappingService, hasTokenPricing } from "../services/cost-mapping.js";
 import { runtimeSystemConfigCache } from "../services/runtime-system-config-cache.js";
 import { threatIpBlocker } from "../services/threat-ip-blocker.js";
-import { manualIpBlocklist } from "../services/manual-ip-blocklist.js";
 import { requestHeaderForwardingService } from "../services/request-header-forwarding.js";
 import { upstreamSslConfigService } from "../services/upstream-ssl-config.js";
 import {
@@ -165,59 +164,17 @@ export async function configRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const [geo, lastRequestByIp, blockedInfo] = await Promise.all([
+    const [geo, lastRequestByIp] = await Promise.all([
       getGeoInfo(normalizedIp),
       apiRequestDb.getLastRequestByIp(normalizedIp),
-      manualIpBlocklist.isBlocked(normalizedIp),
     ]);
 
     return {
       ip: normalizedIp,
       geo,
-      blocked: !!blockedInfo,
-      blockedReason: blockedInfo?.reason || null,
       lastSeen: lastRequestByIp?.created_at || null,
       userAgent: lastRequestByIp?.user_agent || null,
     };
-  });
-
-  fastify.post("/request-sources/block", async (request, reply) => {
-    const { ip, reason } = request.body as { ip?: string; reason?: string };
-    if (!ip) {
-      return reply.code(400).send({
-        error: {
-          message: "IP 地址不能为空",
-          type: "invalid_request_error",
-          param: "ip",
-          code: "invalid_ip",
-        },
-      });
-    }
-
-    try {
-      const entry = await manualIpBlocklist.block(ip, reason);
-      return {
-        success: true,
-        blocked: {
-          ip: entry.ip,
-          reason: entry.reason,
-          timestamp: entry.createdAt,
-        },
-      };
-    } catch (error: any) {
-      memoryLogger.error(
-        `手动拦截 IP 失败: ${error?.message || error}`,
-        "ManualBlock",
-      );
-      return reply.code(400).send({
-        error: {
-          message: error?.message || "拦截 IP 失败",
-          type: "invalid_request_error",
-          param: "ip",
-          code: "block_ip_failed",
-        },
-      });
-    }
   });
 
   fastify.post("/system-settings/refresh-threat-ip", async () => {
@@ -951,7 +908,6 @@ export async function configRoutes(fastify: FastifyInstance) {
           name: body.virtualModelName,
           provider_id: null,
           model_identifier: `virtual-${configId}`,
-          supported_protocols: null,
           is_virtual: 1,
           routing_config_id: configId,
           enabled: 1,

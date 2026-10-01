@@ -1,3 +1,4 @@
+import type { PoolConnection } from 'mysql2/promise';
 import { getDatabase } from '../connection.js';
 import { EXPERT_ROUTING_ANONYMOUS_SCOPE } from '@llm-gateway/shared';
 
@@ -237,9 +238,8 @@ export const expertRoutingSessionBindingRepository = {
   },
 
   /** Invalidate all bindings pointing at a specific (now removed/changed) expert. */
-  async deleteByExpert(expertRoutingId: string, expertId: string): Promise<number> {
-    const pool = getDatabase();
-    const conn = await pool.getConnection();
+  async deleteByExpert(expertRoutingId: string, expertId: string, connection?: PoolConnection): Promise<number> {
+    const conn = connection ?? await getDatabase().getConnection();
     try {
       const [result] = await conn.query(
         `DELETE FROM expert_routing_session_bindings
@@ -248,7 +248,7 @@ export const expertRoutingSessionBindingRepository = {
       );
       return (result as any).affectedRows || 0;
     } finally {
-      conn.release();
+      if (!connection) conn.release();
     }
   },
 

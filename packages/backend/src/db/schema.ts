@@ -41,7 +41,6 @@ export async function createTables() {
         name VARCHAR(255) NOT NULL,
         provider_id VARCHAR(255),
         model_identifier VARCHAR(255) NOT NULL,
-        supported_protocols TEXT,
         is_virtual TINYINT DEFAULT 0,
         routing_config_id VARCHAR(255),
         expert_routing_id VARCHAR(255),
@@ -176,16 +175,6 @@ export async function createTables() {
         created_at BIGINT NOT NULL,
         FOREIGN KEY (request_id) REFERENCES api_requests(id) ON DELETE CASCADE,
         INDEX idx_api_request_payloads_created_at (created_at)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    `);
-
-    await conn.query(`
-      CREATE TABLE IF NOT EXISTS blocked_ips (
-        ip VARCHAR(45) PRIMARY KEY,
-        reason VARCHAR(255) DEFAULT NULL,
-        created_at BIGINT NOT NULL,
-        created_by VARCHAR(255) DEFAULT NULL,
-        INDEX idx_blocked_ips_created_at (created_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 

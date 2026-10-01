@@ -40,7 +40,7 @@ import {
 } from "../proxy/cache.js";
 import { runProxyPipeline } from "../proxy/pipeline.js";
 import { calculateTokensIfNeeded } from "../proxy/token-calculator.js";
-import { circuitBreaker } from "../../services/circuit-breaker.js";
+import { circuitBreaker, httpFailureError } from "../../services/circuit-breaker.js";
 import { applyRouteHeaders, modelFieldForClient } from "../../services/expert-router/exposure.js";
 import {
   shouldLogRequestBody,
@@ -381,6 +381,13 @@ function buildChatCompletionBaseOptions(body: any): any {
     tools: body?.tools,
     tool_choice: body?.tool_choice,
     parallel_tool_calls: body?.parallel_tool_calls,
+    n: body?.n,
+    seed: body?.seed,
+    logit_bias: body?.logit_bias,
+    logprobs: body?.logprobs,
+    top_logprobs: body?.top_logprobs,
+    metadata: body?.metadata,
+    user: body?.user,
   };
 }
 
@@ -392,7 +399,20 @@ function applyGeminiNativeFields(options: any, body: any): void {
   if (body?.generationConfig) Object.assign(options, body.generationConfig);
 }
 
-/** Filter upstream response headers (strip hop-by-hop + content-length/type). */
+/** Filter upstream response headers (strip hop-by-hop, encoding/cookie headers and content-length/type). */
+const UNFORWARDED_RESPONSE_HEADERS = new Set([
+  "content-length",
+  "content-encoding",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "upgrade",
+  "set-cookie",
+  "set-cookie2",
+]);
+
 function filterResponseHeaders(
   headers: Record<string, string | string[]>,
   stripContentType = false,
@@ -403,7 +423,7 @@ function filterResponseHeaders(
     if (
       !lowerKey.startsWith("transfer-encoding") &&
       !lowerKey.startsWith("connection") &&
-      lowerKey !== "content-length" &&
+      !UNFORWARDED_RESPONSE_HEADERS.has(lowerKey) &&
       (!stripContentType || lowerKey !== "content-type")
     ) {
       result[key] = Array.isArray(value) ? value[0] : value;
@@ -475,16 +495,6 @@ export function createOpenAIProxyHandler() {
       const pipelineResult = await runProxyPipeline(request, reply, {
         protocol: "openai",
         handlers: {
-          onManualBlock: ({ reply }) => {
-            reply.code(403).send({
-              error: {
-                message: "Access denied: IP blocked",
-                type: "access_denied",
-                param: "ip",
-                code: "ip_blocked",
-              },
-            });
-          },
           onAntiBotBlock: ({ reply }) => {
             reply.code(403).send({
               error: {
@@ -497,6 +507,16 @@ export function createOpenAIProxyHandler() {
           },
           onAuthError: ({ reply, authError }) => {
             reply.code(authError.code).send(authError.body);
+          },
+          onRateLimited: ({ reply, limitPerMinute, retryAfterSeconds }) => {
+            reply.code(429).send({
+              error: {
+                message: `Rate limit exceeded for this virtual key (limit: ${limitPerMinute} requests/min). Retry after ${retryAfterSeconds}s.`,
+                type: "rate_limit_error",
+                param: null,
+                code: "rate_limit_exceeded",
+              },
+            });
           },
           onModelError: ({ reply, modelError }) => {
             reply.code(modelError.code).send(modelError.body);
@@ -1596,7 +1616,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       if (!isSuccess) {
         circuitBreaker.recordFailure(
           circuitBreakerKey,
-          new Error(`HTTP ${response.statusCode}`),
+          httpFailureError(response.statusCode),
         );
       } else {
         circuitBreaker.recordSuccess(circuitBreakerKey);
@@ -1897,10 +1917,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       ? maskRequestBodyInPlace(request.body, true)
       : { applied: false, context: null, maskedCount: 0 };
 
-    const options: any = {
-      ...buildChatCompletionBaseOptions(request.body as any),
-      user: (request.body as any)?.user,
-    };
+    const options: any = buildChatCompletionBaseOptions(request.body as any);
 
     // 模型名后缀解析的强制 reasoning_effort，覆盖客户端传入的值
     if (modelResult?.forcedReasoningEffort) {
@@ -2088,7 +2105,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
 
       circuitBreaker.recordFailure(
         circuitBreakerKey,
-        new Error(`HTTP ${response.statusCode}`),
+        httpFailureError(response.statusCode),
       );
       logApiRequestAsync({
         virtualKey,
@@ -2225,7 +2242,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
     if (!failedAttemptAccountedFor) {
       circuitBreaker.recordFailure(
         circuitBreakerKey,
-        new Error(`HTTP ${response.statusCode}`),
+        httpFailureError(response.statusCode),
       );
     }
 

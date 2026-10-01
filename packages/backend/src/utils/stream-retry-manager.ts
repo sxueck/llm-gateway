@@ -1,6 +1,7 @@
 import { FastifyReply } from 'fastify';
 import { memoryLogger } from '../services/logger.js';
 import { EmptyOutputError } from '../errors/empty-output-error.js';
+import { writeWithBackpressure } from './stream-guards.js';
 
 /**
  * 流式缓冲管理器 - 处理背压和缓冲逻辑
@@ -21,11 +22,7 @@ export class StreamBuffer {
     if (this.reply.raw.destroyed || this.reply.raw.writableEnded) {
       return;
     }
-    if (!this.reply.raw.write(chunk)) {
-      await new Promise<void>((resolve) => {
-        this.reply.raw.once('drain', resolve);
-      });
-    }
+    await writeWithBackpressure(this.reply.raw, chunk);
   }
 
   /**

@@ -4,7 +4,7 @@ import { hotConfigCache } from '../../services/hot-config-cache.js';
 import { memoryLogger } from '../../services/logger.js';
 import { expertRouter } from '../../services/expert-router.js';
 import type { ExpertRouteInfo } from '../../services/expert-router/exposure.js';
-import { CircuitState, circuitBreaker } from '../../services/circuit-breaker.js';
+import { BREAKER_ELIGIBLE_STATUS_CODES, CircuitState, circuitBreaker } from '../../services/circuit-breaker.js';
 import { parsePositiveInt } from '../../utils/parse-positive-int.js';
 import { blendedPriceOf } from '../../services/expert-router/bands.js';
 
@@ -609,20 +609,15 @@ function simpleHash(str: string): number {
 /**
  * Status codes eligible for automatic cross-target smart-routing retry.
  *
+ * Reuses BREAKER_ELIGIBLE_STATUS_CODES from circuit-breaker.js: the codes that
+ * make retrying another target worthwhile are exactly the codes that make a
+ * target look unhealthy to the breaker.
+ *
  * Only upstream/transient/auth failures where switching targets can actually help
  * are retried. Client errors like 400/404 mean the request itself is invalid —
  * replaying it to every target only amplifies load and masks the real error.
  */
-const SMART_ROUTING_RETRYABLE_STATUS_CODES: ReadonlySet<number> = new Set([
-  401, // upstream rejected credentials — a different target may hold valid keys
-  403, // upstream refused access — target-specific quota/permission
-  429, // rate limited — next target has its own quota
-  472, // gateway-specific upstream failure marker
-  500, // upstream server error
-  502, // bad gateway
-  503, // upstream unavailable / overloaded
-  504, // gateway timeout
-]);
+const SMART_ROUTING_RETRYABLE_STATUS_CODES: ReadonlySet<number> = BREAKER_ELIGIBLE_STATUS_CODES;
 
 export function shouldRetrySmartRouting(statusCode: number): boolean {
   return SMART_ROUTING_RETRYABLE_STATUS_CODES.has(statusCode);

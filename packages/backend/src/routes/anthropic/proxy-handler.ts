@@ -3,7 +3,7 @@ import { memoryLogger } from "../../services/logger.js";
 import { extractIp } from "../../utils/ip.js";
 import { getRequestUserAgent } from "../../utils/http.js";
 import { runProxyPipeline } from "../proxy/pipeline.js";
-import { circuitBreaker } from "../../services/circuit-breaker.js";
+import { circuitBreaker, httpFailureError } from "../../services/circuit-breaker.js";
 import { applyRouteHeaders, modelFieldForClient } from "../../services/expert-router/exposure.js";
 import { shouldRetrySmartRouting } from "../proxy/routing.js";
 import { cloneSmartRoutingRetryBody } from "../proxy/retry-handler.js";
@@ -293,13 +293,6 @@ export function createAnthropicProxyHandler() {
       const pipelineResult = await runProxyPipeline(request, reply, {
         protocol: "anthropic",
         handlers: {
-          onManualBlock: ({ reply }) => {
-            const anthropicError = createAnthropicError(
-              "Access denied: IP blocked",
-              "authentication_error",
-            );
-            reply.code(403).send(anthropicError);
-          },
           onAntiBotBlock: ({ reply }) => {
             const anthropicError = createAnthropicError(
               "Access denied: Bot detected",
@@ -315,6 +308,13 @@ export function createAnthropicProxyHandler() {
                 : "permission_error",
             );
             reply.code(authError.code).send(anthropicError);
+          },
+          onRateLimited: ({ reply, limitPerMinute, retryAfterSeconds }) => {
+            const anthropicError = createAnthropicError(
+              `Rate limit exceeded for this virtual key (limit: ${limitPerMinute} requests/min). Retry after ${retryAfterSeconds}s.`,
+              "rate_limit_error",
+            );
+            reply.code(429).send(anthropicError);
           },
           onModelError: ({ reply, modelError }) => {
             const anthropicError = createAnthropicError(
@@ -748,7 +748,7 @@ export async function handleAnthropicNonStreamRequest(
     } else {
       circuitBreaker.recordFailure(
         circuitBreakerKey,
-        new Error(`HTTP ${response.statusCode}`),
+        httpFailureError(response.statusCode),
       );
 
       const parsedUpstreamBody = parseAnthropicUpstreamBody(response.body);

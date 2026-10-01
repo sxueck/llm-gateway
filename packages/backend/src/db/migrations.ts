@@ -6,7 +6,7 @@ import {
 import {
   DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
   DEFAULT_SESSION_IDLE_TTL_SECONDS,
-} from "@llm-gateway/shared";
+} from "../../../shared/src/index.js";
 import type {
   CostInput,
   RoutingBand,
@@ -19,11 +19,7 @@ export interface Migration {
   down?: (conn: Connection) => Promise<void>;
 }
 
-/**
- * Pure v1 → v2 config transform (PRD §2.2). Bands must already be resolved
- * per expert (bandOf); unresolved ones degrade to `high`. Mutates and returns
- * the config object.
- */
+
 export function transformExpertRoutingConfigV2(
   config: any,
   bandOf: (expert: any) => RoutingBand | undefined,
@@ -1435,6 +1431,128 @@ export const migrations: Migration[] = [
       } catch (error: any) {
         console.warn("[迁移] 删除 intent_text 失败:", error.message);
       }
+    },
+  },
+  {
+    version: 55,
+    name: "drop_manual_ip_blocklist",
+    up: async (conn: Connection) => {
+      await conn.query("DROP TABLE IF EXISTS blocked_ips");
+    },
+    down: async (conn: Connection) => {
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS blocked_ips (
+          ip VARCHAR(45) PRIMARY KEY,
+          reason VARCHAR(255) DEFAULT NULL,
+          created_at BIGINT NOT NULL,
+          created_by VARCHAR(255) DEFAULT NULL,
+          INDEX idx_blocked_ips_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+    },
+  },
+  {
+    version: 56,
+    name: "provider_scoped_model_protocols",
+    up: async (conn: Connection) => {
+      const [columnRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'models'
+           AND COLUMN_NAME = 'supported_protocols'`,
+      );
+      if (Number((columnRows as any[])[0]?.cnt || 0) === 0) {
+        return;
+      }
+
+      // 协议能力改由供应商提供（base_url→openai，protocol_mappings→其余）。
+      // 删列前把模型级声明的 anthropic/google 能力回填到所属供应商的
+      // protocol_mappings（缺映射时继承 base_url），保证现有转发行为不变。
+      const [modelRows] = await conn.query(
+        `SELECT provider_id, supported_protocols
+         FROM models
+         WHERE provider_id IS NOT NULL
+           AND is_virtual = 0
+           AND supported_protocols IS NOT NULL
+           AND supported_protocols != ''`,
+      );
+      const declared = new Map<string, Set<string>>();
+      for (const row of modelRows as any[]) {
+        let protocols: unknown;
+        try {
+          protocols = JSON.parse(row.supported_protocols);
+        } catch {
+          continue;
+        }
+        if (!Array.isArray(protocols)) continue;
+        const set = declared.get(row.provider_id) ?? new Set<string>();
+        for (const protocol of protocols) {
+          if (protocol === "anthropic" || protocol === "google") {
+            set.add(protocol);
+          }
+        }
+        if (set.size > 0) declared.set(row.provider_id, set);
+      }
+
+      if (declared.size > 0) {
+        const [providerRows] = await conn.query(
+          `SELECT id, base_url, protocol_mappings FROM providers`,
+        );
+        for (const provider of providerRows as any[]) {
+          const needed = declared.get(provider.id);
+          if (!needed || needed.size === 0) continue;
+
+          let mappings: Record<string, string> = {};
+          if (provider.protocol_mappings) {
+            try {
+              const parsed = JSON.parse(provider.protocol_mappings);
+              if (parsed && typeof parsed === "object") {
+                mappings = parsed;
+              }
+            } catch {
+              // 非法 JSON 时重建映射，仅保留本次回填内容
+            }
+          }
+
+          let changed = false;
+          for (const protocol of needed) {
+            const existing = mappings[protocol];
+            if (typeof existing === "string" && existing.trim()) continue;
+            mappings[protocol] = provider.base_url || "";
+            changed = true;
+          }
+          if (changed) {
+            await conn.query(
+              `UPDATE providers SET protocol_mappings = ? WHERE id = ?`,
+              [JSON.stringify(mappings), provider.id],
+            );
+            console.log(
+              `[迁移] 供应商 ${provider.id} 已继承模型级协议能力，回填 protocol_mappings`,
+            );
+          }
+        }
+      }
+
+      await conn.query(`ALTER TABLE models DROP COLUMN supported_protocols`);
+      console.log("[迁移] 已删除 models.supported_protocols，协议能力改由供应商提供");
+    },
+    down: async (conn: Connection) => {
+      const [columnRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'models'
+           AND COLUMN_NAME = 'supported_protocols'`,
+      );
+      if (Number((columnRows as any[])[0]?.cnt || 0) > 0) {
+        return;
+      }
+      await conn.query(`ALTER TABLE models ADD COLUMN supported_protocols TEXT`);
+      // 原模型级白名单已删除，回滚后统一回填默认值
+      await conn.query(
+        `UPDATE models SET supported_protocols = '["openai"]'`,
+      );
     },
   },
 ];

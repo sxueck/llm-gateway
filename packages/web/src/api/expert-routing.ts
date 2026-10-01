@@ -113,6 +113,8 @@ export interface UpdateExpertRoutingRequest {
   session_policy?: SessionPolicy;
   classifier?: ClassifierConfig;
   exposure?: ExposureConfig;
+  /** 自定义对外模型名：提供时创建/重命名暴露模型，空串/缺省不变更。 */
+  virtualModelName?: string;
 }
 
 /** One row of a band preview (shape of backend computeBandPreview entries). */

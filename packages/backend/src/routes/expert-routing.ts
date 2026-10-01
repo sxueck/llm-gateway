@@ -1,4 +1,5 @@
 import { FastifyInstance } from "fastify";
+import type { PoolConnection } from "mysql2/promise";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import {
@@ -9,6 +10,7 @@ import {
   expertRoutingTrainingRecordDb,
   modelDb,
   virtualKeyDb,
+  withTransaction,
 } from "../db/index.js";
 import { hotConfigCache } from "../services/hot-config-cache.js";
 import { memoryLogger } from "../services/logger.js";
@@ -122,6 +124,7 @@ const updateExpertRoutingSchema = z.object({
   session_policy: sessionPolicySchema.optional(),
   classifier: classifierConfigSchema,
   exposure: exposureConfigSchema,
+  virtualModelName: z.string().optional(),
 });
 
 /**
@@ -358,7 +361,8 @@ async function invalidateBindingsForExpertChanges(
   expertRoutingId: string,
   prevExperts: any[],
   nextExperts: any[],
-): Promise<void> {
+  connection?: PoolConnection,
+): Promise<string[]> {
   const prevById = new Map(prevExperts.map((e) => [e.id, e]));
   const nextById = new Map(nextExperts.map((e) => [e.id, e]));
   const changedOrRemoved: string[] = [];
@@ -376,18 +380,18 @@ async function invalidateBindingsForExpertChanges(
       changedOrRemoved.push(id);
     }
   }
+  const messages: string[] = [];
   for (const expertId of changedOrRemoved) {
     const n = await expertRoutingSessionBindingDb.deleteByExpert(
       expertRoutingId,
       expertId,
+      connection,
     );
     if (n > 0) {
-      memoryLogger.info(
-        `专家映射变更失效会话绑定 | expert=${expertId} | 清除=${n}`,
-        "ExpertRouting",
-      );
+      messages.push(`专家映射变更失效会话绑定 | expert=${expertId} | 清除=${n}`);
     }
   }
+  return messages;
 }
 
 async function computeBandPreview(experts: BandCandidate[]) {
@@ -439,6 +443,27 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     }
     return { configured, model, breaker: getJevBreakerState() };
   });
+
+  /** The exposed (对外) model row for a config: virtual + created by this config. */
+  async function findExposedModel(configId: string, connection?: PoolConnection) {
+    const models = (await modelDb.getByExpertRoutingId(configId, connection)) as any[];
+    return (
+      models.find(
+        (m) => m.is_virtual === 1 && m.model_identifier === `expert-${configId}`,
+      ) ?? null
+    );
+  }
+
+  function serializeVirtualModel(model: any) {
+    return {
+      id: model.id,
+      name: model.name,
+      providerId: model.provider_id,
+      modelIdentifier: model.model_identifier,
+      isVirtual: true,
+      expertRoutingId: model.expert_routing_id,
+    };
+  }
 
   function safeJsonParse(value?: string | null): any {
     if (!value) return null;
@@ -500,15 +525,23 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     try {
       const configs = await expertRoutingConfigDb.getAll();
       return {
-        configs: (configs as any[]).map((c) => ({
-          id: c.id,
-          name: c.name,
-          description: c.description,
-          enabled: c.enabled === 1,
-          config: JSON.parse(c.config),
-          createdAt: c.created_at,
-          updatedAt: c.updated_at,
-        })),
+        configs: await Promise.all(
+          (configs as any[]).map(async (c) => {
+            const exposedModel = await findExposedModel(c.id);
+            return {
+              id: c.id,
+              name: c.name,
+              description: c.description,
+              enabled: c.enabled === 1,
+              config: JSON.parse(c.config),
+              createdAt: c.created_at,
+              updatedAt: c.updated_at,
+              virtualModel: exposedModel
+                ? serializeVirtualModel(exposedModel)
+                : null,
+            };
+          }),
+        ),
       };
     } catch (error: any) {
       memoryLogger.error(
@@ -528,6 +561,8 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         throw new Error("专家路由配置不存在");
       }
 
+      const exposedModel = await findExposedModel(id);
+
       return {
         id: config.id,
         name: config.name,
@@ -536,6 +571,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         config: JSON.parse(config.config),
         createdAt: config.created_at,
         updatedAt: config.updated_at,
+        virtualModel: exposedModel ? serializeVirtualModel(exposedModel) : null,
       };
     } catch (error: any) {
       memoryLogger.error(
@@ -579,7 +615,6 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
           name: virtualModelName,
           provider_id: null,
           model_identifier: `expert-${configId}`,
-          supported_protocols: null,
           is_virtual: 1,
           routing_config_id: null,
           expert_routing_id: configId,
@@ -601,16 +636,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         config: JSON.parse(config!.config),
         createdAt: config!.created_at,
         updatedAt: config!.updated_at,
-        virtualModel: virtualModel
-          ? {
-              id: virtualModel.id,
-              name: virtualModel.name,
-              providerId: virtualModel.provider_id,
-              modelIdentifier: virtualModel.model_identifier,
-              isVirtual: true,
-              expertRoutingId: virtualModel.expert_routing_id,
-            }
-          : null,
+        virtualModel: virtualModel ? serializeVirtualModel(virtualModel) : null,
       };
     } catch (error: any) {
       memoryLogger.error(
@@ -637,7 +663,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         throw httpError(404, "专家路由配置不存在");
       }
 
-      let configData;
+      let configData: ReturnType<typeof buildConfigData>;
       const currentConfig = JSON.parse(existingConfig.config);
       if (
         body.fail_open !== undefined ||
@@ -652,14 +678,6 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
 
         await validateExpertRoutingConfig(configData, id);
 
-        // AC-6: invalidate bindings for experts removed or changed by this update.
-        if (body.experts) {
-          await invalidateBindingsForExpertChanges(
-            id,
-            currentConfig.experts || [],
-            configData.experts,
-          );
-        }
       }
 
       // 启用门搶：空草稿（无候选模型）不允许启用。
@@ -670,31 +688,73 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         throw httpError(400, "启用前至少需要配置一个候选模型");
       }
 
-      await expertRoutingConfigDb.update(id, {
-        name: body.name,
-        description: body.description ?? undefined,
-        enabled:
-          body.enabled !== undefined ? (body.enabled ? 1 : 0) : undefined,
-        config: configData ? JSON.stringify(configData) : undefined,
+      // 对外模型名：显式提供时优先于配置名同步；空串视为不变更。
+      const customExposedName = body.virtualModelName?.trim();
+      const changedModelIds: string[] = [];
+      const changeMessages: string[] = [];
+      const { updatedConfig, updatedExposedModel } = await withTransaction(async (connection) => {
+        // Lock even model-only saves so concurrent creates cannot expose two models for one config.
+        const lockedConfig = await expertRoutingConfigDb.getById(id, connection);
+        if (!lockedConfig) throw httpError(404, "专家路由配置不存在");
+
+        await expertRoutingConfigDb.update(id, {
+          name: body.name,
+          description: body.description ?? undefined,
+          enabled:
+            body.enabled !== undefined ? (body.enabled ? 1 : 0) : undefined,
+          config: configData ? JSON.stringify(configData) : undefined,
+        }, connection);
+
+        if (body.experts) {
+          changeMessages.push(...await invalidateBindingsForExpertChanges(
+            id, currentConfig.experts || [], configData.experts, connection,
+          ));
+        }
+
+        if (body.name && body.name !== lockedConfig.name && !customExposedName) {
+          const associatedModels = await modelDb.getByExpertRoutingId(id, connection);
+          for (const model of associatedModels) {
+            await modelDb.update(model.id, { name: body.name }, connection);
+            changedModelIds.push(model.id);
+          }
+          changeMessages.push(`同步更新专家路由关联模型名称: ${associatedModels.length} 个`);
+        }
+
+        if (customExposedName) {
+          const exposedModel = await findExposedModel(id, connection);
+          if (exposedModel && exposedModel.name !== customExposedName) {
+            await modelDb.update(exposedModel.id, { name: customExposedName }, connection);
+            changedModelIds.push(exposedModel.id);
+            changeMessages.push(`重命名专家模型: "${exposedModel.name}" -> "${customExposedName}"`);
+          }
+          if (!exposedModel) {
+            const createdModel = await modelDb.create({
+              id: nanoid(),
+              name: customExposedName,
+              provider_id: null,
+              model_identifier: `expert-${id}`,
+              is_virtual: 1,
+              routing_config_id: null,
+              expert_routing_id: id,
+              enabled: 1,
+              model_attributes: null,
+              prompt_config: null,
+              compression_config: null,
+            }, connection);
+            changedModelIds.push(createdModel.id);
+            changeMessages.push(`创建专家模型: ${customExposedName}`);
+          }
+        }
+
+        return {
+          updatedConfig: await expertRoutingConfigDb.getById(id, connection),
+          updatedExposedModel: await findExposedModel(id, connection),
+        };
       });
 
-      if (body.name && body.name !== existingConfig.name) {
-        const associatedModels = ((await modelDb.getAll()) as any[]).filter(
-          (m: any) => m.expert_routing_id === id,
-        );
-        for (const model of associatedModels) {
-          await modelDb.update(model.id, { name: body.name });
-          hotConfigCache.invalidateModel(model.id);
-        }
-        memoryLogger.info(
-          `同步更新专家路由关联模型名称: ${associatedModels.length} 个`,
-          "ExpertRouting",
-        );
-      }
-
+      for (const modelId of changedModelIds) hotConfigCache.invalidateModel(modelId);
+      for (const message of changeMessages) memoryLogger.info(message, "ExpertRouting");
       memoryLogger.info(`更新专家路由配置: ${id}`, "ExpertRouting");
-
-      const updatedConfig = await expertRoutingConfigDb.getById(id);
       return {
         id: updatedConfig!.id,
         name: updatedConfig!.name,
@@ -703,6 +763,9 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         config: JSON.parse(updatedConfig!.config),
         createdAt: updatedConfig!.created_at,
         updatedAt: updatedConfig!.updated_at,
+        virtualModel: updatedExposedModel
+          ? serializeVirtualModel(updatedExposedModel)
+          : null,
       };
     } catch (error: any) {
       memoryLogger.error(

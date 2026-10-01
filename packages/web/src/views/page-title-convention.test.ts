@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 const VIEW_DIR = join(__dirname);
 
 const ROUTELESS_VIEWS = new Set([
-  // 登录/注册自带全屏布局；ApiGuideView 已被 Playground 取代。
+  // 登录/注册使用全屏布局，不属于常规页面壳。
   'auth',
 ]);
 

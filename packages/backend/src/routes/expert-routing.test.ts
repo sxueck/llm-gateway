@@ -1,14 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  expertRoutingConfigDb: { getById: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+  expertRoutingConfigDb: { getAll: vi.fn(), getById: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
   expertRoutingLogDb: { getByConfigId: vi.fn(), getStatistics: vi.fn(), getRouteStats: vi.fn(), getDifficultyStats: vi.fn(), getClassifierLatencies: vi.fn(), getRecentRoutingDecisions: vi.fn(), getClassifierModelStats: vi.fn(), getById: vi.fn() },
   apiRequestDb: { getUsageByRouteLogIds: vi.fn() },
   expertRoutingTrainingRecordDb: { upsertFeedback: vi.fn(), listByConfig: vi.fn() },
-  expertRoutingSessionBindingDb: { deleteByConfig: vi.fn() },
+  expertRoutingSessionBindingDb: { deleteByConfig: vi.fn(), deleteByExpert: vi.fn() },
   modelDb: { getByExpertRoutingId: vi.fn(), update: vi.fn(), delete: vi.fn(), getById: vi.fn(), getByProviderId: vi.fn(), create: vi.fn(), getAll: vi.fn() },
   virtualKeyDb: { countByModels: vi.fn() },
   invalidateModel: vi.fn(),
+  connection: {},
+  withTransaction: vi.fn(),
 }));
 
 vi.mock('../db/index.js', () => ({
@@ -19,6 +21,7 @@ vi.mock('../db/index.js', () => ({
   expertRoutingSessionBindingDb: mocks.expertRoutingSessionBindingDb,
   modelDb: mocks.modelDb,
   virtualKeyDb: mocks.virtualKeyDb,
+  withTransaction: mocks.withTransaction,
 }));
 
 vi.mock('../services/hot-config-cache.js', () => ({
@@ -99,6 +102,8 @@ function createReplyStub() {
 describe('expertRoutingRoutes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.withTransaction.mockImplementation(async (operation) => operation(mocks.connection));
+    mocks.modelDb.getByExpertRoutingId.mockResolvedValue([]);
   });
 
   it('passes through the stored route_source on the logs list endpoint', async () => {
@@ -736,7 +741,177 @@ describe('expertRoutingRoutes', () => {
       expect(mocks.expertRoutingConfigDb.update).toHaveBeenCalledWith(
         'routing-1',
         expect.objectContaining({ enabled: 0 }),
+        mocks.connection,
       );
+    });
+  });
+
+  describe('exposed model name (对外模型名)', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it('GET list and detail return the exposed virtual model', async () => {
+      mocks.expertRoutingConfigDb.getAll.mockResolvedValue([
+        { id: 'routing-1', name: '配置', enabled: 1, config: JSON.stringify({ version: 2, experts: [] }) },
+      ]);
+      mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+        id: 'routing-1',
+        name: '配置',
+        enabled: 1,
+        config: JSON.stringify({ version: 2, experts: [] }),
+      });
+      mocks.modelDb.getByExpertRoutingId.mockResolvedValue([
+        { id: 'model-1', name: 'my-router', provider_id: null, model_identifier: 'expert-routing-1', is_virtual: 1, expert_routing_id: 'routing-1' },
+      ]);
+      const { routes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+
+      const list: any = await routes.get('/')!({});
+      expect(list.configs[0].virtualModel).toMatchObject({ id: 'model-1', name: 'my-router', isVirtual: true });
+
+      const detail: any = await routes.get('/:id')!({ params: { id: 'routing-1' } });
+      expect(detail.virtualModel).toMatchObject({ id: 'model-1', name: 'my-router' });
+    });
+
+    it('PUT with virtualModelName renames the exposed model and returns it', async () => {
+      mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+        id: 'routing-1',
+        name: '配置',
+        enabled: 1,
+        config: JSON.stringify({ version: 2, experts: [{ id: 'e1', band: 'low', type: 'virtual', model_id: 'm1' }] }),
+      });
+      mocks.modelDb.getByExpertRoutingId
+        .mockResolvedValueOnce([
+          { id: 'model-1', name: '旧名字', provider_id: null, model_identifier: 'expert-routing-1', is_virtual: 1, expert_routing_id: 'routing-1' },
+        ])
+        .mockResolvedValue([
+          { id: 'model-1', name: 'my-router', provider_id: null, model_identifier: 'expert-routing-1', is_virtual: 1, expert_routing_id: 'routing-1' },
+        ]);
+      const { putRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+
+      const response: any = await putRoutes.get('/:id')!({
+        params: { id: 'routing-1' },
+        body: { virtualModelName: 'my-router' },
+      });
+
+      expect(mocks.modelDb.update).toHaveBeenCalledWith('model-1', { name: 'my-router' }, mocks.connection);
+      expect(mocks.invalidateModel).toHaveBeenCalledWith('model-1');
+      expect(response.virtualModel).toMatchObject({ id: 'model-1', name: 'my-router' });
+    });
+
+    it('PUT with virtualModelName creates the exposed model when absent', async () => {
+      mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+        id: 'routing-1',
+        name: '配置',
+        enabled: 0,
+        config: JSON.stringify({ version: 2, experts: [] }),
+      });
+      mocks.modelDb.getByExpertRoutingId.mockResolvedValue([]);
+      mocks.modelDb.create.mockResolvedValue({
+        id: 'model-new',
+        name: 'my-router',
+        provider_id: null,
+        model_identifier: 'expert-routing-1',
+        is_virtual: 1,
+        expert_routing_id: 'routing-1',
+      });
+      // 创建后重查返回新行：模拟真实 DB 读到新建后的暴露模型。
+      mocks.modelDb.getByExpertRoutingId
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([
+          { id: 'model-new', name: 'my-router', provider_id: null, model_identifier: 'expert-routing-1', is_virtual: 1, expert_routing_id: 'routing-1' },
+        ]);
+      const { putRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+
+      const response: any = await putRoutes.get('/:id')!({
+        params: { id: 'routing-1' },
+        body: { virtualModelName: 'my-router' },
+      });
+
+      expect(mocks.modelDb.create).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'my-router', model_identifier: 'expert-routing-1', expert_routing_id: 'routing-1', is_virtual: 1 }),
+        mocks.connection,
+      );
+      expect(mocks.invalidateModel).toHaveBeenCalledWith('model-new');
+      expect(response.virtualModel).toMatchObject({ id: 'model-new', name: 'my-router' });
+    });
+
+    it('PUT without virtualModelName keeps the config-name sync behavior', async () => {
+      mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+        id: 'routing-1',
+        name: '旧配置名',
+        enabled: 1,
+        config: JSON.stringify({ version: 2, experts: [{ id: 'e1', band: 'low', type: 'virtual', model_id: 'm1' }] }),
+      });
+      mocks.modelDb.getAll.mockResolvedValue([
+        { id: 'model-1', name: '旧配置名', provider_id: null, model_identifier: 'expert-routing-1', is_virtual: 1, expert_routing_id: 'routing-1' },
+      ]);
+      mocks.modelDb.getByExpertRoutingId.mockResolvedValue([
+        { id: 'model-1', name: '新配置名', provider_id: null, model_identifier: 'expert-routing-1', is_virtual: 1, expert_routing_id: 'routing-1' },
+      ]);
+      const { putRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+
+      await putRoutes.get('/:id')!({
+        params: { id: 'routing-1' },
+        body: { name: '新配置名' },
+      });
+
+      expect(mocks.modelDb.update).toHaveBeenCalledWith('model-1', { name: '新配置名' }, mocks.connection);
+    });
+
+    it.each(['create', 'rename'])('keeps %s failures inside the transaction without invalidating caches', async (operation) => {
+      mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+        id: 'routing-1', name: 'old-config', enabled: 0,
+        config: JSON.stringify({ version: 2, experts: [] }),
+      });
+      mocks.modelDb.getByExpertRoutingId.mockResolvedValue(operation === 'create' ? [] : [{
+        id: 'model-1', name: 'old-model', is_virtual: 1, model_identifier: 'expert-routing-1',
+      }]);
+      const modelWrite = operation === 'create' ? mocks.modelDb.create : mocks.modelDb.update;
+      const error = new Error('model write failed');
+      modelWrite.mockRejectedValueOnce(error);
+      const { putRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+
+      await expect(putRoutes.get('/:id')!({
+        params: { id: 'routing-1' },
+        body: { name: 'new-config', virtualModelName: 'new-model' },
+      })).rejects.toBe(error);
+
+      expect(mocks.withTransaction).toHaveBeenCalledOnce();
+      expect(mocks.expertRoutingConfigDb.update).toHaveBeenCalledWith(
+        'routing-1', expect.objectContaining({ name: 'new-config' }), mocks.connection,
+      );
+      expect(modelWrite.mock.calls[0].at(-1)).toBe(mocks.connection);
+      expect(mocks.invalidateModel).not.toHaveBeenCalled();
+    });
+
+    it('does not invalidate model caches before the transaction commits', async () => {
+      mocks.expertRoutingConfigDb.getById.mockResolvedValue({
+        id: 'routing-1', name: 'old-config', enabled: 0,
+        config: JSON.stringify({ version: 2, experts: [] }),
+      });
+      mocks.modelDb.getByExpertRoutingId.mockResolvedValue([{ 
+        id: 'model-1', name: 'old-model', is_virtual: 1, model_identifier: 'expert-routing-1',
+      }]);
+      const error = new Error('commit failed');
+      mocks.withTransaction.mockImplementationOnce(async (operation) => {
+        await operation(mocks.connection);
+        expect(mocks.invalidateModel).not.toHaveBeenCalled();
+        throw error;
+      });
+      const { putRoutes, fastify } = createFastifyStub();
+      await expertRoutingRoutes(fastify);
+
+      await expect(putRoutes.get('/:id')!({
+        params: { id: 'routing-1' }, body: { virtualModelName: 'new-model' },
+      })).rejects.toBe(error);
+      expect(mocks.modelDb.update).toHaveBeenCalledWith('model-1', { name: 'new-model' }, mocks.connection);
+      expect(mocks.invalidateModel).not.toHaveBeenCalled();
     });
   });
 });

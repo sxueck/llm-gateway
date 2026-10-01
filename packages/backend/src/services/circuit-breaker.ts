@@ -1,6 +1,41 @@
 import { memoryLogger } from './logger.js';
 import { circuitBreakerStatsRepository } from '../db/repositories/circuit-breaker-stats.repository.js';
 
+/**
+ * HTTP status codes that indicate the target itself is unhealthy or switchable
+ * (credentials rejected, quota exhausted, upstream 5xx). Client errors such as
+ * 400/404/422 mean the request is invalid — counting them would let one
+ * malformed request open the breaker for every other caller of the target.
+ *
+ * Single source of truth: routing.js reuses this set for smart-routing retry
+ * eligibility (a status worth retrying elsewhere is exactly a status that
+ * makes the target look unhealthy).
+ */
+export const BREAKER_ELIGIBLE_STATUS_CODES: ReadonlySet<number> = new Set([
+  401, // upstream rejected credentials — target-specific
+  403, // upstream refused access — target-specific quota/permission
+  429, // rate limited — target has its own quota
+  472, // gateway-specific upstream failure marker
+  500, // upstream server error
+  502, // bad gateway
+  503, // upstream unavailable / overloaded
+  504, // gateway timeout
+]);
+
+/**
+ * Whether a failure carrying this HTTP status should count toward opening the
+ * circuit. Transport/network failures (no status) always count.
+ */
+export function isBreakerEligibleFailure(statusCode: number | undefined | null): boolean {
+  if (typeof statusCode !== 'number' || !Number.isFinite(statusCode)) return true;
+  return BREAKER_ELIGIBLE_STATUS_CODES.has(statusCode);
+}
+
+/** Wrap an upstream HTTP failure status into an Error recordFailure can classify. */
+export function httpFailureError(statusCode: number, message?: string): Error {
+  return Object.assign(new Error(message ?? `HTTP ${statusCode}`), { statusCode });
+}
+
 export interface CircuitBreakerConfig {
   failureThreshold: number;
   successThreshold: number;
@@ -143,6 +178,22 @@ export class CircuitBreaker {
   }
 
   recordFailure(circuitKey: string, error?: any): void {
+    // Client-caused 4xx (400/404/…) are request problems, not target health
+    // problems — they must not open the breaker for other callers.
+    const status = (error as any)?.statusCode ?? (error as any)?.status;
+    if (!isBreakerEligibleFailure(status)) {
+      const stats = this.stats.get(circuitKey);
+      if (stats?.state === CircuitState.HALF_OPEN) {
+        // A client error gives no health verdict, so another request must be able to probe.
+        stats.halfOpenAttempts = Math.max(0, stats.halfOpenAttempts - 1);
+      }
+      memoryLogger.debug(
+        `熔断器忽略客户端类失败 | key: ${circuitKey} | status: ${status}`,
+        'CircuitBreaker'
+      );
+      return;
+    }
+
     const stats = this.getStats(circuitKey);
     const providerId = this.extractProviderId(circuitKey);
 

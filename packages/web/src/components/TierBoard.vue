@@ -52,6 +52,7 @@
           <span>{{ t(`expertRouting.band.${band}`) }}</span>
           <n-tag size="small" round>{{ columns[band].length }}</n-tag>
         </div>
+        <div class="tier-column-desc">{{ t(`expertRouting.band.${band}Desc`) }}</div>
         <div class="tier-column-body">
           <TierModelCard
             v-for="(expert, index) in columns[band]"
@@ -392,16 +393,12 @@ onBeforeUnmount(() => {
   background: #ffffff;
 }
 
-.tier-column.band-low .tier-column-header {
-  border-top: 3px solid #18a058;
-}
-
-.tier-column.band-medium .tier-column-header {
-  border-top: 3px solid #f0a020;
-}
-
-.tier-column.band-high .tier-column-header {
-  border-top: 3px solid #d03050;
+.tier-column-desc {
+  padding: 4px 12px 8px;
+  font-size: 12px;
+  color: #8c8c8c;
+  border-bottom: 1px solid #e8e8e8;
+  background: #ffffff;
 }
 
 .tier-column-body {

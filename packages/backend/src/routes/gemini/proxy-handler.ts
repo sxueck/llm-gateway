@@ -158,17 +158,6 @@ export function createGeminiProxyHandler() {
       const pipelineResult = await runProxyPipeline(request, reply, {
         protocol: "gemini",
         handlers: {
-          onManualBlock: ({ reply }) => {
-            reply
-              .code(403)
-              .send({
-                error: {
-                  message: "Access denied: IP blocked",
-                  code: 403,
-                  status: "PERMISSION_DENIED",
-                },
-              });
-          },
           onAntiBotBlock: ({ reply }) => {
             reply
               .code(403)
@@ -182,6 +171,16 @@ export function createGeminiProxyHandler() {
           },
           onAuthError: ({ reply, authError }) => {
             reply.code(authError.code).send(authError.body);
+          },
+          onRateLimited: ({ reply, limitPerMinute, retryAfterSeconds }) => {
+            reply.code(429).send({
+              error: {
+                message: `Rate limit exceeded for this virtual key (limit: ${limitPerMinute} requests/min). Retry after ${retryAfterSeconds}s.`,
+                type: "rate_limit_error",
+                param: null,
+                code: "rate_limit_exceeded",
+              },
+            });
           },
           onModelError: ({ reply, modelError }) => {
             reply.code(modelError.code).send(modelError.body);

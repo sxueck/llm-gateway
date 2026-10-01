@@ -166,7 +166,7 @@
           </div>
           <template v-else-if="overview">
             <n-grid
-              :cols="2"
+              :cols="4"
               :x-gap="16"
               :y-gap="16"
               responsive="screen"
@@ -530,7 +530,6 @@ import {
   NGrid,
   NIcon,
   NInput,
-  NPopconfirm,
   NRadioButton,
   NRadioGroup,
   NSelect,
@@ -898,7 +897,6 @@ const requestSources = ref<OpsRequestSourcesResponse | null>(null);
 const requestSourcesLoading = ref(false);
 let requestSourcesSig: string | null = null;
 const lookupLoadingIp = ref<string | null>(null);
-const blockLoadingIp = ref<string | null>(null);
 
 const requestSourceStats = computed<OpsRequestSourceStats | null>(
   () => requestSources.value?.requestSourceStats ?? null,
@@ -970,8 +968,6 @@ async function handleLookupIp(ip?: string) {
       geo: result.geo,
       timestamp: result.lastSeen || Date.now(),
       userAgent: result.userAgent || null,
-      type: result.blocked ? "blocked" : "normal",
-      blockedReason: result.blocked ? result.blockedReason : null,
     });
     const locationText = formatGeoLocation(result.geo || undefined);
     const asnText = result.geo?.asn
@@ -993,42 +989,6 @@ async function handleLookupIp(ip?: string) {
   }
 }
 
-async function handleBlockIp(ip?: string) {
-  if (!ip) return;
-  blockLoadingIp.value = ip;
-  try {
-    const result = await configApi.blockRequestSource({ ip });
-    const reason =
-      result.blocked.reason || t("operationsMonitoring.requestSource.manualBlock");
-    applyUpdatedSources(
-      ip,
-      { type: "blocked", blockedReason: reason },
-      {
-        lastBlocked: {
-          ip,
-          geo:
-            requestSourceTableData.value.find((entry) => entry.ip === ip)?.geo ??
-            null,
-          timestamp: result.blocked.timestamp,
-          reason,
-          source: "manual",
-        },
-      },
-    );
-    message.success(
-      t("operationsMonitoring.requestSource.blockSuccess", { ip }),
-    );
-  } catch (error: any) {
-    const errorMsg =
-      error?.response?.data?.error?.message ||
-      error?.message ||
-      t("operationsMonitoring.requestSource.blockFailed");
-    message.error(errorMsg);
-  } finally {
-    blockLoadingIp.value = null;
-  }
-}
-
 const requestSourceColumns = computed<
   DataTableColumns<OpsRequestSourceEntry>
 >(() => [
@@ -1044,11 +1004,7 @@ const requestSourceColumns = computed<
           : t("operationsMonitoring.requestSource.tag.normal");
       const subText =
         row.type === "blocked"
-          ? row.blockedReason
-            ? t("operationsMonitoring.requestSource.blockReason", {
-                reason: row.blockedReason,
-              })
-            : t("operationsMonitoring.requestSource.blockedByPolicy")
+          ? t("operationsMonitoring.requestSource.blockedByPolicy")
           : t("operationsMonitoring.requestSource.recentCount", {
               n: row.count || 0,
             });
@@ -1134,45 +1090,6 @@ const requestSourceColumns = computed<
           ),
         default: () => row.userAgent,
       });
-    },
-  },
-  {
-    title: t("operationsMonitoring.requestSource.col.actions"),
-    key: "actions",
-    minWidth: 180,
-    render(row) {
-      return h(NSpace, { size: 6 }, [
-        h(
-          NPopconfirm,
-          {
-            disabled: row.type === "blocked",
-            positiveText: t("operationsMonitoring.requestSource.block"),
-            negativeText: t("common.cancel"),
-            onPositiveClick: () => handleBlockIp(row.ip),
-          },
-          {
-            default: () =>
-              t("operationsMonitoring.requestSource.confirmBlock"),
-            trigger: () =>
-              h(
-                NButton,
-                {
-                  size: "tiny",
-                  type: row.type === "blocked" ? "default" : "error",
-                  ghost: true,
-                  loading: blockLoadingIp.value === row.ip,
-                  disabled: row.type === "blocked",
-                },
-                {
-                  default: () =>
-                    row.type === "blocked"
-                      ? t("operationsMonitoring.requestSource.blocked")
-                      : t("operationsMonitoring.requestSource.block"),
-                },
-              ),
-          },
-        ),
-      ]);
     },
   },
 ]);

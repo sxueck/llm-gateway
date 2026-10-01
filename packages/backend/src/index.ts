@@ -49,7 +49,6 @@ import {
   apiRequestHourlyDb,
 } from "./db/index.js";
 import { debugModeService } from "./services/debug-mode.js";
-import { manualIpBlocklist } from "./services/manual-ip-blocklist.js";
 import { requestHeaderForwardingService } from "./services/request-header-forwarding.js";
 import { upstreamSslConfigService } from "./services/upstream-ssl-config.js";
 import { requestCache } from "./services/request-cache.js";
@@ -160,7 +159,6 @@ if (expertConfigs.some((config) => config.enabled === 1)) {
   await seedBuiltinPlugins();
 }
 
-await manualIpBlocklist.init();
 await runtimeSystemConfigCache.initialize();
 await reasoningEffortSuffixesCache.initialize();
 

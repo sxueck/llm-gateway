@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from 'vitest';
 import { applyMigrations, migrations, normalizeExpertRoutingConfig, transformExpertRoutingConfigV2 } from './migrations.js';
 
 describe('migration runner from v45', () => {
-  test('has unique migration versions and applies v47/v48/v49/v50/v51 after v45', async () => {
+  test('has unique migration versions and applies v47-v56 after v45', async () => {
     const versions = migrations.map(migration => migration.version);
     expect(new Set(versions).size).toBe(versions.length);
 
@@ -109,7 +109,20 @@ describe('migration runner from v45', () => {
       'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
       [54, 'add_expert_routing_log_intent_text', expect.any(Number)],
     );
-    expect(conn.commit).toHaveBeenCalledTimes(8);
+    expect(query).toHaveBeenCalledWith('DROP TABLE IF EXISTS blocked_ips');
+    expect(query).toHaveBeenCalledWith(
+      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      [55, 'drop_manual_ip_blocklist', expect.any(Number)],
+    );
+    // v56：模型级协议白名单退役；列不存在（mock cnt=0）时不得触碰 DDL。
+    expect(query).not.toHaveBeenCalledWith(
+      expect.stringContaining('ALTER TABLE models DROP COLUMN supported_protocols'),
+    );
+    expect(query).toHaveBeenCalledWith(
+      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      [56, 'provider_scoped_model_protocols', expect.any(Number)],
+    );
+    expect(conn.commit).toHaveBeenCalledTimes(10);
   });
 });
 

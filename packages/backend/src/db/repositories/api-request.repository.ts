@@ -975,6 +975,49 @@ export const apiRequestRepository = {
     }
   },
 
+  /**
+   * 模型可用性（被动口径）：聚合窗口期内 api_requests 明细，按 (provider_id, model)
+   * 汇总总量/成功量/最近使用，并按整点对齐分小时桶。模型未产生流量时不返回
+   * 对应记录（调用方展示"暂无调用"）。
+   */
+  async getModelAvailability(windowMs: number = 24 * 60 * 60 * 1000) {
+    const start = Date.now() - windowMs;
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const [totalRows] = await conn.query(
+        `SELECT provider_id, model,
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success,
+                MAX(created_at) AS last_used_at
+         FROM api_requests
+         WHERE created_at >= ?
+           AND provider_id IS NOT NULL
+           AND model IS NOT NULL AND model != ''
+         GROUP BY provider_id, model`,
+        [start],
+      );
+      const [bucketRows] = await conn.query(
+        `SELECT provider_id, model,
+                FLOOR(created_at / 3600000) * 3600000 AS bucket_start,
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success
+         FROM api_requests
+         WHERE created_at >= ?
+           AND provider_id IS NOT NULL
+           AND model IS NOT NULL AND model != ''
+         GROUP BY provider_id, model, bucket_start`,
+        [start],
+      );
+      return {
+        totals: totalRows as any[],
+        buckets: bucketRows as any[],
+      };
+    } finally {
+      conn.release();
+    }
+  },
+
   async getModelResponseTimeStats(options: {
     startTime: number;
     endTime: number;

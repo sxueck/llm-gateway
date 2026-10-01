@@ -34,8 +34,12 @@
       <n-spin :show="loading">
         <n-tabs v-model:value="activeTab" type="line">
           <n-tab-pane name="config" :tab="t('expertRouting.tabs.config')">
-            <n-space vertical :size="12" class="config-panes">
-              <n-card :title="t('expertRouting.basicInfo')" size="small">
+            <div class="config-grid">
+              <n-card
+                :title="t('expertRouting.basicInfo')"
+                size="small"
+                class="config-card"
+              >
                 <n-form label-placement="left" label-width="110" size="small">
                   <n-form-item :label="t('expertRouting.configName')">
                     <n-input v-model:value="form.name" :placeholder="t('expertRouting.configNamePlaceholder')" />
@@ -49,25 +53,19 @@
                     />
                   </n-form-item>
                   <n-form-item :label="t('expertRouting.exposedModelName')">
-                    <n-text v-if="routing?.virtualModel">
-                      {{ routing.virtualModel.name }}
-                    </n-text>
-                    <n-text v-else depth="3">
-                      {{ t('expertRouting.notExposed') }}
-                    </n-text>
+                    <n-input
+                      v-model:value="form.virtualModelName"
+                      :placeholder="t('expertRouting.exposedModelNamePlaceholder')"
+                    />
                   </n-form-item>
                 </n-form>
               </n-card>
 
-              <n-card :title="t('expertRouting.tierBoard')" size="small">
-                <TierBoard
-                  v-model:experts="form.experts"
-                  :routing-id="routingId"
-                  :resolve-model-label="resolveModelLabel"
-                />
-              </n-card>
-
-              <n-card :title="t('expertRouting.classifier')" size="small">
+              <n-card
+                :title="t('expertRouting.classifier')"
+                size="small"
+                class="config-card"
+              >
                 <n-space vertical :size="12">
                   <div class="classifier-status">
                     <n-spin v-if="jevLoading" size="small" />
@@ -140,6 +138,9 @@
                         :step="500"
                         style="width: 100%"
                       />
+                      <template #feedback>
+                        {{ t('expertRouting.timeoutMsHint') }}
+                      </template>
                     </n-form-item>
                     <n-form-item :label="t('expertRouting.onLowConfidence')">
                       <n-radio-group v-model:value="form.classifier.on_low_confidence">
@@ -152,6 +153,9 @@
                           </n-radio>
                         </n-space>
                       </n-radio-group>
+                      <template #feedback>
+                        {{ t('expertRouting.onLowConfidenceHint') }}
+                      </template>
                     </n-form-item>
                     <n-form-item :label="t('expertRouting.minConfidence')">
                       <n-input-number
@@ -161,33 +165,72 @@
                         :step="0.05"
                         style="width: 100%"
                       />
+                      <template #feedback>
+                        {{ t('expertRouting.minConfidenceHint') }}
+                      </template>
                     </n-form-item>
                   </n-form>
                 </n-space>
               </n-card>
 
-              <n-card :title="t('expertRouting.sessionPolicy')" size="small">
+              <n-card
+                :title="t('expertRouting.tierBoard')"
+                size="small"
+                class="config-card config-card--wide"
+              >
+                <TierBoard
+                  v-model:experts="form.experts"
+                  :routing-id="routingId"
+                  :resolve-model-label="resolveModelLabel"
+                />
+              </n-card>
+
+              <n-card
+                :title="t('expertRouting.sessionPolicy')"
+                size="small"
+                class="config-card"
+              >
                 <SessionPolicyForm v-model:policy="form.sessionPolicy" />
               </n-card>
 
-              <n-card :title="t('expertRouting.preprocessingTitle')" size="small">
+              <n-card
+                :title="t('expertRouting.preprocessingTitle')"
+                size="small"
+                class="config-card"
+              >
                 <n-form label-placement="left" label-width="180" size="small">
                   <n-form-item :label="t('expertRouting.stripTools')">
                     <n-switch v-model:value="form.preprocessing.strip_tools" />
+                    <template #feedback>
+                      {{ t('expertRouting.stripToolsHint') }}
+                    </template>
                   </n-form-item>
                   <n-form-item :label="t('expertRouting.stripFiles')">
                     <n-switch v-model:value="form.preprocessing.strip_files" />
+                    <template #feedback>
+                      {{ t('expertRouting.stripFilesHint') }}
+                    </template>
                   </n-form-item>
                   <n-form-item :label="t('expertRouting.stripCodeBlocks')">
                     <n-switch v-model:value="form.preprocessing.strip_code_blocks" />
+                    <template #feedback>
+                      {{ t('expertRouting.stripCodeBlocksHint') }}
+                    </template>
                   </n-form-item>
                   <n-form-item :label="t('expertRouting.stripSystemPrompt')">
                     <n-switch v-model:value="form.preprocessing.strip_system_prompt" />
+                    <template #feedback>
+                      {{ t('expertRouting.stripSystemPromptHint') }}
+                    </template>
                   </n-form-item>
                 </n-form>
               </n-card>
 
-              <n-card :title="t('expertRouting.failOpenStrategy')" size="small">
+              <n-card
+                :title="t('expertRouting.failOpenStrategy')"
+                size="small"
+                class="config-card"
+              >
                 <n-form label-placement="left" label-width="140" size="small">
                   <n-form-item :label="t('expertRouting.failOpenStrategy')">
                     <n-radio-group v-model:value="form.failOpen">
@@ -203,27 +246,35 @@
                         </n-radio>
                       </n-space>
                     </n-radio-group>
+                    <template #feedback>
+                      {{ t('expertRouting.failOpenStrategyHint') }}
+                    </template>
                   </n-form-item>
-                  <template v-if="form.failOpen === 'fallback'">
-                    <n-form-item :label="t('expertRouting.fallbackModel')">
-                      <ModelSelector
-                        v-model:type="fallbackType"
-                        v-model:model-id="fallbackModelId"
-                        v-model:provider-id="fallbackProviderId"
-                        v-model:model="fallbackModelName"
-                        :provider-options="providerOptions"
-                        :virtual-model-options="virtualModelOptions"
-                      />
-                    </n-form-item>
-                  </template>
+                  <n-form-item
+                    v-if="form.failOpen === 'fallback'"
+                    :label="t('expertRouting.fallbackModel')"
+                  >
+                    <ModelSelector
+                      v-model:type="fallbackType"
+                      v-model:model-id="fallbackModelId"
+                      v-model:provider-id="fallbackProviderId"
+                      v-model:model="fallbackModelName"
+                      :provider-options="providerOptions"
+                      :virtual-model-options="virtualModelOptions"
+                    />
+                  </n-form-item>
                 </n-form>
               </n-card>
 
-              <n-card :title="t('expertRouting.exposure')" size="small">
+              <n-card
+                :title="t('expertRouting.exposure')"
+                size="small"
+                class="config-card"
+              >
                 <ExposureSettings v-model:exposure="form.exposure" />
               </n-card>
 
-              <n-space justify="end">
+              <div class="config-card config-card--wide config-actions">
                 <n-button
                   size="small"
                   type="primary"
@@ -233,8 +284,8 @@
                 >
                   {{ t('common.save') }}
                 </n-button>
-              </n-space>
-            </n-space>
+              </div>
+            </div>
           </n-tab-pane>
 
           <n-tab-pane name="simulate" :tab="t('expertRouting.tabs.simulate')">
@@ -314,6 +365,7 @@ import { createDefaultSessionPolicy } from '@/utils/expert-routing';
 interface DetailForm {
   name: string;
   description: string;
+  virtualModelName: string;
   failOpen: FailOpenPolicy;
   preprocessing: PreprocessingConfig;
   experts: ExpertTarget[];
@@ -350,6 +402,7 @@ function createEmptyForm(): DetailForm {
   return {
     name: '',
     description: '',
+    virtualModelName: '',
     failOpen: 'fallback',
     preprocessing: {
       strip_tools: false,
@@ -410,6 +463,7 @@ function applyRouting(record: ExpertRouting) {
   form.value = {
     name: record.name,
     description: record.description ?? '',
+    virtualModelName: record.virtualModel?.name ?? '',
     failOpen: config.fail_open ?? 'fallback',
     preprocessing: {
       strip_tools: config.preprocessing?.strip_tools ?? false,
@@ -439,6 +493,7 @@ function buildPayload(): UpdateExpertRoutingRequest {
   return {
     name: form.value.name,
     description: form.value.description,
+    virtualModelName: form.value.virtualModelName.trim() || undefined,
     fail_open: form.value.failOpen,
     preprocessing: { ...form.value.preprocessing },
     experts: form.value.experts,
@@ -543,8 +598,28 @@ onMounted(async () => {
   margin: 0 auto;
 }
 
-.config-panes {
+/* 左右分栏：梯队板与保存条通栏，其余卡片两列排布 */
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
   padding-top: 4px;
+}
+
+.config-card--wide {
+  grid-column: 1 / -1;
+}
+
+.config-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  .config-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .classifier-status {

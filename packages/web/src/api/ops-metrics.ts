@@ -113,7 +113,6 @@ export interface OpsRequestSourceEntry {
   type: "normal" | "blocked";
   geo: OpsRequestSourceGeoInfo | null;
   userAgent: string | null;
-  blockedReason: string | null;
 }
 
 export interface OpsRequestSourceStats {
@@ -128,7 +127,7 @@ export interface OpsRequestSourceStats {
     geo: OpsRequestSourceGeoInfo | null;
     timestamp: number;
     reason: string | null;
-    source: "manual" | "threat";
+    source: "threat";
   } | null;
   recentSources: OpsRequestSourceEntry[];
 }

@@ -3,26 +3,31 @@ import { describe, expect, it } from "vitest";
 import { modelAttributesSchema, resolveTestProbeProtocol } from "./models.js";
 
 describe("resolveTestProbeProtocol", () => {
-  const multiProtocol = { supported_protocols: '["openai","anthropic"]' };
+  const provider = {
+    base_url: "https://api.example.com",
+    protocol_mappings: JSON.stringify({
+      anthropic: "https://api.example.com/anthropic",
+    }),
+  };
 
-  it("falls back to the first supported protocol when none is requested", () => {
-    expect(resolveTestProbeProtocol(multiProtocol, undefined)).toBe("openai");
+  it("falls back to the first provider protocol when none is requested", () => {
+    expect(resolveTestProbeProtocol(provider, undefined)).toBe("openai");
   });
 
-  it("honours an explicit protocol that belongs to supportedProtocols", () => {
-    expect(resolveTestProbeProtocol(multiProtocol, "anthropic")).toBe(
+  it("honours an explicit protocol the provider offers", () => {
+    expect(resolveTestProbeProtocol(provider, "anthropic")).toBe(
       "anthropic",
     );
   });
 
-  it("rejects a protocol outside supportedProtocols", () => {
-    expect(resolveTestProbeProtocol(multiProtocol, "google")).toBeNull();
+  it("rejects a protocol the provider does not offer", () => {
+    expect(resolveTestProbeProtocol(provider, "google")).toBeNull();
   });
 
-  it("defaults to openai when the model has no protocol list", () => {
-    expect(resolveTestProbeProtocol({ supported_protocols: null })).toBe(
-      "openai",
-    );
+  it("returns null for a provider without any usable protocol", () => {
+    expect(
+      resolveTestProbeProtocol({ base_url: "", protocol_mappings: null }, undefined),
+    ).toBeNull();
   });
 });
 

@@ -4,7 +4,6 @@
  * Re-export shared protocol types/helpers, then add backend-only helpers.
  */
 export * from '@llm-gateway/shared/utils';
-import { memoryLogger } from '../services/logger.js';
 
 /**
  * 判断协议配置是否为 Anthropic
@@ -16,33 +15,37 @@ export function isAnthropicProtocolConfig(protocolConfig: { protocol?: string })
 }
 
 /**
- * 解析模型的 supported_protocols JSON 字符串。
- * - NULL / 空 / 仅空白符 → 返回 ["openai"] 并记录警告。
- * - 非法 JSON → 抛出配置错误异常。
+ * 供应商对外提供的协议集合：base_url 始终意味着 openai 协议，
+ * protocol_mappings 中配置了非空 baseURL 的协议（anthropic/google/openai）额外可用。
+ * 模型不再单独声明协议——下属全部模型继承供应商的能力。
  */
-export function parseSupportedProtocols(raw: string | null | undefined): string[] {
-  if (!raw || !raw.trim()) {
-    memoryLogger.warn('模型 supported_protocols 为空，回退到默认 ["openai"]', 'Protocol');
-    return ['openai'];
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
-    }
-    memoryLogger.warn('模型 supported_protocols 为空数组，回退到默认 ["openai"]', 'Protocol');
-    return ['openai'];
-  } catch (e: any) {
-    throw new Error(`模型 supported_protocols 配置错误: ${e.message}`);
-  }
-}
+export function getProviderSupportedProtocols(
+  provider: { base_url?: string | null; protocol_mappings?: string | null } | null | undefined,
+): string[] {
+  const offered = new Set<string>();
 
-/**
- * 确定探测使用的协议：取 supported_protocols 第一项。
- */
-export function resolveProbeProtocol(model: { supported_protocols: string | null }): string {
-  const supported = parseSupportedProtocols(model.supported_protocols);
-  return supported[0];
+  if (provider && (provider.base_url || '').trim()) {
+    offered.add('openai');
+  }
+
+  if (provider?.protocol_mappings) {
+    let mappings: Record<string, unknown> | null = null;
+    try {
+      mappings = JSON.parse(provider.protocol_mappings);
+    } catch {
+      // 非法 JSON 时仅依赖 base_url，转发路径会记录原始配置错误
+    }
+    if (mappings && typeof mappings === 'object') {
+      for (const protocol of ['openai', 'anthropic', 'google']) {
+        const url = (mappings as any)[protocol];
+        if (typeof url === 'string' && url.trim()) {
+          offered.add(protocol);
+        }
+      }
+    }
+  }
+
+  return ['openai', 'anthropic', 'google'].filter(p => offered.has(p));
 }
 
 
@@ -68,7 +71,7 @@ export function getBaseUrlForProtocol(
       if (protocolSpecificUrl) {
         baseUrl = protocolSpecificUrl;
       }
-    } catch (e: any) {
+    } catch {
       // 解析失败时静默失败，使用默认 base_url
     }
   }
