@@ -2,7 +2,6 @@ import crypto from 'crypto';
 import { memoryLogger } from './logger.js';
 import { countMessagesCooperatively } from './token-counter.js';
 
-// 配置常量
 const MIN_CODE_LENGTH = parseInt(process.env.MIN_CODE_LENGTH || '100', 10);
 const MIN_TEXT_LENGTH = parseInt(process.env.MIN_TEXT_LENGTH || '200', 10);
 const KEEP_RECENT_MESSAGES = parseInt(process.env.KEEP_RECENT_MESSAGES || '5', 10);
@@ -566,17 +565,13 @@ export class MessageCompressor {
     const len = text.length;
 
     while (i < len) {
-      // 查找以 # 开头的行
       const hashIdx = text.indexOf('\n#', i);
       if (hashIdx === -1) break;
 
-      // 从 # 开始的位置
       const sectionStart = hashIdx + 1;
 
-      // 查找下一个 # 或标签结束
       let sectionEnd = text.indexOf('\n#', sectionStart + 1);
       if (sectionEnd === -1) {
-        // 如果没有下一个 #，查找标签结束
         sectionEnd = text.indexOf('</environment_details>', sectionStart);
         if (sectionEnd === -1) {
           sectionEnd = len;

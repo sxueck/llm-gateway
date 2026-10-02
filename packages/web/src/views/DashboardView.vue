@@ -550,15 +550,15 @@ const periodOptions = computed(() => [
 ])
 
 const gridCols = computed(() => {
-  if (windowWidth.value < 640) return 1 // 手机端：1列
-  if (windowWidth.value < 1024) return 2 // 平板端：2列
-  if (windowWidth.value < 1280) return 3 // 小桌面：3列
-  return 4 // 大桌面：4列
+  if (windowWidth.value < 640) return 1
+  if (windowWidth.value < 1024) return 2
+  if (windowWidth.value < 1280) return 3
+  return 4
 })
 
 const gridGap = computed(() => {
-  if (windowWidth.value < 640) return 12 // 手机端：较小间距
-  return 20 // 桌面端：正常间距
+  if (windowWidth.value < 640) return 12
+  return 20
 })
 
 const enabledKeysCount = computed(() => {
@@ -645,16 +645,15 @@ const ipsumBlockedCount = computed(() => {
   return Number(threatIpStats.value.blockedCount || 0)
 })
 
-// Starbucks & Nature Inspired Palette
 const COLOR_PALETTE = [
-  { line: '#006241', gradient: ['rgba(0, 98, 65, 0.4)', 'rgba(0, 98, 65, 0.05)'] }, // Starbucks Green
-  { line: '#C4996C', gradient: ['rgba(196, 153, 108, 0.4)', 'rgba(196, 153, 108, 0.05)'] }, // Coffee/Gold
-  { line: '#1E3932', gradient: ['rgba(30, 57, 50, 0.4)', 'rgba(30, 57, 50, 0.05)'] }, // House Green
-  { line: '#2D8A6D', gradient: ['rgba(45, 138, 109, 0.4)', 'rgba(45, 138, 109, 0.05)'] }, // Medium Green
-  { line: '#A89F91', gradient: ['rgba(168, 159, 145, 0.4)', 'rgba(168, 159, 145, 0.05)'] }, // Warm Gray
-  { line: '#6CA68D', gradient: ['rgba(108, 166, 141, 0.4)', 'rgba(108, 166, 141, 0.05)'] }, // Sage
-  { line: '#4A4A4A', gradient: ['rgba(74, 74, 74, 0.4)', 'rgba(74, 74, 74, 0.05)'] }, // Dark Gray
-  { line: '#D4E9E2', gradient: ['rgba(212, 233, 226, 0.4)', 'rgba(212, 233, 226, 0.05)'] } // Mint
+  { line: '#006241', gradient: ['rgba(0, 98, 65, 0.4)', 'rgba(0, 98, 65, 0.05)'] },
+  { line: '#C4996C', gradient: ['rgba(196, 153, 108, 0.4)', 'rgba(196, 153, 108, 0.05)'] },
+  { line: '#1E3932', gradient: ['rgba(30, 57, 50, 0.4)', 'rgba(30, 57, 50, 0.05)'] },
+  { line: '#2D8A6D', gradient: ['rgba(45, 138, 109, 0.4)', 'rgba(45, 138, 109, 0.05)'] },
+  { line: '#A89F91', gradient: ['rgba(168, 159, 145, 0.4)', 'rgba(168, 159, 145, 0.05)'] },
+  { line: '#6CA68D', gradient: ['rgba(108, 166, 141, 0.4)', 'rgba(108, 166, 141, 0.05)'] },
+  { line: '#4A4A4A', gradient: ['rgba(74, 74, 74, 0.4)', 'rgba(74, 74, 74, 0.05)'] },
+  { line: '#D4E9E2', gradient: ['rgba(212, 233, 226, 0.4)', 'rgba(212, 233, 226, 0.05)'] }
 ]
 
 const chartOption = computed(() => {

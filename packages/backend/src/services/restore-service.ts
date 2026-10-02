@@ -101,16 +101,13 @@ export class RestoreService {
 
       memoryLogger.info(`Starting restore: ${restoreId} from backup ${backupId}`, 'Restore');
 
-      // Download backup from S3
       mkdirSync(this.tempDir, { recursive: true });
       const s3Service = getS3Service();
       await s3Service.downloadFile(backupRecord.s3_key, encryptedPath);
       downloaded = true;
 
-      // Decrypt backup
       await this.backupService.decryptFile(encryptedPath, tarPath);
 
-      // Extract tar.gz
       mkdirSync(extractDir, { recursive: true });
       await tar.extract({
         file: tarPath,
@@ -124,7 +121,6 @@ export class RestoreService {
       }
       const backupDir = join(extractDir, dirs[0]);
 
-      // Read metadata and verify
       const metadataPath = join(backupDir, 'metadata.json');
       let metadata: any;
       try {
@@ -141,7 +137,6 @@ export class RestoreService {
         // Note: Full checksum verification would require recalculating
       }
 
-      // Read index
       const indexPath = join(backupDir, 'index.json');
       let index: { tables: string[] };
       try {
@@ -153,7 +148,6 @@ export class RestoreService {
         throw new Error('Invalid backup index.json: tables must be an array');
       }
 
-      // Determine which tables to restore.
       // 在任何破坏性写入之前完成校验，缺失/非法的备份数据不允许清空表。
       let tablesToRestore = index.tables;
       if (restoreType === 'partial') {

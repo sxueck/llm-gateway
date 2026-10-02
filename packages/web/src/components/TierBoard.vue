@@ -1,11 +1,11 @@
 <template>
-  <div class="tier-board">
+  <div class="tier-board" :style="{ '--tier-border': themeVars.borderColor, '--tier-surface': themeVars.actionColor, '--tier-card': themeVars.cardColor, '--tier-muted': themeVars.textColor3 }">
     <div class="board-toolbar">
       <n-text depth="3" class="board-hint">
         {{ t('expertRouting.tierBoardHint') }}
       </n-text>
       <n-space :size="8">
-        <n-button size="small" @click="openAddModal">
+        <n-button size="small" type="primary" @click="openAddModal">
           <template #icon>
             <n-icon><AddOutline /></n-icon>
           </template>
@@ -50,7 +50,9 @@
       >
         <div class="tier-column-header">
           <span>{{ t(`expertRouting.band.${band}`) }}</span>
-          <n-tag size="small" round>{{ columns[band].length }}</n-tag>
+          <n-tag size="small" :type="band === 'low' ? 'success' : band === 'medium' ? 'warning' : 'error'" :bordered="false">
+            {{ columns[band].length }}
+          </n-tag>
         </div>
         <div class="tier-column-desc">{{ t(`expertRouting.band.${band}Desc`) }}</div>
         <div class="tier-column-body">
@@ -59,6 +61,7 @@
             :key="expert.id"
             :expert="expert"
             :label="labelOf(expert)"
+            :priority="index + 1"
             :first="index === 0"
             :last="index === columns[band].length - 1"
             @move-up="moveExpert(band, index, -1)"
@@ -83,7 +86,7 @@
       :style="{ width: '560px', maxWidth: '92vw' }"
       :segmented="{ footer: 'soft' }"
     >
-      <n-form label-placement="left" label-width="110" size="small">
+      <n-form label-placement="top" size="small">
         <n-form-item :label="t('expertRouting.targetBand')">
           <n-radio-group v-model:value="addBand">
             <n-space>
@@ -133,6 +136,7 @@ import {
   NSpace,
   NTag,
   NText,
+  useThemeVars,
 } from 'naive-ui';
 import { AddOutline, SwapHorizontalOutline } from '@vicons/ionicons5';
 import {
@@ -161,6 +165,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const message = useMessage();
+const themeVars = useThemeVars();
 const providerStore = useProviderStore();
 const modelStore = useModelStore();
 
@@ -376,9 +381,12 @@ onBeforeUnmount(() => {
 }
 
 .tier-column {
-  border: 1px solid #e8e8e8;
+  border: 1px solid var(--tier-border);
   border-radius: 10px;
-  background: #fafafa;
+  background: var(--tier-surface);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -389,16 +397,17 @@ onBeforeUnmount(() => {
   padding: 8px 12px;
   font-size: 13px;
   font-weight: 600;
-  border-bottom: 1px solid #e8e8e8;
-  background: #ffffff;
+  background: var(--tier-card);
 }
 
 .tier-column-desc {
-  padding: 4px 12px 8px;
+  padding: 0 12px 12px;
+  min-height: 48px;
+  line-height: 1.6;
   font-size: 12px;
-  color: #8c8c8c;
-  border-bottom: 1px solid #e8e8e8;
-  background: #ffffff;
+  color: var(--tier-muted);
+  border-bottom: 1px solid var(--tier-border);
+  background: var(--tier-card);
 }
 
 .tier-column-body {
@@ -406,12 +415,27 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 8px;
   padding: 10px;
-  min-height: 64px;
+  min-height: 120px;
+  flex: 1;
 }
 
 .tier-column-empty {
   font-size: 12px;
   text-align: center;
-  padding: 12px 0;
+  padding: 32px 0;
+}
+
+.tier-board > :deep(.n-alert) {
+  margin-bottom: 12px;
+}
+
+@media (max-width: 700px) {
+  .tier-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .board-toolbar {
+    align-items: flex-start;
+  }
 }
 </style>

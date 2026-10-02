@@ -887,7 +887,6 @@ export const apiRequestRepository = {
         });
       }
 
-      // Query detail table for recent data
       if (needsDetail) {
         const detailStartTime = Math.max(startTime, detailStart);
         const loggingCondition = getDisableLoggingCondition();

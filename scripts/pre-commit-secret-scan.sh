@@ -13,7 +13,6 @@ PATTERNS=(
   'Generic API key assign|(api[_-]?key|secret|password|token)["'"'"']?\s*[:=]\s*["'"'"'][A-Za-z0-9_+/=-]{20,}'
 )
 
-# Files / paths to skip
 SKIP_GLOBS=(
   '*.lock' '*.md' 'yarn.lock' 'package-lock.json' 'bun.lockb' 'pnpm-lock.yaml'
   '*.map' 'CHANGELOG*' 'LICENSE*'
@@ -36,7 +35,6 @@ report=""
 while IFS= read -r file; do
   [ -z "$file" ] && continue
 
-  # Skip by glob
   skip=false
   for glob in "${SKIP_GLOBS[@]}"; do
     case "$file" in
@@ -45,12 +43,10 @@ while IFS= read -r file; do
   done
   $skip && continue
 
-  # Only scan text files (skip binaries)
   if file --mime-encoding "$file" 2>/dev/null | grep -qi 'binary'; then
     continue
   fi
 
-  # Get only added/modified lines from the staged diff
   diff_lines=$(git diff --cached -- "$file" | grep '^+' | grep -v '^+++' || true)
   [ -z "$diff_lines" ] && continue
 

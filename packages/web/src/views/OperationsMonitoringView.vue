@@ -697,8 +697,6 @@ function currentSignature() {
   ].join("|");
 }
 
-// ---------- formatting ----------
-
 const shanghaiLocale = computed(() =>
   locale.value === "zh-CN" ? "zh-CN" : "en-US",
 );
@@ -744,8 +742,6 @@ function formatLastUsed(ts: number | null): string {
   if (ts === null) return t("operationsMonitoring.metrics.noValue");
   return formatShanghaiDateTime(ts);
 }
-
-// ---------- data loading ----------
 
 async function refresh(force = false) {
   if (loading.value && !force) return;
@@ -890,8 +886,6 @@ function handleRankingSortChange(sort: "requestCount" | "failureCount") {
     message.error(t("operationsMonitoring.loadFailed"));
   });
 }
-
-// ---------- request sources tab (moved from the dashboard) ----------
 
 const requestSources = ref<OpsRequestSourcesResponse | null>(null);
 const requestSourcesLoading = ref(false);
@@ -1170,8 +1164,6 @@ const dimensionPagination = computed<Record<OpsDimension, PaginationProps>>(
   }),
 );
 
-// ---------- filter actions ----------
-
 function clearFilters() {
   filterVirtualKeyId.value = null;
   filterModel.value = null;
@@ -1197,8 +1189,6 @@ function goToTab(tab: TabKey) {
 watch([period, filterVirtualKeyId, filterModel, filterProviderId], () => {
   refresh(true);
 });
-
-// ---------- overview metric cards ----------
 
 interface MetricCard {
   key: string;
@@ -1294,8 +1284,6 @@ const metricCards = computed<MetricCard[]>(() => {
     },
   ];
 });
-
-// ---------- trend chart ----------
 
 const hasTrendData = computed(
   () =>
@@ -1428,8 +1416,6 @@ function trendBarDataWithStyle(points: OpsTrendPoint[]) {
   });
 }
 
-// ---------- drill-down to request logs ----------
-
 function drillToLogs(options: {
   startTime: number;
   endTime: number;
@@ -1470,8 +1456,6 @@ function handleTrendClick(params: { dataIndex: number }) {
   if (!p || p.gap || p.requestCount === null) return;
   drillToLogs({ startTime: p.bucketStart, endTime: p.bucketEnd });
 }
-
-// ---------- dimension table columns ----------
 
 function renderMetricWithSamples(
   value: number | null,
@@ -1992,8 +1976,6 @@ const dimensionColumns = computed<
     },
   ],
 }));
-
-// ---------- lifecycle ----------
 
 onMounted(() => {
   refresh();

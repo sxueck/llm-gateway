@@ -120,7 +120,6 @@ export class BackupService {
         [backupId]
       );
 
-      // Encrypt archive
       const encryptedPath = join(this.tempDir, `${backupId}.tar.gz.enc`);
       await this.encryptFile(tarPath, encryptedPath);
 
@@ -128,7 +127,6 @@ export class BackupService {
       const stats = await fs.stat(encryptedPath);
       const fileHash = await this.getFileHash(encryptedPath);
 
-      // Upload to S3
       const s3Service = getS3Service();
       await s3Service.uploadFile(encryptedPath, backupRecord.s3_key);
 
@@ -141,7 +139,6 @@ export class BackupService {
         checksum
       });
 
-      // Cleanup temp files
       rmSync(backupDir, { recursive: true, force: true });
       await fs.unlink(tarPath);
       await fs.unlink(encryptedPath);
@@ -265,7 +262,6 @@ export class BackupService {
         return false;
       }
 
-      // Verify encryption key
       if (record.encryption_key_hash !== this.getEncryptionKeyHash()) {
         memoryLogger.error('Encryption key mismatch for backup verification', 'Backup');
         return false;

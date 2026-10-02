@@ -31,16 +31,29 @@
       </n-space>
 
       <n-data-table
+        :scroll-x="1000"
+        :row-key="(row: ExpertRoutingLog) => row.id"
         :columns="columns"
         :data="filteredLogs"
         :loading="loading"
-        :pagination="{ pageSize: 20 }"
+        :pagination="filteredLogs.length ? { pageSize: 20 } : false"
         :row-props="rowProps"
         size="small"
-      />
+      >
+        <template #empty>
+          <n-empty :description="t('expertRouting.ui.noLogs')" class="log-empty" />
+        </template>
+      </n-data-table>
     </n-space>
 
-    <n-drawer v-model:show="showDetail" :width="520" placement="right">
+    <n-drawer
+      v-model:show="showDetail"
+      width="min(520px, 92vw)"
+      placement="right"
+      :auto-focus="true"
+      :close-on-esc="true"
+      :trap-focus="true"
+    >
       <n-drawer-content
         :title="t('expertRouting.logDetails')"
         closable
@@ -64,7 +77,7 @@
                 <div class="detail-row">
                   <span class="detail-label">{{ t('expertRouting.source') }}</span>
                   <n-tag size="small" :type="sourceTagType(detail.route_source)">
-                    {{ detail.route_source || '—' }}
+                    {{ detail.route_source ? routeSourceLabel(detail.route_source) : '—' }}
                   </n-tag>
                 </div>
                 <div class="detail-row">
@@ -108,7 +121,7 @@
                     type="line"
                     :percentage="Math.round(Number(item.probability || 0) * 100)"
                     :show-indicator="false"
-                    style="width: 180px"
+                    class="ranked-progress"
                   />
                   <span class="ranked-value">
                     {{ (Number(item.probability || 0) * 100).toFixed(1) }}%
@@ -122,11 +135,11 @@
               <n-space vertical :size="6">
                 <div class="detail-row">
                   <span class="detail-label">{{ t('expertRouting.verdictReused') }}</span>
-                  <span>{{ detail.verdict_reused ? 'Yes' : 'No' }}</span>
+                  <span class="detail-value">{{ detail.verdict_reused ? t('expertRouting.ui.yes') : t('expertRouting.ui.no') }}</span>
                 </div>
                 <div class="detail-row">
                   <span class="detail-label">{{ t('expertRouting.continuation') }}</span>
-                  <span>{{ classifierMeta.continuation ? 'Yes' : 'No' }}</span>
+                  <span class="detail-value">{{ classifierMeta.continuation ? t('expertRouting.ui.yes') : t('expertRouting.ui.no') }}</span>
                 </div>
                 <div class="detail-row">
                   <span class="detail-label">{{ t('expertRouting.confidence') }}</span>
@@ -228,15 +241,21 @@ const feedbackLoading = ref(false);
 const exporting = ref(false);
 const message = useMessage();
 
-const bandOptions = ['low', 'medium', 'high'].map((band) => ({
+const bandOptions = computed(() => ['low', 'medium', 'high'].map((band) => ({
   label: t(`expertRouting.band.${band}`),
   value: band,
-}));
+})));
 
-const sourceOptions = ROUTE_SOURCES.map((source) => ({
-  label: source.replace(/_/g, ' '),
+const sourceOptions = computed(() => ROUTE_SOURCES.map((source) => ({
+  label: routeSourceLabel(source),
   value: source,
-}));
+})));
+
+function routeSourceLabel(source: string): string {
+  const key = `expertRouting.ui.source.${source}`;
+  const translated = t(key);
+  return translated === key ? source.replace(/_/g, ' ') : translated;
+}
 
 const filteredLogs = computed(() => {
   return logs.value.filter((log) => {
@@ -294,7 +313,7 @@ const columns: DataTableColumns<ExpertRoutingLog> = [
     render: (row) => formatTime(row.created_at),
   },
   {
-    title: () => t('expertRouting.band'),
+    title: () => t('expertRouting.ui.bandLabel'),
     key: 'band',
     width: 90,
     render: (row) =>
@@ -310,7 +329,7 @@ const columns: DataTableColumns<ExpertRoutingLog> = [
     title: () => t('expertRouting.source'),
     key: 'route_source',
     width: 130,
-    render: (row) => row.route_source?.replace(/_/g, ' ') || '—',
+    render: (row) => (row.route_source ? routeSourceLabel(row.route_source) : '—'),
   },
   {
     title: () => t('expertRouting.difficulty'),
@@ -334,13 +353,26 @@ const columns: DataTableColumns<ExpertRoutingLog> = [
     title: () => t('expertRouting.verdictReused'),
     key: 'verdict_reused',
     width: 90,
-    render: (row) => (row.verdict_reused ? 'Yes' : 'No'),
+    render: (row) =>
+      row.verdict_reused != null
+        ? row.verdict_reused
+          ? t('expertRouting.ui.yes')
+          : t('expertRouting.ui.no')
+        : '—',
   },
 ];
 
 const rowProps = (row: ExpertRoutingLog) => ({
   style: 'cursor: pointer',
+  tabindex: 0,
+  'aria-label': t('expertRouting.ui.viewLogDetails'),
   onClick: () => handleRowClick(row),
+  onKeydown: (event: KeyboardEvent) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleRowClick(row);
+    }
+  },
 });
 
 async function loadLogs() {
@@ -349,7 +381,7 @@ async function loadLogs() {
     const response = await expertRoutingApi.getLogs(props.configId, 100);
     logs.value = response.logs;
   } catch (error: any) {
-    console.error('Failed to load routing logs:', error);
+    message.error(error.message || t('messages.operationFailed'));
   } finally {
     loading.value = false;
   }
@@ -363,7 +395,7 @@ async function handleRowClick(log: ExpertRoutingLog) {
   try {
     detail.value = await expertRoutingApi.getLogDetails(props.configId, log.id);
   } catch (error: any) {
-    console.error('Failed to load log details:', error);
+    message.error(error.message || t('messages.operationFailed'));
   } finally {
     detailLoading.value = false;
   }
@@ -418,10 +450,16 @@ onMounted(loadLogs);
 <style scoped>
 .filter-select {
   width: 150px;
+  max-width: 100%;
 }
 
 .filter-input {
   width: 220px;
+  max-width: 100%;
+}
+
+.log-empty {
+  padding: 24px 0;
 }
 
 .detail-row {
@@ -429,6 +467,16 @@ onMounted(loadLogs);
   align-items: center;
   gap: 12px;
   font-size: 13px;
+  min-width: 0;
+}
+
+.detail-row > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.detail-value {
+  word-break: break-all;
 }
 
 .detail-label {
@@ -442,6 +490,12 @@ onMounted(loadLogs);
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+}
+
+.ranked-row .n-progress {
+  flex: 1 1 auto;
+  min-width: 60px;
 }
 
 .ranked-label {

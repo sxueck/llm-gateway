@@ -98,7 +98,6 @@ async function countVirtualKeysByModels(
   const conn = await pool.getConnection();
   try {
     // Fetch all virtual keys with fields needed for reference counting
-    // We need: id, model_id, model_ids, routing_config
     const [rows] = await conn.query(
       `SELECT id, model_id, model_ids, routing_config FROM virtual_keys`
     );
@@ -111,7 +110,6 @@ async function countVirtualKeysByModels(
 
     const result = new Map<string, number>();
 
-    // Initialize all model counts to 0
     for (const model of models) {
       result.set(model.id, 0);
     }
@@ -157,7 +155,6 @@ async function countVirtualKeysByModels(
  * Use countVirtualKeysByModels() for new code.
  */
 async function countVirtualKeysByModelIds(modelIds: string[]): Promise<Map<string, number>> {
-  // For legacy compatibility, fetch minimal model info
   const pool = getDatabase();
   const conn = await pool.getConnection();
   try {

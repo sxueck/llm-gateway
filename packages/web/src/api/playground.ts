@@ -1,5 +1,6 @@
 import request from '@/utils/request';
 import { useAuthStore } from '@/stores/auth';
+import { SSEFrameParser } from '@/utils/sse';
 
 export type PlaygroundProtocol = 'openai' | 'anthropic';
 
@@ -167,43 +168,20 @@ export async function streamPlayground(
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '';
+  const parser = new SSEFrameParser();
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let separator = buffer.indexOf('\n\n');
-    while (separator !== -1) {
-      const block = buffer.slice(0, separator);
-      buffer = buffer.slice(separator + 2);
-      const event = readEventName(block);
-      const data = readDataLines(block);
-      if (event === 'playground') {
+    for (const frame of parser.push(decoder.decode(value, { stream: true }))) {
+      if (frame.event === 'playground') {
         try {
-          handlers.onMetrics(JSON.parse(data) as PlaygroundStreamFrame);
+          handlers.onMetrics(JSON.parse(frame.data) as PlaygroundStreamFrame);
         } catch {
           /* 计量帧损坏时忽略，内容已经流完 */
         }
-      } else if (data) {
-        handlers.onChunk(data);
+      } else if (frame.data) {
+        handlers.onChunk(frame.data);
       }
-      separator = buffer.indexOf('\n\n');
     }
   }
-}
-
-function readEventName(block: string): string | null {
-  for (const line of block.split('\n')) {
-    if (line.startsWith('event:')) return line.slice(6).trim();
-  }
-  return null;
-}
-
-function readDataLines(block: string): string {
-  const lines: string[] = [];
-  for (const line of block.split('\n')) {
-    if (line.startsWith(':')) continue;
-    if (line.startsWith('data:')) lines.push(line.slice(5).trimStart());
-  }
-  return lines.join('\n');
 }

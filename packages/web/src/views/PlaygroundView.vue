@@ -31,7 +31,6 @@
     </PageHeader>
 
     <n-grid cols="1 l:3" responsive="screen" :x-gap="16" :y-gap="16" class="playground-grid">
-      <!-- 配置列 -->
       <n-gi>
         <n-card size="small" :title="t('playground.config.title')" class="full-height-card">
           <n-space vertical :size="14">
@@ -119,7 +118,6 @@
         </n-card>
       </n-gi>
 
-      <!-- 对话列 -->
       <n-gi>
         <n-card size="small" :title="t('playground.chat.title')" class="full-height-card chat-card">
           <div ref="messageListEl" class="message-list">
@@ -206,7 +204,6 @@
         </n-card>
       </n-gi>
 
-      <!-- 指标列 -->
       <n-gi>
         <n-card size="small" :title="t('playground.metrics.title')" class="full-height-card metrics-card">
           <div v-if="!lastMetrics.hasData" class="metrics-empty">
@@ -278,7 +275,6 @@
       </n-gi>
     </n-grid>
 
-    <!-- 响应明细区 -->
     <n-card size="small" :title="t('playground.details.title')" class="details-card">
       <n-tabs type="line" size="small">
         <n-tab-pane name="raw" :tab="t('playground.details.raw')">
@@ -405,7 +401,6 @@ const EMPTY_METRICS: MetricsState = {
   error: null,
 };
 
-// ---- 配置状态 ----
 const protocol = ref<PlaygroundProtocol>('openai');
 const virtualKeyId = ref<string | null>(null);
 const model = ref<string | null>(null);
@@ -415,18 +410,15 @@ const maxTokens = ref<number | null>(null);
 const systemPrompt = ref('');
 const streamEnabled = ref(true);
 
-// ---- 模型列表 ----
 const modelsLoading = ref(false);
 const modelsError = ref<string | null>(null);
 const modelOptions = ref<Array<{ label: string; value: string }>>([]);
 
-// ---- 对话状态 ----
 let messageIdSeq = 0;
 const messages = ref<ChatMessage[]>([]);
 const inputText = ref('');
 const messageListEl = ref<HTMLElement | null>(null);
 
-// ---- 请求状态 ----
 const streaming = ref(false);
 let abortController: AbortController | null = null;
 let requestStartedAt = 0;
@@ -468,7 +460,6 @@ const selectedVirtualKey = computed(() =>
   virtualKeyStore.virtualKeys.find(vk => vk.id === virtualKeyId.value),
 );
 
-// ---- localStorage 持久化 ----
 function persist(key: string, value: unknown) {
   try {
     localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
@@ -526,7 +517,6 @@ function restorePersistedConfig() {
   return typeof savedModel === 'string' ? savedModel : null;
 }
 
-// ---- 模型列表加载 ----
 async function loadModels(preferred: string | null = null) {
   if (!virtualKeyId.value) {
     modelOptions.value = [];
@@ -569,7 +559,6 @@ function refreshModels() {
   loadModels();
 }
 
-// ---- payload 组装 ----
 type UpstreamMessage = { role: string; content: string };
 
 /** 发送时排除流式占位与空消息。 */
@@ -639,7 +628,7 @@ function buildGatewayPayload(
   return payload;
 }
 
-// ---- 流式增量解析：解析不到的帧类型直接忽略 ----
+// 解析不到的帧类型直接忽略
 function extractDelta(data: string, proto: PlaygroundProtocol): string {
   if (!data || data === '[DONE]') return '';
   let json: any;
@@ -666,7 +655,6 @@ function extractDelta(data: string, proto: PlaygroundProtocol): string {
   return '';
 }
 
-// ---- 非流式内容提取 ----
 function extractContent(body: any, proto: PlaygroundProtocol): string {
   if (!body || typeof body !== 'object') return '';
   if (proto === 'openai') {
@@ -691,7 +679,7 @@ function safeJsonStringify(value: unknown): string {
   }
 }
 
-// ---- 原始帧日志（节流同步到响应力，避免高频字符串拷贝卡 UI） ----
+// 节流同步到响应式状态，避免高频字符串拷贝卡 UI
 let rawStreamBuffer = '';
 let rawSyncAt = 0;
 let rawTruncated = false;
@@ -711,7 +699,6 @@ function appendRawChunk(data: string) {
   }
 }
 
-// ---- 指标 ----
 function beginMetrics() {
   lastMetrics.value = { ...EMPTY_METRICS, hasData: true, model: model.value };
 }
@@ -789,7 +776,6 @@ function gotoRequest() {
   router.push({ name: 'ApiRequests', query });
 }
 
-// ---- 发送 ----
 function isAbortError(err: unknown): boolean {
   return (err as { name?: string } | null)?.name === 'AbortError';
 }
@@ -923,7 +909,6 @@ watch(
   { deep: true },
 );
 
-// ---- 响应明细 ----
 const payloadPreview = computed(() =>
   safeJsonStringify(buildUpstreamBody(conversationForPayload(), streamEnabled.value)),
 );
@@ -966,7 +951,6 @@ async function copyCurl() {
   }
 }
 
-// ---- 初始化 ----
 onMounted(async () => {
   const persistedModel = restorePersistedConfig();
   await virtualKeyStore.fetchVirtualKeys();

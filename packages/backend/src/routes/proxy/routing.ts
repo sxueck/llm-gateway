@@ -873,7 +873,7 @@ export async function resolveSmartRouting(
     if (hashSource === 'virtualKey' && virtualKeyId) {
       routingKey = virtualKeyId;
     } else if (hashSource === 'request' && request?.body) {
-      // 使用请求体的哈希作为key
+      // 以序列化请求体作为 key（后续统一走哈希分桶，保持同请求稳定落同一目标）
       routingKey = JSON.stringify(request.body);
     }
   } else if (mode === 'affinity') {

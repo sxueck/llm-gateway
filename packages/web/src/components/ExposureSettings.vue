@@ -1,5 +1,5 @@
 <template>
-  <n-form label-placement="left" label-width="160" size="small">
+  <n-form label-placement="left" label-align="left" label-width="180" size="small" class="switch-form">
     <n-form-item :label="t('expertRouting.exposureHeaders')">
       <n-switch :value="headers" @update:value="(v) => update({ headers: v })" />
       <template #feedback>
@@ -15,7 +15,7 @@
         {{ t('expertRouting.exposureProviderHeaderHint') }}
       </template>
     </n-form-item>
-    <n-form-item :label="t('expertRouting.exposureModelField')">
+    <n-form-item :label="t('expertRouting.exposureModelField')" label-placement="top">
       <n-radio-group
         :value="modelField"
         @update:value="(v) => update({ model_field: v })"

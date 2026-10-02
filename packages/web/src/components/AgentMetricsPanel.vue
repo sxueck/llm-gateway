@@ -50,7 +50,6 @@
     </div>
 
     <n-tabs type="line" :animated="false">
-      <!-- ============ Coding Agent 卡片区 ============ -->
       <n-tab-pane
         name="codingAgents"
         :tab="t('agentMetrics.tabs.codingAgents')"
@@ -141,7 +140,6 @@
         </n-grid>
       </n-tab-pane>
 
-      <!-- ============ Worker Run 区（自有 craft worker） ============ -->
       <n-tab-pane name="workerRuns" :tab="t('agentMetrics.tabs.workerRuns')">
         <n-alert v-if="workerError" type="error" class="section-error">
           <div class="error-row">
@@ -173,7 +171,6 @@
           />
 
           <template v-else>
-            <!-- totals 小字一行 -->
             <div class="worker-totals">
               <span
                 v-for="item in workerTotalsLine"
@@ -283,7 +280,6 @@
       </n-tab-pane>
     </n-tabs>
 
-    <!-- ============ Agent 会话明细抽屉 ============ -->
     <n-drawer v-model:show="drawerVisible" :width="drawerWidth" placement="right">
       <n-drawer-content :title="drawerTitle" closable>
         <div v-if="drawerAgent" class="drawer-body">
@@ -462,7 +458,6 @@ const codingAgents = computed<CodingAgentSummary[]>(
 
 onMounted(load);
 
-// ---------- 会话明细抽屉 ----------
 
 const drawerVisible = ref(false);
 const drawerAgent = ref<CodingAgentSummary | null>(null);
@@ -585,7 +580,6 @@ const sessionColumns = computed<DataTableColumns<AgentSessionSummary>>(() => [
   },
 ]);
 
-// ---------- Worker Run 区 ----------
 
 const workerTotalsLine = computed(() => {
   const totals = workerOverview.value?.totals;
@@ -739,7 +733,6 @@ const categoryTagTypes: Record<
   unknown: "default",
 };
 
-// ---------- 趋势图（worker-runs.trend） ----------
 
 const hasTrendData = computed(() =>
   (workerOverview.value?.trend ?? []).some(
@@ -824,7 +817,6 @@ const trendChartOption = computed(() => {
   };
 });
 
-// ---------- 本地格式化（仓库无对应公共工具时的最小实现） ----------
 
 // estimatedCost === null 表示至少一个模型缺价，宁缺勿假
 function formatCost(value: number | null): string {
@@ -916,7 +908,6 @@ watch(
   padding: 16px 0;
 }
 
-/* Agent 卡片 */
 .agent-card {
   background: linear-gradient(135deg, #ffffff 0%, #f8f8f8 100%);
   border: 1px solid #f0f0f0;
@@ -968,7 +959,6 @@ watch(
   font-size: 12px;
 }
 
-/* Worker Run 区 */
 .worker-totals {
   display: flex;
   flex-wrap: wrap;
@@ -1008,7 +998,6 @@ watch(
   gap: 8px;
 }
 
-/* 会话抽屉 */
 .drawer-body {
   display: block;
 }

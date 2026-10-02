@@ -147,12 +147,14 @@ const mainMenuParentByKey: Record<string, string> = {
   logs: 'tools',
   'api-requests': 'tools',
   'prompt-samples': 'tools',
+  'db-maintenance': 'settings',
 };
 const generalMenuParentByKey: Record<string, string> = {
   settings: 'settings',
   'security-settings': 'settings',
   backup: 'settings',
   'developer-settings': 'settings',
+  'db-maintenance': 'settings',
 };
 
 const toggleSidebar = () => {
@@ -326,6 +328,11 @@ const generalMenuOptions = computed(() => [
         label: t('settings.developerDebug'),
         key: 'developer-settings',
         icon: () => h(NIcon, null, { default: () => h(FlaskOutline) }),
+      },
+      {
+        label: t('settings.dbMaintenance'),
+        key: 'db-maintenance',
+        icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
       },
     ],
   },

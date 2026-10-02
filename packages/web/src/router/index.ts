@@ -137,6 +137,11 @@ const router = createRouter({
           name: 'Backup',
           component: () => import('@/views/BackupView.vue'),
         },
+        {
+          path: 'db-maintenance',
+          name: 'DatabaseMaintenance',
+          component: () => import('@/views/DatabaseMaintenanceView.vue'),
+        },
       ],
     },
     {

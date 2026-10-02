@@ -1,4 +1,3 @@
-// Import base modules
 import * as connectionModule from "./connection.js";
 import { createTables } from "./schema.js";
 import { applyMigrations } from "./migrations.js";
@@ -14,16 +13,12 @@ export type {
   ApiRequestBuffer,
 } from "./types.js";
 
-// Re-export base connection utilities
 export { getDatabase, getPool, withTransaction } from "./connection.js";
 
-// Re-export schema creation
 export { createTables } from "./schema.js";
 
-// Re-export buffer utilities
 export { flushApiRequestBuffer as flushApiRequestBufferNow } from "./utils/buffer.js";
 
-// Import repositories
 import { userRepository } from "./repositories/user.repository.js";
 import { providerRepository } from "./repositories/provider.repository.js";
 import { modelRepository } from "./repositories/model.repository.js";
@@ -78,7 +73,6 @@ export const userPluginEnrollmentDb = userPluginEnrollmentRepository;
 export const alertReadDb = alertReadRepository;
 export const expertRoutingTrainingRecordDb = expertRoutingTrainingRecordRepository;
 
-// Enhanced initDatabase that also creates tables and runs migrations
 export async function initDatabase() {
   const pool = await connectionModule.initDatabase();
 
@@ -105,7 +99,6 @@ export async function initDatabase() {
   return pool;
 }
 
-// Enhanced shutdownDatabase
 export async function shutdownDatabase() {
   stopBufferFlush();
   await flushApiRequestBuffer();

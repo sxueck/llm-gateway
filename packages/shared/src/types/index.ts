@@ -1,10 +1,5 @@
-// 共享类型定义
-
 export * from './agent-search.js';
 
-/**
- * API 统一响应格式
- */
 export interface ApiResponse<T = any> {
   success: boolean;
   data?: T;
@@ -15,17 +10,11 @@ export interface ApiResponse<T = any> {
   };
 }
 
-/**
- * 分页参数
- */
 export interface PaginationParams {
   page?: number;
   pageSize?: number;
 }
 
-/**
- * 分页响应
- */
 export interface PaginatedResponse<T> {
   items: T[];
   total: number;

@@ -1,11 +1,16 @@
 <template>
-  <div class="expert-routing-detail">
+  <div class="expert-routing-detail" :style="{ '--routing-border': themeVars.borderColor }">
     <n-space vertical :size="12">
       <PageHeader
         eyebrow="ROUTING"
         :title="routing?.name ?? t('expertRouting.detail')"
         :subtitle="t('expertRouting.subtitle')"
       >
+        <template #title-extra>
+          <n-tag v-if="routing" size="small" :type="routing.enabled ? 'success' : 'default'" :bordered="false">
+            {{ routing.enabled ? t('common.enabled') : t('common.disabled') }}
+          </n-tag>
+        </template>
         <template #actions>
           <n-button size="small" @click="goBack">
             <template #icon>
@@ -40,7 +45,7 @@
                 size="small"
                 class="config-card"
               >
-                <n-form label-placement="left" label-width="110" size="small">
+                <n-form label-placement="top" size="small">
                   <n-form-item :label="t('expertRouting.configName')">
                     <n-input v-model:value="form.name" :placeholder="t('expertRouting.configNamePlaceholder')" />
                   </n-form-item>
@@ -71,14 +76,14 @@
                     <n-spin v-if="jevLoading" size="small" />
                     <n-space v-else-if="jevStatus" :size="20" align="center" wrap>
                       <span>
-                        {{ t('expertRouting.configured') }}:
+                        {{ t('expertRouting.classifier') }}:
                         <n-tag
                           size="small"
                           :type="jevStatus.configured ? 'success' : 'warning'"
                         >
                           {{
                             jevStatus.configured
-                              ? t('common.enabled')
+                              ? t('expertRouting.configured')
                               : t('expertRouting.notConfigured')
                           }}
                         </n-tag>
@@ -129,8 +134,11 @@
                       {{ jevStatus.breaker.lastError }}
                     </div>
                   </n-alert>
+                  <n-alert v-if="jevStatus && !jevStatus.configured" type="warning" :show-icon="true">
+                    {{ t('expertRouting.ui.classifierUnavailable') }}
+                  </n-alert>
                   <n-divider style="margin: 4px 0" />
-                  <n-form label-placement="left" label-width="140" size="small">
+                  <n-form label-placement="top" size="small">
                     <n-form-item :label="t('expertRouting.timeoutMs')">
                       <n-input-number
                         v-model:value="form.classifier.timeout_ms"
@@ -185,6 +193,11 @@
                 />
               </n-card>
 
+              <div class="config-section config-card--wide">
+                <h3>{{ t('expertRouting.ui.advancedSettings') }}</h3>
+                <n-text depth="3">{{ t('expertRouting.ui.advancedSettingsHint') }}</n-text>
+              </div>
+
               <n-card
                 :title="t('expertRouting.sessionPolicy')"
                 size="small"
@@ -198,7 +211,7 @@
                 size="small"
                 class="config-card"
               >
-                <n-form label-placement="left" label-width="180" size="small">
+                <n-form label-placement="left" label-align="left" label-width="180" size="small" class="switch-form">
                   <n-form-item :label="t('expertRouting.stripTools')">
                     <n-switch v-model:value="form.preprocessing.strip_tools" />
                     <template #feedback>
@@ -231,8 +244,8 @@
                 size="small"
                 class="config-card"
               >
-                <n-form label-placement="left" label-width="140" size="small">
-                  <n-form-item :label="t('expertRouting.failOpenStrategy')">
+                <n-form label-placement="top" size="small">
+                  <n-form-item :label="t('expertRouting.ui.failureAction')">
                     <n-radio-group v-model:value="form.failOpen">
                       <n-space>
                         <n-radio value="fallback">
@@ -253,6 +266,7 @@
                   <n-form-item
                     v-if="form.failOpen === 'fallback'"
                     :label="t('expertRouting.fallbackModel')"
+                    class="fallback-selector"
                   >
                     <ModelSelector
                       v-model:type="fallbackType"
@@ -275,6 +289,9 @@
               </n-card>
 
               <div class="config-card config-card--wide config-actions">
+                <n-text :type="isDirty ? 'warning' : 'default'" depth="3" aria-live="polite">
+                  {{ isDirty ? t('expertRouting.unsavedChanges') : t('expertRouting.ui.savedState') }}
+                </n-text>
                 <n-button
                   size="small"
                   type="primary"
@@ -315,7 +332,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { useMessage } from 'naive-ui';
+import { useMessage, useThemeVars } from 'naive-ui';
 import {
   NAlert,
   NButton,
@@ -381,6 +398,7 @@ interface DetailForm {
 
 const { t } = useI18n();
 const message = useMessage();
+const themeVars = useThemeVars();
 const route = useRoute();
 const router = useRouter();
 const providerStore = useProviderStore();
@@ -594,16 +612,15 @@ onMounted(async () => {
 
 <style scoped>
 .expert-routing-detail {
-  max-width: 1200px;
+  max-width: 1360px;
   margin: 0 auto;
 }
 
-/* 左右分栏：梯队板与保存条通栏，其余卡片两列排布 */
 .config-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  align-items: start;
+  gap: 20px;
+  align-items: stretch;
   padding-top: 4px;
 }
 
@@ -613,7 +630,82 @@ onMounted(async () => {
 
 .config-actions {
   display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0;
+  border-top: 1px solid var(--routing-border);
+}
+
+.config-card {
+  min-width: 0;
+}
+
+.config-section {
+  padding: 12px 0 0;
+}
+
+.config-section h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+:deep(.n-form-item-feedback-wrapper) {
+  min-height: 24px;
+  padding-top: 6px;
+  line-height: 1.6;
+}
+
+:deep(.n-radio-group) {
+  max-width: 100%;
+}
+
+:deep(.config-card .n-form-item) {
+  margin-bottom: 12px;
+}
+
+:deep(.config-card .n-form-item:last-child) {
+  margin-bottom: 0;
+}
+
+:deep(.fallback-selector > .n-form-item-blank > div) {
+  width: 100%;
+}
+
+:deep(.switch-form .n-form-item-feedback-wrapper) {
+  grid-column: 1 / -1;
+}
+
+:deep(.switch-form .n-form-item) {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--routing-border);
+}
+
+:deep(.switch-form .n-form-item:last-child) {
+  border-bottom: 0;
+}
+
+:deep(.switch-form .n-form-item-blank:has(.n-switch)) {
   justify-content: flex-end;
+}
+
+:deep(.page-heading__title) {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 600px) {
+  :deep(.switch-form .n-form-item-label) {
+    width: auto !important;
+    max-width: calc(100% - 60px);
+  }
+
+  .config-grid {
+    gap: 12px;
+  }
 }
 
 @media (max-width: 900px) {

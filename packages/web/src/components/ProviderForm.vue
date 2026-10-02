@@ -513,7 +513,6 @@ defineExpose({
   padding: 0 4px;
 }
 
-/* Form Section Styles */
 .form-section {
   margin-bottom: 16px;
   border-radius: 8px;
@@ -542,7 +541,6 @@ defineExpose({
   border-top: 1px solid #eee;
 }
 
-/* Connection Actions */
 .connection-actions {
   margin: 8px 0;
 }
@@ -552,7 +550,6 @@ defineExpose({
   font-size: 12px;
 }
 
-/* Field-level feedback styles */
 .field-icon {
   font-size: 16px;
   margin-right: 4px;

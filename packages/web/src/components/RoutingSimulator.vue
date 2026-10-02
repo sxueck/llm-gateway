@@ -11,7 +11,7 @@
           <n-alert v-if="draft" type="info" :show-icon="true">
             {{ t('expertRouting.draftHint') }}
           </n-alert>
-          <n-form label-placement="left" label-width="140" size="small">
+          <n-form label-placement="top" size="small">
             <n-form-item :label="t('expertRouting.prompt')">
               <n-input
                 v-model:value="prompt"
@@ -60,7 +60,7 @@
               <n-gi>
                 <n-statistic :label="t('expertRouting.difficulty')">
                   <n-tag :type="difficultyTagType" size="small">
-                    {{ result.difficulty }}
+                    {{ t(`expertRouting.band.${result.difficulty}`) }}
                   </n-tag>
                 </n-statistic>
               </n-gi>
@@ -116,7 +116,7 @@
                     type="line"
                     :percentage="Math.round(item.probability * 100)"
                     :show-indicator="false"
-                    style="width: 220px"
+                    class="ranked-progress"
                   />
                   <span class="ranked-value">
                     {{ (item.probability * 100).toFixed(1) }}%
@@ -294,6 +294,16 @@ async function handleSimulate() {
 <style scoped>
 .simulator-hint {
   font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40vw;
+}
+
+@media (max-width: 640px) {
+  .simulator-hint {
+    display: none;
+  }
 }
 
 .section-label {
@@ -304,6 +314,12 @@ async function handleSimulate() {
 
 .intent-code {
   font-size: 12px;
+  max-width: 100%;
+}
+
+.intent-code :deep(pre) {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .token-stats {
@@ -316,17 +332,26 @@ async function handleSimulate() {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .ranked-label {
+  flex: none;
   width: 160px;
+  max-width: 40%;
   font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.ranked-row .n-progress {
+  flex: 1 1 auto;
+  min-width: 60px;
+}
+
 .ranked-value {
+  flex: none;
   font-size: 12px;
   width: 56px;
   text-align: right;

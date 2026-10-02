@@ -36,6 +36,7 @@ import { costMappingRoutes } from "./routes/cost-mapping.js";
 import { promptSampleRoutes } from "./routes/prompt-samples.js";
 import { workerPluginRoutes } from "./routes/worker-plugins.js";
 import backupRoutes from "./routes/backup.js";
+import dbMaintenanceRoutes from "./routes/db-maintenance.js";
 import { agentSnapshotRoutes } from "./routes/agent/snapshots.js";
 import { agentSearchRoutes } from "./routes/agent/searches.js";
 import { agentInternalRoutes } from "./routes/agent/internal.js";
@@ -288,6 +289,7 @@ await fastify.register(workerPluginRoutes, {
   prefix: "/api/admin/worker-plugins",
 });
 await fastify.register(backupRoutes);
+await fastify.register(dbMaintenanceRoutes);
 await fastify.register(agentSnapshotRoutes, { prefix: "/api/agent/snapshots" });
 await fastify.register(agentSearchRoutes, { prefix: "/api/agent/searches" });
 await fastify.register(agentInternalRoutes, { prefix: "/api/internal/agent" });

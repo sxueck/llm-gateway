@@ -1,5 +1,5 @@
 <template>
-  <div class="expert-routing-view">
+  <div class="expert-routing-view" :style="{ '--routing-muted': themeVars.textColor3, '--routing-border': themeVars.borderColor }">
     <n-space vertical :size="12">
       <PageHeader
         eyebrow="ROUTING"
@@ -24,6 +24,9 @@
 
       <n-card size="small">
         <n-data-table
+          v-if="configs.length > 0 || loading"
+          :row-key="(row: ExpertRouting) => row.id"
+          :scroll-x="900"
           :columns="columns"
           :data="configs"
           :loading="loading"
@@ -51,7 +54,7 @@
 import { h, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { useMessage, NButton, NCard, NDataTable, NIcon, NPopconfirm, NSpace, NSwitch, NTag, NText } from 'naive-ui';
+import { useMessage, useThemeVars, NButton, NCard, NDataTable, NEmpty, NIcon, NPopconfirm, NSpace, NSwitch, NTag, NText } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
 import { AddOutline, RefreshOutline } from '@vicons/ionicons5';
 import { expertRoutingApi, type Band, type ExpertRouting } from '@/api/expert-routing';
@@ -60,6 +63,7 @@ import { createDefaultExpertRoutingConfig } from '@/utils/expert-routing';
 
 const { t } = useI18n();
 const message = useMessage();
+const themeVars = useThemeVars();
 const router = useRouter();
 
 const configs = ref<ExpertRouting[]>([]);
@@ -83,7 +87,9 @@ function tierCounts(config: ExpertRouting): Record<Band, number> {
 function renderTierRatio(config: ExpertRouting) {
   const counts = tierCounts(config);
   const total = counts.low + counts.medium + counts.high;
-  const summary = `${counts.low}/${counts.medium}/${counts.high}`;
+  const summary = (['low', 'medium', 'high'] as Band[])
+    .map((band) => `${t(`expertRouting.band.${band}`)} ${counts[band]}`)
+    .join(' · ');
   if (total === 0) {
     return h(NText, { depth: 3 }, { default: () => `${summary} · ${t('expertRouting.noExperts')}` });
   }
@@ -129,21 +135,35 @@ const columns: DataTableColumns<ExpertRouting> = [
     render: (row) => renderTierRatio(row),
   },
   {
-    title: () => t('expertRouting.failOpenRate'),
-    key: 'failOpenRate',
-    width: 110,
-    render: () =>
-      h(NText, { depth: 3 }, { default: () => '—' }),
+    title: () => t('expertRouting.failOpenStrategy'),
+    key: 'failOpen',
+    width: 140,
+    render: (row) => {
+      const labels = {
+        fallback: 'expertRouting.failOpenFallback',
+        parent: 'expertRouting.failOpenParent',
+        error: 'expertRouting.failOpenError',
+      };
+      return t(labels[row.config.fail_open ?? 'fallback']);
+    },
   },
   {
     title: () => t('common.status'),
     key: 'enabled',
-    width: 90,
+    width: 140,
     render: (row) =>
-      h(NSwitch, {
-        value: row.enabled,
-        size: 'small',
-        onUpdateValue: (value: boolean) => handleToggleEnabled(row.id, value),
+      h(NSpace, { size: 8, align: 'center', wrap: false }, {
+        default: () => [
+          h(NSwitch, {
+            value: row.enabled,
+            size: 'small',
+            'aria-label': `${row.name} · ${t('common.status')}`,
+            onUpdateValue: (value: boolean) => handleToggleEnabled(row.id, value),
+          }),
+          h(NText, { depth: row.enabled ? 1 : 3 }, {
+            default: () => t(row.enabled ? 'common.enabled' : 'common.disabled'),
+          }),
+        ],
       }),
   },
   {
@@ -234,7 +254,7 @@ onMounted(loadConfigs);
 
 <style scoped>
 .expert-routing-view {
-  max-width: 1200px;
+  max-width: 1360px;
   margin: 0 auto;
 }
 
@@ -246,7 +266,7 @@ onMounted(loadConfigs);
 
 :deep(.tier-ratio-text) {
   font-size: 12px;
-  color: #595959;
+  color: var(--routing-muted);
 }
 
 :deep(.tier-ratio-bar) {
@@ -255,7 +275,7 @@ onMounted(loadConfigs);
   height: 6px;
   border-radius: 3px;
   overflow: hidden;
-  background: #f0f0f0;
+  background: var(--routing-border);
 }
 
 :deep(.tier-ratio-segment) {

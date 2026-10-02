@@ -225,7 +225,7 @@ function buildUpstreamHeaders(
     requestHeaderForwardingService.buildForwardedHeaders(requestHeaders as any),
   );
 
-  // 添加 API Key 认证头
+  // 认证头三种写法都带：不同上游/中转对 Gemini 认证头的读取位置不一致
   headers["x-goog-api-key"] = apiKey;
   headers["x-api-key"] = apiKey;
   headers["api-key"] = apiKey;
@@ -606,7 +606,6 @@ export async function handleGeminiNativeStreamRequest(
     }
   };
 
-  // 监听客户端断开连接
   reply.raw.on("close", () => {
     if (!reply.raw.writableEnded) {
       abortController.abort();

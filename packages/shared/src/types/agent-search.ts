@@ -1,8 +1,4 @@
-// Agent Search / Worker Plugin Center 共享类型（Phase 1 垂直最小链路）
-
 import { z } from "zod";
-
-// ============ Worker Plugin Manifest ============
 
 /** Phase 1 平台预置的 worker 工具；插件 allow 必须是其子集。 */
 export const WORKER_TOOL_IDS = [
@@ -66,8 +62,6 @@ export const workerPluginManifestSchema = z.object({
 
 export type WorkerPluginManifest = z.infer<typeof workerPluginManifestSchema>;
 
-// ============ Worker Plugin Center（Phase 1 官方策展） ============
-
 export const WORKER_PLUGIN_STATUSES = [
   "draft",
   "published",
@@ -114,8 +108,6 @@ export function isSafeBundleFileRef(ref: string): boolean {
     return false;
   return (PLUGIN_BUNDLE_FILES as readonly string[]).includes(name);
 }
-
-// ============ Repository Snapshot ============
 
 /** 平台强制排除规则：即使客户端 manifest 包含这些路径，服务端也拒绝接收。 */
 export const SNAPSHOT_FORBIDDEN_PATH_GLOBS: readonly string[] = [
@@ -222,23 +214,22 @@ export function globToRegExp(glob: string): RegExp {
   return new RegExp(out + "$");
 }
 
+// 排除规则固定且逐文件调用，预编译避免每条上传路径重复构造正则。
+const FORBIDDEN_GLOB_REGEXPS: readonly RegExp[] = SNAPSHOT_FORBIDDEN_PATH_GLOBS.map(
+  (glob) => globToRegExp(glob),
+);
+
 /** 判断快照路径是否命中平台强制排除规则（对任意深度的段后缀与 basename 都匹配）。 */
 export function isForbiddenSnapshotPath(path: string): boolean {
   const normalized = path.replace(/\\/g, "/");
   const segments = normalized.split("/");
-  const basename = segments[segments.length - 1] ?? normalized;
-  // 逐段后缀：使 `node_modules/**` 也命中 `a/b/node_modules/x`
+  // 匹配任意深度的后缀，使 `node_modules/**` 也能排除嵌套依赖目录。
   const suffixes: string[] = [];
   for (let i = 0; i < segments.length; i++) {
     suffixes.push(segments.slice(i).join("/"));
   }
-  return SNAPSHOT_FORBIDDEN_PATH_GLOBS.some((glob) => {
-    const re = globToRegExp(glob);
-    return suffixes.some((s) => re.test(s)) || re.test(basename);
-  });
+  return FORBIDDEN_GLOB_REGEXPS.some((re) => suffixes.some((s) => re.test(s)));
 }
-
-// ============ Agent Search Run ============
 
 export const SEARCH_RUN_STATUSES = [
   "queued",
@@ -313,8 +304,6 @@ export interface SearchRunEvent {
   created_at: number;
 }
 
-// ============ 结构化结果 ============
-
 export const structuredResultFileSchema = z
   .object({
     path: z.string().min(1).max(1024),
@@ -355,8 +344,6 @@ export const structuredResultSchema = z.object({
 
 export type StructuredResultFile = z.infer<typeof structuredResultFileSchema>;
 export type StructuredSearchResult = z.infer<typeof structuredResultSchema>;
-
-// ============ Internal completion（gateway ↔ worker） ============
 
 export const internalCompletionRequestSchema = z.object({
   run_id: z.string().min(1),

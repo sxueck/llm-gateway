@@ -1,6 +1,6 @@
 <template>
-  <n-form label-placement="left" label-width="140" size="small">
-    <n-form-item :label="t('expertRouting.sessionPolicy')">
+  <n-form label-placement="top" size="small">
+    <n-form-item :label="t('expertRouting.ui.sessionMode')">
       <n-radio-group :value="policy.mode" @update:value="handleModeChange">
         <n-space>
           <n-radio value="per_turn">
@@ -12,9 +12,9 @@
           </n-radio>
         </n-space>
       </n-radio-group>
-    </n-form-item>
-    <n-form-item :show-label="false">
-      <n-text depth="3" class="mode-desc">{{ modeDescription }}</n-text>
+      <template #feedback>
+        {{ modeDescription }}
+      </template>
     </n-form-item>
     <n-form-item :label="t('expertRouting.idleTtlHours')">
       <n-input-number
@@ -45,7 +45,6 @@ import {
   NRadio,
   NRadioGroup,
   NSpace,
-  NText,
 } from 'naive-ui';
 import type { SessionPolicy, SessionPolicyMode } from '@/api/expert-routing';
 
@@ -93,9 +92,3 @@ function handleAbsoluteChange(value: number | null) {
   });
 }
 </script>
-
-<style scoped>
-.mode-desc {
-  font-size: 12px;
-}
-</style>

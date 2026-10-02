@@ -92,7 +92,6 @@ function shouldApplyPiiProtection(
   // Keep Embeddings excluded.
   if (isEmbeddingsRequest) return false;
   if (!isChatCompletionsPath(path) && !isResponsesApi) return false;
-  // Check virtual key setting
   if (virtualKey?.pii_protection_enabled !== 1) return false;
   // Be strict: don't guess "openai" when protocol is missing.
   return protocolConfig?.protocol === "openai";
@@ -310,7 +309,6 @@ export function applyOpenAITargetModelMutations(
     );
   }
 
-  // 应用模型属性到请求体
   if (modelAttributes) {
     try {
       const enhancedRequestBody = buildFullRequestBody(
@@ -1341,7 +1339,6 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
       },
     };
 
-    // 若仍未发送任何响应，则返回规范化错误
     if (!reply.raw.headersSent && !reply.sent) {
       const finalStatus = statusForRetry || 500;
       reply.raw.writeHead(finalStatus, { "Content-Type": "application/json" });
