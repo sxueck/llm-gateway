@@ -1,6 +1,7 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import { memoryLogger } from "../../services/logger.js";
 import { runProxyPipeline } from "../proxy/pipeline.js";
+import { getNodeRequestState } from "../../services/node-dispatch.js";
 import { logApiRequestAsync } from "../../services/api-request-logger.js";
 import {
   handleGeminiNativeNonStreamRequest,
@@ -143,7 +144,8 @@ export async function dispatchGeminiRequest(
 
 export function createGeminiProxyHandler() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const startTime = Date.now();
+    const nodeState = getNodeRequestState(request);
+    const startTime = nodeState?.envelope.startedAt ?? Date.now();
     let virtualKeyValue: string | undefined;
     let providerId: string | undefined;
     let currentModel: any | undefined;
@@ -229,8 +231,7 @@ export function createGeminiProxyHandler() {
       virtualKeyValue = vkValue;
       providerId = resolvedProviderId;
       currentModel = resolvedModel;
-
-      const normalization = await applyContextNormalization({
+      const normalization = nodeState?.envelope.normalized ? { blocked: false as const } : await applyContextNormalization({
         protocol: "gemini",
         request,
         body: request.body,

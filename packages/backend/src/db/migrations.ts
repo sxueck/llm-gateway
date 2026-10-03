@@ -1555,6 +1555,63 @@ export const migrations: Migration[] = [
       );
     },
   },
+  {
+    version: 57,
+    name: "add_provider_owner_node",
+    up: async (conn: Connection) => {
+      const [columnRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'providers'
+           AND COLUMN_NAME = 'owner_node'`,
+      );
+      if (Number((columnRows as any[])[0]?.cnt || 0) === 0) {
+        await conn.query(
+          "ALTER TABLE providers ADD COLUMN owner_node VARCHAR(64) DEFAULT NULL COMMENT '归属节点 ID，NULL 表示默认控制节点' AFTER model_mapping",
+        );
+        console.log("[迁移] 已为 providers 添加 owner_node 字段");
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(
+          "ALTER TABLE providers DROP COLUMN IF EXISTS owner_node",
+        );
+        console.log("[迁移] 已删除 providers.owner_node 字段");
+      } catch (error: any) {
+        console.warn("[迁移] 删除 providers.owner_node 字段失败:", error.message);
+      }
+    },
+  },
+  {
+    version: 58,
+    name: "rename_provider_owner_pop_column",
+    up: async (conn: Connection) => {
+      const [rows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'providers'
+           AND COLUMN_NAME = 'owner_pop'`,
+      );
+      if (Number((rows as any[])[0]?.cnt || 0) > 0) {
+        await conn.query(
+          "ALTER TABLE providers CHANGE COLUMN owner_pop owner_node VARCHAR(64) DEFAULT NULL COMMENT '归属节点 ID，NULL 表示默认控制节点'",
+        );
+        console.log("[迁移] providers.owner_pop 已重命名为 owner_node");
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(
+          "ALTER TABLE providers CHANGE COLUMN owner_node owner_pop VARCHAR(64) DEFAULT NULL",
+        );
+      } catch (error: any) {
+        console.warn("[迁移] 回退 providers.owner_node 字段失败:", error.message);
+      }
+    },
+  },
 ];
 
 async function hasProviderForeignKey(

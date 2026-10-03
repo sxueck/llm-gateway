@@ -82,8 +82,23 @@ export const providerApi = {
   fetchModels(
     baseUrl: string,
     apiKey: string,
+    ownerNode?: string | null,
   ): Promise<{ success: boolean; message: string; models: ModelInfo[] }> {
-    return request.post("/admin/providers/fetch-models", { baseUrl, apiKey });
+    return request.post("/admin/providers/fetch-models", {
+      baseUrl,
+      apiKey,
+      ownerNode: ownerNode ?? null,
+    });
+  },
+
+  // enabled=false 表示单节点模式（nodeIds 同时为空）。
+  getNodeOptions(): Promise<{
+    enabled: boolean;
+    nodeId: string;
+    controlId: string;
+    nodeIds: string[];
+  }> {
+    return request.get("/admin/providers/node-options");
   },
 
   batchImport(
@@ -92,6 +107,7 @@ export const providerApi = {
       name: string;
       baseUrl: string;
       apiKey: string;
+      ownerNode?: string | null;
       enabled?: boolean;
     }>,
     skipExisting = true,

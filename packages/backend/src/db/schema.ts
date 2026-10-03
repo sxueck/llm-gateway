@@ -27,6 +27,7 @@ export async function createTables() {
         protocol_mappings TEXT,
         api_key TEXT NOT NULL,
         model_mapping TEXT,
+        owner_node VARCHAR(64) DEFAULT NULL COMMENT '归属节点 ID，NULL 表示默认控制节点',
         enabled TINYINT DEFAULT 1,
         created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
         updated_at BIGINT NOT NULL,

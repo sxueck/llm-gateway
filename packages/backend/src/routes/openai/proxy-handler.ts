@@ -39,6 +39,7 @@ import {
   waitForCacheFill,
 } from "../proxy/cache.js";
 import { runProxyPipeline } from "../proxy/pipeline.js";
+import { getNodeRequestState } from "../../services/node-dispatch.js";
 import { calculateTokensIfNeeded } from "../proxy/token-calculator.js";
 import { circuitBreaker, httpFailureError } from "../../services/circuit-breaker.js";
 import { applyRouteHeaders, modelFieldForClient } from "../../services/expert-router/exposure.js";
@@ -477,7 +478,8 @@ function parseResponseBody(
 
 export function createOpenAIProxyHandler() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const startTime = Date.now();
+    const nodeState = getNodeRequestState(request);
+    const startTime = nodeState?.envelope.startedAt ?? Date.now();
     let virtualKeyValue: string | undefined;
     let providerId: string | undefined;
     let compressionStats:
@@ -486,7 +488,7 @@ export function createOpenAIProxyHandler() {
     let parsedModelAttributes: any | undefined;
     let requestIp = "unknown";
     let requestUserAgent = "";
-    let logicalCacheKeyForRequest: string | null | undefined;
+    let logicalCacheKeyForRequest: string | null | undefined = nodeState?.envelope.logicalCacheKey;
     let proxyCtx: ProxyRequestContext | undefined;
 
     try {
@@ -523,14 +525,15 @@ export function createOpenAIProxyHandler() {
             reply.code(providerConfigError.code).send(providerConfigError.body);
           },
         },
-        afterAuth: async ({
-          request,
-          reply,
-          requestIp,
-          requestUserAgent,
-          virtualKey,
-          virtualKeyValue: vkValue,
-        }): Promise<boolean | void> => {
+        afterAuth: async (args): Promise<boolean | void> => {
+          const {
+            request,
+            reply,
+            requestIp,
+            requestUserAgent,
+            virtualKey,
+            virtualKeyValue: vkValue,
+          } = args;
           virtualKeyValue = vkValue;
 
           // Best-effort: shrink base64 images early so cache key + payload are smaller.
@@ -568,6 +571,8 @@ export function createOpenAIProxyHandler() {
             (request.body as any)?.stream === true,
             shouldBypassGatewayCache(request.url || ""),
           );
+          // Hand the key to the pipeline so a cross-node dispatch does not re-hash the body.
+          args.logicalCacheKey = logicalCacheKeyForRequest;
           if (
             logicalCacheKeyForRequest &&
             hasCachedEntry(logicalCacheKeyForRequest)
@@ -620,7 +625,7 @@ export function createOpenAIProxyHandler() {
       currentModel = resolvedModel;
       const providerName = resolvedProvider?.name ?? null;
 
-      const normalization = await applyContextNormalization({
+      const normalization = nodeState?.envelope.normalized ? { blocked: false as const } : await applyContextNormalization({
         protocol: "openai",
         request,
         body: request.body,
@@ -652,6 +657,7 @@ export function createOpenAIProxyHandler() {
       }
 
       if (
+        !nodeState?.envelope.normalized &&
         currentModel &&
         (request.body as any)?.messages &&
         isChatCompletionsPath(path)

@@ -5,6 +5,7 @@ import { ProviderAdapterFactory } from '../../services/provider-adapter.js';
 import { getBaseUrlForProtocol, getProviderSupportedProtocols } from '../../utils/protocol-utils.js';
 import type { ProtocolConfig } from '../../services/protocol-adapter.js';
 import { normalizePath, isEmbeddingsPath } from '../../utils/path-detector.js';
+import { isRemoteProvider, nodeError } from '../../services/node-dispatch.js';
 
 export interface ProviderConfigResult {
   protocolConfig: ProtocolConfig;
@@ -56,6 +57,9 @@ export async function buildProviderConfig(
   currentModel?: any,
   entrypointProtocol?: 'openai' | 'anthropic' | 'gemini'
 ): Promise<ProviderConfigResult | ProviderConfigError> {
+  if (isRemoteProvider(provider)) {
+    return { code: 503, body: nodeError('owner_node_required', 'Provider must execute on its owner node') };
+  }
   const decryptedApiKey = decryptApiKey(provider.api_key);
 
   const [rawPath, rawQuery = ''] = request.url.split('?');

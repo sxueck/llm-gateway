@@ -1,12 +1,19 @@
-import type { FastifyInstance } from "fastify";
-import { lookup } from "node:dns/promises";
-import { createConnection } from "node:net";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
+import { appConfig } from "../config/index.js";
+import { listExecutableNodeIds, nodeOwnerError } from "../config/node.js";
 import { modelDb, providerDb, virtualKeyDb } from "../db/index.js";
 import { hotConfigCache } from "../services/hot-config-cache.js";
+import { isRemoteProvider, nodeError, providerOwner } from "../services/node-dispatch.js";
+import {
+  executeProviderTestLocally,
+  fetchUpstreamModelsLocally,
+  forwardNodeOperationReply,
+  isPrivateNodeTransport,
+} from "../services/node-operations.js";
 import { encryptApiKey, decryptApiKey } from "../utils/crypto.js";
-import { buildModelsEndpoint } from "../utils/api-endpoint-builder.js";
-import { upstreamFetch } from "../utils/upstream-fetch.js";
+
+export { mapUpstreamModelList } from "../services/node-operations.js";
 
 function safeParseJson(value: string | null | undefined): any {
   if (!value) return null;
@@ -17,108 +24,9 @@ function safeParseJson(value: string | null | undefined): any {
   }
 }
 
-// Preserve upstream model entries as-is (max_completion_tokens, context_length, ...)
-// so capability metadata survives into the admin UI; only id/name are normalized.
-export function mapUpstreamModelList(data: any): Array<Record<string, any>> {
-  return (
-    data?.data?.map((model: any) => ({
-      ...model,
-      id: model.id,
-      name: model.id,
-    })) || []
-  );
-}
-
-interface ProviderTestResult {
-  success: boolean;
-  status?: number;
-  message: string;
-  latencyMs?: number;
-}
-
-const PROVIDER_TEST_TIMEOUT_MS = 5000;
-const inFlightProviderTests = new Map<string, Promise<ProviderTestResult>>();
-
-function resolvePort(url: URL): number {
-  if (url.port) {
-    return Number(url.port);
-  }
-
-  return url.protocol === "https:" ? 443 : 80;
-}
-
-async function tcpConnectLatency(
-  hostOrIp: string,
-  port: number,
-  timeoutMs: number,
-): Promise<{ success: boolean; latencyMs: number; error?: string }> {
-  return new Promise((resolve) => {
-    const started = Date.now();
-    const socket = createConnection({ host: hostOrIp, port });
-    let settled = false;
-
-    const finish = (success: boolean, error?: Error) => {
-      if (settled) return;
-      settled = true;
-      const latencyMs = Date.now() - started;
-      socket.destroy();
-      resolve({ success, latencyMs, error: error?.message });
-    };
-
-    socket.once("connect", () => finish(true));
-    socket.once("error", (err) => finish(false, err));
-    socket.setTimeout(timeoutMs, () =>
-      finish(false, new Error(`连接超时 (${timeoutMs}ms)`)),
-    );
-  });
-}
-
-async function testProviderTcpOnly(
-  baseUrl: string,
-): Promise<ProviderTestResult> {
-  try {
-    const url = new URL(baseUrl);
-    const host = url.hostname;
-    const port = resolvePort(url);
-
-    // DNS 解析放在计时外，保证 latencyMs 仅反映 TCP connect 时长。
-    const resolved = await lookup(host);
-    const latency = await tcpConnectLatency(
-      resolved.address,
-      port,
-      PROVIDER_TEST_TIMEOUT_MS,
-    );
-
-    return {
-      success: latency.success,
-      status: latency.success ? 200 : undefined,
-      message: latency.success ? "网络连通" : latency.error || "连接失败",
-      latencyMs: latency.latencyMs,
-    };
-  } catch (error: any) {
-    return {
-      success: false,
-      message: error?.message || "连接失败",
-    };
-  }
-}
-
-function getOrCreateProviderTest(
-  providerId: string,
-  baseUrl: string,
-): Promise<ProviderTestResult> {
-  const inFlight = inFlightProviderTests.get(providerId);
-  if (inFlight) {
-    return inFlight;
-  }
-
-  const task = testProviderTcpOnly(baseUrl).finally(() => {
-    inFlightProviderTests.delete(providerId);
-  });
-
-  inFlightProviderTests.set(providerId, task);
-  return task;
-}
+// 转发上限略高于 owner 侧执行超时（TCP 5s / 模型列表 10s），留出通道开销。
+const PROVIDER_TEST_FORWARD_TIMEOUT_MS = 20000;
+const FETCH_MODELS_FORWARD_TIMEOUT_MS = 30000;
 
 const protocolMappingSchema = z
   .object({
@@ -126,6 +34,16 @@ const protocolMappingSchema = z
     anthropic: z.string().url().optional(),
     google: z.string().url().optional(),
   })
+  .nullable()
+  .optional();
+
+const ownerNodeSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^[a-z][a-z0-9-]{0,31}$/,
+    "ownerNode 必须以小写字母开头，仅含小写字母、数字、连字符，长度 1-32",
+  )
   .nullable()
   .optional();
 
@@ -137,6 +55,7 @@ const createProviderSchema = z.object({
   protocolMappings: protocolMappingSchema,
   apiKey: z.string(),
   modelMapping: z.record(z.string()).optional(),
+  ownerNode: ownerNodeSchema,
   enabled: z.boolean().optional(),
 });
 
@@ -147,8 +66,17 @@ const updateProviderSchema = z.object({
   protocolMappings: protocolMappingSchema,
   apiKey: z.string().optional(),
   modelMapping: z.record(z.string()).optional(),
+  ownerNode: ownerNodeSchema,
   enabled: z.boolean().optional(),
 });
+
+const fetchModelsSchema = z
+  .object({
+    baseUrl: z.string().url(),
+    apiKey: z.string().min(1),
+    ownerNode: ownerNodeSchema,
+  })
+  .strict();
 
 const batchImportSchema = z.object({
   providers: z.array(
@@ -158,14 +86,58 @@ const batchImportSchema = z.object({
       description: z.string().nullable().optional(),
       baseUrl: z.string().url(),
       apiKey: z.string(),
+      ownerNode: ownerNodeSchema,
       enabled: z.boolean().optional(),
     }),
   ),
   skipExisting: z.boolean().optional(),
 });
 
+// 校验失败统一回 400（含 ownerNode 格式错误），避免落入全局 500 处理器。
+function parseRequestBody<T>(
+  schema: z.ZodType<T>,
+  body: unknown,
+  reply: FastifyReply,
+): T | null {
+  const result = schema.safeParse(body);
+  if (!result.success) {
+    reply.code(400).send({
+      error: {
+        message: result.error.issues.map((issue) => issue.message).join("; "),
+        type: "invalid_request_error",
+        param: null,
+        code: "validation_error",
+      },
+    });
+    return null;
+  }
+  return result.data;
+}
+
+// 格式合法但指向未配置/已下线节点的归属会让该供应商流量永久 503
+//（故障不接管是设计行为），所以写入时就必须确认 owner 可执行。
+function rejectUnknownOwnerNode(
+  ownerNode: string | null | undefined,
+  reply: FastifyReply,
+): boolean {
+  if (!ownerNode) return false;
+  const message = nodeOwnerError(ownerNode, appConfig.node);
+  if (!message) return false;
+  reply.code(400).send({
+    error: { message, type: "invalid_request_error", param: "ownerNode", code: "unknown_owner_node" },
+  });
+  return true;
+}
+
 export async function providerRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
+
+  fastify.get("/node-options", async () => ({
+    enabled: appConfig.node.enabled,
+    nodeId: appConfig.node.id,
+    controlId: appConfig.node.controlId,
+    nodeIds: listExecutableNodeIds(appConfig.node),
+  }));
 
   fastify.get("/", async () => {
     const providers = await providerDb.getAll();
@@ -178,6 +150,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
         protocolMappings: safeParseJson(p.protocol_mappings),
         apiKey: "***",
         modelMapping: safeParseJson(p.model_mapping),
+        ownerNode: p.owner_node ?? null,
         enabled: p.enabled === 1,
         createdAt: p.created_at,
         updatedAt: p.updated_at,
@@ -203,6 +176,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
       apiKey:
         includeApiKey === "true" ? decryptApiKey(provider.api_key) : "***",
       modelMapping: safeParseJson(provider.model_mapping),
+      ownerNode: provider.owner_node ?? null,
       enabled: provider.enabled === 1,
       createdAt: provider.created_at,
       updatedAt: provider.updated_at,
@@ -221,7 +195,9 @@ export async function providerRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post("/", async (request, reply) => {
-    const body = createProviderSchema.parse(request.body);
+    const body = parseRequestBody(createProviderSchema, request.body, reply);
+    if (!body) return reply;
+    if (rejectUnknownOwnerNode(body.ownerNode, reply)) return reply;
 
     const existing = await providerDb.getById(body.id);
     if (existing) {
@@ -240,6 +216,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
       model_mapping: body.modelMapping
         ? JSON.stringify(body.modelMapping)
         : null,
+      owner_node: body.ownerNode ?? null,
       enabled: body.enabled === false ? 0 : 1,
     });
 
@@ -250,6 +227,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
       baseUrl: provider.base_url,
       protocolMappings: safeParseJson(provider.protocol_mappings),
       modelMapping: safeParseJson(provider.model_mapping),
+      ownerNode: provider.owner_node ?? null,
       enabled: provider.enabled === 1,
       createdAt: provider.created_at,
       updatedAt: provider.updated_at,
@@ -258,7 +236,9 @@ export async function providerRoutes(fastify: FastifyInstance) {
 
   fastify.put("/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const body = updateProviderSchema.parse(request.body);
+    const body = parseRequestBody(updateProviderSchema, request.body, reply);
+    if (!body) return reply;
+    if (rejectUnknownOwnerNode(body.ownerNode, reply)) return reply;
 
     fastify.log.info({ providerId: id, body }, "[Providers] Updating provider");
 
@@ -289,6 +269,8 @@ export async function providerRoutes(fastify: FastifyInstance) {
         ? JSON.stringify(body.modelMapping)
         : null;
     }
+    // 显式 null 会清除归属（回归默认控制节点），不会静默丢弃
+    if (body.ownerNode !== undefined) updates.owner_node = body.ownerNode;
     if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
 
     fastify.log.info({ updates }, "[Providers] Final updates to apply");
@@ -308,6 +290,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
       baseUrl: updated.base_url,
       protocolMappings: safeParseJson(updated.protocol_mappings),
       modelMapping: safeParseJson(updated.model_mapping),
+      ownerNode: updated.owner_node ?? null,
       enabled: updated.enabled === 1,
       createdAt: updated.created_at,
       updatedAt: updated.updated_at,
@@ -359,57 +342,59 @@ export async function providerRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: "提供商不存在" });
     }
 
-    return getOrCreateProviderTest(id, provider.base_url);
+    // 远端归属的提供商只能在 owner 节点上测试（就近探测出口网络）；
+    // 操作仅携带 providerId，密钥不出库，转发失败也不回退本地执行。
+    if (isRemoteProvider(provider)) {
+      return forwardNodeOperationReply(
+        reply,
+        providerOwner(provider),
+        { op: "provider-test", providerId: id },
+        PROVIDER_TEST_FORWARD_TIMEOUT_MS,
+      );
+    }
+
+    return executeProviderTestLocally(id, provider.base_url);
   });
 
   fastify.post("/fetch-models", async (request, reply) => {
-    const { baseUrl, apiKey } = request.body as {
-      baseUrl: string;
-      apiKey: string;
-    };
+    const body = parseRequestBody(fetchModelsSchema, request.body, reply);
+    if (!body) return reply;
+    if (rejectUnknownOwnerNode(body.ownerNode, reply)) return reply;
 
-    if (!baseUrl || !apiKey) {
-      return reply.code(400).send({ error: "baseUrl 和 apiKey 是必需的" });
-    }
-
-    try {
-      const endpoint = buildModelsEndpoint(baseUrl);
-
-      const response = await upstreamFetch(endpoint, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-        timeoutMs: 10000,
-      });
-
-      if (!response.ok) {
-        return {
-          success: false,
-          message: `获取模型列表失败: HTTP ${response.status}`,
-          models: [],
-        };
+    // ownerNode 缺省表示默认控制节点；非本节点归属时必须转发给对应 owner 节点。
+    // 未落盘的 apiKey 只经签名节点通道传输，且仅限加密/内网链路，不记录载荷。
+    const ownerNode = body.ownerNode ?? appConfig.node.controlId;
+    if (ownerNode !== appConfig.node.id) {
+      if (!isPrivateNodeTransport(ownerNode)) {
+        return reply.code(503).send(
+          nodeError(
+            "node_transport_insecure",
+            `Owner node '${ownerNode}' is not reachable over an encrypted or private transport; refusing to transmit provider credentials`,
+          ),
+        );
       }
-
-      const data: any = await response.json();
-      const models = mapUpstreamModelList(data);
-
-      return {
-        success: true,
-        message: `成功获取 ${models.length} 个模型`,
-        models,
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        message: error.message || "获取模型列表失败",
-        models: [],
-      };
+      return forwardNodeOperationReply(
+        reply,
+        ownerNode,
+        {
+          op: "fetch-models",
+          ownerNode,
+          baseUrl: body.baseUrl,
+          apiKey: body.apiKey,
+        },
+        FETCH_MODELS_FORWARD_TIMEOUT_MS,
+      );
     }
+
+    return fetchUpstreamModelsLocally(body.baseUrl, body.apiKey);
   });
 
-  fastify.post("/batch-import", async (request, _reply) => {
-    const body = batchImportSchema.parse(request.body);
+  fastify.post("/batch-import", async (request, reply) => {
+    const body = parseRequestBody(batchImportSchema, request.body, reply);
+    if (!body) return reply;
+    for (const provider of body.providers) {
+      if (rejectUnknownOwnerNode(provider.ownerNode, reply)) return reply;
+    }
     const { providers, skipExisting = true } = body;
 
     const results = {
@@ -445,6 +430,7 @@ export async function providerRoutes(fastify: FastifyInstance) {
           protocol_mappings: null,
           api_key: encryptApiKey(providerData.apiKey),
           model_mapping: null,
+          owner_node: providerData.ownerNode ?? null,
           enabled: providerData.enabled === false ? 0 : 1,
         });
 

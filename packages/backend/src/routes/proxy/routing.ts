@@ -1167,6 +1167,7 @@ export async function resolveProviderFromModel(
       provider: smartRoutingResult.provider,
       providerId: smartRoutingResult.providerId,
       circuitBreakerKey: smartRoutingResult.circuitBreakerKey,
+      canRetry: smartRoutingResult.canRetry,
       excludeTargetKeys: smartRoutingResult.excludeTargetKeys,
       resolvedModel: smartRoutingResult.resolvedModel
     };

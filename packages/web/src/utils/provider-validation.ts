@@ -43,6 +43,22 @@ export function validateProviderId(id: string): {
   };
 }
 
+export function validateOwnerNode(ownerNode: string): {
+  isValid: boolean;
+  message?: string;
+} {
+  if (!ownerNode) {
+    return { isValid: true };
+  }
+  if (!/^[a-z][a-z0-9-]{0,31}$/.test(ownerNode)) {
+    return {
+      isValid: false,
+      message: '归属节点 ID 必须以小写字母开头，仅含小写字母、数字、连字符，长度 1-32',
+    };
+  }
+  return { isValid: true };
+}
+
 export function validateBaseUrl(url: string): {
   isValid: boolean;
   message?: string;

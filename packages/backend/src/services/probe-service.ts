@@ -6,8 +6,17 @@ import {
 } from '../utils/api-endpoint-builder.js';
 import { getBaseUrlForProtocol } from '../utils/protocol-utils.js';
 import { upstreamFetch } from '../utils/upstream-fetch.js';
+import { fetchNodePayload, isRemoteProvider, providerOwner } from './node-dispatch.js';
 
 type Protocol = 'openai' | 'anthropic' | 'google' | null | undefined;
+
+/** 提供商记录：远程探测仅需要归属信息与（可选）id 来定位 owner。 */
+type ProbeProvider = {
+  id?: string;
+  base_url: string;
+  protocol_mappings: string | null;
+  owner_node?: string | null;
+};
 
 interface ParsedProbeResponse {
   content: string;
@@ -218,8 +227,67 @@ async function doJsonRequest(url: string, opts: CommonRequestOptions): Promise<{
   }
 }
 
+function failedProbeResult(message: string): ModelProbeResult {
+  return {
+    chat: { success: false, message, responseTime: 0 },
+    responses: { success: false, message, responseTime: 0 },
+  };
+}
+
+/** 远程归属的模型探测：转发给 owner 节点执行，密钥不随操作传输。 */
+async function probeModelViaRemoteOwner(args: {
+  modelIdentifier: string;
+  protocol: Protocol;
+  provider: ProbeProvider;
+  apiKey: string;
+  prompt?: string;
+  timeoutMs?: number;
+}): Promise<ModelProbeResult> {
+  const provider = args.provider;
+  if (!provider.id) {
+    return failedProbeResult('探测失败: 提供商记录缺少 id，无法路由到 owner 节点');
+  }
+  const owner = providerOwner(provider);
+  const timeoutMs = args.timeoutMs ?? 30000;
+  const operation = {
+    op: 'model-probe',
+    providerId: provider.id,
+    modelIdentifier: args.modelIdentifier,
+    protocol: args.protocol ?? null,
+    prompt: args.prompt ?? '测试',
+    timeoutMs,
+  };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs + 15_000);
+  try {
+    const response = await fetchNodePayload(owner, operation, controller.signal);
+    if (!response.ok) {
+      let detail = `HTTP ${response.status}`;
+      try {
+        const body: any = await response.json();
+        if (body?.error?.code) detail = `${detail} ${body.error.code}`;
+      } catch {
+        // 非 JSON 错误体不透传，避免泄露内部信息
+      }
+      return failedProbeResult(`远端探测失败: ${detail}`);
+    }
+    const result: any = await response.json();
+    if (!result || typeof result !== 'object' || typeof result.chat?.success !== 'boolean') {
+      return failedProbeResult('远端探测失败: owner 节点返回了无效结果');
+    }
+    return result as ModelProbeResult;
+  } catch {
+    return failedProbeResult(`'远端探测失败: owner 节点 '${owner}' 不可用`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Probe a concrete model via its Provider baseUrl + apiKey.
+ * Remote providers (owned by another node) are routed to their owner before any
+ * local decryption result is used for upstream HTTP; the API key never leaves
+ * this node — the owner re-reads and decrypts it from the shared database.
  * Returns details for:
  * - chat (/chat/completions) for OpenAI/Google-like protocols
  * - responses (/responses) for OpenAI Responses API (skipped for Anthropic)
@@ -228,7 +296,20 @@ async function doJsonRequest(url: string, opts: CommonRequestOptions): Promise<{
 export async function probeModelViaProvider(args: {
   modelIdentifier: string;
   protocol: Protocol;
-  provider: { base_url: string; protocol_mappings: string | null };
+  provider: ProbeProvider;
+  apiKey: string;
+  prompt?: string;
+  timeoutMs?: number;
+}): Promise<ModelProbeResult> {
+  if (isRemoteProvider(args.provider)) return probeModelViaRemoteOwner(args);
+  return probeModelViaProviderLocal(args);
+}
+
+/** 本节点直连上游的探测实现（owner 节点与单节点部署使用）。 */
+export async function probeModelViaProviderLocal(args: {
+  modelIdentifier: string;
+  protocol: Protocol;
+  provider: ProbeProvider;
   apiKey: string;
   prompt?: string;
   timeoutMs?: number;

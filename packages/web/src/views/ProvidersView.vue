@@ -364,6 +364,7 @@ async function handleEdit(provider: Provider) {
       baseUrl: fullProvider.baseUrl,
       protocolMappings: fullProvider.protocolMappings || null,
       apiKey: fullProvider.apiKey || '',
+      ownerNode: fullProvider.ownerNode || '',
       enabled: fullProvider.enabled
     }
   } catch (error: any) {
@@ -480,6 +481,7 @@ async function handleSubmit() {
         description: formValue.value.description,
         baseUrl: formValue.value.baseUrl,
         protocolMappings: formValue.value.protocolMappings,
+        ownerNode: formValue.value.ownerNode || null,
         enabled: formValue.value.enabled
       }
       if (formValue.value.apiKey !== originalApiKey.value) {
@@ -519,6 +521,7 @@ async function handleSubmit() {
 
       await providerApi.create({
         ...formValue.value,
+        ownerNode: formValue.value.ownerNode || null,
         protocolMappings: formValue.value.protocolMappings || undefined
       })
 

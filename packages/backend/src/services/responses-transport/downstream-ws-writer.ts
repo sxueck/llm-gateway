@@ -17,6 +17,8 @@ export interface DownstreamWsWriterOptions {
    *  Default: false (keep connection open for follow-up requests). */
   closeOnTerminal?: boolean;
   logPrefix?: string;
+  /** Await socket flush when bridging a remote node, bounding cross-node buffering. */
+  waitForSend?: boolean;
 }
 
 export async function writeEventsToWebSocket(
@@ -42,7 +44,13 @@ export async function writeEventsToWebSocket(
     }
 
     try {
-      socket.send(serverEventToWsFrame(event));
+      if (options.waitForSend) {
+        await new Promise<void>((resolve, reject) => {
+          socket.send(serverEventToWsFrame(event), (error) => error ? reject(error) : resolve());
+        });
+      } else {
+        socket.send(serverEventToWsFrame(event));
+      }
     } catch (err: any) {
       throw new Error(`Failed to send WS frame: ${err.message}`);
     }

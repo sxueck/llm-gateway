@@ -1,0 +1,25 @@
+services:
+  gateway:
+    image: ${LLM_GATEWAY_IMAGE:?Use the same image built from this revision on both nodes}
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_BIND_ADDRESS:-127.0.0.1}:${GATEWAY_PORT:-13030}:3000"
+    volumes:
+      - ../data:/app/data
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      JWT_SECRET: ${JWT_SECRET:?Both nodes must use the existing shared JWT_SECRET}
+      MYSQL_HOST: ${MYSQL_HOST:?Shared MySQL host is required}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_USER: ${MYSQL_USER:?Shared MySQL user is required}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Shared MySQL password is required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-llm_gateway}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:13030}
+      API_REQUEST_LOG_RETENTION_DAYS: ${API_REQUEST_LOG_RETENTION_DAYS:-31}
+      GATEWAY_NODE_ID: ${GATEWAY_NODE_ID:?Local node ID is required}
+      GATEWAY_CONTROL_NODE_ID: ${GATEWAY_CONTROL_NODE_ID:?Control 节点 ID is required}
+      GATEWAY_NODE_SECRET: ${GATEWAY_NODE_SECRET:?Shared node authentication secret is required}
+      GATEWAY_NODE_PEERS: ${GATEWAY_NODE_PEERS:?Peer origins JSON is required}
+      AGENT_SNAPSHOT_STORAGE_DIR: /app/data/agent-snapshots

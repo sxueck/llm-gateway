@@ -41,8 +41,13 @@ import { agentSnapshotRoutes } from "./routes/agent/snapshots.js";
 import { agentSearchRoutes } from "./routes/agent/searches.js";
 import { agentInternalRoutes } from "./routes/agent/internal.js";
 import { agentMonitoringRoutes } from "./routes/agent/monitoring.js";
+import { nodeRoutes } from "./routes/node.js";
 import { searchRunScheduler } from "./agent/run/scheduler.js";
 import { memoryLogger } from "./services/logger.js";
+import {
+  isControlNode,
+  registerNodeControlGuard,
+} from "./services/node-control.js";
 import { modelPresetsService } from "./services/model-presets.js";
 import { getBackupScheduler } from "./services/backup-scheduler.js";
 import {
@@ -63,6 +68,8 @@ import { upstreamFetch, clearProxyAgentCache } from "./utils/upstream-fetch.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+const isControl = isControlNode(appConfig.node);
 
 const fastify = Fastify({
   logger: {
@@ -106,12 +113,19 @@ await fastify.register(jwt, {
   secret: appConfig.jwtSecret,
 });
 
-await fastify.register(fastifyStatic, {
-  root: resolve(__dirname, "..", "public"),
-  prefix: "/",
-});
+if (isControl) {
+  await fastify.register(fastifyStatic, {
+    root: resolve(__dirname, "..", "public"),
+    prefix: "/",
+  });
+}
 
 await fastify.register(websocket);
+
+// 节点路由与控制节点守卫：必须先于所有路由（含下方 debug-stream 与 /api/* 管理路由）注册，
+// 否则先注册的路由会绕过非控制节点的拦截
+registerNodeControlGuard(fastify, appConfig.node);
+await fastify.register(nodeRoutes);
 
 fastify.decorate("authenticate", async function (request: any, reply: any) {
   try {
@@ -155,7 +169,8 @@ if (expertConfigs.some((config) => config.enabled === 1)) {
 }
 
 // Plugin Center：内置官方插件幂等 seed 到 worker_plugins（版本不可变，不覆盖已存在版本）
-{
+// 仅控制节点执行（多节点模式下非控制节点只读共享库，不写管理数据）
+if (isControl) {
   const { seedBuiltinPlugins } = await import("./agent/plugins/store.js");
   await seedBuiltinPlugins();
 }
@@ -164,36 +179,52 @@ await runtimeSystemConfigCache.initialize();
 await reasoningEffortSuffixesCache.initialize();
 
 // Periodic cleanup of expired durable session bindings (NFR-4).
-startSessionBindingCleanup();
-startContextNormalizationCleanup();
-
-// Agent Search：固定执行器并恢复重启前遗留的 run（确定性失败，不挂起）。
-if (process.env.AGENT_WORKER_IMAGE) {
-  const { createDockerExecutor } = await import("./agent/run/executors.js");
-  searchRunScheduler.setExecutor(
-    createDockerExecutor(process.env.AGENT_WORKER_IMAGE),
-  );
-  memoryLogger.info(
-    `Agent search executor: docker (${process.env.AGENT_WORKER_IMAGE})`,
-    "AgentSearch",
-  );
-} else if (process.env.AGENT_WORKER_LOCAL === "1") {
-  const { createLocalProcessExecutor } =
-    await import("./agent/run/executors.js");
-  searchRunScheduler.setExecutor(createLocalProcessExecutor());
-  process.env.AGENT_WORKER_GATEWAY_URL =
-    process.env.AGENT_WORKER_GATEWAY_URL ||
-    `http://127.0.0.1:${appConfig.port}`;
-  memoryLogger.info("Agent search executor: local process", "AgentSearch");
+// 清理任务仅由控制节点执行
+if (isControl) {
+  startSessionBindingCleanup();
+  startContextNormalizationCleanup();
 } else {
-  memoryLogger.warn(
-    "AGENT_WORKER_IMAGE not set; search runs will fail with executor_not_configured",
-    "AgentSearch",
+  memoryLogger.info(
+    `非控制节点 ('${appConfig.node.id}')：跳过会话绑定/上下文清理任务`,
+    "NodeControl",
   );
 }
-await searchRunScheduler.recoverAtBoot();
-const { startAgentSearchCleanup } = await import("./agent/run/cleanup.js");
-startAgentSearchCleanup();
+
+// Agent Search：固定执行器并恢复重启前遗留的 run（确定性失败，不挂起）。
+// 执行器/恢复/清理均为控制节点职责
+if (isControl) {
+  if (process.env.AGENT_WORKER_IMAGE) {
+    const { createDockerExecutor } = await import("./agent/run/executors.js");
+    searchRunScheduler.setExecutor(
+      createDockerExecutor(process.env.AGENT_WORKER_IMAGE),
+    );
+    memoryLogger.info(
+      `Agent search executor: docker (${process.env.AGENT_WORKER_IMAGE})`,
+      "AgentSearch",
+    );
+  } else if (process.env.AGENT_WORKER_LOCAL === "1") {
+    const { createLocalProcessExecutor } =
+      await import("./agent/run/executors.js");
+    searchRunScheduler.setExecutor(createLocalProcessExecutor());
+    process.env.AGENT_WORKER_GATEWAY_URL =
+      process.env.AGENT_WORKER_GATEWAY_URL ||
+      `http://127.0.0.1:${appConfig.port}`;
+    memoryLogger.info("Agent search executor: local process", "AgentSearch");
+  } else {
+    memoryLogger.warn(
+      "AGENT_WORKER_IMAGE not set; search runs will fail with executor_not_configured",
+      "AgentSearch",
+    );
+  }
+  await searchRunScheduler.recoverAtBoot();
+  const { startAgentSearchCleanup } = await import("./agent/run/cleanup.js");
+  startAgentSearchCleanup();
+} else {
+  memoryLogger.info(
+    `非控制节点 ('${appConfig.node.id}')：跳过 Agent 执行器/恢复/清理任务`,
+    "NodeControl",
+  );
+}
 
 // Load request header forwarding config before serving traffic.
 await requestHeaderForwardingService.reloadConfig();
@@ -300,7 +331,7 @@ await fastify.register(agentMonitoringRoutes, {
 memoryLogger.info("Routes registered", "System");
 
 fastify.setNotFoundHandler((request, reply) => {
-  if (request.url.startsWith("/api/")) {
+  if (!isControl || request.url.startsWith("/api/")) {
     return reply.code(404).send({
       error: {
         message: "未找到请求的资源",
@@ -472,34 +503,46 @@ try {
   // 测试网络连通性
   await checkGoogleConnectivity();
 
-  setInterval(cleanOldApiRequests, 24 * 60 * 60 * 1000);
-  memoryLogger.info(
-    `已启动请求日志自动清理任务，每 24 小时执行一次，保留 ${appConfig.apiRequestLogRetentionDays} 天`,
-    "System",
-  );
+  // 日志聚合与清理、模型预设更新、备份调度均为控制节点任务
+  // （非控制节点仅代理流量，不竞争清理锁/远端更新与备份）
+  if (isControl) {
+    setInterval(cleanOldApiRequests, 24 * 60 * 60 * 1000);
+    memoryLogger.info(
+      `已启动请求日志自动清理任务，每 24 小时执行一次，保留 ${appConfig.apiRequestLogRetentionDays} 天`,
+      "System",
+    );
 
-  // 启动即执行一次聚合+清理：不再依赖 24h 后的首跑，
-  // 否则上次留存边界的明细会在启动后继续滞留。
-  await runHourlyAggregationPass();
-  await cleanOldApiRequests();
-  setInterval(runHourlyAggregationPass, 10 * 60 * 1000);
-  memoryLogger.info("已启动小时级聚合任务，每 10 分钟执行一次", "System");
+    // 启动即执行一次聚合+清理：不再依赖 24h 后的首跑，
+    // 否则上次留存边界的明细会在启动后继续滞留。
+    await runHourlyAggregationPass();
+    await cleanOldApiRequests();
+    setInterval(runHourlyAggregationPass, 10 * 60 * 1000);
+    memoryLogger.info("已启动小时级聚合任务，每 10 分钟执行一次", "System");
 
-  await checkAndUpdateModelPresets();
+    await checkAndUpdateModelPresets();
 
-  setInterval(checkAndUpdateModelPresets, 24 * 60 * 60 * 1000);
-  memoryLogger.info("已启动模型预设自动更新任务，每 24 小时检查一次", "System");
+    setInterval(checkAndUpdateModelPresets, 24 * 60 * 60 * 1000);
+    memoryLogger.info(
+      "已启动模型预设自动更新任务，每 24 小时检查一次",
+      "System",
+    );
 
-  // Start backup scheduler if S3 is configured
-  try {
-    const backupScheduler = getBackupScheduler();
-    await backupScheduler.loadConfigFromDatabase();
-    backupScheduler.start();
-    memoryLogger.info("Backup scheduler started", "Backup");
-  } catch (error: any) {
-    memoryLogger.warn(
-      `Backup scheduler not started: ${error.message}`,
-      "Backup",
+    // Start backup scheduler if S3 is configured
+    try {
+      const backupScheduler = getBackupScheduler();
+      await backupScheduler.loadConfigFromDatabase();
+      backupScheduler.start();
+      memoryLogger.info("Backup scheduler started", "Backup");
+    } catch (error: any) {
+      memoryLogger.warn(
+        `Backup scheduler not started: ${error.message}`,
+        "Backup",
+      );
+    }
+  } else {
+    memoryLogger.info(
+      `非控制节点 ('${appConfig.node.id}')：跳过日志聚合/清理、模型预设更新与备份任务`,
+      "NodeControl",
     );
   }
 } catch (err: any) {

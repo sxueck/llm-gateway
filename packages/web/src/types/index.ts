@@ -17,6 +17,8 @@ export interface Provider {
   protocolMappings?: ProtocolMapping | null;
   apiKey?: string;
   modelMapping?: Record<string, string> | null;
+  /** 归属 节点 ID；null 表示使用默认控制节点 */
+  ownerNode?: string | null;
   enabled: boolean;
   createdAt: number;
   updatedAt: number;
@@ -137,6 +139,7 @@ export interface CreateProviderRequest {
   protocolMappings?: ProtocolMapping;
   apiKey: string;
   modelMapping?: Record<string, string>;
+  ownerNode?: string | null;
   enabled?: boolean;
 }
 
@@ -147,6 +150,7 @@ export interface UpdateProviderRequest {
   protocolMappings?: ProtocolMapping;
   apiKey?: string;
   modelMapping?: Record<string, string>;
+  ownerNode?: string | null;
   enabled?: boolean;
 }
 

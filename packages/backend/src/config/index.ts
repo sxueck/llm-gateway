@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
 import { z } from "zod";
 import { memoryLogger } from "../services/logger.js";
+import { parseNodeConfig } from "./node.js";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const envCandidates = [
@@ -69,6 +70,8 @@ export const appConfig = {
     database: env.MYSQL_DATABASE,
     connectionLimit,
   },
+  // 跨地域双节点部署配置：在 dotenv 加载完成后解析（未配置时默认禁用）
+  node: parseNodeConfig(process.env),
 };
 
 export function validatePublicUrl(url: string): {

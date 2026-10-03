@@ -20,6 +20,8 @@ export interface Provider {
   api_key: string;
   model_mapping: string | null;
   protocol_mappings: string | null; // JSON string of ProtocolMapping
+  /** NULL/absent keeps legacy providers on the control node. */
+  owner_node?: string | null;
   enabled: number;
   created_at: number;
   updated_at: number;

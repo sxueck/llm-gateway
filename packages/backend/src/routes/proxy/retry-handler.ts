@@ -3,6 +3,9 @@ import { memoryLogger } from '../../services/logger.js';
 import { shouldRetrySmartRouting } from './routing.js';
 import { retrySmartRouting, type ModelResolutionResult } from './model-resolver.js';
 import { buildProviderConfig, type ProviderConfigResult } from './provider-config-builder.js';
+import { appConfig } from '../../config/index.js';
+import { providerDb } from '../../db/index.js';
+import { forwardToOwner, isRemoteProvider } from '../../services/node-dispatch.js';
 
 export interface RetryContext {
   virtualKey: any;
@@ -71,7 +74,8 @@ export async function selectSmartRoutingRetryTarget(
   reply: FastifyReply,
   statusCode: number,
   context: RetryContext,
-  isStream: boolean
+  isStream: boolean,
+  onTarget?: (modelResult: ModelResolutionResult) => Promise<boolean>
 ): Promise<SmartRoutingRetrySelection | null> {
   if (!context.modelResult.canRetry) {
     if (!isStream) {
@@ -135,7 +139,14 @@ export async function selectSmartRoutingRetryTarget(
   const retriedModelResult = {
     ...retryResult,
     forcedReasoningEffort: context.modelResult.forcedReasoningEffort,
+    routeInfo: context.modelResult.routeInfo,
   };
+  if (appConfig.node.enabled) {
+    const provider = await providerDb.getById(retryResult.providerId);
+    if (!provider || !provider.enabled) return null;
+    retriedModelResult.provider = provider;
+  }
+  if (onTarget && await onTarget(retriedModelResult)) return null;
 
   memoryLogger.info(
     `${logPrefix}: 切换到新目标 provider=${retryResult.provider.name}`,
@@ -143,7 +154,7 @@ export async function selectSmartRoutingRetryTarget(
   );
 
   const configResult = await buildProviderConfig(
-    retryResult.provider,
+    retriedModelResult.provider,
     context.virtualKey,
     context.virtualKeyValue,
     retryResult.providerId,
@@ -193,9 +204,22 @@ async function handleSmartRoutingRetry(
   context: RetryContext,
   isStream: boolean
 ): Promise<boolean> {
-  const selection = await selectSmartRoutingRetryTarget(request, reply, statusCode, context, isStream);
+  let forwarded = false;
+  const selection = await selectSmartRoutingRetryTarget(request, reply, statusCode, context, isStream, async (target) => {
+    if (!isRemoteProvider(target.provider)) return false;
+    replayRetryBodySnapshot(request, context.retryBodySnapshot, 'node retry');
+    if (target.currentModel?.model_identifier && target.currentModel.is_virtual !== 1) {
+      (request.body as any).model = target.currentModel.model_identifier;
+    }
+    forwarded = await forwardToOwner(request, reply, context.entrypointProtocol || 'openai', context.virtualKey, target, {
+      normalized: true,
+      logicalCacheKey: context.logicalCacheKey,
+      startedAt: context.startTime,
+    });
+    return forwarded;
+  });
   if (!selection) {
-    return false;
+    return forwarded;
   }
 
   const { modelResult: retriedModelResult, configResult, providerId } = selection;

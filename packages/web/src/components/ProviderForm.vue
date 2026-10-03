@@ -67,6 +67,28 @@
               />
             </n-form-item>
 
+            <n-form-item v-if="nodeModeEnabled || formValue.ownerNode" :label="t('providers.ownerNode')" path="ownerNode">
+              <n-space vertical style="width: 100%" :size="4">
+                <n-select
+                  v-model:value="ownerNodeValue"
+                  :options="ownerNodeOptions"
+                  :placeholder="t('providers.ownerNodePlaceholder')"
+                  size="small"
+                  @update:value="handleOwnerNodeChange"
+                />
+                <div v-if="ownerNodeUnconfigured" class="field-feedback field-feedback--error">
+                  {{ t('providers.ownerNodeUnconfigured') }}
+                </div>
+                <div v-else-if="nodeValidation.message" class="field-feedback field-feedback--error">
+                  {{ nodeValidation.message }}
+                </div>
+                <div v-else class="field-hint">
+                  <n-icon :component="InformationCircle" class="field-hint__icon" />
+                  <span>{{ t('providers.ownerNodeHelp') }}</span>
+                </div>
+              </n-space>
+            </n-form-item>
+
             <n-form-item label="多协议支持">
               <n-switch v-model:value="multiProtocolEnabled" size="small" />
             </n-form-item>
@@ -244,7 +266,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import {
   NForm,
   NFormItem,
@@ -267,10 +289,12 @@ import {
   CloseCircle,
   InformationCircle,
 } from '@vicons/ionicons5';
+import { useI18n } from 'vue-i18n';
 import {
   validateProviderId,
   validateBaseUrl,
-  validateApiKey
+  validateApiKey,
+  validateOwnerNode
 } from '@/utils/provider-validation';
 import { providerApi, type ModelInfo } from '@/api/provider';
 import type { ProtocolMapping } from '@/types';
@@ -283,6 +307,7 @@ interface Props {
     baseUrl: string;
     protocolMappings?: ProtocolMapping | null;
     apiKey: string;
+    ownerNode: string;
     enabled: boolean;
   };
   editingId?: string | null;
@@ -295,11 +320,56 @@ const emit = defineEmits<{
 }>();
 
 const message = useMessage();
+const { t } = useI18n();
 const formRef = ref();
 
 const idValidation = ref<ReturnType<typeof validateProviderId>>({ isValid: true });
 const urlValidation = ref<ReturnType<typeof validateBaseUrl>>({ isValid: true });
 const keyValidation = ref<ReturnType<typeof validateApiKey>>({ isValid: true });
+const nodeValidation = ref<ReturnType<typeof validateOwnerNode>>({ isValid: true });
+// Owner 节点只能取本节点已配置的值（写错会让该供应商流量永久 503），
+// 所以选项来自 /node-options；列表外的存量值仍需可见。
+const nodeModeEnabled = ref(false);
+const nodeIds = ref<string[]>([]);
+const controlNodeId = ref('');
+
+async function loadNodeOptions() {
+  try {
+    const options = await providerApi.getNodeOptions();
+    nodeModeEnabled.value = options.enabled;
+    nodeIds.value = options.nodeIds || [];
+    controlNodeId.value = options.controlId || '';
+  } catch {
+    // 接口不可用时不阻断表单：下拉只剩已存的归属值，可编辑性不受影响。
+  }
+}
+
+onMounted(loadNodeOptions);
+
+const ownerNodeValue = computed<string>({
+  get: () => formValue.value.ownerNode || '',
+  set: (value) => {
+    formValue.value.ownerNode = value || '';
+  },
+});
+
+const ownerNodeOptions = computed(() => {
+  const ids = new Set(nodeIds.value);
+  const current = formValue.value.ownerNode;
+  if (current) ids.add(current);
+  return [
+    { label: t('providers.ownerNodeDefault'), value: '' },
+    ...[...ids].map((id) => ({
+      label: id === controlNodeId.value ? `${id} · ${t('providers.ownerNodeControl')}` : id,
+      value: id,
+    })),
+  ];
+});
+
+const ownerNodeUnconfigured = computed(() => {
+  const current = formValue.value.ownerNode;
+  return nodeModeEnabled.value && !!current && !nodeIds.value.includes(current);
+});
 const fetchingModels = ref(false);
 const availableModels = ref<ModelInfo[]>([]);
 const selectedModels = ref<string[]>([]);
@@ -412,6 +482,13 @@ const rules = {
       trigger: 'blur',
     },
   ],
+  ownerNode: [
+    {
+      validator: (_rule: any, value: string) => validateOwnerNode(value).isValid,
+      message: () => t('providers.ownerNodeInvalid'),
+      trigger: ['blur', 'input'],
+    },
+  ],
 };
 
 async function pasteApiKey() {
@@ -448,6 +525,14 @@ function validateKey() {
   keyValidation.value = validateApiKey(formValue.value.apiKey, formValue.value.id);
 }
 
+function handleOwnerNodeChange() {
+  validateOwnerNodeField();
+}
+
+function validateOwnerNodeField() {
+  nodeValidation.value = validateOwnerNode(formValue.value.ownerNode);
+}
+
 function getFieldStatus(isValid: boolean | undefined, hasValue: string): 'success' | 'error' | undefined {
   if (!hasValue) return undefined;
   return isValid ? 'success' : 'error';
@@ -466,7 +551,11 @@ async function handleFetchModels() {
   try {
     fetchingModels.value = true;
     fetchError.value = '';
-    const result = await providerApi.fetchModels(baseUrlToUse, formValue.value.apiKey);
+    const result = await providerApi.fetchModels(
+      baseUrlToUse,
+      formValue.value.apiKey,
+      formValue.value.ownerNode?.trim() || null,
+    );
 
     if (result.success) {
       availableModels.value = result.models;

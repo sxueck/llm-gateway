@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from 'vitest';
 import { applyMigrations, migrations, normalizeExpertRoutingConfig, transformExpertRoutingConfigV2 } from './migrations.js';
 
 describe('migration runner from v45', () => {
-  test('has unique migration versions and applies v47-v56 after v45', async () => {
+  test('has unique migration versions and applies v47-v58 after v45', async () => {
     const versions = migrations.map(migration => migration.version);
     expect(new Set(versions).size).toBe(versions.length);
 
@@ -122,7 +122,22 @@ describe('migration runner from v45', () => {
       'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
       [56, 'provider_scoped_model_protocols', expect.any(Number)],
     );
-    expect(conn.commit).toHaveBeenCalledTimes(10);
+    expect(query).toHaveBeenCalledWith(
+      "ALTER TABLE providers ADD COLUMN owner_node VARCHAR(64) DEFAULT NULL COMMENT '归属节点 ID，NULL 表示默认控制节点' AFTER model_mapping",
+    );
+    expect(query).toHaveBeenCalledWith(
+      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      [57, 'add_provider_owner_node', expect.any(Number)],
+    );
+    // v58：只在旧列存在时重命名；这里 INFORMATION_SCHEMA 报 0 行，故不执行 ALTER。
+    expect(query).not.toHaveBeenCalledWith(
+      expect.stringContaining('CHANGE COLUMN owner_pop owner_node'),
+    );
+    expect(query).toHaveBeenCalledWith(
+      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      [58, 'rename_provider_owner_pop_column', expect.any(Number)],
+    );
+    expect(conn.commit).toHaveBeenCalledTimes(12);
   });
 });
 

@@ -4,8 +4,14 @@ import { extractIp } from '../../utils/ip.js';
 import { getRequestUserAgent } from '../../utils/http.js';
 import { extractVirtualKeyAuthHeader, authenticateVirtualKey } from './auth.js';
 import { virtualKeyRateLimiter } from '../../services/virtual-key-rate-limiter.js';
-import { resolveModelAndProvider } from './model-resolver.js';
+import { resolveModelAndProvider, retrySmartRouting } from './model-resolver.js';
 import { buildProviderConfig } from './provider-config-builder.js';
+import { appConfig } from '../../config/index.js';
+import { providerDb } from '../../db/index.js';
+import { computeLogicalCacheKey } from './cache.js';
+import { shouldBypassGatewayCache } from '../../utils/path-detector.js';
+import { forwardToOwner, getNodeRequestState, isRemoteProvider, nodeError } from '../../services/node-dispatch.js';
+import { circuitBreaker } from '../../services/circuit-breaker.js';
 
 export type ProxyProtocol = 'openai' | 'anthropic' | 'gemini';
 
@@ -73,19 +79,27 @@ export interface ProxyPipelineHandlers extends ProxyPreflightHandlers {
   }) => Promise<void> | void;
 }
 
+export interface ProxyAfterAuthArgs {
+  request: FastifyRequest;
+  reply: FastifyReply;
+  requestIp: string;
+  requestUserAgent: string;
+  virtualKey: any;
+  virtualKeyValue: string;
+  /**
+   * Out-param: the entrypoint derives the logical response-cache key here, from the
+   * body after image compression but before routing rewrites it. The pipeline reads it
+   * back for the cross-node envelope instead of hashing the whole body a second time.
+   */
+  logicalCacheKey?: string | null;
+}
+
 export interface ProxyPipelineOptions {
   protocol: ProxyProtocol;
   handlers: ProxyPipelineHandlers;
   // Runs after auth succeeds and before model/provider resolution.
   // Return false if the hook already sent a response and the pipeline should stop.
-  afterAuth?: (args: {
-    request: FastifyRequest;
-    reply: FastifyReply;
-    requestIp: string;
-    requestUserAgent: string;
-    virtualKey: any;
-    virtualKeyValue: string;
-  }) => Promise<boolean | void> | boolean | void;
+  afterAuth?: (args: ProxyAfterAuthArgs) => Promise<boolean | void> | boolean | void;
 }
 
 export type ProxyPipelineResult =
@@ -150,6 +164,8 @@ export async function runProxyPreflight(
   reply: FastifyReply,
   handlers: ProxyPreflightHandlers
 ): Promise<ProxyPreflightResult> {
+  const internal = getNodeRequestState(request);
+  if (internal) return { ok: true, context: internal.preflight };
   const authResult = await runProxyAuthentication(request, reply, handlers);
   if (!authResult.ok) return authResult;
   const { virtualKey, requestIp, requestUserAgent } = authResult.context;
@@ -192,6 +208,8 @@ export async function runProxyPipeline(
   reply: FastifyReply,
   options: ProxyPipelineOptions
 ): Promise<ProxyPipelineResult> {
+  const startedAt = Date.now();
+  const internal = getNodeRequestState(request);
   const preflightResult = await runProxyPreflight(request, reply, options.handlers);
   if (!preflightResult.ok) {
     return { ok: false };
@@ -205,15 +223,16 @@ export async function runProxyPipeline(
     virtualKeyValue,
   } = preflightResult.context;
 
-  if (options.afterAuth) {
-    const hookResult = await options.afterAuth({
-      request,
-      reply,
-      requestIp,
-      requestUserAgent,
-      virtualKey,
-      virtualKeyValue,
-    });
+  const hookArgs: ProxyAfterAuthArgs = {
+    request,
+    reply,
+    requestIp,
+    requestUserAgent,
+    virtualKey,
+    virtualKeyValue,
+  };
+  if (options.afterAuth && !internal) {
+    const hookResult = await options.afterAuth(hookArgs);
     if (hookResult === false) {
       return { ok: false };
     }
@@ -227,7 +246,10 @@ export async function runProxyPipeline(
     url: request.url,
   };
 
-  const modelResult = await resolveModelAndProvider(
+  const logicalCacheKey = internal?.envelope.logicalCacheKey ?? hookArgs.logicalCacheKey ?? (options.protocol === 'openai'
+    ? computeLogicalCacheKey(virtualKey, request.body, (request.body as any)?.stream === true, shouldBypassGatewayCache(request.url))
+    : null);
+  const modelResult = internal?.modelResult ?? await resolveModelAndProvider(
     virtualKey,
     modelResolverRequest as any,
     virtualKeyValue
@@ -244,7 +266,49 @@ export async function runProxyPipeline(
     return { ok: false };
   }
 
-  const { provider, providerId, currentModel } = modelResult;
+  const { providerId, currentModel } = modelResult;
+  if (appConfig.node.enabled && !internal) {
+    const freshProvider = await providerDb.getById(providerId);
+    if (!freshProvider || !freshProvider.enabled) {
+      reply.code(503).send(nodeError('provider_unavailable', 'Provider is unavailable'));
+      return { ok: false };
+    }
+    modelResult.provider = freshProvider;
+  }
+  const needsOwnerAdmission = appConfig.node.enabled && !isRemoteProvider(modelResult.provider) &&
+    (internal ? !internal.ownerAdmitted : !modelResult.excludeTargetKeys);
+  if (needsOwnerAdmission && !circuitBreaker.isAvailable(modelResult.circuitBreakerKey || providerId)) {
+    if (internal && modelResult.canRetry && modelResult.modelId && modelResult.excludeTargetKeys &&
+        Date.now() - internal.envelope.startedAt <= 10_000) {
+      const next = await retrySmartRouting(virtualKey, modelResolverRequest, modelResult.modelId, modelResult.excludeTargetKeys);
+      if (!('code' in next)) {
+        const provider = await providerDb.getById(next.providerId);
+        if (provider?.enabled) {
+          internal.modelResult = { ...next, provider, forcedReasoningEffort: modelResult.forcedReasoningEffort, routeInfo: modelResult.routeInfo };
+          // The owner router already acquired local half-open admission; never acquire it twice.
+          internal.ownerAdmitted = !isRemoteProvider(provider);
+          return runProxyPipeline(request, reply, options);
+        }
+      }
+    }
+    await options.handlers.onProviderConfigError({
+      reply, requestIp, requestUserAgent, virtualKey, virtualKeyValue, providerId,
+      providerConfigError: { code: 503, body: nodeError('owner_circuit_open', 'Provider circuit is open on its owner node') },
+    });
+    return { ok: false };
+  }
+  if (await forwardToOwner(request, reply, options.protocol, virtualKey, modelResult, {
+    logicalCacheKey,
+    startedAt: internal?.envelope.startedAt ?? startedAt,
+    normalized: internal?.envelope.normalized ?? false,
+  })) {
+    return { ok: false };
+  }
+  const { provider } = modelResult;
+  if (appConfig.node.enabled) {
+    reply.header('x-gateway-execution-node', appConfig.node.id);
+    reply.raw.setHeader('x-gateway-execution-node', appConfig.node.id);
+  }
 
   const configResult = await buildProviderConfig(
     provider,

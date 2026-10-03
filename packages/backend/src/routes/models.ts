@@ -5,6 +5,7 @@ import { apiRequestDb, modelDb, providerDb, routingConfigDb, virtualKeyDb } from
 import { hotConfigCache } from "../services/hot-config-cache.js";
 import { decryptApiKey } from "../utils/crypto.js";
 import { probeService } from "../services/probe-service.js";
+import { isRemoteProvider } from "../services/node-dispatch.js";
 import {
   getProviderSupportedProtocols,
 } from "../utils/protocol-utils.js";
@@ -414,7 +415,7 @@ export async function modelRoutes(fastify: FastifyInstance) {
         .send({ error: "探测协议必须是供应商提供协议的成员" });
     }
 
-    const apiKey = decryptApiKey(provider.api_key);
+    const apiKey = isRemoteProvider(provider) ? "" : decryptApiKey(provider.api_key);
     const result = await probeService.probeModelViaProvider({
       modelIdentifier: model.model_identifier,
       protocol: probeProtocol as any,

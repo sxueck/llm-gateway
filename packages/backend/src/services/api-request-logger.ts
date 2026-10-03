@@ -4,6 +4,8 @@ import { agentRunIdFromHeaders } from "../agent/run/loopback-token.js";
 import type { VirtualKey } from "../types/index.js";
 import type { TokenCalculationResult } from "../routes/proxy/token-calculator.js";
 import { memoryLogger } from "./logger.js";
+import { appConfig } from "../config/index.js";
+import { nodeAuditContext } from "./node-audit.js";
 
 export interface ApiLogParams {
   virtualKey: VirtualKey;
@@ -132,11 +134,20 @@ export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
   const normalizedErrorMessage = normalizeErrorMessage(params.errorMessage);
   const agentRunId =
     params.agentRunId ?? agentRunIdFromHeaders(params.request?.headers);
-  const requestParamsJson = extractRequestParamsJson(
+  let requestParamsJson = extractRequestParamsJson(
     params.truncatedRequest,
     params.piiMaskedCount,
     params.streamResume,
   );
+  if (appConfig.node?.enabled) {
+    const context = nodeAuditContext.getStore();
+    requestParamsJson = JSON.stringify({
+      ...(safeParseJson(requestParamsJson) ?? {}),
+      ingress_node: context?.ingressNode ?? appConfig.node.id,
+      execution_node: appConfig.node.id,
+      node_request_id: params.virtualKey.disable_logging ? undefined : context?.requestId,
+    });
+  }
   const responseMetaJson = extractResponseMetaJson(params.truncatedResponse);
 
   // disable_logging：除已抑制的正文/参数外，ip、user_agent 和错误文本同属敏感元数据，

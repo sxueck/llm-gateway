@@ -39,11 +39,15 @@ services:
       - JWT_SECRET=${JWT_SECRET:-please-change-this-secret-key-to-a-random-string-at-least-32-chars}
       - PUBLIC_URL=${PUBLIC_URL:-http://localhost:3000}
       - API_REQUEST_LOG_RETENTION_DAYS=${API_REQUEST_LOG_RETENTION_DAYS:-14}
-      - MYSQL_HOST=mysql
-      - MYSQL_PORT=3306
-      - MYSQL_USER=root
+      - MYSQL_HOST=${MYSQL_HOST:-mysql}
+      - MYSQL_PORT=${MYSQL_PORT:-3306}
+      - MYSQL_USER=${MYSQL_USER:-root}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD:-your-mysql-password}
       - MYSQL_DATABASE=${MYSQL_DATABASE:-llm_gateway}
+      - GATEWAY_NODE_ID=${GATEWAY_NODE_ID:-}
+      - GATEWAY_CONTROL_NODE_ID=${GATEWAY_CONTROL_NODE_ID:-}
+      - GATEWAY_NODE_SECRET=${GATEWAY_NODE_SECRET:-}
+      - GATEWAY_NODE_PEERS=${GATEWAY_NODE_PEERS:-}
       # Agent Search / craft-worker（须先完成 docs/docker-deployment.md 中的启用步骤）
       - AGENT_WORKER_IMAGE=${AGENT_WORKER_IMAGE:-ghcr.io/sxueck/llm-gateway/craft-worker:latest}
       # worker 在默认 bridge 网络，经 host-gateway 回连网关发布端口（13030）

@@ -1,6 +1,9 @@
 import * as connectionModule from "./connection.js";
 import { createTables } from "./schema.js";
 import { applyMigrations } from "./migrations.js";
+import { appConfig } from "../config/index.js";
+import { nodeOwnerError } from "../config/node.js";
+import { isControlNode } from "../services/node-control.js";
 import {
   startBufferFlush,
   stopBufferFlush,
@@ -75,21 +78,59 @@ export const expertRoutingTrainingRecordDb = expertRoutingTrainingRecordReposito
 
 export async function initDatabase() {
   const pool = await connectionModule.initDatabase();
+  const control = isControlNode(appConfig.node);
 
   const connection = await pool.getConnection();
   try {
-    console.log("[数据库] 开始创建表结构...");
-    await createTables();
-    console.log("[数据库] 表结构创建完成");
+    if (control) {
+      console.log("[数据库] 开始创建表结构...");
+      await createTables();
+      console.log("[数据库] 表结构创建完成");
 
-    console.log("[数据库] 开始应用数据库迁移...");
-    try {
-      await applyMigrations(connection as any);
-      console.log("[数据库] 数据库迁移完成");
-    } catch (migrationError: any) {
-      console.error("[数据库] 迁移失败:", migrationError.message);
-      console.error("[数据库] 迁移错误详情:", migrationError);
-      throw migrationError;
+      console.log("[数据库] 开始应用数据库迁移...");
+      try {
+        await applyMigrations(connection as any);
+        console.log("[数据库] 数据库迁移完成");
+      } catch (migrationError: any) {
+        console.error("[数据库] 迁移失败:", migrationError.message);
+        console.error("[数据库] 迁移错误详情:", migrationError);
+        throw migrationError;
+      }
+    } else {
+      // 非控制节点不执行建表/迁移（由控制节点统一管理 schema），
+      // 但必须确认 schema 已被控制节点迁移到位，否则直接失败以便尽早暴露。
+      console.log(
+        `[数据库] 非控制节点 ('${appConfig.node.id}')，跳过建表/迁移，校验 schema...`,
+      );
+      const [rows] = await connection.query(
+        `SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'providers'
+           AND COLUMN_NAME = 'owner_node'`,
+      );
+      const result = rows as any[];
+      const columnCount = Number(result?.[0]?.cnt || 0);
+      if (columnCount < 1) {
+        throw new Error(
+          "[数据库] 当前 schema 缺少 providers.owner_node 列：请先启动控制节点完成数据库迁移，再启动本节点",
+        );
+      }
+      console.log("[数据库] schema 校验通过 (providers.owner_node 已存在)");
+    }
+
+    // 配置漂移自检：owner_node 指向未配置节点时不会报错，只会让该供应商
+    // 的流量全部 503（故障不接管是设计行为），因此在启动时点名到日志。
+    {
+      const [ownerRows] = await connection.query(
+        `SELECT owner_node, COUNT(*) AS cnt FROM providers
+         WHERE owner_node IS NOT NULL GROUP BY owner_node`,
+      );
+      for (const row of ownerRows as any[]) {
+        const message = nodeOwnerError(String(row.owner_node), appConfig.node);
+        if (message) {
+          console.warn(`[数据库] ${message}（影响 ${row.cnt} 个供应商）`);
+        }
+      }
     }
   } finally {
     connection.release();

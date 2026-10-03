@@ -3,6 +3,7 @@ import { memoryLogger } from "../../services/logger.js";
 import { extractIp } from "../../utils/ip.js";
 import { getRequestUserAgent } from "../../utils/http.js";
 import { runProxyPipeline } from "../proxy/pipeline.js";
+import { getNodeRequestState } from "../../services/node-dispatch.js";
 import { circuitBreaker, httpFailureError } from "../../services/circuit-breaker.js";
 import { applyRouteHeaders, modelFieldForClient } from "../../services/expert-router/exposure.js";
 import { shouldRetrySmartRouting } from "../proxy/routing.js";
@@ -277,7 +278,8 @@ export async function dispatchAnthropicRequest(
 
 export function createAnthropicProxyHandler() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const startTime = Date.now();
+    const nodeState = getNodeRequestState(request);
+    const startTime = nodeState?.envelope.startedAt ?? Date.now();
     let virtualKeyValue: string | undefined;
     let providerId: string | undefined;
     let currentModel: any | undefined;
@@ -413,8 +415,7 @@ export function createAnthropicProxyHandler() {
       providerId = resolvedProviderId;
       currentModel = resolvedModel;
       const providerName = resolvedProvider?.name ?? null;
-
-      const normalization = await applyContextNormalization({
+      const normalization = nodeState?.envelope.normalized ? { blocked: false as const } : await applyContextNormalization({
         protocol: "anthropic",
         request,
         body: request.body,
