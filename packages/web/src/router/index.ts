@@ -118,6 +118,11 @@ const router = createRouter({
           component: () => import('@/views/PromptSamplesView.vue'),
         },
         {
+          path: 'node-operations',
+          name: 'NodeOperations',
+          component: () => import('@/views/NodeOperationsView.vue'),
+        },
+        {
           path: 'settings',
           name: 'Settings',
           component: () => import('@/views/SettingsView.vue'),

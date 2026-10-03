@@ -75,7 +75,8 @@ describe('worker 运行时体检', () => {
     listImages.mockResolvedValue([{ RepoTags: ['mysql:8'] }]);
     const alerts = await collectAlerts({ fresh: true });
     const hit = alerts.find(a => a.code === 'worker_image_missing');
-    expect(hit?.level).toBe('error');
+    expect(hit?.level).toBe('warning');
+    expect(hit?.message).toContain('自动拉取');
     expect(hit?.params?.image).toBe(IMAGE);
   });
 
@@ -241,7 +242,7 @@ describe('采集健壮性', () => {
   });
 
   it('error 排在 warning 之前', async () => {
-    listImages.mockResolvedValue([]);
+    listImages.mockRejectedValue(new Error('Docker daemon unavailable'));
     getLastCompletedBackup.mockResolvedValue(null);
     const alerts = await collectAlerts({ fresh: true });
     expect(alerts[0].level).toBe('error');

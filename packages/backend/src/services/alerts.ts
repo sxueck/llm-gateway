@@ -134,9 +134,9 @@ async function checkWorkerRuntime(): Promise<SystemAlert[]> {
       if (!digests) {
         alerts.push({
           code: 'worker_image_missing',
-          level: 'error',
+          level: 'warning',
           category: 'worker',
-          message: `主机上不存在 Worker 镜像 ${image}，craft-agent run 会直接失败；请先 docker pull ${image}`,
+          message: `主机上尚无 Worker 镜像 ${image}，首次执行 run 时会自动拉取；请确保镜像仓库可访问，也可提前 docker pull ${image}`,
           params: { image },
         });
       }

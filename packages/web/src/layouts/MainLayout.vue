@@ -114,10 +114,16 @@ import {
   CloudDownloadOutline,
   CashOutline,
   MenuOutline,
+  BugOutline,
   SpeedometerOutline,
   TrendingUpOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
+import {
+  generalMenuParentByKey,
+  mainMenuParentByKey,
+} from '@/utils/menu-mappings';
+import { isNodeOperationsMenuEnabled } from '@/api/nodes';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
 import AlertCenter from '@/components/AlertCenter.vue';
 import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize';
@@ -130,32 +136,11 @@ const { t } = useI18n();
 const collapsed = ref(false);
 const mainMenuExpandedKeys = ref<string[]>([]);
 const generalMenuExpandedKeys = ref<string[]>([]);
+// 节点运维入口默认隐藏，接口确认 enabled:true 后才显示（fail-closed）。
+const nodeOperationsEnabled = ref(false);
 
 const MAIN_MENU_DEFAULT_KEYS = ['model-management', 'tools'];
 const COMPACT_SIDEBAR_HEIGHT = 960;
-const mainMenuParentByKey: Record<string, string> = {
-  providers: 'model-management',
-  models: 'model-management',
-  'virtual-models': 'model-management',
-  'expert-routing': 'experimental-features',
-  'worker-plugins': 'experimental-features',
-  'cost-analysis': 'experimental-features',
-  'worker-monitoring': 'monitoring',
-  'operations-monitoring': 'monitoring',
-  'traffic-analysis': 'monitoring',
-  playground: 'tools',
-  logs: 'tools',
-  'api-requests': 'tools',
-  'prompt-samples': 'tools',
-  'db-maintenance': 'settings',
-};
-const generalMenuParentByKey: Record<string, string> = {
-  settings: 'settings',
-  'security-settings': 'settings',
-  backup: 'settings',
-  'developer-settings': 'settings',
-  'db-maintenance': 'settings',
-};
 
 const toggleSidebar = () => {
   collapsed.value = !collapsed.value;
@@ -275,6 +260,12 @@ const menuOptions = computed(() => [
     ],
   },
   {
+    label: t('menu.advancedTools'),
+    key: 'advanced-tools',
+    icon: () => h(NIcon, null, { default: () => h(BugOutline) }),
+    children: advancedToolsChildren.value,
+  },
+  {
     label: t('menu.tools'),
     key: 'tools',
     icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
@@ -303,6 +294,29 @@ const menuOptions = computed(() => [
   },
 ]);
 
+const advancedToolsChildren = computed(() => {
+  const children = [
+    {
+      label: t('menu.developerSettings'),
+      key: 'developer-settings',
+      icon: () => h(NIcon, null, { default: () => h(FlaskOutline) }),
+    },
+    {
+      label: t('menu.dbMaintenance'),
+      key: 'db-maintenance',
+      icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
+    },
+  ];
+  if (nodeOperationsEnabled.value) {
+    children.unshift({
+      label: t('menu.nodeOperations'),
+      key: 'node-operations',
+      icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) }),
+    });
+  }
+  return children;
+});
+
 const generalMenuOptions = computed(() => [
   {
     label: t('menu.settings'),
@@ -323,16 +337,6 @@ const generalMenuOptions = computed(() => [
         label: t('settings.backup'),
         key: 'backup',
         icon: () => h(NIcon, null, { default: () => h(CloudDownloadOutline) }),
-      },
-      {
-        label: t('settings.developerDebug'),
-        key: 'developer-settings',
-        icon: () => h(NIcon, null, { default: () => h(FlaskOutline) }),
-      },
-      {
-        label: t('settings.dbMaintenance'),
-        key: 'db-maintenance',
-        icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
       },
     ],
   },
@@ -374,10 +378,15 @@ watch(activeKey, () => {
   syncMenuExpandedKeys();
 }, { immediate: true });
 
+watch(nodeOperationsEnabled, () => {
+  syncMenuExpandedKeys();
+});
+
 onMounted(async () => {
   if (authStore.token && !authStore.user) {
     await authStore.fetchProfile();
   }
+  nodeOperationsEnabled.value = await isNodeOperationsMenuEnabled();
 });
 </script>
 

@@ -1,4 +1,5 @@
 export * from './agent-search.js';
+export * from './nodes.js';
 
 export interface ApiResponse<T = any> {
   success: boolean;

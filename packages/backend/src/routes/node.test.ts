@@ -68,6 +68,25 @@ beforeEach(() => {
   });
 });
 
+test('health diagnostics require signed control-node authentication without calling upstream', async () => {
+  const payload = { op: 'node-health' };
+  const app = Fastify();
+  await app.register(nodeRoutes);
+  try {
+    const rejected = await app.inject({ method: 'POST', url: NODE_DISPATCH_PATH, payload });
+    expect(rejected.statusCode).toBe(401);
+    const headers = signNodeEnvelope(source, 'node-b', JSON.stringify(payload));
+    const response = await app.inject({ method: 'POST', url: NODE_DISPATCH_PATH, payload, headers });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ enabled: true, nodeId: 'node-b', controlId: 'node-a' });
+    expect(mocks.provider).not.toHaveBeenCalled();
+    expect(mocks.handler).not.toHaveBeenCalled();
+    expect(mocks.audit).not.toHaveBeenCalled();
+    const replay = await app.inject({ method: 'POST', url: NODE_DISPATCH_PATH, payload, headers });
+    expect(replay.statusCode).toBe(401);
+  } finally { await app.close(); }
+});
+
 test('direct owner ingress cannot bypass an open circuit and still counts RPM once', async () => {
   const admission = vi.spyOn(circuitBreaker, 'isAvailable').mockReturnValue(false);
   const app = Fastify();

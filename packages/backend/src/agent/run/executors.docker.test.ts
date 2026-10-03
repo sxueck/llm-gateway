@@ -1,7 +1,10 @@
 import { PassThrough } from "stream";
 import { Writable } from "stream";
 import { describe, expect, it, vi } from "vitest";
-import { createDockerExecutor, type DockerClient } from "./executors.js";
+import {
+  createDockerExecutor,
+  type DockerClient,
+} from "./executors.js";
 import type Dockerode from "dockerode";
 
 interface FakeContainer {
@@ -14,13 +17,47 @@ interface FakeContainer {
 }
 
 /** 最小假 dockerode 客户端：记录 createContainer 入参，容器方法可控可观测。 */
-function fakeDocker(): {
+function fakeDocker(opts: {
+  /** inspect 抛出则视为镜像不存在（404）或其他错误。 */
+  inspectError?: object;
+  pullError?: Error;
+  /** 覆盖默认 pull：返回受控流/延迟 promise 以模拟卡死、迟到或出错的拉取。 */
+  pullImpl?: () => Promise<PassThrough> | PassThrough;
+} = {}): {
   client: DockerClient;
+  pullCalls: string[];
   /** 须在 executor.start() 之后访问（createContainer 被调用后才有值）。 */
   readonly container: FakeContainer;
 } {
   let container: FakeContainer | undefined;
+  const pullCalls: string[] = [];
   const client: DockerClient = {
+    getImage(image: string) {
+      return {
+        async inspect() {
+          if (opts.inspectError) throw opts.inspectError;
+          return { Id: `sha256:${image}` };
+        },
+      } as unknown as Dockerode.Image;
+    },
+    pull: (async (image: string) => {
+      pullCalls.push(image);
+      if (opts.pullError) throw opts.pullError;
+      if (opts.pullImpl) return opts.pullImpl();
+      const stream = new PassThrough();
+      stream.end();
+      return stream;
+    }) as unknown as DockerClient["pull"],
+    modem: {
+      followProgress(
+        stream: PassThrough,
+        onFinished: (err: Error | null, output: unknown) => void,
+      ) {
+        stream.resume();
+        stream.on("end", () => onFinished(null, []));
+        stream.on("error", (err: Error) => onFinished(err, null));
+      },
+    } as unknown as DockerClient["modem"],
     async createContainer(config) {
       container = {
         createConfig: config,
@@ -58,6 +95,7 @@ function fakeDocker(): {
   };
   return {
     client,
+    pullCalls,
     get container(): FakeContainer {
       if (!container) throw new Error("createContainer not called yet");
       return container;
@@ -165,5 +203,178 @@ describe("createDockerExecutor", () => {
     container.resolveWait(137);
     await handle.exited;
     expect(container.removeOpts).toEqual([{ force: true }]);
+  });
+});
+
+describe("createDockerExecutor image auto-pull", () => {
+  const notFound = Object.assign(new Error("No such image"), {
+    statusCode: 404,
+  });
+
+  it("skips pull when the image already exists locally", async () => {
+    const fake = fakeDocker();
+    await createDockerExecutor("worker-img:1", () => fake.client).start(
+      startContext(),
+    );
+    expect(fake.pullCalls).toEqual([]);
+    expect(fake.container.createConfig.Image).toBe("worker-img:1");
+  });
+
+  it("pulls once when inspect returns 404, then creates the container", async () => {
+    const fake = fakeDocker({ inspectError: notFound });
+    await createDockerExecutor("worker-img:1", () => fake.client).start(
+      startContext(),
+    );
+    expect(fake.pullCalls).toEqual(["worker-img:1"]);
+    expect(fake.container.createConfig.Image).toBe("worker-img:1");
+  });
+
+  it("pulls again if a previously pulled image is later missing", async () => {
+    const fake = fakeDocker({ inspectError: notFound });
+    const executor = createDockerExecutor("deleted-img:1", () => fake.client);
+    await executor.start(startContext());
+    await executor.start({ ...startContext(), runId: "later-run" });
+    expect(fake.pullCalls).toEqual(["deleted-img:1", "deleted-img:1"]);
+  });
+
+  it("deduplicates concurrent pulls of the same image across runs", async () => {
+    const fake = fakeDocker({ inspectError: notFound });
+    const starts = await Promise.all(
+      ["run_a", "run_b", "run_c"].map((runId) =>
+        createDockerExecutor("shared-img:2", () => fake.client).start({
+          ...startContext(),
+          runId,
+        }),
+      ),
+    );
+    expect(fake.pullCalls).toEqual(["shared-img:2"]);
+    expect(starts).toHaveLength(3);
+  });
+
+  it("surfaces an actionable error (without env secrets) when pull fails", async () => {
+    const fake = fakeDocker({ inspectError: notFound, pullError: new Error("pull access denied") });
+    await expect(
+      createDockerExecutor("private-img:9", () => fake.client).start(
+        startContext(),
+      ),
+    ).rejects.toThrow(/Failed to pull missing worker image "private-img:9"/);
+    // 失败不缓存：后续 run 可重试拉取
+    await expect(
+      createDockerExecutor("private-img:9", () => fake.client).start(
+        startContext(),
+      ),
+    ).rejects.toThrow(/docker pull private-img:9/);
+    expect(fake.pullCalls).toEqual(["private-img:9", "private-img:9"]);
+  });
+
+  it("does not pull and rethrows when inspect fails with a non-404 error", async () => {
+    const daemonErr = Object.assign(
+      new Error("permission denied while accessing docker.sock"),
+      { statusCode: 403 },
+    );
+    const fake = fakeDocker({ inspectError: daemonErr });
+    await expect(
+      createDockerExecutor("worker-img:1", () => fake.client).start(
+        startContext(),
+      ),
+    ).rejects.toThrow("permission denied while accessing docker.sock");
+    expect(fake.pullCalls).toEqual([]);
+  });
+
+  it("times out and destroys a stalled pull stream without creating a container", async () => {
+    vi.useFakeTimers();
+    try {
+      const stream = new PassThrough();
+      const fake = fakeDocker({
+        inspectError: notFound,
+        pullImpl: () => stream,
+      });
+      const startP = createDockerExecutor("stalled-img:1", () => fake.client)
+        .start(startContext());
+      const assertion = expect(startP).rejects.toThrow(
+        /timed out after 10 minutes/,
+      );
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+      await assertion;
+      expect(stream.destroyed).toBe(true);
+      const assertion2 = expect(
+        createDockerExecutor("stalled-img:1", () => fake.client).start(
+          startContext(),
+        ),
+      ).rejects.toThrow(/timed out after 10 minutes/);
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+      await assertion2;
+      expect(fake.pullCalls).toEqual(["stalled-img:1", "stalled-img:1"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("destroys a stream that arrives after the pull timeout fired", async () => {
+    vi.useFakeTimers();
+    try {
+      let resolvePull: (s: PassThrough) => void = () => {};
+      const fake = fakeDocker({
+        inspectError: notFound,
+        pullImpl: () =>
+          new Promise<PassThrough>((resolve) => {
+            resolvePull = resolve;
+          }),
+      });
+      const startP = createDockerExecutor("late-img:1", () => fake.client)
+        .start(startContext());
+      const assertion = expect(startP).rejects.toThrow(
+        /timed out after 10 minutes/,
+      );
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+      await assertion;
+      const late = new PassThrough();
+      resolvePull(late);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(late.destroyed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects synchronous progress errors immediately and clears the timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const stream = new PassThrough();
+      const fake = fakeDocker({ inspectError: notFound, pullImpl: () => stream });
+      vi.spyOn(fake.client.modem, "followProgress").mockImplementation(() => {
+        throw new Error("invalid progress stream");
+      });
+      await expect(createDockerExecutor("sync-progress-img:1", () => fake.client).start(startContext()))
+        .rejects.toThrow("invalid progress stream");
+      expect(stream.destroyed).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(() => fake.container).toThrow("createContainer not called yet");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("surfaces a pull stream error emitted before container creation", async () => {
+    let stream: PassThrough | undefined;
+    const fake = fakeDocker({
+      inspectError: notFound,
+      pullImpl: () => {
+        stream = new PassThrough();
+        process.nextTick(() => stream!.emit("error", new Error("layer fetch failed")));
+        return stream;
+      },
+    });
+    await expect(
+      createDockerExecutor("err-img:1", () => fake.client).start(
+        startContext(),
+      ),
+    ).rejects.toThrow(/Failed to pull missing worker image "err-img:1".*layer fetch failed/s);
+    await expect(
+      createDockerExecutor("err-img:1", () => fake.client).start(
+        startContext(),
+      ),
+    ).rejects.toThrow(/layer fetch failed/);
+    expect(fake.pullCalls).toEqual(["err-img:1", "err-img:1"]);
   });
 });

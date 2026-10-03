@@ -187,6 +187,7 @@ export async function fetchUpstreamModelsLocally(
 const NODE_ID_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 
 export const nodeOperationSchema = z.discriminatedUnion('op', [
+  z.object({ op: z.literal('node-health') }).strict(),
   z
     .object({
       op: z.literal('provider-test'),
@@ -251,6 +252,10 @@ export async function handleNodeOperation(
       return true;
     }
     switch (operation.op) {
+      case 'node-health': {
+        reply.code(200).send({ enabled: true, nodeId: appConfig.node.id, controlId: appConfig.node.controlId });
+        return true;
+      }
       case 'provider-test': {
         const provider = await providerDb.getById(operation.providerId);
         if (!provider) {

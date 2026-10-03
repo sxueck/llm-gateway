@@ -109,6 +109,20 @@ describe('handleNodeOperation source authorization', () => {
   });
 });
 
+describe("operation 'node-health'", () => {
+  test('only the control node can diagnose a peer', async () => {
+    const reply = createReply();
+    expect(await handleNodeOperation('node-a', { op: 'node-health' }, reply)).toBe(true);
+    expect(reply.payload).toEqual({ enabled: true, nodeId: 'node-b', controlId: 'node-a' });
+    expect(mocks.provider).not.toHaveBeenCalled();
+    const forbidden = createReply();
+    expect(await handleNodeOperation('node-c', { op: 'node-health' }, forbidden)).toBe(true);
+    expect(forbidden.statusCode).toBe(403);
+    const invalid = createReply();
+    expect(await handleNodeOperation('node-a', { op: 'node-health', url: 'https://other.test' }, invalid)).toBe(false);
+  });
+});
+
 describe("operation 'provider-test' on the owner node", () => {
   test('verifies fresh ownership and executes the local TCP test', async () => {
     const { server, baseUrl } = await startLocalServer();

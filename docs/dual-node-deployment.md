@@ -74,6 +74,16 @@ docker compose --env-file .env.node-b.local -f compose/dual-node.yml up -d
 
 该 Compose 不挂载 Docker socket，也未默认启用 Agent worker。如果需要 Agent，仅在控制节点按 [Docker 部署指南](docker-deployment.md) 配置 worker 镜像、工作区和 socket；另一地不执行 Agent，也不对外提供 Agent 路由。
 
+## 节点诊断页面
+
+控制节点后台的 **高级工具 → 节点运维** 展示部署配置、节点地址和供应商归属。未启用多节点时隐藏菜单，直接访问 `/node-operations` 只显示禁用态。开发者调试与数据库整理也归入高级工具，原有访问地址保持不变。
+
+- `GET /api/admin/nodes`：管理员登录后查看节点和归属信息；不返回认证密钥或供应商 Key。
+- `POST /api/admin/nodes/:id/check`：手动诊断配置中的节点，走既有 epoch + HMAC dispatch 通道，执行只读 `node-health` 操作。仅控制节点可发起，不接受任意目标 URL，不调用上游模型。
+- 单次诊断最多 8 秒，同一节点的并发诊断合并；本地节点不标记为已通过远端认证。网络失败/超时显示未知，认证拒绝或身份不匹配显示错误。检查时间与耗时仅反映本次探测，不是持续在线监控；过载响应不等同于认证失败。
+
+两地必须更新到支持 `node-health` 的相同版本。诊断通过只证明控制节点到该 peer 的通信和认证正常，不证明反向链路或上游模型可用；仍需按照本文验收步骤发送真实模型请求，结合 `X-Gateway-Execution-Node` 与日志的 `ingress_node` / `execution_node` 核实执行路径。
+
 ## 供应商归属
 
 管理后台“提供商”表单新增 **Owner 节点**（下拉列出本节点可执行的节点 ID），API 对应 `ownerNode`：
