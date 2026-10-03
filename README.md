@@ -18,9 +18,6 @@
 <p align="center">
   <img width="80%" alt="Dashboard" src="https://github.com/user-attachments/assets/a69d7e89-5225-4c2e-bae3-d11faddc9b56" />
 </p>
-<p align="center">
-  <img width="80%" alt="Health Monitoring" src="https://github.com/user-attachments/assets/196adf78-2346-41f9-903b-a18920464486" />
-</p>
 
 <p align="center">
   <a href="./docs/screenshot.md">更多截图</a>
@@ -30,7 +27,6 @@
 
 - [特性](#特性)
 - [快速开始](#快速开始)
-- [健康监控](#健康监控)
 - [意图路由分类器](#意图路由分类器)
 - [贡献](#贡献)
 - [许可证](#许可证)
@@ -41,13 +37,15 @@
 | 功能 | 描述 |
 | ------ | ------ |
 | **提供商管理** | 支持 20+ 主流 LLM 提供商：OpenAI、Anthropic、Google、DeepSeek 等 |
+| **跨地域双节点** | [两地固定 owner 部署](docs/dual-node-deployment.md)，供应商固定归属、跨节点转发，故障不接管 |
 | **虚拟密钥** | 创建和管理虚拟 API 密钥，支持速率限制和访问控制 |
 | **路由配置** | 负载均衡和故障转移策略，提高服务可用性 |
 | **模型管理** | 统一管理所有提供商的模型，支持批量导入和自定义配置 |
 | **多端点支持** | 兼容 `/v1/chat/completions`、`/v1/responses`、`/v1/messages` 等端点 |
-| **健康监控** | 免登录健康检查页面，实时展示模型可用率、延迟分位数（P50/P95）和错误分布 |
 | **用户认证** | 基于 JWT 的安全认证机制 |
 | **实时监控** | 仪表盘展示系统状态和配置信息 |
+| **成本分析** | 按 models.dev 官方牌价计量，模型名自动归一到官方实验室条目（前缀、`[1m]`、快照日期等装饰不参与比价） |
+| **系统告警** | 顶部铃铛体检 Worker 镜像与 Docker 可用性、成本价缺失与预设过期、供应商熔断、写入缓冲积压、备份过期 |
 | **中转站支持** | 隔离 Codex 等上游强制注入的提示词，使下游应用对 Prompt 遵循更规范 |
 | **内置 PII 保护** | 自动检测和脱敏请求中的个人身份信息，支持流式响应还原 |
 
@@ -147,69 +145,35 @@ bun run start
 5. **使用虚拟密钥访问 API** - 在应用中调用 LLM Gateway
 
 
-### 限流保护
+## Jev 智能分级路由
 
-健康监控 API 默认启用限流保护：
+智能分级路由（原专家路由）使用 Jev 的 `choice` 决策把请求分为 low / medium / high 三个难度档，每个档位配置一组候选模型（同一档内按配置顺序优先）。分类失败或候选均不可用时走 fail-open 链（fallback / 交回上层路由 / 报错）；`escalate_only` 会话策略下同一会话只升档不降档，agent 工具续写轮次直接复用上一轮决策；带图片/工具或超上下文窗口的请求会先按能力过滤候选再选档。
 
-- 每个 IP 每分钟最多 60 个请求
-- 超过限制将返回 429 错误
+配置支持空草稿：创建/保存时可以不带任何候选模型，但空草稿强制保持禁用状态，启用（含创建时请求 `enabled: true`）要求至少配置一个候选模型，否则返回 400。
 
-
-## 意图路由分类器
-
-LLM Gateway 的专家路由（Expert Routing）使用独立部署的 Intent Router API 作为第一级路由决策器。它将用户意图分类到 21 个标签（coding 9 类 + ops 8 类 + general_control 3 类 + out_of_scope）；被拒判、无可用专家映射或服务不可用时，网关回退到 LLM 二次分类。
-
-### 配置外置分类服务
-
-设置 `INTENT_ROUTER_API_URL` 为绝对 HTTP(S) 地址；容器编排中可直接使用服务名，例如 `http://intent-router:8000`。服务启用认证时，设置可选的 `INTENT_ROUTER_API_KEY`；`INTENT_ROUTER_API_TIMEOUT_MS` 默认为 5000 毫秒。
+在后端部署环境中配置完整的 Jev Decisions 请求 URL、密钥及上游模型名：
 
 ```bash
-INTENT_ROUTER_API_URL=https://intent-api.sxueck.com
-# INTENT_ROUTER_API_KEY=change-me
+JEV_API_URL=https://api.typesafe.ai/v1/systemone
+JEV_API_KEY=<server-side-key>
+JEV_MODEL=jev-1.13.0
+# JEV_API_TIMEOUT_MS=800            # 分类器超时（默认 800ms）
+# JEV_BREAKER_THRESHOLD=3           # 连续失败熔断阈值
+# JEV_BREAKER_COOLDOWN_MS=30000     # 熔断冷却时长
 ```
 
-网关不再下载或加载 ONNX 模型。未配置或无法访问该服务时，专家路由继续走 LLM 二次分类 / fallback，而 `/v1/intent/classify` 返回 `503`。
+OpenRouter 可使用 `JEV_API_URL=https://openrouter.ai/api/alpha/decisions` 和 `JEV_MODEL=typesafe/jev-1.13`。不要将密钥放入前端；已有启用的分级路由但未配置 Jev 时，服务启动会输出警告日志，运行时 Jev 不可用的请求走 fail-open。旧的 `/v1/intent/classify` 已移除；通用 `/v1/systemone` 代理端点保留。
 
-### 意图分类 API
+### 客户端可见的路由信息
 
-本地分类器同时以外部 API 形式开放，返回原始信号量（完整 label→score 分布，按分数降序），不做专家映射、拒绝决策或会话绑定。鉴权使用任意启用的虚拟密钥（Bearer）。
+分级路由的响应默认携带 `X-Gateway-Routed-Model`（网关内模型名）、`X-Gateway-Upstream-Model`（实际发性上游的模型 id）、`X-Gateway-Route-Tier`（low/medium/high）、`X-Gateway-Route-Source`（jev/session/fallback/fail_open/manual/cache）与 `X-Gateway-Route-Id`（路由日志 id）。可在路由配置的「对外透出」中关闭响应头、改写 body `model` 字段口径（upstream/gateway_name）或开启 SSE 调试注释行（`exposure.sse_comment`）。
 
-```bash
-curl -X POST http://your-gateway-url/v1/intent/classify \
-  -H "Authorization: Bearer <你的虚拟密钥>" \
-  -H "Content-Type: application/json" \
-  -d '{"input": "帮我写一个快排", "top_n": 5}'
-```
+### 手动指定档位
 
-**请求参数：**
+- 请求头：`X-Gateway-Tier: low|medium|high`，跳过分类器直接路由到对应档；
+- 模型名后缀：对外模型名追加 `-auto-high` / `-auto-medium` / `-auto-low`（如 `my-router-auto-high`），解析为基础模型并强制档位。
 
-| 参数 | 类型 | 说明 | 默认值 |
-| ------ | ------ | ------ | -------- |
-| `input` | string | 待分类文本（必填，非空，直接送分类器，不做路由预处理） | - |
-| `top_n` | int | 截取前 N 个标签；超过标签总数时返回全量 | 返回全量（21） |
-| `max_tokens` | int | 分词器截断上限 | 1024 |
-
-**响应示例：**
-
-```json
-{
-  "object": "intent_classification",
-  "model": "snival/intent-router-zh-setfit-v2",
-  "revision": "44b7e54f38c4657708c59a0ea7b4dfbf7226cf61",
-  "labels": [
-    { "label": "coding", "score": 0.92 },
-    { "label": "general_control", "score": 0.03 }
-  ],
-  "total_labels": 21,
-  "seq_len": 8,
-  "input_truncated": false,
-  "latency_ms": 12
-}
-```
-
-**错误码：** `401`（鉴权失败）、`400`（参数校验失败）、`503`（分类器未就绪，模型资产未加载）、`500`（推理失败）。
-
-> 注意：外部输入不经过专家路由的 `SignalBuilder` 去噪，与内部路由的分类结果可能不同；该端点为原始信号接口
+手动档位是显式意图：`escalate_only` 下不会强制拉回绑定档；绑定仅在手动档更高时升档。
 
 ## Cloud SubAgent
 

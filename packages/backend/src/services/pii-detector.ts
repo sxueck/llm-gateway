@@ -32,9 +32,9 @@ const MAX_FIELD_SCAN_LENGTH = parseInt(process.env.PII_MAX_FIELD_SCAN_LENGTH || 
 /**
  * Upper bound on the number of raw match candidates collected per field.
  *
- * The overlap-resolution step is quadratic in the candidate count, so a field
- * full of e.g. tens of thousands of IPs/emails (pasted logs) could otherwise
- * stall the event loop. Once the cap is hit we stop collecting (accept 漏检).
+ * Sorting candidates and building the overlap index still use CPU and memory
+ * proportional to the match count. A field full of IPs/emails (pasted logs)
+ * can stall the event loop; once the cap is hit we stop collecting (accept 漏检).
  */
 const MAX_MATCHES_PER_FIELD = parseInt(process.env.PII_MAX_MATCHES_PER_FIELD || '2000', 10);
 
@@ -186,17 +186,90 @@ function _detectPii(text: string): DetectedPii[] {
   return finalizeCandidates(candidates);
 }
 
+class IntervalOverlapIndex {
+  private readonly segmentCount: number;
+  private readonly max: number[];
+  private readonly lazy: number[];
+
+  constructor(coordinates: number[]) {
+    this.segmentCount = Math.max(1, coordinates.length - 1);
+    this.max = Array.from({ length: this.segmentCount * 4 }, () => 0);
+    this.lazy = Array.from({ length: this.segmentCount * 4 }, () => 0);
+  }
+
+  hasOverlap(start: number, end: number): boolean {
+    if (start >= end) return false;
+    return this.query(1, 0, this.segmentCount - 1, start, end - 1) > 0;
+  }
+
+  add(start: number, end: number): void {
+    if (start >= end) return;
+    this.update(1, 0, this.segmentCount - 1, start, end - 1);
+  }
+
+  private apply(node: number, amount: number): void {
+    this.max[node] += amount;
+    this.lazy[node] += amount;
+  }
+
+  private push(node: number): void {
+    const amount = this.lazy[node];
+    if (amount === 0) return;
+    this.apply(node * 2, amount);
+    this.apply(node * 2 + 1, amount);
+    this.lazy[node] = 0;
+  }
+
+  private update(node: number, left: number, right: number, start: number, end: number): void {
+    if (start <= left && right <= end) {
+      this.apply(node, 1);
+      return;
+    }
+
+    this.push(node);
+    const middle = Math.floor((left + right) / 2);
+    if (start <= middle) {
+      this.update(node * 2, left, middle, start, end);
+    }
+    if (end > middle) {
+      this.update(node * 2 + 1, middle + 1, right, start, end);
+    }
+    this.max[node] = Math.max(this.max[node * 2], this.max[node * 2 + 1]);
+  }
+
+  private query(node: number, left: number, right: number, start: number, end: number): number {
+    if (start <= left && right <= end) return this.max[node];
+
+    this.push(node);
+    const middle = Math.floor((left + right) / 2);
+    let result = 0;
+    if (start <= middle) {
+      result = Math.max(result, this.query(node * 2, left, middle, start, end));
+    }
+    if (end > middle) {
+      result = Math.max(result, this.query(node * 2 + 1, middle + 1, right, start, end));
+    }
+    return result;
+  }
+}
+
 function finalizeCandidates(candidates: PiiMatchCandidate[]): DetectedPii[] {
   candidates.sort((a, b) => a.priority - b.priority || a.start - b.start || b.end - a.end);
 
+  const coordinates = [...new Set(candidates.flatMap(candidate => [candidate.start, candidate.end]))].sort(
+    (a, b) => a - b,
+  );
+  const coordinateIndex = new Map(coordinates.map((coordinate, index) => [coordinate, index]));
+  const overlapIndex = new IntervalOverlapIndex(coordinates);
   const accepted: PiiMatchCandidate[] = [];
+
+  // Half-open coordinate segments preserve the existing start/end overlap semantics.
   for (const candidate of candidates) {
-    const overlapsAccepted = accepted.some(
-      (existing) => candidate.start < existing.end && candidate.end > existing.start
-    );
-    if (overlapsAccepted) {
-      continue;
-    }
+    const start = coordinateIndex.get(candidate.start);
+    const end = coordinateIndex.get(candidate.end);
+    if (start === undefined || end === undefined) continue;
+    if (overlapIndex.hasOverlap(start, end)) continue;
+    overlapIndex.add(start, end);
     accepted.push(candidate);
   }
 

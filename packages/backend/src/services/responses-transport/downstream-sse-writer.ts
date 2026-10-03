@@ -1,6 +1,7 @@
 import type { FastifyReply } from 'fastify';
 import type { ResponsesServerEvent, ResponsesStreamResult } from './types.js';
 import { serverEventToSseFrame } from './helpers.js';
+import { writeWithBackpressure } from '../../utils/stream-guards.js';
 
 export interface DownstreamSseWriterOptions {
   reply: FastifyReply;
@@ -39,11 +40,7 @@ export async function writeEventsToSse(
 
     const frame = serverEventToSseFrame(event);
 
-    if (!reply.raw.write(frame)) {
-      await new Promise<void>((resolve) => {
-        reply.raw.once('drain', resolve);
-      });
-    }
+    await writeWithBackpressure(reply.raw, frame);
   }
 
   if (!reply.raw.destroyed && !reply.raw.writableEnded) {

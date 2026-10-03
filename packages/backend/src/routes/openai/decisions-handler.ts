@@ -20,7 +20,7 @@ import { extractIp } from "../../utils/ip.js";
 import { getRequestUserAgent } from "../../utils/http.js";
 import { normalizeUsageCounts } from "../../utils/usage-normalizer.js";
 import { CLIENT_ABORTED_MESSAGE } from "../../utils/client-abort.js";
-import { circuitBreaker } from "../../services/circuit-breaker.js";
+import { circuitBreaker, httpFailureError } from "../../services/circuit-breaker.js";
 
 export function stripTrailingV1(baseUrl?: string): string {
   return (baseUrl || "").replace(/\/+$/, "").replace(/\/v1$/i, "");
@@ -44,16 +44,6 @@ export function createDecisionsProxyHandler() {
     const pipelineResult = await runProxyPipeline(request, reply, {
       protocol: "openai",
       handlers: {
-        onManualBlock: ({ reply }) => {
-          reply.code(403).send({
-            error: {
-              message: "Access denied: IP blocked",
-              type: "access_denied",
-              param: "ip",
-              code: "ip_blocked",
-            },
-          });
-        },
         onAntiBotBlock: ({ reply }) => {
           reply.code(403).send({
             error: {
@@ -66,6 +56,16 @@ export function createDecisionsProxyHandler() {
         },
         onAuthError: ({ reply, authError }) => {
           reply.code(authError.code).send(authError.body);
+        },
+        onRateLimited: ({ reply, limitPerMinute, retryAfterSeconds }) => {
+          reply.code(429).send({
+            error: {
+              message: `Rate limit exceeded for this virtual key (limit: ${limitPerMinute} requests/min). Retry after ${retryAfterSeconds}s.`,
+              type: "rate_limit_error",
+              param: null,
+              code: "rate_limit_exceeded",
+            },
+          });
         },
         onModelError: ({ reply, modelError }) => {
           reply.code(modelError.code).send(modelError.body);
@@ -182,7 +182,7 @@ export function createDecisionsProxyHandler() {
       } else {
         circuitBreaker.recordFailure(
           circuitBreakerKey,
-          new Error(`HTTP ${response.statusCode}`),
+          httpFailureError(response.statusCode),
         );
       }
 

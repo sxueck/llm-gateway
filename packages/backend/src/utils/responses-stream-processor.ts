@@ -4,6 +4,7 @@ import { normalizeUsageCounts } from './usage-normalizer.js';
 import { BoundedChunkRecorder } from './bounded-chunk-recorder.js';
 import { createInitialAggregate, processResponsesEvent, type ResponsesAggregate } from './responses-parser.js';
 import { EmptyOutputError } from '../errors/empty-output-error.js';
+import { StreamTruncatedError, withStreamIdleTimeout, writeWithBackpressure } from './stream-guards.js';
 
 // Responses API 空输出重试默认次数（可通过环境变量或模型属性配置）
 export const DEFAULT_RESPONSES_EMPTY_OUTPUT_MAX_RETRIES = Math.max(
@@ -66,6 +67,14 @@ function responsesEventHasAssistantContent(event: any): boolean {
   return false;
 }
 
+/** Events after which an upstream Responses stream is legitimately complete. */
+const TERMINAL_RESPONSE_EVENTS = new Set([
+  'response.completed',
+  'response.incomplete',
+  'response.failed',
+  'response.done',
+]);
+
 export interface OpenAIResponsesStreamProcessorOptions {
   client: any;
   requestParams: any;
@@ -78,7 +87,8 @@ export interface OpenAIResponsesStreamProcessorOptions {
 
   totalAttempts: number;
   initTimeoutMs: number;
-
+  /** Max silence between upstream events once the stream has started; 0/undefined disables. */
+  streamIdleTimeoutMs?: number;
   streamRestorer?: SyncStreamRestorer | null;
 
   logger?: StreamLogger;
@@ -126,9 +136,7 @@ class SseWriter {
   async write(data: string): Promise<void> {
     this.recorded.record(data);
     this.ensureHeadersSent();
-    if (!this.reply.raw.write(data)) {
-      await new Promise<void>((resolve) => this.reply.raw.once('drain', resolve));
-    }
+    await writeWithBackpressure(this.reply.raw, data);
   }
 
   /** Buffer a frame while in the buffering phase. */
@@ -170,6 +178,7 @@ async function runStreamAttempt(
     baseUpstreamRequestOptions?: any;
     abortSignal?: AbortSignal;
     initTimeoutMs: number;
+    streamIdleTimeoutMs?: number;
     streamRestorer?: SyncStreamRestorer | null;
   },
   logger?: StreamLogger
@@ -182,6 +191,7 @@ async function runStreamAttempt(
     baseUpstreamRequestOptions,
     abortSignal,
     initTimeoutMs,
+    streamIdleTimeoutMs,
     streamRestorer,
   } = deps;
 
@@ -202,8 +212,12 @@ async function runStreamAttempt(
 
   const attemptAbortController = new AbortController();
   let initTimeoutId: ReturnType<typeof setTimeout> | undefined;
+  let initTimedOut = false;
   if (initTimeoutMs > 0) {
-    initTimeoutId = setTimeout(() => attemptAbortController.abort(), initTimeoutMs);
+    initTimeoutId = setTimeout(() => {
+      initTimedOut = true;
+      attemptAbortController.abort();
+    }, initTimeoutMs);
   }
 
   let abortHandler: (() => void) | undefined;
@@ -228,17 +242,35 @@ async function runStreamAttempt(
       requestParams,
       attemptUpstreamRequestOptions
     )) as unknown as AsyncIterable<any>;
+  } catch (error: any) {
+    if (abortSignal && abortHandler) {
+      abortSignal.removeEventListener('abort', abortHandler as any);
+    }
+    if (initTimedOut && !abortSignal?.aborted) {
+      const timeoutError: any = new Error(`Upstream did not start the stream within ${initTimeoutMs}ms`);
+      timeoutError.status = 504;
+      throw timeoutError;
+    }
+    throw error;
   } finally {
     if (initTimeoutId) {
       clearTimeout(initTimeoutId);
     }
   }
 
+  stream = withStreamIdleTimeout(stream, streamIdleTimeoutMs ?? 0, () => attemptAbortController.abort());
+  let sawTerminalEvent = false;
+  let clientGone = false;
   try {
     for await (const chunk of stream) {
       if (reply.raw.destroyed || reply.raw.writableEnded) {
         logger?.info('客户端已断开连接，停止流式传输', 'Protocol');
+        clientGone = true;
         break;
+      }
+
+      if (TERMINAL_RESPONSE_EVENTS.has((chunk as any)?.type)) {
+        sawTerminalEvent = true;
       }
 
       if (chunk && typeof chunk === 'object' && 'instructions' in chunk) {
@@ -309,6 +341,17 @@ async function runStreamAttempt(
         await writer.enqueue(serializeChunkToSse(flushEvent));
       }
     }
+
+    // The SDK ends the iterator silently on a graceful close, so completion must be checked here.
+    if (
+      hasAssistantOutput &&
+      !sawTerminalEvent &&
+      !bypassEmptyGuard &&
+      !clientGone &&
+      !abortSignal?.aborted
+    ) {
+      throw new StreamTruncatedError('Upstream Responses stream ended before a terminal event');
+    }
   } finally {
     if (abortSignal && abortHandler) {
       abortSignal.removeEventListener('abort', abortHandler as any);
@@ -374,6 +417,7 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
     abortSignal,
     totalAttempts,
     initTimeoutMs,
+    streamIdleTimeoutMs,
     streamRestorer,
     logger,
   } = options;
@@ -392,7 +436,7 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
       const result = await runStreamAttempt(
         attempt,
         totalAttempts,
-        { client, requestParams, reply, responseHeaders, baseUpstreamRequestOptions, abortSignal, initTimeoutMs, streamRestorer },
+        { client, requestParams, reply, responseHeaders, baseUpstreamRequestOptions, abortSignal, initTimeoutMs, streamIdleTimeoutMs, streamRestorer },
         logger
       );
 

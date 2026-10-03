@@ -1,5 +1,3 @@
-import { PROVIDER_PRESETS } from '@/constants/providers';
-
 export function validateProviderId(id: string): {
   isValid: boolean;
   message?: string;
@@ -45,23 +43,20 @@ export function validateProviderId(id: string): {
   };
 }
 
-/**
- * 获取提供商 ID 建议
- */
-export function getProviderIdSuggestions(input: string): string[] {
-  if (!input || input.length < 2) {
-    return [];
+export function validateOwnerNode(ownerNode: string): {
+  isValid: boolean;
+  message?: string;
+} {
+  if (!ownerNode) {
+    return { isValid: true };
   }
-
-  const suggestions = PROVIDER_PRESETS
-    .filter(p => 
-      p.id.includes(input.toLowerCase()) || 
-      p.name.toLowerCase().includes(input.toLowerCase())
-    )
-    .map(p => p.id)
-    .slice(0, 5);
-
-  return suggestions;
+  if (!/^[a-z][a-z0-9-]{0,31}$/.test(ownerNode)) {
+    return {
+      isValid: false,
+      message: '归属节点 ID 必须以小写字母开头，仅含小写字母、数字、连字符，长度 1-32',
+    };
+  }
+  return { isValid: true };
 }
 
 export function validateBaseUrl(url: string): {

@@ -36,8 +36,104 @@ function childHandle(child: ChildProcess): ExecutorHandle {
   };
 }
 
-/** executor 依赖的 dockerode 客户端面；收窄到 createContainer 以便测试注入假实现。 */
-export type DockerClient = Pick<Docker, "createContainer">;
+export type DockerClient = Pick<
+  Docker,
+  "createContainer" | "getImage" | "pull" | "modem"
+>;
+
+type PullStream = Awaited<ReturnType<DockerClient["pull"]>>;
+
+function destroyPullStream(stream: PullStream): void {
+  (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
+}
+
+/** 同一镜像的并发拉取去重：多个 run 同时发现镜像缺失时只发一次 docker pull。 */
+const pendingPulls = new Map<string, Promise<void>>();
+
+/** 拉取整体硬上限：scheduler 超时在 executor.start 之后才计时，此处不设界会占死 worker 并发。 */
+const PULL_TIMEOUT_MS = 10 * 60 * 1000;
+
+function isImageNotFound(err: unknown): boolean {
+  return (err as { statusCode?: number } | null)?.statusCode === 404;
+}
+
+function asErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function pullTimeoutError(image: string): Error {
+  return new Error(
+    `Pull of worker image "${image}" timed out after ${
+      PULL_TIMEOUT_MS / 60000
+    } minutes`,
+  );
+}
+
+function pullWithTimeout(
+  client: DockerClient,
+  image: string,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let stream: PullStream | undefined;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      if (stream) destroyPullStream(stream);
+      reject(pullTimeoutError(image));
+    }, PULL_TIMEOUT_MS);
+    timer.unref?.();
+    Promise.resolve().then(() => client.pull(image)).then(
+      (s) => {
+        if (timedOut) {
+          destroyPullStream(s);
+          return;
+        }
+        stream = s;
+        client.modem.followProgress(s, (err, _output) => {
+          clearTimeout(timer);
+          if (timedOut) return;
+          if (err) {
+            destroyPullStream(s);
+            reject(err);
+          } else resolve();
+        });
+      },
+    ).catch((err) => {
+      clearTimeout(timer);
+      if (stream) destroyPullStream(stream);
+      if (!timedOut) reject(err);
+    });
+  });
+}
+
+/**
+ * 确保 worker 镜像存在：仅在 inspect 返回 404（真缺镜像）时拉取；
+ * daemon 权限/网络等其他错误原样抛出，不做业务重试。
+ */
+async function ensureImage(client: DockerClient, image: string): Promise<void> {
+  try {
+    await client.getImage(image).inspect();
+    return;
+  } catch (err) {
+    if (!isImageNotFound(err)) throw err;
+  }
+  let pending = pendingPulls.get(image);
+  if (!pending) {
+    pending = pullWithTimeout(client, image);
+    // Only in-flight pulls are shared; a later image deletion must trigger a fresh pull.
+    pending.then(() => pendingPulls.delete(image), () => pendingPulls.delete(image));
+    pendingPulls.set(image, pending);
+  }
+  try {
+    await pending;
+  } catch (err) {
+    throw new Error(
+      `Failed to pull missing worker image "${image}". ` +
+        `Verify registry access/credentials (e.g. docker pull ${image}) and retry. ` +
+        `Cause: ${asErrorMessage(err)}`,
+    );
+  }
+}
 
 export function createDockerExecutor(
   image: string,
@@ -55,7 +151,9 @@ export function createDockerExecutor(
         AGENT_PLUGIN_FILE: "/run/plugin.json",
         AGENT_WORKSPACE_ROOT: "/workspace/repo",
       };
-      const container = await createClient().createContainer({
+      const client = createClient();
+      await ensureImage(client, image);
+      const container = await client.createContainer({
         Image: image,
         name: containerName,
         Env: Object.entries(env).map(([k, v]) => `${k}=${v}`),

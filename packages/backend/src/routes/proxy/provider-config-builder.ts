@@ -2,9 +2,10 @@ import { FastifyRequest } from 'fastify';
 import { decryptApiKey } from '../../utils/crypto.js';
 import { memoryLogger } from '../../services/logger.js';
 import { ProviderAdapterFactory } from '../../services/provider-adapter.js';
-import { getBaseUrlForProtocol, parseSupportedProtocols } from '../../utils/protocol-utils.js';
+import { getBaseUrlForProtocol, getProviderSupportedProtocols } from '../../utils/protocol-utils.js';
 import type { ProtocolConfig } from '../../services/protocol-adapter.js';
 import { normalizePath, isEmbeddingsPath } from '../../utils/path-detector.js';
+import { isRemoteProvider, nodeError } from '../../services/node-dispatch.js';
 
 export interface ProviderConfigResult {
   protocolConfig: ProtocolConfig;
@@ -56,6 +57,9 @@ export async function buildProviderConfig(
   currentModel?: any,
   entrypointProtocol?: 'openai' | 'anthropic' | 'gemini'
 ): Promise<ProviderConfigResult | ProviderConfigError> {
+  if (isRemoteProvider(provider)) {
+    return { code: 503, body: nodeError('owner_node_required', 'Provider must execute on its owner node') };
+  }
   const decryptedApiKey = decryptApiKey(provider.api_key);
 
   const [rawPath, rawQuery = ''] = request.url.split('?');
@@ -86,18 +90,20 @@ export async function buildProviderConfig(
     effectiveProtocol = 'openai';
   }
 
-  // Validate final resolved model's supported protocols whitelist
-  if (currentModel) {
-    const supported = parseSupportedProtocols(currentModel.supported_protocols);
-    if (!supported.includes(effectiveProtocol)) {
+  // Validate the provider actually offers the effective protocol: protocol
+  // capability is provider-scoped (base_url → openai; protocol_mappings → others)
+  // and inherited by every model under it.
+  {
+    const supported = getProviderSupportedProtocols(provider);
+    if (supported.length > 0 && !supported.includes(effectiveProtocol)) {
       return {
         code: 400,
         body: {
           error: {
-            message: `Model "${currentModel.name}" does not support protocol "${effectiveProtocol}". Supported protocols: ${supported.join(', ')}`,
+            message: `Provider "${provider.name ?? provider.id}" does not provide protocol "${effectiveProtocol}". Provided protocols: ${supported.join(', ')}`,
             type: 'invalid_request_error',
             param: null,
-            code: 'unsupported_model_protocol',
+            code: 'unsupported_provider_protocol',
           },
         },
       };

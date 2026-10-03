@@ -3,22 +3,10 @@ import type { VirtualModelTarget, RoutingConfigType } from '@/types/virtual-mode
 
 export interface UseRoutingTargetsOptions {
   configType: Ref<RoutingConfigType>;
-  /**
-   * 外部传入的 targets Ref；若提供则直接操作该 Ref，否则内部新建
-   */
   targets?: Ref<VirtualModelTarget[]>;
   initialTargets?: VirtualModelTarget[];
-  /**
-   * 切换路由类型时是否清空 targets，默认 true
-   */
   clearOnTypeChange?: boolean;
-  /**
-   * fallback 模式下默认触发状态码
-   */
   defaultFallbackStatusCodes?: number[];
-  /**
-   * 非 fallback 且非 loadbalance 模式下默认权重
-   */
   defaultWeight?: number;
 }
 
@@ -32,7 +20,6 @@ export function useRoutingTargets(options: UseRoutingTargetsOptions) {
     defaultWeight = 0.5,
   } = options;
 
-  // 若外部提供了 targets 则直接使用，否则内部新建
   const internalTargets = ref<VirtualModelTarget[]>([...initialTargets]);
   const _targets = externalTargets ?? internalTargets;
 

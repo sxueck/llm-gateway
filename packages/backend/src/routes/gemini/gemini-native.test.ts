@@ -19,9 +19,15 @@ vi.mock("../../services/logger.js", () => ({
   },
 }));
 
-vi.mock("../../services/circuit-breaker.js", () => ({
-  circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() },
-}));
+vi.mock("../../services/circuit-breaker.js", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("../../services/circuit-breaker.js")
+  >();
+  return {
+    ...actual,
+    circuitBreaker: { recordSuccess: vi.fn(), recordFailure: vi.fn() },
+  };
+});
 
 vi.mock("../../services/api-request-logger.js", () => ({
   logApiRequestAsync: vi.fn(),

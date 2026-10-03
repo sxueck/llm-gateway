@@ -15,8 +15,7 @@
     "benchmark:dynamic-compression": "tsx scripts/benchmark-dynamic-compression.ts",
     "typecheck": "tsc -p ../shared/tsconfig.json --emitDeclarationOnly && tsc --noEmit",
     "lint": "tsc -p ../shared/tsconfig.json --emitDeclarationOnly && tsc --noEmit --noUnusedLocals false --noUnusedParameters false --noImplicitReturns false",
-    "clean": "rm -rf dist",
-    "fix:db": "node scripts/fix-database.js"
+    "clean": "rm -rf dist"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.940.0",
@@ -36,7 +35,7 @@
     "mysql2": "^3.15.3",
     "nanoid": "^5.0.9",
     "node-cron": "^4.2.1",
-    "openai": "7.22.0",
+    "openai": "7.25.0",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
     "sharp": "^0.33.5",

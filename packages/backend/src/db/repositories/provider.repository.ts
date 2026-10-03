@@ -32,8 +32,8 @@ export const providerRepository = {
     const conn = await pool.getConnection();
     try {
       await conn.query(
-        'INSERT INTO providers (id, name, description, base_url, protocol_mappings, api_key, model_mapping, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [provider.id, provider.name, provider.description || null, provider.base_url, provider.protocol_mappings || null, provider.api_key, provider.model_mapping || null, provider.enabled, now, now]
+        'INSERT INTO providers (id, name, description, base_url, protocol_mappings, api_key, model_mapping, owner_node, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [provider.id, provider.name, provider.description || null, provider.base_url, provider.protocol_mappings || null, provider.api_key, provider.model_mapping || null, provider.owner_node ?? null, provider.enabled, now, now]
       );
       return { ...provider, created_at: now, updated_at: now };
     } finally {
@@ -72,6 +72,11 @@ export const providerRepository = {
       if (updates.model_mapping !== undefined) {
         fields.push('model_mapping = ?');
         values.push(updates.model_mapping);
+      }
+      // owner_node 允许显式置 null（回归默认控制节点），未提供时不动
+      if (updates.owner_node !== undefined) {
+        fields.push('owner_node = ?');
+        values.push(updates.owner_node ?? null);
       }
       if (updates.enabled !== undefined) {
         fields.push('enabled = ?');

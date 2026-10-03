@@ -9,6 +9,7 @@ vi.hoisted(() => {
 
 import Fastify from 'fastify';
 
+import { appConfig } from '../../config/index.js';
 import { requestCache } from '../../services/request-cache.js';
 import { hotConfigCache } from '../../services/hot-config-cache.js';
 import { computeLogicalCacheKey } from '../proxy/cache.js';
@@ -20,9 +21,6 @@ vi.mock('../../db/index.js', () => ({
 }));
 vi.mock('../../services/hot-config-cache.js', () => ({
   hotConfigCache: { getVirtualKeyByKeyValue: vi.fn() },
-}));
-vi.mock('../../services/manual-ip-blocklist.js', () => ({
-  manualIpBlocklist: { isBlocked: vi.fn(async () => null) },
 }));
 vi.mock('../proxy/model-resolver.js', async (importOriginal) => {
   const actual = await importOriginal<any>();
@@ -65,6 +63,7 @@ const cachedResponse = {
 beforeEach(() => {
   vi.clearAllMocks();
   requestCache.clear();
+  appConfig.node = { enabled: false, id: 'local', controlId: 'local', peers: {}, secret: '' };
   vi.mocked(hotConfigCache.getVirtualKeyByKeyValue).mockResolvedValue(virtualKey as any);
 });
 
@@ -112,6 +111,27 @@ test('no early hit without a cached entry: model resolution runs as usual', asyn
   // resolver throws), proving the early return only triggers on a real hit.
   expect(resolverCalls()).toBe(1);
   expect(res.statusCode).toBe(500);
+});
+
+test('node mode still serves an early cache hit on the owning ingress', async () => {
+  appConfig.node = { enabled: true, id: 'node-a', controlId: 'node-a', peers: {}, secret: "node-test-".repeat(4) };
+  const logicalKey = computeLogicalCacheKey(virtualKey, requestBody, false, false)!;
+  requestCache.set(logicalKey, cachedResponse, { 'content-type': 'application/json' }, 60_000);
+
+  const app = Fastify();
+  app.post('/v1/chat/completions', createOpenAIProxyHandler());
+  const res = await app.inject({
+    method: 'POST',
+    url: '/v1/chat/completions',
+    headers: { authorization: `Bearer ${KEY_VALUE}` },
+    payload: requestBody,
+  });
+  await app.close();
+
+  // The ingress owns this provider's cache, so a hit must not pay for resolution.
+  expect(res.statusCode).toBe(200);
+  expect(res.headers['x-cache-status']).toBe('HIT');
+  expect(resolverCalls()).toBe(0);
 });
 
 function resolverCalls(): number {

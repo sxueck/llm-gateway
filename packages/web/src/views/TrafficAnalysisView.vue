@@ -1,11 +1,11 @@
 <template>
   <div>
     <n-space vertical :size="24">
+      <PageHeader eyebrow="MONITORING" :title="t('trafficAnalysis.title')" />
       <n-card>
         <template #header>
           <n-space align="center" justify="space-between">
             <n-space align="center">
-              <span style="font-size: 16px; font-weight: 600;">{{ t('trafficAnalysis.title') }}</span>
               <n-tag v-if="data?.region" size="small" type="info">
                 {{ t('trafficAnalysis.regionLabel') }}: {{ data.region }}
               </n-tag>
@@ -158,6 +158,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
+import PageHeader from '@/components/PageHeader.vue';
 import {
   NSpace, NCard, NButton, NIcon, NTag, NAlert, NSkeleton, NResult, NEmpty,
   NGrid, NGi, NStatistic, NSelect, NSpin, NTooltip, NCheckbox,

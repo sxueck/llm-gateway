@@ -1,14 +1,12 @@
 <template>
   <div class="providers-view">
     <div class="providers-stack">
-      <n-space justify="space-between" align="center">
-        <div>
-          <h2 class="page-title">提供商管理</h2>
-          <p class="page-subtitle">
-            配置和管理 AI 模型提供商,包括 API 密钥、Base URL 等信息。支持导入导出配置
-          </p>
-        </div>
-        <n-space :size="8">
+      <PageHeader
+        eyebrow="MODEL MANAGEMENT"
+        title="提供商管理"
+        subtitle="配置和管理 AI 模型提供商,包括 API 密钥、Base URL 等信息。支持导入导出配置"
+      >
+        <template #actions>
           <n-button size="small" @click="testAllProviders" :loading="isTestingAll">
             <template #icon>
               <n-icon><SpeedTestIcon /></n-icon>
@@ -32,8 +30,8 @@
             </n-button>
           </n-upload>
           <n-button type="primary" size="small" @click="showModal = true">添加提供商</n-button>
-        </n-space>
-      </n-space>
+        </template>
+      </PageHeader>
 
       <ProviderOverview :providers="providerStore.providers" />
 
@@ -137,6 +135,7 @@ import type { ProviderFormValue } from '@/types/provider'
 import { createDefaultProviderForm } from '@/types/provider'
 import ProviderForm from '@/components/ProviderForm.vue'
 import ProviderOverview from '@/components/ProviderOverview.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { downloadProvidersConfig, parseImportFile } from '@/utils/provider-export'
 
 const message = useMessage()
@@ -365,6 +364,7 @@ async function handleEdit(provider: Provider) {
       baseUrl: fullProvider.baseUrl,
       protocolMappings: fullProvider.protocolMappings || null,
       apiKey: fullProvider.apiKey || '',
+      ownerNode: fullProvider.ownerNode || '',
       enabled: fullProvider.enabled
     }
   } catch (error: any) {
@@ -481,6 +481,7 @@ async function handleSubmit() {
         description: formValue.value.description,
         baseUrl: formValue.value.baseUrl,
         protocolMappings: formValue.value.protocolMappings,
+        ownerNode: formValue.value.ownerNode || null,
         enabled: formValue.value.enabled
       }
       if (formValue.value.apiKey !== originalApiKey.value) {
@@ -520,6 +521,7 @@ async function handleSubmit() {
 
       await providerApi.create({
         ...formValue.value,
+        ownerNode: formValue.value.ownerNode || null,
         protocolMappings: formValue.value.protocolMappings || undefined
       })
 
@@ -682,7 +684,9 @@ onMounted(() => {
 .providers-view {
   max-width: 1400px;
   margin: 0 auto;
-  /* 72px header + 8px/24px content padding in MainLayout */
+  /* n-layout-content 滚动内容层（.n-scrollbar-content）高度是 auto，
+     height:100% 解析不了，会把 flex-height 表格压成 0 行；
+     改用确定高度：100vh - 72px 页头 - 8px/24px 上下内边距。 */
   height: calc(100vh - 104px);
   min-height: 480px;
   display: flex;
@@ -697,9 +701,15 @@ onMounted(() => {
   gap: 12px;
 }
 
+/* 页头与概览不参与压缩，剩下的高度全给表格卡片 */
+.providers-stack > * {
+  flex-shrink: 0;
+}
+
 .table-card {
-  flex: 1;
-  min-height: 280px;
+  flex: 1 1 auto;
+  /* 不设 min-height：卡片只拿到“剩下”的高度，行多时在表格内部滚动 + 翻页 */
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: #ffffff;

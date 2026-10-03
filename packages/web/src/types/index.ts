@@ -17,6 +17,8 @@ export interface Provider {
   protocolMappings?: ProtocolMapping | null;
   apiKey?: string;
   modelMapping?: Record<string, string> | null;
+  /** 归属 节点 ID；null 表示使用默认控制节点 */
+  ownerNode?: string | null;
   enabled: boolean;
   createdAt: number;
   updatedAt: number;
@@ -51,20 +53,36 @@ export interface ModelAttributes {
   requestTimeout?: number;
 }
 
+export interface ModelAvailabilityBucket {
+  start: number;
+  total: number;
+  success: number;
+}
+
+export interface ModelAvailability {
+  windowHours: number;
+  total: number;
+  success: number;
+  lastUsedAt: number;
+  buckets: ModelAvailabilityBucket[];
+}
+
 export interface Model {
   id: string;
   name: string;
   providerId: string;
   providerName?: string;
   modelIdentifier: string;
+  /** 由供应商派生的可用协议（base_url→openai + protocol_mappings） */
   supportedProtocols?: string[];
-  healthCheckProtocol?: string | null;
   isVirtual?: boolean;
   routingConfigId?: string | null;
   expertRoutingId?: string | null;
   enabled: boolean;
   modelAttributes?: ModelAttributes | null;
   virtualKeyCount?: number;
+  /** 被动可用性（近24h api_requests 聚合）；无调用记录时为 null */
+  availability?: ModelAvailability | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -121,6 +139,7 @@ export interface CreateProviderRequest {
   protocolMappings?: ProtocolMapping;
   apiKey: string;
   modelMapping?: Record<string, string>;
+  ownerNode?: string | null;
   enabled?: boolean;
 }
 
@@ -131,6 +150,7 @@ export interface UpdateProviderRequest {
   protocolMappings?: ProtocolMapping;
   apiKey?: string;
   modelMapping?: Record<string, string>;
+  ownerNode?: string | null;
   enabled?: boolean;
 }
 
@@ -138,8 +158,6 @@ export interface CreateModelRequest {
   name: string;
   providerId: string;
   modelIdentifier: string;
-  supportedProtocols?: string[];
-  healthCheckProtocol?: string;
   isVirtual?: boolean;
   routingConfigId?: string;
   enabled?: boolean;
@@ -149,8 +167,6 @@ export interface CreateModelRequest {
 export interface UpdateModelRequest {
   name?: string;
   modelIdentifier?: string;
-  supportedProtocols?: string[];
-  healthCheckProtocol?: string;
   enabled?: boolean;
   modelAttributes?: ModelAttributes;
 }

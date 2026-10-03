@@ -1,32 +1,33 @@
 <template>
   <div class="ops-monitoring-container">
-    <div class="page-header">
-      <div class="page-title-section">
-        <h1 class="page-title">{{ t("operationsMonitoring.title") }}</h1>
-        <div class="page-subtitle">
-          {{ t("operationsMonitoring.subtitle") }}
+    <PageHeader
+      class="ops-page-header"
+      eyebrow="MONITORING"
+      :title="t('operationsMonitoring.title')"
+      :subtitle="t('operationsMonitoring.subtitle')"
+    >
+      <template #actions>
+        <div class="page-actions">
+          <n-radio-group v-model:value="period" size="medium">
+            <n-radio-button value="24h">{{
+              t("operationsMonitoring.period.last24h")
+            }}</n-radio-button>
+            <n-radio-button value="7d">{{
+              t("operationsMonitoring.period.last7d")
+            }}</n-radio-button>
+            <n-radio-button value="30d">{{
+              t("operationsMonitoring.period.last30d")
+            }}</n-radio-button>
+          </n-radio-group>
+          <n-button secondary round :loading="loading" :disabled="loading" @click="refresh()">
+            <template #icon>
+              <n-icon><RefreshOutline /></n-icon>
+            </template>
+            {{ t("common.refresh") }}
+          </n-button>
         </div>
-      </div>
-      <div class="page-actions">
-        <n-radio-group v-model:value="period" size="medium">
-          <n-radio-button value="24h">{{
-            t("operationsMonitoring.period.last24h")
-          }}</n-radio-button>
-          <n-radio-button value="7d">{{
-            t("operationsMonitoring.period.last7d")
-          }}</n-radio-button>
-          <n-radio-button value="30d">{{
-            t("operationsMonitoring.period.last30d")
-          }}</n-radio-button>
-        </n-radio-group>
-        <n-button secondary round :loading="loading" :disabled="loading" @click="refresh()">
-          <template #icon>
-            <n-icon><RefreshOutline /></n-icon>
-          </template>
-          {{ t("common.refresh") }}
-        </n-button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- Window metadata + coverage, identical across all requests of one refresh cycle -->
     <div v-if="overview" class="window-info-bar">
@@ -165,7 +166,7 @@
           </div>
           <template v-else-if="overview">
             <n-grid
-              :cols="2"
+              :cols="4"
               :x-gap="16"
               :y-gap="16"
               responsive="screen"
@@ -386,6 +387,120 @@
             "
           />
         </n-tab-pane>
+
+        <!-- Request-source card moved from the homepage dashboard; windowed
+             via the shared period selector and pinned endTime. -->
+        <n-tab-pane
+          v-if="!dashboardHideRequestSourceCard"
+          name="requestSources"
+          :tab="t('operationsMonitoring.requestSource.tab')"
+        >
+          <div v-if="requestSourcesLoading" class="loading-container">
+            <n-skeleton
+              text
+              :repeat="2"
+              style="height: 96px; margin-bottom: 16px"
+            />
+            <n-skeleton text style="height: 260px" />
+          </div>
+          <n-space v-else-if="requestSourceStats" vertical :size="20">
+            <n-grid cols="1 s:2" :x-gap="24" :y-gap="16" responsive="screen">
+              <n-gi>
+                <div class="source-info-item">
+                  <div class="source-label">
+                    {{ t("operationsMonitoring.requestSource.lastRequest") }}
+                  </div>
+                  <div class="source-value">
+                    {{ formatGeoLocation(requestSourceStats.lastRequest?.geo) }}
+                  </div>
+                  <div class="source-sub">
+                    {{
+                      requestSourceStats.lastRequest?.ip ||
+                      t("operationsMonitoring.requestSource.noRecord")
+                    }}
+                  </div>
+                  <div class="source-time">
+                    {{
+                      requestSourceStats.lastRequest?.timestamp
+                        ? formatSourceTime(
+                            requestSourceStats.lastRequest.timestamp,
+                          )
+                        : "---"
+                    }}
+                  </div>
+                  <div class="source-client">
+                    {{
+                      t("operationsMonitoring.requestSource.client", {
+                        agent:
+                          requestSourceStats.lastRequest?.userAgent ||
+                          t("operationsMonitoring.requestSource.unknown"),
+                      })
+                    }}
+                  </div>
+                </div>
+              </n-gi>
+              <n-gi>
+                <div class="source-info-item">
+                  <div class="source-label">
+                    {{ t("operationsMonitoring.requestSource.lastBlocked") }}
+                  </div>
+                  <div class="source-value source-value-danger">
+                    {{ formatGeoLocation(requestSourceStats.lastBlocked?.geo) }}
+                  </div>
+                  <div class="source-sub">
+                    {{
+                      requestSourceStats.lastBlocked?.ip ||
+                      t("operationsMonitoring.requestSource.noBlock")
+                    }}
+                  </div>
+                  <div class="source-time">
+                    {{
+                      requestSourceStats.lastBlocked?.timestamp
+                        ? formatSourceTime(
+                            requestSourceStats.lastBlocked.timestamp,
+                          )
+                        : "---"
+                    }}
+                  </div>
+                </div>
+              </n-gi>
+            </n-grid>
+            <div>
+              <div class="source-table-header">
+                <div class="source-table-title">
+                  {{ t("operationsMonitoring.requestSource.recentTitle") }}
+                </div>
+                <div class="source-table-desc">
+                  {{ t("operationsMonitoring.requestSource.recentDesc") }}
+                </div>
+              </div>
+              <n-data-table
+                v-if="requestSourceTableData.length > 0"
+                :columns="requestSourceColumns"
+                :data="requestSourceTableData"
+                :bordered="false"
+                size="small"
+                :scroll-x="1100"
+                :row-key="(row: OpsRequestSourceEntry) => row.ip"
+              />
+              <n-empty
+                v-else
+                :description="t('operationsMonitoring.requestSource.empty')"
+                :show-icon="false"
+              />
+            </div>
+          </n-space>
+          <n-empty
+            v-else
+            :description="t('operationsMonitoring.requestSource.empty')"
+            :show-icon="false"
+            style="padding: 48px 0"
+          />
+        </n-tab-pane>
+        <!-- Agent 使用统计：网关流量按 coding agent 归类 + 自有 worker run 聚合。 -->
+        <n-tab-pane name="agents" :tab="t('operationsMonitoring.tabs.agents')">
+          <AgentMetricsPanel :period="period" :end-time="sampledAt ?? undefined" />
+        </n-tab-pane>
       </n-tabs>
     </n-card>
   </div>
@@ -420,6 +535,7 @@ import {
   NSelect,
   NSkeleton,
   NSpace,
+  NSpin,
   NTabPane,
   NTabs,
   NTag,
@@ -453,15 +569,24 @@ import {
   type OpsDimensionItem,
   type OpsCoverage,
   type OpsFilters,
+  type OpsRequestSourceEntry,
+  type OpsRequestSourceStats,
+  type OpsRequestSourcesResponse,
 } from "@/api/ops-metrics";
+import { configApi } from "@/api/config";
+import { useSystemConfig } from "@/composables/useSystemConfig";
 import { copyToClipboard } from "@/utils/common";
-import { formatTokenNumber } from "@/utils/format";
+import { formatTokenNumber, formatTimestamp } from "@/utils/format";
+import PageHeader from "@/components/PageHeader.vue";
+import AgentMetricsPanel from "@/components/AgentMetricsPanel.vue";
 
 const { t, locale } = useI18n();
 const message = useMessage();
 const router = useRouter();
+const { dashboardHideRequestSourceCard } = useSystemConfig();
 
-type TabKey = "overview" | OpsDimension;
+// "sources" is not an OpsDimension; it rides the same tab machinery.
+type TabKey = "overview" | OpsDimension | "requestSources";
 
 interface DimState {
   items: OpsDimensionItem[];
@@ -491,6 +616,9 @@ const trend = ref<OpsTrendResponse | null>(null);
 // Sampling instant pinned once per refresh/condition change so every card,
 // chart and table of this cycle reports the identical window.
 let pinnedEndTime: number | null = null;
+// pinnedEndTime 本身不是响应式的；AgentMetricsPanel 需要响应信号才能在“刷新”时重拉，
+// 因此每次刷新把同一采样时刻镜像到 sampledAt（两者始终同值）。
+const sampledAt = ref<number | null>(null);
 let refreshId = 0;
 
 const DIMENSIONS: readonly OpsDimension[] = ["virtualKey", "model", "provider"];
@@ -569,8 +697,6 @@ function currentSignature() {
   ].join("|");
 }
 
-// ---------- formatting ----------
-
 const shanghaiLocale = computed(() =>
   locale.value === "zh-CN" ? "zh-CN" : "en-US",
 );
@@ -617,13 +743,12 @@ function formatLastUsed(ts: number | null): string {
   return formatShanghaiDateTime(ts);
 }
 
-// ---------- data loading ----------
-
 async function refresh(force = false) {
   if (loading.value && !force) return;
   loading.value = true;
   const requestId = ++refreshId;
   pinnedEndTime = Date.now();
+  sampledAt.value = pinnedEndTime;
   const sig = currentSignature();
   const base = baseQuery();
   try {
@@ -637,7 +762,9 @@ async function refresh(force = false) {
       loadFilterOptions(),
       activeTab.value === "overview"
         ? loadRankings(sig)
-        : loadDimension(activeTab.value, sig),
+        : activeTab.value === "requestSources"
+          ? loadRequestSources(sig)
+          : loadDimension(activeTab.value, sig),
     ]);
   } catch (error) {
     if (requestId === refreshId) {
@@ -760,12 +887,219 @@ function handleRankingSortChange(sort: "requestCount" | "failureCount") {
   });
 }
 
+const requestSources = ref<OpsRequestSourcesResponse | null>(null);
+const requestSourcesLoading = ref(false);
+let requestSourcesSig: string | null = null;
+const lookupLoadingIp = ref<string | null>(null);
+
+const requestSourceStats = computed<OpsRequestSourceStats | null>(
+  () => requestSources.value?.requestSourceStats ?? null,
+);
+
+const requestSourceTableData = computed<OpsRequestSourceEntry[]>(
+  () => requestSourceStats.value?.recentSources ?? [],
+);
+
+function formatSourceTime(ts: number): string {
+  return formatTimestamp(ts, period.value);
+}
+
+function formatGeoLocation(
+  geo: OpsRequestSourceEntry["geo"] | undefined,
+): string {
+  if (!geo) return t("operationsMonitoring.requestSource.unknown");
+  if (geo.locationZh) return geo.locationZh;
+  const parts = [geo.country, geo.province, geo.city].filter(Boolean);
+  return parts.length > 0
+    ? parts.join(" · ")
+    : t("operationsMonitoring.requestSource.unknown");
+}
+
+async function loadRequestSources(sig: string) {
+  if (requestSourcesSig === sig && !requestSourcesLoading.value) return;
+  requestSourcesLoading.value = true;
+  try {
+    const res = await opsMetricsApi.getRequestSources(baseQuery());
+    if (sig === currentSignature()) {
+      requestSources.value = res;
+      requestSourcesSig = sig;
+    }
+  } finally {
+    requestSourcesLoading.value = false;
+  }
+}
+
+function buildUpdatedSources(ip: string, patch: Partial<OpsRequestSourceEntry>) {
+  const recentSources = requestSourceStats.value?.recentSources ?? [];
+  return recentSources.map((entry) =>
+    entry.ip === ip ? { ...entry, ...patch } : entry,
+  );
+}
+
+function applyUpdatedSources(
+  ip: string,
+  patch: Partial<OpsRequestSourceEntry>,
+  extra?: Partial<OpsRequestSourceStats>,
+) {
+  const updatedSources = buildUpdatedSources(ip, patch);
+  requestSources.value = {
+    ...requestSources.value!,
+    requestSourceStats: {
+      ...requestSourceStats.value!,
+      recentSources: updatedSources,
+      ...extra,
+    },
+  };
+}
+
+async function handleLookupIp(ip?: string) {
+  if (!ip) return;
+  lookupLoadingIp.value = ip;
+  try {
+    // Reuses the dashboard-era lookup endpoint; no second geo API.
+    const result = await configApi.lookupRequestSource(ip);
+    applyUpdatedSources(ip, {
+      geo: result.geo,
+      timestamp: result.lastSeen || Date.now(),
+      userAgent: result.userAgent || null,
+    });
+    const locationText = formatGeoLocation(result.geo || undefined);
+    const asnText = result.geo?.asn
+      ? `${result.geo.asn}${result.geo.asOrganization ? ` · ${result.geo.asOrganization}` : ""}`
+      : "";
+    message.success(
+      t("operationsMonitoring.requestSource.lookupSuccess", {
+        result: `${locationText}${asnText ? ` | ${asnText}` : ""}`,
+      }),
+    );
+  } catch (error: any) {
+    const errorMsg =
+      error?.response?.data?.error?.message ||
+      error?.message ||
+      t("operationsMonitoring.requestSource.lookupFailed");
+    message.error(errorMsg);
+  } finally {
+    lookupLoadingIp.value = null;
+  }
+}
+
+const requestSourceColumns = computed<
+  DataTableColumns<OpsRequestSourceEntry>
+>(() => [
+  {
+    title: t("operationsMonitoring.requestSource.col.ip"),
+    key: "ip",
+    minWidth: 220,
+    render(row) {
+      const tagType = row.type === "blocked" ? "error" : "success";
+      const tagText =
+        row.type === "blocked"
+          ? t("operationsMonitoring.requestSource.tag.blocked")
+          : t("operationsMonitoring.requestSource.tag.normal");
+      const subText =
+        row.type === "blocked"
+          ? t("operationsMonitoring.requestSource.blockedByPolicy")
+          : t("operationsMonitoring.requestSource.recentCount", {
+              n: row.count || 0,
+            });
+      return h(
+        "div",
+        { style: "display: flex; flex-direction: column; gap: 4px;" },
+        [
+          h(
+            "div",
+            { style: "display: flex; align-items: center; gap: 8px;" },
+            [
+              h(
+                "span",
+                {
+                  style:
+                    "font-weight: 600; color: #111827; cursor: pointer; text-decoration: underline; text-underline-offset: 4px; text-decoration-color: #d1d5db;",
+                  onClick: () => handleLookupIp(row.ip),
+                  title: t("operationsMonitoring.requestSource.lookupHint"),
+                  class: "ip-clickable",
+                },
+                row.ip || "-",
+              ),
+              h(
+                NTag,
+                { size: "small", type: tagType, bordered: false },
+                { default: () => tagText },
+              ),
+              lookupLoadingIp.value === row.ip ? h(NSpin, { size: 14 }) : null,
+            ],
+          ),
+          h("div", { style: "font-size: 12px; color: #6b7280;" }, subText),
+        ],
+      );
+    },
+  },
+  {
+    title: t("operationsMonitoring.requestSource.col.location"),
+    key: "location",
+    minWidth: 160,
+    render(row) {
+      return (
+        row.geo?.locationZh || t("operationsMonitoring.requestSource.unknown")
+      );
+    },
+  },
+  {
+    title: t("operationsMonitoring.requestSource.col.isp"),
+    key: "isp",
+    minWidth: 160,
+    render(row) {
+      return row.geo?.ispZh || row.geo?.isp || "-";
+    },
+  },
+  {
+    title: t("operationsMonitoring.requestSource.col.lastSeen"),
+    key: "timestamp",
+    minWidth: 160,
+    render(row) {
+      return row.timestamp ? formatSourceTime(row.timestamp) : "-";
+    },
+  },
+  {
+    title: t("operationsMonitoring.requestSource.col.client"),
+    key: "client",
+    minWidth: 220,
+    render(row) {
+      if (!row.userAgent) {
+        return t("operationsMonitoring.requestSource.unknown");
+      }
+      const text =
+        row.userAgent.length > 60
+          ? `${row.userAgent.slice(0, 60)}...`
+          : row.userAgent;
+      return h(NTooltip, null, {
+        trigger: () =>
+          h(
+            "div",
+            {
+              style:
+                "font-size: 12px; color: #374151; line-height: 1.5; word-break: break-all;",
+            },
+            text,
+          ),
+        default: () => row.userAgent,
+      });
+    },
+  },
+]);
+
 function handleTabChange(tab: string) {
   const sig = currentSignature();
   if (tab === "overview") {
     if (overview.value) {
       loadRankings(sig).catch(() => {});
     }
+    return;
+  }
+  if (tab === "requestSources") {
+    loadRequestSources(sig).catch(() => {
+      message.error(t("operationsMonitoring.loadFailed"));
+    });
     return;
   }
   loadDimension(tab as OpsDimension, sig).catch(() => {});
@@ -830,8 +1164,6 @@ const dimensionPagination = computed<Record<OpsDimension, PaginationProps>>(
   }),
 );
 
-// ---------- filter actions ----------
-
 function clearFilters() {
   filterVirtualKeyId.value = null;
   filterModel.value = null;
@@ -857,8 +1189,6 @@ function goToTab(tab: TabKey) {
 watch([period, filterVirtualKeyId, filterModel, filterProviderId], () => {
   refresh(true);
 });
-
-// ---------- overview metric cards ----------
 
 interface MetricCard {
   key: string;
@@ -954,8 +1284,6 @@ const metricCards = computed<MetricCard[]>(() => {
     },
   ];
 });
-
-// ---------- trend chart ----------
 
 const hasTrendData = computed(
   () =>
@@ -1088,8 +1416,6 @@ function trendBarDataWithStyle(points: OpsTrendPoint[]) {
   });
 }
 
-// ---------- drill-down to request logs ----------
-
 function drillToLogs(options: {
   startTime: number;
   endTime: number;
@@ -1130,8 +1456,6 @@ function handleTrendClick(params: { dataIndex: number }) {
   if (!p || p.gap || p.requestCount === null) return;
   drillToLogs({ startTime: p.bucketStart, endTime: p.bucketEnd });
 }
-
-// ---------- dimension table columns ----------
 
 function renderMetricWithSamples(
   value: number | null,
@@ -1653,8 +1977,6 @@ const dimensionColumns = computed<
   ],
 }));
 
-// ---------- lifecycle ----------
-
 onMounted(() => {
   refresh();
 });
@@ -1674,13 +1996,8 @@ onBeforeUnmount(() => {
   padding: 0 0 32px 0;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+.ops-page-header {
   margin-bottom: 20px;
-  flex-wrap: wrap;
-  gap: 16px;
 }
 
 .page-actions {
@@ -1938,6 +2255,90 @@ onBeforeUnmount(() => {
   font-size: 11.5px;
   color: #6b7280;
   word-break: break-all;
+}
+
+/* Request-source card styles: equivalent copies of the rules that used to
+   live in styles/dashboard.css (kept there untouched for the dashboard). */
+.source-info-item {
+  padding: 4px 2px;
+}
+
+.source-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #6b7280;
+  margin-bottom: 6px;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
+}
+
+.source-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  word-break: break-word;
+}
+
+.source-value-danger {
+  color: #dc2626;
+}
+
+.source-sub {
+  margin-top: 2px;
+  font-size: 13px;
+  color: #4b5563;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.source-time {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #9ca3af;
+  line-height: 1.5;
+}
+
+.source-client {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.source-table-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.source-table-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.source-table-desc {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+@media (max-width: 639px) {
+  .source-value {
+    font-size: 18px;
+  }
+
+  .source-table-title {
+    font-size: 14px;
+  }
 }
 
 @media (max-width: 768px) {

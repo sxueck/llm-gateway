@@ -10,16 +10,22 @@ import {
   initDatabase,
   apiRequestDb,
   systemConfigDb,
+  expertRoutingConfigDb,
   shutdownDatabase,
 } from "./db/index.js";
 import { startSessionBindingCleanup } from "./services/expert-router.js";
+import { getJevConfiguration } from "./services/expert-router/jev-client.js";
 import { startContextNormalizationCleanup } from "./services/context-normalization/index.js";
 import { authRoutes } from "./routes/auth.js";
 import { providerRoutes } from "./routes/providers.js";
+import { nodeAdminRoutes } from "./routes/nodes.js";
 import { modelRoutes } from "./routes/models.js";
 import { virtualKeyRoutes } from "./routes/virtual-keys.js";
 import { configRoutes } from "./routes/config.js";
 import { opsMetricsRoutes } from "./routes/ops-metrics.js";
+import { alertRoutes } from "./routes/alerts.js";
+import { agentMetricsRoutes } from "./routes/agent-metrics.js";
+import { playgroundRoutes } from "./routes/playground.js";
 import { publicConfigRoutes } from "./routes/public-config.js";
 import { proxyRoutes } from "./routes/proxy.js";
 import { anthropicRoutes } from "./routes/anthropic/index.js";
@@ -27,28 +33,29 @@ import { openaiRoutes } from "./routes/openai.js";
 import { geminiRoutes } from "./routes/gemini.js";
 import { modelPresetsRoutes } from "./routes/model-presets.js";
 import { expertRoutingRoutes } from "./routes/expert-routing.js";
-import { intentRoutes } from "./routes/intent.js";
-import { healthRoutes } from "./routes/health.js";
 import { costMappingRoutes } from "./routes/cost-mapping.js";
 import { promptSampleRoutes } from "./routes/prompt-samples.js";
 import { workerPluginRoutes } from "./routes/worker-plugins.js";
 import backupRoutes from "./routes/backup.js";
+import dbMaintenanceRoutes from "./routes/db-maintenance.js";
 import { agentSnapshotRoutes } from "./routes/agent/snapshots.js";
 import { agentSearchRoutes } from "./routes/agent/searches.js";
 import { agentInternalRoutes } from "./routes/agent/internal.js";
 import { agentMonitoringRoutes } from "./routes/agent/monitoring.js";
+import { nodeRoutes } from "./routes/node.js";
 import { searchRunScheduler } from "./agent/run/scheduler.js";
 import { memoryLogger } from "./services/logger.js";
+import {
+  isControlNode,
+  registerNodeControlGuard,
+} from "./services/node-control.js";
 import { modelPresetsService } from "./services/model-presets.js";
-import { healthCheckerService } from "./services/health-checker.js";
 import { getBackupScheduler } from "./services/backup-scheduler.js";
 import {
-  healthRunDb,
   systemConfigDb as systemConfigDbForDebug,
   apiRequestHourlyDb,
 } from "./db/index.js";
 import { debugModeService } from "./services/debug-mode.js";
-import { manualIpBlocklist } from "./services/manual-ip-blocklist.js";
 import { requestHeaderForwardingService } from "./services/request-header-forwarding.js";
 import { upstreamSslConfigService } from "./services/upstream-ssl-config.js";
 import { requestCache } from "./services/request-cache.js";
@@ -62,6 +69,8 @@ import { upstreamFetch, clearProxyAgentCache } from "./utils/upstream-fetch.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+const isControl = isControlNode(appConfig.node);
 
 const fastify = Fastify({
   logger: {
@@ -105,12 +114,19 @@ await fastify.register(jwt, {
   secret: appConfig.jwtSecret,
 });
 
-await fastify.register(fastifyStatic, {
-  root: resolve(__dirname, "..", "public"),
-  prefix: "/",
-});
+if (isControl) {
+  await fastify.register(fastifyStatic, {
+    root: resolve(__dirname, "..", "public"),
+    prefix: "/",
+  });
+}
 
 await fastify.register(websocket);
+
+// 节点路由与控制节点守卫：必须先于所有路由（含下方 debug-stream 与 /api/* 管理路由）注册，
+// 否则先注册的路由会绕过非控制节点的拦截
+registerNodeControlGuard(fastify, appConfig.node);
+await fastify.register(nodeRoutes);
 
 fastify.decorate("authenticate", async function (request: any, reply: any) {
   try {
@@ -140,48 +156,76 @@ fastify.get("/api/admin/config/debug-stream", (_request, reply) => {
 });
 
 await initDatabase();
+// 与运行时行为保持一致：Jev 未配置不阻断启动，只警告；实际请求会走 fallback。
+const expertConfigs = await expertRoutingConfigDb.getAll() as Array<{ enabled: number }>;
+if (expertConfigs.some((config) => config.enabled === 1)) {
+  try {
+    getJevConfiguration();
+  } catch (error) {
+    memoryLogger.warn(
+      `Expert routing is enabled but Jev is not configured; requests will fall back until JEV_API_URL/JEV_API_KEY/JEV_MODEL are set: ${error instanceof Error ? error.message : error}`,
+      "ExpertRouter",
+    );
+  }
+}
 
 // Plugin Center：内置官方插件幂等 seed 到 worker_plugins（版本不可变，不覆盖已存在版本）
-{
+// 仅控制节点执行（多节点模式下非控制节点只读共享库，不写管理数据）
+if (isControl) {
   const { seedBuiltinPlugins } = await import("./agent/plugins/store.js");
   await seedBuiltinPlugins();
 }
 
-await manualIpBlocklist.init();
 await runtimeSystemConfigCache.initialize();
 await reasoningEffortSuffixesCache.initialize();
 
 // Periodic cleanup of expired durable session bindings (NFR-4).
-startSessionBindingCleanup();
-startContextNormalizationCleanup();
-
-// Agent Search：固定执行器并恢复重启前遗留的 run（确定性失败，不挂起）。
-if (process.env.AGENT_WORKER_IMAGE) {
-  const { createDockerExecutor } = await import("./agent/run/executors.js");
-  searchRunScheduler.setExecutor(
-    createDockerExecutor(process.env.AGENT_WORKER_IMAGE),
-  );
-  memoryLogger.info(
-    `Agent search executor: docker (${process.env.AGENT_WORKER_IMAGE})`,
-    "AgentSearch",
-  );
-} else if (process.env.AGENT_WORKER_LOCAL === "1") {
-  const { createLocalProcessExecutor } =
-    await import("./agent/run/executors.js");
-  searchRunScheduler.setExecutor(createLocalProcessExecutor());
-  process.env.AGENT_WORKER_GATEWAY_URL =
-    process.env.AGENT_WORKER_GATEWAY_URL ||
-    `http://127.0.0.1:${appConfig.port}`;
-  memoryLogger.info("Agent search executor: local process", "AgentSearch");
+// 清理任务仅由控制节点执行
+if (isControl) {
+  startSessionBindingCleanup();
+  startContextNormalizationCleanup();
 } else {
-  memoryLogger.warn(
-    "AGENT_WORKER_IMAGE not set; search runs will fail with executor_not_configured",
-    "AgentSearch",
+  memoryLogger.info(
+    `非控制节点 ('${appConfig.node.id}')：跳过会话绑定/上下文清理任务`,
+    "NodeControl",
   );
 }
-await searchRunScheduler.recoverAtBoot();
-const { startAgentSearchCleanup } = await import("./agent/run/cleanup.js");
-startAgentSearchCleanup();
+
+// Agent Search：固定执行器并恢复重启前遗留的 run（确定性失败，不挂起）。
+// 执行器/恢复/清理均为控制节点职责
+if (isControl) {
+  if (process.env.AGENT_WORKER_IMAGE) {
+    const { createDockerExecutor } = await import("./agent/run/executors.js");
+    searchRunScheduler.setExecutor(
+      createDockerExecutor(process.env.AGENT_WORKER_IMAGE),
+    );
+    memoryLogger.info(
+      `Agent search executor: docker (${process.env.AGENT_WORKER_IMAGE})`,
+      "AgentSearch",
+    );
+  } else if (process.env.AGENT_WORKER_LOCAL === "1") {
+    const { createLocalProcessExecutor } =
+      await import("./agent/run/executors.js");
+    searchRunScheduler.setExecutor(createLocalProcessExecutor());
+    process.env.AGENT_WORKER_GATEWAY_URL =
+      process.env.AGENT_WORKER_GATEWAY_URL ||
+      `http://127.0.0.1:${appConfig.port}`;
+    memoryLogger.info("Agent search executor: local process", "AgentSearch");
+  } else {
+    memoryLogger.warn(
+      "AGENT_WORKER_IMAGE not set; search runs will fail with executor_not_configured",
+      "AgentSearch",
+    );
+  }
+  await searchRunScheduler.recoverAtBoot();
+  const { startAgentSearchCleanup } = await import("./agent/run/cleanup.js");
+  startAgentSearchCleanup();
+} else {
+  memoryLogger.info(
+    `非控制节点 ('${appConfig.node.id}')：跳过 Agent 执行器/恢复/清理任务`,
+    "NodeControl",
+  );
+}
 
 // Load request header forwarding config before serving traffic.
 await requestHeaderForwardingService.reloadConfig();
@@ -254,17 +298,20 @@ await fastify.register(geminiRoutes);
 await fastify.register(authRoutes, { prefix: "/api/auth" });
 await fastify.register(publicConfigRoutes, { prefix: "/api/public" });
 await fastify.register(providerRoutes, { prefix: "/api/admin/providers" });
+await fastify.register(nodeAdminRoutes, { prefix: "/api/admin/nodes" });
 await fastify.register(modelRoutes, { prefix: "/api/admin/models" });
 await fastify.register(virtualKeyRoutes, { prefix: "/api/admin/virtual-keys" });
 await fastify.register(configRoutes, { prefix: "/api/admin/config" });
 await fastify.register(opsMetricsRoutes, { prefix: "/api/admin/config" });
+await fastify.register(alertRoutes, { prefix: "/api/admin/alerts" });
+await fastify.register(agentMetricsRoutes, { prefix: "/api/admin" });
+await fastify.register(playgroundRoutes, { prefix: "/api/admin" });
 await fastify.register(modelPresetsRoutes, {
   prefix: "/api/admin/model-presets",
 });
 await fastify.register(expertRoutingRoutes, {
   prefix: "/api/admin/expert-routing",
 });
-await fastify.register(intentRoutes, { prefix: "/v1/intent" });
 await fastify.register(costMappingRoutes, {
   prefix: "/api/admin/cost-mappings",
 });
@@ -274,8 +321,8 @@ await fastify.register(promptSampleRoutes, {
 await fastify.register(workerPluginRoutes, {
   prefix: "/api/admin/worker-plugins",
 });
-await fastify.register(healthRoutes);
 await fastify.register(backupRoutes);
+await fastify.register(dbMaintenanceRoutes);
 await fastify.register(agentSnapshotRoutes, { prefix: "/api/agent/snapshots" });
 await fastify.register(agentSearchRoutes, { prefix: "/api/agent/searches" });
 await fastify.register(agentInternalRoutes, { prefix: "/api/internal/agent" });
@@ -286,7 +333,7 @@ await fastify.register(agentMonitoringRoutes, {
 memoryLogger.info("Routes registered", "System");
 
 fastify.setNotFoundHandler((request, reply) => {
-  if (request.url.startsWith("/api/")) {
+  if (!isControl || request.url.startsWith("/api/")) {
     return reply.code(404).send({
       error: {
         message: "未找到请求的资源",
@@ -458,66 +505,46 @@ try {
   // 测试网络连通性
   await checkGoogleConnectivity();
 
-  setInterval(cleanOldApiRequests, 24 * 60 * 60 * 1000);
-  memoryLogger.info(
-    `已启动请求日志自动清理任务，每 24 小时执行一次，保留 ${appConfig.apiRequestLogRetentionDays} 天`,
-    "System",
-  );
+  // 日志聚合与清理、模型预设更新、备份调度均为控制节点任务
+  // （非控制节点仅代理流量，不竞争清理锁/远端更新与备份）
+  if (isControl) {
+    setInterval(cleanOldApiRequests, 24 * 60 * 60 * 1000);
+    memoryLogger.info(
+      `已启动请求日志自动清理任务，每 24 小时执行一次，保留 ${appConfig.apiRequestLogRetentionDays} 天`,
+      "System",
+    );
 
-  // 启动即执行一次聚合+清理：不再依赖 24h 后的首跑，
-  // 否则上次留存边界的明细会在启动后继续滞留。
-  await runHourlyAggregationPass();
-  await cleanOldApiRequests();
-  setInterval(runHourlyAggregationPass, 10 * 60 * 1000);
-  memoryLogger.info("已启动小时级聚合任务，每 10 分钟执行一次", "System");
+    // 启动即执行一次聚合+清理：不再依赖 24h 后的首跑，
+    // 否则上次留存边界的明细会在启动后继续滞留。
+    await runHourlyAggregationPass();
+    await cleanOldApiRequests();
+    setInterval(runHourlyAggregationPass, 10 * 60 * 1000);
+    memoryLogger.info("已启动小时级聚合任务，每 10 分钟执行一次", "System");
 
-  await checkAndUpdateModelPresets();
+    await checkAndUpdateModelPresets();
 
-  setInterval(checkAndUpdateModelPresets, 24 * 60 * 60 * 1000);
-  memoryLogger.info("已启动模型预设自动更新任务，每 24 小时检查一次", "System");
+    setInterval(checkAndUpdateModelPresets, 24 * 60 * 60 * 1000);
+    memoryLogger.info(
+      "已启动模型预设自动更新任务，每 24 小时检查一次",
+      "System",
+    );
 
-  // 根据系统设置决定是否启动健康检查服务
-  const persistentMonitoringCfg = await systemConfigDb.get(
-    "persistent_monitoring_enabled",
-  );
-  if (persistentMonitoringCfg && persistentMonitoringCfg.value === "true") {
-    await healthCheckerService.start();
-    memoryLogger.info("健康检查服务已启动", "System");
+    // Start backup scheduler if S3 is configured
+    try {
+      const backupScheduler = getBackupScheduler();
+      await backupScheduler.loadConfigFromDatabase();
+      backupScheduler.start();
+      memoryLogger.info("Backup scheduler started", "Backup");
+    } catch (error: any) {
+      memoryLogger.warn(
+        `Backup scheduler not started: ${error.message}`,
+        "Backup",
+      );
+    }
   } else {
-    memoryLogger.info("持久监控未启用，未启动健康检查服务", "System");
-  }
-
-  // 每天清理一次健康检查历史记录（保留7天）
-  setInterval(
-    async () => {
-      try {
-        const deletedCount = await healthRunDb.cleanOldRecords(7);
-        if (deletedCount > 0) {
-          memoryLogger.info(
-            `清理健康检查历史记录: 删除 ${deletedCount} 条记录`,
-            "System",
-          );
-        }
-      } catch (error: any) {
-        memoryLogger.error(
-          `清理健康检查历史记录失败: ${error.message}`,
-          "System",
-        );
-      }
-    },
-    24 * 60 * 60 * 1000,
-  );
-
-  // Start backup scheduler if S3 is configured
-  try {
-    const backupScheduler = getBackupScheduler();
-    await backupScheduler.loadConfigFromDatabase();
-    backupScheduler.start();
-    memoryLogger.info("Backup scheduler started", "Backup");
-  } catch (error: any) {
-    memoryLogger.warn(
-      `Backup scheduler not started: ${error.message}`,
-      "Backup",
+    memoryLogger.info(
+      `非控制节点 ('${appConfig.node.id}')：跳过日志聚合/清理、模型预设更新与备份任务`,
+      "NodeControl",
     );
   }
 } catch (err: any) {
@@ -538,9 +565,6 @@ const gracefulShutdown = async (signal: string) => {
     } catch {
       // Ignore if not started
     }
-
-    await healthCheckerService.stop();
-    memoryLogger.info("健康检查服务已停止", "System");
 
     requestCache.destroy();
     memoryLogger.info("请求缓存已清理", "System");

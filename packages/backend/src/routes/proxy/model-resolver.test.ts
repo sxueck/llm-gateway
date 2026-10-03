@@ -116,6 +116,24 @@ test('suffix match is case-sensitive', () => {
   expect(parseModelSuffix('gpt-5-Max', DEFAULT_SUFFIXES)).toBeNull();
 });
 
+test('returns an OpenAI 400 invalid_request_error when routing strategy conflicts with a pinned model', async () => {
+  const model = { id: 'model-1', name: 'gpt-5', model_identifier: 'gpt-5', provider_id: 'provider-1' };
+  vi.mocked(hotConfigCache.getModelById).mockResolvedValue(model as any);
+  vi.mocked(resolveProviderFromModel).mockRejectedValue(Object.assign(
+    new Error('Routing strategy is not applicable to a pinned model target'),
+    { statusCode: 400, code: 'invalid_routing_strategy' },
+  ));
+  const result = await resolveModelAndProvider(
+    { id: 'vk-1', model_id: 'model-1' },
+    { body: { model: 'gpt-5', routing: 'price' }, headers: {}, protocol: 'openai', url: '/v1/chat/completions' } as any,
+    'vk-value',
+  );
+  expect(result).toMatchObject({
+    code: 400,
+    body: { error: { type: 'invalid_request_error', code: 'invalid_routing_strategy', param: null } },
+  });
+});
+
 test('resolves a suffix request to its base model and records the forced effort', async () => {
   const model = { id: 'model-1', name: 'gpt-5', model_identifier: 'gpt-5', provider_id: 'provider-1' };
   const provider = { id: 'provider-1', name: 'provider-1' };

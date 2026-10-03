@@ -7,6 +7,8 @@ export interface ProviderFormValue {
   baseUrl: string;
   protocolMappings?: ProtocolMapping | null;
   apiKey: string;
+  /** 归属 节点 ID；空字符串表示默认控制节点（提交时转 null） */
+  ownerNode: string;
   enabled: boolean;
 }
 
@@ -18,6 +20,7 @@ export function createDefaultProviderForm(): ProviderFormValue {
     baseUrl: '',
     protocolMappings: null,
     apiKey: '',
+    ownerNode: '',
     enabled: true,
   };
 }

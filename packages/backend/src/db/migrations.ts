@@ -1,10 +1,91 @@
 import type { Connection, ResultSetHeader } from "mysql2/promise";
+import {
+  BAND_ORDER,
+  buildBands,
+} from "../services/expert-router/bands.js";
+import {
+  DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
+  DEFAULT_SESSION_IDLE_TTL_SECONDS,
+} from "../../../shared/src/index.js";
+import type {
+  CostInput,
+  RoutingBand,
+} from "../types/expert-routing.js";
 
 export interface Migration {
   version: number;
   name: string;
   up: (conn: Connection) => Promise<void>;
   down?: (conn: Connection) => Promise<void>;
+}
+
+
+export function transformExpertRoutingConfigV2(
+  config: any,
+  bandOf: (expert: any) => RoutingBand | undefined,
+): { config: any; wasDifficulty: boolean } {
+  const wasDifficulty = config?.classification_mode === "difficulty";
+  const experts = Array.isArray(config?.experts) ? config.experts : [];
+  for (const expert of experts) {
+    if (expert && typeof expert === "object") {
+      expert.band = bandOf(expert) ?? "high";
+      delete expert.category;
+      delete expert.description;
+      delete expert.color;
+    }
+  }
+  const legacyPolicy = config?.session_binding_policy ?? {};
+  config.session_policy = {
+    mode: "escalate_only",
+    idle_ttl_seconds:
+      legacyPolicy.idle_ttl_seconds ?? DEFAULT_SESSION_IDLE_TTL_SECONDS,
+    absolute_ttl_seconds:
+      legacyPolicy.absolute_ttl_seconds ?? DEFAULT_SESSION_ABSOLUTE_TTL_SECONDS,
+  };
+  delete config.session_binding_policy;
+  delete config.choice_threshold;
+  delete config.classification_mode;
+  config.version = 2;
+  return { config, wasDifficulty };
+}
+
+/** Cost lookup for migration banding — conn-scoped, mirrors resolveExpertCost. */
+async function fetchExpertCostForMigration(
+  conn: Connection,
+  expert: any,
+): Promise<CostInput | undefined> {
+  try {
+    let attributes: unknown;
+    if (expert?.type === "virtual") {
+      if (!expert.model_id) return undefined;
+      const [rows] = await conn.query(
+        "SELECT model_attributes FROM models WHERE id = ?",
+        [expert.model_id],
+      );
+      attributes = (rows as any[])[0]?.model_attributes;
+    } else {
+      if (!expert.provider_id || !expert.model) return undefined;
+      const [rows] = await conn.query(
+        "SELECT model_identifier, name, model_attributes, is_virtual FROM models WHERE provider_id = ?",
+        [expert.provider_id],
+      );
+      const match = (rows as any[])?.find(
+        (candidate) =>
+          candidate.is_virtual !== 1 &&
+          (candidate.model_identifier === expert.model ||
+            candidate.name === expert.model),
+      );
+      attributes = match?.model_attributes;
+    }
+    if (typeof attributes !== "string" || !attributes) return undefined;
+    const parsed = JSON.parse(attributes);
+    return {
+      input_cost_per_token: Number(parsed?.input_cost_per_token),
+      output_cost_per_token: Number(parsed?.output_cost_per_token),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 const legacyExpertRoutingLabels: Record<string, string> = {
@@ -174,13 +255,6 @@ export const migrations: Migration[] = [
         console.log("[迁移] 已添加 models.supported_protocols 字段");
       }
 
-      if (!(await hasColumn("health_check_protocol"))) {
-        await conn.query(
-          `ALTER TABLE models ADD COLUMN health_check_protocol VARCHAR(50)`,
-        );
-        console.log("[迁移] 已添加 models.health_check_protocol 字段");
-      }
-
       if (await hasColumn("protocol")) {
         // Migrate existing protocol values into supported_protocols JSON array
         await conn.query(`
@@ -188,15 +262,9 @@ export const migrations: Migration[] = [
           SET supported_protocols = CASE
             WHEN protocol IS NULL OR protocol = '' THEN '["openai"]'
             ELSE CONCAT('["', protocol, '"]')
-          END,
-          health_check_protocol = CASE
-            WHEN protocol IS NULL OR protocol = '' THEN 'openai'
-            ELSE protocol
           END
         `);
-        console.log(
-          "[迁移] 已迁移 models.protocol 到 supported_protocols 和 health_check_protocol",
-        );
+        console.log("[迁移] 已迁移 models.protocol 到 supported_protocols");
 
         if (await hasIndex("idx_models_protocol")) {
           await conn.query(`DROP INDEX idx_models_protocol ON models`);
@@ -212,14 +280,7 @@ export const migrations: Migration[] = [
           SET supported_protocols = '["openai"]'
           WHERE supported_protocols IS NULL OR supported_protocols = ''
         `);
-        await conn.query(`
-          UPDATE models
-          SET health_check_protocol = COALESCE(JSON_UNQUOTE(JSON_EXTRACT(supported_protocols, '$[0]')), 'openai')
-          WHERE health_check_protocol IS NULL OR health_check_protocol = ''
-        `);
-        console.log(
-          "[迁移] 已回填 models.supported_protocols 和 health_check_protocol 默认值",
-        );
+        console.log("[迁移] 已回填 models.supported_protocols 默认值");
       }
     },
     down: async (conn: Connection) => {
@@ -273,14 +334,7 @@ export const migrations: Migration[] = [
       if (await hasColumn("supported_protocols")) {
         await conn.query(`ALTER TABLE models DROP COLUMN supported_protocols`);
       }
-      if (await hasColumn("health_check_protocol")) {
-        await conn.query(
-          `ALTER TABLE models DROP COLUMN health_check_protocol`,
-        );
-      }
-      console.log(
-        "[迁移] 已删除 supported_protocols 和 health_check_protocol 字段",
-      );
+      console.log("[迁移] 已删除 supported_protocols 字段");
     },
   },
   {
@@ -926,6 +980,635 @@ export const migrations: Migration[] = [
         } catch (e: any) {
           console.warn(`[迁移] 删除 ${column} 字段失败:`, e.message);
         }
+      }
+    },
+  },
+  {
+    version: 47,
+    // v2 未发布批次合并迁移：expert-routing 难度列 + api_requests.run_id 关联。
+    // 注意 runner 按 version > current 过滤（不看 name）：已应用过 v47 的库
+    // 需先 DELETE FROM schema_migrations WHERE version = 47 才会重跑本条
+    //（块内全部幂等）补齐 run_id；未发布阶段仅开发库会命中此情况。
+    name: "add_expert_routing_difficulty_columns",
+    up: async (conn: Connection) => {
+      // Idempotent INFORMATION_SCHEMA pattern: add each column only when absent.
+      const columns: Array<{ table: string; column: string; ddl: string }> = [
+        {
+          table: "expert_routing_logs",
+          column: "difficulty",
+          ddl: "ALTER TABLE expert_routing_logs ADD COLUMN difficulty VARCHAR(16) DEFAULT NULL COMMENT '路由难度: low/medium/high'",
+        },
+        {
+          table: "expert_routing_logs",
+          column: "band",
+          ddl: "ALTER TABLE expert_routing_logs ADD COLUMN band VARCHAR(16) DEFAULT NULL COMMENT '难度分档'",
+        },
+        {
+          table: "expert_routing_logs",
+          column: "verdict_reused",
+          ddl: "ALTER TABLE expert_routing_logs ADD COLUMN verdict_reused TINYINT(1) DEFAULT 0 COMMENT '是否复用缓存判定'",
+        },
+        {
+          table: "expert_routing_logs",
+          column: "classifier_time_ms",
+          ddl: "ALTER TABLE expert_routing_logs ADD COLUMN classifier_time_ms INT DEFAULT NULL COMMENT '分类器耗时(毫秒)'",
+        },
+        {
+          table: "expert_routing_session_bindings",
+          column: "difficulty",
+          ddl: "ALTER TABLE expert_routing_session_bindings ADD COLUMN difficulty VARCHAR(16) DEFAULT NULL COMMENT '绑定时的路由难度(可选)'",
+        },
+        // agent run 关联：loopback 打标写入；无外键（api_requests 保留期与
+        // agent_search_runs 生命周期不同步，FK 会阻止行清理）。
+        {
+          table: "api_requests",
+          column: "run_id",
+          ddl: "ALTER TABLE api_requests ADD COLUMN run_id VARCHAR(255) DEFAULT NULL",
+        },
+      ];
+      for (const { table, column, ddl } of columns) {
+        const [rows] = await conn.query(
+          `SELECT COUNT(*) AS cnt
+           FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = ?
+             AND COLUMN_NAME = ?`,
+          [table, column],
+        );
+        if (Number((rows as any[])[0]?.cnt || 0) === 0) {
+          await conn.query(ddl);
+          console.log(`[迁移] 已为 ${table} 添加列 ${column}`);
+        }
+      }
+
+      const [classifierColumn] = await conn.query(
+        `SELECT IS_NULLABLE AS is_nullable
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'expert_routing_logs'
+           AND COLUMN_NAME = 'classifier_model'`,
+      );
+      if ((classifierColumn as Array<{ is_nullable: string }>)[0]?.is_nullable === 'NO') {
+        await conn.query(
+          'ALTER TABLE expert_routing_logs MODIFY COLUMN classifier_model VARCHAR(255) DEFAULT NULL',
+        );
+      }
+
+      const [indexRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'api_requests'
+           AND INDEX_NAME = 'idx_api_requests_run_id'`,
+      );
+      if (Number((indexRows as any[])[0]?.cnt || 0) === 0) {
+        await conn.query(
+          "ALTER TABLE api_requests ADD INDEX idx_api_requests_run_id (run_id)",
+        );
+        console.log("[迁移] 已为 api_requests 添加 run_id 索引");
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query("ALTER TABLE api_requests DROP INDEX idx_api_requests_run_id");
+      } catch (error: any) {
+        console.warn("[迁移] 删除 api_requests.run_id 索引失败:", error.message);
+      }
+      for (const [table, column] of [
+        ["api_requests", "run_id"],
+        ["expert_routing_logs", "difficulty"],
+        ["expert_routing_logs", "band"],
+        ["expert_routing_logs", "verdict_reused"],
+        ["expert_routing_logs", "classifier_time_ms"],
+        ["expert_routing_session_bindings", "difficulty"],
+      ] as const) {
+        try {
+          await conn.query(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+        } catch (error: any) {
+          console.warn(`[迁移] 删除 ${table}.${column} 列失败:`, error.message);
+        }
+      }
+    },
+  },
+  {
+    version: 48,
+    // 模型主动监控已整体移除：清理 health_* 表、models.health_check_protocol 列、
+    // 监控配置键与监控专用虚拟密钥。down 仅重建空结构，监控数据与配置键不恢复。
+    name: "drop_model_proactive_monitoring",
+    up: async (conn: Connection) => {
+      // 子表先删，避免外键约束（health_runs/health_summaries 引用 health_targets）
+      await conn.query(`DROP TABLE IF EXISTS health_summaries`);
+      await conn.query(`DROP TABLE IF EXISTS health_runs`);
+      await conn.query(`DROP TABLE IF EXISTS health_targets`);
+
+      const [columnRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'models'
+           AND COLUMN_NAME = 'health_check_protocol'`,
+      );
+      if (Number((columnRows as any[])[0]?.cnt || 0) > 0) {
+        await conn.query(`ALTER TABLE models DROP COLUMN health_check_protocol`);
+        console.log("[迁移] 已删除 models.health_check_protocol 字段");
+      }
+
+      await conn.query(
+        "DELETE FROM system_config WHERE `key` IN ('health_monitoring_enabled', 'persistent_monitoring_enabled', 'monitoring_virtual_key_id')",
+      );
+      await conn.query(
+        "DELETE FROM virtual_keys WHERE name = 'System Monitoring Key'",
+      );
+      console.log("[迁移] 已清理监控配置键与监控专用虚拟密钥");
+    },
+    down: async (conn: Connection) => {
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS health_targets (
+          id VARCHAR(255) PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          display_title VARCHAR(255) DEFAULT NULL COMMENT '显示标题(可自定义)',
+          type ENUM('model', 'virtual_model') NOT NULL,
+          target_id VARCHAR(255) NOT NULL COMMENT '模型或虚拟模型的ID',
+          enabled TINYINT DEFAULT 1,
+          check_interval_seconds INT DEFAULT 300 COMMENT '检查频率(秒)',
+          check_prompt TEXT DEFAULT NULL COMMENT '健康检查使用的提示词',
+          check_config TEXT DEFAULT NULL COMMENT 'JSON配置: 超时、重试、并发等',
+          created_at BIGINT NOT NULL,
+          updated_at BIGINT NOT NULL,
+          INDEX idx_health_targets_type (type),
+          INDEX idx_health_targets_enabled (enabled),
+          INDEX idx_health_targets_target_id (target_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS health_runs (
+          id VARCHAR(255) PRIMARY KEY,
+          target_id VARCHAR(255) NOT NULL,
+          status ENUM('success', 'error') NOT NULL,
+          latency_ms INT NOT NULL COMMENT '总耗时(毫秒)',
+          error_type VARCHAR(100) DEFAULT NULL COMMENT '错误类型',
+          error_message TEXT DEFAULT NULL COMMENT '错误摘要',
+          request_id VARCHAR(255) DEFAULT NULL COMMENT '请求ID,对齐api_requests',
+          created_at BIGINT NOT NULL,
+          FOREIGN KEY (target_id) REFERENCES health_targets(id) ON DELETE CASCADE,
+          INDEX idx_health_runs_target (target_id),
+          INDEX idx_health_runs_created_at (created_at),
+          INDEX idx_health_runs_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS health_summaries (
+          id VARCHAR(255) PRIMARY KEY,
+          target_id VARCHAR(255) NOT NULL,
+          window_start BIGINT NOT NULL COMMENT '时间窗口起点',
+          window_end BIGINT NOT NULL COMMENT '时间窗口终点',
+          total_checks INT DEFAULT 0,
+          success_count INT DEFAULT 0,
+          error_count INT DEFAULT 0,
+          avg_latency_ms INT DEFAULT 0,
+          p50_latency_ms INT DEFAULT 0,
+          p95_latency_ms INT DEFAULT 0,
+          p99_latency_ms INT DEFAULT 0,
+          created_at BIGINT NOT NULL,
+          FOREIGN KEY (target_id) REFERENCES health_targets(id) ON DELETE CASCADE,
+          INDEX idx_health_summaries_target (target_id),
+          INDEX idx_health_summaries_window (window_start, window_end)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+
+      const [columnRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'models'
+           AND COLUMN_NAME = 'health_check_protocol'`,
+      );
+      if (Number((columnRows as any[])[0]?.cnt || 0) === 0) {
+        await conn.query(
+          `ALTER TABLE models ADD COLUMN health_check_protocol VARCHAR(50)`,
+        );
+      }
+    },
+  },
+  {
+    version: 49,
+    // 运维监控的 Agent 统计按 created_at 窗口聚合 agent_search_runs（一次刷新 6 个
+    // 聚合查询），该表原本只有 user/status/expires/snapshot 四个索引 → 全表扫描。
+    name: "add_agent_search_runs_created_at_index",
+    up: async (conn: Connection) => {
+      const [indexRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'agent_search_runs'
+           AND INDEX_NAME = 'idx_runs_created_at'`,
+      );
+      if (Number((indexRows as any[])[0]?.cnt || 0) === 0) {
+        await conn.query(
+          "ALTER TABLE agent_search_runs ADD INDEX idx_runs_created_at (created_at)",
+        );
+        console.log("[迁移] 已为 agent_search_runs 添加 created_at 索引");
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(
+          "ALTER TABLE agent_search_runs DROP INDEX idx_runs_created_at",
+        );
+      } catch (error: any) {
+        console.warn("[迁移] 删除 agent_search_runs.created_at 索引失败:", error.message);
+      }
+    },
+  },
+  {
+    version: 50,
+    // 系统告警已读状态：按 (user_id, 告警 code) 落库，铃铛 GET 按用户过滤已确认告警。
+    name: "add_alert_reads",
+    up: async (conn: Connection) => {
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS alert_reads (
+          user_id VARCHAR(255) NOT NULL,
+          code VARCHAR(64) NOT NULL,
+          read_at BIGINT NOT NULL,
+          PRIMARY KEY (user_id, code),
+          INDEX idx_alert_reads_read_at (read_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      console.log("[迁移] 已创建 alert_reads 表");
+    },
+    down: async (conn: Connection) => {
+      await conn.query("DROP TABLE IF EXISTS alert_reads");
+      console.log("[迁移] 已删除 alert_reads 表");
+    },
+  },
+  {
+    version: 51,
+    // 难度分级路由 v2：逐行升级 expert_routing_configs.config（band 必填、
+    // session_policy、version:2），缺 band 按价格三分法补齐（取价失败归 high），
+    // expert 模式配置的会话绑定一并清除。
+    name: "expert_routing_config_v2",
+    up: async (conn: Connection) => {
+      const [rows] = await conn.query(
+        "SELECT id, config FROM expert_routing_configs",
+      );
+      for (const row of rows as any[]) {
+        let config: any;
+        try {
+          config = JSON.parse(row.config);
+        } catch {
+          console.warn(
+            `[迁移] expert_routing_configs ${row.id} config 非法 JSON，跳过`,
+          );
+          continue;
+        }
+        if (config?.version === 2) continue; // 幂等：已是 v2
+
+        const experts = Array.isArray(config?.experts) ? config.experts : [];
+        const costOf = new Map<string, CostInput | undefined>();
+        for (const expert of experts) {
+          costOf.set(expert?.id, await fetchExpertCostForMigration(conn, expert));
+        }
+        const assignment = buildBands(experts, (e) => costOf.get(e?.id));
+        const bandOf = new Map<string, RoutingBand>();
+        for (const band of BAND_ORDER) {
+          for (const candidate of assignment[band]) bandOf.set(candidate.id, band);
+        }
+
+        const { wasDifficulty } = transformExpertRoutingConfigV2(
+          config,
+          (expert) => bandOf.get(expert?.id),
+        );
+        await conn.query(
+          "UPDATE expert_routing_configs SET config = ? WHERE id = ?",
+          [JSON.stringify(config), row.id],
+        );
+        if (!wasDifficulty) {
+          // expert 模式的绑定指向已删除的类别语义，清除后由 v2 重新决策。
+          await conn.query(
+            "DELETE FROM expert_routing_session_bindings WHERE expert_routing_id = ?",
+            [row.id],
+          );
+        }
+      }
+
+      // 可选清理：删表不可逆，仅 env 显式开启时执行（执行前请先备份）。
+      if (process.env.EXPERT_ROUTING_DROP_LEGACY_TABLES === "1") {
+        await conn.query("DROP TABLE IF EXISTS intent_classify_logs");
+        await conn.query(
+          "DROP TABLE IF EXISTS expert_routing_training_records",
+        );
+        console.log(
+          "[迁移] 已删除 intent_classify_logs / expert_routing_training_records（EXPERT_ROUTING_DROP_LEGACY_TABLES=1）",
+        );
+      }
+      console.log("[迁移] 专家路由配置已升级到 v2");
+    },
+    down: async () => {
+      // config JSON 结构变换不可逆，不提供回滚。
+      console.log(
+        "[迁移] expert_routing_config_v2 为结构变换，不支持回滚",
+      );
+    },
+  },
+  {
+    version: 52,
+    // §5.1 escalate_only：会话绑定增加 tier 列（只升不降的档位锚点），
+    // 存量行按 v47 difficulty 回填（缺失归 low）。
+    name: "add_expert_routing_binding_tier",
+    up: async (conn: Connection) => {
+      const [columnRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'expert_routing_session_bindings'
+           AND COLUMN_NAME = 'tier'`,
+      );
+      if (Number((columnRows as any[])[0]?.cnt || 0) === 0) {
+        await conn.query(
+          "ALTER TABLE expert_routing_session_bindings ADD COLUMN tier VARCHAR(16) DEFAULT NULL COMMENT '绑定档位(escalate_only 锚点)'",
+        );
+        await conn.query(
+          `UPDATE expert_routing_session_bindings
+           SET tier = CASE difficulty
+             WHEN 'medium' THEN 'medium'
+             WHEN 'high' THEN 'high'
+             ELSE 'low'
+           END`,
+        );
+        console.log("[迁移] 已为 expert_routing_session_bindings 添加 tier 列并回填");
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(
+          "ALTER TABLE expert_routing_session_bindings DROP COLUMN tier",
+        );
+      } catch (error: any) {
+        console.warn("[迁移] 删除 tier 列失败:", error.message);
+      }
+    },
+  },
+  {
+    version: 53,
+    // §5.8：api_requests 关联路由决策（expert_routing_logs.id + 命中档位），
+    // 用于实际用量×选中模型价的节省额口径。
+    name: "add_api_requests_route_columns",
+    up: async (conn: Connection) => {
+      const [columnRows] = await conn.query(
+        `SELECT COLUMN_NAME AS name
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'api_requests'
+           AND COLUMN_NAME IN ('route_log_id', 'route_tier')`,
+      );
+      const existing = new Set(
+        (columnRows as any[]).map((row) => String(row.name)),
+      );
+      if (!existing.has("route_log_id")) {
+        await conn.query(
+          "ALTER TABLE api_requests ADD COLUMN route_log_id VARCHAR(255) DEFAULT NULL COMMENT '关联 expert_routing_logs.id'",
+        );
+      }
+      if (!existing.has("route_tier")) {
+        await conn.query(
+          "ALTER TABLE api_requests ADD COLUMN route_tier VARCHAR(16) DEFAULT NULL COMMENT '命中档位 low/medium/high'",
+        );
+      }
+      const [indexRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'api_requests'
+           AND INDEX_NAME = 'idx_api_requests_route_log_id'`,
+      );
+      if (Number((indexRows as any[])[0]?.cnt || 0) === 0) {
+        await conn.query(
+          "ALTER TABLE api_requests ADD INDEX idx_api_requests_route_log_id (route_log_id)",
+        );
+      }
+      console.log("[迁移] 已为 api_requests 添加 route_log_id/route_tier");
+    },
+    down: async (conn: Connection) => {
+      for (const ddl of [
+        "ALTER TABLE api_requests DROP INDEX idx_api_requests_route_log_id",
+        "ALTER TABLE api_requests DROP COLUMN route_log_id",
+        "ALTER TABLE api_requests DROP COLUMN route_tier",
+      ]) {
+        try {
+          await conn.query(ddl);
+        } catch (error: any) {
+          console.warn("[迁移] 回滚 api_requests 路由列失败:", error.message);
+        }
+      }
+    },
+  },
+  {
+    version: 54,
+    // §5.9 误判反馈闭环：路由日志落清洗后意图文本（截断），支撑判低/判高
+    // 标记导出回放集。注意：这是路由日志中唯一明文 prompt 内容的列，
+    // 敏感场景可通过缩短日志保留期控制暴露面。
+    name: "add_expert_routing_log_intent_text",
+    up: async (conn: Connection) => {
+      const [columnRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'expert_routing_logs'
+           AND COLUMN_NAME = 'intent_text'`,
+      );
+      if (Number((columnRows as any[])[0]?.cnt || 0) === 0) {
+        await conn.query(
+          "ALTER TABLE expert_routing_logs ADD COLUMN intent_text MEDIUMTEXT NULL COMMENT '清洗后意图文本(截断,反馈回放用)'",
+        );
+        console.log("[迁移] 已为 expert_routing_logs 添加 intent_text");
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(
+          "ALTER TABLE expert_routing_logs DROP COLUMN intent_text",
+        );
+      } catch (error: any) {
+        console.warn("[迁移] 删除 intent_text 失败:", error.message);
+      }
+    },
+  },
+  {
+    version: 55,
+    name: "drop_manual_ip_blocklist",
+    up: async (conn: Connection) => {
+      await conn.query("DROP TABLE IF EXISTS blocked_ips");
+    },
+    down: async (conn: Connection) => {
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS blocked_ips (
+          ip VARCHAR(45) PRIMARY KEY,
+          reason VARCHAR(255) DEFAULT NULL,
+          created_at BIGINT NOT NULL,
+          created_by VARCHAR(255) DEFAULT NULL,
+          INDEX idx_blocked_ips_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+    },
+  },
+  {
+    version: 56,
+    name: "provider_scoped_model_protocols",
+    up: async (conn: Connection) => {
+      const [columnRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'models'
+           AND COLUMN_NAME = 'supported_protocols'`,
+      );
+      if (Number((columnRows as any[])[0]?.cnt || 0) === 0) {
+        return;
+      }
+
+      // 协议能力改由供应商提供（base_url→openai，protocol_mappings→其余）。
+      // 删列前把模型级声明的 anthropic/google 能力回填到所属供应商的
+      // protocol_mappings（缺映射时继承 base_url），保证现有转发行为不变。
+      const [modelRows] = await conn.query(
+        `SELECT provider_id, supported_protocols
+         FROM models
+         WHERE provider_id IS NOT NULL
+           AND is_virtual = 0
+           AND supported_protocols IS NOT NULL
+           AND supported_protocols != ''`,
+      );
+      const declared = new Map<string, Set<string>>();
+      for (const row of modelRows as any[]) {
+        let protocols: unknown;
+        try {
+          protocols = JSON.parse(row.supported_protocols);
+        } catch {
+          continue;
+        }
+        if (!Array.isArray(protocols)) continue;
+        const set = declared.get(row.provider_id) ?? new Set<string>();
+        for (const protocol of protocols) {
+          if (protocol === "anthropic" || protocol === "google") {
+            set.add(protocol);
+          }
+        }
+        if (set.size > 0) declared.set(row.provider_id, set);
+      }
+
+      if (declared.size > 0) {
+        const [providerRows] = await conn.query(
+          `SELECT id, base_url, protocol_mappings FROM providers`,
+        );
+        for (const provider of providerRows as any[]) {
+          const needed = declared.get(provider.id);
+          if (!needed || needed.size === 0) continue;
+
+          let mappings: Record<string, string> = {};
+          if (provider.protocol_mappings) {
+            try {
+              const parsed = JSON.parse(provider.protocol_mappings);
+              if (parsed && typeof parsed === "object") {
+                mappings = parsed;
+              }
+            } catch {
+              // 非法 JSON 时重建映射，仅保留本次回填内容
+            }
+          }
+
+          let changed = false;
+          for (const protocol of needed) {
+            const existing = mappings[protocol];
+            if (typeof existing === "string" && existing.trim()) continue;
+            mappings[protocol] = provider.base_url || "";
+            changed = true;
+          }
+          if (changed) {
+            await conn.query(
+              `UPDATE providers SET protocol_mappings = ? WHERE id = ?`,
+              [JSON.stringify(mappings), provider.id],
+            );
+            console.log(
+              `[迁移] 供应商 ${provider.id} 已继承模型级协议能力，回填 protocol_mappings`,
+            );
+          }
+        }
+      }
+
+      await conn.query(`ALTER TABLE models DROP COLUMN supported_protocols`);
+      console.log("[迁移] 已删除 models.supported_protocols，协议能力改由供应商提供");
+    },
+    down: async (conn: Connection) => {
+      const [columnRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'models'
+           AND COLUMN_NAME = 'supported_protocols'`,
+      );
+      if (Number((columnRows as any[])[0]?.cnt || 0) > 0) {
+        return;
+      }
+      await conn.query(`ALTER TABLE models ADD COLUMN supported_protocols TEXT`);
+      // 原模型级白名单已删除，回滚后统一回填默认值
+      await conn.query(
+        `UPDATE models SET supported_protocols = '["openai"]'`,
+      );
+    },
+  },
+  {
+    version: 57,
+    name: "add_provider_owner_node",
+    up: async (conn: Connection) => {
+      const [columnRows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'providers'
+           AND COLUMN_NAME = 'owner_node'`,
+      );
+      if (Number((columnRows as any[])[0]?.cnt || 0) === 0) {
+        await conn.query(
+          "ALTER TABLE providers ADD COLUMN owner_node VARCHAR(64) DEFAULT NULL COMMENT '归属节点 ID，NULL 表示默认控制节点' AFTER model_mapping",
+        );
+        console.log("[迁移] 已为 providers 添加 owner_node 字段");
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(
+          "ALTER TABLE providers DROP COLUMN IF EXISTS owner_node",
+        );
+        console.log("[迁移] 已删除 providers.owner_node 字段");
+      } catch (error: any) {
+        console.warn("[迁移] 删除 providers.owner_node 字段失败:", error.message);
+      }
+    },
+  },
+  {
+    version: 58,
+    name: "rename_provider_owner_pop_column",
+    up: async (conn: Connection) => {
+      const [rows] = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'providers'
+           AND COLUMN_NAME = 'owner_pop'`,
+      );
+      if (Number((rows as any[])[0]?.cnt || 0) > 0) {
+        await conn.query(
+          "ALTER TABLE providers CHANGE COLUMN owner_pop owner_node VARCHAR(64) DEFAULT NULL COMMENT '归属节点 ID，NULL 表示默认控制节点'",
+        );
+        console.log("[迁移] providers.owner_pop 已重命名为 owner_node");
+      }
+    },
+    down: async (conn: Connection) => {
+      try {
+        await conn.query(
+          "ALTER TABLE providers CHANGE COLUMN owner_node owner_pop VARCHAR(64) DEFAULT NULL",
+        );
+      } catch (error: any) {
+        console.warn("[迁移] 回退 providers.owner_node 字段失败:", error.message);
       }
     },
   },

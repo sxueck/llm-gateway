@@ -1,10 +1,8 @@
 <template>
   <div class="api-requests-view">
     <n-space vertical :size="24">
+      <PageHeader eyebrow="TOOLS" title="API 请求日志" />
       <n-card>
-        <template #header>
-          <span class="card-title">API 请求日志</span>
-        </template>
         <template #header-extra>
           <n-space class="filter-toolbar">
             <n-date-picker
@@ -252,6 +250,7 @@ import { formatJson, formatTimestamp } from '@/utils/common'
 import { isSessionStartBody } from '@/utils/session-start'
 import { extractRequestPreview, extractResponsePreview } from '@/utils/content-truncator'
 import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize'
+import PageHeader from '@/components/PageHeader.vue'
 
 const message = useMessage()
 const loading = ref(false)
@@ -704,16 +703,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.card-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--color-title);
-  letter-spacing: -0.015em;
-  line-height: 1.3;
-  white-space: nowrap;
-  display: inline-block;
-}
-
 .filter-toolbar {
   align-items: center;
   justify-content: flex-end;
@@ -918,10 +907,6 @@ onMounted(() => {
 }
 
 @media (max-width: 768px) {
-  .card-title {
-    font-size: 18px;
-  }
-
   .filter-toolbar {
     justify-content: flex-start;
   }

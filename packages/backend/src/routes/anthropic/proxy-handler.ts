@@ -3,7 +3,9 @@ import { memoryLogger } from "../../services/logger.js";
 import { extractIp } from "../../utils/ip.js";
 import { getRequestUserAgent } from "../../utils/http.js";
 import { runProxyPipeline } from "../proxy/pipeline.js";
-import { circuitBreaker } from "../../services/circuit-breaker.js";
+import { getNodeRequestState } from "../../services/node-dispatch.js";
+import { circuitBreaker, httpFailureError } from "../../services/circuit-breaker.js";
+import { applyRouteHeaders, modelFieldForClient } from "../../services/expert-router/exposure.js";
 import { shouldRetrySmartRouting } from "../proxy/routing.js";
 import { cloneSmartRoutingRetryBody } from "../proxy/retry-handler.js";
 import { isAnthropicProtocolConfig } from "../../utils/protocol-utils.js";
@@ -110,6 +112,8 @@ export interface AnthropicProxyRequestContext {
   protocolConfig: any;
   virtualKey: any;
   providerId: string;
+  /** Display name of the serving provider (X-Gateway-Provider, opt-in). */
+  providerName?: string | null;
   /** Smart-routing circuit key (modelResult.circuitBreakerKey), not the bare provider id. */
   circuitBreakerKey: string;
   startTime: number;
@@ -274,7 +278,8 @@ export async function dispatchAnthropicRequest(
 
 export function createAnthropicProxyHandler() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const startTime = Date.now();
+    const nodeState = getNodeRequestState(request);
+    const startTime = nodeState?.envelope.startedAt ?? Date.now();
     let virtualKeyValue: string | undefined;
     let providerId: string | undefined;
     let currentModel: any | undefined;
@@ -290,13 +295,6 @@ export function createAnthropicProxyHandler() {
       const pipelineResult = await runProxyPipeline(request, reply, {
         protocol: "anthropic",
         handlers: {
-          onManualBlock: ({ reply }) => {
-            const anthropicError = createAnthropicError(
-              "Access denied: IP blocked",
-              "authentication_error",
-            );
-            reply.code(403).send(anthropicError);
-          },
           onAntiBotBlock: ({ reply }) => {
             const anthropicError = createAnthropicError(
               "Access denied: Bot detected",
@@ -312,6 +310,13 @@ export function createAnthropicProxyHandler() {
                 : "permission_error",
             );
             reply.code(authError.code).send(anthropicError);
+          },
+          onRateLimited: ({ reply, limitPerMinute, retryAfterSeconds }) => {
+            const anthropicError = createAnthropicError(
+              `Rate limit exceeded for this virtual key (limit: ${limitPerMinute} requests/min). Retry after ${retryAfterSeconds}s.`,
+              "rate_limit_error",
+            );
+            reply.code(429).send(anthropicError);
           },
           onModelError: ({ reply, modelError }) => {
             const anthropicError = createAnthropicError(
@@ -397,6 +402,7 @@ export function createAnthropicProxyHandler() {
         requestUserAgent: pipelineUa,
         virtualKey,
         virtualKeyValue: vkValue,
+        provider: resolvedProvider,
         providerId: resolvedProviderId,
         currentModel: resolvedModel,
         modelResult,
@@ -408,8 +414,8 @@ export function createAnthropicProxyHandler() {
       virtualKeyValue = vkValue;
       providerId = resolvedProviderId;
       currentModel = resolvedModel;
-
-      const normalization = await applyContextNormalization({
+      const providerName = resolvedProvider?.name ?? null;
+      const normalization = nodeState?.envelope.normalized ? { blocked: false as const } : await applyContextNormalization({
         protocol: "anthropic",
         request,
         body: request.body,
@@ -422,6 +428,20 @@ export function createAnthropicProxyHandler() {
       }
 
       const { protocolConfig, vkDisplay } = configResult;
+
+      // gateway_name exposure: rewrite message_start `model` when the route
+      // opts in; absent = upstream identifier passthrough (byte-identical).
+      const anthropicClientModel = modelFieldForClient(
+        protocolConfig?.model,
+        modelResult?.routeInfo,
+      );
+      if (
+        protocolConfig &&
+        anthropicClientModel &&
+        anthropicClientModel !== protocolConfig.model
+      ) {
+        protocolConfig.clientModel = anthropicClientModel;
+      }
 
       // Smart-routing retry safety: snapshot the globally-normalized body (context
       // normalization, image compression) BEFORE any target-specific mutation
@@ -436,6 +456,7 @@ export function createAnthropicProxyHandler() {
         protocolConfig,
         virtualKey,
         providerId: resolvedProviderId,
+        providerName,
         circuitBreakerKey: modelResult?.circuitBreakerKey || resolvedProviderId,
         startTime,
         currentModel,
@@ -571,6 +592,14 @@ export async function handleAnthropicNonStreamRequest(
     }
   });
 
+  // Route exposure headers (PRD §4): setHeader on the raw response survives
+  // the stream writeHead inside makeAnthropicStreamRequest.
+  applyRouteHeaders(reply, {
+    routeInfo: modelResult?.routeInfo,
+    upstreamModel: protocolConfig?.model ?? requestBody.model,
+    providerName: ctx.providerName,
+  });
+
   try {
     const response = await makeAnthropicRequest(
       protocolConfig,
@@ -681,6 +710,8 @@ export async function handleAnthropicNonStreamRequest(
         model: modelForLogging,
         tokenCount,
         status: "success",
+        routeLogId: modelResult?.routeInfo?.logId ?? undefined,
+        routeTier: modelResult?.routeInfo?.tier ?? undefined,
         responseTime: duration,
         truncatedRequest: shouldLogBody
           ? JSON.stringify(requestBody)
@@ -701,11 +732,24 @@ export async function handleAnthropicNonStreamRequest(
       );
 
       reply.header("Content-Type", "application/json");
+      // Route exposure headers + body model field (PRD §4) at the final send.
+      applyRouteHeaders(reply, {
+        routeInfo: modelResult?.routeInfo,
+        upstreamModel: protocolConfig?.model ?? requestBody.model,
+        providerName: ctx.providerName,
+      });
+      if (typeof responseData.model === "string") {
+        const modelForClient = modelFieldForClient(
+          responseData.model,
+          modelResult?.routeInfo,
+        );
+        if (modelForClient) responseData.model = modelForClient;
+      }
       return reply.code(response.statusCode).send(responseData);
     } else {
       circuitBreaker.recordFailure(
         circuitBreakerKey,
-        new Error(`HTTP ${response.statusCode}`),
+        httpFailureError(response.statusCode),
       );
 
       const parsedUpstreamBody = parseAnthropicUpstreamBody(response.body);
@@ -857,6 +901,14 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
   const streamIp = extractIp(request);
   const forwardedHeaders = anthropicForwardedHeaders(request);
 
+  // Route exposure headers (PRD §4): raw setHeader survives the writeHead
+  // inside makeAnthropicStreamRequest.
+  applyRouteHeaders(reply, {
+    routeInfo: modelResult?.routeInfo,
+    upstreamModel: protocolConfig?.model ?? requestBody.model,
+    providerName: ctx.providerName,
+  });
+
   // PII protection: mask request before sending to upstream
   const piiEnabled = virtualKey?.pii_protection_enabled === 1;
   const piiResult = piiEnabled
@@ -885,6 +937,14 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
       forwardedHeaders,
       piiResult.context,
       abortController.signal,
+      protocolConfig.clientModel,
+      modelResult?.routeInfo?.exposure?.sse_comment
+        ? `x-gateway-route ${JSON.stringify({
+            model: protocolConfig?.model ?? requestBody.model ?? "",
+            tier: modelResult.routeInfo.tier ?? "",
+            source: modelResult.routeInfo.routeSource,
+          })}`
+        : undefined,
     );
 
     const duration = Date.now() - startTime;
@@ -906,6 +966,8 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
       model: modelForLogging,
       tokenCount,
       status: "success",
+      routeLogId: modelResult?.routeInfo?.logId ?? undefined,
+      routeTier: modelResult?.routeInfo?.tier ?? undefined,
       responseTime: duration,
       truncatedRequest: shouldLogBody ? JSON.stringify(requestBody) : undefined,
       truncatedResponse: shouldLogBody

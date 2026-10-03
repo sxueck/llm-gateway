@@ -1,38 +1,5 @@
 <template>
   <div class="provider-form-container">
-    <div v-if="!editingId" class="preset-section">
-      <div class="preset-header" @click="showPresetSelector = !showPresetSelector">
-        <span class="section-label" style="margin-bottom: 0">选择提供商模板</span>
-        <span v-if="!showPresetSelector" class="preset-summary">{{ presetSummary }}</span>
-        <n-icon :component="showPresetSelector ? ChevronDown : ChevronRight" />
-      </div>
-
-      <n-collapse-transition :show="showPresetSelector">
-        <div class="preset-grid">
-          <div
-            class="preset-card custom-card"
-            :class="{ active: !activePresetId }"
-            @click="selectPreset(null)"
-          >
-            <div class="preset-name">Custom / 自定义</div>
-            <div class="preset-desc">连接自定义协议服务</div>
-          </div>
-          <div
-            v-for="preset in PROVIDER_PRESETS"
-            :key="preset.id"
-            class="preset-card"
-            :class="{ active: activePresetId === preset.id }"
-            @click="selectPreset(preset)"
-          >
-            <div class="preset-name">{{ preset.name }}</div>
-            <div class="preset-tag">{{ preset.category }}</div>
-          </div>
-        </div>
-      </n-collapse-transition>
-    </div>
-
-    <n-divider v-if="!editingId" style="margin: 16px 0 24px 0" />
-
     <n-form
       ref="formRef"
       :model="formValue"
@@ -43,35 +10,24 @@
       class="main-form"
     >
       <div class="form-section">
-        <div 
-          class="section-header" 
-          @click="showAdvanced = !showAdvanced" 
-          :class="{ 'is-collapsed': !showAdvanced && activePresetId }"
-        >
+        <div class="section-header">
           <span class="section-title">基础配置</span>
-          <n-icon v-if="activePresetId" :component="showAdvanced ? ChevronDown : ChevronRight" />
-          <span v-if="activePresetId && !showAdvanced" class="summary-text">
-            {{ formValue.name }} ({{ formValue.baseUrl }})
-          </span>
         </div>
 
-        <n-collapse-transition :show="showAdvanced || !activePresetId">
-          <div class="section-content">
+        <div class="section-content">
             <n-form-item label="显示名称" path="name">
               <n-input 
                 v-model:value="formValue.name" 
                 placeholder="如: My LLM Service" 
                 size="small"
-                @input="handleNameInput" 
               />
             </n-form-item>
 
             <n-form-item label="提供商 ID" path="id">
               <n-space vertical style="width: 100%" :size="4">
-                <n-auto-complete
+                <n-input
                   v-model:value="formValue.id"
                   :disabled="!!editingId"
-                  :options="idSuggestions"
                   placeholder="唯一标识符，如: my-llm"
                   size="small"
                   :status="getFieldStatus(idValidation.isValid, formValue.id)"
@@ -90,7 +46,7 @@
                       class="field-icon field-icon--error"
                     />
                   </template>
-                </n-auto-complete>
+                </n-input>
                 <div
                   v-if="idValidation.message"
                   class="field-feedback"
@@ -109,6 +65,28 @@
                 type="textarea" 
                 :autosize="{ minRows: 1, maxRows: 3 }" 
               />
+            </n-form-item>
+
+            <n-form-item v-if="nodeModeEnabled || formValue.ownerNode" :label="t('providers.ownerNode')" path="ownerNode">
+              <n-space vertical style="width: 100%" :size="4">
+                <n-select
+                  v-model:value="ownerNodeValue"
+                  :options="ownerNodeOptions"
+                  :placeholder="t('providers.ownerNodePlaceholder')"
+                  size="small"
+                  @update:value="handleOwnerNodeChange"
+                />
+                <div v-if="ownerNodeUnconfigured" class="field-feedback field-feedback--error">
+                  {{ t('providers.ownerNodeUnconfigured') }}
+                </div>
+                <div v-else-if="nodeValidation.message" class="field-feedback field-feedback--error">
+                  {{ nodeValidation.message }}
+                </div>
+                <div v-else class="field-hint">
+                  <n-icon :component="InformationCircle" class="field-hint__icon" />
+                  <span>{{ t('providers.ownerNodeHelp') }}</span>
+                </div>
+              </n-space>
             </n-form-item>
 
             <n-form-item label="多协议支持">
@@ -173,7 +151,6 @@
               </n-form-item>
             </template>
           </div>
-        </n-collapse-transition>
       </div>
 
       <div class="form-section highlight-section">
@@ -289,14 +266,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import {
   NForm,
   NFormItem,
   NInput,
   NSwitch,
   NSpace,
-  NAutoComplete,
   NButton,
   NSelect,
   NText,
@@ -304,27 +280,24 @@ import {
   NIcon,
   NInputGroup,
   NTooltip,
-  NDivider,
   NCollapseTransition,
 } from 'naive-ui';
 import { 
   ClipboardOutline, 
   LinkOutline,
-  ChevronForward as ChevronRight,
-  ChevronDown,
   CheckmarkCircle,
   CloseCircle,
   InformationCircle,
 } from '@vicons/ionicons5';
+import { useI18n } from 'vue-i18n';
 import {
   validateProviderId,
   validateBaseUrl,
   validateApiKey,
-  getProviderIdSuggestions
+  validateOwnerNode
 } from '@/utils/provider-validation';
 import { providerApi, type ModelInfo } from '@/api/provider';
 import type { ProtocolMapping } from '@/types';
-import { PROVIDER_PRESETS, type ProviderPreset } from '@/constants/providers';
 
 interface Props {
   modelValue: {
@@ -334,6 +307,7 @@ interface Props {
     baseUrl: string;
     protocolMappings?: ProtocolMapping | null;
     apiKey: string;
+    ownerNode: string;
     enabled: boolean;
   };
   editingId?: string | null;
@@ -346,22 +320,56 @@ const emit = defineEmits<{
 }>();
 
 const message = useMessage();
+const { t } = useI18n();
 const formRef = ref();
-const activePresetId = ref<string | null>(null);
-const showAdvanced = ref(true)
-const showPresetSelector = ref(false)
-
-const presetSummary = computed(() => {
-  if (activePresetId.value) {
-    const preset = PROVIDER_PRESETS.find(p => p.id === activePresetId.value)
-    return preset?.name ?? activePresetId.value
-  }
-  return 'Custom / 自定义'
-})
 
 const idValidation = ref<ReturnType<typeof validateProviderId>>({ isValid: true });
 const urlValidation = ref<ReturnType<typeof validateBaseUrl>>({ isValid: true });
 const keyValidation = ref<ReturnType<typeof validateApiKey>>({ isValid: true });
+const nodeValidation = ref<ReturnType<typeof validateOwnerNode>>({ isValid: true });
+// Owner 节点只能取本节点已配置的值（写错会让该供应商流量永久 503），
+// 所以选项来自 /node-options；列表外的存量值仍需可见。
+const nodeModeEnabled = ref(false);
+const nodeIds = ref<string[]>([]);
+const controlNodeId = ref('');
+
+async function loadNodeOptions() {
+  try {
+    const options = await providerApi.getNodeOptions();
+    nodeModeEnabled.value = options.enabled;
+    nodeIds.value = options.nodeIds || [];
+    controlNodeId.value = options.controlId || '';
+  } catch {
+    // 接口不可用时不阻断表单：下拉只剩已存的归属值，可编辑性不受影响。
+  }
+}
+
+onMounted(loadNodeOptions);
+
+const ownerNodeValue = computed<string>({
+  get: () => formValue.value.ownerNode || '',
+  set: (value) => {
+    formValue.value.ownerNode = value || '';
+  },
+});
+
+const ownerNodeOptions = computed(() => {
+  const ids = new Set(nodeIds.value);
+  const current = formValue.value.ownerNode;
+  if (current) ids.add(current);
+  return [
+    { label: t('providers.ownerNodeDefault'), value: '' },
+    ...[...ids].map((id) => ({
+      label: id === controlNodeId.value ? `${id} · ${t('providers.ownerNodeControl')}` : id,
+      value: id,
+    })),
+  ];
+});
+
+const ownerNodeUnconfigured = computed(() => {
+  const current = formValue.value.ownerNode;
+  return nodeModeEnabled.value && !!current && !nodeIds.value.includes(current);
+});
 const fetchingModels = ref(false);
 const availableModels = ref<ModelInfo[]>([]);
 const selectedModels = ref<string[]>([]);
@@ -426,11 +434,6 @@ function updateProtocolMappings() {
   formValue.value.baseUrl = newBaseUrl;
 }
 
-const idSuggestions = computed(() => {
-  const suggestions = getProviderIdSuggestions(formValue.value.id);
-  return suggestions.map(id => ({ label: id, value: id }));
-});
-
 const modelOptions = computed(() => {
   return availableModels.value.map(model => ({
     label: model.name,
@@ -479,46 +482,14 @@ const rules = {
       trigger: 'blur',
     },
   ],
+  ownerNode: [
+    {
+      validator: (_rule: any, value: string) => validateOwnerNode(value).isValid,
+      message: () => t('providers.ownerNodeInvalid'),
+      trigger: ['blur', 'input'],
+    },
+  ],
 };
-
-function selectPreset(preset: ProviderPreset | null) {
-  if (preset) {
-    activePresetId.value = preset.id;
-    formValue.value.id = preset.id;
-    formValue.value.name = preset.name;
-    formValue.value.baseUrl = preset.baseUrl;
-    formValue.value.description = preset.description;
-    showAdvanced.value = false;
-    idValidation.value = { isValid: true };
-    urlValidation.value = { isValid: true };
-  } else {
-    activePresetId.value = null;
-    formValue.value.id = '';
-    formValue.value.name = '';
-    formValue.value.baseUrl = '';
-    formValue.value.description = '';
-    showAdvanced.value = true;
-
-    // Avoid an overly tall modal: once user chooses custom provider,
-    // auto-collapse the preset selector section.
-    if (!props.editingId) {
-      showPresetSelector.value = false
-    }
-  }
-  formValue.value.apiKey = '';
-  availableModels.value = [];
-  selectedModels.value = [];
-  fetchError.value = '';
-}
-
-function handleNameInput(value: string) {
-  if (!activePresetId.value && !props.editingId) {
-    const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    if (!formValue.value.id) {
-      formValue.value.id = slug;
-    }
-  }
-}
 
 async function pasteApiKey() {
   try {
@@ -554,6 +525,14 @@ function validateKey() {
   keyValidation.value = validateApiKey(formValue.value.apiKey, formValue.value.id);
 }
 
+function handleOwnerNodeChange() {
+  validateOwnerNodeField();
+}
+
+function validateOwnerNodeField() {
+  nodeValidation.value = validateOwnerNode(formValue.value.ownerNode);
+}
+
 function getFieldStatus(isValid: boolean | undefined, hasValue: string): 'success' | 'error' | undefined {
   if (!hasValue) return undefined;
   return isValid ? 'success' : 'error';
@@ -572,7 +551,11 @@ async function handleFetchModels() {
   try {
     fetchingModels.value = true;
     fetchError.value = '';
-    const result = await providerApi.fetchModels(baseUrlToUse, formValue.value.apiKey);
+    const result = await providerApi.fetchModels(
+      baseUrlToUse,
+      formValue.value.apiKey,
+      formValue.value.ownerNode?.trim() || null,
+    );
 
     if (result.success) {
       availableModels.value = result.models;
@@ -619,103 +602,6 @@ defineExpose({
   padding: 0 4px;
 }
 
-/* Preset Grid Styles */
-.preset-section {
-  margin-bottom: 20px;
-}
-
-.preset-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.preset-summary {
-  flex: 1;
-  min-width: 0;
-  text-align: right;
-  font-size: 11px;
-  color: #888;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.section-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #666;
-  margin-bottom: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.preset-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 12px;
-}
-
-.preset-card {
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  padding: 10px 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  background: #fff;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-height: 60px;
-}
-
-.preset-card:hover {
-  border-color: var(--color-primary);
-  background: #f7fbf9;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-}
-
-.preset-card.active {
-  border-color: var(--color-primary);
-  background: #eaf7f1;
-  box-shadow: 0 0 0 1px var(--color-primary) inset;
-}
-
-.custom-card {
-  grid-column: span 2;
-  background: #f9f9f9;
-  border-style: dashed;
-}
-
-.custom-card.active {
-  border-style: solid;
-}
-
-.preset-name {
-  font-weight: 600;
-  font-size: 13px;
-  color: #333;
-  margin-bottom: 4px;
-}
-
-.preset-tag {
-  font-size: 10px;
-  color: #888;
-  background: #f0f0f0;
-  padding: 1px 6px;
-  border-radius: 4px;
-  align-self: flex-start;
-}
-
-.preset-desc {
-  font-size: 11px;
-  color: #666;
-}
-
-/* Form Section Styles */
 .form-section {
   margin-bottom: 16px;
   border-radius: 8px;
@@ -736,17 +622,7 @@ defineExpose({
   color: #444;
   display: flex;
   align-items: center;
-  cursor: pointer;
-  user-select: none;
   border-bottom: 1px solid transparent;
-}
-
-.section-header:hover {
-  background: #f0f0f0;
-}
-
-.section-header.is-collapsed {
-  border-bottom: none;
 }
 
 .section-content {
@@ -754,19 +630,6 @@ defineExpose({
   border-top: 1px solid #eee;
 }
 
-.n-collapse-transition-enter-from .section-content,
-.n-collapse-transition-leave-to .section-content {
-  border-top-color: transparent;
-}
-
-.summary-text {
-  margin-left: 8px;
-  font-weight: 400;
-  color: #888;
-  font-size: 12px;
-}
-
-/* Connection Actions */
 .connection-actions {
   margin: 8px 0;
 }
@@ -776,7 +639,6 @@ defineExpose({
   font-size: 12px;
 }
 
-/* Field-level feedback styles */
 .field-icon {
   font-size: 16px;
   margin-right: 4px;

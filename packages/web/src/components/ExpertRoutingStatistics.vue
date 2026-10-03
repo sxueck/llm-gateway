@@ -1,7 +1,7 @@
 <template>
   <div>
     <n-space vertical :size="16">
-      <n-grid :cols="3" :x-gap="12">
+      <n-grid :cols="'1 s:2 l:3'" responsive="screen" :x-gap="12" :y-gap="12">
         <n-gi>
           <n-card size="small">
             <n-statistic
@@ -30,6 +30,34 @@
             </n-statistic>
           </n-card>
         </n-gi>
+        <n-gi>
+          <n-card size="small">
+            <n-statistic
+              :label="t('expertRouting.failOpenRate')"
+              :value="failOpenRateText"
+            />
+          </n-card>
+        </n-gi>
+        <n-gi>
+          <n-card size="small">
+            <n-statistic
+              :label="t('expertRouting.classifierLatencyP50')"
+              :value="statistics.classifierLatency?.p50 ?? '-'"
+            >
+              <template #suffix>ms</template>
+            </n-statistic>
+          </n-card>
+        </n-gi>
+        <n-gi>
+          <n-card size="small">
+            <n-statistic
+              :label="t('expertRouting.classifierLatencyP95')"
+              :value="statistics.classifierLatency?.p95 ?? '-'"
+            >
+              <template #suffix>ms</template>
+            </n-statistic>
+          </n-card>
+        </n-gi>
       </n-grid>
 
       <n-card :title="t('expertRouting.routingDistribution')" size="small">
@@ -53,73 +81,95 @@
         </n-space>
       </n-card>
 
-      <n-card :title="t('expertRouting.categoryDistribution')" size="small">
-        <n-space vertical :size="8">
-          <div
-            v-for="(count, category) in statistics.categoryDistribution"
-            :key="category"
-            class="category-item"
-            @click="handleCategoryClick(category)"
-          >
-            <n-text>{{ category }}</n-text>
-            <n-space align="center">
-              <n-progress
-                type="line"
-                :percentage="getPercentage(count)"
-                :show-indicator="false"
-                style="width: 200px"
+      <n-grid :cols="'1 m:2'" responsive="screen" :x-gap="12" :y-gap="12">
+        <n-gi>
+          <n-card :title="t('expertRouting.ui.difficultyDistribution')" size="small">
+            <n-space vertical :size="8">
+              <div
+                v-for="(count, level) in statistics.difficultyDistribution"
+                :key="`difficulty-${level}`"
+                class="category-item"
+              >
+                <n-text>{{ ['low', 'medium', 'high'].includes(String(level)) ? t(`expertRouting.band.${level}`) : level }}</n-text>
+                <div class="dist-value">
+                  <n-progress
+                    type="line"
+                    :percentage="getDistributionPercentage(statistics.difficultyDistribution, count)"
+                    :show-indicator="false"
+                    class="dist-progress"
+                  />
+                  <n-text>{{ count }}</n-text>
+                </div>
+              </div>
+              <n-empty
+                v-if="!hasDistributionData(statistics.difficultyDistribution)"
+                :description="t('expertRouting.ui.noDifficultyObservations')"
+                :show-icon="false"
               />
-              <n-text>{{ count }}</n-text>
             </n-space>
-          </div>
-          <n-empty
-            v-if="Object.keys(statistics.categoryDistribution).length === 0"
-            :description="t('common.noData')"
-            :show-icon="false"
-          />
-        </n-space>
-      </n-card>
+          </n-card>
+        </n-gi>
+        <n-gi>
+          <n-card :title="t('expertRouting.ui.bandDistribution')" size="small">
+            <n-space vertical :size="8">
+              <div
+                v-for="(count, band) in statistics.bandDistribution"
+                :key="`band-${band}`"
+                class="category-item"
+              >
+                <n-text>{{ ['low', 'medium', 'high'].includes(String(band)) ? t(`expertRouting.band.${band}`) : band }}</n-text>
+                <div class="dist-value">
+                  <n-progress
+                    type="line"
+                    :percentage="getDistributionPercentage(statistics.bandDistribution, count)"
+                    :show-indicator="false"
+                    class="dist-progress"
+                  />
+                  <n-text>{{ count }}</n-text>
+                </div>
+              </div>
+              <n-empty
+                v-if="!hasDistributionData(statistics.bandDistribution)"
+                :description="t('expertRouting.ui.noBandObservations')"
+                :show-icon="false"
+              />
+            </n-space>
+          </n-card>
+        </n-gi>
+      </n-grid>
 
       <n-card :title="t('expertRouting.logs')" size="small">
         <n-data-table
+          :scroll-x="900"
+          :row-key="(row: ExpertRoutingLog) => row.id"
           :columns="logColumns"
           :data="logs"
           :loading="loading"
-          :pagination="{ pageSize: 10 }"
+          :pagination="logs.length ? { pageSize: 10 } : false"
           size="small"
-        />
+        >
+          <template #empty>
+            <n-empty :description="t('expertRouting.ui.noLogs')" />
+          </template>
+        </n-data-table>
       </n-card>
     </n-space>
-
-    <n-modal
-      v-model:show="showCategoryDetailModal"
-      preset="card"
-      :title="
-        t('expertRouting.categoryDetails', { category: selectedCategory })
-      "
-      style="width: 900px; max-width: 92vw"
-    >
-      <n-spin :show="categoryLogsLoading">
-        <n-data-table
-          :columns="categoryLogColumns"
-          :data="categoryLogs"
-          :pagination="{ pageSize: 20 }"
-          size="small"
-        />
-      </n-spin>
-    </n-modal>
 
     <n-modal
       v-model:show="showLogDetailModal"
       preset="card"
       :title="t('expertRouting.logDetails')"
+      :auto-focus="true"
+      :trap-focus="true"
+      :close-on-esc="true"
+      :aria-modal="true"
       style="width: 1000px; max-width: 92vw; max-height: 90vh"
     >
       <div class="log-detail-scroll-container">
         <n-spin :show="logDetailLoading">
           <n-space v-if="selectedLogDetail" vertical :size="16">
             <n-card :title="t('expertRouting.basicInfo')" size="small">
-              <n-grid :cols="2" :x-gap="24">
+              <n-grid :cols="'1 m:2'" responsive="screen" :x-gap="24" :y-gap="12">
                 <n-gi>
                   <n-space vertical :size="8">
                     <div>
@@ -159,24 +209,52 @@
                 <n-gi>
                   <n-space vertical :size="8">
                     <div>
-                      <n-text strong>Route Source:</n-text>
+                      <n-text strong>{{ t('expertRouting.ui.routeSource') }}:</n-text>
                       <n-tag
                         size="small"
                         :type="getSourceTagType(selectedLogDetail.route_source)"
                       >
-                        {{ selectedLogDetail.route_source || "N/A" }}
+                        {{
+                          selectedLogDetail.route_source
+                            ? formatRouteSource(selectedLogDetail.route_source)
+                            : t('expertRouting.ui.notAvailable')
+                        }}
                       </n-tag>
                     </div>
                     <div>
-                      <n-text strong>Prompt Tokens (Est):</n-text>
+                      <n-text strong>{{ t('expertRouting.ui.promptTokensEst') }}:</n-text>
                       {{ selectedLogDetail.prompt_tokens ?? "-" }}
                     </div>
                     <div>
-                      <n-text strong>Cleaned Length:</n-text>
+                      <n-text strong>{{ t('expertRouting.ui.cleanedLength') }}:</n-text>
                       {{
                         selectedLogDetail.cleaned_content_length ?? "-"
                       }}
-                      chars
+                      {{ t('expertRouting.ui.chars') }}
+                    </div>
+                    <div>
+                      <n-text strong>{{ t('expertRouting.ui.difficultyBand') }}:</n-text>
+                      {{ selectedLogDetail.difficulty || "-" }} /
+                      {{ selectedLogDetail.band || "-" }}
+                    </div>
+                    <div>
+                      <n-text strong>{{ t('expertRouting.verdictReused') }}:</n-text>
+                      {{
+                        selectedLogDetail.verdict_reused != null
+                          ? selectedLogDetail.verdict_reused
+                            ? t("expertRouting.ui.yes")
+                            : t("expertRouting.ui.no")
+                          : "-"
+                      }}
+                    </div>
+                    <div>
+                      <n-text strong>{{ t('expertRouting.ui.classifierLatency') }}:</n-text>
+                      {{
+                        selectedLogDetail.classifier_time_ms !== null &&
+                        selectedLogDetail.classifier_time_ms !== undefined
+                          ? selectedLogDetail.classifier_time_ms + "ms"
+                          : "-"
+                      }}
                     </div>
                   </n-space>
                 </n-gi>
@@ -185,7 +263,15 @@
 
             <n-card size="small" class="log-detail-card collapsible-card">
               <template #header>
-                <div class="card-header" @click="toggleOriginalRequest">
+                <div
+                  class="card-header"
+                  role="button"
+                  tabindex="0"
+                  :aria-expanded="showOriginalRequest"
+                  @click="toggleOriginalRequest"
+                  @keydown.enter.prevent="toggleOriginalRequest"
+                  @keydown.space.prevent="toggleOriginalRequest"
+                >
                   <n-text>{{ t("expertRouting.originalRequest") }}</n-text>
                   <n-icon :class="{ 'rotate-icon': !showOriginalRequest }">
                     <SvgIcon :path="CHEVRON_DOWN_PATH" :size="20" />
@@ -208,7 +294,15 @@
 
             <n-card size="small" class="log-detail-card collapsible-card">
               <template #header>
-                <div class="card-header" @click="toggleClassifierRequest">
+                <div
+                  class="card-header"
+                  role="button"
+                  tabindex="0"
+                  :aria-expanded="showClassifierRequest"
+                  @click="toggleClassifierRequest"
+                  @keydown.enter.prevent="toggleClassifierRequest"
+                  @keydown.space.prevent="toggleClassifierRequest"
+                >
                   <n-text>{{ t("expertRouting.classifierRequest") }}</n-text>
                   <n-icon :class="{ 'rotate-icon': !showClassifierRequest }">
                     <SvgIcon :path="CHEVRON_DOWN_PATH" :size="20" />
@@ -239,7 +333,15 @@
 
             <n-card size="small" class="log-detail-card collapsible-card">
               <template #header>
-                <div class="card-header" @click="toggleClassifierResponse">
+                <div
+                  class="card-header"
+                  role="button"
+                  tabindex="0"
+                  :aria-expanded="showClassifierResponse"
+                  @click="toggleClassifierResponse"
+                  @keydown.enter.prevent="toggleClassifierResponse"
+                  @keydown.space.prevent="toggleClassifierResponse"
+                >
                   <n-text>{{ t("expertRouting.classifierResponse") }}</n-text>
                   <n-icon :class="{ 'rotate-icon': !showClassifierResponse }">
                     <SvgIcon :path="CHEVRON_DOWN_PATH" :size="20" />
@@ -293,6 +395,7 @@ import {
   NIcon,
   NGrid,
   NGi,
+  useMessage,
   type DataTableColumns,
 } from "naive-ui";
 import {
@@ -307,6 +410,7 @@ const CHEVRON_DOWN_PATH =
   "M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z";
 
 const { t } = useI18n();
+const message = useMessage();
 
 interface Props {
   configId: string;
@@ -317,16 +421,16 @@ const props = defineProps<Props>();
 const statistics = ref<ExpertRoutingStatistics>({
   totalRequests: 0,
   avgClassificationTime: 0,
-  categoryDistribution: {},
   routeSourceDistribution: {},
   cleaningStats: { avgPromptTokens: 0, avgCleanedLength: 0, totalRequests: 0 },
+  difficultyDistribution: {},
+  bandDistribution: {},
+  failOpenRate: null,
+  estimatedSavingVsHighBand: null,
+  limitations: [],
 });
 const logs = ref<ExpertRoutingLog[]>([]);
 const loading = ref(false);
-const showCategoryDetailModal = ref(false);
-const selectedCategory = ref("");
-const categoryLogs = ref<ExpertRoutingLog[]>([]);
-const categoryLogsLoading = ref(false);
 const showLogDetailModal = ref(false);
 const selectedLogDetail = ref<ExpertRoutingLogDetail | null>(null);
 const logDetailLoading = ref(false);
@@ -344,31 +448,41 @@ const cleaningEfficiency = computed(() => {
   return Math.max(0, Math.round((reduction / estimatedOriginalChars) * 100));
 });
 
-type RouteSource = "session" | "intent_api" | "llm_second_pass" | "fallback";
+const failOpenRateText = computed(() => {
+  const rate = statistics.value.failOpenRate;
+  if (rate == null) return '-';
+  return `${(rate * 100).toFixed(2)}%`;
+});
+
+type RouteSource = "session" | "jev" | "fail_open" | "intent_api" | "llm_second_pass" | "fallback";
 type NaiveTagType =
   "info" | "success" | "warning" | "error" | "default" | "primary";
 
 const ROUTE_SOURCE_META: Record<
   RouteSource,
-  { label: string; color: string; tag: NaiveTagType }
+  { labelKey: string; color: string; tag: NaiveTagType }
 > = {
-  session: { label: "Session Reuse", color: "#8a2be2", tag: "info" },
-  intent_api: { label: "Intent Router API", color: "#2080f0", tag: "info" },
+  session: { labelKey: "expertRouting.ui.source.session", color: "#8a2be2", tag: "info" },
+  jev: { labelKey: "expertRouting.ui.source.jev", color: "#18a058", tag: "success" },
+  fail_open: { labelKey: "expertRouting.ui.source.fail_open", color: "#f0a020", tag: "warning" },
+  intent_api: { labelKey: "expertRouting.ui.source.intent_api", color: "#2080f0", tag: "info" },
   llm_second_pass: {
-    label: "LLM Second Pass",
+    labelKey: "expertRouting.ui.source.llm_second_pass",
     color: "#18a058",
     tag: "success",
   },
-  fallback: { label: "Fallback", color: "#d03050", tag: "error" },
+  fallback: { labelKey: "expertRouting.ui.source.fallback", color: "#d03050", tag: "error" },
 };
 
 const distributionBars = computed(() => {
   const dist = statistics.value.routeSourceDistribution || {};
   const count = (source: RouteSource) => dist[source] || 0;
 
-  // Report the Intent Router API and LLM second pass separately.
+  // Keep historical route sources visible alongside Jev.
   const order: RouteSource[] = [
     "session",
+    "jev",
+    "fail_open",
     "intent_api",
     "llm_second_pass",
     "fallback",
@@ -378,18 +492,18 @@ const distributionBars = computed(() => {
     if (count(source) > 0 || dist[source] !== undefined) {
       bars.push({
         source,
-        label: ROUTE_SOURCE_META[source].label,
+        label: t(ROUTE_SOURCE_META[source].labelKey),
         color: ROUTE_SOURCE_META[source].color,
       });
     }
   }
 
-  // Always show the primary classifier source if empty
+  // Show the current route source when statistics are empty.
   if (bars.length === 0) {
     bars.push({
-      source: "intent_api",
-      label: ROUTE_SOURCE_META.intent_api.label,
-      color: ROUTE_SOURCE_META.intent_api.color,
+      source: "jev",
+      label: t(ROUTE_SOURCE_META.jev.labelKey),
+      color: ROUTE_SOURCE_META.jev.color,
     });
   }
 
@@ -411,8 +525,7 @@ function getSourceTagType(source?: string): NaiveTagType {
 function formatRouteSource(source?: string) {
   if (!source) return "-";
   if (source in ROUTE_SOURCE_META)
-    return ROUTE_SOURCE_META[source as RouteSource].label;
-  // Legacy layer sources roll up to LLM second pass.
+    return t(ROUTE_SOURCE_META[source as RouteSource].labelKey);
   return source.replace(/_/g, " ");
 }
 
@@ -423,7 +536,7 @@ const logColumns: DataTableColumns<ExpertRoutingLog> = [
     ellipsis: { tooltip: true },
   },
   {
-    title: () => "Source",
+    title: () => t("expertRouting.source"),
     key: "route_source",
     width: 110,
     render: (row) => {
@@ -466,57 +579,24 @@ const logColumns: DataTableColumns<ExpertRoutingLog> = [
   },
 ];
 
-const categoryLogColumns: DataTableColumns<ExpertRoutingLog> = [
-  {
-    title: () => t("expertRouting.selectedExpert"),
-    key: "selected_expert_name",
-    ellipsis: { tooltip: true },
-  },
-  {
-    title: () => "Source",
-    key: "route_source",
-    width: 100,
-    render: (row) => row.route_source || "-",
-  },
-  {
-    title: () => t("expertRouting.classificationTime"),
-    key: "classification_time",
-    width: 100,
-    render: (row) => `${row.classification_time}ms`,
-  },
-  {
-    title: () => t("common.time"),
-    key: "created_at",
-    width: 180,
-    render: (row) => new Date(row.created_at).toLocaleString("zh-CN"),
-  },
-  {
-    title: () => t("common.actions"),
-    key: "actions",
-    width: 80,
-    render: (row) => {
-      return h(
-        NButton,
-        {
-          size: "tiny",
-          onClick: () => handleLogClick(row),
-        },
-        () => t("common.details"),
-      );
-    },
-  },
-];
+function hasDistributionData(dist?: Record<string, number>): boolean {
+  return Object.keys(dist || {}).length > 0;
+}
 
-function getPercentage(count: number): number {
-  if (statistics.value.totalRequests === 0) return 0;
-  return Math.round((count / statistics.value.totalRequests) * 100);
+function getDistributionPercentage(
+  dist: Record<string, number> | undefined,
+  count: number,
+): number {
+  const total = Object.values(dist || {}).reduce((sum, n) => sum + Number(n), 0);
+  if (total === 0) return 0;
+  return Math.round((Number(count) / total) * 100);
 }
 
 async function loadStatistics() {
   try {
     statistics.value = await expertRoutingApi.getStatistics(props.configId);
   } catch (error) {
-    console.error("Failed to load statistics:", error);
+    message.error(error instanceof Error ? error.message : t("messages.operationFailed"));
   }
 }
 
@@ -526,27 +606,9 @@ async function loadLogs() {
     const response = await expertRoutingApi.getLogs(props.configId, 50);
     logs.value = response.logs;
   } catch (error) {
-    console.error("Failed to load logs:", error);
+    message.error(error instanceof Error ? error.message : t("messages.operationFailed"));
   } finally {
     loading.value = false;
-  }
-}
-
-async function handleCategoryClick(category: string) {
-  selectedCategory.value = category;
-  showCategoryDetailModal.value = true;
-  categoryLogsLoading.value = true;
-  try {
-    const response = await expertRoutingApi.getLogsByCategory(
-      props.configId,
-      category,
-      100,
-    );
-    categoryLogs.value = response.logs;
-  } catch (error) {
-    console.error("Failed to load category logs:", error);
-  } finally {
-    categoryLogsLoading.value = false;
   }
 }
 
@@ -561,7 +623,7 @@ async function handleLogClick(log: ExpertRoutingLog) {
     const detail = await expertRoutingApi.getLogDetails(props.configId, log.id);
     selectedLogDetail.value = detail;
   } catch (error) {
-    console.error("Failed to load log details:", error);
+    message.error(error instanceof Error ? error.message : t("messages.operationFailed"));
   } finally {
     logDetailLoading.value = false;
   }
@@ -586,30 +648,58 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.collapsible-card .card-header:focus-visible {
+  outline: 1px solid var(--n-color-target, #18a058);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.dist-progress {
+  flex: 1 1 auto;
+  min-width: 60px;
+  max-width: 220px;
+}
+
 .category-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   padding: 8px 12px;
   border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.2s;
+  min-width: 0;
 }
 
-.category-item:hover {
-  background-color: rgba(0, 0, 0, 0.05);
+.dist-value {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  max-width: 70%;
+  min-width: 0;
 }
 
 .distribution-bar {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+}
+
+.distribution-bar .n-progress {
+  flex: 1 1 auto;
+  min-width: 80px;
 }
 
 .dist-label {
+  flex: none;
   width: 120px;
+  max-width: 40%;
   font-size: 13px;
   color: var(--n-text-color-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .log-detail-card {

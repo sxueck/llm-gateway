@@ -19,6 +19,7 @@ import { DownloadOutline } from '@vicons/ionicons5'
 import { promptSampleApi, type PromptSample } from '@/api/prompt-sample'
 import { virtualKeyApi } from '@/api/virtual-key'
 import { formatTimestamp } from '@/utils/common'
+import PageHeader from '@/components/PageHeader.vue'
 
 const message = useMessage()
 const loading = ref(false)
@@ -220,10 +221,12 @@ onMounted(async () => {
 
 <template>
   <div class="prompt-samples-view">
+    <PageHeader
+      class="prompt-samples-page-header"
+      eyebrow="TOOLS"
+      title="Prompt 样本"
+    />
     <n-card>
-      <template #header>
-        <span class="card-title">Prompt 样本</span>
-      </template>
       <template #header-extra>
         <n-space class="filter-toolbar">
           <n-date-picker
@@ -283,19 +286,12 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.prompt-samples-page-header {
+  margin-bottom: 24px;
+}
 .prompt-samples-view {
   max-width: 1400px;
   margin: 0 auto;
-}
-
-.card-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--color-title);
-  letter-spacing: -0.015em;
-  line-height: 1.3;
-  white-space: nowrap;
-  display: inline-block;
 }
 
 .filter-toolbar {
@@ -333,10 +329,6 @@ onMounted(async () => {
 }
 
 @media (max-width: 768px) {
-  .card-title {
-    font-size: 18px;
-  }
-
   .filter-toolbar {
     justify-content: flex-start;
   }

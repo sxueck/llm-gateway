@@ -55,11 +55,7 @@
         </div>
         <div class="header-right">
           <LanguageSwitcher />
-          <n-button circle quaternary class="header-icon-btn">
-            <template #icon>
-              <n-icon size="20"><MailOutline /></n-icon>
-            </template>
-          </n-button>
+          <AlertCenter />
           <n-dropdown :options="userOptions" @select="handleUserAction">
             <div class="user-avatar">
               <n-avatar
@@ -107,7 +103,6 @@ import {
   DocumentTextOutline,
   TerminalOutline,
   CubeOutline,
-  MailOutline,
   GitNetworkOutline,
   LayersOutline,
   ConstructOutline,
@@ -119,11 +114,18 @@ import {
   CloudDownloadOutline,
   CashOutline,
   MenuOutline,
+  BugOutline,
   SpeedometerOutline,
   TrendingUpOutline,
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
+import {
+  generalMenuParentByKey,
+  mainMenuParentByKey,
+} from '@/utils/menu-mappings';
+import { isNodeOperationsMenuEnabled } from '@/api/nodes';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
+import AlertCenter from '@/components/AlertCenter.vue';
 import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize';
 
 const router = useRouter();
@@ -134,30 +136,11 @@ const { t } = useI18n();
 const collapsed = ref(false);
 const mainMenuExpandedKeys = ref<string[]>([]);
 const generalMenuExpandedKeys = ref<string[]>([]);
+// 节点运维入口默认隐藏，接口确认 enabled:true 后才显示（fail-closed）。
+const nodeOperationsEnabled = ref(false);
 
 const MAIN_MENU_DEFAULT_KEYS = ['model-management', 'tools'];
 const COMPACT_SIDEBAR_HEIGHT = 960;
-const mainMenuParentByKey: Record<string, string> = {
-  providers: 'model-management',
-  models: 'model-management',
-  'virtual-models': 'model-management',
-  'expert-routing': 'experimental-features',
-  'worker-plugins': 'experimental-features',
-  'cost-analysis': 'experimental-features',
-  'worker-monitoring': 'monitoring',
-  'operations-monitoring': 'monitoring',
-  'traffic-analysis': 'monitoring',
-  'api-guide': 'tools',
-  logs: 'tools',
-  'api-requests': 'tools',
-  'prompt-samples': 'tools',
-};
-const generalMenuParentByKey: Record<string, string> = {
-  settings: 'settings',
-  'security-settings': 'settings',
-  backup: 'settings',
-  'developer-settings': 'settings',
-};
 
 const toggleSidebar = () => {
   collapsed.value = !collapsed.value;
@@ -277,14 +260,20 @@ const menuOptions = computed(() => [
     ],
   },
   {
+    label: t('menu.advancedTools'),
+    key: 'advanced-tools',
+    icon: () => h(NIcon, null, { default: () => h(BugOutline) }),
+    children: advancedToolsChildren.value,
+  },
+  {
     label: t('menu.tools'),
     key: 'tools',
     icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
     children: [
       {
-        label: t('menu.apiGuide'),
-        key: 'api-guide',
-        icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }),
+        label: t('menu.playground'),
+        key: 'playground',
+        icon: () => h(NIcon, null, { default: () => h(TerminalOutline) }),
       },
       {
         label: t('menu.logs'),
@@ -304,6 +293,29 @@ const menuOptions = computed(() => [
     ],
   },
 ]);
+
+const advancedToolsChildren = computed(() => {
+  const children = [
+    {
+      label: t('menu.developerSettings'),
+      key: 'developer-settings',
+      icon: () => h(NIcon, null, { default: () => h(FlaskOutline) }),
+    },
+    {
+      label: t('menu.dbMaintenance'),
+      key: 'db-maintenance',
+      icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
+    },
+  ];
+  if (nodeOperationsEnabled.value) {
+    children.unshift({
+      label: t('menu.nodeOperations'),
+      key: 'node-operations',
+      icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) }),
+    });
+  }
+  return children;
+});
 
 const generalMenuOptions = computed(() => [
   {
@@ -325,11 +337,6 @@ const generalMenuOptions = computed(() => [
         label: t('settings.backup'),
         key: 'backup',
         icon: () => h(NIcon, null, { default: () => h(CloudDownloadOutline) }),
-      },
-      {
-        label: t('settings.developerDebug'),
-        key: 'developer-settings',
-        icon: () => h(NIcon, null, { default: () => h(FlaskOutline) }),
       },
     ],
   },
@@ -371,10 +378,15 @@ watch(activeKey, () => {
   syncMenuExpandedKeys();
 }, { immediate: true });
 
+watch(nodeOperationsEnabled, () => {
+  syncMenuExpandedKeys();
+});
+
 onMounted(async () => {
   if (authStore.token && !authStore.user) {
     await authStore.fetchProfile();
   }
+  nodeOperationsEnabled.value = await isNodeOperationsMenuEnabled();
 });
 </script>
 
@@ -548,16 +560,6 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.header-icon-btn {
-  width: 40px;
-  height: 40px;
-  color: #595959;
-}
-
-.header-icon-btn:hover {
-  background-color: rgba(0, 0, 0, 0.04);
 }
 
 .user-avatar {

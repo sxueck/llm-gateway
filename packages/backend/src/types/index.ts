@@ -20,6 +20,8 @@ export interface Provider {
   api_key: string;
   model_mapping: string | null;
   protocol_mappings: string | null; // JSON string of ProtocolMapping
+  /** NULL/absent keeps legacy providers on the control node. */
+  owner_node?: string | null;
   enabled: number;
   created_at: number;
   updated_at: number;
@@ -81,6 +83,8 @@ export interface PromptConfig {
 }
 
 export interface ExpertRoutingConfig {
+  /** v2 configs always carry version 2; missing = legacy (pre-v2) row. */
+  version?: 2;
   id: string;
   name: string;
   description?: string;
@@ -91,15 +95,21 @@ export interface ExpertRoutingConfig {
     strip_code_blocks?: boolean;
     strip_system_prompt?: boolean;
   };
-  llm_second_pass: import("./expert-routing.js").LlmSecondPassConfig;
+  /** PR-2: terminal behaviour when the fallback chain is exhausted
+   * (default "fallback"). "error" preserves the legacy throw. */
+  fail_open?: import("./expert-routing.js").FailOpenMode;
   experts: import("./expert-routing.js").ExpertTarget[];
   fallback?: {
     type: "virtual" | "real";
     model_id?: string;
     provider_id?: string;
     model?: string;
-  };
-  session_binding_policy: import("./expert-routing.js").SessionBindingPolicy;
+  } | null;
+  session_policy: import("./expert-routing.js").SessionPolicy;
+  /** @deprecated legacy pre-v2 key; kept so unmigrated rows still parse. */
+  session_binding_policy?: import("./expert-routing.js").SessionPolicy;
+  classifier?: import("./expert-routing.js").ClassifierConfig;
+  exposure?: import("./expert-routing.js").ExposureConfig;
 }
 
 export interface ExpertRoutingLog {

@@ -97,8 +97,8 @@ export async function runSearchAgent(config: WorkerRunConfig): Promise<void> {
   let convergeNudged = false;
   const rejectDiscovery = () =>
     `error: discovery tools are disabled from turn ${convergeTurn} (turn budget: ${exec.max_turns}); converge now: read narrow windows with read_file or call submit_result`;
-  interface DiscoveryCall { id: string; function: { name: string } }
-  const isDiscoveryCall = (call: DiscoveryCall, currentTurn: number) =>
+  type ToolCall = NonNullable<ChatMessage['tool_calls']>[number];
+  const isDiscoveryCall = (call: ToolCall, currentTurn: number) =>
     currentTurn >= convergeTurn && DISCOVERY_TOOLS.has(call.function.name);
 
   const failRun = async (errorCode: string, errorMessage: string) => {
@@ -108,6 +108,29 @@ export async function runSearchAgent(config: WorkerRunConfig): Promise<void> {
       error_message: errorMessage,
       usage: { turns: stats.turns, tool_calls: stats.toolCalls },
     });
+  };
+
+  // Rejected calls still count toward usage; serial and parallel turns must enforce
+  // the same tool policy and deadline before emitting execution events.
+  const executeToolCall = async (call: ToolCall, turn: number): Promise<string> => {
+    stats.toolCalls++;
+    if (isDiscoveryCall(call, turn)) {
+      return rejectDiscovery();
+    }
+    const impl = TOOL_IMPLEMENTATIONS[call.function.name];
+    if (!impl || !config.manifest.tool_policy.allow.includes(call.function.name)) {
+      return `error: tool "${call.function.name}" is not allowed by plugin tool policy`;
+    }
+    if (now() > deadline) return 'error: run deadline exceeded';
+    await reporter.event('tool.started', { tool: call.function.name });
+    let output: string;
+    try {
+      output = await impl(toolCtx, safeParseParams(call.function.arguments));
+    } catch (e) {
+      output = e instanceof ToolError ? `error: ${e.message}` : `error: ${e instanceof Error ? e.message : String(e)}`;
+    }
+    await reporter.event('tool.completed', { tool: call.function.name, bytes: output.length });
+    return output;
   };
 
   for (let turn = 1; turn <= exec.max_turns; turn++) {
@@ -136,7 +159,6 @@ export async function runSearchAgent(config: WorkerRunConfig): Promise<void> {
 
     const toolCalls = assistantMessage.tool_calls ?? [];
     if (toolCalls.length === 0) {
-      // 模型直接回复文本：尝试提取结果，否则引导其调用 submit_result
       const text = assistantMessage.content ?? '';
       if (text.trim().length > 0) {
         const extracted = extractJson(text);
@@ -155,33 +177,13 @@ export async function runSearchAgent(config: WorkerRunConfig): Promise<void> {
       continue;
     }
 
-    // 检索轮不含 submit_result 时，同一轮工具调用并发执行；最终提交保留原有串行验证路径。
+    // 提交轮保持串行，避免先前工具尚未完成就提交结果。
     if (!toolCalls.some((call) => call.function.name === 'submit_result')) {
       const limit = config.manifest.tool_policy.max_parallel_calls;
       const accepted = toolCalls.slice(0, limit);
       const overflow = toolCalls.slice(limit);
       const results = await Promise.all(
-        accepted.map(async (call) => {
-          if (isDiscoveryCall(call, turn)) {
-            stats.toolCalls++;
-            return { id: call.id, output: rejectDiscovery() };
-          }
-          const impl = TOOL_IMPLEMENTATIONS[call.function.name];
-          stats.toolCalls++;
-          if (!impl || !config.manifest.tool_policy.allow.includes(call.function.name)) {
-            return { id: call.id, output: `error: tool "${call.function.name}" is not allowed by plugin tool policy` };
-          }
-          if (now() > deadline) return { id: call.id, output: 'error: run deadline exceeded' };
-          await reporter.event('tool.started', { tool: call.function.name });
-          let output: string;
-          try {
-            output = await impl(toolCtx, safeParseParams(call.function.arguments));
-          } catch (e) {
-            output = e instanceof ToolError ? `error: ${e.message}` : `error: ${e instanceof Error ? e.message : String(e)}`;
-          }
-          await reporter.event('tool.completed', { tool: call.function.name, bytes: output.length });
-          return { id: call.id, output };
-        }),
+        accepted.map(async (call) => ({ id: call.id, output: await executeToolCall(call, turn) })),
       );
       for (const result of results) messages.push(toolResult(result.id, result.output));
       for (const call of overflow) {
@@ -233,35 +235,7 @@ export async function runSearchAgent(config: WorkerRunConfig): Promise<void> {
         return;
       }
 
-      // 普通工具调用：白名单 + 预算 + 截断
-      if (isDiscoveryCall(call, turn)) {
-        stats.toolCalls++;
-        messages.push(toolResult(call.id, rejectDiscovery()));
-        continue;
-      }
-      const impl = TOOL_IMPLEMENTATIONS[call.function.name];
-      if (!impl || !config.manifest.tool_policy.allow.includes(call.function.name)) {
-        stats.toolCalls++;
-        messages.push(
-          toolResult(call.id, `error: tool "${call.function.name}" is not allowed by plugin tool policy`),
-        );
-        continue;
-      }
-      stats.toolCalls++;
-      if (now() > deadline) {
-        messages.push(toolResult(call.id, 'error: run deadline exceeded'));
-        continue;
-      }
-      await reporter.event('tool.started', { tool: call.function.name });
-      let output: string;
-      try {
-        const params = safeParseParams(call.function.arguments);
-        output = await impl(toolCtx, params);
-      } catch (e) {
-        output = e instanceof ToolError ? `error: ${e.message}` : `error: ${e instanceof Error ? e.message : String(e)}`;
-      }
-      await reporter.event('tool.completed', { tool: call.function.name, bytes: output.length });
-      messages.push(toolResult(call.id, output));
+      messages.push(toolResult(call.id, await executeToolCall(call, turn)));
     }
   }
 

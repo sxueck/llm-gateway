@@ -1,8 +1,11 @@
 import { nanoid } from "nanoid";
 import { apiRequestDb } from "../db/index.js";
+import { agentRunIdFromHeaders } from "../agent/run/loopback-token.js";
 import type { VirtualKey } from "../types/index.js";
 import type { TokenCalculationResult } from "../routes/proxy/token-calculator.js";
 import { memoryLogger } from "./logger.js";
+import { appConfig } from "../config/index.js";
+import { nodeAuditContext } from "./node-audit.js";
 
 export interface ApiLogParams {
   virtualKey: VirtualKey;
@@ -24,13 +27,20 @@ export interface ApiLogParams {
   piiMaskedCount?: number;
   requestType?: string;
   streamResume?: { attempts: number; chars: number };
+  /** agent run 关联显式值；缺省时从 request 头提取（需有效 loopback token） */
+  agentRunId?: string;
+  /** §5.8 难度分级路由关联：决策日志 id + 命中档位 */
+  routeLogId?: string | null;
+  routeTier?: string | null;
+  /** 原始请求，仅用于提取 loopback 可信的 run 关联头部 */
+  request?: { headers: unknown };
 }
 
 function safeParseJson(text: string | undefined): any | null {
   if (!text) return null;
   try {
     return JSON.parse(text);
-  } catch (_e) {
+  } catch {
     return null;
   }
 }
@@ -115,18 +125,29 @@ function normalizeErrorMessage(errorMessage: unknown): string | undefined {
 
   try {
     return JSON.stringify(errorMessage);
-  } catch (_e) {
+  } catch {
     return String(errorMessage);
   }
 }
 
 export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
   const normalizedErrorMessage = normalizeErrorMessage(params.errorMessage);
-  const requestParamsJson = extractRequestParamsJson(
+  const agentRunId =
+    params.agentRunId ?? agentRunIdFromHeaders(params.request?.headers);
+  let requestParamsJson = extractRequestParamsJson(
     params.truncatedRequest,
     params.piiMaskedCount,
     params.streamResume,
   );
+  if (appConfig.node?.enabled) {
+    const context = nodeAuditContext.getStore();
+    requestParamsJson = JSON.stringify({
+      ...(safeParseJson(requestParamsJson) ?? {}),
+      ingress_node: context?.ingressNode ?? appConfig.node.id,
+      execution_node: appConfig.node.id,
+      node_request_id: params.virtualKey.disable_logging ? undefined : context?.requestId,
+    });
+  }
   const responseMetaJson = extractResponseMetaJson(params.truncatedResponse);
 
   // disable_logging：除已抑制的正文/参数外，ip、user_agent 和错误文本同属敏感元数据，
@@ -159,6 +180,9 @@ export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
     compression_saved_tokens: params.compressionStats?.savedTokens,
     ip: suppressSensitiveMetadata ? undefined : params.ip,
     user_agent: suppressSensitiveMetadata ? undefined : params.userAgent,
+    run_id: agentRunId,
+    route_log_id: params.routeLogId ?? undefined,
+    route_tier: params.routeTier ?? undefined,
   });
 }
 

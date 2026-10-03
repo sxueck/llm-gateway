@@ -3,6 +3,7 @@ import {
   getOpsOverview,
   getOpsTrend,
   getOpsDimensionList,
+  getRequestSourceStats,
   resolveWindow,
   isOpsPeriod,
   type OpsPeriod,
@@ -75,6 +76,26 @@ export async function opsMetricsRoutes(fastify: FastifyInstance) {
       resolveWindow(parsed.period, parsed.endTime),
       parsed.filters,
     );
+  });
+
+  fastify.get("/ops-metrics/request-sources", async (request, reply) => {
+    const parsed = parseWindowAndFilters(request.query as OpsQueryParams);
+    if ("error" in parsed) {
+      return reply400(reply, parsed.error);
+    }
+    // Same requestSourceStats shape as GET /stats but scoped to the resolved
+    // window; geo lookups and manual blocks still reuse the existing
+    // /request-sources/lookup|block endpoints, so no second blocklist API.
+    const window = resolveWindow(parsed.period, parsed.endTime);
+    return {
+      window: {
+        startTime: window.startTime,
+        endTime: window.endTime,
+        timezone: "Asia/Shanghai",
+      },
+      updatedAt: Date.now(),
+      requestSourceStats: await getRequestSourceStats(window),
+    };
   });
 
   fastify.get("/ops-metrics/dimensions/:dimension", async (request, reply) => {

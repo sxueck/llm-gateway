@@ -42,20 +42,48 @@ export const apiRequestRepository = {
     }
   },
 
-  async getLastRequestByIp(ip: string) {
+  /** §5.8: actual token usage linked to routing decisions (expert_routing_logs ids). */
+  async getUsageByRouteLogIds(routeLogIds: string[]) {
+    if (routeLogIds.length === 0) return [];
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const placeholders = routeLogIds.map(() => "?").join(", ");
+      const [rows] = await conn.query(
+        `SELECT route_log_id, prompt_tokens, completion_tokens, cached_tokens
+         FROM api_requests
+         WHERE route_log_id IN (${placeholders})`,
+        routeLogIds,
+      );
+      return rows as any[];
+    } finally {
+      conn.release();
+    }
+  },
+
+  async getLastRequestByIp(ip: string, startTime?: number, endTime?: number) {
     if (!ip) return null;
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
       const loggingCondition = getDisableLoggingCondition();
+      // startTime/endTime 只由窗口化的 ops-metrics 请求来源接口传入；不传时
+      // 保持原有的无界口径（老调用方行为不变）。
+      const windowSql =
+        (startTime ? "ar.created_at >= ? AND " : "") +
+        (endTime ? "ar.created_at < ? AND " : "");
+      const windowParams = [
+        ...(startTime ? [startTime] : []),
+        ...(endTime ? [endTime] : []),
+      ];
       const [rows] = await conn.query(
         `SELECT ar.created_at, ar.user_agent
          FROM api_requests ar
          LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-         WHERE ar.ip = ? AND ${loggingCondition}
+         WHERE ar.ip = ? AND ${windowSql}${loggingCondition}
          ORDER BY ar.created_at DESC
          LIMIT 1`,
-        [ip],
+        [ip, ...windowParams],
       );
       const result = rows as any[];
       if (result.length === 0) return null;
@@ -65,12 +93,25 @@ export const apiRequestRepository = {
     }
   },
 
-  async getLastRequest() {
+  async getLastRequest(startTime?: number, endTime?: number) {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
+      const conditions: string[] = [];
+      const params: number[] = [];
+      if (startTime) {
+        conditions.push("ar.created_at >= ?");
+        params.push(startTime);
+      }
+      if (endTime) {
+        conditions.push("ar.created_at < ?");
+        params.push(endTime);
+      }
+      const where =
+        conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
       const [rows] = await conn.query(
-        `SELECT ip, created_at, user_agent FROM api_requests ORDER BY created_at DESC LIMIT 1`,
+        `SELECT ip, created_at, user_agent FROM api_requests ar ${where} ORDER BY created_at DESC LIMIT 1`,
+        params,
       );
       const result = rows as any[];
       if (result.length === 0) return null;
@@ -80,12 +121,16 @@ export const apiRequestRepository = {
     }
   },
 
-  async getRecentUniqueIps(limit: number = 30) {
+  async getRecentUniqueIps(limit: number = 30, startTime?: number, endTime?: number) {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
-      const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+      // Default keeps the historical 14-day horizon; windowed callers pass
+      // their own startTime/endTime so the ops page honors its period selector
+      //（半开区间，与 ops-metrics 其他查询同一口径，不把窗口外的行显示进来）。
+      const cutoff = startTime ?? Date.now() - 14 * 24 * 60 * 60 * 1000;
       const loggingCondition = getDisableLoggingCondition();
+      const upperBound = endTime ? "AND ar.created_at < ? " : "";
 
       const [rows] = await conn.query(
         `SELECT
@@ -94,11 +139,11 @@ export const apiRequestRepository = {
           COUNT(*) as count
          FROM api_requests ar
          LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-         WHERE ar.created_at > ? AND ${loggingCondition}
+         WHERE ar.created_at >= ? ${upperBound}AND ${loggingCondition}
          GROUP BY ar.ip
          ORDER BY last_seen DESC
          LIMIT ?`,
-        [cutoff, limit],
+        endTime ? [cutoff, endTime, limit] : [cutoff, limit],
       );
       return rows as any[];
     } finally {
@@ -432,6 +477,7 @@ export const apiRequestRepository = {
     startTime?: number;
     endTime?: number;
     status?: string;
+    runId?: string;
   }) {
     const limit = options?.limit || 100;
     const offset = options?.offset || 0;
@@ -468,6 +514,7 @@ export const apiRequestRepository = {
           ar.request_type,
           ar.compression_original_tokens,
           ar.compression_saved_tokens,
+          ar.run_id,
           ar.ip,
           ar.user_agent,
           ar.created_at,
@@ -513,6 +560,12 @@ export const apiRequestRepository = {
         countQuery += " AND ar.status = ?";
         dataQuery += " AND ar.status = ?";
         params.push(options.status);
+      }
+
+      if (options?.runId) {
+        countQuery += " AND ar.run_id = ?";
+        dataQuery += " AND ar.run_id = ?";
+        params.push(options.runId);
       }
 
       const [countRows] = await conn.query(countQuery, params);
@@ -773,7 +826,8 @@ export const apiRequestRepository = {
     startTime: number;
     endTime: number;
     sortBy?: "requests" | "tokens";
-    limit?: number;
+    uniqueModels?: boolean;
+    limit?: number | null;
   }) {
     const { startTime, endTime } = options;
     const pool = getDatabase();
@@ -833,7 +887,6 @@ export const apiRequestRepository = {
         });
       }
 
-      // Query detail table for recent data
       if (needsDetail) {
         const detailStartTime = Math.max(startTime, detailStart);
         const loggingCondition = getDisableLoggingCondition();
@@ -879,9 +932,26 @@ export const apiRequestRepository = {
       }
 
       const sortBy = options.sortBy ?? "requests";
-      const limit = options.limit ?? 10;
+      const limit = options.limit === undefined ? 10 : options.limit;
+      let stats = Array.from(modelStats.values());
 
-      return Array.from(modelStats.values())
+      if (options.uniqueModels) {
+        const uniqueStats = new Map<string, (typeof stats)[number]>();
+        for (const stat of stats) {
+          const existing = uniqueStats.get(stat.model);
+          if (existing) {
+            existing.requestCount += stat.requestCount;
+            existing.totalTokens += stat.totalTokens;
+            existing.totalResponseTime += stat.totalResponseTime;
+            existing.responseTimeCount += stat.responseTimeCount;
+          } else {
+            uniqueStats.set(stat.model, { ...stat, providerName: "" });
+          }
+        }
+        stats = Array.from(uniqueStats.values());
+      }
+
+      const result = stats
         .map((stat) => ({
           model: stat.model,
           provider_name: stat.providerName,
@@ -896,8 +966,52 @@ export const apiRequestRepository = {
           sortBy === "tokens"
             ? b.total_tokens - a.total_tokens
             : b.request_count - a.request_count,
-        )
-        .slice(0, limit);
+        );
+
+      return limit === null ? result : result.slice(0, limit);
+    } finally {
+      conn.release();
+    }
+  },
+
+  /**
+   * 模型可用性（被动口径）：聚合窗口期内 api_requests 明细，按 (provider_id, model)
+   * 汇总总量/成功量/最近使用，并按整点对齐分小时桶。模型未产生流量时不返回
+   * 对应记录（调用方展示"暂无调用"）。
+   */
+  async getModelAvailability(windowMs: number = 24 * 60 * 60 * 1000) {
+    const start = Date.now() - windowMs;
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const [totalRows] = await conn.query(
+        `SELECT provider_id, model,
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success,
+                MAX(created_at) AS last_used_at
+         FROM api_requests
+         WHERE created_at >= ?
+           AND provider_id IS NOT NULL
+           AND model IS NOT NULL AND model != ''
+         GROUP BY provider_id, model`,
+        [start],
+      );
+      const [bucketRows] = await conn.query(
+        `SELECT provider_id, model,
+                FLOOR(created_at / 3600000) * 3600000 AS bucket_start,
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success
+         FROM api_requests
+         WHERE created_at >= ?
+           AND provider_id IS NOT NULL
+           AND model IS NOT NULL AND model != ''
+         GROUP BY provider_id, model, bucket_start`,
+        [start],
+      );
+      return {
+        totals: totalRows as any[],
+        buckets: bucketRows as any[],
+      };
     } finally {
       conn.release();
     }

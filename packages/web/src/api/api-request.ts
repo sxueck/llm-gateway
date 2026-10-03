@@ -16,12 +16,13 @@ export interface ApiRequest {
   created_at: number;
   request_body: string | null;
   response_body: string | null;
-  request_params_json?: Record<string, any> | string | null;
-  response_meta_json?: Record<string, any> | string | null;
+  request_params_json?: Record<string, unknown> | string | null;
+  response_meta_json?: Record<string, unknown> | string | null;
   cache_hit: number;
   request_type: string;
   compression_original_tokens: number | null;
   compression_saved_tokens: number | null;
+  run_id?: string | null;
 }
 
 export interface ApiRequestListResponse {
@@ -41,6 +42,7 @@ export interface ApiRequestQueryParams {
   virtualKeyId?: string;
   providerId?: string;
   model?: string;
+  runId?: string;
 }
 
 export const apiRequestApi = {

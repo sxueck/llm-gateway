@@ -106,7 +106,9 @@ Agent Search 的代码快照对象默认存储在 `/app/data/agent-snapshots`(co
 
 ### 3. 准备 worker 镜像
 
-网关通过 Docker SDK 直接 `createContainer` 拉起 worker,**不会自动拉取镜像**,宿主机上必须提前备好 `AGENT_WORKER_IMAGE` 指向的镜像,否则发起搜索时报 `No such image`:
+网关通过 Docker SDK 直接 `createContainer` 拉起 worker。镜像缺失时会**自动拉取**：启动前先 inspect 镜像，仅在确认返回 404（镜像真不存在）时才 `docker pull`，同一镜像并发拉取会去重合并为一次；拉取失败会给出含镜像名与手动 `docker pull` 提示的错误，run 直接失败不重试。docker.sock 权限/网络等其他错误不会触发拉取，原样抛出。整体拉取上限为 10 分钟，超时中止等待并销毁拉取流，避免占满 worker 并发。公开镜像可以不提前 `docker pull`；当前自动拉取不传私有仓库认证配置，私有镜像仍需先在宿主机登录并手动拉取：
+
+> 配了 `AGENT_WORKER_IMAGE` 但宿主机没这个镜像时，控制台顶部铃铛显示 `worker_image_missing` 警告，提示首次 run 自动拉取。`docker.sock` 不可访问时仍显示 `worker_docker_unavailable` 错误，自动拉取不能解决 Docker 权限或挂载问题。
 
 ```bash
 # 拉取官方镜像(私有包需先 docker login ghcr.io)

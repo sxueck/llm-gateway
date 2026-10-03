@@ -2,12 +2,18 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket as WsWebSocket } from "@fastify/websocket";
 import { WebSocket } from "ws";
 import {
-  runProxyPreflight,
+  runProxyAuthentication,
   type ProxyPreflightContext,
 } from "../proxy/pipeline.js";
 import { resolveModelAndProvider } from "../proxy/model-resolver.js";
 import { buildProviderConfig } from "../proxy/provider-config-builder.js";
+import { appConfig } from "../../config/index.js";
+import { providerDb } from "../../db/index.js";
+import { isRemoteProvider, remoteResponsesEvents } from "../../services/node-dispatch.js";
+import { circuitBreaker, httpFailureError } from "../../services/circuit-breaker.js";
+import type { ModelResolutionResult } from "../proxy/model-resolver.js";
 import { memoryLogger } from "../../services/logger.js";
+import { virtualKeyRateLimiter } from "../../services/virtual-key-rate-limiter.js";
 import { debugModeService } from "../../services/debug-mode.js";
 import { logApiRequestAsync } from "../../services/api-request-logger.js";
 import { capturePromptSampleAsync } from "../../services/prompt-capture-service.js";
@@ -17,6 +23,7 @@ import {
   normalizeResponseCreate,
   buildErrorEvent,
   ERROR_CODES,
+  ERROR_TYPES,
   WS_CLOSE_CODES,
 } from "../../services/responses-transport/index.js";
 import { resolveTransportMode } from "../../services/responses-transport/mode-resolver.js";
@@ -37,23 +44,14 @@ export interface WsTurnConfig {
   currentModel?: any;
   protocolConfig: any;
   path: string;
+  modelResult?: ModelResolutionResult;
 }
 
 export async function registerResponsesWebSocketRoutes(
   fastify: FastifyInstance,
 ) {
   const preHandler = async (request: FastifyRequest, reply: any) => {
-    const result = await runProxyPreflight(request, reply, {
-      onManualBlock: ({ reply: r }) => {
-        r.code(403).send({
-          error: {
-            message: "Access denied: IP blocked",
-            type: "access_denied",
-            param: "ip",
-            code: "ip_blocked",
-          },
-        });
-      },
+    const result = await runProxyAuthentication(request, reply, {
       onAntiBotBlock: ({ reply: r }) => {
         r.code(403).send({
           error: {
@@ -177,6 +175,17 @@ export async function handleResponsesWebSocket(
         return;
       }
 
+      const rateLimit = virtualKeyRateLimiter.check(virtualKey.id, virtualKey.rate_limit);
+      if (!rateLimit.allowed) {
+        sendGatewayError(
+          socket,
+          `Rate limit exceeded for this virtual key (limit: ${virtualKey.rate_limit} requests/min). Retry after ${rateLimit.retryAfterSeconds}s.`,
+          "rate_limit_exceeded",
+          ERROR_TYPES.RATE_LIMIT_ERROR,
+        );
+        return;
+      }
+
       inFlight = true;
       const turnStartTime = Date.now();
       const abortController = new AbortController();
@@ -190,17 +199,28 @@ export async function handleResponsesWebSocket(
 
       try {
         const normalizedRequest = normalizeResponseCreate(requestBody);
-        capturePromptSampleAsync(
-          virtualKey,
-          { body: normalizedRequest.body },
-          "openai",
-        );
+        // Prompt samples are captured where the client request lands, from the pristine
+        // body — including turns executed by a remote owner, which must not re-capture.
+        capturePromptSampleAsync(virtualKey, { body: normalizedRequest.body }, "openai");
         turnConfig = await resolveWebSocketTurnConfig(
           request,
           virtualKey,
           virtualKeyValue,
           normalizedRequest,
         );
+        if (turnConfig.modelResult && isRemoteProvider(turnConfig.provider)) {
+          const remoteTimer = setTimeout(() => abortController.abort(), maxDurationMs);
+          try {
+            const eventStream = remoteResponsesEvents(
+              request, virtualKey, turnConfig.modelResult, normalizedRequest.body, abortController.signal,
+            );
+            const writerOptions = { socket, closeOnTerminal: false, waitForSend: true };
+            await writeEventsToWebSocket(eventStream, writerOptions);
+          } finally {
+            clearTimeout(remoteTimer);
+          }
+          return;
+        }
         const { protocolConfig, path, providerId } = turnConfig;
         const providerLogPrefix = `${logPrefix} | provider=${providerId}`;
         const mode = resolveTransportMode(
@@ -240,6 +260,12 @@ export async function handleResponsesWebSocket(
           if (maxDurationTimer) clearTimeout(maxDurationTimer);
         }
 
+        if (appConfig.node.enabled) {
+          const circuitKey = turnConfig.modelResult?.circuitBreakerKey || providerId;
+          if (abortController.signal.aborted) circuitBreaker.recordFailure(circuitKey, httpFailureError(499, CLIENT_ABORTED_MESSAGE));
+          else if (success) circuitBreaker.recordSuccess(circuitKey);
+          else circuitBreaker.recordFailure(circuitKey, httpFailureError(502, 'Upstream stream ended without a terminal event'));
+        }
         const duration = Date.now() - turnStartTime;
 
         if (debugModeService.isActive()) {
@@ -299,7 +325,11 @@ export async function handleResponsesWebSocket(
           undefined,
           socket.readyState !== WebSocket.OPEN,
         );
-        logApiRequestAsync({
+        if (appConfig.node.enabled && turnConfig && !isRemoteProvider(turnConfig.provider)) {
+          const circuitKey = turnConfig.modelResult?.circuitBreakerKey || turnConfig.providerId;
+          circuitBreaker.recordFailure(circuitKey, clientAborted || abortController.signal.aborted ? httpFailureError(499, CLIENT_ABORTED_MESSAGE) : err);
+        }
+        if (!turnConfig?.modelResult || !isRemoteProvider(turnConfig.provider)) logApiRequestAsync({
           virtualKey,
           providerId: turnConfig?.providerId || "unknown",
           model:
@@ -421,7 +451,15 @@ export async function resolveWebSocketTurnConfig(
     );
   }
 
+  if (appConfig.node.enabled) {
+    const provider = await providerDb.getById(modelResult.providerId);
+    if (!provider || !provider.enabled) throw new Error('provider_unavailable');
+    modelResult.provider = provider;
+  }
   const { provider, providerId, currentModel } = modelResult;
+  if (isRemoteProvider(provider)) {
+    return { provider, providerId, currentModel, protocolConfig: undefined, path: request.url, modelResult };
+  }
   const configResult = await buildProviderConfig(
     provider,
     virtualKey,
@@ -455,12 +493,16 @@ export async function resolveWebSocketTurnConfig(
     );
   }
 
+  if (appConfig.node.enabled && !modelResult.excludeTargetKeys && !circuitBreaker.isAvailable(modelResult.circuitBreakerKey || providerId)) {
+    throw errorFromGatewayPayload('Provider circuit is open on its owner node', 'owner_circuit_open');
+  }
   return {
     provider,
     providerId,
     currentModel,
     protocolConfig,
     path,
+    modelResult,
   };
 }
 
@@ -493,10 +535,10 @@ function normalizedModelFromRequest(requestBody: any): string | undefined {
   return typeof requestBody?.model === "string" ? requestBody.model : undefined;
 }
 
-function sendGatewayError(socket: WsWebSocket, message: string, code: string) {
+function sendGatewayError(socket: WsWebSocket, message: string, code: string, type?: string) {
   if (socket.readyState !== WebSocket.OPEN) return;
   try {
-    socket.send(JSON.stringify(buildErrorEvent(message, code)));
+    socket.send(JSON.stringify(buildErrorEvent(message, code, type)));
   } catch (_e) {}
 }
 

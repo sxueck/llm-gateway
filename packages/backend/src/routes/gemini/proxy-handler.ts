@@ -1,6 +1,7 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import { memoryLogger } from "../../services/logger.js";
 import { runProxyPipeline } from "../proxy/pipeline.js";
+import { getNodeRequestState } from "../../services/node-dispatch.js";
 import { logApiRequestAsync } from "../../services/api-request-logger.js";
 import {
   handleGeminiNativeNonStreamRequest,
@@ -143,7 +144,8 @@ export async function dispatchGeminiRequest(
 
 export function createGeminiProxyHandler() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const startTime = Date.now();
+    const nodeState = getNodeRequestState(request);
+    const startTime = nodeState?.envelope.startedAt ?? Date.now();
     let virtualKeyValue: string | undefined;
     let providerId: string | undefined;
     let currentModel: any | undefined;
@@ -158,17 +160,6 @@ export function createGeminiProxyHandler() {
       const pipelineResult = await runProxyPipeline(request, reply, {
         protocol: "gemini",
         handlers: {
-          onManualBlock: ({ reply }) => {
-            reply
-              .code(403)
-              .send({
-                error: {
-                  message: "Access denied: IP blocked",
-                  code: 403,
-                  status: "PERMISSION_DENIED",
-                },
-              });
-          },
           onAntiBotBlock: ({ reply }) => {
             reply
               .code(403)
@@ -182,6 +173,16 @@ export function createGeminiProxyHandler() {
           },
           onAuthError: ({ reply, authError }) => {
             reply.code(authError.code).send(authError.body);
+          },
+          onRateLimited: ({ reply, limitPerMinute, retryAfterSeconds }) => {
+            reply.code(429).send({
+              error: {
+                message: `Rate limit exceeded for this virtual key (limit: ${limitPerMinute} requests/min). Retry after ${retryAfterSeconds}s.`,
+                type: "rate_limit_error",
+                param: null,
+                code: "rate_limit_exceeded",
+              },
+            });
           },
           onModelError: ({ reply, modelError }) => {
             reply.code(modelError.code).send(modelError.body);
@@ -230,8 +231,7 @@ export function createGeminiProxyHandler() {
       virtualKeyValue = vkValue;
       providerId = resolvedProviderId;
       currentModel = resolvedModel;
-
-      const normalization = await applyContextNormalization({
+      const normalization = nodeState?.envelope.normalized ? { blocked: false as const } : await applyContextNormalization({
         protocol: "gemini",
         request,
         body: request.body,

@@ -5,12 +5,14 @@ import {
   type SegmentRange,
   type SegmentTotalsRow,
 } from "../db/repositories/ops-metrics.repository.js";
-import { apiRequestHourlyDb } from "../db/index.js";
+import { apiRequestHourlyDb, apiRequestDb } from "../db/index.js";
 import { appConfig } from "../config/index.js";
 import {
   getShanghaiDayStart,
   generateShanghaiDayBuckets,
 } from "../db/utils/time-buckets.js";
+import { threatIpBlocker } from "../services/threat-ip-blocker.js";
+import { getGeoInfo } from "../utils/ip.js";
 
 /**
  * Ops-monitoring shared aggregation service. One window resolution, one
@@ -507,5 +509,156 @@ export async function getOpsDimensionList(
       totalPages: Math.max(Math.ceil(total / pageSize), 1),
     },
     items: items.slice(start, start + pageSize),
+  };
+}
+
+export interface RequestSourceGeoInfo {
+  ip: string;
+  country?: string;
+  province?: string;
+  city?: string;
+  isp?: string;
+  ispZh?: string;
+  locationZh: string;
+  asn?: string;
+  asOrganization?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+export interface RequestSourceEntry {
+  ip: string;
+  timestamp: number;
+  count: number;
+  type: "normal" | "blocked";
+  geo: RequestSourceGeoInfo | null;
+  userAgent: string | null;
+}
+
+export interface RequestSourceStats {
+  lastRequest: {
+    ip: string;
+    geo: RequestSourceGeoInfo | null;
+    timestamp: number;
+    userAgent: string | null;
+  } | null;
+  lastBlocked: {
+    ip: string;
+    geo: RequestSourceGeoInfo | null;
+    timestamp: number;
+    reason: string | null;
+    source: "threat";
+  } | null;
+  recentSources: RequestSourceEntry[];
+}
+
+/**
+ * Single source of truth for the "request sources" card: GET /stats (no
+ * window -> historical 14-day/all-time scope, byte-identical to the previous
+ * inline implementation) and the windowed ops-metrics endpoint both consume
+ * this. With a window, lastRequest/recentSources/lastBlocked are scoped to
+ * [startTime, endTime).
+ */
+export async function getRequestSourceStats(
+  window?: OpsWindow,
+): Promise<RequestSourceStats> {
+  const startTime = window?.startTime;
+  const endTime = window?.endTime;
+
+  const lastRequest = await apiRequestDb.getLastRequest(startTime, endTime);
+  const threatIpStats = threatIpBlocker.getStats();
+  const threatLastBlocked = threatIpStats.lastBlockedIp
+    ? {
+        ip: threatIpStats.lastBlockedIp,
+        timestamp: threatIpStats.lastBlockedAt || 0,
+        reason: null,
+        source: "threat" as const,
+      }
+    : null;
+  let lastBlockedInfo = threatLastBlocked;
+  if (
+    window &&
+    lastBlockedInfo &&
+    (lastBlockedInfo.timestamp || 0) < window.startTime
+  ) {
+    lastBlockedInfo = null;
+  }
+
+  const [lastRequestGeo, lastBlockedGeo] = await Promise.all([
+    getGeoInfo(lastRequest?.ip),
+    getGeoInfo(lastBlockedInfo?.ip),
+  ]);
+
+  const recentIps = await apiRequestDb.getRecentUniqueIps(50, startTime, endTime);
+  const sourceCandidates: Array<{
+    ip: string;
+    timestamp: number;
+    count: number;
+    type: "normal" | "blocked";
+  }> = recentIps
+    .filter((row: any) => !!row.ip)
+    .map((row: any) => ({
+      ip: row.ip,
+      timestamp: row.last_seen,
+      count: row.count,
+      type: "normal" as const,
+    }));
+
+  if (lastBlockedInfo?.ip) {
+    sourceCandidates.unshift({
+      ip: lastBlockedInfo.ip,
+      timestamp: lastBlockedInfo.timestamp || Date.now(),
+      count: 0,
+      type: "blocked",
+    });
+  }
+
+  sourceCandidates.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+  const dedupedSources: typeof sourceCandidates = [];
+  const seenIps = new Set<string>();
+  for (const candidate of sourceCandidates) {
+    if (!candidate.ip || seenIps.has(candidate.ip)) continue;
+    dedupedSources.push(candidate);
+    seenIps.add(candidate.ip);
+    if (dedupedSources.length >= 10) break;
+  }
+
+  const recentSources = await Promise.all(
+    dedupedSources.map(async (entry) => {
+      const [geo, lastRequestForIp] = await Promise.all([
+        getGeoInfo(entry.ip),
+        apiRequestDb.getLastRequestByIp(entry.ip, startTime, endTime),
+      ]);
+      return {
+        ip: entry.ip,
+        timestamp: lastRequestForIp?.created_at || entry.timestamp,
+        count: entry.count,
+        type: entry.type,
+        geo,
+        userAgent: lastRequestForIp?.user_agent || null,
+      };
+    }),
+  );
+
+  return {
+    lastRequest: lastRequest
+      ? {
+          ip: lastRequest.ip,
+          geo: lastRequestGeo,
+          timestamp: lastRequest?.created_at || 0,
+          userAgent: lastRequest?.user_agent || null,
+        }
+      : null,
+    lastBlocked: lastBlockedInfo?.ip
+      ? {
+          ip: lastBlockedInfo.ip,
+          geo: lastBlockedGeo,
+          timestamp: lastBlockedInfo?.timestamp || 0,
+          reason: lastBlockedInfo.reason || null,
+          source: lastBlockedInfo.source,
+        }
+      : null,
+    recentSources,
   };
 }

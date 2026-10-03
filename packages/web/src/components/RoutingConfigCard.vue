@@ -294,8 +294,8 @@ const enrichedTargets = computed(() => {
 
 function getWeightColor(weight: number) {
   if (weight >= 0.8) return '#0f6b4a';
-  if (weight >= 0.4) return '#2080f0'; // Blue
-  return '#f0a020'; // Orange
+  if (weight >= 0.4) return '#2080f0';
+  return '#f0a020';
 }
 </script>
 
@@ -355,7 +355,6 @@ function getWeightColor(weight: number) {
   flex: 1;
 }
 
-/* Fallback View Styles */
 .fallback-view {
   position: relative;
   display: flex;
@@ -478,7 +477,6 @@ function getWeightColor(weight: number) {
   color: #333;
 }
 
-/* Load Balance View Styles */
 .lb-view {
   display: flex;
   flex-direction: column;
@@ -502,7 +500,6 @@ function getWeightColor(weight: number) {
   font-family: monospace;
 }
 
-/* Default View Styles */
 .default-view {
   display: flex;
   flex-direction: column;

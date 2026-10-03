@@ -1,6 +1,7 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import { memoryLogger } from "../../services/logger.js";
-import { circuitBreaker } from "../../services/circuit-breaker.js";
+import { circuitBreaker, httpFailureError } from "../../services/circuit-breaker.js";
+import { applyRouteHeaders } from "../../services/expert-router/exposure.js";
 import { shouldRetrySmartRouting } from "../proxy/routing.js";
 import type { ModelResolutionResult } from "../proxy/model-resolver.js";
 import { calculateTokensIfNeeded } from "../proxy/token-calculator.js";
@@ -224,7 +225,7 @@ function buildUpstreamHeaders(
     requestHeaderForwardingService.buildForwardedHeaders(requestHeaders as any),
   );
 
-  // 添加 API Key 认证头
+  // 认证头三种写法都带：不同上游/中转对 Gemini 认证头的读取位置不一致
   headers["x-goog-api-key"] = apiKey;
   headers["x-api-key"] = apiKey;
   headers["api-key"] = apiKey;
@@ -342,7 +343,7 @@ export async function handleGeminiNativeNonStreamRequest(
     } else {
       circuitBreaker.recordFailure(
         circuitBreakerKey,
-        new Error(`HTTP ${upstreamResponse.status}`),
+        httpFailureError(upstreamResponse.status),
       );
     }
 
@@ -413,6 +414,11 @@ export async function handleGeminiNativeNonStreamRequest(
       if (!excludedResponseHeaders.includes(key.toLowerCase())) {
         reply.header(key, value);
       }
+    });
+    // Route exposure headers (PRD §4) on the non-stream passthrough send.
+    applyRouteHeaders(reply, {
+      routeInfo: options?.modelResult?.routeInfo,
+      upstreamModel: (request.body as any)?.model,
     });
     reply.code(upstreamResponse.status);
 
@@ -600,7 +606,6 @@ export async function handleGeminiNativeStreamRequest(
     }
   };
 
-  // 监听客户端断开连接
   reply.raw.on("close", () => {
     if (!reply.raw.writableEnded) {
       abortController.abort();
@@ -659,7 +664,7 @@ export async function handleGeminiNativeStreamRequest(
         // response write, so a retry dispatch below cannot skip accounting.
         circuitBreaker.recordFailure(
           circuitBreakerKey,
-          new Error(`HTTP ${upstreamResponse.status}`),
+          httpFailureError(upstreamResponse.status),
         );
 
         let errorResponse;
@@ -795,6 +800,8 @@ export async function handleGeminiNativeStreamRequest(
           model: getModelForLogging(request.body, currentModel),
           tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
           status: "success",
+          routeLogId: options?.modelResult?.routeInfo?.logId ?? undefined,
+          routeTier: options?.modelResult?.routeInfo?.tier ?? undefined,
           responseTime: duration,
           truncatedRequest,
           cacheHit: 0,
@@ -814,6 +821,11 @@ export async function handleGeminiNativeStreamRequest(
       }
 
       if (!headersSent) {
+        // Route exposure headers (PRD §4): setHeader survives the writeHead.
+        applyRouteHeaders(reply, {
+          routeInfo: options?.modelResult?.routeInfo,
+          upstreamModel: (request.body as any)?.model,
+        });
         reply.raw.writeHead(upstreamResponse.status, {
           "Content-Type": "text/event-stream; charset=utf-8",
           "Cache-Control": "no-cache, no-transform",
@@ -935,6 +947,8 @@ export async function handleGeminiNativeStreamRequest(
       model: getModelForLogging(request.body, currentModel),
       tokenCount,
       status: "success",
+      routeLogId: options?.modelResult?.routeInfo?.logId ?? undefined,
+      routeTier: options?.modelResult?.routeInfo?.tier ?? undefined,
       responseTime: duration,
       tffbMs: attemptResult?.tffbMs,
       truncatedRequest,
