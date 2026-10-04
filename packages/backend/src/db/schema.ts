@@ -1,8 +1,7 @@
-import { getDatabase } from "./connection.js";
+import type { Connection, PoolConnection } from "mysql2/promise";
 
-export async function createTables() {
-  const pool = getDatabase();
-  const conn = await pool.getConnection();
+export async function createTables(connection?: Connection) {
+  const conn = connection ?? await (await import("./connection.js")).getDatabase().getConnection();
 
   try {
     // 用户表
@@ -161,6 +160,7 @@ export async function createTables() {
         INDEX idx_api_requests_status (status),
         INDEX idx_api_requests_ip_created_at (ip, created_at),
         INDEX idx_api_requests_run_id (run_id),
+        INDEX idx_api_requests_route_log_id (route_log_id),
         INDEX idx_api_requests_vk_created_at (virtual_key_id, created_at),
         INDEX idx_api_requests_provider_created_at (provider_id, created_at),
         INDEX idx_api_requests_status_created_at (status, created_at)
@@ -587,7 +587,6 @@ export async function createTables() {
     `);
 
     // 小时级聚合表：精确滚动窗口的查询优化；边界部分小时由明细精确计算。
-    // 口径与 v45 迁移保持一致。
     await conn.query(`
       CREATE TABLE IF NOT EXISTS api_request_hourly_summaries (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -621,6 +620,6 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
   } finally {
-    conn.release();
+    if (!connection) (conn as PoolConnection).release();
   }
 }

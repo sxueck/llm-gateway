@@ -1,191 +1,49 @@
-import type { Connection } from 'mysql2/promise';
-import { describe, expect, test, vi } from 'vitest';
-import { applyMigrations, migrations, normalizeExpertRoutingConfig, transformExpertRoutingConfigV2 } from './migrations.js';
+import type { Connection } from "mysql2/promise";
+import { describe, expect, test, vi } from "vitest";
+import { applyMigrations, getCurrentVersion, migrations } from "./migrations.js";
 
-describe('migration runner from v45', () => {
-  test('has unique migration versions and applies v47-v56 after v45', async () => {
-    const versions = migrations.map(migration => migration.version);
-    expect(new Set(versions).size).toBe(versions.length);
-
-    const query = vi.fn(async (sql: string) => {
-      if (sql.includes('MAX(version)')) return [[{ version: 45 }]];
-      if (sql.includes('INFORMATION_SCHEMA.STATISTICS')) return [[{ cnt: 0 }]];
-      if (sql.includes('IS_NULLABLE AS is_nullable')) return [[{ is_nullable: 'NO' }]];
-      if (sql.includes('INFORMATION_SCHEMA.COLUMNS')) return [[{ cnt: 0 }]];
-      return [[]];
-    });
-    const conn = {
-      query,
-      beginTransaction: vi.fn(),
-      commit: vi.fn(),
-      rollback: vi.fn(),
-    } as unknown as Connection;
-
-    await applyMigrations(conn);
-
-    // v47 adds the expert-routing difficulty columns idempotently.
-    expect(query).toHaveBeenCalledWith(
-      "ALTER TABLE expert_routing_logs ADD COLUMN difficulty VARCHAR(16) DEFAULT NULL COMMENT '路由难度: low/medium/high'",
-    );
-    expect(query).toHaveBeenCalledWith(
-      "ALTER TABLE expert_routing_session_bindings ADD COLUMN difficulty VARCHAR(16) DEFAULT NULL COMMENT '绑定时的路由难度(可选)'",
-    );
-    expect(query).toHaveBeenCalledWith(
-      'ALTER TABLE expert_routing_logs MODIFY COLUMN classifier_model VARCHAR(255) DEFAULT NULL',
-    );
-    // v47 also carries the unreleased agent run correlation additions.
-    expect(query).toHaveBeenCalledWith(
-      'ALTER TABLE api_requests ADD COLUMN run_id VARCHAR(255) DEFAULT NULL',
-    );
-    expect(query).toHaveBeenCalledWith(
-      'ALTER TABLE api_requests ADD INDEX idx_api_requests_run_id (run_id)',
-    );
-    expect(query).toHaveBeenCalledWith(
-      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
-      [47, 'add_expert_routing_difficulty_columns', expect.any(Number)],
-    );
-    // v48 drops the removed model proactive monitoring objects.
-    expect(query).toHaveBeenCalledWith('DROP TABLE IF EXISTS health_summaries');
-    expect(query).toHaveBeenCalledWith('DROP TABLE IF EXISTS health_runs');
-    expect(query).toHaveBeenCalledWith('DROP TABLE IF EXISTS health_targets');
-    expect(query).toHaveBeenCalledWith(
-      "DELETE FROM system_config WHERE `key` IN ('health_monitoring_enabled', 'persistent_monitoring_enabled', 'monitoring_virtual_key_id')",
-    );
-    expect(query).toHaveBeenCalledWith(
-      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
-      [48, 'drop_model_proactive_monitoring', expect.any(Number)],
-    );
-    // v49：运维监控 Agent 统计按 created_at 窗口聚合 agent_search_runs，补索引。
-    expect(query).toHaveBeenCalledWith(
-      'ALTER TABLE agent_search_runs ADD INDEX idx_runs_created_at (created_at)',
-    );
-    expect(query).toHaveBeenCalledWith(
-      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
-      [49, 'add_agent_search_runs_created_at_index', expect.any(Number)],
-    );
-    // v50：系统告警已读状态表。
-    expect(query).toHaveBeenCalledWith(
-      expect.stringContaining('CREATE TABLE IF NOT EXISTS alert_reads'),
-    );
-    expect(query).toHaveBeenCalledWith(
-      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
-      [50, 'add_alert_reads', expect.any(Number)],
-    );
-    // v51：专家路由配置 v2（无配置行时仅作幂等扫表，不做 env 清理）。
-    expect(query).toHaveBeenCalledWith(
-      'SELECT id, config FROM expert_routing_configs',
-    );
-    expect(query).not.toHaveBeenCalledWith(
-      'DROP TABLE IF EXISTS intent_classify_logs',
-    );
-    expect(query).toHaveBeenCalledWith(
-      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
-      [51, 'expert_routing_config_v2', expect.any(Number)],
-    );
-    // v52：escalate_only 绑定档位列。
-    expect(query).toHaveBeenCalledWith(
-      "ALTER TABLE expert_routing_session_bindings ADD COLUMN tier VARCHAR(16) DEFAULT NULL COMMENT '绑定档位(escalate_only 锚点)'",
-    );
-    expect(query).toHaveBeenCalledWith(
-      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
-      [52, 'add_expert_routing_binding_tier', expect.any(Number)],
-    );
-    // v53：api_requests 路由关联列。
-    expect(query).toHaveBeenCalledWith(
-      "ALTER TABLE api_requests ADD COLUMN route_log_id VARCHAR(255) DEFAULT NULL COMMENT '关联 expert_routing_logs.id'",
-    );
-    expect(query).toHaveBeenCalledWith(
-      "ALTER TABLE api_requests ADD COLUMN route_tier VARCHAR(16) DEFAULT NULL COMMENT '命中档位 low/medium/high'",
-    );
-    expect(query).toHaveBeenCalledWith(
-      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
-      [53, 'add_api_requests_route_columns', expect.any(Number)],
-    );
-    // v54：反馈回放用意图文本列。
-    expect(query).toHaveBeenCalledWith(
-      "ALTER TABLE expert_routing_logs ADD COLUMN intent_text MEDIUMTEXT NULL COMMENT '清洗后意图文本(截断,反馈回放用)'",
-    );
-    expect(query).toHaveBeenCalledWith(
-      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
-      [54, 'add_expert_routing_log_intent_text', expect.any(Number)],
-    );
-    expect(query).toHaveBeenCalledWith('DROP TABLE IF EXISTS blocked_ips');
-    expect(query).toHaveBeenCalledWith(
-      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
-      [55, 'drop_manual_ip_blocklist', expect.any(Number)],
-    );
-    // v56：模型级协议白名单退役；列不存在（mock cnt=0）时不得触碰 DDL。
-    expect(query).not.toHaveBeenCalledWith(
-      expect.stringContaining('ALTER TABLE models DROP COLUMN supported_protocols'),
-    );
-    expect(query).toHaveBeenCalledWith(
-      'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
-      [56, 'provider_scoped_model_protocols', expect.any(Number)],
-    );
-    expect(conn.commit).toHaveBeenCalledTimes(10);
+function connection(names: string[] = [], generation: number | null = null) {
+  const query = vi.fn(async (sql: string) => {
+    if (sql.includes("INFORMATION_SCHEMA.TABLES")) return [names.map((name) => ({ name }))];
+    if (sql.includes("SELECT generation")) return [generation === null ? [] : [{ generation }]];
+    if (sql.includes("INSERT INTO schema_baseline")) generation = 2;
+    if (sql.includes("MAX(version)")) return [[{ version: null }]];
+    return [[]];
   });
-});
+  return { query, beginTransaction: vi.fn(), commit: vi.fn(), rollback: vi.fn() };
+}
 
-describe('transformExpertRoutingConfigV2', () => {
-  test('bands experts, converts session policy, strips removed fields', () => {
-    const config = {
-      classification_mode: 'expert',
-      choice_threshold: 0.6,
-      experts: [
-        { id: 'a', category: 'review', description: 'd', color: '#fff', type: 'real', provider_id: 'p', model: 'm' },
-        { id: 'b', category: 'simple', type: 'real', provider_id: 'p', model: 'm2' },
-      ],
-      session_binding_policy: { idle_ttl_seconds: 60, absolute_ttl_seconds: 3600 },
-    };
-    const { config: upgraded, wasDifficulty } = transformExpertRoutingConfigV2(
-      config,
-      (expert) => (expert.id === 'a' ? 'high' : undefined),
-    );
-    expect(wasDifficulty).toBe(false);
-    expect(upgraded.version).toBe(2);
-    expect(upgraded.experts).toEqual([
-      { id: 'a', type: 'real', provider_id: 'p', model: 'm', band: 'high' },
-      { id: 'b', type: 'real', provider_id: 'p', model: 'm2', band: 'high' },
-    ]);
-    expect(upgraded.session_policy).toEqual({
-      mode: 'escalate_only',
-      idle_ttl_seconds: 60,
-      absolute_ttl_seconds: 3600,
-    });
-    expect(upgraded.session_binding_policy).toBeUndefined();
-    expect(upgraded.choice_threshold).toBeUndefined();
-    expect(upgraded.classification_mode).toBeUndefined();
+describe("v2 database baseline", () => {
+  test("has no historical migrations and establishes generation 2 on an empty database", async () => {
+    const conn = connection();
+    expect(migrations).toEqual([]);
+    await applyMigrations(conn as unknown as Connection);
+    expect(conn.query).toHaveBeenCalledWith("INSERT INTO schema_baseline (id, generation) VALUES (1, 2)");
+    expect(conn.beginTransaction).not.toHaveBeenCalled();
+    expect(conn.query.mock.calls.some(([sql]) => /DROP |DELETE |ALTER |UPDATE /.test(sql))).toBe(false);
   });
 
-  test('difficulty-mode configs keep their identity for binding retention', () => {
-    const config = { classification_mode: 'difficulty', experts: [] };
-    const { wasDifficulty } = transformExpertRoutingConfigV2(config, () => 'low');
-    expect(wasDifficulty).toBe(true);
+  test.each([["users"], ["schema_migrations"], ["other_table"]])("rejects legacy objects before any writes: %s", async (name) => {
+    const conn = connection([name]);
+    await expect(applyMigrations(conn as unknown as Connection)).rejects.toThrow("Legacy database detected");
+    expect(conn.query).toHaveBeenCalledTimes(1);
   });
-});
 
-describe('normalizeExpertRoutingConfig', () => {
-  test('maps legacy expert categories and removes ignored LLM prompt fields', () => {
-    const result = normalizeExpertRoutingConfig(JSON.stringify({
-      experts: [
-        { id: 'repair', category: 'debug', system_prompt: 'legacy criteria' },
-        { id: 'general', category: 'other' },
-      ],
-      llm_second_pass: {
-        type: 'real',
-        prompt_template: '{{USER_PROMPT}}',
-        system_prompt: 'legacy prompt',
-        user_prompt_marker: '{{USER_PROMPT}}',
-      },
-    }));
+  test("accepts the current baseline without reinitializing it", async () => {
+    const conn = connection(["users", "schema_baseline", "schema_migrations"], 2);
+    expect(await getCurrentVersion(conn as unknown as Connection)).toBe(0);
+    expect(conn.query.mock.calls.some(([sql]) => sql.includes("INSERT INTO schema_baseline"))).toBe(false);
+  });
 
-    expect(result.changed).toBe(true);
-    expect(JSON.parse(result.config)).toEqual({
-      experts: [
-        { id: 'repair', category: 'code_repair' },
-        { id: 'general', category: 'general_inquiry' },
-      ],
-      llm_second_pass: { type: 'real' },
-    });
+  test.each([null, 1, 3])("rejects missing or unsupported baseline %s", async (generation) => {
+    const conn = connection(["users", "schema_baseline"], generation);
+    await expect(getCurrentVersion(conn as unknown as Connection)).rejects.toThrow(/baseline/);
+    expect(conn.query.mock.calls.some(([sql]) => sql.includes("INSERT INTO schema_baseline"))).toBe(false);
+  });
+
+  test("propagates metadata read failures instead of treating them as an empty database", async () => {
+    const conn = connection();
+    conn.query.mockRejectedValueOnce(new Error("permission denied"));
+    await expect(applyMigrations(conn as unknown as Connection)).rejects.toThrow("permission denied");
   });
 });

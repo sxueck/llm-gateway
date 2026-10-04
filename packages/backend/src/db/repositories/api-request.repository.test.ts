@@ -78,8 +78,8 @@ describe('apiRequestRepository.getStats', () => {
     });
 
     expect(stats.avgResponseTime).toBe(2600);
-    expect(stats.legacyTokenSemantics).toBe(true);
-    expect(String(mocks.connection.query.mock.calls[0][0])).toContain('s.cache_hit_count > 0');
+    expect(stats.legacyTokenSemantics).toBe(false);
+    expect(String(mocks.connection.query.mock.calls[0][0])).not.toContain('schema_migrations');
     expect(mocks.connection.query).toHaveBeenCalledTimes(2);
   });
 

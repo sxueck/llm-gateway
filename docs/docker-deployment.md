@@ -142,6 +142,10 @@ docker-compose logs llm-gateway | grep "Agent search executor"
 
 之后在 Web UI 的 Agent Search 页面发起一次搜索,`docker ps` 中应出现短暂的 `craft-worker-<runId>` 容器。
 
+## 数据库 v2 重建升级
+
+包含 v2 改动的新镜像提供 `node dist/upgrade.js export|rebuild`，无需源码或 tsx。旧镜像不含此入口，需先发布新镜像。升级时停止全部网关副本、保留 MySQL 运行，使用一次性 Compose 容器导出配置、演练并重建恢复；备份必须保存到持久化私有目录。完整命令、SQL 灾备与权限要求见 [数据库 v2 升级指南](database-v2-upgrade.md#线上-docker--compose-升级)。不要使用 `docker compose down -v` 清库。
+
 ## 生产环境部署建议
 
 ### 使用反向代理

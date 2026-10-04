@@ -175,7 +175,6 @@ export const apiRequestRepository = {
       let effectiveTimeCount = 0;
       let cacheHits = 0;
       let promptCacheHits = 0;
-      let legacyTokenSemantics = false;
 
       if (needsSummary) {
         const lastSummaryDay = new Date(detailStart - 1);
@@ -183,8 +182,6 @@ export const apiRequestRepository = {
         // disable_logging 密钥（正文已在写入侧禁用，聚合不暴露敏感元数据）。
         // 历史口径缺口：旧版汇总 SQL 排除了 disable_logging 密钥，相关日汇总行
         // 不存在，明细已清理后无法回补，不做推测性回填（PRD §4.2）。
-        // 旧汇总行可能计入 cache_hit = 1 的 Tokens；明细已删除时无法回算，
-        // 使用迁移时间和存量汇总的创建时间标记可能偏高的结果。
 
         const [summaryRows] = await conn.query(
           `SELECT
@@ -197,9 +194,6 @@ export const apiRequestRepository = {
             SUM(s.cached_tokens) as cached_tokens,
             SUM(s.cache_hit_count) as cache_hits,
             SUM(s.prompt_cache_hit_count) as prompt_cache_hits,
-            MAX(CASE WHEN s.cache_hit_count > 0
-              AND s.created_at < (SELECT applied_at FROM schema_migrations WHERE version = 45)
-              THEN 1 ELSE 0 END) as legacy_token_semantics,
             SUM(CASE
               WHEN s.effective_time_count > 0 THEN s.total_effective_time
               ELSE s.total_response_time
@@ -230,7 +224,6 @@ export const apiRequestRepository = {
           effectiveTimeCount += Number(summary.effective_time_count) || 0;
           cacheHits += Number(summary.cache_hits) || 0;
           promptCacheHits += Number(summary.prompt_cache_hits) || 0;
-          legacyTokenSemantics = Number(summary.legacy_token_semantics) > 0;
         }
       }
 
@@ -292,7 +285,7 @@ export const apiRequestRepository = {
         cacheHits,
         promptCacheHits,
         cacheSavedTokens: 0,
-        legacyTokenSemantics,
+        legacyTokenSemantics: false,
       };
     } finally {
       conn.release();

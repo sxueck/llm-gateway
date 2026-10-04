@@ -1,6 +1,6 @@
 import * as connectionModule from "./connection.js";
 import { createTables } from "./schema.js";
-import { applyMigrations } from "./migrations.js";
+import { applyMigrations, getCurrentVersion } from "./migrations.js";
 import {
   startBufferFlush,
   stopBufferFlush,
@@ -78,8 +78,9 @@ export async function initDatabase() {
 
   const connection = await pool.getConnection();
   try {
+    await getCurrentVersion(connection);
     console.log("[数据库] 开始创建表结构...");
-    await createTables();
+    await createTables(connection);
     console.log("[数据库] 表结构创建完成");
 
     console.log("[数据库] 开始应用数据库迁移...");
