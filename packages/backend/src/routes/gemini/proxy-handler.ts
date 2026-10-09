@@ -281,6 +281,7 @@ export function createGeminiProxyHandler() {
           if (virtualKey) {
             const shouldLogBody = shouldLogRequestBody(virtualKey);
             logApiRequestAsync({
+              request,
               virtualKey,
               providerId,
               model: currentModel?.name || "unknown",

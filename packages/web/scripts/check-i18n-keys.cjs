@@ -22,6 +22,8 @@ const files = [
   'src/components/AlertCenter.vue',
   'src/views/CostAnalysisView.vue',
   'src/views/DeveloperSettingsView.vue',
+  'src/views/ApiRequestsView.vue',
+  'src/views/DashboardView.vue',
 ];
 
 const used = new Map();

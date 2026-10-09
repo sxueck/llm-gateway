@@ -211,6 +211,7 @@ export function createDecisionsProxyHandler() {
           ).substring(0, 500);
 
       logApiRequestAsync({
+        request,
         virtualKey,
         providerId: providerId!,
         model: getModelForLogging(request.body, currentModel),
@@ -245,6 +246,7 @@ export function createDecisionsProxyHandler() {
           return;
         }
         logApiRequestAsync({
+          request,
           virtualKey,
           providerId: providerId!,
           model: getModelForLogging(request.body, currentModel),
@@ -284,6 +286,7 @@ export function createDecisionsProxyHandler() {
 
       const shouldLogBody = shouldLogRequestBody(virtualKey);
       logApiRequestAsync({
+        request,
         virtualKey,
         providerId: providerId!,
         model: getModelForLogging(request.body, currentModel),

@@ -49,6 +49,8 @@ export type ApiRequestBuffer = {
   user_agent?: string;
   /** agent run 关联（loopback 打标，仅内部可信来源写入） */
   run_id?: string;
+  /** 客户端显式会话标识（x-session-id / body.session_id 等）；无则 NULL */
+  session_id?: string | null;
   /** 难度分级路由决策关联（expert_routing_logs.id + 命中档位） */
   route_log_id?: string;
   route_tier?: string;

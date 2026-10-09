@@ -212,24 +212,25 @@
         <n-gi class="stagger-item" style="--delay: 300ms">
           <n-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-header">意图分类速度</div>
+              <div class="stat-header">{{ t('dashboard.activeAgents') }}</div>
               <div class="stat-main-value">
-                <n-skeleton v-if="loading" text style="width: 50%; height: 42px" :sharp="false" />
-                <span v-else>
-                  {{
-                    intentClassifySpeed >= 1000
-                      ? (intentClassifySpeed / 1000).toFixed(2)
-                      : formatResponseTime(intentClassifySpeed)
-                  }}
-                  <span class="stat-unit">{{ intentClassifySpeed >= 1000 ? 's' : 'ms' }}</span>
-                </span>
+                <n-skeleton v-if="agentStatsLoading" text style="width: 40%; height: 42px" :sharp="false" />
+                <span v-else-if="agentStatsError">—</span>
+                <span v-else>{{ formatNumber(activeAgentCount) }}</span>
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">分类次数:</span>
-                  <span class="stat-detail-value">
-                    <n-skeleton v-if="loading" text style="width: 40px" />
-                    <span v-else>{{ formatNumber(intentClassifyCount) }}</span>
+                  <span class="stat-detail-label">{{ t('dashboard.topAgent') }}:</span>
+                  <span class="stat-detail-value" :title="topAgentLabel">
+                    <n-skeleton v-if="agentStatsLoading" text style="width: 60px" />
+                    <span v-else>{{ topAgentLabel }}</span>
+                  </span>
+                </span>
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">{{ t('dashboard.unattributed') }}:</span>
+                  <span class="stat-detail-value" :title="agentStatsError || t('dashboard.unattributedHint')">
+                    <n-skeleton v-if="agentStatsLoading" text style="width: 40px" />
+                    <span v-else>{{ formatNumber(unattributedRequests) }}</span>
                   </span>
                 </span>
               </div>
@@ -487,11 +488,15 @@ import {
   configApi,
   type ApiStats,
   type VirtualKeyTrend,
-  type IntentClassifyStats,
   type ModelStat,
   type CostStats,
   type ThreatIpStats
 } from '@/api/config'
+import {
+  agentMetricsApi,
+  type CodingAgentSummary,
+  type CodingAgentTotals
+} from '@/api/agent-metrics'
 import {
   formatNumber,
   formatTokenNumber,
@@ -512,7 +517,10 @@ const stats = ref<ApiStats | null>(null)
 const statsAllTime = ref<ApiStats | null>(null)
 const isTokenCardFlipped = ref(false)
 const trendData = ref<VirtualKeyTrend[]>([])
-const intentClassifyStats = ref<IntentClassifyStats | null>(null)
+const agentTotals = ref<CodingAgentTotals | null>(null)
+const topAgent = ref<CodingAgentSummary | null>(null)
+const agentStatsLoading = ref(false)
+const agentStatsError = ref<string | null>(null)
 const modelStats = ref<ModelStat[]>([])
 const circuitBreakerStats = ref<{
   totalTriggers: number
@@ -594,13 +602,34 @@ const avgOutputTokens = computed(() => {
   return Math.round(Number(stats.value?.completionTokens || 0) / reqs)
 })
 
-const intentClassifySpeed = computed(() => {
-  return Number(intentClassifyStats.value?.avgClassificationTime || 0)
+const activeAgentCount = computed(() => Number(agentTotals.value?.agentCount || 0))
+
+const unattributedRequests = computed(() =>
+  Number(agentTotals.value?.unattributed?.requests || 0)
+)
+
+const topAgentLabel = computed(() => {
+  if (!topAgent.value) return agentStatsError.value ? '-' : t('dashboard.agentNone')
+  return `${topAgent.value.label} · ${t('dashboard.agentRequests', { count: formatNumber(topAgent.value.requests) })}`
 })
 
-const intentClassifyCount = computed(() => {
-  return Number(intentClassifyStats.value?.totalRequests || 0)
-})
+// Agent 归因走独立接口：首页主卡不等这条较重查询，失败也只影响这一张卡。
+const loadAgentStats = async () => {
+  agentStatsLoading.value = true
+  agentStatsError.value = null
+  try {
+    const result = await agentMetricsApi.getCodingAgents({ period: selectedPeriod.value })
+    agentTotals.value = result.totals || null
+    topAgent.value =
+      [...(result.agents || [])].sort((a, b) => b.requests - a.requests)[0] || null
+  } catch (error: any) {
+    agentTotals.value = null
+    topAgent.value = null
+    agentStatsError.value = error?.message || t('dashboard.agentStatsFailed')
+  } finally {
+    agentStatsLoading.value = false
+  }
+}
 
 const topModel = computed(() => {
   if (modelStats.value.length === 0 || !modelStats.value[0].model) return '-'
@@ -991,6 +1020,7 @@ async function loadStats(opts: { silent?: boolean } = {}) {
     loading.value = true
   }
   loadError.value = null
+  void loadAgentStats()
   try {
     const result = await configApi.getStats(selectedPeriod.value, chartMetric.value)
 
@@ -1000,10 +1030,6 @@ async function loadStats(opts: { silent?: boolean } = {}) {
 
     stats.value = result.stats
     trendData.value = result.trend || []
-    intentClassifyStats.value = result.intentClassifyStats || {
-      totalRequests: 0,
-      avgClassificationTime: 0
-    }
     modelStats.value = result.modelStats || []
     circuitBreakerStats.value = result.circuitBreakerStats || {
       totalTriggers: 0,

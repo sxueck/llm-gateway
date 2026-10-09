@@ -41,6 +41,38 @@
               @update:value="resetPageAndLoad"
             />
             <n-select
+              v-model:value="filterRequestType"
+              :options="requestTypeOptions"
+              class="filter-control filter-request-type-select"
+              :placeholder="t('apiRequests.filterProtocol')"
+              clearable
+              @update:value="resetPageAndLoad"
+            />
+            <n-select
+              v-model:value="filterCacheHit"
+              :options="cacheHitOptions"
+              class="filter-control filter-cache-select"
+              :placeholder="t('apiRequests.filterCacheHit')"
+              clearable
+              @update:value="resetPageAndLoad"
+            />
+            <n-input
+              v-model:value="filterIp"
+              class="filter-control filter-ip-input"
+              :placeholder="t('apiRequests.filterIp')"
+              clearable
+              @keyup.enter="resetPageAndLoad"
+              @clear="resetPageAndLoad"
+            />
+            <n-input
+              v-model:value="filterSessionId"
+              class="filter-control filter-session-input"
+              :placeholder="t('apiRequests.filterSessionId')"
+              clearable
+              @keyup.enter="resetPageAndLoad"
+              @clear="resetPageAndLoad"
+            />
+            <n-select
               v-model:value="filterStatus"
               :options="statusOptions"
               class="filter-control filter-status-select"
@@ -69,7 +101,7 @@
             :row-key="(row: ApiRequest) => row.id"
             :row-props="rowProps"
             :row-class-name="rowClassName"
-            :scroll-x="1180"
+            :scroll-x="1700"
             remote
             striped
           />
@@ -148,13 +180,92 @@
                   {{ selectedRequest.compression_saved_tokens }}
                 </n-tag>
               </n-descriptions-item>
-              <n-descriptions-item label="虚拟密钥 ID" v-if="selectedRequest.virtual_key_id">
-                <n-text code class="detail-code-id">{{ selectedRequest.virtual_key_id }}</n-text>
+              <n-descriptions-item :label="t('apiRequests.colVirtualKey')" v-if="selectedRequest.virtual_key_id">
+                <div class="detail-named-id">
+                  <n-text strong>{{ selectedRequest.virtual_key_name || t('apiRequests.unnamedKey') }}</n-text>
+                  <n-text code class="detail-code-id">{{ selectedRequest.virtual_key_id }}</n-text>
+                </div>
               </n-descriptions-item>
-              <n-descriptions-item label="提供商 ID" v-if="selectedRequest.provider_id">
-                <n-text code class="detail-code-id">{{ selectedRequest.provider_id }}</n-text>
+              <n-descriptions-item :label="t('apiRequests.colProvider')" v-if="selectedRequest.provider_id">
+                <div class="detail-named-id">
+                  <n-text strong>{{ selectedRequest.provider_name || t('apiRequests.unknownProvider') }}</n-text>
+                  <n-text code class="detail-code-id">{{ selectedRequest.provider_id }}</n-text>
+                </div>
+              </n-descriptions-item>
+              <n-descriptions-item :label="t('apiRequests.filterIp')" v-if="selectedRequest.ip">
+                <n-text code class="detail-code-id">{{ selectedRequest.ip }}</n-text>
+              </n-descriptions-item>
+              <n-descriptions-item :label="t('apiRequests.detailClient')" v-if="selectedRequest.user_agent" :span="2">
+                <n-text class="detail-user-agent">{{ selectedRequest.user_agent }}</n-text>
               </n-descriptions-item>
             </n-descriptions>
+          </n-card>
+
+          <n-card size="small" :bordered="false" class="session-nav-card">
+            <template #header>
+              <n-space align="center" :size="8">
+                <span>{{ t('apiRequests.sessionNav') }}</span>
+                <n-tag
+                  v-if="session"
+                  size="tiny"
+                  :bordered="false"
+                  :type="session.strategy === 'explicit' ? 'success' : 'warning'"
+                >
+                  {{ session.strategy === 'explicit' ? t('apiRequests.sessionExplicit') : t('apiRequests.sessionInferred') }}
+                </n-tag>
+              </n-space>
+            </template>
+            <n-spin :show="sessionLoading">
+              <n-space vertical :size="10">
+                <n-space align="center" :size="8">
+                  <n-button
+                    size="small"
+                    :disabled="!session || !session.requests.length"
+                    @click="gotoSessionRequest(0)"
+                  >
+                    {{ t('apiRequests.sessionFirst') }}
+                  </n-button>
+                  <n-button
+                    size="small"
+                    :disabled="!session || sessionIndex <= 0"
+                    @click="gotoSessionRequest(sessionIndex - 1)"
+                  >
+                    {{ t('apiRequests.sessionPrev') }}
+                  </n-button>
+                  <n-button
+                    size="small"
+                    :disabled="!session || sessionIndex < 0 || sessionIndex >= (session?.requests.length ?? 0) - 1"
+                    @click="gotoSessionRequest(sessionIndex + 1)"
+                  >
+                    {{ t('apiRequests.sessionNext') }}
+                  </n-button>
+                  <n-button
+                    size="small"
+                    :disabled="!session || sessionIndex < 0 || sessionIndex >= (session?.requests.length ?? 0) - 1"
+                    @click="gotoSessionRequest((session?.requests.length ?? 1) - 1)"
+                  >
+                    {{ t('apiRequests.sessionLatest') }}
+                  </n-button>
+                  <n-text depth="3" class="session-position">
+                    {{ session && sessionIndex >= 0 ? t('apiRequests.sessionPosition', { index: sessionIndex + 1, total: session.requests.length }) : '' }}
+                  </n-text>
+                </n-space>
+                <n-space align="center" :size="8" wrap>
+                  <n-text v-if="session?.sessionId" code class="detail-code-id">
+                    {{ session.sessionId }}
+                  </n-text>
+                  <n-button size="tiny" :disabled="!session" @click="filterOnlySession">
+                    {{ t('apiRequests.sessionOnly') }}
+                  </n-button>
+                </n-space>
+                <n-text v-if="session?.truncated" depth="3" class="session-hint">
+                  {{ t('apiRequests.sessionTruncatedHint', { count: session.requests.length }) }}
+                </n-text>
+                <n-text v-else-if="session && session.strategy === 'heuristic'" depth="3" class="session-hint">
+                  {{ t('apiRequests.sessionHeuristicHint') }}
+                </n-text>
+              </n-space>
+            </n-spin>
           </n-card>
 
           <n-card v-if="selectedRequest.request_body" title="请求体" size="small" hoverable>
@@ -220,8 +331,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, h, onMounted, reactive } from 'vue'
+import { ref, computed, h, onMounted, reactive, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import {
   useMessage,
   NSpace,
@@ -239,9 +351,11 @@ import {
   NModal,
   NText,
   NInputNumber,
+  NInput,
+  NSpin,
   NAlert
 } from 'naive-ui'
-import { apiRequestApi, type ApiRequest } from '@/api/api-request'
+import { apiRequestApi, type ApiRequest, type ApiRequestSession } from '@/api/api-request'
 import { virtualKeyApi } from '@/api/virtual-key'
 import { providerApi } from '@/api/provider'
 import { modelApi } from '@/api/model'
@@ -253,6 +367,7 @@ import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize'
 import PageHeader from '@/components/PageHeader.vue'
 
 const message = useMessage()
+const { t } = useI18n()
 const loading = ref(false)
 const requests = ref<ApiRequest[]>([])
 const showDetail = ref(false)
@@ -262,6 +377,10 @@ const filterStatus = ref<string | undefined>(undefined)
 const filterVirtualKeyId = ref<string | undefined>(undefined)
 const filterProviderId = ref<string | undefined>(undefined)
 const filterModel = ref<string | undefined>(undefined)
+const filterRequestType = ref<string | undefined>(undefined)
+const filterCacheHit = ref<0 | 1 | undefined>(undefined)
+const filterIp = ref<string>('')
+const filterSessionId = ref<string>('')
 const virtualKeyOptions = ref<Array<{ label: string; value: string }>>([])
 const providerOptions = ref<Array<{ label: string; value: string }>>([])
 const modelOptions = ref<Array<{ label: string; value: string }>>([])
@@ -275,7 +394,11 @@ const hasActiveFilters = computed(
     !!filterStatus.value ||
     !!filterVirtualKeyId.value ||
     !!filterProviderId.value ||
-    !!filterModel.value
+    !!filterModel.value ||
+    !!filterRequestType.value ||
+    filterCacheHit.value !== undefined ||
+    !!filterIp.value.trim() ||
+    !!filterSessionId.value.trim()
 )
 
 // Drill-down entry: ops monitoring pushes startTime/endTime/virtualKeyId/
@@ -300,6 +423,18 @@ const applyRouteQuery = () => {
   if (q.status === 'success' || q.status === 'error') {
     filterStatus.value = q.status
   }
+  if (typeof q.requestType === 'string' && q.requestType) {
+    filterRequestType.value = q.requestType
+  }
+  if (q.cacheHit === '1' || q.cacheHit === '0') {
+    filterCacheHit.value = q.cacheHit === '1' ? 1 : 0
+  }
+  if (typeof q.ip === 'string' && q.ip) {
+    filterIp.value = q.ip
+  }
+  if (typeof q.sessionId === 'string' && q.sessionId) {
+    filterSessionId.value = q.sessionId
+  }
 }
 
 const clearFilters = () => {
@@ -308,6 +443,10 @@ const clearFilters = () => {
   filterVirtualKeyId.value = undefined
   filterProviderId.value = undefined
   filterModel.value = undefined
+  filterRequestType.value = undefined
+  filterCacheHit.value = undefined
+  filterIp.value = ''
+  filterSessionId.value = ''
   // 清除过滤后重置分页；同时移除钻取携带的 URL 参数
   pagination.page = 1
   if (Object.keys(route.query).length > 0) {
@@ -464,6 +603,20 @@ const statusOptions = [
   { label: '失败', value: 'error' }
 ]
 
+// 与后端 request_type 写入值对齐；openai-responses-ws 等内部入口不预置选项，
+// 但控件为 tag 输入，仍可手工填入完整值筛选。
+const requestTypeOptions = [
+  { label: 'OpenAI Chat', value: 'chat' },
+  { label: 'OpenAI Responses', value: 'openai-responses' },
+  { label: 'Anthropic', value: 'anthropic' },
+  { label: 'Gemini', value: 'gemini' }
+]
+
+const cacheHitOptions = [
+  { label: t('apiRequests.cacheHitOnly'), value: 1 as const },
+  { label: t('apiRequests.cacheMissOnly'), value: 0 as const }
+]
+
 const columns: DataTableColumns<ApiRequest> = [
   {
     title: '请求时间',
@@ -479,6 +632,34 @@ const columns: DataTableColumns<ApiRequest> = [
       tooltip: true
     },
     render: row => h('span', { class: 'table-model' }, getModelDisplay(row))
+  },
+  {
+    title: t('apiRequests.colVirtualKey'),
+    key: 'virtual_key_name',
+    width: 150,
+    ellipsis: {
+      tooltip: true
+    },
+    render: row =>
+      h(
+        'span',
+        { class: row.virtual_key_name ? 'table-key' : 'table-placeholder' },
+        row.virtual_key_name || row.virtual_key_id || '-'
+      )
+  },
+  {
+    title: t('apiRequests.colProvider'),
+    key: 'provider_name',
+    width: 120,
+    ellipsis: {
+      tooltip: true
+    },
+    render: row =>
+      h(
+        'span',
+        { class: row.provider_name ? 'table-key' : 'table-placeholder' },
+        row.provider_name || row.provider_id || '-'
+      )
   },
   {
     title: '状态',
@@ -516,6 +697,41 @@ const columns: DataTableColumns<ApiRequest> = [
         { class: row.tffb_ms !== null ? 'table-latency' : 'table-placeholder' },
         row.tffb_ms !== null ? `${row.tffb_ms}ms` : '-'
       )
+  },
+  {
+    title: t('apiRequests.colSession'),
+    key: 'session_id',
+    width: 90,
+    render: row => {
+      if (row.session_id) {
+        return h(
+          NTag,
+          { size: 'small', type: 'success', bordered: false, title: row.session_id },
+          { default: () => t('apiRequests.tagExplicit') }
+        )
+      }
+      // 无显式标识时只能靠“本轮无 assistant 回合”推断首条，口径仅供导航参考。
+      if (isSessionStartBody(row.request_body)) {
+        return h(
+          NTag,
+          { size: 'small', type: 'warning', bordered: false },
+          { default: () => t('apiRequests.tagSessionStart') }
+        )
+      }
+      return h('span', { class: 'table-placeholder' }, '-')
+    }
+  },
+  {
+    title: t('apiRequests.colSource'),
+    key: 'ip',
+    width: 150,
+    render: row =>
+      h('div', { class: 'source-cell' }, [
+        h('div', { class: row.ip ? 'table-ip' : 'table-placeholder' }, row.ip || '-'),
+        row.user_agent
+          ? h('div', { class: 'table-ua', title: row.user_agent }, row.user_agent)
+          : null
+      ])
   },
   {
     title: 'Tokens',
@@ -589,6 +805,24 @@ const loadRequests = async () => {
       params.model = filterModel.value
     }
 
+    if (filterRequestType.value) {
+      params.requestType = filterRequestType.value
+    }
+
+    if (filterCacheHit.value !== undefined) {
+      params.cacheHit = filterCacheHit.value
+    }
+
+    const ip = filterIp.value.trim()
+    if (ip) {
+      params.ip = ip
+    }
+
+    const sessionId = filterSessionId.value.trim()
+    if (sessionId) {
+      params.sessionId = sessionId
+    }
+
     const response = await apiRequestApi.getAll(params)
     requests.value = response.data
     pagination.itemCount = response.total
@@ -605,17 +839,66 @@ const handleTimeRangeChange = () => {
   loadRequests()
 }
 
-const handleViewDetail = async (request: ApiRequest) => {
+const session = ref<ApiRequestSession | null>(null)
+const sessionLoading = ref(false)
+const sessionIndex = computed(() => session.value?.anchorIndex ?? -1)
+
+const loadSession = async (id: string) => {
+  sessionLoading.value = true
+  try {
+    session.value = await apiRequestApi.getSession(id)
+  } catch (error: any) {
+    session.value = null
+  } finally {
+    sessionLoading.value = false
+  }
+}
+
+const gotoSessionRequest = async (index: number) => {
+  const target = session.value?.requests[index]
+  if (!target) return
+  await openRequestById(target.id)
+}
+
+// 只看此会话：显式会话直接按 session_id 筛；推断会话没有唯一键，
+// 退到同密钥 + 同 IP + 该段起止时间窗，与抽屉里看到的结果一致。
+const filterOnlySession = () => {
+  const rows = session.value?.requests ?? []
+  if (rows.length === 0) return
+  const first = rows[0].created_at
+  const last = rows[rows.length - 1].created_at
+  timeRange.value = [first, last + 1]
+
+  if (session.value?.sessionId) {
+    filterSessionId.value = session.value.sessionId
+  } else {
+    filterVirtualKeyId.value = selectedRequest.value?.virtual_key_id || undefined
+    filterIp.value = selectedRequest.value?.ip || ''
+  }
+  showDetail.value = false
+  resetPageAndLoad()
+}
+
+const openRequestById = async (id: string) => {
   loading.value = true
   try {
-    selectedRequest.value = await apiRequestApi.getById(request.id)
+    selectedRequest.value = await apiRequestApi.getById(id)
     showDetail.value = true
+    await loadSession(id)
   } catch (error: any) {
     message.error(error.message || '加载请求详情失败')
   } finally {
     loading.value = false
   }
 }
+
+const handleViewDetail = async (request: ApiRequest) => {
+  await openRequestById(request.id)
+}
+
+watch(showDetail, open => {
+  if (!open) session.value = null
+})
 
 const rowProps = (row: ApiRequest) => {
   return {
@@ -734,6 +1017,22 @@ onMounted(() => {
   width: 120px;
 }
 
+.filter-request-type-select {
+  width: 150px;
+}
+
+.filter-cache-select {
+  width: 130px;
+}
+
+.filter-ip-input {
+  width: 150px;
+}
+
+.filter-session-input {
+  width: 180px;
+}
+
 .filter-action-btn {
   font-weight: 500;
   letter-spacing: 0.01em;
@@ -791,6 +1090,59 @@ onMounted(() => {
 .table-preview {
   color: #475569;
   font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.table-key {
+  color: #1f2937;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.source-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.table-ip {
+  font-family: var(--n-font-family-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: #374151;
+}
+
+.table-ua {
+  font-size: 11px;
+  color: #9ca3af;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+
+.detail-named-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.detail-user-agent {
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.session-nav-card {
+  background: #f8fafc;
+  border-radius: 12px;
+}
+
+.session-position {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-hint {
+  font-size: 12px;
   line-height: 1.5;
 }
 

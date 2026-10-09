@@ -72,11 +72,6 @@ export interface ApiStats {
   dbUptime?: number;
 }
 
-export interface IntentClassifyStats {
-  totalRequests: number;
-  avgClassificationTime: number;
-}
-
 export interface ModelStat {
   model: string;
   provider_name: string;
@@ -324,7 +319,6 @@ type GetStatsResponse = {
   period: string;
   stats: ApiStats;
   trend: VirtualKeyTrend[];
-  intentClassifyStats: IntentClassifyStats;
   modelStats: ModelStat[];
   modelResponseTimeStats: ModelResponseTimeStat[];
   circuitBreakerStats?: CircuitBreakerStats;

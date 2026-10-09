@@ -84,8 +84,9 @@ export async function opsMetricsRoutes(fastify: FastifyInstance) {
       return reply400(reply, parsed.error);
     }
     // Same requestSourceStats shape as GET /stats but scoped to the resolved
-    // window; geo lookups and manual blocks still reuse the existing
-    // /request-sources/lookup|block endpoints, so no second blocklist API.
+    // window AND the page's virtual key / model / provider filters; geo lookups
+    // and manual blocks still reuse the existing /request-sources/lookup|block
+    // endpoints, so no second blocklist API.
     const window = resolveWindow(parsed.period, parsed.endTime);
     return {
       window: {
@@ -94,7 +95,7 @@ export async function opsMetricsRoutes(fastify: FastifyInstance) {
         timezone: "Asia/Shanghai",
       },
       updatedAt: Date.now(),
-      requestSourceStats: await getRequestSourceStats(window),
+      requestSourceStats: await getRequestSourceStats(window, parsed.filters),
     };
   });
 

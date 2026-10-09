@@ -557,15 +557,22 @@ export interface RequestSourceStats {
  * window -> historical 14-day/all-time scope, byte-identical to the previous
  * inline implementation) and the windowed ops-metrics endpoint both consume
  * this. With a window, lastRequest/recentSources/lastBlocked are scoped to
- * [startTime, endTime).
+ * [startTime, endTime). With filters, every IP read is restricted to the same
+ * virtual key / model / provider subset the rest of the ops page shows — the
+ * card must never silently widen back to all traffic.
  */
 export async function getRequestSourceStats(
   window?: OpsWindow,
+  filters?: OpsFilters,
 ): Promise<RequestSourceStats> {
   const startTime = window?.startTime;
   const endTime = window?.endTime;
 
-  const lastRequest = await apiRequestDb.getLastRequest(startTime, endTime);
+  const lastRequest = await apiRequestDb.getLastRequest(
+    startTime,
+    endTime,
+    filters,
+  );
   const threatIpStats = threatIpBlocker.getStats();
   const threatLastBlocked = threatIpStats.lastBlockedIp
     ? {
@@ -589,7 +596,12 @@ export async function getRequestSourceStats(
     getGeoInfo(lastBlockedInfo?.ip),
   ]);
 
-  const recentIps = await apiRequestDb.getRecentUniqueIps(50, startTime, endTime);
+  const recentIps = await apiRequestDb.getRecentUniqueIps(
+    50,
+    startTime,
+    endTime,
+    filters,
+  );
   const sourceCandidates: Array<{
     ip: string;
     timestamp: number;
@@ -628,7 +640,7 @@ export async function getRequestSourceStats(
     dedupedSources.map(async (entry) => {
       const [geo, lastRequestForIp] = await Promise.all([
         getGeoInfo(entry.ip),
-        apiRequestDb.getLastRequestByIp(entry.ip, startTime, endTime),
+        apiRequestDb.getLastRequestByIp(entry.ip, startTime, endTime, filters),
       ]);
       return {
         ip: entry.ip,

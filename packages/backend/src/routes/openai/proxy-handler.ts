@@ -1125,6 +1125,7 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
       : undefined;
 
     logApiRequestAsync({
+      request,
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),
@@ -1203,6 +1204,7 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
       const abortTokenCount = await calculateTokensIfNeeded(0, request.body);
 
       logApiRequestAsync({
+        request,
         virtualKey,
         providerId,
         model: getModelForLogging(request.body, currentModel),
@@ -1284,6 +1286,7 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
     const tokenCount = await calculateTokensIfNeeded(0, request.body);
 
     logApiRequestAsync({
+      request,
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),

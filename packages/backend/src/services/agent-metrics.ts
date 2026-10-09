@@ -1,3 +1,4 @@
+import { SESSION_GAP_MS } from "../db/utils/session.js";
 import {
   agentMetricsRepository,
   type AgentSessionDetailRow,
@@ -379,8 +380,7 @@ export async function getCodingAgentOverview(
   };
 }
 
-/** 会话间隔阈值：取自 llmgateway.io 对「一次使用会话」的定义（30 分钟无活动即切分）。 */
-const SESSION_GAP_MS = 30 * 60 * 1000;
+// 会话间隔阈值与请求日志会话回溯同源，见 db/utils/session.ts。
 /** 单次明细拉取上限（最新优先），限制 session 重建的查询成本。 */
 const SESSION_DETAIL_LIMIT = 2000;
 const MAX_SESSIONS = 100;

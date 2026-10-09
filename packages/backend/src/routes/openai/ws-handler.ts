@@ -271,6 +271,7 @@ export async function handleResponsesWebSocket(
         }
 
         logApiRequestAsync({
+          request,
           virtualKey,
           providerId,
           model: protocolConfig.model || "unknown",
@@ -303,6 +304,7 @@ export async function handleResponsesWebSocket(
           socket.readyState !== WebSocket.OPEN,
         );
         logApiRequestAsync({
+          request,
           virtualKey,
           providerId: turnConfig?.providerId || "unknown",
           model:

@@ -6,7 +6,6 @@ import {
   routingConfigDb,
   modelDb,
   systemConfigDb,
-  expertRoutingLogDb,
   virtualKeyDb,
 } from "../db/index.js";
 import { hotConfigCache } from "../services/hot-config-cache.js";
@@ -716,7 +715,6 @@ export async function configRoutes(fastify: FastifyInstance) {
       endTime: now,
     });
 
-    const intentClassifyStats = await expertRoutingLogDb.getGlobalStatistics(startTime);
     const modelStats = await apiRequestDb.getModelStats({
       startTime,
       endTime: now,
@@ -749,7 +747,6 @@ export async function configRoutes(fastify: FastifyInstance) {
       period,
       stats,
       trend,
-      intentClassifyStats,
       modelStats,
       modelResponseTimeStats,
       circuitBreakerStats,
@@ -781,6 +778,10 @@ export async function configRoutes(fastify: FastifyInstance) {
       providerId,
       model,
       runId,
+      sessionId,
+      ip,
+      requestType,
+      cacheHit,
     } = request.query as {
       page?: number;
       pageSize?: number;
@@ -791,6 +792,10 @@ export async function configRoutes(fastify: FastifyInstance) {
       providerId?: string;
       model?: string;
       runId?: string;
+      sessionId?: string;
+      ip?: string;
+      requestType?: string;
+      cacheHit?: string;
     };
 
     const result = await apiRequestDb.getAll({
@@ -803,9 +808,37 @@ export async function configRoutes(fastify: FastifyInstance) {
       providerId,
       model,
       runId,
+      sessionId,
+      ip,
+      requestType,
+      // Fastify 的 query 恒为字符串；只认显式的真/假值，其他值视为不筛选。
+      cacheHit:
+        cacheHit === undefined || cacheHit === ""
+          ? undefined
+          : cacheHit === "1" || cacheHit === "true",
     });
 
     return result;
+  });
+
+  // 会话回溯：返回该请求所在会话的有序列表（升序）与锚点下标，
+  // 供日志页“跳到会话首条 / 会话内上一条下一条”导航使用。
+  fastify.get("/api-requests/:id/session", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const session = await apiRequestDb.getSession(id);
+
+    if (!session) {
+      return reply.code(404).send({
+        error: {
+          message: "请求记录不存在",
+          type: "invalid_request_error",
+          param: "id",
+          code: "not_found",
+        },
+      });
+    }
+
+    return session;
   });
 
   fastify.get("/api-requests/:id", async (request) => {

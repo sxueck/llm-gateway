@@ -123,3 +123,58 @@ describe("logApiRequestToDb agent run correlation", () => {
     expect(mocks.create.mock.calls[0][0].run_id).toBe("asr_explicit");
   });
 });
+
+describe("logApiRequestToDb 会话标识入库", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.create.mockResolvedValue(undefined);
+  });
+
+  it("从请求体 metadata.session_id 提取", async () => {
+    await logApiRequestToDb({
+      ...baseParams,
+      truncatedRequest: JSON.stringify({
+        messages: [{ role: "user", content: "hi" }],
+        metadata: { session_id: "sess-body" },
+      }),
+    });
+
+    expect(mocks.create.mock.calls[0][0].session_id).toBe("sess-body");
+  });
+
+  it("请求头优先于请求体，且不依赖请求体可解析", async () => {
+    await logApiRequestToDb({
+      ...baseParams,
+      request: { headers: { "x-session-id": "sess-head" } },
+      truncatedRequest: "{ 已被截断的 JSON",
+    });
+
+    expect(mocks.create.mock.calls[0][0].session_id).toBe("sess-head");
+  });
+
+  it("原始 body 的标识优先于截断摘要（超长正文不丢会话）", async () => {
+    await logApiRequestToDb({
+      ...baseParams,
+      request: { headers: {}, body: { metadata: { session_id: "sess-raw" } } },
+      truncatedRequest: '{"truncated":true,"top_level_keys":["messages"]}',
+    });
+
+    expect(mocks.create.mock.calls[0][0].session_id).toBe("sess-raw");
+  });
+
+  it("两者都缺失时写 NULL，交给读取侧启发式兼底", async () => {
+    await logApiRequestToDb({ ...baseParams });
+
+    expect(mocks.create.mock.calls[0][0].session_id).toBeNull();
+  });
+
+  it("disable_logging 密钥不写会话标识（与 ip/user_agent 同一隐私口径）", async () => {
+    await logApiRequestToDb({
+      ...baseParams,
+      virtualKey: { id: "vk-2", disable_logging: 1 } as any,
+      request: { headers: { "x-session-id": "sess-secret" } },
+    });
+
+    expect(mocks.create.mock.calls[0][0].session_id).toBeNull();
+  });
+});

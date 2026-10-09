@@ -14,6 +14,17 @@ import {
 } from "../utils/time-buckets.js";
 import { debugModeService } from "../../services/debug-mode.js";
 import { appConfig } from "../../config/index.js";
+import {
+  filterConditions,
+  type OpsFilters,
+} from "./ops-metrics.repository.js";
+import {
+  SESSION_GAP_MS,
+  SESSION_MAX_REQUESTS,
+  SESSION_SCAN_LIMIT,
+  SESSION_HEURISTIC_LOOKBACK_MS,
+  SESSION_HEURISTIC_LOOKAHEAD_MS,
+} from "../utils/session.js";
 
 function getDisableLoggingCondition(): string {
   return "(ar.virtual_key_id IS NULL OR vk.id IS NULL OR vk.disable_logging IS NULL OR vk.disable_logging = 0)";
@@ -61,7 +72,12 @@ export const apiRequestRepository = {
     }
   },
 
-  async getLastRequestByIp(ip: string, startTime?: number, endTime?: number) {
+  async getLastRequestByIp(
+    ip: string,
+    startTime?: number,
+    endTime?: number,
+    filters?: OpsFilters,
+  ) {
     if (!ip) return null;
     const pool = getDatabase();
     const conn = await pool.getConnection();
@@ -76,14 +92,15 @@ export const apiRequestRepository = {
         ...(startTime ? [startTime] : []),
         ...(endTime ? [endTime] : []),
       ];
+      const filter = filterConditions("ar", filters ?? {});
       const [rows] = await conn.query(
         `SELECT ar.created_at, ar.user_agent
          FROM api_requests ar
          LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-         WHERE ar.ip = ? AND ${windowSql}${loggingCondition}
+         WHERE ar.ip = ? AND ${windowSql}${loggingCondition}${filter.sql}
          ORDER BY ar.created_at DESC
          LIMIT 1`,
-        [ip, ...windowParams],
+        [ip, ...windowParams, ...filter.params],
       );
       const result = rows as any[];
       if (result.length === 0) return null;
@@ -93,12 +110,16 @@ export const apiRequestRepository = {
     }
   },
 
-  async getLastRequest(startTime?: number, endTime?: number) {
+  async getLastRequest(
+    startTime?: number,
+    endTime?: number,
+    filters?: OpsFilters,
+  ) {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
       const conditions: string[] = [];
-      const params: number[] = [];
+      const params: unknown[] = [];
       if (startTime) {
         conditions.push("ar.created_at >= ?");
         params.push(startTime);
@@ -107,11 +128,14 @@ export const apiRequestRepository = {
         conditions.push("ar.created_at < ?");
         params.push(endTime);
       }
+      const filter = filterConditions("ar", filters ?? {});
       const where =
-        conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+        conditions.length > 0
+          ? `WHERE ${conditions.join(" AND ")}${filter.sql}`
+          : "";
       const [rows] = await conn.query(
         `SELECT ip, created_at, user_agent FROM api_requests ar ${where} ORDER BY created_at DESC LIMIT 1`,
-        params,
+        [...params, ...filter.params],
       );
       const result = rows as any[];
       if (result.length === 0) return null;
@@ -121,7 +145,12 @@ export const apiRequestRepository = {
     }
   },
 
-  async getRecentUniqueIps(limit: number = 30, startTime?: number, endTime?: number) {
+  async getRecentUniqueIps(
+    limit: number = 30,
+    startTime?: number,
+    endTime?: number,
+    filters?: OpsFilters,
+  ) {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
@@ -131,6 +160,7 @@ export const apiRequestRepository = {
       const cutoff = startTime ?? Date.now() - 14 * 24 * 60 * 60 * 1000;
       const loggingCondition = getDisableLoggingCondition();
       const upperBound = endTime ? "AND ar.created_at < ? " : "";
+      const filter = filterConditions("ar", filters ?? {});
 
       const [rows] = await conn.query(
         `SELECT
@@ -139,11 +169,11 @@ export const apiRequestRepository = {
           COUNT(*) as count
          FROM api_requests ar
          LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-         WHERE ar.created_at >= ? ${upperBound}AND ${loggingCondition}
+         WHERE ar.created_at >= ? ${upperBound}AND ${loggingCondition}${filter.sql}
          GROUP BY ar.ip
          ORDER BY last_seen DESC
          LIMIT ?`,
-        endTime ? [cutoff, endTime, limit] : [cutoff, limit],
+        [...(endTime ? [cutoff, endTime] : [cutoff]), ...filter.params, limit],
       );
       return rows as any[];
     } finally {
@@ -471,6 +501,10 @@ export const apiRequestRepository = {
     endTime?: number;
     status?: string;
     runId?: string;
+    sessionId?: string;
+    ip?: string;
+    requestType?: string;
+    cacheHit?: boolean;
   }) {
     const limit = options?.limit || 100;
     const offset = options?.offset || 0;
@@ -490,7 +524,9 @@ export const apiRequestRepository = {
         SELECT
           ar.id,
           ar.virtual_key_id,
+          vk.name AS virtual_key_name,
           ar.provider_id,
+          p.name AS provider_name,
           ar.model,
           ar.prompt_tokens,
           ar.completion_tokens,
@@ -508,12 +544,14 @@ export const apiRequestRepository = {
           ar.compression_original_tokens,
           ar.compression_saved_tokens,
           ar.run_id,
+          ar.session_id,
           ar.ip,
           ar.user_agent,
           ar.created_at,
           ap.request_body AS payload_request_body
         FROM api_requests ar
         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+        LEFT JOIN providers p ON ar.provider_id = p.id
         LEFT JOIN api_request_payloads ap ON ap.request_id = ar.id
         WHERE ${loggingCondition}
       `;
@@ -561,6 +599,32 @@ export const apiRequestRepository = {
         params.push(options.runId);
       }
 
+      if (options?.sessionId) {
+        countQuery += " AND ar.session_id = ?";
+        dataQuery += " AND ar.session_id = ?";
+        params.push(options.sessionId);
+      }
+
+      if (options?.ip) {
+        countQuery += " AND ar.ip = ?";
+        dataQuery += " AND ar.ip = ?";
+        params.push(options.ip);
+      }
+
+      if (options?.requestType) {
+        countQuery += " AND ar.request_type = ?";
+        dataQuery += " AND ar.request_type = ?";
+        params.push(options.requestType);
+      }
+
+      if (options?.cacheHit !== undefined) {
+        // 缓存命中请求不计入 Token 统计算法，列表需要能单独隔离这部分流量。
+        const value = options.cacheHit ? 1 : 0;
+        countQuery += " AND ar.cache_hit = ?";
+        dataQuery += " AND ar.cache_hit = ?";
+        params.push(value);
+      }
+
       const [countRows] = await conn.query(countQuery, params);
       const total = (countRows as any[])[0].total;
 
@@ -591,9 +655,11 @@ export const apiRequestRepository = {
     const conn = await pool.getConnection();
     try {
       const [rows] = await conn.query(
-        `SELECT ar.*, ap.request_body AS payload_request_body, ap.response_body AS payload_response_body
+        `SELECT ar.*, vk.name AS virtual_key_name, p.name AS provider_name,
+                ap.request_body AS payload_request_body, ap.response_body AS payload_response_body
          FROM api_requests ar
          LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+         LEFT JOIN providers p ON ar.provider_id = p.id
          LEFT JOIN api_request_payloads ap ON ap.request_id = ar.id
          WHERE ar.id = ? AND ${getDisableLoggingCondition()}`,
         [id],
@@ -606,6 +672,139 @@ export const apiRequestRepository = {
         ...rest,
         request_body: payload_request_body ?? rest.request_body,
         response_body: payload_response_body ?? rest.response_body,
+      };
+    } finally {
+      conn.release();
+    }
+  },
+
+  /**
+   * 会话回溯：给定一条请求，返回它所在会话的明细序列（created_at 升序）。
+   *
+   * 两种口径：
+   * - explicit：客户端携带了 session 标识（x-session-id / body.session_id 等），
+   *   直接按 session_id 精确匹配；
+   * - heuristic：旧数据或未传标识的请求，按 (virtual_key_id, ip) 分组、相邻间隔
+   *   > SESSION_GAP_MS 切段，与 Agent 归因页同一阈值。
+   *
+   * 启发式口径的天花板：同 NAT/共享 IP 会被并成一个会话，客户端换 IP 会断开；
+   * 会话开头超出 24h 回溯窗口或扫描上限时如实标记 truncated。`anchorIndex`
+   * 为 -1 表示锚点不在返回序列里（会话超过 SESSION_MAX_REQUESTS 或扫描上限）。
+   */
+  async getSession(id: string): Promise<{
+    sessionId: string | null;
+    strategy: "explicit" | "heuristic";
+    requests: Array<{
+      id: string;
+      created_at: number;
+      model: string | null;
+      status: string;
+    }>;
+    anchorIndex: number;
+    truncated: boolean;
+  } | undefined> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const loggingCondition = getDisableLoggingCondition();
+      const [anchorRows] = await conn.query(
+        `SELECT ar.id, ar.session_id, ar.virtual_key_id, ar.ip, ar.created_at
+         FROM api_requests ar
+         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+         WHERE ar.id = ? AND ${loggingCondition}`,
+        [id],
+      );
+      const anchor = (anchorRows as any[])[0];
+      if (!anchor) return undefined;
+
+      const withTruncation = (rows: any[]) => {
+        const truncated = rows.length > SESSION_MAX_REQUESTS;
+        const requests = rows.slice(0, SESSION_MAX_REQUESTS);
+        return {
+          requests,
+          truncated,
+          anchorIndex: requests.findIndex((row) => row.id === id),
+        };
+      };
+
+      if (anchor.session_id) {
+        // 会话标识由客户端提供，可能撞值：限定同密钥并套用 disable_logging 口径，
+        // 不把其他密钥（或已禁止日志的密钥）的记录混进同一序列。
+        const [rows] = await conn.query(
+          `SELECT ar.id, ar.created_at, ar.model, ar.status
+           FROM api_requests ar
+           LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+           WHERE ar.session_id = ? AND ar.virtual_key_id <=> ?
+             AND ${loggingCondition}
+           ORDER BY ar.created_at ASC
+           LIMIT ?`,
+          [anchor.session_id, anchor.virtual_key_id, SESSION_MAX_REQUESTS + 1],
+        );
+        return {
+          sessionId: anchor.session_id,
+          strategy: "explicit" as const,
+          ...withTruncation(rows as any[]),
+        };
+      }
+
+      // `<=>` 是 MySQL 的空值安全等号：ip 为 NULL（早期未采集）的行仍需同组。
+      const [rows] = await conn.query(
+        `SELECT ar.id, ar.created_at, ar.model, ar.status
+         FROM api_requests ar
+         LEFT JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
+         WHERE ar.virtual_key_id <=> ? AND ar.ip <=> ?
+           AND ar.created_at >= ? AND ar.created_at <= ?
+           AND ${loggingCondition}
+         ORDER BY ar.created_at ASC
+         LIMIT ?`,
+        [
+          anchor.virtual_key_id,
+          anchor.ip,
+          anchor.created_at - SESSION_HEURISTIC_LOOKBACK_MS,
+          anchor.created_at + SESSION_HEURISTIC_LOOKAHEAD_MS,
+          SESSION_SCAN_LIMIT,
+        ],
+      );
+
+      // 按 gap 切段后取包含锚点的那一段（升序，保留会话开头）。
+      const scanned = rows as any[];
+      const anchorPosition = scanned.findIndex((row) => row.id === id);
+      if (anchorPosition === -1) {
+        // 窗口内锚点之前已有多于 SESSION_SCAN_LIMIT 条请求，扫描被截断，
+        // 分段不可重建；如实返回空序列，不把扫描到的旧段误当会话开头。
+        return {
+          sessionId: null,
+          strategy: "heuristic" as const,
+          requests: [],
+          anchorIndex: -1,
+          truncated: true,
+        };
+      }
+      let run: any[] = [];
+      for (let index = 0; index <= anchorPosition; index += 1) {
+        const row = scanned[index];
+        if (run.length > 0 && row.created_at - run[run.length - 1].created_at > SESSION_GAP_MS) {
+          run = [];
+        }
+        run.push(row);
+      }
+      // 向后延伸同一段（锚点后面的请求属于同一会话，直到出现 gap）。
+      for (let index = anchorPosition + 1; index < scanned.length; index += 1) {
+        const row = scanned[index];
+        const previous = scanned[index - 1];
+        if (row.created_at - previous.created_at > SESSION_GAP_MS) break;
+        run.push(row);
+      }
+
+      const result = withTruncation(run);
+      // 会话起点顶到扫描窗口边界：真实开头可能在 24h 回溯窗口之外，如实标记。
+      if (result.requests.length > 0 && result.requests[0].id === scanned[0].id) {
+        result.truncated = true;
+      }
+      return {
+        sessionId: null,
+        strategy: "heuristic" as const,
+        ...result,
       };
     } finally {
       conn.release();

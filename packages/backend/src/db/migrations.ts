@@ -8,7 +8,60 @@ export interface Migration {
 }
 
 // v2 starts from schema.ts; future incremental migrations start at version 1.
-export const migrations: Migration[] = [];
+export const migrations: Migration[] = [
+  {
+    version: 1,
+    name: "api_requests_session_id",
+    up: async (conn) => {
+      const [tables] = await conn.query(
+        `SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'api_requests'`,
+      );
+      if ((tables as Array<{ name: string }>).length === 0) {
+        // 空库（scratch 干跑 / rebuild 先跑 migrations 后建表）：表由 schema.ts
+        // 连同 session_id 一起创建，这里只登记版本号，绝不先跑 DDL。
+        return;
+      }
+      const [columns] = await conn.query(
+        `SELECT COLUMN_NAME AS name FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'api_requests' AND COLUMN_NAME = 'session_id'`,
+      );
+      if ((columns as Array<{ name: string }>).length === 0) {
+        await conn.query(
+          "ALTER TABLE api_requests ADD COLUMN session_id VARCHAR(256) DEFAULT NULL COMMENT '客户端显式会话标识（x-session-id 等），无则为 NULL' AFTER run_id",
+        );
+      }
+      const [indexes] = await conn.query(
+        `SELECT INDEX_NAME AS name FROM INFORMATION_SCHEMA.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'api_requests' AND INDEX_NAME = 'idx_api_requests_session'`,
+      );
+      if ((indexes as Array<{ name: string }>).length === 0) {
+        await conn.query(
+          "ALTER TABLE api_requests ADD INDEX idx_api_requests_session (session_id, created_at)",
+        );
+      }
+    },
+    down: async (conn) => {
+      const [tables] = await conn.query(
+        `SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'api_requests'`,
+      );
+      if ((tables as Array<{ name: string }>).length === 0) return;
+      const [indexes] = await conn.query(
+        `SELECT INDEX_NAME AS name FROM INFORMATION_SCHEMA.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'api_requests' AND INDEX_NAME = 'idx_api_requests_session'`,
+      );
+      if ((indexes as Array<{ name: string }>).length > 0) {
+        await conn.query(
+          "ALTER TABLE api_requests DROP INDEX idx_api_requests_session",
+        );
+      }
+      await conn.query(
+        "ALTER TABLE api_requests DROP COLUMN session_id",
+      );
+    },
+  },
+];
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {
   const [tables] = await conn.query(

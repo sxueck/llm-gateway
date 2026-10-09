@@ -348,6 +348,7 @@ export async function handleGeminiNativeNonStreamRequest(
     }
 
     logApiRequestAsync({
+      request,
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),
@@ -444,6 +445,7 @@ export async function handleGeminiNativeNonStreamRequest(
         return;
       }
       logApiRequestAsync({
+        request,
         virtualKey,
         providerId,
         model: getModelForLogging(request.body, currentModel),
@@ -475,6 +477,7 @@ export async function handleGeminiNativeNonStreamRequest(
     // catch; never write a second one for the same request.
     if (!options?.auditState?.auditLogged) {
       logApiRequestAsync({
+        request,
         virtualKey,
         providerId,
         model: getModelForLogging(request.body, currentModel),
@@ -680,6 +683,7 @@ export async function handleGeminiNativeStreamRequest(
           : undefined;
 
         logApiRequestAsync({
+          request,
           virtualKey,
           providerId,
           model: getModelForLogging(request.body, currentModel),
@@ -795,6 +799,7 @@ export async function handleGeminiNativeStreamRequest(
         circuitBreaker.recordSuccess(circuitBreakerKey);
 
         logApiRequestAsync({
+          request,
           virtualKey,
           providerId,
           model: getModelForLogging(request.body, currentModel),
@@ -864,6 +869,7 @@ export async function handleGeminiNativeStreamRequest(
         // Client vanished before any terminal write: unified abort row, no
         // breaker verdict and no empty-output retry for a gone client.
         logApiRequestAsync({
+          request,
           virtualKey,
           providerId,
           model: getModelForLogging(request.body, currentModel),
@@ -942,6 +948,7 @@ export async function handleGeminiNativeStreamRequest(
       : undefined;
 
     logApiRequestAsync({
+      request,
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),
@@ -975,6 +982,7 @@ export async function handleGeminiNativeStreamRequest(
     ) {
       memoryLogger.info("Gemini 流式请求被取消（客户端断开）", "GeminiNative");
       logApiRequestAsync({
+        request,
         virtualKey,
         providerId,
         model: getModelForLogging(request.body, currentModel),
@@ -1009,6 +1017,7 @@ export async function handleGeminiNativeStreamRequest(
     // second one for the same request.
     if (!options?.auditState?.auditLogged) {
       logApiRequestAsync({
+        request,
         virtualKey,
         providerId,
         model: getModelForLogging(request.body, currentModel),

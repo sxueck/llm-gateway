@@ -508,6 +508,7 @@ export function createAnthropicProxyHandler() {
             const tokenCount = await calculateTokensIfNeeded(0, requestBody);
 
             logApiRequestAsync({
+              request,
               virtualKey,
               providerId,
               model: modelForLogging,
@@ -617,6 +618,7 @@ export async function handleAnthropicNonStreamRequest(
       const abortTokenCount = await calculateTokensIfNeeded(0, requestBody);
 
       logApiRequestAsync({
+        request,
         virtualKey,
         providerId,
         model: modelForLogging,
@@ -658,6 +660,7 @@ export async function handleAnthropicNonStreamRequest(
 
         const shouldLogBody = shouldLogRequestBody(virtualKey);
         logApiRequestAsync({
+          request,
           virtualKey,
           providerId,
           model: modelForLogging,
@@ -704,6 +707,7 @@ export async function handleAnthropicNonStreamRequest(
       );
 
       logApiRequestAsync({
+        request,
         virtualKey,
         providerId,
         model: modelForLogging,
@@ -771,6 +775,7 @@ export async function handleAnthropicNonStreamRequest(
       // retry succeeds. The audit is fire-and-forget: an observability outage
       // cannot change the outcome.
       logApiRequestAsync({
+        request,
         virtualKey,
         providerId,
         model: modelForLogging,
@@ -844,6 +849,7 @@ export async function handleAnthropicNonStreamRequest(
     const tokenCount = await calculateTokensIfNeeded(0, requestBody);
 
     logApiRequestAsync({
+      request,
       virtualKey,
       providerId,
       model: modelForLogging,
@@ -960,6 +966,7 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
     );
 
     logApiRequestAsync({
+      request,
       virtualKey,
       providerId,
       model: modelForLogging,
@@ -998,6 +1005,7 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
       const abortTokenCount = await calculateTokensIfNeeded(0, requestBody);
 
       logApiRequestAsync({
+        request,
         virtualKey,
         providerId,
         model: modelForLogging,
@@ -1034,6 +1042,7 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
     // Account/audit the failed target before any retry dispatch; the audit is
     // fire-and-forget so an observability outage cannot change the outcome.
     logApiRequestAsync({
+      request,
       virtualKey,
       providerId,
       model: requestBody.model,
