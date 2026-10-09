@@ -97,6 +97,17 @@ describe('normalizeAnthropicRequest', () => {
       expect(result.thinking).toEqual({ type: 'adaptive' });
     });
 
+    it('converts enabled thinking to adaptive for Haiku 5.5', () => {
+      const result = normalizeAnthropicRequest('claude-haiku-5-5', {
+        ...baseRequest,
+        model: 'claude-haiku-5-5',
+        temperature: 0.5,
+        thinking: { type: 'enabled', budget_tokens: 10000 },
+      });
+      expect(result.thinking).toEqual({ type: 'adaptive' });
+      expect(result.temperature).toBeUndefined();
+    });
+
     it('does not touch manual extended thinking on older models', () => {
       const result = normalizeAnthropicRequest('claude-sonnet-4-5', {
         ...baseRequest,

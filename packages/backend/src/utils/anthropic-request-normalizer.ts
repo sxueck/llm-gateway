@@ -6,7 +6,7 @@ import type { AnthropicRequest } from '../types/anthropic.js';
  * manual extended thinking (`{type: "enabled", budget_tokens}`) both return
  * HTTP 400. See the Claude model migration guides.
  */
-const ADAPTIVE_ONLY_MODEL_PATTERNS = ['claude-sonnet-5', 'claude-opus-4-7', 'claude-opus-4-8', 'claude-fable-5', 'claude-mythos-5'];
+const ADAPTIVE_ONLY_MODEL_PATTERNS = ['claude-sonnet-5', 'claude-haiku-5', 'claude-opus-4-7', 'claude-opus-4-8', 'claude-fable-5', 'claude-mythos-5'];
 
 function matchesModelPattern(model: string, patterns: readonly string[]): boolean {
   return patterns.some(pattern => model.includes(pattern));
