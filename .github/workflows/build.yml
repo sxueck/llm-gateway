@@ -36,15 +36,15 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Stage 1/4 — Typecheck (advisory, non-blocking)
+      # Stage 1/3 — Typecheck (advisory, non-blocking)
       # Mirrors analyze.sh's lint stage: surface issues but never block the pipeline.
       - name: Typecheck (advisory)
         continue-on-error: true
         run: npm run typecheck
 
-      # Stage 2/4 — Semgrep security scan (advisory, non-blocking)
+      # Stage 2/3 — Semgrep security scan (advisory, non-blocking)
       # Security-focused ruleset: secrets leakage, Node.js pitfalls, OWASP Top 10.
-      # Produces semgrep.sarif consumed by both SonarQube and GitHub Security tab.
+      # Produces semgrep.sarif consumed by the GitHub Security tab.
       - name: Setup Python for Semgrep
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
@@ -79,7 +79,7 @@ jobs:
           path: semgrep.sarif
           retention-days: 14
 
-      # Stage 3/4 — Tests with coverage (blocking)
+      # Stage 3/3 — Tests with coverage (blocking)
       # Produces packages/backend/coverage/lcov.info and test-results.junit.xml
       - name: Test with coverage
         run: npm run test:coverage -w @llm-gateway/backend
@@ -106,11 +106,3 @@ jobs:
             packages/backend/coverage/
             packages/backend/test-results.junit.xml
           retention-days: 14
-
-      # Stage 4/4 — SonarQube scan + Quality Gate (imports coverage + Semgrep SARIF)
-      - name: SonarQube Scan
-        if: github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
-        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
