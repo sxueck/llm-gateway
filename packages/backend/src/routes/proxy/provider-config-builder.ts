@@ -2,7 +2,7 @@ import { FastifyRequest } from 'fastify';
 import { decryptApiKey } from '../../utils/crypto.js';
 import { memoryLogger } from '../../services/logger.js';
 import { ProviderAdapterFactory } from '../../services/provider-adapter.js';
-import { getBaseUrlForProtocol, parseSupportedProtocols } from '../../utils/protocol-utils.js';
+import { getBaseUrlForProtocol, getProviderSupportedProtocols } from '../../utils/protocol-utils.js';
 import type { ProtocolConfig } from '../../services/protocol-adapter.js';
 import { normalizePath, isEmbeddingsPath } from '../../utils/path-detector.js';
 
@@ -86,18 +86,20 @@ export async function buildProviderConfig(
     effectiveProtocol = 'openai';
   }
 
-  // Validate final resolved model's supported protocols whitelist
-  if (currentModel) {
-    const supported = parseSupportedProtocols(currentModel.supported_protocols);
-    if (!supported.includes(effectiveProtocol)) {
+  // Validate the provider actually offers the effective protocol: protocol
+  // capability is provider-scoped (base_url → openai; protocol_mappings → others)
+  // and inherited by every model under it.
+  {
+    const supported = getProviderSupportedProtocols(provider);
+    if (supported.length > 0 && !supported.includes(effectiveProtocol)) {
       return {
         code: 400,
         body: {
           error: {
-            message: `Model "${currentModel.name}" does not support protocol "${effectiveProtocol}". Supported protocols: ${supported.join(', ')}`,
+            message: `Provider "${provider.name ?? provider.id}" does not provide protocol "${effectiveProtocol}". Provided protocols: ${supported.join(', ')}`,
             type: 'invalid_request_error',
             param: null,
-            code: 'unsupported_model_protocol',
+            code: 'unsupported_provider_protocol',
           },
         },
       };

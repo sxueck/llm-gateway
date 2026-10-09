@@ -1,85 +1,58 @@
 import { getDatabase } from '../connection.js';
 
-export type TrainingRecordStatus = 'pending_review' | 'accepted' | 'rejected';
+export interface TrainingRecordFilter {
+  status?: 'pending_review' | 'accepted' | 'rejected';
+  limit?: number;
+}
 
+/**
+ * §5.9 misclassification feedback loop. The historical judge-flow columns are
+ * repurposed: judge_* fields carry the original routing decision, final_*
+ * fields carry the operator's correction. `input_hash` (from the routing log's
+ * request_hash) dedupes repeated feedback for the same prompt.
+ */
 export const expertRoutingTrainingRecordRepository = {
-  async createOrIncrement(record: {
+  /**
+   * Upsert a feedback record: same (config, input_hash) bumps occurrence_count
+   * and refreshes the correction instead of accumulating duplicates.
+   */
+  async upsertFeedback(record: {
     id: string;
     expert_routing_id: string;
     input_hash: string;
     input_text: string;
-    local_result?: string;
-    classifier_revision?: string;
-    judge_prompt_version: string;
-    judge_model?: string;
     judge_intent_label: string;
     judge_confidence: number;
-    judge_reason?: string;
     final_intent_label: string;
-    final_expert_id?: string;
-    status: TrainingRecordStatus;
-  }) {
-    const now = Date.now();
+    final_expert_id: string | null;
+  }): Promise<void> {
     const pool = getDatabase();
     const conn = await pool.getConnection();
+    const now = Date.now();
     try {
       await conn.query(
         `INSERT INTO expert_routing_training_records (
-          id, expert_routing_id, input_hash, input_text, local_result,
-          classifier_revision, judge_prompt_version, judge_model,
-          judge_intent_label, judge_confidence, judge_reason,
-          final_intent_label, final_expert_id, status, occurrence_count,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+          id, expert_routing_id, input_hash, input_text,
+          judge_prompt_version, judge_intent_label, judge_confidence,
+          final_intent_label, final_expert_id,
+          status, occurrence_count, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'v2-feedback', ?, ?, ?, ?, 'pending_review', 1, ?, ?)
         ON DUPLICATE KEY UPDATE
-          occurrence_count = occurrence_count + 1,
-          status = IF(
-            judge_prompt_version <> VALUES(judge_prompt_version)
-            OR judge_intent_label <> VALUES(judge_intent_label),
-            'pending_review',
-            status
-          ),
-          final_intent_label = IF(
-            judge_prompt_version <> VALUES(judge_prompt_version)
-            OR judge_intent_label <> VALUES(judge_intent_label),
-            VALUES(final_intent_label),
-            final_intent_label
-          ),
-          final_expert_id = IF(
-            judge_prompt_version <> VALUES(judge_prompt_version)
-            OR judge_intent_label <> VALUES(judge_intent_label),
-            VALUES(final_expert_id),
-            final_expert_id
-          ),
-          reviewed_at = IF(
-            judge_prompt_version <> VALUES(judge_prompt_version)
-            OR judge_intent_label <> VALUES(judge_intent_label),
-            NULL,
-            reviewed_at
-          ),
-          local_result = VALUES(local_result),
-          classifier_revision = VALUES(classifier_revision),
-          judge_prompt_version = VALUES(judge_prompt_version),
-          judge_model = VALUES(judge_model),
+          final_intent_label = VALUES(final_intent_label),
+          final_expert_id = VALUES(final_expert_id),
           judge_intent_label = VALUES(judge_intent_label),
           judge_confidence = VALUES(judge_confidence),
-          judge_reason = VALUES(judge_reason),
+          occurrence_count = occurrence_count + 1,
           updated_at = VALUES(updated_at)`,
         [
           record.id,
           record.expert_routing_id,
           record.input_hash,
           record.input_text,
-          record.local_result || null,
-          record.classifier_revision || null,
-          record.judge_prompt_version,
-          record.judge_model || null,
           record.judge_intent_label,
           record.judge_confidence,
-          record.judge_reason || null,
           record.final_intent_label,
-          record.final_expert_id || null,
-          record.status,
+          record.final_expert_id,
           now,
           now,
         ]
@@ -89,34 +62,29 @@ export const expertRoutingTrainingRecordRepository = {
     }
   },
 
-  async getByConfigId(configId: string, status?: TrainingRecordStatus, limit?: number) {
+  /** Replay export: operator-corrected records, newest first. */
+  async listByConfig(configId: string, filter: TrainingRecordFilter = {}) {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
-      const where = status ? 'WHERE expert_routing_id = ? AND status = ?' : 'WHERE expert_routing_id = ?';
-      const params: Array<string | number> = status ? [configId, status] : [configId];
-      if (limit !== undefined) params.push(limit);
+      const conditions = ['expert_routing_id = ?'];
+      const params: any[] = [configId];
+      if (filter.status) {
+        conditions.push('status = ?');
+        params.push(filter.status);
+      }
+      const limit = filter.limit && filter.limit > 0 ? Math.min(filter.limit, 1000) : 200;
       const [rows] = await conn.query(
-        `SELECT * FROM expert_routing_training_records ${where} ORDER BY updated_at DESC${limit === undefined ? '' : ' LIMIT ?'}`,
-        params
+        `SELECT id, input_hash, input_text, judge_intent_label, judge_confidence,
+          final_intent_label, final_expert_id, status, occurrence_count,
+          created_at, updated_at
+         FROM expert_routing_training_records
+         WHERE ${conditions.join(' AND ')}
+         ORDER BY updated_at DESC
+         LIMIT ?`,
+        [...params, limit]
       );
       return rows as any[];
-    } finally {
-      conn.release();
-    }
-  },
-
-  async updateReview(configId: string, id: string, status: TrainingRecordStatus, finalIntentLabel: string) {
-    const pool = getDatabase();
-    const conn = await pool.getConnection();
-    try {
-      const [result] = await conn.query(
-        `UPDATE expert_routing_training_records
-         SET status = ?, final_intent_label = ?, reviewed_at = ?, updated_at = ?
-         WHERE id = ? AND expert_routing_id = ?`,
-        [status, finalIntentLabel, Date.now(), Date.now(), id, configId]
-      );
-      return Number((result as any).affectedRows || 0);
     } finally {
       conn.release();
     }

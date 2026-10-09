@@ -333,7 +333,6 @@ function handleSave() {
   min-height: 0;
 }
 
-/* Sidebar */
 .editor-sidebar {
   width: 280px;
   background: #fafafa;
@@ -445,7 +444,6 @@ function handleSave() {
   font-size: 16px;
 }
 
-/* Main Area */
 .editor-main {
   flex: 1;
   display: flex;
@@ -514,7 +512,6 @@ function handleSave() {
   background: #fff;
 }
 
-/* List Transitions */
 .targets-list {
   position: relative;
 }

@@ -18,7 +18,6 @@ export class S3StorageService {
   private config: S3Config | null = null;
 
   async initializeFromConfig(): Promise<void> {
-    // Load S3 config from database
     const endpoint = await systemConfigDb.get('s3_endpoint');
     const bucketName = await systemConfigDb.get('s3_bucket_name');
     const region = await systemConfigDb.get('s3_region');

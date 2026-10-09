@@ -1,8 +1,7 @@
-import { getDatabase } from "./connection.js";
+import type { Connection, PoolConnection } from "mysql2/promise";
 
-export async function createTables() {
-  const pool = getDatabase();
-  const conn = await pool.getConnection();
+export async function createTables(connection?: Connection) {
+  const conn = connection ?? await (await import("./connection.js")).getDatabase().getConnection();
 
   try {
     // 用户表
@@ -41,8 +40,6 @@ export async function createTables() {
         name VARCHAR(255) NOT NULL,
         provider_id VARCHAR(255),
         model_identifier VARCHAR(255) NOT NULL,
-        supported_protocols TEXT,
-        health_check_protocol VARCHAR(50),
         is_virtual TINYINT DEFAULT 0,
         routing_config_id VARCHAR(255),
         expert_routing_id VARCHAR(255),
@@ -149,6 +146,10 @@ export async function createTables() {
         request_type VARCHAR(50) DEFAULT 'chat',
         compression_original_tokens INT DEFAULT NULL,
         compression_saved_tokens INT DEFAULT NULL,
+        run_id VARCHAR(255) DEFAULT NULL,
+        session_id VARCHAR(256) DEFAULT NULL COMMENT '客户端显式会话标识（x-session-id 等），无则为 NULL',
+        route_log_id VARCHAR(255) DEFAULT NULL COMMENT '关联 expert_routing_logs.id',
+        route_tier VARCHAR(16) DEFAULT NULL COMMENT '命中档位 low/medium/high',
         ip VARCHAR(45) DEFAULT NULL,
         user_agent VARCHAR(500) DEFAULT NULL,
         created_at BIGINT NOT NULL,
@@ -159,6 +160,9 @@ export async function createTables() {
         INDEX idx_api_requests_provider (provider_id),
         INDEX idx_api_requests_status (status),
         INDEX idx_api_requests_ip_created_at (ip, created_at),
+        INDEX idx_api_requests_run_id (run_id),
+        INDEX idx_api_requests_session (session_id, created_at),
+        INDEX idx_api_requests_route_log_id (route_log_id),
         INDEX idx_api_requests_vk_created_at (virtual_key_id, created_at),
         INDEX idx_api_requests_provider_created_at (provider_id, created_at),
         INDEX idx_api_requests_status_created_at (status, created_at)
@@ -173,16 +177,6 @@ export async function createTables() {
         created_at BIGINT NOT NULL,
         FOREIGN KEY (request_id) REFERENCES api_requests(id) ON DELETE CASCADE,
         INDEX idx_api_request_payloads_created_at (created_at)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    `);
-
-    await conn.query(`
-      CREATE TABLE IF NOT EXISTS blocked_ips (
-        ip VARCHAR(45) PRIMARY KEY,
-        reason VARCHAR(255) DEFAULT NULL,
-        created_at BIGINT NOT NULL,
-        created_by VARCHAR(255) DEFAULT NULL,
-        INDEX idx_blocked_ips_created_at (created_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
@@ -224,7 +218,7 @@ export async function createTables() {
         virtual_key_id VARCHAR(255),
         expert_routing_id VARCHAR(255) NOT NULL,
         request_hash VARCHAR(255) NOT NULL,
-        classifier_model VARCHAR(255) NOT NULL,
+        classifier_model VARCHAR(255) DEFAULT NULL,
         classification_result VARCHAR(255) NOT NULL,
         selected_expert_id VARCHAR(255) NOT NULL,
         selected_expert_type VARCHAR(50) NOT NULL,
@@ -237,26 +231,15 @@ export async function createTables() {
         route_source VARCHAR(50) DEFAULT NULL COMMENT '分类来源: llm, fallback',
         prompt_tokens INT DEFAULT 0 COMMENT '原始请求预估Token',
         cleaned_content_length INT DEFAULT 0 COMMENT '清洗后用于分类的文本长度',
+        difficulty VARCHAR(16) DEFAULT NULL COMMENT '路由难度: low/medium/high',
+        intent_text MEDIUMTEXT NULL COMMENT '清洗后意图文本(截断,反馈回放用)',
+        band VARCHAR(16) DEFAULT NULL COMMENT '难度分档',
+        verdict_reused TINYINT(1) DEFAULT 0 COMMENT '是否复用缓存判定',
+        classifier_time_ms INT DEFAULT NULL COMMENT '分类器耗时(毫秒)',
         FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
         INDEX idx_expert_routing_logs_config (expert_routing_id),
         INDEX idx_expert_routing_logs_created_at (created_at),
         INDEX idx_expert_routing_logs_category (classification_result)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    `);
-
-    // 意图分类日志表（/v1/intent/classify API 调用；专家路由分类记录在 expert_routing_logs）
-    await conn.query(`
-      CREATE TABLE IF NOT EXISTS intent_classify_logs (
-        id VARCHAR(255) PRIMARY KEY,
-        virtual_key_id VARCHAR(255) DEFAULT NULL,
-        classifier_model VARCHAR(255) NOT NULL,
-        top_label VARCHAR(255) DEFAULT NULL,
-        latency_ms INT NOT NULL,
-        seq_len INT NOT NULL DEFAULT 0,
-        input_truncated TINYINT(1) NOT NULL DEFAULT 0,
-        created_at BIGINT NOT NULL,
-        FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
-        INDEX idx_intent_classify_logs_created_at (created_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
@@ -270,6 +253,8 @@ export async function createTables() {
         session_id VARCHAR(256) NOT NULL,
         expert_id VARCHAR(255) NOT NULL,
         route_source VARCHAR(50) NOT NULL,
+        difficulty VARCHAR(16) DEFAULT NULL COMMENT '绑定时的路由难度(可选)',
+        tier VARCHAR(16) DEFAULT NULL COMMENT '绑定档位(escalate_only 锚点)',
         created_at BIGINT NOT NULL,
         last_seen_at BIGINT NOT NULL,
         idle_expires_at BIGINT NOT NULL,
@@ -342,65 +327,6 @@ export async function createTables() {
         reviewed_at BIGINT DEFAULT NULL,
         UNIQUE KEY uk_training_record_input (expert_routing_id, input_hash),
         INDEX idx_training_records_status (expert_routing_id, status, updated_at)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    `);
-
-    // 健康检查目标表
-    await conn.query(`
-      CREATE TABLE IF NOT EXISTS health_targets (
-        id VARCHAR(255) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        display_title VARCHAR(255) DEFAULT NULL COMMENT '显示标题(可自定义)',
-        type ENUM('model', 'virtual_model') NOT NULL,
-        target_id VARCHAR(255) NOT NULL COMMENT '模型或虚拟模型的ID',
-        enabled TINYINT DEFAULT 1,
-        check_interval_seconds INT DEFAULT 300 COMMENT '检查频率(秒)',
-        check_prompt TEXT DEFAULT NULL COMMENT '健康检查使用的提示词',
-        check_config TEXT DEFAULT NULL COMMENT 'JSON配置: 超时、重试、并发等',
-        created_at BIGINT NOT NULL,
-        updated_at BIGINT NOT NULL,
-        INDEX idx_health_targets_type (type),
-        INDEX idx_health_targets_enabled (enabled),
-        INDEX idx_health_targets_target_id (target_id)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    `);
-
-    // 健康检查运行记录表
-    await conn.query(`
-      CREATE TABLE IF NOT EXISTS health_runs (
-        id VARCHAR(255) PRIMARY KEY,
-        target_id VARCHAR(255) NOT NULL,
-        status ENUM('success', 'error') NOT NULL,
-        latency_ms INT NOT NULL COMMENT '总耗时(毫秒)',
-        error_type VARCHAR(100) DEFAULT NULL COMMENT '错误类型',
-        error_message TEXT DEFAULT NULL COMMENT '错误摘要',
-        request_id VARCHAR(255) DEFAULT NULL COMMENT '请求ID,对齐api_requests',
-        created_at BIGINT NOT NULL,
-        FOREIGN KEY (target_id) REFERENCES health_targets(id) ON DELETE CASCADE,
-        INDEX idx_health_runs_target (target_id),
-        INDEX idx_health_runs_created_at (created_at),
-        INDEX idx_health_runs_status (status)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    `);
-
-    // 健康检查汇总表
-    await conn.query(`
-      CREATE TABLE IF NOT EXISTS health_summaries (
-        id VARCHAR(255) PRIMARY KEY,
-        target_id VARCHAR(255) NOT NULL,
-        window_start BIGINT NOT NULL COMMENT '时间窗口起点',
-        window_end BIGINT NOT NULL COMMENT '时间窗口终点',
-        total_checks INT DEFAULT 0,
-        success_count INT DEFAULT 0,
-        error_count INT DEFAULT 0,
-        avg_latency_ms INT DEFAULT 0,
-        p50_latency_ms INT DEFAULT 0,
-        p95_latency_ms INT DEFAULT 0,
-        p99_latency_ms INT DEFAULT 0,
-        created_at BIGINT NOT NULL,
-        FOREIGN KEY (target_id) REFERENCES health_targets(id) ON DELETE CASCADE,
-        INDEX idx_health_summaries_target (target_id),
-        INDEX idx_health_summaries_window (window_start, window_end)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
@@ -541,7 +467,8 @@ export async function createTables() {
         INDEX idx_runs_user (user_id),
         INDEX idx_runs_status (status),
         INDEX idx_runs_expires (expires_at),
-        INDEX idx_runs_snapshot (snapshot_id)
+        INDEX idx_runs_snapshot (snapshot_id),
+        INDEX idx_runs_created_at (created_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
@@ -612,6 +539,18 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    // 系统告警已读标记：按 (user_id, 告警 code) 记录，铃铛据此过滤已确认的告警。
+    // 旳行由仓库层按 read_at 过期清理。
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS alert_reads (
+        user_id VARCHAR(255) NOT NULL,
+        code VARCHAR(64) NOT NULL,
+        read_at BIGINT NOT NULL,
+        PRIMARY KEY (user_id, code),
+        INDEX idx_alert_reads_read_at (read_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
     // API 请求按天汇总表（支持 7 天外的统计查询，天边界为 Asia/Shanghai 时区）
     // Nullable 维度使用空字符串作为 sentinel 值以满足唯一键约束
     await conn.query(`
@@ -650,7 +589,6 @@ export async function createTables() {
     `);
 
     // 小时级聚合表：精确滚动窗口的查询优化；边界部分小时由明细精确计算。
-    // 口径与 v45 迁移保持一致。
     await conn.query(`
       CREATE TABLE IF NOT EXISTS api_request_hourly_summaries (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -684,6 +622,6 @@ export async function createTables() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
   } finally {
-    conn.release();
+    if (!connection) (conn as PoolConnection).release();
   }
 }

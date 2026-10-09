@@ -1,5 +1,5 @@
 
-const MAX_TEXT_LENGTH = 400; // 文本内容最大长度
+const MAX_TEXT_LENGTH = 400;
 
 export function extractContentPreview(content: any, maxLength: number = MAX_TEXT_LENGTH): string {
   if (!content) return '';
@@ -17,9 +17,6 @@ export function extractContentPreview(content: any, maxLength: number = MAX_TEXT
   return JSON.stringify(content).substring(0, maxLength) + '...';
 }
 
-/**
- * 从请求体中提取预览内容
- */
 export function extractRequestPreview(requestBody: string | null): string {
   if (!requestBody) return '-';
   
@@ -41,9 +38,6 @@ export function extractRequestPreview(requestBody: string | null): string {
   }
 }
 
-/**
- * 从响应体中提取预览内容
- */
 export function extractResponsePreview(responseBody: string | null): string {
   if (!responseBody) return '-';
   

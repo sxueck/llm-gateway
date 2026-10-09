@@ -12,25 +12,19 @@ export interface NormalizedTokenCounts {
   cachedTokens: number;
 }
 
-/**
- * Normalize heterogeneous usage objects into unified token counts.
- */
 export function normalizeUsageCounts(usage: any): NormalizedTokenCounts {
   if (!usage || typeof usage !== 'object') {
     return { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedTokens: 0 };
   }
 
-  // Base prompt/input tokens
   let prompt = (typeof usage.prompt_tokens === 'number'
     ? usage.prompt_tokens
     : (typeof usage.input_tokens === 'number' ? usage.input_tokens : 0));
 
-  // Completion/output tokens
   const completion = (typeof usage.completion_tokens === 'number'
     ? usage.completion_tokens
     : (typeof usage.output_tokens === 'number' ? usage.output_tokens : 0));
 
-  // Cached tokens (OpenAI Responses)
   const openaiCached =
     (usage.input_tokens_details && typeof usage.input_tokens_details.cached_tokens === 'number')
       ? usage.input_tokens_details.cached_tokens
@@ -38,7 +32,6 @@ export function normalizeUsageCounts(usage: any): NormalizedTokenCounts {
         ? usage.prompt_tokens_details.cached_tokens
         : 0);
 
-  // Anthropic cache tokens
   const anthropicCacheCreation = typeof usage.cache_creation_input_tokens === 'number'
     ? usage.cache_creation_input_tokens
     : 0;
@@ -46,7 +39,6 @@ export function normalizeUsageCounts(usage: any): NormalizedTokenCounts {
     ? usage.cache_read_input_tokens
     : 0;
 
-  // Total cached tokens (OpenAI + Anthropic)
   const totalCached = openaiCached + anthropicCacheCreation + anthropicCacheRead;
 
   // Only add cached tokens when base is zero (defensive, avoid double counting)
@@ -54,7 +46,6 @@ export function normalizeUsageCounts(usage: any): NormalizedTokenCounts {
     prompt = prompt + totalCached;
   }
 
-  // Total tokens: prefer provided value, else sum
   const total = (typeof usage.total_tokens === 'number')
     ? usage.total_tokens
     : (prompt + completion);

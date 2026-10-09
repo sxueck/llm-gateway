@@ -1,27 +1,29 @@
 <template>
   <div class="dashboard-view">
     <n-space vertical :size="24">
-      <div class="dashboard-header">
-        <div>
-          <h2 class="page-title dashboard-page-title">{{ t('dashboard.title') }}</h2>
-          <p class="page-subtitle dashboard-page-subtitle">{{ t('dashboard.subtitle') }}</p>
-        </div>
-        <n-space :size="12" class="dashboard-controls">
-          <n-button secondary round @click="refreshDashboard">
-            <template #icon>
-              <n-icon><RefreshOutline /></n-icon>
-            </template>
-            {{ t('common.refresh') }}
-          </n-button>
-          <n-select
-            v-model:value="selectedPeriod"
-            :options="periodOptions"
-            size="medium"
-            :style="{ width: windowWidth < 640 ? '140px' : '160px' }"
-            @update:value="() => loadStats()"
-          />
-        </n-space>
-      </div>
+      <PageHeader
+        eyebrow="OVERVIEW"
+        :title="t('dashboard.title')"
+        :subtitle="t('dashboard.subtitle')"
+      >
+        <template #actions>
+          <n-space :size="12" class="dashboard-controls">
+            <n-button secondary round @click="refreshDashboard">
+              <template #icon>
+                <n-icon><RefreshOutline /></n-icon>
+              </template>
+              {{ t('common.refresh') }}
+            </n-button>
+            <n-select
+              v-model:value="selectedPeriod"
+              :options="periodOptions"
+              size="medium"
+              :style="{ width: windowWidth < 640 ? '140px' : '160px' }"
+              @update:value="() => loadStats()"
+            />
+          </n-space>
+        </template>
+      </PageHeader>
 
       <n-alert v-if="stats?.legacyTokenSemantics || (isTokenCardFlipped && statsAllTime?.legacyTokenSemantics)" type="warning" :show-icon="true">
         历史汇总中存在旧版缓存命中 Token 口径；相关统计可能偏高，已清理的明细无法精确回算。
@@ -210,24 +212,25 @@
         <n-gi class="stagger-item" style="--delay: 300ms">
           <n-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-header">意图分类速度</div>
+              <div class="stat-header">{{ t('dashboard.activeAgents') }}</div>
               <div class="stat-main-value">
-                <n-skeleton v-if="loading" text style="width: 50%; height: 42px" :sharp="false" />
-                <span v-else>
-                  {{
-                    intentClassifySpeed >= 1000
-                      ? (intentClassifySpeed / 1000).toFixed(2)
-                      : formatResponseTime(intentClassifySpeed)
-                  }}
-                  <span class="stat-unit">{{ intentClassifySpeed >= 1000 ? 's' : 'ms' }}</span>
-                </span>
+                <n-skeleton v-if="agentStatsLoading" text style="width: 40%; height: 42px" :sharp="false" />
+                <span v-else-if="agentStatsError">—</span>
+                <span v-else>{{ formatNumber(activeAgentCount) }}</span>
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">分类次数:</span>
-                  <span class="stat-detail-value">
-                    <n-skeleton v-if="loading" text style="width: 40px" />
-                    <span v-else>{{ formatNumber(intentClassifyCount) }}</span>
+                  <span class="stat-detail-label">{{ t('dashboard.topAgent') }}:</span>
+                  <span class="stat-detail-value" :title="topAgentLabel">
+                    <n-skeleton v-if="agentStatsLoading" text style="width: 60px" />
+                    <span v-else>{{ topAgentLabel }}</span>
+                  </span>
+                </span>
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">{{ t('dashboard.unattributed') }}:</span>
+                  <span class="stat-detail-value" :title="agentStatsError || t('dashboard.unattributedHint')">
+                    <n-skeleton v-if="agentStatsLoading" text style="width: 40px" />
+                    <span v-else>{{ formatNumber(unattributedRequests) }}</span>
                   </span>
                 </span>
               </div>
@@ -441,73 +444,6 @@
         </n-gi>
       </n-grid>
 
-      <n-card
-        v-if="showRequestSourceCard"
-        class="overview-card"
-        title="请求来源"
-        style="margin-bottom: 24px"
-      >
-        <n-space vertical :size="20">
-          <n-grid cols="1 s:2" :x-gap="24" :y-gap="16" responsive="screen">
-            <n-gi>
-              <div class="source-info-item">
-                <div class="source-label">上一次请求来源</div>
-                <div class="source-value">
-                  {{ formatGeoLocation(requestSourceStats?.lastRequest?.geo) }}
-                </div>
-                <div class="source-sub">
-                  {{ requestSourceStats?.lastRequest?.ip || '暂未记录' }}
-                </div>
-                <div class="source-time">
-                  {{
-                    requestSourceStats?.lastRequest?.timestamp
-                      ? formatTimestamp(requestSourceStats?.lastRequest?.timestamp || 0)
-                      : '---'
-                  }}
-                </div>
-                <div class="source-client">
-                  客户端：{{ requestSourceStats?.lastRequest?.userAgent || '未知' }}
-                </div>
-              </div>
-            </n-gi>
-            <n-gi>
-              <div class="source-info-item">
-                <div class="source-label">最近拦截 IP</div>
-                <div class="source-value source-value-danger">
-                  {{ formatGeoLocation(requestSourceStats?.lastBlocked?.geo) }}
-                </div>
-                <div class="source-sub">
-                  {{ requestSourceStats?.lastBlocked?.ip || '暂无拦截' }}
-                </div>
-                <div class="source-time">
-                  {{
-                    requestSourceStats?.lastBlocked?.timestamp
-                      ? formatTimestamp(requestSourceStats?.lastBlocked?.timestamp || 0)
-                      : '---'
-                  }}
-                </div>
-              </div>
-            </n-gi>
-          </n-grid>
-          <div>
-            <div class="source-table-header">
-              <div class="source-table-title">最近来源 IP（去重后 10 条）</div>
-              <div class="source-table-desc">包含被拦截与正常访问的来源</div>
-            </div>
-            <n-data-table
-              v-if="requestSourceTableData.length > 0"
-              :columns="requestSourceColumns"
-              :data="requestSourceTableData"
-              :bordered="false"
-              size="small"
-              :scroll-x="1100"
-              :row-key="row => row.ip"
-            />
-            <n-empty v-else description="暂无请求来源数据" :show-icon="false" />
-          </div>
-        </n-space>
-      </n-card>
-
       <n-card class="overview-card" title="系统概览">
         <div class="overview-grid">
           <div class="overview-item">
@@ -529,7 +465,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import {
   useMessage,
   NSpace,
@@ -542,13 +478,8 @@ import {
   NIcon,
   NSpin,
   NResult,
-  NDataTable,
-  NTag,
-  NTooltip,
-  NPopconfirm,
   NSkeleton
 } from 'naive-ui'
-import type { DataTableColumns } from 'naive-ui'
 import { RefreshOutline } from '@vicons/ionicons5'
 import { useI18n } from 'vue-i18n'
 import { useProviderStore } from '@/stores/provider'
@@ -557,13 +488,15 @@ import {
   configApi,
   type ApiStats,
   type VirtualKeyTrend,
-  type IntentClassifyStats,
   type ModelStat,
   type CostStats,
-  type RequestSourceEntry,
-  type RequestSourceStats,
   type ThreatIpStats
 } from '@/api/config'
+import {
+  agentMetricsApi,
+  type CodingAgentSummary,
+  type CodingAgentTotals
+} from '@/api/agent-metrics'
 import {
   formatNumber,
   formatTokenNumber,
@@ -572,22 +505,22 @@ import {
   formatTimestamp,
   formatUptime
 } from '@/utils/format'
-import { useSystemConfig } from '@/composables/useSystemConfig'
 import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize'
 import VChart from 'vue-echarts'
+import PageHeader from '@/components/PageHeader.vue'
 
 const { t } = useI18n()
 const message = useMessage()
 const providerStore = useProviderStore()
 const virtualKeyStore = useVirtualKeyStore()
-const { dashboardHideRequestSourceCard } = useSystemConfig()
-
-const showRequestSourceCard = computed(() => !dashboardHideRequestSourceCard.value)
 const stats = ref<ApiStats | null>(null)
 const statsAllTime = ref<ApiStats | null>(null)
 const isTokenCardFlipped = ref(false)
 const trendData = ref<VirtualKeyTrend[]>([])
-const intentClassifyStats = ref<IntentClassifyStats | null>(null)
+const agentTotals = ref<CodingAgentTotals | null>(null)
+const topAgent = ref<CodingAgentSummary | null>(null)
+const agentStatsLoading = ref(false)
+const agentStatsError = ref<string | null>(null)
 const modelStats = ref<ModelStat[]>([])
 const circuitBreakerStats = ref<{
   totalTriggers: number
@@ -595,210 +528,8 @@ const circuitBreakerStats = ref<{
   maxTriggerCount: number
 } | null>(null)
 const costStats = ref<CostStats | null>(null)
-const requestSourceStats = ref<RequestSourceStats | null>(null)
 const threatIpStats = ref<ThreatIpStats | null>(null)
 const piiProtectionCount = ref<number>(0)
-const requestSourceTableData = computed<RequestSourceEntry[]>(
-  () => requestSourceStats.value?.recentSources || []
-)
-const lookupLoadingIp = ref<string | null>(null)
-const blockLoadingIp = ref<string | null>(null)
-const requestSourceColumns: DataTableColumns<RequestSourceEntry> = [
-  {
-    title: 'IP 地址',
-    key: 'ip',
-    minWidth: 220,
-    render(row) {
-      const tagType = row.type === 'blocked' ? 'error' : 'success'
-      const tagText = row.type === 'blocked' ? '被拦截' : '正常访问'
-      const subText =
-        row.type === 'blocked'
-          ? row.blockedReason
-            ? `拦截原因：${row.blockedReason}`
-            : '由安全策略拦截'
-          : `最近请求 ${row.count || 0} 次`
-      return h('div', { style: 'display: flex; flex-direction: column; gap: 4px;' }, [
-        h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, [
-          h(
-            'span',
-            {
-              style:
-                'font-weight: 600; color: #111827; cursor: pointer; text-decoration: underline; text-underline-offset: 4px; text-decoration-color: #d1d5db;',
-              onClick: () => handleLookupIp(row.ip),
-              title: '点击查询 IP 详细信息',
-              class: 'ip-clickable'
-            },
-            row.ip || '-'
-          ),
-          h(NTag, { size: 'small', type: tagType, bordered: false }, { default: () => tagText }),
-          lookupLoadingIp.value === row.ip ? h(NSpin, { size: 14 }) : null
-        ]),
-        h('div', { style: 'font-size: 12px; color: #6b7280;' }, subText)
-      ])
-    }
-  },
-  {
-    title: '属地',
-    key: 'location',
-    minWidth: 160,
-    render(row) {
-      return row.geo?.locationZh || '未知'
-    }
-  },
-  {
-    title: '运营商 / ISP',
-    key: 'isp',
-    minWidth: 160,
-    render(row) {
-      return row.geo?.ispZh || row.geo?.isp || '-'
-    }
-  },
-  {
-    title: '最近出现时间',
-    key: 'timestamp',
-    minWidth: 160,
-    render(row) {
-      return row.timestamp ? formatTimestamp(row.timestamp) : '-'
-    }
-  },
-  {
-    title: '客户端',
-    key: 'client',
-    minWidth: 220,
-    render(row) {
-      if (!row.userAgent) {
-        return '未知'
-      }
-      const text = row.userAgent.length > 60 ? `${row.userAgent.slice(0, 60)}...` : row.userAgent
-      return h(NTooltip, null, {
-        trigger: () =>
-          h(
-            'div',
-            { style: 'font-size: 12px; color: #374151; line-height: 1.5; word-break: break-all;' },
-            text
-          ),
-        default: () => row.userAgent
-      })
-    }
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    minWidth: 180,
-    render(row) {
-      return h(NSpace, { size: 6 }, [
-        h(
-          NPopconfirm,
-          {
-            disabled: row.type === 'blocked',
-            positiveText: '拦截',
-            negativeText: '取消',
-            onPositiveClick: () => handleBlockIp(row.ip)
-          },
-          {
-            default: () => '确定要拦截该 IP 吗？',
-            trigger: () =>
-              h(
-                NButton,
-                {
-                  size: 'tiny',
-                  type: row.type === 'blocked' ? 'default' : 'error',
-                  ghost: true,
-                  loading: blockLoadingIp.value === row.ip,
-                  disabled: row.type === 'blocked'
-                },
-                { default: () => (row.type === 'blocked' ? '已拦截' : '拦截') }
-              )
-          }
-        )
-      ])
-    }
-  }
-]
-
-function ensureRequestSourceState() {
-  if (!requestSourceStats.value) {
-    requestSourceStats.value = {
-      lastRequest: null,
-      lastBlocked: null,
-      recentSources: []
-    }
-  } else if (!requestSourceStats.value.recentSources) {
-    requestSourceStats.value = {
-      ...requestSourceStats.value,
-      recentSources: []
-    }
-  }
-}
-
-function buildUpdatedSources(ip: string, patch: Partial<RequestSourceEntry>) {
-  ensureRequestSourceState()
-  const recentSources = requestSourceStats.value!.recentSources || []
-  return recentSources.map(entry => {
-    if (entry.ip !== ip) return entry
-    return { ...entry, ...patch }
-  })
-}
-
-async function handleLookupIp(ip?: string) {
-  if (!ip) return
-  lookupLoadingIp.value = ip
-  try {
-    const result = await configApi.lookupRequestSource(ip)
-    const updatedSources = buildUpdatedSources(ip, {
-      geo: result.geo,
-      timestamp: result.lastSeen || Date.now(),
-      userAgent: result.userAgent || null,
-      type: result.blocked ? 'blocked' : 'normal',
-      blockedReason: result.blocked ? result.blockedReason : null
-    })
-    requestSourceStats.value = {
-      ...requestSourceStats.value!,
-      recentSources: updatedSources
-    }
-    const locationText = formatGeoLocation(result.geo || undefined)
-    const asnText = result.geo?.asn
-      ? `${result.geo.asn}${result.geo.asOrganization ? ` · ${result.geo.asOrganization}` : ''}`
-      : ''
-    message.success(`查询成功：${locationText}${asnText ? ` | ${asnText}` : ''}`)
-  } catch (error: any) {
-    const errorMsg = error?.response?.data?.error?.message || error?.message || '查询 IP 信息失败'
-    message.error(errorMsg)
-  } finally {
-    lookupLoadingIp.value = null
-  }
-}
-
-async function handleBlockIp(ip?: string) {
-  if (!ip) return
-  blockLoadingIp.value = ip
-  try {
-    const result = await configApi.blockRequestSource({ ip })
-    const reason = result.blocked.reason || '手动拦截'
-    const updatedSources = buildUpdatedSources(ip, {
-      type: 'blocked',
-      blockedReason: reason
-    })
-    const targetEntry = updatedSources.find(entry => entry.ip === ip)
-    requestSourceStats.value = {
-      ...requestSourceStats.value!,
-      recentSources: updatedSources,
-      lastBlocked: {
-        ip,
-        geo: targetEntry?.geo || null,
-        timestamp: result.blocked.timestamp,
-        reason,
-        source: 'manual'
-      }
-    }
-    message.success(`已拦截 IP ${ip}`)
-  } catch (error: any) {
-    const errorMsg = error?.response?.data?.error?.message || error?.message || '拦截 IP 失败'
-    message.error(errorMsg)
-  } finally {
-    blockLoadingIp.value = null
-  }
-}
 const selectedPeriod = ref<'24h' | '7d' | '30d'>('24h')
 const chartMetric = ref<'requests' | 'tokens'>('requests')
 const loading = ref(false)
@@ -827,15 +558,15 @@ const periodOptions = computed(() => [
 ])
 
 const gridCols = computed(() => {
-  if (windowWidth.value < 640) return 1 // 手机端：1列
-  if (windowWidth.value < 1024) return 2 // 平板端：2列
-  if (windowWidth.value < 1280) return 3 // 小桌面：3列
-  return 4 // 大桌面：4列
+  if (windowWidth.value < 640) return 1
+  if (windowWidth.value < 1024) return 2
+  if (windowWidth.value < 1280) return 3
+  return 4
 })
 
 const gridGap = computed(() => {
-  if (windowWidth.value < 640) return 12 // 手机端：较小间距
-  return 20 // 桌面端：正常间距
+  if (windowWidth.value < 640) return 12
+  return 20
 })
 
 const enabledKeysCount = computed(() => {
@@ -871,13 +602,34 @@ const avgOutputTokens = computed(() => {
   return Math.round(Number(stats.value?.completionTokens || 0) / reqs)
 })
 
-const intentClassifySpeed = computed(() => {
-  return Number(intentClassifyStats.value?.avgClassificationTime || 0)
+const activeAgentCount = computed(() => Number(agentTotals.value?.agentCount || 0))
+
+const unattributedRequests = computed(() =>
+  Number(agentTotals.value?.unattributed?.requests || 0)
+)
+
+const topAgentLabel = computed(() => {
+  if (!topAgent.value) return agentStatsError.value ? '-' : t('dashboard.agentNone')
+  return `${topAgent.value.label} · ${t('dashboard.agentRequests', { count: formatNumber(topAgent.value.requests) })}`
 })
 
-const intentClassifyCount = computed(() => {
-  return Number(intentClassifyStats.value?.totalRequests || 0)
-})
+// Agent 归因走独立接口：首页主卡不等这条较重查询，失败也只影响这一张卡。
+const loadAgentStats = async () => {
+  agentStatsLoading.value = true
+  agentStatsError.value = null
+  try {
+    const result = await agentMetricsApi.getCodingAgents({ period: selectedPeriod.value })
+    agentTotals.value = result.totals || null
+    topAgent.value =
+      [...(result.agents || [])].sort((a, b) => b.requests - a.requests)[0] || null
+  } catch (error: any) {
+    agentTotals.value = null
+    topAgent.value = null
+    agentStatsError.value = error?.message || t('dashboard.agentStatsFailed')
+  } finally {
+    agentStatsLoading.value = false
+  }
+}
 
 const topModel = computed(() => {
   if (modelStats.value.length === 0 || !modelStats.value[0].model) return '-'
@@ -922,16 +674,15 @@ const ipsumBlockedCount = computed(() => {
   return Number(threatIpStats.value.blockedCount || 0)
 })
 
-// Starbucks & Nature Inspired Palette
 const COLOR_PALETTE = [
-  { line: '#006241', gradient: ['rgba(0, 98, 65, 0.4)', 'rgba(0, 98, 65, 0.05)'] }, // Starbucks Green
-  { line: '#C4996C', gradient: ['rgba(196, 153, 108, 0.4)', 'rgba(196, 153, 108, 0.05)'] }, // Coffee/Gold
-  { line: '#1E3932', gradient: ['rgba(30, 57, 50, 0.4)', 'rgba(30, 57, 50, 0.05)'] }, // House Green
-  { line: '#2D8A6D', gradient: ['rgba(45, 138, 109, 0.4)', 'rgba(45, 138, 109, 0.05)'] }, // Medium Green
-  { line: '#A89F91', gradient: ['rgba(168, 159, 145, 0.4)', 'rgba(168, 159, 145, 0.05)'] }, // Warm Gray
-  { line: '#6CA68D', gradient: ['rgba(108, 166, 141, 0.4)', 'rgba(108, 166, 141, 0.05)'] }, // Sage
-  { line: '#4A4A4A', gradient: ['rgba(74, 74, 74, 0.4)', 'rgba(74, 74, 74, 0.05)'] }, // Dark Gray
-  { line: '#D4E9E2', gradient: ['rgba(212, 233, 226, 0.4)', 'rgba(212, 233, 226, 0.05)'] } // Mint
+  { line: '#006241', gradient: ['rgba(0, 98, 65, 0.4)', 'rgba(0, 98, 65, 0.05)'] },
+  { line: '#C4996C', gradient: ['rgba(196, 153, 108, 0.4)', 'rgba(196, 153, 108, 0.05)'] },
+  { line: '#1E3932', gradient: ['rgba(30, 57, 50, 0.4)', 'rgba(30, 57, 50, 0.05)'] },
+  { line: '#2D8A6D', gradient: ['rgba(45, 138, 109, 0.4)', 'rgba(45, 138, 109, 0.05)'] },
+  { line: '#A89F91', gradient: ['rgba(168, 159, 145, 0.4)', 'rgba(168, 159, 145, 0.05)'] },
+  { line: '#6CA68D', gradient: ['rgba(108, 166, 141, 0.4)', 'rgba(108, 166, 141, 0.05)'] },
+  { line: '#4A4A4A', gradient: ['rgba(74, 74, 74, 0.4)', 'rgba(74, 74, 74, 0.05)'] },
+  { line: '#D4E9E2', gradient: ['rgba(212, 233, 226, 0.4)', 'rgba(212, 233, 226, 0.05)'] }
 ]
 
 const chartOption = computed(() => {
@@ -1269,6 +1020,7 @@ async function loadStats(opts: { silent?: boolean } = {}) {
     loading.value = true
   }
   loadError.value = null
+  void loadAgentStats()
   try {
     const result = await configApi.getStats(selectedPeriod.value, chartMetric.value)
 
@@ -1278,10 +1030,6 @@ async function loadStats(opts: { silent?: boolean } = {}) {
 
     stats.value = result.stats
     trendData.value = result.trend || []
-    intentClassifyStats.value = result.intentClassifyStats || {
-      totalRequests: 0,
-      avgClassificationTime: 0
-    }
     modelStats.value = result.modelStats || []
     circuitBreakerStats.value = result.circuitBreakerStats || {
       totalTriggers: 0,
@@ -1289,7 +1037,6 @@ async function loadStats(opts: { silent?: boolean } = {}) {
       maxTriggerCount: 0
     }
     costStats.value = result.costStats || null
-    requestSourceStats.value = result.requestSourceStats || null
     threatIpStats.value = result.threatIpStats || null
     piiProtectionCount.value = result.piiProtectionCount || 0
   } catch (error: any) {
@@ -1319,13 +1066,6 @@ const formatCost = (cost: number) => {
   if (cost === 0) return '0.00'
   if (cost < 0.01) return cost.toFixed(4)
   return cost.toFixed(2)
-}
-
-const formatGeoLocation = (geo: RequestSourceEntry['geo'] | undefined) => {
-  if (!geo) return '未知'
-  if (geo.locationZh) return geo.locationZh
-  const parts = [geo.country, geo.province, geo.city].filter(Boolean)
-  return parts.length > 0 ? parts.join(' · ') : '未知'
 }
 
 onMounted(async () => {

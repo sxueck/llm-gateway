@@ -1,4 +1,4 @@
-import type { Connection, ResultSetHeader } from "mysql2/promise";
+import type { Connection } from "mysql2/promise";
 
 export interface Migration {
   version: number;
@@ -7,1074 +7,130 @@ export interface Migration {
   down?: (conn: Connection) => Promise<void>;
 }
 
-const legacyExpertRoutingLabels: Record<string, string> = {
-  debug: "code_repair",
-  explain: "code_explanation",
-  feature: "code_authoring",
-  plan: "architecture_consultation",
-  refactor: "code_modification",
-  review: "code_review",
-  setup: "dependency_management",
-  test: "test_generation",
-  utility: "general_inquiry",
-  other: "general_inquiry",
-};
-
-export function normalizeExpertRoutingConfig(configText: string): {
-  config: string;
-  changed: boolean;
-} {
-  const config = JSON.parse(configText);
-  let changed = false;
-
-  if (Array.isArray(config?.experts)) {
-    for (const expert of config.experts) {
-      const label = legacyExpertRoutingLabels[expert?.category];
-      if (label) {
-        expert.category = label;
-        changed = true;
-      }
-      if (expert && "system_prompt" in expert) {
-        delete expert.system_prompt;
-        changed = true;
-      }
-    }
-  }
-
-  if (config?.llm_second_pass) {
-    for (const field of [
-      "prompt_template",
-      "system_prompt",
-      "user_prompt_marker",
-    ]) {
-      if (field in config.llm_second_pass) {
-        delete config.llm_second_pass[field];
-        changed = true;
-      }
-    }
-  }
-
-  return { config: JSON.stringify(config), changed };
-}
-
+// v2 starts from schema.ts; future incremental migrations start at version 1.
 export const migrations: Migration[] = [
   {
-    version: 31,
-    name: "add_api_request_daily_summaries",
-    up: async (conn: Connection) => {
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS api_request_daily_summaries (
-          id BIGINT AUTO_INCREMENT PRIMARY KEY,
-          summary_date DATE NOT NULL COMMENT 'Asia/Shanghai 时区的汇总日期',
-          virtual_key_id VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
-          provider_id VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
-          model VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
-          request_count INT NOT NULL DEFAULT 0,
-          success_count INT NOT NULL DEFAULT 0,
-          error_count INT NOT NULL DEFAULT 0,
-          total_tokens BIGINT NOT NULL DEFAULT 0,
-          prompt_tokens BIGINT NOT NULL DEFAULT 0,
-          completion_tokens BIGINT NOT NULL DEFAULT 0,
-          cached_tokens BIGINT NOT NULL DEFAULT 0,
-          cache_hit_count INT NOT NULL DEFAULT 0 COMMENT 'cache_hit = 1 的计数',
-          prompt_cache_hit_count INT NOT NULL DEFAULT 0 COMMENT 'cached_tokens > 0 的计数（即使用了 prompt cache）',
-          total_response_time BIGINT NOT NULL DEFAULT 0,
-          response_time_count INT NOT NULL DEFAULT 0,
-          created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
-          updated_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
-          UNIQUE KEY uk_daily_summary_dimensions (summary_date, virtual_key_id, provider_id, model),
-          INDEX idx_summary_date (summary_date),
-          INDEX idx_summary_virtual_key (virtual_key_id, summary_date),
-          INDEX idx_summary_provider (provider_id, summary_date),
-          INDEX idx_summary_model (model, summary_date)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-      console.log("[迁移] 已创建 api_request_daily_summaries 表");
-    },
-    down: async (conn: Connection) => {
-      await conn.query("DROP TABLE IF EXISTS api_request_daily_summaries");
-      console.log("[迁移] 已删除 api_request_daily_summaries 表");
-    },
-  },
-  {
-    version: 32,
-    name: "add_prompt_cache_hit_count_to_summaries",
-    up: async (conn: Connection) => {
-      const hasColumn = async (columnName: string) => {
-        const [rows] = await conn.query(
-          `SELECT COUNT(*) AS cnt
-           FROM INFORMATION_SCHEMA.COLUMNS
-           WHERE TABLE_SCHEMA = DATABASE()
-             AND TABLE_NAME = 'api_request_daily_summaries'
-             AND COLUMN_NAME = ?`,
-          [columnName],
-        );
-        const result = rows as any[];
-        return Number(result?.[0]?.cnt || 0) > 0;
-      };
-
-      if (!(await hasColumn("prompt_cache_hit_count"))) {
-        await conn.query(`
-          ALTER TABLE api_request_daily_summaries
-          ADD COLUMN prompt_cache_hit_count INT NOT NULL DEFAULT 0
-          COMMENT 'cached_tokens > 0 的计数（即使用了 prompt cache）'
-          AFTER cache_hit_count
-        `);
-        console.log(
-          "[迁移] 已添加 api_request_daily_summaries.prompt_cache_hit_count 字段",
-        );
-      }
-    },
-    down: async (conn: Connection) => {
-      try {
-        await conn.query(
-          `ALTER TABLE api_request_daily_summaries DROP COLUMN IF EXISTS prompt_cache_hit_count`,
-        );
-        console.log(
-          "[迁移] 已删除 api_request_daily_summaries.prompt_cache_hit_count 字段",
-        );
-      } catch (e: any) {
-        console.warn("[迁移] 删除 prompt_cache_hit_count 字段失败:", e.message);
-      }
-    },
-  },
-  {
-    version: 33,
-    name: "replace_model_protocol_with_supported_protocols",
-    up: async (conn: Connection) => {
-      const hasColumn = async (columnName: string) => {
-        const [rows] = await conn.query(
-          `SELECT COUNT(*) AS cnt
-           FROM INFORMATION_SCHEMA.COLUMNS
-           WHERE TABLE_SCHEMA = DATABASE()
-             AND TABLE_NAME = 'models'
-             AND COLUMN_NAME = ?`,
-          [columnName],
-        );
-        const result = rows as any[];
-        return Number(result?.[0]?.cnt || 0) > 0;
-      };
-
-      const hasIndex = async (indexName: string) => {
-        const [rows] = await conn.query(
-          `SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.STATISTICS
-           WHERE TABLE_SCHEMA = DATABASE()
-             AND TABLE_NAME = 'models'
-             AND INDEX_NAME = ?`,
-          [indexName],
-        );
-        const result = rows as any[];
-        return Number(result?.[0]?.cnt || 0) > 0;
-      };
-
-      if (!(await hasColumn("supported_protocols"))) {
-        await conn.query(
-          `ALTER TABLE models ADD COLUMN supported_protocols TEXT`,
-        );
-        console.log("[迁移] 已添加 models.supported_protocols 字段");
-      }
-
-      if (!(await hasColumn("health_check_protocol"))) {
-        await conn.query(
-          `ALTER TABLE models ADD COLUMN health_check_protocol VARCHAR(50)`,
-        );
-        console.log("[迁移] 已添加 models.health_check_protocol 字段");
-      }
-
-      if (await hasColumn("protocol")) {
-        // Migrate existing protocol values into supported_protocols JSON array
-        await conn.query(`
-          UPDATE models
-          SET supported_protocols = CASE
-            WHEN protocol IS NULL OR protocol = '' THEN '["openai"]'
-            ELSE CONCAT('["', protocol, '"]')
-          END,
-          health_check_protocol = CASE
-            WHEN protocol IS NULL OR protocol = '' THEN 'openai'
-            ELSE protocol
-          END
-        `);
-        console.log(
-          "[迁移] 已迁移 models.protocol 到 supported_protocols 和 health_check_protocol",
-        );
-
-        if (await hasIndex("idx_models_protocol")) {
-          await conn.query(`DROP INDEX idx_models_protocol ON models`);
-          console.log("[迁移] 已删除 idx_models_protocol 索引");
-        }
-
-        await conn.query(`ALTER TABLE models DROP COLUMN protocol`);
-        console.log("[迁移] 已删除 models.protocol 字段");
-      } else {
-        // Backfill defaults when protocol column is already absent (partial/fresh state)
-        await conn.query(`
-          UPDATE models
-          SET supported_protocols = '["openai"]'
-          WHERE supported_protocols IS NULL OR supported_protocols = ''
-        `);
-        await conn.query(`
-          UPDATE models
-          SET health_check_protocol = COALESCE(JSON_UNQUOTE(JSON_EXTRACT(supported_protocols, '$[0]')), 'openai')
-          WHERE health_check_protocol IS NULL OR health_check_protocol = ''
-        `);
-        console.log(
-          "[迁移] 已回填 models.supported_protocols 和 health_check_protocol 默认值",
-        );
-      }
-    },
-    down: async (conn: Connection) => {
-      const hasColumn = async (columnName: string) => {
-        const [rows] = await conn.query(
-          `SELECT COUNT(*) AS cnt
-           FROM INFORMATION_SCHEMA.COLUMNS
-           WHERE TABLE_SCHEMA = DATABASE()
-             AND TABLE_NAME = 'models'
-             AND COLUMN_NAME = ?`,
-          [columnName],
-        );
-        const result = rows as any[];
-        return Number(result?.[0]?.cnt || 0) > 0;
-      };
-
-      const hasIndex = async (indexName: string) => {
-        const [rows] = await conn.query(
-          `SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.STATISTICS
-           WHERE TABLE_SCHEMA = DATABASE()
-             AND TABLE_NAME = 'models'
-             AND INDEX_NAME = ?`,
-          [indexName],
-        );
-        const result = rows as any[];
-        return Number(result?.[0]?.cnt || 0) > 0;
-      };
-
-      if (!(await hasColumn("protocol"))) {
-        await conn.query(`ALTER TABLE models ADD COLUMN protocol VARCHAR(50)`);
-        console.log("[迁移] 已恢复 models.protocol 字段");
-      }
-
-      // Backfill protocol from the first entry of supported_protocols
-      await conn.query(`
-        UPDATE models
-        SET protocol = CASE
-          WHEN supported_protocols IS NULL OR supported_protocols = '' THEN 'openai'
-          ELSE JSON_UNQUOTE(JSON_EXTRACT(supported_protocols, '$[0]'))
-        END
-      `);
-      console.log("[迁移] 已从 supported_protocols 回填充 protocol 字段");
-
-      if (!(await hasIndex("idx_models_protocol"))) {
-        await conn.query(
-          `CREATE INDEX idx_models_protocol ON models(protocol)`,
-        );
-        console.log("[迁移] 已重建 idx_models_protocol 索引");
-      }
-
-      if (await hasColumn("supported_protocols")) {
-        await conn.query(`ALTER TABLE models DROP COLUMN supported_protocols`);
-      }
-      if (await hasColumn("health_check_protocol")) {
-        await conn.query(
-          `ALTER TABLE models DROP COLUMN health_check_protocol`,
-        );
-      }
-      console.log(
-        "[迁移] 已删除 supported_protocols 和 health_check_protocol 字段",
+    version: 1,
+    name: "api_requests_session_id",
+    up: async (conn) => {
+      const [tables] = await conn.query(
+        `SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'api_requests'`,
       );
+      if ((tables as Array<{ name: string }>).length === 0) {
+        // 空库（scratch 干跑 / rebuild 先跑 migrations 后建表）：表由 schema.ts
+        // 连同 session_id 一起创建，这里只登记版本号，绝不先跑 DDL。
+        return;
+      }
+      const [columns] = await conn.query(
+        `SELECT COLUMN_NAME AS name FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'api_requests' AND COLUMN_NAME = 'session_id'`,
+      );
+      if ((columns as Array<{ name: string }>).length === 0) {
+        await conn.query(
+          "ALTER TABLE api_requests ADD COLUMN session_id VARCHAR(256) DEFAULT NULL COMMENT '客户端显式会话标识（x-session-id 等），无则为 NULL' AFTER run_id",
+        );
+      }
+      const [indexes] = await conn.query(
+        `SELECT INDEX_NAME AS name FROM INFORMATION_SCHEMA.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'api_requests' AND INDEX_NAME = 'idx_api_requests_session'`,
+      );
+      if ((indexes as Array<{ name: string }>).length === 0) {
+        await conn.query(
+          "ALTER TABLE api_requests ADD INDEX idx_api_requests_session (session_id, created_at)",
+        );
+      }
     },
-  },
-  {
-    version: 34,
-    name: "local_onnx_expert_routing_reset",
-    up: async (conn: Connection) => {
-      // 1. Durable session bindings table (idempotent with schema.ts).
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS expert_routing_session_bindings (
-          expert_routing_id VARCHAR(255) NOT NULL,
-          virtual_key_scope VARCHAR(255) NOT NULL,
-          session_id VARCHAR(256) NOT NULL,
-          expert_id VARCHAR(255) NOT NULL,
-          route_source VARCHAR(50) NOT NULL,
-          created_at BIGINT NOT NULL,
-          last_seen_at BIGINT NOT NULL,
-          idle_expires_at BIGINT NOT NULL,
-          absolute_expires_at BIGINT NOT NULL,
-          PRIMARY KEY (expert_routing_id, virtual_key_scope, session_id),
-          INDEX idx_bindings_idle_expires (idle_expires_at),
-          INDEX idx_bindings_absolute_expires (absolute_expires_at),
-          INDEX idx_bindings_expert (expert_routing_id, expert_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-      console.log("[迁移] 已确保 expert_routing_session_bindings 表存在");
-
-      // 2. Destructive reset of legacy LLM-primary Expert Routing data (AC-7, FR-12).
-      //    The local-ONNX classifier config is incompatible with the legacy
-      //    `classifier`-based configs, so all prior configs/logs/generated models
-      //    are removed. This is a one-time, intentional, irreversible migration.
-
-      // 2a. Detach (non-generated) models that referenced legacy configs, then
-      //     drop the generated virtual models (model_identifier = expert-<configId>).
-      await conn.query(`
-        UPDATE models
-        SET expert_routing_id = NULL
-        WHERE expert_routing_id IS NOT NULL
-      `);
-      console.log("[迁移] 已解绑所有引用旧专家路由配置的模型");
-
-      await conn.query(`
-        DELETE FROM models
-        WHERE is_virtual = 1 AND model_identifier LIKE 'expert-%'
-      `);
-      console.log("[迁移] 已删除旧专家路由生成的虚拟模型");
-
-      // 2b. Remove legacy Expert Routing logs and configs.
-      await conn.query(`DELETE FROM expert_routing_logs`);
-      console.log("[迁移] 已清空旧专家路由日志");
-
-      await conn.query(`DELETE FROM expert_routing_configs`);
-      console.log("[迁移] 已清空旧专家路由配置");
-
-      // 2c. Drop any pre-existing session bindings table from earlier iterations.
+    down: async (conn) => {
+      const [tables] = await conn.query(
+        `SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'api_requests'`,
+      );
+      if ((tables as Array<{ name: string }>).length === 0) return;
+      const [indexes] = await conn.query(
+        `SELECT INDEX_NAME AS name FROM INFORMATION_SCHEMA.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'api_requests' AND INDEX_NAME = 'idx_api_requests_session'`,
+      );
+      if ((indexes as Array<{ name: string }>).length > 0) {
+        await conn.query(
+          "ALTER TABLE api_requests DROP INDEX idx_api_requests_session",
+        );
+      }
       await conn.query(
-        `DROP TABLE IF EXISTS expert_routing_session_bindings_legacy`,
+        "ALTER TABLE api_requests DROP COLUMN session_id",
       );
-      console.log("[迁移] 本地 ONNX 专家路由重置完成");
-    },
-  },
-  {
-    version: 35,
-    name: "add_expert_routing_training_records",
-    up: async (conn: Connection) => {
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS expert_routing_training_records (
-          id VARCHAR(255) PRIMARY KEY,
-          expert_routing_id VARCHAR(255) NOT NULL,
-          input_hash CHAR(64) NOT NULL,
-          input_text MEDIUMTEXT NOT NULL,
-          local_result JSON DEFAULT NULL,
-          classifier_revision VARCHAR(255) DEFAULT NULL,
-          judge_prompt_version VARCHAR(100) NOT NULL,
-          judge_model VARCHAR(255) DEFAULT NULL,
-          judge_intent_label VARCHAR(255) NOT NULL,
-          judge_confidence DECIMAL(5,4) NOT NULL,
-          judge_reason TEXT DEFAULT NULL,
-          final_intent_label VARCHAR(255) NOT NULL,
-          final_expert_id VARCHAR(255) DEFAULT NULL,
-          status ENUM('pending_review', 'accepted', 'rejected') NOT NULL DEFAULT 'pending_review',
-          occurrence_count INT NOT NULL DEFAULT 1,
-          created_at BIGINT NOT NULL,
-          updated_at BIGINT NOT NULL,
-          reviewed_at BIGINT DEFAULT NULL,
-          UNIQUE KEY uk_training_record_input (expert_routing_id, input_hash),
-          INDEX idx_training_records_status (expert_routing_id, status, updated_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-      console.log("[迁移] 已创建 expert_routing_training_records 表");
-    },
-    down: async (conn: Connection) => {
-      await conn.query("DROP TABLE IF EXISTS expert_routing_training_records");
-      console.log("[迁移] 已删除 expert_routing_training_records 表");
-    },
-  },
-  {
-    version: 36,
-    name: "normalize_expert_routing_labels_and_prompt_config",
-    up: async (conn: Connection) => {
-      const [rows] = await conn.query(
-        "SELECT id, config FROM expert_routing_configs",
-      );
-      let updated = 0;
-
-      for (const row of rows as Array<{ id: string; config: string }>) {
-        try {
-          const normalized = normalizeExpertRoutingConfig(row.config);
-          if (!normalized.changed) continue;
-          await conn.query(
-            "UPDATE expert_routing_configs SET config = ?, updated_at = ? WHERE id = ?",
-            [normalized.config, Date.now(), row.id],
-          );
-          updated += 1;
-        } catch (error: any) {
-          console.warn(
-            `[迁移] 跳过无法解析的专家路由配置 ${row.id}: ${error.message}`,
-          );
-        }
-      }
-
-      console.log(`[迁移] 已规范化 ${updated} 个专家路由配置`);
-    },
-  },
-  {
-    version: 37,
-    name: "add_prompt_capture_samples",
-    up: async (conn: Connection) => {
-      const [columns] = await conn.query(`
-        SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME = 'virtual_keys'
-          AND COLUMN_NAME = 'prompt_capture_enabled'
-      `);
-      if ((columns as any[]).length === 0) {
-        await conn.query(
-          "ALTER TABLE virtual_keys ADD COLUMN prompt_capture_enabled TINYINT DEFAULT 0",
-        );
-      }
-
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS prompt_samples (
-          id VARCHAR(255) PRIMARY KEY,
-          virtual_key_id VARCHAR(255) NOT NULL,
-          model VARCHAR(255) NOT NULL DEFAULT 'unknown',
-          protocol VARCHAR(50) NOT NULL,
-          intent_text MEDIUMTEXT NOT NULL,
-          prompt_tokens INT NOT NULL DEFAULT 0,
-          intent_truncated TINYINT NOT NULL DEFAULT 0,
-          created_at BIGINT NOT NULL,
-          INDEX idx_prompt_samples_virtual_key (virtual_key_id, created_at),
-          INDEX idx_prompt_samples_created_at (created_at),
-          FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-    },
-    down: async (conn: Connection) => {
-      await conn.query("DROP TABLE IF EXISTS prompt_samples");
-      await conn.query(
-        "ALTER TABLE virtual_keys DROP COLUMN IF EXISTS prompt_capture_enabled",
-      );
-    },
-  },
-  {
-    version: 38,
-    name: "add_circuit_breaker_fk_cascade",
-    up: async (conn: Connection) => {
-      if (
-        !(await hasProviderForeignKey(
-          conn,
-          "circuit_breaker_stats",
-          "provider_id",
-        ))
-      ) {
-        // 清理已删除供应商的残留统计记录
-        await conn.query(`
-          DELETE FROM circuit_breaker_stats
-          WHERE provider_id NOT IN (SELECT id FROM providers)
-        `);
-        await conn.query(`
-          ALTER TABLE circuit_breaker_stats
-          ADD CONSTRAINT fk_circuit_breaker_stats_provider
-          FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
-        `);
-        console.log(
-          "[迁移] 已添加 circuit_breaker_stats.provider_id FK (ON DELETE CASCADE)",
-        );
-      }
-
-      if (
-        !(await hasProviderForeignKey(
-          conn,
-          "circuit_breaker_events",
-          "provider_id",
-        ))
-      ) {
-        // 清理已删除供应商的残留事件记录
-        await conn.query(`
-          DELETE FROM circuit_breaker_events
-          WHERE provider_id NOT IN (SELECT id FROM providers)
-        `);
-        await conn.query(`
-          ALTER TABLE circuit_breaker_events
-          ADD CONSTRAINT fk_circuit_breaker_events_provider
-          FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
-        `);
-        console.log(
-          "[迁移] 已添加 circuit_breaker_events.provider_id FK (ON DELETE CASCADE)",
-        );
-      }
-    },
-    down: async (conn: Connection) => {
-      const fkStats = await getProviderForeignKeyName(
-        conn,
-        "circuit_breaker_stats",
-        "provider_id",
-      );
-      if (fkStats) {
-        await conn.query(
-          `ALTER TABLE circuit_breaker_stats DROP FOREIGN KEY \`${fkStats}\``,
-        );
-        console.log("[迁移] 已删除 circuit_breaker_stats FK");
-      }
-
-      const fkEvents = await getProviderForeignKeyName(
-        conn,
-        "circuit_breaker_events",
-        "provider_id",
-      );
-      if (fkEvents) {
-        await conn.query(
-          `ALTER TABLE circuit_breaker_events DROP FOREIGN KEY \`${fkEvents}\``,
-        );
-        console.log("[迁移] 已删除 circuit_breaker_events FK");
-      }
-    },
-  },
-  {
-    version: 39,
-    name: "add_context_normalization_enabled_to_virtual_keys",
-    up: async (conn: Connection) => {
-      const [columns] = await conn.query(`
-        SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME = 'virtual_keys'
-          AND COLUMN_NAME = 'context_normalization_enabled'
-      `);
-      if ((columns as any[]).length === 0) {
-        await conn.query(
-          `ALTER TABLE virtual_keys
-           ADD COLUMN context_normalization_enabled TINYINT DEFAULT 0
-           COMMENT '模型切换上下文规范化开关（0 关闭，1 开启）'
-           AFTER prompt_capture_enabled`,
-        );
-        console.log(
-          "[迁移] 已添加 virtual_keys.context_normalization_enabled 字段",
-        );
-      }
-    },
-    down: async (conn: Connection) => {
-      await conn.query(
-        "ALTER TABLE virtual_keys DROP COLUMN IF EXISTS context_normalization_enabled",
-      );
-    },
-  },
-  {
-    version: 40,
-    name: "add_context_normalization_tables",
-    up: async (conn: Connection) => {
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS session_context_bindings (
-          virtual_key_scope VARCHAR(255) NOT NULL,
-          session_id VARCHAR(256) NOT NULL,
-          fingerprint CHAR(64) NOT NULL,
-          protocol VARCHAR(50) NOT NULL,
-          context_version INT NOT NULL DEFAULT 1,
-          created_at BIGINT NOT NULL,
-          last_seen_at BIGINT NOT NULL,
-          idle_expires_at BIGINT NOT NULL,
-          absolute_expires_at BIGINT NOT NULL,
-          PRIMARY KEY (virtual_key_scope, session_id),
-          INDEX idx_ctx_bindings_idle_expires (idle_expires_at),
-          INDEX idx_ctx_bindings_absolute_expires (absolute_expires_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS context_switch_events (
-          id VARCHAR(255) PRIMARY KEY,
-          virtual_key_id VARCHAR(255) DEFAULT NULL,
-          session_id VARCHAR(256) NOT NULL,
-          protocol VARCHAR(50) NOT NULL,
-          source_fingerprint CHAR(64) DEFAULT NULL,
-          target_fingerprint CHAR(64) NOT NULL,
-          source_context_version INT DEFAULT NULL,
-          target_context_version INT NOT NULL,
-          strategy VARCHAR(50) NOT NULL,
-          cleaned_blocks INT NOT NULL DEFAULT 0,
-          cleaned_chars INT NOT NULL DEFAULT 0,
-          reason VARCHAR(500) DEFAULT NULL,
-          created_at BIGINT NOT NULL,
-          INDEX idx_ctx_switch_events_vk_session (virtual_key_id, session_id, created_at),
-          INDEX idx_ctx_switch_events_created_at (created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-      console.log(
-        "[迁移] 已创建 session_context_bindings 与 context_switch_events 表",
-      );
-    },
-    down: async (conn: Connection) => {
-      await conn.query("DROP TABLE IF EXISTS context_switch_events");
-      await conn.query("DROP TABLE IF EXISTS session_context_bindings");
-    },
-  },
-  {
-    version: 41,
-    name: "add_intent_classify_logs",
-    up: async (conn: Connection) => {
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS intent_classify_logs (
-          id VARCHAR(255) PRIMARY KEY,
-          virtual_key_id VARCHAR(255) DEFAULT NULL,
-          classifier_model VARCHAR(255) NOT NULL,
-          top_label VARCHAR(255) DEFAULT NULL,
-          latency_ms INT NOT NULL,
-          seq_len INT NOT NULL DEFAULT 0,
-          input_truncated TINYINT(1) NOT NULL DEFAULT 0,
-          created_at BIGINT NOT NULL,
-          FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE SET NULL,
-          INDEX idx_intent_classify_logs_created_at (created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-      console.log("[迁移] 已创建 intent_classify_logs 表");
-    },
-    down: async (conn: Connection) => {
-      await conn.query("DROP TABLE IF EXISTS intent_classify_logs");
-    },
-  },
-  {
-    version: 42,
-    name: "add_effective_time_to_summaries",
-    up: async (conn: Connection) => {
-      const hasColumn = async (columnName: string) => {
-        const [rows] = await conn.query(
-          `SELECT COUNT(*) AS cnt
-           FROM INFORMATION_SCHEMA.COLUMNS
-           WHERE TABLE_SCHEMA = DATABASE()
-             AND TABLE_NAME = 'api_request_daily_summaries'
-             AND COLUMN_NAME = ?`,
-          [columnName],
-        );
-        const result = rows as any[];
-        return Number(result?.[0]?.cnt || 0) > 0;
-      };
-
-      // 平均响应时间改用 tffb_ms 优先、response_time 回退口径后，
-      // 汇总表需要同步保存请求级有效时间，否则 7 天前的汇总段无法回算。
-      if (!(await hasColumn("total_effective_time"))) {
-        await conn.query(`
-          ALTER TABLE api_request_daily_summaries
-          ADD COLUMN total_effective_time BIGINT NOT NULL DEFAULT 0
-          COMMENT '请求级有效响应时间总和：tffb_ms > 0 用 tffb_ms，否则回退 response_time(毫秒)'
-          AFTER response_time_count
-        `);
-        console.log(
-          "[迁移] 已添加 api_request_daily_summaries.total_effective_time 字段",
-        );
-      }
-
-      if (!(await hasColumn("effective_time_count"))) {
-        await conn.query(`
-          ALTER TABLE api_request_daily_summaries
-          ADD COLUMN effective_time_count INT NOT NULL DEFAULT 0
-          COMMENT '参与 total_effective_time 统计的请求数'
-          AFTER total_effective_time
-        `);
-        console.log(
-          "[迁移] 已添加 api_request_daily_summaries.effective_time_count 字段",
-        );
-      }
-    },
-    down: async (conn: Connection) => {
-      try {
-        await conn.query(
-          `ALTER TABLE api_request_daily_summaries DROP COLUMN IF EXISTS effective_time_count`,
-        );
-        await conn.query(
-          `ALTER TABLE api_request_daily_summaries DROP COLUMN IF EXISTS total_effective_time`,
-        );
-      } catch (e: any) {
-        console.warn("[迁移] 删除 effective_time 字段失败:", e.message);
-      }
-    },
-  },
-  {
-    version: 43,
-    name: "add_agent_search_tables",
-    up: async (conn: Connection) => {
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS repository_snapshots (
-          id VARCHAR(255) PRIMARY KEY,
-          user_id VARCHAR(255) NOT NULL,
-          virtual_key_id VARCHAR(255),
-          source_type VARCHAR(50) NOT NULL DEFAULT 'pi_local_worktree',
-          display_name VARCHAR(255),
-          git_remote TEXT,
-          head_commit VARCHAR(64),
-          manifest_encrypted MEDIUMTEXT NOT NULL,
-          dek_encrypted VARCHAR(512) NOT NULL,
-          file_count INT NOT NULL DEFAULT 0,
-          total_size BIGINT NOT NULL DEFAULT 0,
-          storage_prefix VARCHAR(512) NOT NULL,
-          status VARCHAR(32) NOT NULL DEFAULT 'uploading',
-          created_at BIGINT NOT NULL,
-          expires_at BIGINT NOT NULL,
-          deleted_at BIGINT,
-          INDEX idx_snapshots_user (user_id),
-          INDEX idx_snapshots_status (status),
-          INDEX idx_snapshots_expires (expires_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS agent_search_runs (
-          id VARCHAR(255) PRIMARY KEY,
-          user_id VARCHAR(255) NOT NULL,
-          virtual_key_id VARCHAR(255),
-          plugin_id VARCHAR(255) NOT NULL,
-          plugin_version VARCHAR(64) NOT NULL,
-          plugin_digest VARCHAR(128) NOT NULL,
-          source_type VARCHAR(32) NOT NULL,
-          snapshot_id VARCHAR(255),
-          public_git_url_encrypted TEXT,
-          requested_ref VARCHAR(255),
-          resolved_commit VARCHAR(64),
-          query_encrypted MEDIUMTEXT NOT NULL,
-          model_profile VARCHAR(128) NOT NULL,
-          status VARCHAR(32) NOT NULL DEFAULT 'queued',
-          result_encrypted MEDIUMTEXT,
-          error_code VARCHAR(128),
-          error_message TEXT,
-          service_token_hash VARCHAR(128),
-          created_at BIGINT NOT NULL,
-          started_at BIGINT,
-          completed_at BIGINT,
-          expires_at BIGINT NOT NULL,
-          cancellation_requested_at BIGINT,
-          INDEX idx_runs_user (user_id),
-          INDEX idx_runs_status (status),
-          INDEX idx_runs_expires (expires_at),
-          INDEX idx_runs_snapshot (snapshot_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS agent_search_run_events (
-          id BIGINT AUTO_INCREMENT PRIMARY KEY,
-          run_id VARCHAR(255) NOT NULL,
-          seq INT NOT NULL,
-          type VARCHAR(64) NOT NULL,
-          payload_json TEXT,
-          created_at BIGINT NOT NULL,
-          UNIQUE KEY uq_agent_search_run_events_seq (run_id, seq),
-          INDEX idx_agent_search_run_events_run (run_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS agent_search_usage (
-          run_id VARCHAR(255) PRIMARY KEY,
-          turn_count INT NOT NULL DEFAULT 0,
-          tool_call_count INT NOT NULL DEFAULT 0,
-          input_tokens BIGINT NOT NULL DEFAULT 0,
-          output_tokens BIGINT NOT NULL DEFAULT 0,
-          cost DECIMAL(12,6) NOT NULL DEFAULT 0,
-          model_route_metadata TEXT,
-          updated_at BIGINT NOT NULL,
-          INDEX idx_agent_search_usage_updated (updated_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-      console.log("[迁移] 已创建 agent search 相关表");
-    },
-    down: async (conn: Connection) => {
-      await conn.query("DROP TABLE IF EXISTS agent_search_usage");
-      await conn.query("DROP TABLE IF EXISTS agent_search_run_events");
-      await conn.query("DROP TABLE IF EXISTS agent_search_runs");
-      await conn.query("DROP TABLE IF EXISTS repository_snapshots");
-    },
-  },
-  {
-    version: 44,
-    name: "add_worker_plugin_center_tables",
-    up: async (conn: Connection) => {
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS worker_plugins (
-          id VARCHAR(255) NOT NULL,
-          version VARCHAR(64) NOT NULL,
-          digest VARCHAR(128) NOT NULL,
-          name VARCHAR(100) NOT NULL,
-          description VARCHAR(500),
-          manifest_json MEDIUMTEXT NOT NULL,
-          bundle_files_json MEDIUMTEXT NOT NULL,
-          changelog TEXT,
-          bundle_url VARCHAR(1024),
-          signature VARCHAR(512),
-          status VARCHAR(32) NOT NULL DEFAULT 'published',
-          published_at BIGINT,
-          deprecated_at BIGINT,
-          revoked_at BIGINT,
-          created_at BIGINT NOT NULL,
-          PRIMARY KEY (id, version),
-          INDEX idx_worker_plugins_id (id),
-          INDEX idx_worker_plugins_status (status)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS user_plugin_enrollments (
-          user_id VARCHAR(255) NOT NULL,
-          plugin_id VARCHAR(255) NOT NULL,
-          version VARCHAR(64) NOT NULL,
-          enabled TINYINT(1) NOT NULL DEFAULT 1,
-          is_default TINYINT(1) NOT NULL DEFAULT 0,
-          updated_at BIGINT NOT NULL,
-          PRIMARY KEY (user_id, plugin_id),
-          INDEX idx_plugin_enrollments_plugin (plugin_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-      console.log("[迁移] 已创建 worker plugin center 相关表");
-    },
-    down: async (conn: Connection) => {
-      await conn.query("DROP TABLE IF EXISTS user_plugin_enrollments");
-      await conn.query("DROP TABLE IF EXISTS worker_plugins");
-    },
-  },
-  {
-    version: 45,
-    name: "add_hourly_summaries_and_summary_perf_columns",
-    up: async (conn: Connection) => {
-      const hasColumn = async (tableName: string, columnName: string) => {
-        const [rows] = await conn.query(
-          `SELECT COUNT(*) AS cnt
-           FROM INFORMATION_SCHEMA.COLUMNS
-           WHERE TABLE_SCHEMA = DATABASE()
-             AND TABLE_NAME = ?
-             AND COLUMN_NAME = ?`,
-          [tableName, columnName],
-        );
-        const result = rows as any[];
-        return Number(result?.[0]?.cnt || 0) > 0;
-      };
-
-      // 小时级聚合：精确滚动窗口（24h/7d/30d）的查询优化，
-      // 窗口内部整小时读此表，边界不足一小时的部分由尚存明细精确计算。
-      // Token 口径与首页明细一致：prompt/completion/total 仅统计 cache_hit = 0 的请求。
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS api_request_hourly_summaries (
-          id BIGINT AUTO_INCREMENT PRIMARY KEY,
-          bucket_hour BIGINT NOT NULL COMMENT 'UTC 毫秒整小时桶起点',
-          virtual_key_id VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
-          provider_id VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
-          model VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
-          request_count INT NOT NULL DEFAULT 0,
-          success_count INT NOT NULL DEFAULT 0 COMMENT 'status = success 的计数',
-          error_count INT NOT NULL DEFAULT 0 COMMENT 'status != success 的计数',
-          prompt_tokens BIGINT NOT NULL DEFAULT 0 COMMENT '仅 cache_hit = 0 的请求',
-          completion_tokens BIGINT NOT NULL DEFAULT 0 COMMENT '仅 cache_hit = 0 的请求',
-          total_tokens BIGINT NOT NULL DEFAULT 0 COMMENT '仅 cache_hit = 0 的请求',
-          cached_tokens BIGINT NOT NULL DEFAULT 0 COMMENT '全部请求的 prompt cache tokens',
-          cache_hit_count INT NOT NULL DEFAULT 0 COMMENT 'cache_hit = 1 的计数',
-          prompt_cache_hit_count INT NOT NULL DEFAULT 0 COMMENT 'cached_tokens > 0 的计数',
-          total_tffb_ms BIGINT NOT NULL DEFAULT 0 COMMENT 'tffb_ms >= 0 的总和(毫秒)',
-          tffb_count INT NOT NULL DEFAULT 0 COMMENT 'tffb_ms >= 0 的请求数',
-          total_response_time BIGINT NOT NULL DEFAULT 0 COMMENT 'response_time > 0 的总和(毫秒)',
-          response_time_count INT NOT NULL DEFAULT 0 COMMENT 'response_time > 0 的请求数',
-          total_output_speed DOUBLE NOT NULL DEFAULT 0 COMMENT '逐请求有效输出速度总和(tokens/s)，与 performance-metrics 同口径',
-          speed_count INT NOT NULL DEFAULT 0 COMMENT '有效输出速度样本数',
-          last_used_at BIGINT NOT NULL DEFAULT 0 COMMENT '桶内 MAX(created_at)',
-          created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
-          updated_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
-          UNIQUE KEY uk_hourly_summary_dimensions (bucket_hour, virtual_key_id, provider_id, model),
-          INDEX idx_hourly_bucket (bucket_hour),
-          INDEX idx_hourly_vk (virtual_key_id, bucket_hour),
-          INDEX idx_hourly_provider (provider_id, bucket_hour),
-          INDEX idx_hourly_model (model, bucket_hour)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-      console.log("[迁移] 已创建 api_request_hourly_summaries 表");
-
-      // 日汇总扩展：纯 TFFB 口径、逐请求速度与最近使用时间，
-      // 保留原 total_effective_time 列供存量首页读取。
-      const dailyColumns: Array<[string, string, string]> = [
-        [
-          "total_tffb_ms",
-          "BIGINT NOT NULL DEFAULT 0",
-          "tffb_ms >= 0 的总和(毫秒)",
-        ],
-        ["tffb_count", "INT NOT NULL DEFAULT 0", "tffb_ms >= 0 的请求数"],
-        [
-          "total_output_speed",
-          "DOUBLE NOT NULL DEFAULT 0",
-          "逐请求有效输出速度总和(tokens/s)",
-        ],
-        ["speed_count", "INT NOT NULL DEFAULT 0", "有效输出速度样本数"],
-        ["last_used_at", "BIGINT NOT NULL DEFAULT 0", "当日 MAX(created_at)"],
-      ];
-      for (const [column, definition, comment] of dailyColumns) {
-        if (!(await hasColumn("api_request_daily_summaries", column))) {
-          await conn.query(
-            `ALTER TABLE api_request_daily_summaries
-             ADD COLUMN ${column} ${definition} COMMENT '${comment}'`,
-          );
-          console.log(
-            `[迁移] 已添加 api_request_daily_summaries.${column} 字段`,
-          );
-        }
-      }
-
-      // disable_logging 密钥的存量明细清洗：写入侧自此不再保存这三类敏感字段，
-      // 存量行按同一约定置空。条件天然幂等，可重复执行。
-      const [cleanResult] = await conn.query(`
-        UPDATE api_requests ar
-        INNER JOIN virtual_keys vk ON ar.virtual_key_id = vk.id
-        SET ar.ip = NULL,
-            ar.user_agent = NULL,
-            ar.error_message = NULL
-        WHERE vk.disable_logging = 1
-          AND (ar.ip IS NOT NULL OR ar.user_agent IS NOT NULL OR ar.error_message IS NOT NULL)
-      `);
-      const cleaned = (cleanResult as ResultSetHeader).affectedRows || 0;
-      console.log(
-        `[迁移] 已清洗 disable_logging 密钥存量敏感字段 ${cleaned} 行`,
-      );
-    },
-    down: async (conn: Connection) => {
-      await conn.query("DROP TABLE IF EXISTS api_request_hourly_summaries");
-      for (const column of [
-        "last_used_at",
-        "speed_count",
-        "total_output_speed",
-        "tffb_count",
-        "total_tffb_ms",
-      ]) {
-        try {
-          await conn.query(
-            `ALTER TABLE api_request_daily_summaries DROP COLUMN IF EXISTS ${column}`,
-          );
-        } catch (e: any) {
-          console.warn(`[迁移] 删除 ${column} 字段失败:`, e.message);
-        }
-      }
     },
   },
 ];
 
-async function hasProviderForeignKey(
-  conn: Connection,
-  tableName: string,
-  columnName: string,
-): Promise<boolean> {
-  const [rows] = await conn.query(
-    `SELECT COUNT(*) AS cnt
-     FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
-     WHERE TABLE_SCHEMA = DATABASE()
-       AND TABLE_NAME = ?
-       AND COLUMN_NAME = ?
-       AND REFERENCED_TABLE_NAME = 'providers'`,
-    [tableName, columnName],
-  );
-  const result = rows as any[];
-  return Number(result?.[0]?.cnt || 0) > 0;
-}
-
-async function getProviderForeignKeyName(
-  conn: Connection,
-  tableName: string,
-  columnName: string,
-): Promise<string | null> {
-  const [rows] = await conn.query(
-    `SELECT CONSTRAINT_NAME
-     FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
-     WHERE TABLE_SCHEMA = DATABASE()
-       AND TABLE_NAME = ?
-       AND COLUMN_NAME = ?
-       AND REFERENCED_TABLE_NAME = 'providers'
-     LIMIT 1`,
-    [tableName, columnName],
-  );
-  const result = rows as any[];
-  return result?.[0]?.CONSTRAINT_NAME || null;
-}
-
 export async function getCurrentVersion(conn: Connection): Promise<number> {
-  try {
-    await conn.query(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        version INT PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        applied_at BIGINT NOT NULL
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    `);
-
-    const [rows] = await conn.query(
-      "SELECT MAX(version) as version FROM schema_migrations",
-    );
-    const result = rows as any[];
-    if (result.length > 0 && result[0].version !== null) {
-      console.log(`已应用的迁移版本: v${result[0].version}`);
-      return result[0].version;
-    }
-
-    console.log("未发现已应用的迁移,数据库版本为 v0");
-    return 0;
-  } catch (e: any) {
-    console.error("获取数据库版本失败:", e.message);
-    console.error("错误详情:", e);
-    return 0;
+  const [tables] = await conn.query(
+    "SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE()",
+  );
+  const names = new Set((tables as Array<{ name: string }>).map((row) => row.name));
+  if (!names.has("schema_baseline") && names.size > 0) {
+    throw new Error("Legacy database detected. Run the explicit v2 upgrade export/rebuild before starting the gateway.");
   }
+
+  await conn.query(`
+    CREATE TABLE IF NOT EXISTS schema_baseline (
+      id TINYINT PRIMARY KEY,
+      generation INT NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  const [baseline] = await conn.query("SELECT generation FROM schema_baseline WHERE id = 1");
+  const rows = baseline as Array<{ generation: number }>;
+  if (rows.length === 0) {
+    if (names.size > 0) {
+      throw new Error("Missing database baseline. Restore or rebuild the database before starting the gateway.");
+    }
+    await conn.query("INSERT INTO schema_baseline (id, generation) VALUES (1, 2)");
+  } else if (Number(rows[0].generation) !== 2) {
+    throw new Error("Unsupported database baseline; expected v2.");
+  }
+
+  await conn.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version INT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      applied_at BIGINT NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  const [versions] = await conn.query("SELECT MAX(version) as version FROM schema_migrations");
+  return Number((versions as Array<{ version: number | null }>)[0]?.version ?? 0);
 }
 
 export async function applyMigrations(conn: Connection): Promise<void> {
-  try {
-    const currentVersion = await getCurrentVersion(conn);
-    console.log(`当前数据库版本: v${currentVersion}`);
-
-    const pendingMigrations = migrations.filter(
-      (m) => m.version > currentVersion,
-    );
-
-    if (pendingMigrations.length === 0) {
-      console.log("数据库已是最新版本（由 schema.ts 定义初始结构）");
-      return;
+  const currentVersion = await getCurrentVersion(conn);
+  for (const migration of migrations.filter((entry) => entry.version > currentVersion)) {
+    await conn.beginTransaction();
+    try {
+      await migration.up(conn);
+      await conn.query(
+        "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+        [migration.version, migration.name, Date.now()],
+      );
+      await conn.commit();
+    } catch (error) {
+      await conn.rollback();
+      throw error;
     }
-
-    console.log(`发现 ${pendingMigrations.length} 个待应用的迁移`);
-
-    for (const migration of pendingMigrations) {
-      await conn.beginTransaction();
-      try {
-        console.log(`应用迁移 v${migration.version}: ${migration.name}`);
-        await migration.up(conn);
-
-        await conn.query(
-          "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
-          [migration.version, migration.name, Date.now()],
-        );
-
-        await conn.commit();
-        console.log(`迁移 v${migration.version} 应用成功`);
-      } catch (e: any) {
-        await conn.rollback();
-        console.error(`迁移 v${migration.version} 应用失败:`, e.message);
-        console.error("错误详情:", e);
-        throw e;
-      }
-    }
-
-    console.log("所有迁移应用完成");
-  } catch (e: any) {
-    console.error("迁移系统执行失败:", e.message);
-    throw e;
   }
 }
 
-export async function rollbackMigration(
-  conn: Connection,
-  targetVersion: number,
-): Promise<void> {
+export async function rollbackMigration(conn: Connection, targetVersion: number): Promise<void> {
   const currentVersion = await getCurrentVersion(conn);
-
-  if (targetVersion >= currentVersion) {
-    console.log("目标版本不低于当前版本，无需回滚");
-    return;
+  if (!Number.isInteger(targetVersion) || targetVersion < 0) {
+    throw new Error("Invalid migration target version");
   }
-
-  const migrationsToRollback = migrations
-    .filter((m) => m.version > targetVersion && m.version <= currentVersion)
+  const pending = migrations
+    .filter((entry) => entry.version > targetVersion && entry.version <= currentVersion)
     .sort((a, b) => b.version - a.version);
-
-  for (const migration of migrationsToRollback) {
-    if (!migration.down) {
-      console.warn(`迁移 v${migration.version} 没有回滚脚本，跳过`);
-      continue;
-    }
-
-    try {
-      console.log(`回滚迁移 v${migration.version}: ${migration.name}`);
-      await migration.down(conn);
-
-      await conn.query("DELETE FROM schema_migrations WHERE version = ?", [
-        migration.version,
-      ]);
-
-      console.log(`迁移 v${migration.version} 回滚成功`);
-    } catch (e) {
-      console.error(`迁移 v${migration.version} 回滚失败:`, e);
-      throw e;
-    }
+  if (pending.some((entry) => !entry.down)) {
+    throw new Error("Cannot roll back an irreversible migration");
   }
-
-  console.log("回滚完成");
+  for (const migration of pending) {
+    await migration.down!(conn);
+    await conn.query("DELETE FROM schema_migrations WHERE version = ?", [migration.version]);
+  }
 }

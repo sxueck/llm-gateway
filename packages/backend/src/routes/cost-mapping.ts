@@ -45,7 +45,10 @@ export async function costMappingRoutes(fastify: FastifyInstance) {
              model: modelIdentifier,
              provider: providerName,
              ...costInfo.info,
-             source: costInfo.source
+             source: costInfo.source,
+             // 牌价到底取自哪个预设键 / 哪家实验室：归一命中时与原模型名不同
+             pricing_model: costInfo.model,
+             pricing_provider: costInfo.provider,
            });
         } else {
            results.push({
@@ -132,7 +135,11 @@ export async function costMappingRoutes(fastify: FastifyInstance) {
 
       const result = await costMappingService.resolveModelCost(model);
       if (result) {
-        return result;
+        return {
+          ...result,
+          pricing_model: result.model,
+          pricing_provider: result.provider,
+        };
       }
 
       return reply.code(404).send({ error: 'No cost information found for this model' });

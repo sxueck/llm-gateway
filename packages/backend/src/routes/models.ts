@@ -1,13 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { nanoid } from "nanoid";
-import { modelDb, providerDb, routingConfigDb, virtualKeyDb } from "../db/index.js";
+import { apiRequestDb, modelDb, providerDb, routingConfigDb, virtualKeyDb } from "../db/index.js";
 import { hotConfigCache } from "../services/hot-config-cache.js";
 import { decryptApiKey } from "../utils/crypto.js";
 import { probeService } from "../services/probe-service.js";
 import {
-  parseSupportedProtocols,
-  resolveProbeProtocol,
+  getProviderSupportedProtocols,
 } from "../utils/protocol-utils.js";
 
 declare module "fastify" {
@@ -15,8 +14,6 @@ declare module "fastify" {
     authenticate: (request: any, reply: any) => Promise<void>;
   }
 }
-
-const protocolEnum = z.enum(["openai", "anthropic", "google"]);
 
 const baseModelAttributesSchema = z.object({
   input_cost_per_token: z.number().optional(),
@@ -58,19 +55,6 @@ export const modelAttributesSchema = baseModelAttributesSchema
   })
   .optional();
 
-function validateHealthCheckMembership(
-  supported: string[] | undefined,
-  healthCheck: string | undefined,
-) {
-  if (
-    healthCheck !== undefined &&
-    supported !== undefined &&
-    !supported.includes(healthCheck)
-  ) {
-    throw new Error("healthCheckProtocol 必须是 supportedProtocols 的成员");
-  }
-}
-
 function parseModelAttributesSafe(value: string | null | undefined): any {
   if (!value) return null;
   try {
@@ -80,34 +64,33 @@ function parseModelAttributesSafe(value: string | null | undefined): any {
   }
 }
 
-const createModelSchema = z
-  .object({
-    name: z.string(),
-    providerId: z.string().optional(),
-    modelIdentifier: z.string(),
-    supportedProtocols: z.array(protocolEnum).min(1).optional(),
-    healthCheckProtocol: protocolEnum.optional(),
-    isVirtual: z.boolean().optional(),
-    routingConfigId: z.string().optional(),
-    enabled: z.boolean().optional(),
-    modelAttributes: modelAttributesSchema,
-  })
-  .transform((data) => {
-    const supported = data.supportedProtocols ?? ["openai"];
-    const healthCheck = data.healthCheckProtocol ?? supported[0];
-    validateHealthCheckMembership(supported, healthCheck);
-    return {
-      ...data,
-      supportedProtocols: supported,
-      healthCheckProtocol: healthCheck,
-    };
-  });
+/**
+ * 手动测试的探测协议：未指定时取供应商提供的首个协议；显式指定时必须是供应商能力成员，非法返回 null。
+ */
+export function resolveTestProbeProtocol(
+  provider: { base_url?: string | null; protocol_mappings?: string | null } | null,
+  requested?: string,
+): string | null {
+  const supported = getProviderSupportedProtocols(provider);
+  if (requested === undefined) {
+    return supported[0] ?? null;
+  }
+  return supported.includes(requested) ? requested : null;
+}
+
+const createModelSchema = z.object({
+  name: z.string(),
+  providerId: z.string().optional(),
+  modelIdentifier: z.string(),
+  isVirtual: z.boolean().optional(),
+  routingConfigId: z.string().optional(),
+  enabled: z.boolean().optional(),
+  modelAttributes: modelAttributesSchema,
+});
 
 const updateModelSchema = z.object({
   name: z.string().optional(),
   modelIdentifier: z.string().optional(),
-  supportedProtocols: z.array(protocolEnum).min(1).optional(),
-  healthCheckProtocol: protocolEnum.optional(),
   enabled: z.boolean().optional(),
   modelAttributes: modelAttributesSchema,
 });
@@ -128,13 +111,58 @@ export async function modelRoutes(fastify: FastifyInstance) {
     }));
     const virtualKeyCounts = await virtualKeyDb.countByModels(modelRefInfos);
 
+    // 被动可用性：近 24h api_requests 聚合，无流量则不出现在 map 中（前端显示"暂无调用"）
+    const availabilityData = await apiRequestDb.getModelAvailability();
+    const availabilityBuckets = new Map<
+      string,
+      { start: number; total: number; success: number }[]
+    >();
+    for (const row of availabilityData.buckets) {
+      const key = `${row.provider_id}|${row.model}`;
+      const list = availabilityBuckets.get(key) ?? [];
+      list.push({
+        start: Number(row.bucket_start),
+        total: Number(row.total),
+        success: Number(row.success),
+      });
+      availabilityBuckets.set(key, list);
+    }
+    const availabilityByKey = new Map<
+      string,
+      {
+        windowHours: number;
+        total: number;
+        success: number;
+        lastUsedAt: number;
+        buckets: { start: number; total: number; success: number }[];
+      }
+    >();
+    for (const row of availabilityData.totals) {
+      const key = `${row.provider_id}|${row.model}`;
+      availabilityByKey.set(key, {
+        windowHours: 24,
+        total: Number(row.total),
+        success: Number(row.success),
+        lastUsedAt: Number(row.last_used_at),
+        buckets: availabilityBuckets.get(key) ?? [],
+      });
+    }
+
     const modelPromises = models.map(async (m) => {
       const provider = m.provider_id ? providerMap.get(m.provider_id) : null;
       const virtualKeyCount = virtualKeyCounts.get(m.id) || 0;
 
       const modelAttributes = parseModelAttributesSafe(m.model_attributes);
 
-      const supportedProtocols = parseSupportedProtocols(m.supported_protocols);
+      // 协议能力由供应商派生；虚拟模型不直接对外提供协议
+      const supportedProtocols =
+        m.is_virtual === 1 ? [] : getProviderSupportedProtocols(provider);
+
+      const availability =
+        m.is_virtual === 1
+          ? null
+          : (availabilityByKey.get(`${m.provider_id}|${m.model_identifier}`) ??
+            null);
 
       return {
         id: m.id,
@@ -144,13 +172,13 @@ export async function modelRoutes(fastify: FastifyInstance) {
           m.is_virtual === 1 ? "虚拟模型" : provider?.name || "未知提供商",
         modelIdentifier: m.model_identifier,
         supportedProtocols,
-        healthCheckProtocol: m.health_check_protocol,
         isVirtual: m.is_virtual === 1,
         routingConfigId: m.routing_config_id,
         expertRoutingId: m.expert_routing_id,
         enabled: m.enabled === 1,
         modelAttributes,
         virtualKeyCount,
+        availability,
         createdAt: m.created_at,
         updatedAt: m.updated_at,
       };
@@ -185,9 +213,8 @@ export async function modelRoutes(fastify: FastifyInstance) {
 
     const modelAttributes = parseModelAttributesSafe(model.model_attributes);
 
-    const supportedProtocols = parseSupportedProtocols(
-      model.supported_protocols,
-    );
+    const supportedProtocols =
+      model.is_virtual === 1 ? [] : getProviderSupportedProtocols(provider);
 
     return {
       id: model.id,
@@ -197,7 +224,6 @@ export async function modelRoutes(fastify: FastifyInstance) {
         model.is_virtual === 1 ? "虚拟模型" : provider?.name || "未知提供商",
       modelIdentifier: model.model_identifier,
       supportedProtocols,
-      healthCheckProtocol: model.health_check_protocol,
       enabled: model.enabled === 1,
       modelAttributes,
       virtualKeyCount,
@@ -209,8 +235,10 @@ export async function modelRoutes(fastify: FastifyInstance) {
   fastify.post("/", async (request, reply) => {
     const body = createModelSchema.parse(request.body);
 
+    let provider: Awaited<ReturnType<typeof providerDb.getById>> | null =
+      null;
     if (body.providerId) {
-      const provider = await providerDb.getById(body.providerId);
+      provider = await providerDb.getById(body.providerId);
       if (!provider) {
         return reply.code(400).send({ error: "提供商不存在" });
       }
@@ -230,8 +258,6 @@ export async function modelRoutes(fastify: FastifyInstance) {
       name: body.name,
       provider_id: body.providerId || null,
       model_identifier: body.modelIdentifier,
-      supported_protocols: JSON.stringify(body.supportedProtocols),
-      health_check_protocol: body.healthCheckProtocol ?? null,
       is_virtual: body.isVirtual ? 1 : 0,
       routing_config_id: body.routingConfigId || null,
       enabled: body.enabled === false ? 0 : 1,
@@ -244,9 +270,8 @@ export async function modelRoutes(fastify: FastifyInstance) {
 
     const modelAttributes = parseModelAttributesSafe(model.model_attributes);
 
-    const supportedProtocols = parseSupportedProtocols(
-      model.supported_protocols,
-    );
+    const supportedProtocols =
+      model.is_virtual === 1 ? [] : getProviderSupportedProtocols(provider);
 
     return {
       id: model.id,
@@ -254,7 +279,6 @@ export async function modelRoutes(fastify: FastifyInstance) {
       providerId: model.provider_id,
       modelIdentifier: model.model_identifier,
       supportedProtocols,
-      healthCheckProtocol: model.health_check_protocol,
       isVirtual: model.is_virtual === 1,
       routingConfigId: model.routing_config_id,
       enabled: model.enabled === 1,
@@ -273,37 +297,10 @@ export async function modelRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: "模型不存在" });
     }
 
-    const resolvedSupported =
-      body.supportedProtocols ??
-      parseSupportedProtocols(model.supported_protocols);
-    if (body.healthCheckProtocol !== undefined) {
-      validateHealthCheckMembership(
-        resolvedSupported,
-        body.healthCheckProtocol,
-      );
-    }
-
     const updates: any = {};
     if (body.name !== undefined) updates.name = body.name;
     if (body.modelIdentifier !== undefined)
       updates.model_identifier = body.modelIdentifier;
-    if (body.supportedProtocols !== undefined) {
-      updates.supported_protocols = JSON.stringify(body.supportedProtocols);
-      // 如果 health_check_protocol 不再属于新的 supportedProtocols，重置为第一个
-      const currentHealthCheck =
-        body.healthCheckProtocol === undefined
-          ? model.health_check_protocol
-          : body.healthCheckProtocol;
-      if (
-        currentHealthCheck &&
-        !(body.supportedProtocols as string[]).includes(currentHealthCheck)
-      ) {
-        updates.health_check_protocol = body.supportedProtocols[0];
-      }
-    }
-    if (body.healthCheckProtocol !== undefined) {
-      updates.health_check_protocol = body.healthCheckProtocol ?? null;
-    }
     if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
     if (body.modelAttributes !== undefined) {
       updates.model_attributes =
@@ -322,9 +319,13 @@ export async function modelRoutes(fastify: FastifyInstance) {
 
     const modelAttributes = parseModelAttributesSafe(updated.model_attributes);
 
-    const supportedProtocols = parseSupportedProtocols(
-      updated.supported_protocols,
-    );
+    const updatedProvider = updated.provider_id
+      ? await providerDb.getById(updated.provider_id)
+      : null;
+    const supportedProtocols =
+      updated.is_virtual === 1
+        ? []
+        : getProviderSupportedProtocols(updatedProvider);
 
     return {
       id: updated.id,
@@ -332,7 +333,6 @@ export async function modelRoutes(fastify: FastifyInstance) {
       providerId: updated.provider_id,
       modelIdentifier: updated.model_identifier,
       supportedProtocols,
-      healthCheckProtocol: updated.health_check_protocol,
       enabled: updated.enabled === 1,
       modelAttributes,
       createdAt: updated.created_at,
@@ -390,7 +390,9 @@ export async function modelRoutes(fastify: FastifyInstance) {
 
   fastify.post("/:id/test", async (request, reply) => {
     const { id } = request.params as { id: string };
-
+    const { protocol: requestedProtocol } = (request.body ?? {}) as {
+      protocol?: string;
+    };
     const model = await modelDb.getById(id);
     if (!model) {
       return reply.code(404).send({ error: "模型不存在" });
@@ -405,7 +407,12 @@ export async function modelRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: "关联的提供商不存在" });
     }
 
-    const probeProtocol = resolveProbeProtocol(model);
+    const probeProtocol = resolveTestProbeProtocol(provider, requestedProtocol);
+    if (probeProtocol === null) {
+      return reply
+        .code(400)
+        .send({ error: "探测协议必须是供应商提供协议的成员" });
+    }
 
     const apiKey = decryptApiKey(provider.api_key);
     const result = await probeService.probeModelViaProvider({

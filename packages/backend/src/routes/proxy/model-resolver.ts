@@ -1,5 +1,5 @@
 import { FastifyRequest } from 'fastify';
-import { modelDb, systemConfigDb } from '../../db/index.js';
+import { modelDb } from '../../db/index.js';
 import { hotConfigCache } from '../../services/hot-config-cache.js';
 import {
   AGENT_LOOPBACK_HEADER,
@@ -11,6 +11,7 @@ import { isChatCompletionsPath, isResponsesApiPath, isResponsesCompactPath } fro
 import { maskKey } from '../../utils/crypto.js';
 import { resolveProviderFromModel } from './routing.js';
 import { parseModelAttributes } from './model-handlers.js';
+import type { ExpertRouteInfo } from '../../services/expert-router/exposure.js';
 
 export interface ModelResolutionResult {
   provider: any;
@@ -21,6 +22,7 @@ export interface ModelResolutionResult {
   canRetry?: boolean; // 是否支持重试（仅智能路由模式）
   modelId?: string; // 用于重试时重新解析
   forcedReasoningEffort?: string; // 由模型名后缀解析得到的强制 reasoning_effort
+  routeInfo?: ExpertRouteInfo; // 难度分级路由透出信息（PRD §4）
 }
 
 /**
@@ -109,168 +111,6 @@ export async function resolveModelAndProvider(
   let currentModel;
   let providerId: string | undefined;
 
-  // 监控专用密钥：健康检查请求只在监控虚拟密钥绑定的模型中解析目标模型
-  try {
-    const isHealthCheck = String((request.headers['x-health-check'] as any) || '').toLowerCase() === 'true';
-    if (isHealthCheck) {
-      const monitoringKeyIdCfg = await systemConfigDb.get('monitoring_virtual_key_id');
-      if (monitoringKeyIdCfg && monitoringKeyIdCfg.value === virtualKey.id) {
-        const requestedModel = (request.body as any)?.model;
-        if (!requestedModel) {
-          return {
-            code: 400,
-            body: {
-              error: {
-                message: 'Missing model for health check',
-                type: 'invalid_request_error',
-                param: null,
-                code: 'missing_model'
-              }
-            }
-          };
-        }
-
-        // 只在监控虚拟密钥绑定的模型中查找目标模型，避免被其他同名模型干扰
-        const candidateModelIds: string[] = [];
-        if (virtualKey.model_id) {
-          candidateModelIds.push(virtualKey.model_id);
-        }
-        if (virtualKey.model_ids) {
-          try {
-            const parsed = JSON.parse(virtualKey.model_ids);
-            if (Array.isArray(parsed)) {
-              for (const id of parsed) {
-                if (typeof id === 'string') {
-                  candidateModelIds.push(id);
-                }
-              }
-            }
-          } catch (e) {
-            memoryLogger.error(`Failed to parse monitoring virtual key model_ids: ${e}`, 'ModelResolver');
-          }
-        }
-
-        const uniqueCandidateIds = [...new Set(candidateModelIds)];
-        if (uniqueCandidateIds.length === 0) {
-          memoryLogger.error(
-            `Monitoring virtual key ${virtualKey.id} has no bound models for health check`,
-            'ModelResolver'
-          );
-          return {
-            code: 500,
-            body: {
-              error: {
-                message: 'Monitoring virtual key has no bound models',
-                type: 'internal_error',
-                param: null,
-                code: 'monitoring_key_no_models'
-              }
-            }
-          };
-        }
-
-        const candidateModels: Array<{ id: string; model: any }> = [];
-        for (const id of uniqueCandidateIds) {
-          try {
-            const m = await hotConfigCache.getModelById(id);
-            if (m && m.enabled) {
-              candidateModels.push({ id, model: m });
-            }
-          } catch (e) {
-            memoryLogger.warn(
-              `Failed to load model ${id} for monitoring virtual key ${virtualKey.id}: ${e}`,
-              'ModelResolver'
-            );
-          }
-        }
-
-        const matchedModels = candidateModels.filter(({ model }) =>
-          model?.model_identifier === requestedModel || model?.name === requestedModel
-        );
-
-        if (matchedModels.length === 0) {
-          memoryLogger.error(
-            `Health check model not found in monitoring virtual key models: ${requestedModel}`,
-            'ModelResolver'
-          );
-          return {
-            code: 404,
-            body: {
-              error: {
-                message: `Model not found for health check in monitoring virtual key: ${requestedModel}`,
-                type: 'invalid_request_error',
-                param: null,
-                code: 'model_not_found'
-              }
-            }
-          };
-        }
-
-        if (matchedModels.length > 1) {
-          const options = matchedModels.map(({ model }) => `${model.name} (${model.provider_id || 'no-provider'})`);
-          memoryLogger.error(
-            `Health check model name "${requestedModel}" is ambiguous within monitoring virtual key. ` +
-              `Matched: ${options.join(', ')}`,
-            'ModelResolver'
-          );
-          return {
-            code: 400,
-            body: {
-              error: {
-                message:
-                  `Ambiguous model name for health check: "${requestedModel}". ` +
-                  `Monitoring virtual key has multiple models with the same name: ${options.join(', ')}.`,
-                type: 'invalid_request_error',
-                param: null,
-                code: 'ambiguous_health_check_model'
-              }
-            }
-          };
-        }
-
-        const { model, id: selectedModelId } = matchedModels[0];
-
-        currentModel = model;
-        try {
-          const result = await resolveProviderFromModel(model, request as any, virtualKey.id);
-          provider = result.provider;
-          providerId = result.providerId;
-
-          if (result.resolvedModel) {
-            currentModel = result.resolvedModel;
-          }
-
-          const canRetry = !!(model.is_virtual && model.routing_config_id && result.canRetry);
-
-          return {
-            provider,
-            providerId: providerId!,
-            circuitBreakerKey: result.circuitBreakerKey || providerId!,
-            currentModel,
-            excludeTargetKeys: result.excludeTargetKeys,
-            canRetry,
-            modelId: selectedModelId
-          };
-        } catch (e: any) {
-          memoryLogger.error(`Health check provider resolution failed: ${e.message}`, 'ModelResolver');
-          return {
-            code: 500,
-            body: {
-              error: {
-                message: e.message || 'Health check resolution failed',
-                type: 'internal_error',
-                param: null,
-                code: 'health_check_resolution_failed'
-              }
-            }
-          };
-        }
-      }
-    }
-  } catch (_e) {
-    // 忽略健康检查快速路径中的异常，继续走常规分支
-  }
-
   // Agent loopback 旁路：worker 模型通道携带进程内共享密钥时，跳过虚拟密钥
   // 白名单、按 name 解析全局启用模型；鉴权与计量仍走发起密钥，agent 模型
   // 无需绑定到用户密钥或暴露在其 /v1/models 列表。
@@ -319,7 +159,8 @@ export async function resolveModelAndProvider(
         currentModel: result.resolvedModel || model,
         excludeTargetKeys: result.excludeTargetKeys,
         canRetry,
-        modelId: model.id
+        modelId: model.id,
+        routeInfo: result.routeInfo
       };
     } catch (e: any) {
       memoryLogger.error(`Agent loopback provider resolution failed: ${e.message}`, 'ModelResolver');
@@ -373,7 +214,8 @@ export async function resolveModelAndProvider(
         currentModel,
         excludeTargetKeys: result.excludeTargetKeys,
         canRetry,
-        modelId: virtualKey.model_id
+        modelId: virtualKey.model_id,
+        routeInfo: result.routeInfo
       };
     } catch (routingError: any) {
       memoryLogger.error(`Smart routing failed: ${routingError.message}`, 'Proxy');
@@ -382,7 +224,7 @@ export async function resolveModelAndProvider(
         body: {
           error: {
             message: routingError.message || 'Smart routing failed',
-            type: 'internal_error',
+            type: routingError.statusCode === 400 ? 'invalid_request_error' : 'internal_error',
             param: null,
             code: routingError.code || 'smart_routing_error'
           }
@@ -417,6 +259,29 @@ export async function resolveModelAndProvider(
         const matchedModels = await collectModelMatches(parsedModelIds, requestedModel);
 
         if (matchedModels.length === 0) {
+          // §5.6 manual tier suffix: `<model>-auto-high|medium|low` resolves to
+          // the base model and forces that routing tier (expert-routed models
+          // only — a plain match simply routes normally, the forced tier is
+          // ignored by non-tiered targets).
+          const tierSuffix = requestedModel.match(/-auto-(low|medium|high)$/);
+          if (tierSuffix) {
+            const base = requestedModel.slice(0, requestedModel.length - tierSuffix[0].length);
+            const tierMatched = await collectModelMatches(parsedModelIds, base);
+            if (tierMatched.length === 1) {
+              const matched = tierMatched[0];
+              targetModelId = matched.modelId;
+              selectedModel = matched.model;
+              (request.body as any).model = base;
+              (request as any).__forcedTier = tierSuffix[1];
+              memoryLogger.debug(
+                `模型档位后缀解析: ${requestedModel} -> ${base} + 强制 ${tierSuffix[1]} 档`,
+                'ModelResolver'
+              );
+            }
+          }
+        }
+
+        if (matchedModels.length === 0 && !selectedModel) {
           // FR-1: 仅当入口协议为 OpenAI 且请求目标为 Chat Completions / Responses（非 compact）时，
           // 才尝试模型名后缀解析
           const isOpenAiProtocol = (request as any).protocol === 'openai';
@@ -617,6 +482,7 @@ export async function resolveModelAndProvider(
           canRetry,
           modelId: targetModelId,
           forcedReasoningEffort,
+          routeInfo: result.routeInfo
         };
       } catch (routingError: any) {
         memoryLogger.error(`Smart routing failed: ${routingError.message}`, 'Proxy');
@@ -625,7 +491,7 @@ export async function resolveModelAndProvider(
           body: {
             error: {
               message: routingError.message || 'Smart routing failed',
-              type: 'internal_error',
+              type: routingError.statusCode === 400 ? 'invalid_request_error' : 'internal_error',
               param: null,
               code: routingError.code || 'smart_routing_error'
             }

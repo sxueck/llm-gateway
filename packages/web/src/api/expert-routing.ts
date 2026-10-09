@@ -1,46 +1,41 @@
 import request from "@/utils/request";
 
+/** v2: candidate in a difficulty-tiered routing config. */
 export interface ExpertTarget {
+  /** Stable key; session bindings reference it — never rename live candidates. */
   id: string;
-  category: string;
+  /** Mandatory tier; array order decides priority within the tier. */
+  band: Band;
   type: "virtual" | "real";
   model_id?: string;
   provider_id?: string;
   model?: string;
-  description?: string;
-  color?: string;
 }
 
-export interface ExpertTemplate {
-  label: string;
-  value: string;
-  description: string;
-  utterances: string[];
-}
+/** Difficulty tier used to bucket candidates. */
+export type Band = "low" | "medium" | "high";
 
-/** The external Intent Router API runs before this fallback classifier. */
-export interface LlmSecondPassConfig {
-  type: "virtual" | "real";
-  model_id?: string;
-  provider_id?: string;
-  model?: string;
-  max_tokens?: number;
-  temperature?: number;
-  timeout?: number;
-  ignore_system_messages?: boolean;
-  max_messages_to_classify?: number;
-  ignored_tags?: string[];
-  enable_structured_output?: boolean;
-  enable_adaptive_thinking?: boolean;
-}
+export type SessionPolicyMode = "per_turn" | "sticky" | "escalate_only";
 
-/** Deprecated alias kept for transition; prefer LlmSecondPassConfig. */
-export type ClassifierConfig = LlmSecondPassConfig;
-
-/** Session binding TTL policy (NFR-4). */
-export interface SessionBindingPolicy {
+/** v2 session policy (PRD §5.1). */
+export interface SessionPolicy {
+  mode: SessionPolicyMode;
   idle_ttl_seconds: number;
   absolute_ttl_seconds: number;
+}
+
+export interface ClassifierConfig {
+  timeout_ms?: number;
+  on_low_confidence?: "escalate" | "keep";
+  min_confidence?: number;
+}
+
+/** How routing facts are exposed to clients (PRD §4). */
+export interface ExposureConfig {
+  headers?: boolean;
+  provider_header?: boolean;
+  model_field?: "upstream" | "gateway_name";
+  sse_comment?: boolean;
 }
 
 export interface FallbackConfig {
@@ -51,21 +46,27 @@ export interface FallbackConfig {
 }
 
 export interface ExpertRoutingConfig {
+  version?: 2;
   preprocessing?: {
     strip_tools?: boolean;
     strip_files?: boolean;
     strip_code_blocks?: boolean;
     strip_system_prompt?: boolean;
   };
-  llm_second_pass: LlmSecondPassConfig;
+  /** Failure policy when classification errors out; defaults to fallback. */
+  fail_open?: FailOpenPolicy;
   experts: ExpertTarget[];
-  fallback?: FallbackConfig;
-  session_binding_policy: SessionBindingPolicy;
+  fallback?: FallbackConfig | null;
+  session_policy: SessionPolicy;
+  classifier?: ClassifierConfig;
+  exposure?: ExposureConfig;
 }
 
 export type PreprocessingConfig = NonNullable<
   ExpertRoutingConfig["preprocessing"]
 >;
+
+export type FailOpenPolicy = "fallback" | "parent" | "error";
 
 export interface ExpertRouting {
   id: string;
@@ -89,12 +90,13 @@ export interface CreateExpertRoutingRequest {
   name: string;
   description?: string;
   enabled?: boolean;
-  llm_second_pass: LlmSecondPassConfig;
-  // Editor always normalizes this; make it required to simplify v-model usage.
+  fail_open?: FailOpenPolicy;
   preprocessing: PreprocessingConfig;
   experts: ExpertTarget[];
-  fallback?: FallbackConfig;
-  session_binding_policy?: SessionBindingPolicy;
+  fallback?: FallbackConfig | null;
+  session_policy?: SessionPolicy;
+  classifier?: ClassifierConfig;
+  exposure?: ExposureConfig;
   createVirtualModel?: boolean;
   virtualModelName?: string;
   modelAttributes?: any;
@@ -102,25 +104,66 @@ export interface CreateExpertRoutingRequest {
 
 export interface UpdateExpertRoutingRequest {
   name?: string;
-  description?: string;
+  description?: string | null;
   enabled?: boolean;
-  llm_second_pass?: LlmSecondPassConfig;
+  fail_open?: FailOpenPolicy;
   preprocessing?: ExpertRoutingConfig["preprocessing"];
   experts?: ExpertTarget[];
-  fallback?: FallbackConfig;
-  session_binding_policy?: SessionBindingPolicy;
+  fallback?: FallbackConfig | null;
+  session_policy?: SessionPolicy;
+  classifier?: ClassifierConfig;
+  exposure?: ExposureConfig;
+  /** 自定义对外模型名：提供时创建/重命名暴露模型，空串/缺省不变更。 */
+  virtualModelName?: string;
+}
+
+/** One row of a band preview (shape of backend computeBandPreview entries). */
+export interface BandPreviewEntry {
+  id: string;
+  type: "virtual" | "real";
+  /** Explicit band, null when inferred from cost. */
+  explicitBand: Band | null;
+  /** Blended per-token price; Infinity when cost info is unknown. */
+  blendedPrice: number | null;
+  inputCostPerToken: number | null;
+  outputCostPerToken: number | null;
+}
+
+export interface BandPreviewResponse {
+  bands: Record<Band, BandPreviewEntry[]>;
+  /** expert id -> assigned band. */
+  assignment: Record<string, Band>;
 }
 
 export interface ExpertRoutingStatistics {
   totalRequests: number;
   avgClassificationTime: number;
-  categoryDistribution: Record<string, number>;
+  classifierLatency?: {
+    count: number;
+    p50: number | null;
+    p95: number | null;
+    avg: number | null;
+  };
   routeSourceDistribution?: Record<string, number>;
   cleaningStats?: {
     avgPromptTokens: number;
     avgCleanedLength: number;
     totalRequests: number;
   };
+  difficultyDistribution?: Record<string, number>;
+  bandDistribution?: Record<string, number>;
+  failOpenRate?: number | null;
+  /** §5.8: computed from actual api_requests tokens linked via route_log_id;
+   * null when no priced high-tier expert exists to baseline against. */
+  estimatedSavingVsHighBand?: {
+    actualCost: number;
+    baselineCost: number;
+    saving: number;
+    savingPct: number | null;
+    linkedRequests: number;
+    cacheHitTokens: number;
+  } | null;
+  limitations?: string[];
 }
 
 export interface ExpertRoutingLog {
@@ -138,7 +181,10 @@ export interface ExpertRoutingLog {
   route_source?: string;
   prompt_tokens?: number;
   cleaned_content_length?: number;
-  semantic_score?: number;
+  difficulty?: string | null;
+  band?: string | null;
+  verdict_reused?: number;
+  classifier_time_ms?: number | null;
 }
 
 export interface ExpertRoutingLogDetail {
@@ -159,24 +205,56 @@ export interface ExpertRoutingLogDetail {
   route_source?: string;
   prompt_tokens?: number;
   cleaned_content_length?: number;
-  semantic_score?: number;
+  difficulty?: string | null;
+  band?: string | null;
+  verdict_reused?: number;
+  classifier_time_ms?: number | null;
 }
 
-export type TrainingRecordStatus = "pending_review" | "accepted" | "rejected";
+/** §3.3 RoutingSimulator response. */
+export interface RoutingSimulation {
+  intentText: string;
+  stats?: {
+    promptTokens?: number;
+    cleanedLength?: number;
+    originalTokens?: number;
+    cleanedTokens?: number;
+  };
+  difficulty: "low" | "medium" | "high";
+  confidence: number;
+  ranked: Array<{ expertId: string; probability: number }>;
+  classifierModel: string;
+  classifierTimeMs: number;
+  band: Band;
+  candidates: Array<{ id: string; band: Band; type: "virtual" | "real" }>;
+  wouldHit: string | null;
+}
 
-export interface ExpertRoutingTrainingRecord {
+/** §5.9 feedback training record (replay set). */
+export interface TrainingRecord {
   id: string;
-  expert_routing_id: string;
+  input_hash: string;
   input_text: string;
   judge_intent_label: string;
   judge_confidence: number;
-  judge_reason?: string;
   final_intent_label: string;
-  final_expert_id?: string;
-  status: TrainingRecordStatus;
+  final_expert_id: string | null;
+  status: string;
   occurrence_count: number;
   created_at: number;
   updated_at: number;
+}
+
+/** §5.5 classifier runtime status. */
+export interface JevStatus {
+  configured: boolean;
+  model: string | null;
+  breaker: {
+    open: boolean;
+    openUntil: number | null;
+    consecutiveFailures: number;
+    lastError: string | null;
+  };
 }
 
 export const expertRoutingApi = {
@@ -213,74 +291,64 @@ export const expertRoutingApi = {
     return request.get(`/admin/expert-routing/${id}/logs`, { params });
   },
 
-  getLogsByCategory(
-    id: string,
-    category: string,
-    limit?: number,
-  ): Promise<{ logs: ExpertRoutingLog[] }> {
-    const params = limit ? { limit: limit.toString() } : {};
-    return request.get(
-      `/admin/expert-routing/${id}/logs/category/${encodeURIComponent(category)}`,
-      { params },
-    );
-  },
-
   getLogDetails(id: string, logId: string): Promise<ExpertRoutingLogDetail> {
     return request.get(`/admin/expert-routing/${id}/logs/${logId}/details`);
   },
 
-  associateModels(
+  /** §5.9 misclassification feedback (too_low / too_high → corrected tier). */
+  submitLogFeedback(
     id: string,
-    modelIds: string[],
-  ): Promise<{ success: boolean }> {
-    return request.post(`/admin/expert-routing/${id}/models`, { modelIds });
-  },
-
-  disassociateModel(
-    id: string,
-    modelId: string,
-  ): Promise<{ success: boolean }> {
-    return request.delete(`/admin/expert-routing/${id}/models/${modelId}`);
-  },
-
-  savePreviewWidth(width: number): Promise<{ success: boolean }> {
-    return request.post("/admin/expert-routing/preferences/preview-width", {
-      width,
-    });
-  },
-
-  getPreviewWidth(): Promise<{ width: number }> {
-    return request.get("/admin/expert-routing/preferences/preview-width");
-  },
-
-  getTemplates(): Promise<{ templates: ExpertTemplate[] }> {
-    return request.get("/admin/expert-routing/templates");
-  },
-
-  getTrainingRecords(
-    id: string,
-    status?: TrainingRecordStatus,
-  ): Promise<{ records: ExpertRoutingTrainingRecord[] }> {
-    return request.get(`/admin/expert-routing/${id}/training-records`, {
-      params: status ? { status } : {},
-    });
-  },
-
-  reviewTrainingRecord(
-    id: string,
-    recordId: string,
-    data: Pick<ExpertRoutingTrainingRecord, "status" | "final_intent_label">,
-  ): Promise<{ success: boolean }> {
-    return request.patch(
-      `/admin/expert-routing/${id}/training-records/${recordId}`,
-      data,
+    logId: string,
+    rating: 'too_low' | 'too_high',
+  ): Promise<{ success: boolean; corrected: string }> {
+    return request.post(
+      `/admin/expert-routing/${id}/logs/${logId}/feedback`,
+      { rating },
     );
   },
 
-  exportTrainingRecords(id: string): Promise<string> {
-    return request.get(`/admin/expert-routing/${id}/training-records/export`, {
-      headers: { Accept: "application/x-ndjson" },
-      responseType: "text",
+  /** §5.9 replay-set export. */
+  getTrainingRecords(
+    id: string,
+    params?: { status?: string; limit?: number },
+  ): Promise<{ records: TrainingRecord[] }> {
+    return request.get(`/admin/expert-routing/${id}/training/records`, { params });
+  },
+
+  getJevStatus(): Promise<JevStatus> {
+    return request.get("/admin/expert-routing/jev/status");
+  },
+
+  /** Simulate a prompt against an unsaved draft config (no side effects). */
+  simulate(
+    config: { experts: ExpertTarget[]; preprocessing?: PreprocessingConfig },
+    input: { prompt?: string; messages?: any[] },
+  ): Promise<RoutingSimulation> {
+    return request.post("/admin/expert-routing/simulate", {
+      ...input,
+      config,
     });
+  },
+
+  /** Simulate a prompt against a saved config (no side effects). */
+  simulateById(
+    id: string,
+    input: { prompt?: string; messages?: any[] },
+  ): Promise<RoutingSimulation> {
+    return request.post(`/admin/expert-routing/${encodeURIComponent(id)}/simulate`, input);
+  },
+
+  getBandPreview(id: string): Promise<BandPreviewResponse> {
+    return request.get(`/admin/expert-routing/${id}/bands/preview`);
+  },
+
+  previewBands(
+    id: string | null | undefined,
+    experts: Array<Omit<ExpertTarget, "band"> & { band?: Band }>,
+  ): Promise<BandPreviewResponse> {
+    const path = id
+      ? `/admin/expert-routing/${id}/bands/preview`
+      : "/admin/expert-routing/bands/preview";
+    return request.post(path, { experts });
   },
 };

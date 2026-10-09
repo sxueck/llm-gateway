@@ -62,7 +62,7 @@ export const modelApi = {
     return baseModelApi.delete(id);
   },
 
-  test(id: string): Promise<ModelTestResponse> {
-    return request.post(`${adminModelPath(id)}/test`);
+  test(id: string, protocol?: string): Promise<ModelTestResponse> {
+    return request.post(`${adminModelPath(id)}/test`, protocol ? { protocol } : {});
   },
 };

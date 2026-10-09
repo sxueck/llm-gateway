@@ -55,11 +55,7 @@
         </div>
         <div class="header-right">
           <LanguageSwitcher />
-          <n-button circle quaternary class="header-icon-btn">
-            <template #icon>
-              <n-icon size="20"><MailOutline /></n-icon>
-            </template>
-          </n-button>
+          <AlertCenter />
           <n-dropdown :options="userOptions" @select="handleUserAction">
             <div class="user-avatar">
               <n-avatar
@@ -107,7 +103,6 @@ import {
   DocumentTextOutline,
   TerminalOutline,
   CubeOutline,
-  MailOutline,
   GitNetworkOutline,
   LayersOutline,
   ConstructOutline,
@@ -124,6 +119,7 @@ import {
 } from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
+import AlertCenter from '@/components/AlertCenter.vue';
 import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize';
 
 const router = useRouter();
@@ -147,16 +143,18 @@ const mainMenuParentByKey: Record<string, string> = {
   'worker-monitoring': 'monitoring',
   'operations-monitoring': 'monitoring',
   'traffic-analysis': 'monitoring',
-  'api-guide': 'tools',
+  playground: 'tools',
   logs: 'tools',
   'api-requests': 'tools',
   'prompt-samples': 'tools',
+  'db-maintenance': 'settings',
 };
 const generalMenuParentByKey: Record<string, string> = {
   settings: 'settings',
   'security-settings': 'settings',
   backup: 'settings',
   'developer-settings': 'settings',
+  'db-maintenance': 'settings',
 };
 
 const toggleSidebar = () => {
@@ -282,9 +280,9 @@ const menuOptions = computed(() => [
     icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
     children: [
       {
-        label: t('menu.apiGuide'),
-        key: 'api-guide',
-        icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }),
+        label: t('menu.playground'),
+        key: 'playground',
+        icon: () => h(NIcon, null, { default: () => h(TerminalOutline) }),
       },
       {
         label: t('menu.logs'),
@@ -330,6 +328,11 @@ const generalMenuOptions = computed(() => [
         label: t('settings.developerDebug'),
         key: 'developer-settings',
         icon: () => h(NIcon, null, { default: () => h(FlaskOutline) }),
+      },
+      {
+        label: t('settings.dbMaintenance'),
+        key: 'db-maintenance',
+        icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
       },
     ],
   },
@@ -548,16 +551,6 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.header-icon-btn {
-  width: 40px;
-  height: 40px;
-  color: #595959;
-}
-
-.header-icon-btn:hover {
-  background-color: rgba(0, 0, 0, 0.04);
 }
 
 .user-avatar {

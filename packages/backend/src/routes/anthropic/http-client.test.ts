@@ -266,19 +266,123 @@ describe('makeAnthropicStreamRequest', () => {
   });
 
   test('forwards the provided abort signal to the upstream fetch', async () => {
-    fetchMock.mockResolvedValue(
-      sseResponse([
+    const controller = new AbortController();
+    let abortedUpstream = false;
+    fetchMock.mockImplementation((async (_url: string, init: any) => {
+      controller.abort();
+      abortedUpstream = init.signal.aborted;
+      return sseResponse([
         'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":1}}}\n\n',
         'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\n\n',
         'event: message_stop\ndata: {"type":"message_stop"}\n\n',
-      ])
-    );
+      ]);
+    }) as any);
     const reply = createReply();
-    const controller = new AbortController();
 
     const usage = await makeAnthropicStreamRequest(CONFIG, REQUEST_BODY, reply, undefined, null, controller.signal);
 
     expect(usage.promptTokens).toBe(1);
-    expect((fetchMock.mock.calls[0] as any[])[1].signal).toBe(controller.signal);
+    expect(abortedUpstream).toBe(true);
+  });
+
+  test('an upstream that stalls after the headers is cut off by the idle deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockImplementation((async (_url: string, init: any) => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'text/event-stream' },
+        body: {
+          getReader: () => ({
+            read: () =>
+              new Promise((_resolve, reject) => {
+                init.signal.addEventListener('abort', () => reject(new Error('aborted')));
+              }),
+          }),
+        },
+      })) as any);
+
+      const pending = makeAnthropicStreamRequest(CONFIG, REQUEST_BODY, createReply());
+      const assertion = expect(pending).rejects.toMatchObject({ statusCode: 504 });
+      await vi.advanceTimersByTimeAsync(300_001);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('joins a CRLF pair split across chunks and parses a final frame without blank line', async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse([
+        'event: message_start\r\ndata: {"type":"message_start","message":{"usage":{"input_tokens":2}}}\r\n\r',
+        '\nevent: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}',
+      ])
+    );
+    const reply = createReply();
+
+    const usage = await makeAnthropicStreamRequest(CONFIG, REQUEST_BODY, reply);
+
+    expect(usage.promptTokens).toBe(2);
+    const written = reply.raw.write.mock.calls.map((c: any[]) => c[0]).join('');
+    expect(written).toContain('event: message_start');
+    expect(written).toContain('"text":"ok"');
+    expect(written).toContain('event: message_stop');
+  });
+
+  test('stream that ends after content without message_stop fails instead of ending cleanly', async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse([
+        'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":2}}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}\n\n',
+      ])
+    );
+    const reply = createReply();
+
+    await expect(makeAnthropicStreamRequest(CONFIG, REQUEST_BODY, reply)).rejects.toMatchObject({
+      statusCode: 502,
+      errorResponse: { error: { message: expect.stringContaining('message_stop') } },
+    });
+    expect(reply.raw.end).not.toHaveBeenCalled();
+  });
+
+  test('an SSE frame without a boundary beyond the size limit aborts the stream', async () => {
+    const cancel = vi.fn();
+    const huge = 'data: ' + 'x'.repeat(5 * 1024 * 1024);
+    const response = sseResponse([huge]);
+    const getReader = response.body.getReader;
+    response.body.getReader = () => ({ ...getReader(), cancel });
+    fetchMock.mockResolvedValue(response);
+
+    await expect(makeAnthropicStreamRequest(CONFIG, REQUEST_BODY, createReply())).rejects.toMatchObject({
+      statusCode: 502,
+    });
+    expect(cancel).toHaveBeenCalled();
+  });
+
+  test('waits for drain when the client socket applies backpressure', async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse([
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"a"}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"b"}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ])
+    );
+    const reply = createReply();
+    const listeners = new Map<string, () => void>();
+    reply.raw.destroyed = false;
+    reply.raw.on = vi.fn((event: string, fn: () => void) => listeners.set(event, fn));
+    reply.raw.off = vi.fn();
+    reply.raw.write.mockReturnValueOnce(false).mockReturnValue(true);
+
+    const pending = makeAnthropicStreamRequest(CONFIG, REQUEST_BODY, reply);
+    await vi.waitFor(() => expect(listeners.has('drain')).toBe(true));
+    const writesBeforeDrain = reply.raw.write.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(reply.raw.write.mock.calls.length).toBe(writesBeforeDrain);
+
+    listeners.get('drain')!();
+    await pending;
+    expect(reply.raw.write.mock.calls.map((c: any[]) => c[0]).join('')).toContain('event: message_stop');
   });
 });

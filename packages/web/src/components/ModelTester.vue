@@ -8,17 +8,27 @@
             <n-text depth="3" style="margin-left: 8px">{{ model.modelIdentifier }}</n-text>
           </span>
         </n-space>
-        <n-button
-          type="primary"
-          :loading="testing"
-          @click="handleTest"
-          size="small"
-        >
-          <template #icon>
-            <n-icon><FlashOutline /></n-icon>
-          </template>
-          {{ testing ? t('common.testing') : t('common.startTest') }}
-        </n-button>
+        <n-space :size="8" align="center">
+          <n-select
+            v-if="protocolOptions.length > 1"
+            v-model:value="selectedProtocol"
+            :options="protocolOptions"
+            size="small"
+            class="protocol-picker"
+            @update:value="testResult = null"
+          />
+          <n-button
+            type="primary"
+            :loading="testing"
+            @click="handleTest"
+            size="small"
+          >
+            <template #icon>
+              <n-icon><FlashOutline /></n-icon>
+            </template>
+            {{ testing ? t('common.testing') : t('common.startTest') }}
+          </n-button>
+        </n-space>
       </n-space>
 
       <div v-if="testResult" class="test-result">
@@ -148,6 +158,7 @@ import { useI18n } from 'vue-i18n';
 import {
   NSpace,
   NButton,
+  NSelect,
   NCard,
   NIcon,
   NText,
@@ -161,6 +172,7 @@ import {
   FlashOutline,
 } from '@vicons/ionicons5';
 import { modelApi } from '@/api/model';
+import { PROTOCOL_OPTIONS } from '@/utils/protocol-utils';
 import type { Model } from '@/types';
 
 const { t } = useI18n();
@@ -193,6 +205,21 @@ const message = useMessage();
 const testing = ref(false);
 const testResult = ref<TestResult | null>(null);
 
+// 探测协议：多协议模型由用户选择，单协议模型不展示选择器
+const supportedProtocols = computed(() =>
+  props.model.supportedProtocols?.length
+    ? props.model.supportedProtocols
+    : ['openai'],
+);
+
+const protocolOptions = computed(() =>
+  PROTOCOL_OPTIONS.filter((option) =>
+    supportedProtocols.value.includes(option.value),
+  ),
+);
+
+const selectedProtocol = ref(supportedProtocols.value[0]);
+
 async function handleTest() {
   if (props.model.isVirtual) {
     message.warning(t('models.testWarning'));
@@ -201,7 +228,11 @@ async function handleTest() {
 
   testing.value = true;
   try {
-    const result = await modelApi.test(props.model.id);
+    // 只有用户可选时才显式传协议；否则走后端默认，避免将未知协议串递成 400
+    const result = await modelApi.test(
+      props.model.id,
+      protocolOptions.value.length > 1 ? selectedProtocol.value : undefined,
+    );
     const testData: TestResult = {
       chat: result.chat,
       responses: result.responses,
@@ -258,7 +289,7 @@ function getResponseTimeType(responseTime: number): 'default' | 'success' | 'war
   return 'error';
 }
 
-const effectiveProtocol = computed(() => props.model.healthCheckProtocol || props.model.supportedProtocols?.[0] || 'openai');
+const effectiveProtocol = computed(() => selectedProtocol.value);
 
 function isAnthropicProtocol(): boolean {
   return effectiveProtocol.value === 'anthropic';
@@ -310,6 +341,10 @@ function getTotalTokens(usage: any): number {
 .model-info {
   display: flex;
   align-items: center;
+}
+
+.protocol-picker {
+  width: 168px;
 }
 
 .test-result {

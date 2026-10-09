@@ -11,7 +11,8 @@
     "typecheck": "vue-tsc --noEmit",
     "lint": "vue-tsc --noEmit",
     "clean": "rm -rf dist",
-    "subset:font": "node scripts/subset-font.cjs"
+    "subset:font": "node scripts/subset-font.cjs",
+    "check:i18n": "node scripts/check-i18n-keys.cjs"
   },
   "dependencies": {
     "@llm-gateway/shared": "workspace:*",

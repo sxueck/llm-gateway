@@ -16,11 +16,25 @@ import { removeV1Suffix } from "../../utils/api-endpoint-builder.js";
 import { upstreamFetch } from "../../utils/upstream-fetch.js";
 import { normalizeAnthropicRequest } from "../../utils/anthropic-request-normalizer.js";
 import { BoundedChunkRecorder } from "../../utils/bounded-chunk-recorder.js";
+import { createUpstreamDeadline } from "../../utils/upstream-deadline.js";
+import { waitForDrain } from "../../utils/stream-guards.js";
 import { AnthropicStreamNormalizer } from "./stream-normalizer.js";
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 const ANTHROPIC_VERSION = "2023-06-01";
+const MAX_SSE_FRAME_CHARS = 4 * 1024 * 1024;
+const MAX_PENDING_CHARS = 1024 * 1024;
+
+function upstreamError(statusCode: number, message: string): Error {
+  const error = new Error(message);
+  (error as any).statusCode = statusCode;
+  (error as any).errorResponse = {
+    type: "error",
+    error: { type: "api_error", message },
+  };
+  return error;
+}
 
 export interface HttpResponse {
   statusCode: number;
@@ -186,6 +200,20 @@ function hasAnthropicContent(event: AnthropicStreamEvent): boolean {
   }
 }
 
+function parseSseBlock(block: string): AnthropicStreamEvent | null {
+  const data = block
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trimStart())
+    .join("\n");
+  if (!data) return null;
+  try {
+    return JSON.parse(data) as AnthropicStreamEvent;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Parse an SSE byte stream into Anthropic stream events. Handles CRLF framing
  * and ignores comment/keep-alive lines; malformed JSON frames are skipped
@@ -193,35 +221,42 @@ function hasAnthropicContent(event: AnthropicStreamEvent): boolean {
  */
 async function* parseSseEvents(
   response: Response,
+  onRead?: () => void,
 ): AsyncGenerator<AnthropicStreamEvent> {
   const reader = (response.body as any).getReader();
   const decoder = new TextDecoder();
   let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      onRead?.();
+      // Normalize after concatenation so a CR/LF pair split across chunks still joins.
+      buffer = (buffer + decoder.decode(value, { stream: true })).replace(
+        /\r\n/g,
+        "\n",
+      );
 
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary >= 0) {
-      const block = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      boundary = buffer.indexOf("\n\n");
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary >= 0) {
+        const event = parseSseBlock(buffer.slice(0, boundary));
+        buffer = buffer.slice(boundary + 2);
+        if (event) yield event;
+        boundary = buffer.indexOf("\n\n");
+      }
 
-      const data = block
-        .split("\n")
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trimStart())
-        .join("\n");
-      if (!data) continue;
-
-      try {
-        yield JSON.parse(data) as AnthropicStreamEvent;
-      } catch {
-        // Skip unparseable frame
+      if (buffer.length > MAX_SSE_FRAME_CHARS) {
+        throw upstreamError(502, "Anthropic upstream SSE frame too large");
       }
     }
+
+    const tail = parseSseBlock(
+      (buffer + decoder.decode()).replace(/\r\n/g, "\n"),
+    );
+    if (tail) yield tail;
+  } finally {
+    void Promise.resolve(reader.cancel?.()).catch(() => {});
   }
 }
 
@@ -285,6 +320,9 @@ export async function consumeAnthropicStreamAttempt(
   flushOnEmptyOutput: boolean,
   piiCtx?: PiiProtectionContext | null,
   upstreamRequestStartedAt?: number,
+  clientModel?: string,
+  sseComment?: string,
+  abortSignal?: AbortSignal,
 ): Promise<StreamAttemptResult> {
   let inputTokens = 0;
   let cacheCreationInputTokens = 0;
@@ -293,6 +331,9 @@ export async function consumeAnthropicStreamAttempt(
   let buffering = true;
   let tffbMs: number | undefined;
   const pendingChunks: string[] = [];
+  let pendingChars = 0;
+  let needsDrain = false;
+  let sawTerminalEvent = false;
   let hasAssistantContent = false;
   const streamChunks = new BoundedChunkRecorder();
 
@@ -301,25 +342,41 @@ export async function consumeAnthropicStreamAttempt(
 
   const streamNormalizer = new AnthropicStreamNormalizer();
 
+  const writeRaw = (chunk: string) => {
+    if (reply.raw.write(chunk) === false) needsDrain = true;
+  };
+
   const flushPendingChunks = () => {
     if (!buffering) return;
     buffering = false;
     ensureSseHeaders(reply);
+    // §4C: opt-in debug comment before the first buffered event.
+    if (sseComment) {
+      writeRaw(`: ${sseComment}\n\n`);
+    }
     for (const chunk of pendingChunks) {
-      reply.raw.write(chunk);
+      writeRaw(chunk);
       streamChunks.record(chunk);
     }
     pendingChunks.length = 0;
+    pendingChars = 0;
   };
 
   const writeChunk = (chunk: string) => {
     if (buffering) {
+      pendingChars += chunk.length;
+      if (pendingChars > MAX_PENDING_CHARS) {
+        throw upstreamError(
+          502,
+          "Anthropic upstream sent too much data before any output",
+        );
+      }
       pendingChunks.push(chunk);
       return;
     }
 
     ensureSseHeaders(reply);
-    reply.raw.write(chunk);
+    writeRaw(chunk);
     streamChunks.record(chunk);
   };
 
@@ -397,12 +454,25 @@ export async function consumeAnthropicStreamAttempt(
   };
 
   for await (const sourceEvent of events) {
+    if (needsDrain) {
+      await waitForDrain(reply.raw, abortSignal);
+      needsDrain = false;
+    }
+
     // Record TFFB on the first upstream stream event observed.
     if (tffbMs === undefined && upstreamRequestStartedAt !== undefined) {
       tffbMs = Date.now() - upstreamRequestStartedAt;
     }
 
+    if (sourceEvent.type === "message_stop" || sourceEvent.type === "error") {
+      sawTerminalEvent = true;
+    }
+
     if (sourceEvent.type === "message_start") {
+      // gateway_name exposure: report the gateway model name to the client.
+      if (clientModel && (sourceEvent.message as any)?.model) {
+        (sourceEvent.message as any).model = clientModel;
+      }
       if (sourceEvent.message?.usage) {
         inputTokens = sourceEvent.message.usage.input_tokens || 0;
         const anyUsage: any = sourceEvent.message.usage as any;
@@ -433,6 +503,14 @@ export async function consumeAnthropicStreamAttempt(
     flushPendingChunks();
   }
 
+  // Headers are already sent here, so the handler reports this as an in-stream error frame.
+  if (hasAssistantContent && !sawTerminalEvent) {
+    throw upstreamError(
+      502,
+      "Anthropic upstream stream ended before message_stop",
+    );
+  }
+
   if (hasAssistantContent && !reply.raw.writableEnded) {
     reply.raw.end();
   }
@@ -461,6 +539,7 @@ export async function makeAnthropicRequest(
     requestBody,
   );
   const requestParams = buildRequestParams(config, normalizedRequest);
+  const deadline = createUpstreamDeadline(abortSignal, DEFAULT_TIMEOUT_MS);
 
   try {
     const response = await upstreamFetch(buildMessagesUrl(config), {
@@ -473,7 +552,7 @@ export async function makeAnthropicRequest(
       ),
       body: JSON.stringify(requestParams),
       timeoutMs: DEFAULT_TIMEOUT_MS,
-      signal: abortSignal,
+      signal: deadline.signal,
     });
     const bodyText = await response.text();
 
@@ -498,7 +577,13 @@ export async function makeAnthropicRequest(
       body: bodyText,
     };
   } catch (error: any) {
-    const norm = normalizeAnthropicError(error);
+    const norm = deadline.timedOut
+      ? {
+          statusCode: 504,
+          errorType: "api_error",
+          message: "Anthropic upstream timed out",
+        }
+      : normalizeAnthropicError(error);
     return {
       statusCode: norm.statusCode,
       headers: { "content-type": "application/json" },
@@ -510,6 +595,8 @@ export async function makeAnthropicRequest(
         },
       }),
     };
+  } finally {
+    deadline.dispose();
   }
 }
 
@@ -537,6 +624,8 @@ export async function makeAnthropicStreamRequest(
   forwardedHeaders?: Record<string, string>,
   piiCtx?: PiiProtectionContext | null,
   abortSignal?: AbortSignal,
+  clientModel?: string,
+  sseComment?: string,
 ): Promise<StreamTokenUsage> {
   const normalizedRequest = normalizeAnthropicRequest(
     config.model,
@@ -554,6 +643,7 @@ export async function makeAnthropicStreamRequest(
   let lastEmptyError: EmptyOutputError | null = null;
 
   for (let attempt = 1; attempt <= totalAttempts; attempt++) {
+    const deadline = createUpstreamDeadline(abortSignal, DEFAULT_TIMEOUT_MS);
     try {
       // Anchor for this attempt's TFFB measurement (first upstream event).
       const upstreamRequestStartedAt = Date.now();
@@ -562,7 +652,7 @@ export async function makeAnthropicStreamRequest(
         headers,
         body: JSON.stringify(requestParams),
         timeoutMs: DEFAULT_TIMEOUT_MS,
-        signal: abortSignal,
+        signal: deadline.signal,
       });
 
       if (!response.ok) {
@@ -571,11 +661,14 @@ export async function makeAnthropicStreamRequest(
       }
 
       const attemptResult = await consumeAnthropicStreamAttempt(
-        parseSseEvents(response),
+        parseSseEvents(response, deadline.touch),
         reply,
         attempt === totalAttempts,
         piiCtx,
         upstreamRequestStartedAt,
+        clientModel,
+        sseComment,
+        deadline.signal,
       );
 
       if (!attemptResult.hasAssistantContent) {
@@ -615,6 +708,9 @@ export async function makeAnthropicStreamRequest(
         // still attempt a smart-routing retry when nothing was written.
         throw error;
       }
+      if (deadline.timedOut) {
+        throw upstreamError(504, "Anthropic upstream timed out");
+      }
       if ((error as any)?.errorResponse) {
         // Already enriched upstream error from the !response.ok branch above.
         throw error;
@@ -639,6 +735,8 @@ export async function makeAnthropicStreamRequest(
         },
       };
       throw enriched;
+    } finally {
+      deadline.dispose();
     }
   }
   throw new Error("Anthropic stream retries exhausted");

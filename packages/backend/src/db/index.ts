@@ -1,7 +1,6 @@
-// Import base modules
 import * as connectionModule from "./connection.js";
 import { createTables } from "./schema.js";
-import { applyMigrations } from "./migrations.js";
+import { applyMigrations, getCurrentVersion } from "./migrations.js";
 import {
   startBufferFlush,
   stopBufferFlush,
@@ -11,21 +10,15 @@ import {
 // Re-export types (type-only to avoid runtime import)
 export type {
   Model,
-  HealthTarget,
-  HealthRun,
   ApiRequestBuffer,
 } from "./types.js";
 
-// Re-export base connection utilities
-export { getDatabase, getPool } from "./connection.js";
+export { getDatabase, getPool, withTransaction } from "./connection.js";
 
-// Re-export schema creation
 export { createTables } from "./schema.js";
 
-// Re-export buffer utilities
 export { flushApiRequestBuffer as flushApiRequestBufferNow } from "./utils/buffer.js";
 
-// Import repositories
 import { userRepository } from "./repositories/user.repository.js";
 import { providerRepository } from "./repositories/provider.repository.js";
 import { modelRepository } from "./repositories/model.repository.js";
@@ -36,14 +29,9 @@ import { hourlySummaryRepository } from "./repositories/hourly-summary.repositor
 import { routingConfigRepository } from "./repositories/routing-config.repository.js";
 import { expertRoutingConfigRepository } from "./repositories/expert-routing-config.repository.js";
 import { expertRoutingLogRepository } from "./repositories/expert-routing-log.repository.js";
-import { intentClassifyLogRepository } from "./repositories/intent-classify-log.repository.js";
 import { expertRoutingSessionBindingRepository } from "./repositories/expert-routing-session-binding.repository.js";
-import { expertRoutingTrainingRecordRepository } from "./repositories/expert-routing-training-record.repository.js";
-import { healthTargetRepository } from "./repositories/health-target.repository.js";
-import { healthRunRepository } from "./repositories/health-run.repository.js";
 import { costMappingRepository } from "./repositories/cost-mapping.repository.js";
 import { circuitBreakerStatsRepository } from "./repositories/circuit-breaker-stats.repository.js";
-import { blockedIpRepository } from "./repositories/blocked-ip.repository.js";
 import { promptSampleRepository } from "./repositories/prompt-sample.repository.js";
 import { contextNormalizationRepository } from "./repositories/context-normalization.repository.js";
 import {
@@ -56,6 +44,8 @@ import {
   workerPluginRepository,
   userPluginEnrollmentRepository,
 } from "./repositories/worker-plugin.repository.js";
+import { alertReadRepository } from "./repositories/alert-read.repository.js";
+import { expertRoutingTrainingRecordRepository } from "./repositories/expert-routing-training-record.repository.js";
 
 // Export repositories with backward-compatible names
 export const userDb = userRepository;
@@ -68,16 +58,10 @@ export const apiRequestHourlyDb = hourlySummaryRepository;
 export const routingConfigDb = routingConfigRepository;
 export const expertRoutingConfigDb = expertRoutingConfigRepository;
 export const expertRoutingLogDb = expertRoutingLogRepository;
-export const intentClassifyLogDb = intentClassifyLogRepository;
 export const expertRoutingSessionBindingDb =
   expertRoutingSessionBindingRepository;
-export const expertRoutingTrainingRecordDb =
-  expertRoutingTrainingRecordRepository;
-export const healthTargetDb = healthTargetRepository;
-export const healthRunDb = healthRunRepository;
 export const costMappingDb = costMappingRepository;
 export const circuitBreakerStatsDb = circuitBreakerStatsRepository;
-export const blockedIpDb = blockedIpRepository;
 export const promptSampleDb = promptSampleRepository;
 export const contextNormalizationDb = contextNormalizationRepository;
 export const repositorySnapshotDb = repositorySnapshotRepository;
@@ -86,15 +70,17 @@ export const agentSearchRunEventDb = agentSearchRunEventRepository;
 export const agentSearchUsageDb = agentSearchUsageRepository;
 export const workerPluginDb = workerPluginRepository;
 export const userPluginEnrollmentDb = userPluginEnrollmentRepository;
+export const alertReadDb = alertReadRepository;
+export const expertRoutingTrainingRecordDb = expertRoutingTrainingRecordRepository;
 
-// Enhanced initDatabase that also creates tables and runs migrations
 export async function initDatabase() {
   const pool = await connectionModule.initDatabase();
 
   const connection = await pool.getConnection();
   try {
+    await getCurrentVersion(connection);
     console.log("[数据库] 开始创建表结构...");
-    await createTables();
+    await createTables(connection);
     console.log("[数据库] 表结构创建完成");
 
     console.log("[数据库] 开始应用数据库迁移...");
@@ -114,7 +100,6 @@ export async function initDatabase() {
   return pool;
 }
 
-// Enhanced shutdownDatabase
 export async function shutdownDatabase() {
   stopBufferFlush();
   await flushApiRequestBuffer();

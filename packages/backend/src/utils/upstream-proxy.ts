@@ -9,10 +9,6 @@ export interface ProxyConfig {
   noProxy: string[];
 }
 
-/**
- * Get proxy configuration from environment variables.
- * Priority: uppercase > lowercase
- */
 export function getProxyConfigFromEnv(): ProxyConfig {
   const httpProxyUrl = process.env.HTTP_PROXY || process.env.http_proxy || null;
   const httpsProxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || null;
@@ -48,19 +44,15 @@ export function isHostInNoProxy(hostname: string, noProxyPatterns: string[]): bo
   for (const pattern of noProxyPatterns) {
     const normalizedPattern = pattern.toLowerCase();
 
-    // Wildcard matches everything
     if (normalizedPattern === '*') {
       return true;
     }
 
-    // Exact match
     if (normalizedHost === normalizedPattern) {
       return true;
     }
 
-    // Domain suffix match: pattern starts with "."
     if (normalizedPattern.startsWith('.')) {
-      // e.g., pattern ".example.com" should match "api.example.com"
       if (normalizedHost.endsWith(normalizedPattern)) {
         return true;
       }
@@ -70,8 +62,6 @@ export function isHostInNoProxy(hostname: string, noProxyPatterns: string[]): bo
         return true;
       }
     } else {
-      // Pattern without leading dot should match exact hostname AND subdomains
-      // e.g., pattern "example.com" should match "example.com" and "api.example.com"
       if (normalizedHost === normalizedPattern) {
         return true;
       }
@@ -99,7 +89,6 @@ export function getProxyUrlForTarget(targetUrl: string, proxyConfig: ProxyConfig
   const hostname = url.hostname;
   const protocol = url.protocol;
 
-  // Check NO_PROXY first
   if (isHostInNoProxy(hostname, proxyConfig.noProxy)) {
     return null;
   }
@@ -117,9 +106,6 @@ export function getProxyUrlForTarget(targetUrl: string, proxyConfig: ProxyConfig
   return null;
 }
 
-/**
- * Check if proxy is configured in environment.
- */
 export function isProxyConfigured(): boolean {
   const config = getProxyConfigFromEnv();
   return !!(config.httpProxyUrl || config.httpsProxyUrl);
