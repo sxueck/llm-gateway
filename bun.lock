@@ -58,6 +58,16 @@
         "vitest": "^3.0.0",
       },
     },
+    "packages/e2e": {
+      "name": "@llm-gateway/e2e",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/node": "^22.10.2",
+        "mysql2": "^3.15.3",
+        "typescript": "^5.7.2",
+        "vitest": "^3.0.0",
+      },
+    },
     "packages/shared": {
       "name": "@llm-gateway/shared",
       "version": "0.2.4",
@@ -374,6 +384,8 @@
     "@llm-gateway/backend": ["@llm-gateway/backend@workspace:packages/backend"],
 
     "@llm-gateway/craft-worker": ["@llm-gateway/craft-worker@workspace:packages/worker"],
+
+    "@llm-gateway/e2e": ["@llm-gateway/e2e@workspace:packages/e2e"],
 
     "@llm-gateway/shared": ["@llm-gateway/shared@workspace:packages/shared"],
 

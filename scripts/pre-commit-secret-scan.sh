@@ -19,6 +19,9 @@ SKIP_GLOBS=(
   # The secret-scan self-test intentionally stages fake-key fixtures; skip the
   # test file itself so committing it doesn't trip the scanner.
   'scripts/test-secret-scan.sh'
+  # packages/e2e helpers intentionally declare fixture values the suite
+  # provisions itself (its own gateway); skip so committing them doesn't trip the scanner.
+  'packages/e2e/src/helpers/env.ts'
 )
 
 if ! staged=$(git diff --cached --name-only --diff-filter=ACM -- 2>/dev/null); then
