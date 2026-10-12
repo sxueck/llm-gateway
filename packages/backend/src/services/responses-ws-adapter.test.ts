@@ -122,13 +122,16 @@ describe('streamResponsesViaWebSocket', () => {
     ).rejects.toThrow('base URL');
   });
 
-  it('should terminate SSE on response.failed', async () => {
+  const terminalCases: Array<[string, Record<string, unknown>]> = [
+    ['response.failed', { id: 'r-fail', status: 'failed' }],
+    ['response.incomplete', { id: 'r-inc' }],
+    ['response.cancelled', { id: 'r-cancel' }],
+  ];
+  it('should terminate SSE on terminal events', async () => {
+    for (const [terminalType, response] of terminalCases) {
     server.once('connection', (socket: WebSocket) => {
       socket.on('message', () => {
-        socket.send(JSON.stringify({
-          type: 'response.failed',
-          response: { id: 'r-fail', status: 'failed' },
-        }));
+        socket.send(JSON.stringify({ type: terminalType, response }));
         socket.close();
       });
     });
@@ -141,60 +144,11 @@ describe('streamResponsesViaWebSocket', () => {
     );
 
     const chunks = reply.getChunks();
-    expect(chunks.some(c => c.includes('event: response.failed'))).toBe(true);
-    expect(chunks.some(c => c.includes('data: [DONE]'))).toBe(true);
-    expect(reply.raw.writableEnded).toBe(true);
-    expect(result.promptTokens).toBe(0);
-  });
-
-  it('should terminate SSE on response.incomplete', async () => {
-    server.once('connection', (socket: WebSocket) => {
-      socket.on('message', () => {
-        socket.send(JSON.stringify({
-          type: 'response.incomplete',
-          response: { id: 'r-inc' },
-        }));
-        socket.close();
-      });
-    });
-
-    const reply = createMockReply();
-    const result = await streamResponsesViaWebSocket(
-      { provider: 'test', apiKey: 'test-key', baseUrl: `http://localhost:${serverPort}`, model: 'gpt-test' },
-      { input: 'hi' },
-      reply
-    );
-
-    const chunks = reply.getChunks();
-    expect(chunks.some(c => c.includes('event: response.incomplete'))).toBe(true);
-    expect(chunks.some(c => c.includes('data: [DONE]'))).toBe(true);
-    expect(reply.raw.writableEnded).toBe(true);
-    expect(result.promptTokens).toBe(0);
-  });
-
-  it('should terminate SSE on response.cancelled', async () => {
-    server.once('connection', (socket: WebSocket) => {
-      socket.on('message', () => {
-        socket.send(JSON.stringify({
-          type: 'response.cancelled',
-          response: { id: 'r-cancel' },
-        }));
-        socket.close();
-      });
-    });
-
-    const reply = createMockReply();
-    const result = await streamResponsesViaWebSocket(
-      { provider: 'test', apiKey: 'test-key', baseUrl: `http://localhost:${serverPort}`, model: 'gpt-test' },
-      { input: 'hi' },
-      reply
-    );
-
-    const chunks = reply.getChunks();
-    expect(chunks.some(c => c.includes('event: response.cancelled'))).toBe(true);
-    expect(chunks.some(c => c.includes('data: [DONE]'))).toBe(true);
-    expect(reply.raw.writableEnded).toBe(true);
-    expect(result.promptTokens).toBe(0);
+      expect(chunks.some(c => c.includes(`event: ${terminalType}`))).toBe(true);
+      expect(chunks.some(c => c.includes('data: [DONE]'))).toBe(true);
+      expect(reply.raw.writableEnded).toBe(true);
+      expect(result.promptTokens).toBe(0);
+    }
   });
 
   it('should reject when upstream closes before a terminal event', async () => {

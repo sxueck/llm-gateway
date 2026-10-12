@@ -21,31 +21,34 @@ import { streamUpstreamWebSocket } from './upstream-ws-adapter.js';
 
 describe('responses-transport contracts', () => {
   describe('isTerminalEventType', () => {
-    it('returns true for terminal types', () => {
-      expect(isTerminalEventType('response.completed')).toBe(true);
-      expect(isTerminalEventType('response.failed')).toBe(true);
-      expect(isTerminalEventType('response.incomplete')).toBe(true);
-      expect(isTerminalEventType('response.cancelled')).toBe(true);
-      expect(isTerminalEventType('error')).toBe(true);
-      expect(isTerminalEventType('response.error')).toBe(true);
-    });
-
-    it('returns false for non-terminal types', () => {
-      expect(isTerminalEventType('response.created')).toBe(false);
-      expect(isTerminalEventType('response.output_text.delta')).toBe(false);
-      expect(isTerminalEventType(undefined)).toBe(false);
+    const terminalTypeCases: Array<[string | undefined, boolean]> = [
+      ['response.completed', true],
+      ['response.failed', true],
+      ['response.incomplete', true],
+      ['response.cancelled', true],
+      ['error', true],
+      ['response.error', true],
+      ['response.created', false],
+      ['response.output_text.delta', false],
+      [undefined, false],
+    ];
+    it('returns the correct terminal classification per event type', () => {
+      for (const [type, expected] of terminalTypeCases) {
+        expect(isTerminalEventType(type)).toBe(expected);
+      }
     });
   });
 
   describe('isTerminalEvent', () => {
-    it('returns true for terminal events', () => {
-      expect(isTerminalEvent({ type: 'response.completed' } as any)).toBe(true);
-    });
-    it('returns false for non-terminal events', () => {
-      expect(isTerminalEvent({ type: 'response.output_text.delta' } as any)).toBe(false);
-    });
-    it('returns false for undefined', () => {
-      expect(isTerminalEvent(undefined)).toBe(false);
+    const terminalEventCases: Array<[{ type: string } | undefined, boolean]> = [
+      [{ type: 'response.completed' }, true],
+      [{ type: 'response.output_text.delta' }, false],
+      [undefined, false],
+    ];
+    it('returns the correct terminal classification per event', () => {
+      for (const [event, expected] of terminalEventCases) {
+        expect(isTerminalEvent(event as any)).toBe(expected);
+      }
     });
   });
 
@@ -90,40 +93,30 @@ describe('responses-transport contracts', () => {
   });
 
   describe('parseClientWebSocketEvent', () => {
-    it('parses response.create', () => {
-      const event = parseClientWebSocketEvent(Buffer.from(JSON.stringify({ type: 'response.create' })), false);
-      expect(event.type).toBe('response.create');
-    });
-
-    it('parses response.cancel', () => {
-      const event = parseClientWebSocketEvent(JSON.stringify({ type: 'response.cancel' }), false);
-      expect(event.type).toBe('response.cancel');
-    });
-
-    it('rejects binary frames', () => {
-      try {
-        parseClientWebSocketEvent(Buffer.from('x'), true);
-        expect.fail('should have thrown');
-      } catch (err: any) {
-        expect(err.code).toBe('binary_not_supported');
+    const parseCases: Array<[string, string | Buffer]> = [
+      ['response.create', Buffer.from(JSON.stringify({ type: 'response.create' }))],
+      ['response.cancel', JSON.stringify({ type: 'response.cancel' })],
+    ];
+    it('parses supported client events', () => {
+      for (const [type, payload] of parseCases) {
+        const event = parseClientWebSocketEvent(payload as any, false);
+        expect(event.type).toBe(type);
       }
     });
 
-    it('rejects invalid JSON', () => {
-      try {
-        parseClientWebSocketEvent('not-json', false);
-        expect.fail('should have thrown');
-      } catch (err: any) {
-        expect(err.code).toBe('invalid_json');
-      }
-    });
-
-    it('rejects unsupported event types', () => {
-      try {
-        parseClientWebSocketEvent(JSON.stringify({ type: 'unknown' }), false);
-        expect.fail('should have thrown');
-      } catch (err: any) {
-        expect(err.code).toBe('unsupported_client_event');
+    const rejectCases: Array<[string, string | Buffer, boolean, string]> = [
+      ['binary frames', Buffer.from('x'), true, 'binary_not_supported'],
+      ['invalid JSON', 'not-json', false, 'invalid_json'],
+      ['unsupported event types', JSON.stringify({ type: 'unknown' }), false, 'unsupported_client_event'],
+    ];
+    it('rejects malformed or unsupported client events', () => {
+      for (const [_label, payload, isBinary, code] of rejectCases) {
+        try {
+          parseClientWebSocketEvent(payload as any, isBinary);
+          expect.fail('should have thrown');
+        } catch (err: any) {
+          expect(err.code).toBe(code);
+        }
       }
     });
   });
@@ -159,17 +152,16 @@ describe('responses-transport contracts', () => {
 });
 
 describe('resolveTransportMode', () => {
-  it('resolves ws_to_ws', () => {
-    expect(resolveTransportMode(true, 'websocket')).toBe('ws_to_ws');
-  });
-  it('resolves ws_to_http_sse', () => {
-    expect(resolveTransportMode(true, 'http_sse')).toBe('ws_to_http_sse');
-  });
-  it('resolves http_sse_to_ws', () => {
-    expect(resolveTransportMode(false, 'websocket')).toBe('http_sse_to_ws');
-  });
-  it('resolves http_sse_to_http_sse', () => {
-    expect(resolveTransportMode(false, 'http_sse')).toBe('http_sse_to_http_sse');
+  const modeCases: Array<[boolean, string, string]> = [
+    [true, 'websocket', 'ws_to_ws'],
+    [true, 'http_sse', 'ws_to_http_sse'],
+    [false, 'websocket', 'http_sse_to_ws'],
+    [false, 'http_sse', 'http_sse_to_http_sse'],
+  ];
+  it('resolves each transport mode combination', () => {
+    for (const [isWs, clientMode, expected] of modeCases) {
+      expect(resolveTransportMode(isWs, clientMode as any)).toBe(expected);
+    }
   });
 });
 

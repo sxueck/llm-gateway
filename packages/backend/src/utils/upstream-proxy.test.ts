@@ -138,52 +138,64 @@ describe('isHostInNoProxy', () => {
 });
 
 describe('getProxyUrlForTarget', () => {
-  it('should return null for invalid URLs', () => {
-    const config = { httpProxyUrl: 'http://proxy:8080', httpsProxyUrl: null, noProxy: [] };
-    expect(getProxyUrlForTarget('not-a-url', config)).toBeNull();
-  });
-
-  it('should use HTTPS_PROXY for https URLs', () => {
-    const config = {
-      httpProxyUrl: 'http://http-proxy:8080',
-      httpsProxyUrl: 'http://https-proxy:8443',
-      noProxy: [],
-    };
-    expect(getProxyUrlForTarget('https://api.openai.com', config)).toBe('http://https-proxy:8443');
-  });
-
-  it('should use HTTP_PROXY for http URLs', () => {
-    const config = {
-      httpProxyUrl: 'http://http-proxy:8080',
-      httpsProxyUrl: 'http://https-proxy:8443',
-      noProxy: [],
-    };
-    expect(getProxyUrlForTarget('http://api.example.com', config)).toBe('http://http-proxy:8080');
-  });
-
-  it('should fallback to HTTP_PROXY when HTTPS_PROXY is not set', () => {
-    const config = {
-      httpProxyUrl: 'http://http-proxy:8080',
-      httpsProxyUrl: null,
-      noProxy: [],
-    };
-    expect(getProxyUrlForTarget('https://api.openai.com', config)).toBe('http://http-proxy:8080');
-  });
-
-  it('should return null when NO_PROXY matches', () => {
-    const config = {
-      httpProxyUrl: 'http://proxy:8080',
-      httpsProxyUrl: 'http://proxy:8443',
-      noProxy: ['localhost', '.internal.com'],
-    };
-    expect(getProxyUrlForTarget('https://localhost/some/path', config)).toBeNull();
-    expect(getProxyUrlForTarget('https://api.internal.com', config)).toBeNull();
-    expect(getProxyUrlForTarget('https://api.example.com', config)).toBe('http://proxy:8443');
-  });
-
-  it('should return null when no proxy is configured', () => {
-    const config = { httpProxyUrl: null, httpsProxyUrl: null, noProxy: [] };
-    expect(getProxyUrlForTarget('https://api.openai.com', config)).toBeNull();
+  const proxyUrlCases = [
+    ['not-a-url', { httpProxyUrl: 'http://proxy:8080', httpsProxyUrl: null, noProxy: [] }, null],
+    [
+      'https://api.openai.com',
+      {
+        httpProxyUrl: 'http://http-proxy:8080',
+        httpsProxyUrl: 'http://https-proxy:8443',
+        noProxy: [],
+      },
+      'http://https-proxy:8443',
+    ],
+    [
+      'http://api.example.com',
+      {
+        httpProxyUrl: 'http://http-proxy:8080',
+        httpsProxyUrl: 'http://https-proxy:8443',
+        noProxy: [],
+      },
+      'http://http-proxy:8080',
+    ],
+    [
+      'https://api.openai.com',
+      { httpProxyUrl: 'http://http-proxy:8080', httpsProxyUrl: null, noProxy: [] },
+      'http://http-proxy:8080',
+    ],
+    [
+      'https://localhost/some/path',
+      {
+        httpProxyUrl: 'http://proxy:8080',
+        httpsProxyUrl: 'http://proxy:8443',
+        noProxy: ['localhost', '.internal.com'],
+      },
+      null,
+    ],
+    [
+      'https://api.internal.com',
+      {
+        httpProxyUrl: 'http://proxy:8080',
+        httpsProxyUrl: 'http://proxy:8443',
+        noProxy: ['localhost', '.internal.com'],
+      },
+      null,
+    ],
+    [
+      'https://api.example.com',
+      {
+        httpProxyUrl: 'http://proxy:8080',
+        httpsProxyUrl: 'http://proxy:8443',
+        noProxy: ['localhost', '.internal.com'],
+      },
+      'http://proxy:8443',
+    ],
+    ['https://api.openai.com', { httpProxyUrl: null, httpsProxyUrl: null, noProxy: [] }, null],
+  ] as Array<[string, { httpProxyUrl: string | null; httpsProxyUrl: string | null; noProxy: string[] }, string | null]>;
+  it('should resolve the expected proxy URL (or null) for each target/config pair', () => {
+    for (const [target, config, expected] of proxyUrlCases) {
+      expect(getProxyUrlForTarget(target, config)).toBe(expected);
+    }
   });
 });
 
@@ -201,22 +213,23 @@ describe('isProxyConfigured', () => {
     process.env = originalEnv;
   });
 
-  it('should return false when no proxy is configured', () => {
-    expect(isProxyConfigured()).toBe(false);
-  });
-
-  it('should return true when HTTP_PROXY is set', () => {
-    process.env.HTTP_PROXY = 'http://proxy:8080';
-    expect(isProxyConfigured()).toBe(true);
-  });
-
-  it('should return true when HTTPS_PROXY is set', () => {
-    process.env.HTTPS_PROXY = 'http://proxy:8443';
-    expect(isProxyConfigured()).toBe(true);
-  });
-
-  it('should return true when lowercase proxy is set', () => {
-    process.env.http_proxy = 'http://proxy:8080';
-    expect(isProxyConfigured()).toBe(true);
+  const configuredCases: Array<[string | undefined, string | undefined, boolean]> = [
+    [undefined, undefined, false],
+    ['HTTP_PROXY', 'http://proxy:8080', true],
+    ['HTTPS_PROXY', 'http://proxy:8443', true],
+    ['http_proxy', 'http://proxy:8080', true],
+  ];
+  it('should reflect whether any proxy env var is set', () => {
+    const proxyEnvKeys = ['HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy'];
+    for (const [envKey, envValue, expected] of configuredCases) {
+      // 循环内各自从零环境起步，否则上一轮残留会让后续断言恒真
+      for (const key of proxyEnvKeys) {
+        delete process.env[key];
+      }
+      if (envKey) {
+        process.env[envKey] = envValue;
+      }
+      expect(isProxyConfigured()).toBe(expected);
+    }
   });
 });

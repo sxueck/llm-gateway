@@ -69,32 +69,23 @@ describe('normalizeAnthropicRequest', () => {
   });
 
   describe('manual extended thinking conversion', () => {
-    it('converts enabled thinking to adaptive for Sonnet 5', () => {
-      const result = normalizeAnthropicRequest('claude-sonnet-5', {
-        ...baseRequest,
-        thinking: { type: 'enabled', budget_tokens: 32000 },
-      });
-      expect(result.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
-    });
-
-    it('converts enabled thinking to adaptive for Opus 4.8', () => {
-      const result = normalizeAnthropicRequest('claude-opus-4-8', {
-        ...baseRequest,
-        model: 'claude-opus-4-8',
-        thinking: { type: 'enabled', budget_tokens: 10000 },
-      });
-      expect(result.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
-    });
-
-    it('converts enabled thinking to adaptive for Haiku 5.5', () => {
-      const result = normalizeAnthropicRequest('claude-haiku-5-5', {
-        ...baseRequest,
-        model: 'claude-haiku-5-5',
-        temperature: 0.5,
-        thinking: { type: 'enabled', budget_tokens: 10000 },
-      });
-      expect(result.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
-      expect(result.temperature).toBeUndefined();
+    const adaptiveCases: Array<[string, Record<string, unknown>, number]> = [
+      ['claude-sonnet-5', {}, 32000],
+      ['claude-opus-4-8', { model: 'claude-opus-4-8' }, 10000],
+      ['claude-haiku-5-5', { model: 'claude-haiku-5-5', temperature: 0.5 }, 10000],
+    ];
+    it('converts enabled thinking to adaptive for adaptive-capable models', () => {
+      for (const [model, overrides, budgetTokens] of adaptiveCases) {
+        const result = normalizeAnthropicRequest(model, {
+          ...baseRequest,
+          ...overrides,
+          thinking: { type: 'enabled', budget_tokens: budgetTokens },
+        });
+        expect(result.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+        if ('temperature' in overrides) {
+          expect(result.temperature).toBeUndefined();
+        }
+      }
     });
 
     it('keeps an explicit display when converting enabled thinking', () => {
