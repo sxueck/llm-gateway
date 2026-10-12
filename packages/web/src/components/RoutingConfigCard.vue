@@ -347,7 +347,7 @@ function getWeightColor(weight: number) {
 
 .card-actions {
   display: flex;
-  gap: 4px;
+  gap: 8px;
 }
 
 .card-body {

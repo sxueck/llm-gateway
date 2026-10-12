@@ -7,7 +7,7 @@
         subtitle="创建和管理虚拟 API 密钥,用于访问 LLM Gateway。可以设置过期时间和使用限制"
       >
         <template #actions>
-          <n-button type="primary" size="small" @click="showModal = true">创建虚拟密钥</n-button>
+          <n-button type="primary" @click="showModal = true">创建虚拟密钥</n-button>
         </template>
       </PageHeader>
 

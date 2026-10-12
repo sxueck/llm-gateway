@@ -101,7 +101,7 @@
             :row-key="(row: ApiRequest) => row.id"
             :row-props="rowProps"
             :row-class-name="rowClassName"
-            :scroll-x="1700"
+            :scroll-x="1580"
             remote
             striped
           />
@@ -216,7 +216,7 @@
               </n-space>
             </template>
             <n-spin :show="sessionLoading">
-              <n-space vertical :size="10">
+              <n-space vertical :size="12">
                 <n-space align="center" :size="8">
                   <n-button
                     size="small"
@@ -759,7 +759,7 @@ const columns: DataTableColumns<ApiRequest> = [
   {
     title: '请求预览',
     key: 'request_body',
-    width: 200,
+    width: 140,
     ellipsis: {
       tooltip: true
     },
@@ -768,7 +768,7 @@ const columns: DataTableColumns<ApiRequest> = [
   {
     title: '响应预览',
     key: 'response_body',
-    width: 200,
+    width: 140,
     ellipsis: {
       tooltip: true
     },
@@ -990,7 +990,7 @@ onMounted(() => {
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
 }
 
 .filter-control {

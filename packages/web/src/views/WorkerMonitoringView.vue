@@ -509,7 +509,7 @@ onBeforeUnmount(() => {
   padding-bottom: 32px;
 }
 .worker-monitoring-page-header {
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 
 /* 仅本视图内抹平全局卡片的阴影与大圆角，换成 hairline 扁平风 */

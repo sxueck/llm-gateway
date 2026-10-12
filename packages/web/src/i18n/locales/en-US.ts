@@ -1158,6 +1158,7 @@ export default {
   },
   trafficAnalysis: {
     title: 'Traffic Analysis',
+    subtitle: 'Load forecasting from traffic history and response-time distribution',
     actualSeries: 'Actual Traffic',
     predictedSeries: 'Predicted Traffic',
     dataInsufficient: 'Insufficient history (< 3 days); no forecast yet, current values are indicative only',

@@ -1,6 +1,6 @@
 <template>
   <div class="expert-routing-detail" :style="{ '--routing-border': themeVars.borderColor }">
-    <n-space vertical :size="12">
+    <n-space vertical :size="24">
       <PageHeader
         eyebrow="ROUTING"
         :title="routing?.name ?? t('expertRouting.detail')"
@@ -619,7 +619,7 @@ onMounted(async () => {
 .config-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
+  gap: 24px;
   align-items: stretch;
   padding-top: 4px;
 }

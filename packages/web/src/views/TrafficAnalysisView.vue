@@ -1,7 +1,7 @@
 <template>
   <div>
     <n-space vertical :size="24">
-      <PageHeader eyebrow="MONITORING" :title="t('trafficAnalysis.title')" />
+      <PageHeader eyebrow="MONITORING" :title="t('trafficAnalysis.title')" :subtitle="t('trafficAnalysis.subtitle')" />
       <n-card>
         <template #header>
           <n-space align="center" justify="space-between">

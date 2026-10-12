@@ -1997,7 +1997,7 @@ onBeforeUnmount(() => {
 }
 
 .ops-page-header {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .page-actions {

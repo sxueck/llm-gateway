@@ -1160,6 +1160,7 @@ export default {
   },
   trafficAnalysis: {
     title: '流量分析',
+    subtitle: '基于历史流量趋势的负载预测与响应时间分布',
     actualSeries: '实际流量',
     predictedSeries: '预测流量',
     dataInsufficient: '可用历史数据不足（< 3 天），暂不输出预测，当前结果仅供参考',

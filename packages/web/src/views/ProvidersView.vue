@@ -7,14 +7,14 @@
         subtitle="配置和管理 AI 模型提供商,包括 API 密钥、Base URL 等信息。支持导入导出配置"
       >
         <template #actions>
-          <n-button size="small" @click="testAllProviders" :loading="isTestingAll">
+          <n-button @click="testAllProviders" :loading="isTestingAll">
             <template #icon>
               <n-icon><SpeedTestIcon /></n-icon>
             </template>
             测速
           </n-button>
           <n-dropdown :options="exportOptions" @select="handleExportSelect">
-            <n-button size="small">
+            <n-button>
               <template #icon>
                 <n-icon><DownloadIcon /></n-icon>
               </template>
@@ -22,14 +22,14 @@
             </n-button>
           </n-dropdown>
           <n-upload :show-file-list="false" accept=".json" @change="handleImportFile">
-            <n-button size="small">
+            <n-button>
               <template #icon>
                 <n-icon><UploadIcon /></n-icon>
               </template>
               导入
             </n-button>
           </n-upload>
-          <n-button type="primary" size="small" @click="showModal = true">添加提供商</n-button>
+          <n-button type="primary" @click="showModal = true">添加提供商</n-button>
         </template>
       </PageHeader>
 
@@ -745,13 +745,13 @@ onMounted(() => {
 
 .table-card :deep(.n-data-table-th) {
   background: #fafafa;
-  font-weight: 700;
-  font-size: 11px;
-  color: var(--color-title);
+  font-weight: 600;
+  font-size: 12px;
+  color: #666;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  border-bottom: 1px solid #d4d4d4;
-  padding: 12px 14px;
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid #e8e8e8;
+  padding: 10px 12px;
 }
 
 .table-card :deep(.n-data-table-tr:last-child .n-data-table-td) {

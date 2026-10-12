@@ -10,18 +10,17 @@
           <n-input
             v-model:value="searchQuery"
             :placeholder="t('common.searchPlaceholder')"
-            size="small"
             clearable
-            style="width: 200px"
+            style="width: 240px"
           >
             <template #prefix>
               <n-icon><SearchOutlined /></n-icon>
             </template>
           </n-input>
-          <n-button type="primary" size="small" @click="showModal = true">
+          <n-button type="primary" @click="showModal = true">
             {{ t('models.addModel') }}
           </n-button>
-          <n-button size="small" @click="showBatchModal = true">
+          <n-button @click="showBatchModal = true">
             {{ t('models.batchAdd') }}
           </n-button>
         </template>
@@ -393,14 +392,15 @@ const columns: DataTableColumns<Model> = [
   { 
     title: () => t('models.modelId'),
     key: 'modelIdentifier',
+    width: 240,
     render: (row: Model) => h(NTooltip, { trigger: 'hover', placement: 'top' }, {
       trigger: () => h(NText, {
-        style: { cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' },
+        style: { cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 },
         onClick: () => copyToClipboard(row.modelIdentifier)
       }, {
         default: () => [
-          row.modelIdentifier,
-          h(NIcon, { size: 12, style: { opacity: 0.5 } }, { default: () => h(ContentCopyOutlined) })
+          h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, row.modelIdentifier),
+          h(NIcon, { size: 12, style: { opacity: 0.5, flexShrink: 0 } }, { default: () => h(ContentCopyOutlined) })
         ]
       }),
       default: () => t('common.copy') || '复制'

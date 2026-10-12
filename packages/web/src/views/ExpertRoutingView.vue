@@ -1,6 +1,6 @@
 <template>
   <div class="expert-routing-view" :style="{ '--routing-muted': themeVars.textColor3, '--routing-border': themeVars.borderColor }">
-    <n-space vertical :size="12">
+    <n-space vertical :size="24">
       <PageHeader
         eyebrow="ROUTING"
         :title="t('expertRouting.title')"
@@ -254,7 +254,7 @@ onMounted(loadConfigs);
 
 <style scoped>
 .expert-routing-view {
-  max-width: 1360px;
+  max-width: 1400px;
   margin: 0 auto;
 }
 

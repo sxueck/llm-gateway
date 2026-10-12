@@ -33,7 +33,7 @@
     <n-grid cols="1 l:3" responsive="screen" :x-gap="16" :y-gap="16" class="playground-grid">
       <n-gi>
         <n-card size="small" :title="t('playground.config.title')" class="full-height-card">
-          <n-space vertical :size="14">
+          <n-space vertical :size="16">
             <div class="config-field">
               <div class="config-label">{{ t('playground.config.virtualKey') }}</div>
               <n-select
@@ -977,13 +977,13 @@ onMounted(async () => {
 
 <style scoped>
 .playground-page {
-  max-width: 1500px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 0 0 32px 0;
 }
 
 .playground-page-header {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .page-actions {

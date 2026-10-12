@@ -6,7 +6,7 @@
       </div>
     </template>
 
-    <n-grid :cols="2" :x-gap="12" :y-gap="12">
+    <n-grid :cols="2" :x-gap="16" :y-gap="16">
       <n-gi>
         <div class="stat-item">
           <div class="stat-value">{{ stats.total }}</div>
@@ -102,7 +102,7 @@ const stats = computed(() => {
 .stat-label {
   font-size: 13px;
   color: #8c8c8c;
-  margin-top: 6px;
+  margin-top: 8px;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.02em;

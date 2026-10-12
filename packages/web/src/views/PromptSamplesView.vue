@@ -298,7 +298,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
 }
 
 .filter-control {
@@ -310,7 +310,7 @@ onMounted(async () => {
 }
 
 .filter-key-select {
-  width: 180px;
+  width: 200px;
 }
 
 .filter-action-btn {
