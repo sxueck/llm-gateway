@@ -139,6 +139,19 @@ describe('makeAnthropicRequest', () => {
     expect(body.model).toBe('public-alias');
   });
 
+  test('forwards Claude thinking and sampling fields verbatim (no translation)', async () => {
+    fetchMock.mockResolvedValue(textResponse(200, '{}'));
+    const body = {
+      ...REQUEST_BODY,
+      thinking: { type: 'adaptive', display: 'summarized' },
+      output_config: { effort: 'high' },
+      temperature: 0.5,
+    } as any;
+    await makeAnthropicRequest({ ...CONFIG, model: 'claude-haiku-5.5' }, body);
+    const [, init] = fetchMock.mock.calls[0] as [string, any];
+    expect(JSON.parse(init.body)).toEqual({ ...body, model: 'claude-haiku-5.5' });
+  });
+
   test('strips trailing /v1 from provider baseUrl before appending /v1/messages', async () => {
     fetchMock.mockResolvedValue(textResponse(200, '{}'));
     await makeAnthropicRequest({ ...CONFIG, baseUrl: 'https://compat.example/v1/' }, REQUEST_BODY);

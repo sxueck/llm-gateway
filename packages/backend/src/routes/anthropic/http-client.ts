@@ -14,7 +14,6 @@ import { PiiStreamRestorer } from "../../services/pii-protection-service.js";
 import type { PiiProtectionContext } from "../../services/pii-protection-types.js";
 import { removeV1Suffix } from "../../utils/api-endpoint-builder.js";
 import { upstreamFetch } from "../../utils/upstream-fetch.js";
-import { normalizeAnthropicRequest } from "../../utils/anthropic-request-normalizer.js";
 import { BoundedChunkRecorder } from "../../utils/bounded-chunk-recorder.js";
 import { createUpstreamDeadline } from "../../utils/upstream-deadline.js";
 import { waitForDrain } from "../../utils/stream-guards.js";
@@ -534,11 +533,7 @@ export async function makeAnthropicRequest(
   forwardedHeaders?: Record<string, string>,
   abortSignal?: AbortSignal,
 ): Promise<HttpResponse> {
-  const normalizedRequest = normalizeAnthropicRequest(
-    config.model,
-    requestBody,
-  );
-  const requestParams = buildRequestParams(config, normalizedRequest);
+  const requestParams = buildRequestParams(config, requestBody);
   const deadline = createUpstreamDeadline(abortSignal, DEFAULT_TIMEOUT_MS);
 
   try {
@@ -547,7 +542,7 @@ export async function makeAnthropicRequest(
       headers: buildUpstreamHeaders(
         config,
         forwardedHeaders,
-        normalizedRequest,
+        requestBody,
         false,
       ),
       body: JSON.stringify(requestParams),
@@ -627,15 +622,11 @@ export async function makeAnthropicStreamRequest(
   clientModel?: string,
   sseComment?: string,
 ): Promise<StreamTokenUsage> {
-  const normalizedRequest = normalizeAnthropicRequest(
-    config.model,
-    requestBody,
-  );
-  const requestParams = buildRequestParams(config, normalizedRequest, true);
+  const requestParams = buildRequestParams(config, requestBody, true);
   const headers = buildUpstreamHeaders(
     config,
     forwardedHeaders,
-    normalizedRequest,
+    requestBody,
     true,
   );
   const url = buildMessagesUrl(config);
