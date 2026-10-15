@@ -264,6 +264,9 @@ export default {
     deleteSuccess: '密钥删除成功',
     createSuccess: '密钥创建成功',
     updateSuccess: '密钥更新成功',
+    contextBudget: '上下文预算',
+    contextBudgetOff: '关闭（不限制）',
+    contextBudgetHint: '仅在新用户输入时检查：超预算返回 context_length_exceeded，由客户端自动压缩历史后重试',
   },
   playground: {
     title: '模型调试台',

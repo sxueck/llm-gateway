@@ -1,4 +1,5 @@
 export * from './agent-search.js';
+export * from './virtual-key.js';
 
 export interface ApiResponse<T = any> {
   success: boolean;

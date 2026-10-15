@@ -88,10 +88,48 @@ describe("migration 1: api_requests.session_id", () => {
     expect(issued.some((sql) => sql.includes("ADD INDEX idx_api_requests_session"))).toBe(true);
   });
 
-  test("does not re-apply version 1 once recorded", async () => {
-    const conn = provisionedConn(1);
+  test("does not re-apply recorded migrations once all versions are applied", async () => {
+    const conn = provisionedConn(2);
     await applyMigrations(conn as unknown as Connection);
     expect(conn.beginTransaction).not.toHaveBeenCalled();
     expect(conn.query.mock.calls.some(([sql]) => String(sql).includes("ALTER TABLE"))).toBe(false);
+  });
+});
+
+describe("migration 2: virtual_keys.context_budget_tokens", () => {
+  function v2Conn(columns: string[]) {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("INFORMATION_SCHEMA.TABLES")) {
+        return [[{ name: "virtual_keys" }, { name: "schema_baseline" }, { name: "schema_migrations" }]];
+      }
+      if (sql.includes("SELECT generation")) return [[{ generation: 2 }]];
+      if (sql.includes("MAX(version)")) return [[{ version: 1 }]];
+      if (sql.includes("INFORMATION_SCHEMA.COLUMNS")) return [columns.map((name) => ({ name }))];
+      return [[]];
+    });
+    return { query, beginTransaction: vi.fn(), commit: vi.fn(), rollback: vi.fn() };
+  }
+
+  test("swaps dynamic_compression_enabled for context_budget_tokens", async () => {
+    const conn = v2Conn(["dynamic_compression_enabled"]);
+    await migrations[1].up!(conn as unknown as Connection);
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(issued.some((sql) => sql.includes("ADD COLUMN context_budget_tokens"))).toBe(true);
+    expect(issued.some((sql) => sql.includes("DROP COLUMN dynamic_compression_enabled"))).toBe(true);
+  });
+
+  test("skips DDL when the swap already happened", async () => {
+    const conn = v2Conn(["context_budget_tokens"]);
+    await migrations[1].up!(conn as unknown as Connection);
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(issued.some((sql) => sql.includes("ALTER TABLE"))).toBe(false);
+  });
+
+  test("down restores the legacy column", async () => {
+    const conn = v2Conn(["context_budget_tokens"]);
+    await migrations[1].down!(conn as unknown as Connection);
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(issued.some((sql) => sql.includes("DROP COLUMN context_budget_tokens"))).toBe(true);
+    expect(issued.some((sql) => sql.includes("ADD COLUMN dynamic_compression_enabled"))).toBe(true);
   });
 });

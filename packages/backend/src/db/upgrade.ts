@@ -149,7 +149,7 @@ export const TABLE_COLUMNS: Record<PreservedTable, string[]> = {
     "rate_limit",
     "cache_enabled",
     "disable_logging",
-    "dynamic_compression_enabled",
+    "context_budget_tokens",
     "image_compression_enabled",
     "intercept_zero_temperature",
     "zero_temperature_replacement",

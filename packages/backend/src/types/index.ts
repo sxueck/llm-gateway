@@ -39,7 +39,7 @@ export interface VirtualKey {
   rate_limit: number | null;
   cache_enabled: number;
   disable_logging: number;
-  dynamic_compression_enabled: number;
+  context_budget_tokens: number | null;
   image_compression_enabled: number;
   intercept_zero_temperature: number;
   zero_temperature_replacement: number | null;

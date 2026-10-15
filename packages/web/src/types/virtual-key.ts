@@ -9,7 +9,8 @@ export interface VirtualKeyFormValue {
   enabled: boolean;
   cacheEnabled: boolean;
   disableLogging: boolean;
-  dynamicCompressionEnabled: boolean;
+  /** 上下文预算档位 tokens（200K/400K/600K/800K），null=关闭 */
+  contextBudgetTokens: number | null;
   imageCompressionEnabled: boolean;
   interceptZeroTemperature: boolean;
   zeroTemperatureReplacement: number | undefined;
@@ -27,7 +28,7 @@ export function createDefaultVirtualKeyForm(): VirtualKeyFormValue {
     enabled: true,
     cacheEnabled: false,
     disableLogging: false,
-    dynamicCompressionEnabled: false,
+    contextBudgetTokens: null,
     imageCompressionEnabled: false,
     interceptZeroTemperature: false,
     zeroTemperatureReplacement: 0.7,

@@ -74,7 +74,7 @@ export async function createTables(connection?: Connection) {
 	        rate_limit INT,
 	        cache_enabled TINYINT DEFAULT 0,
 	        disable_logging TINYINT DEFAULT 0,
-	        dynamic_compression_enabled TINYINT DEFAULT 0,
+	        context_budget_tokens BIGINT DEFAULT NULL,
 	        image_compression_enabled TINYINT DEFAULT 0,
         intercept_zero_temperature TINYINT DEFAULT 0,
          zero_temperature_replacement DECIMAL(3,2) DEFAULT NULL,

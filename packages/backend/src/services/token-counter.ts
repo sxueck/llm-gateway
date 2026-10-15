@@ -84,6 +84,22 @@ export function countTokensForText(text: string): number {
   }
 }
 
+/**
+ * Cooperative variant of countTokensForText: identical fallback, but yields
+ * periodically so encoding a long payload (serialized tool definitions on the
+ * budget path) cannot stall the event loop.
+ */
+export async function countTextCooperatively(text: string): Promise<number> {
+  if (!text) return 0;
+  try {
+    const enc = createYieldingEncoder(acquireEncoding());
+    return await enc.countLong(text);
+  } catch {
+    sharedEncoding = null;
+    return Math.ceil(text.length / 4);
+  }
+}
+
 export type TruncationStrategy = 'head' | 'headAndTail';
 
 /**

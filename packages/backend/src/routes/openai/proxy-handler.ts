@@ -14,10 +14,7 @@ import {
   messageCompressor,
   KEEP_RECENT_WINDOW,
 } from "../../services/message-compressor.js";
-import {
-  historyCompactor,
-  type CompactionResult,
-} from "../../services/history-compactor.js";
+import { checkContextBudget } from "../../services/context-budget.js";
 import { extractIp } from "../../utils/ip.js";
 import { getRequestUserAgent } from "../../utils/http.js";
 import {
@@ -651,6 +648,7 @@ export function createOpenAIProxyHandler() {
         protocolConfig.clientModel = openAIClientModel;
       }
 
+      const contextBudgetTokens = Number(virtualKey.context_budget_tokens) || 0;
       if (
         currentModel &&
         (request.body as any)?.messages &&
@@ -660,74 +658,71 @@ export function createOpenAIProxyHandler() {
           (request.body as any).messages,
           KEEP_RECENT_WINDOW,
         );
-        const shouldCompressMessages =
-          approxTokens >= MESSAGE_COMPRESSION_MIN_TOKENS;
+        // 预算判定复用压缩统计的消息计数，避免整段历史重复分词
+        let forwardedMessageTokens: number | undefined;
 
-        if (
-          virtualKey.dynamic_compression_enabled === 1 &&
-          shouldCompressMessages
-        ) {
-          let compaction: CompactionResult | undefined;
-          try {
-            compaction = await historyCompactor.compactIfNeeded(
-              (request.body as any).messages,
-            );
-            if (compaction.fired) {
-              (request.body as any).messages = compaction.messages;
+        if (contextBudgetTokens > 0) {
+          if (approxTokens >= MESSAGE_COMPRESSION_MIN_TOKENS) {
+            try {
+              const {
+                messages: compressedMessages,
+                stats,
+                cache: compressionCache,
+              } = await messageCompressor.compressMessages(
+                (request.body as any).messages,
+              );
+
+              (request.body as any).messages = compressedMessages;
+
+              compressionStats = {
+                originalTokens: stats.originalTokenEstimate,
+                savedTokens:
+                  stats.originalTokenEstimate - stats.compressedTokenEstimate,
+              };
+              forwardedMessageTokens = stats.compressedTokenEstimate;
+
               memoryLogger.info(
-                `历史摘要压缩 | 虚拟密钥: ${vkDisplay} | ${compaction.merged ? "摘要已合并更新" : "复用缓存摘要,增量原样下发"} | ` +
-                  `Token 节省: ${compaction.originalTokens - compaction.compactedTokens}` +
-                  (compaction.summarizerTokens
-                    ? ` | summarizer: ${compaction.summarizerTokens.promptTokens}+${compaction.summarizerTokens.completionTokens} tokens`
-                    : ""),
+                `消息压缩完成 | 虚拟密钥: ${vkDisplay} | 压缩率: ${(stats.compressionRatio * 100).toFixed(1)}% | ` +
+                  `Token 节省: ${compressionStats.savedTokens} | 压缩缓存: ${compressionCache.hit ? `命中(复用${compressionCache.reusedMessages}条)` : "未命中"}`,
+                "Proxy",
+              );
+            } catch (compressionError: any) {
+              memoryLogger.error(
+                `消息压缩失败: ${compressionError.message}`,
                 "Proxy",
               );
             }
-          } catch (compactionError: any) {
-            memoryLogger.error(
-              `历史摘要压缩失败，回退去重压缩: ${compactionError.message}`,
+          } else {
+            memoryLogger.debug(
+              `跳过消息压缩 | 虚拟密钥: ${vkDisplay} | 历史估算 tokens: ${approxTokens} < 阈值 ${MESSAGE_COMPRESSION_MIN_TOKENS}`,
               "Proxy",
             );
           }
 
-          try {
-            const {
-              messages: compressedMessages,
-              stats,
-              cache: compressionCache,
-            } = await messageCompressor.compressMessages(
-              (request.body as any).messages,
-            );
-
-            (request.body as any).messages = compressedMessages;
-
-            const baseTokens = compaction?.fired
-              ? compaction.originalTokens
-              : stats.originalTokenEstimate;
-            compressionStats = {
-              originalTokens: baseTokens,
-              savedTokens: baseTokens - stats.compressedTokenEstimate,
-            };
-
+          // 上下文预算判定（去重之后、目标级改写之前，不重试重判）：
+          // 只在用户轮次边界拦截，超预算返回 context_length_exceeded，
+          // 客户端自动压缩后重试（PRD async-context-compaction §5.1/§6.1）。
+          // tools 定义随请求转发，必须计入输入预算。
+          const budgetVerdict = await checkContextBudget({
+            virtualKeyId: virtualKey.id,
+            messages: (request.body as any).messages,
+            tools: (request.body as any)?.tools,
+            budgetTokens: contextBudgetTokens,
+            contextWindow: resolveServingLimits(
+              parsedModelAttributes,
+            ).contextWindow,
+            messagesTokens: forwardedMessageTokens,
+          });
+          if (budgetVerdict.action === "block") {
             memoryLogger.info(
-              `消息压缩完成 | 虚拟密钥: ${vkDisplay} | 压缩率: ${(stats.compressionRatio * 100).toFixed(1)}% | ` +
-                `Token 节省: ${compressionStats.savedTokens} | 压缩缓存: ${compressionCache.hit ? `命中(复用${compressionCache.reusedMessages}条)` : "未命中"}`,
+              `上下文预算拦截 | 虚拟密钥: ${vkDisplay} | 分类: ${budgetVerdict.classification} | ` +
+                `估算: ${budgetVerdict.estimatedTokens} tokens > 生效预算: ${budgetVerdict.effectiveBudget} (配置: ${contextBudgetTokens})`,
               "Proxy",
             );
-          } catch (compressionError: any) {
-            memoryLogger.error(
-              `消息压缩失败: ${compressionError.message}`,
-              "Proxy",
-            );
+            reply.header("x-should-retry", "false");
+            reply.header("x-gateway-budget", "enforced");
+            return reply.code(400).send(budgetVerdict.body);
           }
-        } else if (
-          virtualKey.dynamic_compression_enabled === 1 &&
-          !shouldCompressMessages
-        ) {
-          memoryLogger.debug(
-            `跳过消息压缩 | 虚拟密钥: ${vkDisplay} | 历史估算 tokens: ${approxTokens} < 阈值 ${MESSAGE_COMPRESSION_MIN_TOKENS}`,
-            "Proxy",
-          );
         }
       }
       if (

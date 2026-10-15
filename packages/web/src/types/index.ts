@@ -98,7 +98,8 @@ export interface VirtualKey {
   rateLimit?: number | null;
   cacheEnabled: boolean;
   disableLogging: boolean;
-  dynamicCompressionEnabled: boolean;
+  /** 上下文预算档位 tokens（200K/400K/600K/800K），null=关闭 */
+  contextBudgetTokens: number | null;
   imageCompressionEnabled: boolean;
   interceptZeroTemperature: boolean;
   zeroTemperatureReplacement?: number | null;
@@ -180,7 +181,7 @@ export interface CreateVirtualKeyRequest {
   enabled?: boolean;
   cacheEnabled?: boolean;
   disableLogging?: boolean;
-  dynamicCompressionEnabled?: boolean;
+  contextBudgetTokens?: number | null;
   imageCompressionEnabled?: boolean;
   interceptZeroTemperature?: boolean;
   zeroTemperatureReplacement?: number;
@@ -199,7 +200,7 @@ export interface UpdateVirtualKeyRequest {
   rateLimit?: number;
   cacheEnabled?: boolean;
   disableLogging?: boolean;
-  dynamicCompressionEnabled?: boolean;
+  contextBudgetTokens?: number | null;
   imageCompressionEnabled?: boolean;
   interceptZeroTemperature?: boolean;
   zeroTemperatureReplacement?: number;

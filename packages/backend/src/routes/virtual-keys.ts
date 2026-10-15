@@ -5,6 +5,7 @@ import { virtualKeyDb, providerDb, modelDb, contextNormalizationDb } from '../db
 import { hotConfigCache } from '../services/hot-config-cache.js';
 import { hashKey } from '../utils/crypto.js';
 import { validateCustomKey } from '../utils/validation.js';
+import { contextBudgetTokensSchema } from '@llm-gateway/shared';
 
 const createVirtualKeySchema = z.object({
   name: z.string(),
@@ -19,7 +20,7 @@ const createVirtualKeySchema = z.object({
   enabled: z.boolean().optional(),
   cacheEnabled: z.boolean().optional(),
   disableLogging: z.boolean().optional(),
-  dynamicCompressionEnabled: z.boolean().optional(),
+  contextBudgetTokens: contextBudgetTokensSchema.optional(),
   imageCompressionEnabled: z.boolean().optional(),
   interceptZeroTemperature: z.boolean().optional(),
   zeroTemperatureReplacement: z.number().min(0).max(2).optional(),
@@ -39,7 +40,7 @@ const updateVirtualKeySchema = z.object({
   rateLimit: z.number().optional(),
   cacheEnabled: z.boolean().optional(),
   disableLogging: z.boolean().optional(),
-  dynamicCompressionEnabled: z.boolean().optional(),
+  contextBudgetTokens: contextBudgetTokensSchema.optional(),
   imageCompressionEnabled: z.boolean().optional(),
   interceptZeroTemperature: z.boolean().optional(),
   zeroTemperatureReplacement: z.number().min(0).max(2).optional(),
@@ -76,7 +77,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
         rateLimit: vk.rate_limit,
         cacheEnabled: vk.cache_enabled === 1,
         disableLogging: vk.disable_logging === 1,
-        dynamicCompressionEnabled: vk.dynamic_compression_enabled === 1,
+        contextBudgetTokens: vk.context_budget_tokens ?? null,
         imageCompressionEnabled: vk.image_compression_enabled === 1,
         interceptZeroTemperature: vk.intercept_zero_temperature === 1,
         zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
@@ -110,7 +111,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       rateLimit: vk.rate_limit,
       cacheEnabled: vk.cache_enabled === 1,
       disableLogging: vk.disable_logging === 1,
-      dynamicCompressionEnabled: vk.dynamic_compression_enabled === 1,
+      contextBudgetTokens: vk.context_budget_tokens ?? null,
       imageCompressionEnabled: vk.image_compression_enabled === 1,
       interceptZeroTemperature: vk.intercept_zero_temperature === 1,
       zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
@@ -203,7 +204,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       rate_limit: body.rateLimit || null,
       cache_enabled: body.cacheEnabled ? 1 : 0,
       disable_logging: body.disableLogging ? 1 : 0,
-      dynamic_compression_enabled: body.dynamicCompressionEnabled ? 1 : 0,
+      context_budget_tokens: body.contextBudgetTokens ?? null,
       image_compression_enabled: body.imageCompressionEnabled ? 1 : 0,
       intercept_zero_temperature: body.interceptZeroTemperature ? 1 : 0,
       zero_temperature_replacement: body.zeroTemperatureReplacement || null,
@@ -226,7 +227,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
         rateLimit: vk.rate_limit,
         cacheEnabled: vk.cache_enabled === 1,
         disableLogging: vk.disable_logging === 1,
-        dynamicCompressionEnabled: vk.dynamic_compression_enabled === 1,
+        contextBudgetTokens: vk.context_budget_tokens ?? null,
         imageCompressionEnabled: vk.image_compression_enabled === 1,
         interceptZeroTemperature: vk.intercept_zero_temperature === 1,
         zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
@@ -303,7 +304,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     if (body.rateLimit !== undefined) updates.rate_limit = body.rateLimit;
     if (body.cacheEnabled !== undefined) updates.cache_enabled = body.cacheEnabled ? 1 : 0;
     if (body.disableLogging !== undefined) updates.disable_logging = body.disableLogging ? 1 : 0;
-    if (body.dynamicCompressionEnabled !== undefined) updates.dynamic_compression_enabled = body.dynamicCompressionEnabled ? 1 : 0;
+    if (body.contextBudgetTokens !== undefined) updates.context_budget_tokens = body.contextBudgetTokens;
     if (body.imageCompressionEnabled !== undefined) updates.image_compression_enabled = body.imageCompressionEnabled ? 1 : 0;
     if (body.interceptZeroTemperature !== undefined) updates.intercept_zero_temperature = body.interceptZeroTemperature ? 1 : 0;
     if (body.zeroTemperatureReplacement !== undefined) updates.zero_temperature_replacement = body.zeroTemperatureReplacement;
@@ -332,7 +333,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       rateLimit: updated.rate_limit,
       cacheEnabled: updated.cache_enabled === 1,
       disableLogging: updated.disable_logging === 1,
-      dynamicCompressionEnabled: updated.dynamic_compression_enabled === 1,
+      contextBudgetTokens: updated.context_budget_tokens ?? null,
       imageCompressionEnabled: updated.image_compression_enabled === 1,
       interceptZeroTemperature: updated.intercept_zero_temperature === 1,
       zeroTemperatureReplacement: updated.zero_temperature_replacement ? Number(updated.zero_temperature_replacement) : null,

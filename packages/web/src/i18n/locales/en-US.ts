@@ -264,6 +264,9 @@ export default {
     deleteSuccess: 'Key deleted successfully',
     createSuccess: 'Key created successfully',
     updateSuccess: 'Key updated successfully',
+    contextBudget: 'Context Budget',
+    contextBudgetOff: 'Off (unlimited)',
+    contextBudgetHint: 'Checked only on new user input: over-budget requests get context_length_exceeded so the client compacts history and retries',
   },
   playground: {
     title: 'Playground',

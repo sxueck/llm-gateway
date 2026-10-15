@@ -61,6 +61,63 @@ export const migrations: Migration[] = [
       );
     },
   },
+  {
+    // 2.0 客户端压缩方案：网关侧摘要压缩（dynamic_compression_enabled）删除，
+    // 改为虚拟密钥级上下文预算档位（context_budget_tokens，NULL=关闭）。
+    version: 2,
+    name: "virtual_keys_context_budget",
+    up: async (conn) => {
+      const [tables] = await conn.query(
+        `SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'virtual_keys'`,
+      );
+      if ((tables as Array<{ name: string }>).length === 0) {
+        // 空库：表由 schema.ts 连同新列一起创建，只登记版本号。
+        return;
+      }
+      const [columns] = await conn.query(
+        `SELECT COLUMN_NAME AS name FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'virtual_keys' AND COLUMN_NAME IN ('context_budget_tokens', 'dynamic_compression_enabled')`,
+      );
+      const names = new Set(
+        (columns as Array<{ name: string }>).map((row) => row.name),
+      );
+      if (!names.has("context_budget_tokens")) {
+        await conn.query(
+          "ALTER TABLE virtual_keys ADD COLUMN context_budget_tokens BIGINT DEFAULT NULL COMMENT '上下文预算档位 tokens，NULL=关闭；超预算的边界请求返回 context_length_exceeded' AFTER disable_logging",
+        );
+      }
+      if (names.has("dynamic_compression_enabled")) {
+        await conn.query(
+          "ALTER TABLE virtual_keys DROP COLUMN dynamic_compression_enabled",
+        );
+      }
+    },
+    down: async (conn) => {
+      const [tables] = await conn.query(
+        `SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'virtual_keys'`,
+      );
+      if ((tables as Array<{ name: string }>).length === 0) return;
+      const [columns] = await conn.query(
+        `SELECT COLUMN_NAME AS name FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'virtual_keys' AND COLUMN_NAME IN ('context_budget_tokens', 'dynamic_compression_enabled')`,
+      );
+      const names = new Set(
+        (columns as Array<{ name: string }>).map((row) => row.name),
+      );
+      if (names.has("context_budget_tokens")) {
+        await conn.query(
+          "ALTER TABLE virtual_keys DROP COLUMN context_budget_tokens",
+        );
+      }
+      if (!names.has("dynamic_compression_enabled")) {
+        await conn.query(
+          "ALTER TABLE virtual_keys ADD COLUMN dynamic_compression_enabled TINYINT DEFAULT 0 AFTER disable_logging",
+        );
+      }
+    },
+  },
 ];
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {
