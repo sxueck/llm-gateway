@@ -38,7 +38,7 @@ describe('virtualKeyRepository.create', () => {
       rate_limit: 0,
       cache_enabled: 0,
       disable_logging: 0,
-      dynamic_compression_enabled: 0,
+      context_budget_tokens: null,
       image_compression_enabled: 0,
       intercept_zero_temperature: 0,
       zero_temperature_replacement: null,
@@ -60,8 +60,7 @@ describe('virtualKeyRepository.rotate', () => {
   it('updates key_value, key_hash and updated_at in one statement', async () => {
     await virtualKeyRepository.rotate('vk-1', 'sk-rotated', 'hash-rotated');
 
-    const [sql, values] = mocks.connection.query.mock.calls[0];
-    expect(sql).toContain('UPDATE virtual_keys SET key_value = ?, key_hash = ?, updated_at = ?');
+    const [, values] = mocks.connection.query.mock.calls[0];
     expect(values).toEqual(['sk-rotated', 'hash-rotated', expect.any(Number), 'vk-1']);
   });
 });

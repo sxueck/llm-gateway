@@ -1,7 +1,8 @@
 <template>
   <div>
     <n-space vertical :size="24">
-      <n-card :title="t('settings.developerDebugTitle')">
+      <PageHeader eyebrow="SETTINGS" :title="t('settings.developerDebugTitle')" />
+      <n-card>
         <n-space vertical :size="16">
           <n-space align="center" justify="space-between">
             <div>
@@ -191,6 +192,7 @@ import {
   useMessage,
 } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
+import PageHeader from '@/components/PageHeader.vue';
 import { configApi } from '@/api/config';
 import { formatJson, formatTimestamp } from '@/utils/common';
 

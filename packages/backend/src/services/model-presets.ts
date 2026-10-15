@@ -3,6 +3,11 @@ import type { ModelAttributes } from '../types/index.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { upstreamFetch } from '../utils/upstream-fetch.js';
+import {
+  createPresetResolver,
+  presetEntryScore,
+  type PricingMatch,
+} from './pricing-normalize.js';
 
 export interface ModelPresetInfo {
   max_tokens?: number;
@@ -56,37 +61,21 @@ function toNumber(value: unknown): number | undefined {
   return value;
 }
 
-function providerPriority(providerId: string | undefined): number {
-  const id = (providerId || '').toLowerCase();
-  const table: Record<string, number> = {
-    openai: 1000,
-    anthropic: 950,
-    google: 900,
-    'google-ai-studio': 890,
-    'vertex-ai': 880,
-    mistral: 850,
-    cohere: 800,
-    xai: 780,
-    deepseek: 760,
-    alibaba: 720,
-    qwen: 710,
-    'amazon-bedrock': 700,
-    bedrock: 700,
-    azure: 690,
-    groq: 650,
-    together: 620,
-    fireworks: 610,
-    huggingface: 550,
-    hf: 550,
-    openrouter: 500,
-  };
-  return table[id] ?? 0;
-}
-
-function shouldReplaceExisting(existing: ModelPresetInfo, incoming: ModelPresetInfo): boolean {
-  const existingP = providerPriority(existing.litellm_provider || existing.provider);
-  const incomingP = providerPriority(incoming.litellm_provider || incoming.provider);
-  if (incomingP !== existingP) return incomingP > existingP;
+function shouldReplaceExisting(
+  modelId: string,
+  existing: ModelPresetInfo,
+  incoming: ModelPresetInfo,
+): boolean {
+  // 同一个 modelId 会被多家供应商重复登记：自研实验室牌价优先，云托管/聚合商只兑底。
+  const existingScore = presetEntryScore(modelId, {
+    ...existing,
+    provider: existing.litellm_provider || existing.provider,
+  });
+  const incomingScore = presetEntryScore(modelId, {
+    ...incoming,
+    provider: incoming.litellm_provider || incoming.provider,
+  });
+  if (existingScore !== incomingScore) return incomingScore > existingScore;
 
   // Prefer entries that contain token pricing.
   const existingHasCost =
@@ -109,32 +98,46 @@ function shouldReplaceExisting(existing: ModelPresetInfo, incoming: ModelPresetI
   return false;
 }
 
+/** models.dev 是外部数据源，这里只做结构化取值，不做形状假设。 */
+type JsonRecord = Record<string, unknown>;
+
+const asRecord = (value: unknown): JsonRecord | null =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonRecord) : null;
+
+const asString = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+
+const asBoolean = (value: unknown): boolean | undefined => (typeof value === 'boolean' ? value : undefined);
+
+const asStringList = (value: unknown): string[] => (Array.isArray(value) ? (value.filter(item => typeof item === 'string') as string[]) : []);
+
 function parseModelsDevApiJson(apiJson: unknown): ModelPresetData {
-  if (!apiJson || typeof apiJson !== 'object' || Array.isArray(apiJson)) {
+  const providers = asRecord(apiJson);
+  if (!providers) {
     throw new Error('无效的 models.dev 数据格式');
   }
 
-  const providers = apiJson as Record<string, any>;
   const data: ModelPresetData = {};
 
-  for (const [providerId, provider] of Object.entries(providers)) {
-    if (!provider || typeof provider !== 'object') continue;
+  for (const [providerId, providerValue] of Object.entries(providers)) {
+    const provider = asRecord(providerValue);
+    if (!provider) continue;
 
-    const providerName = typeof provider.name === 'string' ? provider.name : undefined;
-    const models = provider.models;
-    if (!models || typeof models !== 'object' || Array.isArray(models)) continue;
+    const providerName = asString(provider.name);
+    const models = asRecord(provider.models);
+    if (!models) continue;
 
-    for (const [modelKey, model] of Object.entries(models as Record<string, any>)) {
-      if (!model || typeof model !== 'object') continue;
+    for (const [modelKey, modelValue] of Object.entries(models)) {
+      const model = asRecord(modelValue);
+      if (!model) continue;
 
-      const modelId = typeof model.id === 'string' && model.id ? model.id : modelKey;
-      if (typeof modelId !== 'string' || !modelId.trim()) continue;
+      const modelId = (asString(model.id) || modelKey).trim();
+      if (!modelId) continue;
 
-      const cost = model.cost || {};
-      const limit = model.limit || {};
-      const modalities = model.modalities || {};
-      const inputModalities = Array.isArray(modalities.input) ? modalities.input : [];
-      const outputModalities = Array.isArray(modalities.output) ? modalities.output : [];
+      const cost = asRecord(model.cost) || {};
+      const limit = asRecord(model.limit) || {};
+      const modalities = asRecord(model.modalities) || {};
+      const inputModalities = asStringList(modalities.input);
+      const outputModalities = asStringList(modalities.output);
 
       const supportsVision =
         inputModalities.includes('image') || outputModalities.includes('image') || undefined;
@@ -148,7 +151,7 @@ function parseModelsDevApiJson(apiJson: unknown): ModelPresetData {
       const preset: ModelPresetInfo = {
         litellm_provider: providerId || providerName || undefined,
         provider: providerId || providerName || undefined,
-        mode: typeof model.family === 'string' ? model.family : undefined,
+        mode: asString(model.family),
 
         max_tokens: toNumber(limit.context),
         max_input_tokens: toNumber(limit.input),
@@ -159,9 +162,8 @@ function parseModelsDevApiJson(apiJson: unknown): ModelPresetData {
         cache_read_cost_per_token: toPerTokenFromPer1M(cost.cache_read),
         cache_write_cost_per_token: toPerTokenFromPer1M(cost.cache_write),
 
-        supports_function_calling: typeof model.tool_call === 'boolean' ? model.tool_call : undefined,
-        supports_response_schema:
-          typeof model.structured_output === 'boolean' ? model.structured_output : undefined,
+        supports_function_calling: asBoolean(model.tool_call),
+        supports_response_schema: asBoolean(model.structured_output),
         supports_vision: supportsVision,
         supports_audio_input: supportsAudioInput,
         supports_audio_output: supportsAudioOutput,
@@ -170,7 +172,7 @@ function parseModelsDevApiJson(apiJson: unknown): ModelPresetData {
       };
 
       const existing = data[modelId];
-      if (!existing || shouldReplaceExisting(existing, preset)) {
+      if (!existing || shouldReplaceExisting(modelId, existing, preset)) {
         data[modelId] = preset;
       }
     }
@@ -185,6 +187,8 @@ function parseModelsDevApiJson(apiJson: unknown): ModelPresetData {
 export class ModelPresetsService {
   private cachedData: ModelPresetData | null = null;
   private lastUpdateTime: number = 0;
+  /** 定价解析索引惰建；数据刷新时置空重建。 */
+  private presetResolver: ((name: string) => PricingMatch<ModelPresetInfo> | null) | null = null;
 
   constructor() {
     this.loadFromCache();
@@ -197,6 +201,7 @@ export class ModelPresetsService {
         const data = JSON.parse(content);
         this.cachedData = data.models || null;
         this.lastUpdateTime = data.lastUpdate || 0;
+        this.presetResolver = null;
         memoryLogger.info(`从缓存加载模型预设: ${Object.keys(this.cachedData || {}).length} 个模型`, 'ModelPresets');
       }
     } catch (error: any) {
@@ -221,6 +226,7 @@ export class ModelPresetsService {
       writeFileSync(CACHE_FILE_PATH, JSON.stringify(cacheData, null, 2), 'utf-8');
       this.cachedData = data;
       this.lastUpdateTime = Date.now();
+      this.presetResolver = null;
       memoryLogger.info(`模型预设已缓存: ${Object.keys(data).length} 个模型`, 'ModelPresets');
     } catch (error: any) {
       memoryLogger.error(`保存模型预设缓存失败: ${error.message}`, 'ModelPresets');
@@ -351,6 +357,22 @@ export class ModelPresetsService {
       return null;
     }
     return this.cachedData[modelName] || null;
+  }
+
+  /**
+   * 按“官方实验室牌价”解析模型名：原名 → 去装饰后缀 → 同家族最近邻。
+   *
+   * 与 getModelInfo 的区别只在千容：虚拟名、带 `[1m]`/快照日期/供应商前缀的名字
+   * 不再因精确匹配落空而被记成 0 成本。策略为 family 的是近似价（不同型号）。
+   */
+  resolvePreset(modelName: string): PricingMatch<ModelPresetInfo> | null {
+    if (!this.cachedData) {
+      return null;
+    }
+    if (!this.presetResolver) {
+      this.presetResolver = createPresetResolver(this.cachedData);
+    }
+    return this.presetResolver(modelName);
   }
 
   getAllModels(): Array<{ modelName: string; info: ModelPresetInfo }> {

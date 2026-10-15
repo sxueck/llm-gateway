@@ -236,152 +236,124 @@ describe("capturePromptSample", () => {
     );
   });
 
-  it("skips capture for follow-up turns carrying assistant history", async () => {
+  const skipCases: Array<
+    [string, Record<string, any>, "openai" | "anthropic" | "gemini", boolean]
+  > = [
+    [
+      "follow-up turns carrying assistant history",
+      {
+        model: "gpt-5",
+        messages: [
+          { role: "user", content: "帮我编写一个清理脚本" },
+          { role: "assistant", content: "好的，先确认目录……" },
+          { role: "user", content: "继续" },
+        ],
+      },
+      "openai",
+      true,
+    ],
+    [
+      "agent loop turns with tool results",
+      {
+        model: "gpt-5",
+        messages: [
+          { role: "user", content: "帮我编写一个清理脚本" },
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [{ id: "call_1", type: "function" }],
+          },
+          { role: "tool", tool_call_id: "call_1", content: "done" },
+        ],
+      },
+      "openai",
+      false,
+    ],
+    [
+      "anthropic user messages carrying tool_result blocks",
+      {
+        model: "claude-sonnet-4",
+        messages: [
+          { role: "user", content: "帮我编写一个清理脚本" },
+          {
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "tu_1",
+                name: "run_shell_command",
+                input: {},
+              },
+            ],
+          },
+          {
+            role: "user",
+            content: [
+              { type: "tool_result", tool_use_id: "tu_1", content: "ok" },
+            ],
+          },
+        ],
+      },
+      "anthropic",
+      false,
+    ],
+    [
+      "gemini requests with model turns or function parts",
+      {
+        contents: [
+          { role: "user", parts: [{ text: "帮我编写一个清理脚本" }] },
+          {
+            role: "model",
+            parts: [{ functionCall: { name: "run_shell_command" } }],
+          },
+          {
+            role: "user",
+            parts: [
+              {
+                functionResponse: { name: "run_shell_command", response: {} },
+              },
+            ],
+          },
+        ],
+      },
+      "gemini",
+      false,
+    ],
+    [
+      "responses api input with tool output items",
+      {
+        model: "gpt-5",
+        input: [
+          { role: "user", content: "帮我编写一个清理脚本" },
+          { type: "function_call", name: "run_shell_command", call_id: "c1" },
+          { type: "function_call_output", call_id: "c1", output: "done" },
+        ],
+      },
+      "openai",
+      false,
+    ],
+  ];
+
+  it("skips capture for non-first-turn / tool-loop request shapes", async () => {
     const { SignalBuilder } = await import(
       "./expert-router/preprocess/index.js"
     );
+    for (const [_label, body, protocol, assertSignalBuilder] of skipCases) {
+      await capturePromptSample(
+        {
+          id: "vk-1",
+          prompt_capture_enabled: 1,
+          pii_protection_enabled: 0,
+        } as any,
+        { body } as any,
+        protocol,
+      );
 
-    await capturePromptSample(
-      {
-        id: "vk-1",
-        prompt_capture_enabled: 1,
-        pii_protection_enabled: 0,
-      } as any,
-      {
-        body: {
-          model: "gpt-5",
-          messages: [
-            { role: "user", content: "帮我编写一个清理脚本" },
-            { role: "assistant", content: "好的，先确认目录……" },
-            { role: "user", content: "继续" },
-          ],
-        },
-      } as any,
-      "openai",
-    );
-
-    expect(SignalBuilder.buildRoutingSignal).not.toHaveBeenCalled();
-    expect(promptSampleDb.create).not.toHaveBeenCalled();
-  });
-
-  it("skips capture for agent loop turns with tool results", async () => {
-    await capturePromptSample(
-      {
-        id: "vk-1",
-        prompt_capture_enabled: 1,
-        pii_protection_enabled: 0,
-      } as any,
-      {
-        body: {
-          model: "gpt-5",
-          messages: [
-            { role: "user", content: "帮我编写一个清理脚本" },
-            {
-              role: "assistant",
-              content: null,
-              tool_calls: [{ id: "call_1", type: "function" }],
-            },
-            { role: "tool", tool_call_id: "call_1", content: "done" },
-          ],
-        },
-      } as any,
-      "openai",
-    );
-
-    expect(promptSampleDb.create).not.toHaveBeenCalled();
-  });
-
-  it("skips capture when an anthropic user message carries tool_result blocks", async () => {
-    await capturePromptSample(
-      {
-        id: "vk-1",
-        prompt_capture_enabled: 1,
-        pii_protection_enabled: 0,
-      } as any,
-      {
-        body: {
-          model: "claude-sonnet-4",
-          messages: [
-            { role: "user", content: "帮我编写一个清理脚本" },
-            {
-              role: "assistant",
-              content: [
-                {
-                  type: "tool_use",
-                  id: "tu_1",
-                  name: "run_shell_command",
-                  input: {},
-                },
-              ],
-            },
-            {
-              role: "user",
-              content: [
-                { type: "tool_result", tool_use_id: "tu_1", content: "ok" },
-              ],
-            },
-          ],
-        },
-      } as any,
-      "anthropic",
-    );
-
-    expect(promptSampleDb.create).not.toHaveBeenCalled();
-  });
-
-  it("skips capture for gemini requests with model turns or function parts", async () => {
-    await capturePromptSample(
-      {
-        id: "vk-1",
-        prompt_capture_enabled: 1,
-        pii_protection_enabled: 0,
-      } as any,
-      {
-        body: {
-          contents: [
-            { role: "user", parts: [{ text: "帮我编写一个清理脚本" }] },
-            {
-              role: "model",
-              parts: [{ functionCall: { name: "run_shell_command" } }],
-            },
-            {
-              role: "user",
-              parts: [
-                {
-                  functionResponse: { name: "run_shell_command", response: {} },
-                },
-              ],
-            },
-          ],
-        },
-      } as any,
-      "gemini",
-    );
-
-    expect(promptSampleDb.create).not.toHaveBeenCalled();
-  });
-
-  it("skips capture for responses api input with tool output items", async () => {
-    await capturePromptSample(
-      {
-        id: "vk-1",
-        prompt_capture_enabled: 1,
-        pii_protection_enabled: 0,
-      } as any,
-      {
-        body: {
-          model: "gpt-5",
-          input: [
-            { role: "user", content: "帮我编写一个清理脚本" },
-            { type: "function_call", name: "run_shell_command", call_id: "c1" },
-            { type: "function_call_output", call_id: "c1", output: "done" },
-          ],
-        },
-      } as any,
-      "openai",
-    );
-
-    expect(promptSampleDb.create).not.toHaveBeenCalled();
+      expect(promptSampleDb.create).not.toHaveBeenCalled();
+      if (assertSignalBuilder) {
+        expect(SignalBuilder.buildRoutingSignal).not.toHaveBeenCalled();
+      }
+    }
   });
 
   it("captures responses api first-turn string input", async () => {

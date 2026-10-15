@@ -55,7 +55,7 @@ export interface SegmentTotalsRow {
   last_used_at: number | null;
 }
 
-function filterConditions(
+export function filterConditions(
   prefix: string,
   filters: OpsFilters,
 ): { sql: string; params: unknown[] } {

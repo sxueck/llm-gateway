@@ -14,9 +14,6 @@ export interface ProviderExportData {
   }>;
 }
 
-/**
- * 导出提供商配置
- */
 export function exportProviders(providers: Provider[]): ProviderExportData {
   const exportData: ProviderExportData = {
     version: '1.0.0',
@@ -37,9 +34,6 @@ export function exportProviders(providers: Provider[]): ProviderExportData {
   return exportData;
 }
 
-/**
- * 下载提供商配置文件
- */
 export function downloadProvidersConfig(providers: Provider[], filename?: string) {
   const exportData = exportProviders(providers)
   const jsonString = JSON.stringify(exportData, null, 2)
@@ -54,9 +48,6 @@ export function downloadProvidersConfig(providers: Provider[], filename?: string
   URL.revokeObjectURL(url)
 }
 
-/**
- * 验证导入的配置文件
- */
 export function validateImportData(data: any): {
   isValid: boolean;
   errors: string[];
@@ -65,7 +56,6 @@ export function validateImportData(data: any): {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  // 检查基本结构
   if (!data || typeof data !== 'object') {
     errors.push('无效的配置文件格式');
     return { isValid: false, errors, warnings };
@@ -80,7 +70,6 @@ export function validateImportData(data: any): {
     return { isValid: false, errors, warnings };
   }
 
-  // 检查每个提供商配置
   data.providers.forEach((provider: any, index: number) => {
     const prefix = `提供商 ${index + 1}`;
 
@@ -114,9 +103,6 @@ export function validateImportData(data: any): {
   };
 }
 
-/**
- * 解析导入的配置文件
- */
 export function parseImportFile(file: File): Promise<{
   data: ProviderExportData | null;
   validation: ReturnType<typeof validateImportData>;
@@ -161,9 +147,6 @@ export function parseImportFile(file: File): Promise<{
   });
 }
 
-/**
- * 转换导入数据为创建提供商的格式
- */
 export function convertImportDataToProviders(data: ProviderExportData): Array<{
   id: string;
   name: string;
@@ -184,9 +167,6 @@ export function convertImportDataToProviders(data: ProviderExportData): Array<{
   }));
 }
 
-/**
- * 生成配置摘要
- */
 export function generateConfigSummary(data: ProviderExportData): {
   totalProviders: number;
   enabledProviders: number;

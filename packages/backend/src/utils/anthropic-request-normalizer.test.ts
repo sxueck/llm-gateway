@@ -52,58 +52,61 @@ describe('normalizeAnthropicRequest', () => {
       expect(result.temperature).toBeUndefined();
     });
 
-    it('strips sampling parameters for Opus 4.7 and 4.8', () => {
-      for (const model of ['claude-opus-4-7', 'claude-opus-4-8']) {
+    it('strips sampling parameters for every Claude model, including 4.x ids', () => {
+      for (const model of ['claude-opus-4-7', 'claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5']) {
         const result = normalizeAnthropicRequest(model, {
           ...baseRequest,
           model,
           temperature: 0.5,
           top_p: 0.95,
+          top_k: 40,
         });
         expect(result.temperature).toBeUndefined();
         expect(result.top_p).toBeUndefined();
+        expect(result.top_k).toBeUndefined();
       }
-    });
-
-    it('preserves sampling parameters for legacy models', () => {
-      const result = normalizeAnthropicRequest('claude-sonnet-4-6', {
-        ...baseRequest,
-        model: 'claude-sonnet-4-6',
-        temperature: 0.7,
-        top_p: 0.9,
-        top_k: 40,
-      });
-      expect(result.temperature).toBe(0.7);
-      expect(result.top_p).toBe(0.9);
-      expect(result.top_k).toBe(40);
     });
   });
 
   describe('manual extended thinking conversion', () => {
-    it('converts enabled thinking to adaptive for Sonnet 5', () => {
-      const result = normalizeAnthropicRequest('claude-sonnet-5', {
-        ...baseRequest,
-        thinking: { type: 'enabled', budget_tokens: 32000 },
-      });
-      expect(result.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+    const adaptiveCases: Array<[string, Record<string, unknown>, number]> = [
+      ['claude-sonnet-5', {}, 32000],
+      ['claude-opus-4-8', { model: 'claude-opus-4-8' }, 10000],
+      ['claude-haiku-5-5', { model: 'claude-haiku-5-5', temperature: 0.5 }, 10000],
+    ];
+    it('converts enabled thinking to adaptive for adaptive-capable models', () => {
+      for (const [model, overrides, budgetTokens] of adaptiveCases) {
+        const result = normalizeAnthropicRequest(model, {
+          ...baseRequest,
+          ...overrides,
+          thinking: { type: 'enabled', budget_tokens: budgetTokens },
+        });
+        expect(result.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+        if ('temperature' in overrides) {
+          expect(result.temperature).toBeUndefined();
+        }
+      }
     });
 
-    it('converts enabled thinking to adaptive for Opus 4.8 without forcing display', () => {
-      const result = normalizeAnthropicRequest('claude-opus-4-8', {
+    it('keeps an explicit display when converting enabled thinking', () => {
+      const result = normalizeAnthropicRequest('claude-haiku-5-5', {
         ...baseRequest,
-        model: 'claude-opus-4-8',
-        thinking: { type: 'enabled', budget_tokens: 10000 },
+        model: 'claude-haiku-5-5',
+        thinking: { type: 'enabled', budget_tokens: 8192, display: 'omitted' } as any,
       });
-      expect(result.thinking).toEqual({ type: 'adaptive' });
+      expect(result.thinking).toEqual({ type: 'adaptive', display: 'omitted' });
     });
 
-    it('does not touch manual extended thinking on older models', () => {
-      const result = normalizeAnthropicRequest('claude-sonnet-4-5', {
-        ...baseRequest,
-        model: 'claude-sonnet-4-5',
-        thinking: { type: 'enabled', budget_tokens: 10000 },
-      });
-      expect(result.thinking).toEqual({ type: 'enabled', budget_tokens: 10000 });
+    it('no legacy path: manual extended thinking on 4.x ids is converted too', () => {
+      for (const model of ['claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-sonnet-4-6']) {
+        const result = normalizeAnthropicRequest(model, {
+          ...baseRequest,
+          model,
+          thinking: { type: 'enabled', budget_tokens: 10000 },
+        });
+        expect(result.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+        expect((result.thinking as any).budget_tokens).toBeUndefined();
+      }
     });
   });
 
@@ -118,27 +121,6 @@ describe('normalizeAnthropicRequest', () => {
       expect(result.temperature).toBeUndefined();
       expect(result.top_p).toBeUndefined();
       expect(result.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
-    });
-  });
-
-  describe('Sonnet 4.6 adaptive compatibility', () => {
-    it('converts manual thinking to summarized adaptive without stripping sampling parameters', () => {
-      const request = {
-        ...baseRequest,
-        model: 'claude-sonnet-4-6',
-        temperature: 0.7,
-        top_p: 0.9,
-        thinking: { type: 'enabled', budget_tokens: 8000 } as const,
-      };
-      expect(normalizeAnthropicRequest('claude-sonnet-4-6', request)).toEqual({
-        ...request,
-        thinking: { type: 'adaptive', display: 'summarized' },
-      });
-    });
-
-    it('preserves omitted thinking so the model default remains disabled', () => {
-      const request = { ...baseRequest, model: 'claude-sonnet-4-6' };
-      expect(normalizeAnthropicRequest('claude-sonnet-4-6', request)).toEqual(request);
     });
   });
 
@@ -225,16 +207,13 @@ describe('native thinking passthrough for compatible upstreams', () => {
     }).thinking).toBe(thinking);
   });
 
-  it('keeps display for Claude family models', () => {
-    const result = normalizeAnthropicRequest('claude-haiku-4-5', {
-      ...baseRequest,
-      thinking: { type: 'enabled', budget_tokens: 8192, display: 'summarized' } as any,
-    });
-    expect(result.thinking).toEqual({ type: 'enabled', budget_tokens: 8192, display: 'summarized' } as any);
-  });
-
   it('passes requests without thinking through unchanged for non-Claude models', () => {
     const request = { ...baseRequest, model: 'mimo-v2.6-pro' };
     expect(normalizeAnthropicRequest('mimo-v2.6-pro', request)).toBe(request);
+  });
+
+  it('passes a Claude request without thinking or sampling params through unchanged', () => {
+    const request = { ...baseRequest, model: 'claude-sonnet-4-6' };
+    expect(normalizeAnthropicRequest('claude-sonnet-4-6', request)).toBe(request);
   });
 });

@@ -21,15 +21,11 @@ const request = {
   body: { model: 'client-model' },
 } as any;
 
-function modelWithProtocols(protocols: string[]) {
-  return {
-    name: 'configured-model',
-    model_identifier: 'upstream-model',
-    supported_protocols: JSON.stringify(protocols),
-    health_check_protocol: protocols[0] ?? null,
-    model_attributes: null,
-  };
-}
+const plainModel = {
+  name: 'configured-model',
+  model_identifier: 'upstream-model',
+  model_attributes: null,
+};
 
 describe('buildProviderConfig protocol selection', () => {
   it.each([
@@ -43,7 +39,7 @@ describe('buildProviderConfig protocol selection', () => {
       'vk-test-value',
       provider.id,
       request,
-      modelWithProtocols(['openai', 'anthropic', 'google']),
+      plainModel,
       entrypointProtocol
     );
 
@@ -54,14 +50,20 @@ describe('buildProviderConfig protocol selection', () => {
     expect(result.protocolConfig.baseUrl).toContain(`${expectedProtocol === 'google' ? 'google' : expectedProtocol}.example`);
   });
 
-  it('returns unsupported_model_protocol when final model does not allow the effective protocol', async () => {
+  it('returns unsupported_provider_protocol when the provider does not offer the effective protocol', async () => {
+    const openaiOnlyProvider = {
+      ...provider,
+      name: 'openai-only',
+      protocol_mappings: null,
+    };
+
     const result = await buildProviderConfig(
-      provider,
+      openaiOnlyProvider,
       virtualKey,
       'vk-test-value',
-      provider.id,
+      openaiOnlyProvider.id,
       request,
-      modelWithProtocols(['openai']),
+      plainModel,
       'anthropic'
     );
 
@@ -70,7 +72,8 @@ describe('buildProviderConfig protocol selection', () => {
       body: {
         error: {
           type: 'invalid_request_error',
-          code: 'unsupported_model_protocol',
+          code: 'unsupported_provider_protocol',
+          message: expect.stringContaining('does not provide protocol "anthropic"'),
         },
       },
     });
@@ -93,7 +96,7 @@ describe('buildProviderConfig upstream model mapping', () => {
       'vk-test-value',
       provider.id,
       makeRequest('configured-model'),
-      modelWithProtocols(['openai']),
+      plainModel,
       'openai'
     );
 
@@ -109,7 +112,7 @@ describe('buildProviderConfig upstream model mapping', () => {
       'vk-test-value',
       provider.id,
       makeRequest('upstream-model'),
-      modelWithProtocols(['openai']),
+      plainModel,
       'openai'
     );
 
@@ -120,7 +123,7 @@ describe('buildProviderConfig upstream model mapping', () => {
 
   it('skips mapping for virtual models (identifier is internal)', async () => {
     const virtualModel = {
-      ...modelWithProtocols(['openai']),
+      ...plainModel,
       name: 'grok-4.6',
       model_identifier: 'virtual-123',
       is_virtual: 1,

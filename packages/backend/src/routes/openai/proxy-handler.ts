@@ -14,10 +14,7 @@ import {
   messageCompressor,
   KEEP_RECENT_WINDOW,
 } from "../../services/message-compressor.js";
-import {
-  historyCompactor,
-  type CompactionResult,
-} from "../../services/history-compactor.js";
+import { checkContextBudget } from "../../services/context-budget.js";
 import { extractIp } from "../../utils/ip.js";
 import { getRequestUserAgent } from "../../utils/http.js";
 import {
@@ -40,7 +37,8 @@ import {
 } from "../proxy/cache.js";
 import { runProxyPipeline } from "../proxy/pipeline.js";
 import { calculateTokensIfNeeded } from "../proxy/token-calculator.js";
-import { circuitBreaker } from "../../services/circuit-breaker.js";
+import { circuitBreaker, httpFailureError } from "../../services/circuit-breaker.js";
+import { applyRouteHeaders, modelFieldForClient } from "../../services/expert-router/exposure.js";
 import {
   shouldLogRequestBody,
   getModelForLogging,
@@ -91,7 +89,6 @@ function shouldApplyPiiProtection(
   // Keep Embeddings excluded.
   if (isEmbeddingsRequest) return false;
   if (!isChatCompletionsPath(path) && !isResponsesApi) return false;
-  // Check virtual key setting
   if (virtualKey?.pii_protection_enabled !== 1) return false;
   // Be strict: don't guess "openai" when protocol is missing.
   return protocolConfig?.protocol === "openai";
@@ -192,6 +189,8 @@ export interface ProxyRequestContext {
   path: string;
   virtualKey: any;
   providerId: string;
+  /** Display name of the serving provider (X-Gateway-Provider, opt-in). */
+  providerName?: string | null;
   startTime: number;
   compressionStats?: { originalTokens: number; savedTokens: number };
   currentModel?: any;
@@ -307,7 +306,6 @@ export function applyOpenAITargetModelMutations(
     );
   }
 
-  // 应用模型属性到请求体
   if (modelAttributes) {
     try {
       const enhancedRequestBody = buildFullRequestBody(
@@ -378,6 +376,13 @@ function buildChatCompletionBaseOptions(body: any): any {
     tools: body?.tools,
     tool_choice: body?.tool_choice,
     parallel_tool_calls: body?.parallel_tool_calls,
+    n: body?.n,
+    seed: body?.seed,
+    logit_bias: body?.logit_bias,
+    logprobs: body?.logprobs,
+    top_logprobs: body?.top_logprobs,
+    metadata: body?.metadata,
+    user: body?.user,
   };
 }
 
@@ -389,7 +394,20 @@ function applyGeminiNativeFields(options: any, body: any): void {
   if (body?.generationConfig) Object.assign(options, body.generationConfig);
 }
 
-/** Filter upstream response headers (strip hop-by-hop + content-length/type). */
+/** Filter upstream response headers (strip hop-by-hop, encoding/cookie headers and content-length/type). */
+const UNFORWARDED_RESPONSE_HEADERS = new Set([
+  "content-length",
+  "content-encoding",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "upgrade",
+  "set-cookie",
+  "set-cookie2",
+]);
+
 function filterResponseHeaders(
   headers: Record<string, string | string[]>,
   stripContentType = false,
@@ -400,7 +418,7 @@ function filterResponseHeaders(
     if (
       !lowerKey.startsWith("transfer-encoding") &&
       !lowerKey.startsWith("connection") &&
-      lowerKey !== "content-length" &&
+      !UNFORWARDED_RESPONSE_HEADERS.has(lowerKey) &&
       (!stripContentType || lowerKey !== "content-type")
     ) {
       result[key] = Array.isArray(value) ? value[0] : value;
@@ -472,16 +490,6 @@ export function createOpenAIProxyHandler() {
       const pipelineResult = await runProxyPipeline(request, reply, {
         protocol: "openai",
         handlers: {
-          onManualBlock: ({ reply }) => {
-            reply.code(403).send({
-              error: {
-                message: "Access denied: IP blocked",
-                type: "access_denied",
-                param: "ip",
-                code: "ip_blocked",
-              },
-            });
-          },
           onAntiBotBlock: ({ reply }) => {
             reply.code(403).send({
               error: {
@@ -494,6 +502,16 @@ export function createOpenAIProxyHandler() {
           },
           onAuthError: ({ reply, authError }) => {
             reply.code(authError.code).send(authError.body);
+          },
+          onRateLimited: ({ reply, limitPerMinute, retryAfterSeconds }) => {
+            reply.code(429).send({
+              error: {
+                message: `Rate limit exceeded for this virtual key (limit: ${limitPerMinute} requests/min). Retry after ${retryAfterSeconds}s.`,
+                type: "rate_limit_error",
+                param: null,
+                code: "rate_limit_exceeded",
+              },
+            });
           },
           onModelError: ({ reply, modelError }) => {
             reply.code(modelError.code).send(modelError.body);
@@ -562,9 +580,11 @@ export function createOpenAIProxyHandler() {
                 startTime,
                 virtualKey,
                 providerId: undefined,
+                providerName: null,
                 currentModel: undefined,
                 modelAttributes: undefined,
                 cached: early.cached,
+                routeInfo: null,
                 ip: requestIp,
                 userAgent: requestUserAgent,
               });
@@ -583,6 +603,7 @@ export function createOpenAIProxyHandler() {
         requestUserAgent: pipelineUa,
         virtualKey,
         virtualKeyValue: vkValue,
+        provider: resolvedProvider,
         providerId: resolvedProviderId,
         currentModel: resolvedModel,
         modelResult,
@@ -594,6 +615,7 @@ export function createOpenAIProxyHandler() {
       virtualKeyValue = vkValue;
       providerId = resolvedProviderId;
       currentModel = resolvedModel;
+      const providerName = resolvedProvider?.name ?? null;
 
       const normalization = await applyContextNormalization({
         protocol: "openai",
@@ -612,6 +634,21 @@ export function createOpenAIProxyHandler() {
 
       const { protocolConfig, path, vkDisplay, isStreamRequest } = configResult;
 
+      // gateway_name exposure: rewrite streamed chunk `model` fields when the
+      // route opts in; absent = upstream identifier passthrough (byte-identical).
+      const openAIClientModel = modelFieldForClient(
+        protocolConfig?.model,
+        modelResult?.routeInfo,
+      );
+      if (
+        protocolConfig &&
+        openAIClientModel &&
+        openAIClientModel !== protocolConfig.model
+      ) {
+        protocolConfig.clientModel = openAIClientModel;
+      }
+
+      const contextBudgetTokens = Number(virtualKey.context_budget_tokens) || 0;
       if (
         currentModel &&
         (request.body as any)?.messages &&
@@ -621,74 +658,71 @@ export function createOpenAIProxyHandler() {
           (request.body as any).messages,
           KEEP_RECENT_WINDOW,
         );
-        const shouldCompressMessages =
-          approxTokens >= MESSAGE_COMPRESSION_MIN_TOKENS;
+        // 预算判定复用压缩统计的消息计数，避免整段历史重复分词
+        let forwardedMessageTokens: number | undefined;
 
-        if (
-          virtualKey.dynamic_compression_enabled === 1 &&
-          shouldCompressMessages
-        ) {
-          let compaction: CompactionResult | undefined;
-          try {
-            compaction = await historyCompactor.compactIfNeeded(
-              (request.body as any).messages,
-            );
-            if (compaction.fired) {
-              (request.body as any).messages = compaction.messages;
+        if (contextBudgetTokens > 0) {
+          if (approxTokens >= MESSAGE_COMPRESSION_MIN_TOKENS) {
+            try {
+              const {
+                messages: compressedMessages,
+                stats,
+                cache: compressionCache,
+              } = await messageCompressor.compressMessages(
+                (request.body as any).messages,
+              );
+
+              (request.body as any).messages = compressedMessages;
+
+              compressionStats = {
+                originalTokens: stats.originalTokenEstimate,
+                savedTokens:
+                  stats.originalTokenEstimate - stats.compressedTokenEstimate,
+              };
+              forwardedMessageTokens = stats.compressedTokenEstimate;
+
               memoryLogger.info(
-                `历史摘要压缩 | 虚拟密钥: ${vkDisplay} | ${compaction.merged ? "摘要已合并更新" : "复用缓存摘要,增量原样下发"} | ` +
-                  `Token 节省: ${compaction.originalTokens - compaction.compactedTokens}` +
-                  (compaction.summarizerTokens
-                    ? ` | summarizer: ${compaction.summarizerTokens.promptTokens}+${compaction.summarizerTokens.completionTokens} tokens`
-                    : ""),
+                `消息压缩完成 | 虚拟密钥: ${vkDisplay} | 压缩率: ${(stats.compressionRatio * 100).toFixed(1)}% | ` +
+                  `Token 节省: ${compressionStats.savedTokens} | 压缩缓存: ${compressionCache.hit ? `命中(复用${compressionCache.reusedMessages}条)` : "未命中"}`,
+                "Proxy",
+              );
+            } catch (compressionError: any) {
+              memoryLogger.error(
+                `消息压缩失败: ${compressionError.message}`,
                 "Proxy",
               );
             }
-          } catch (compactionError: any) {
-            memoryLogger.error(
-              `历史摘要压缩失败，回退去重压缩: ${compactionError.message}`,
+          } else {
+            memoryLogger.debug(
+              `跳过消息压缩 | 虚拟密钥: ${vkDisplay} | 历史估算 tokens: ${approxTokens} < 阈值 ${MESSAGE_COMPRESSION_MIN_TOKENS}`,
               "Proxy",
             );
           }
 
-          try {
-            const {
-              messages: compressedMessages,
-              stats,
-              cache: compressionCache,
-            } = await messageCompressor.compressMessages(
-              (request.body as any).messages,
-            );
-
-            (request.body as any).messages = compressedMessages;
-
-            const baseTokens = compaction?.fired
-              ? compaction.originalTokens
-              : stats.originalTokenEstimate;
-            compressionStats = {
-              originalTokens: baseTokens,
-              savedTokens: baseTokens - stats.compressedTokenEstimate,
-            };
-
+          // 上下文预算判定（去重之后、目标级改写之前，不重试重判）：
+          // 只在用户轮次边界拦截，超预算返回 context_length_exceeded，
+          // 客户端自动压缩后重试（PRD async-context-compaction §5.1/§6.1）。
+          // tools 定义随请求转发，必须计入输入预算。
+          const budgetVerdict = await checkContextBudget({
+            virtualKeyId: virtualKey.id,
+            messages: (request.body as any).messages,
+            tools: (request.body as any)?.tools,
+            budgetTokens: contextBudgetTokens,
+            contextWindow: resolveServingLimits(
+              parsedModelAttributes,
+            ).contextWindow,
+            messagesTokens: forwardedMessageTokens,
+          });
+          if (budgetVerdict.action === "block") {
             memoryLogger.info(
-              `消息压缩完成 | 虚拟密钥: ${vkDisplay} | 压缩率: ${(stats.compressionRatio * 100).toFixed(1)}% | ` +
-                `Token 节省: ${compressionStats.savedTokens} | 压缩缓存: ${compressionCache.hit ? `命中(复用${compressionCache.reusedMessages}条)` : "未命中"}`,
+              `上下文预算拦截 | 虚拟密钥: ${vkDisplay} | 分类: ${budgetVerdict.classification} | ` +
+                `估算: ${budgetVerdict.estimatedTokens} tokens > 生效预算: ${budgetVerdict.effectiveBudget} (配置: ${contextBudgetTokens})`,
               "Proxy",
             );
-          } catch (compressionError: any) {
-            memoryLogger.error(
-              `消息压缩失败: ${compressionError.message}`,
-              "Proxy",
-            );
+            reply.header("x-should-retry", "false");
+            reply.header("x-gateway-budget", "enforced");
+            return reply.code(400).send(budgetVerdict.body);
           }
-        } else if (
-          virtualKey.dynamic_compression_enabled === 1 &&
-          !shouldCompressMessages
-        ) {
-          memoryLogger.debug(
-            `跳过消息压缩 | 虚拟密钥: ${vkDisplay} | 历史估算 tokens: ${approxTokens} < 阈值 ${MESSAGE_COMPRESSION_MIN_TOKENS}`,
-            "Proxy",
-          );
         }
       }
       if (
@@ -757,6 +791,7 @@ export function createOpenAIProxyHandler() {
         path,
         virtualKey,
         providerId: resolvedProviderId,
+        providerName,
         startTime,
         compressionStats,
         currentModel,
@@ -820,6 +855,7 @@ export function createOpenAIProxyHandler() {
               compressionStats,
               ip: requestIp,
               userAgent: requestUserAgent,
+              request,
               piiMaskedCount: 0,
             });
           }
@@ -878,6 +914,22 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
     const capHeader = String(ctx.effectiveMaxCompletionTokens);
     reply.header("X-Max-Completion-Tokens", capHeader);
     reply.raw.setHeader("X-Max-Completion-Tokens", capHeader);
+  }
+
+  // Route exposure headers (PRD §4): written before the first byte so they
+  // survive the raw writeHead below; upstreamModel reflects any retry rewrite.
+  applyRouteHeaders(reply, {
+    routeInfo: modelResult?.routeInfo,
+    upstreamModel: protocolConfig.model ?? (request.body as any)?.model,
+    providerName: ctx.providerName,
+  });
+  // §4C: opt-in SSE debug comment line (default off).
+  if (modelResult?.routeInfo?.exposure?.sse_comment) {
+    protocolConfig.sseComment = `x-gateway-route ${JSON.stringify({
+      model: protocolConfig.model ?? (request.body as any)?.model ?? "",
+      tier: modelResult.routeInfo.tier ?? "",
+      source: modelResult.routeInfo.routeSource,
+    })}`;
   }
 
   memoryLogger.info(
@@ -1068,11 +1120,14 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
       : undefined;
 
     logApiRequestAsync({
+      request,
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),
       tokenCount,
       status: "success",
+      routeLogId: modelResult?.routeInfo?.logId ?? undefined,
+      routeTier: modelResult?.routeInfo?.tier ?? undefined,
       responseTime: duration,
       tffbMs: tokenUsage.tffbMs,
       truncatedRequest,
@@ -1144,6 +1199,7 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
       const abortTokenCount = await calculateTokensIfNeeded(0, request.body);
 
       logApiRequestAsync({
+        request,
         virtualKey,
         providerId,
         model: getModelForLogging(request.body, currentModel),
@@ -1225,6 +1281,7 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
     const tokenCount = await calculateTokensIfNeeded(0, request.body);
 
     logApiRequestAsync({
+      request,
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),
@@ -1280,7 +1337,6 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
       },
     };
 
-    // 若仍未发送任何响应，则返回规范化错误
     if (!reply.raw.headersSent && !reply.sent) {
       const finalStatus = statusForRetry || 500;
       reply.raw.writeHead(finalStatus, { "Content-Type": "application/json" });
@@ -1325,6 +1381,9 @@ interface NonStreamCacheHitArgs {
    * reply.send failure cannot produce a second row via the outer catch.
    */
   auditState?: { auditLogged?: boolean };
+  /** Difficulty-routing facts when the hit came after model resolution. */
+  routeInfo?: import("../../services/expert-router/exposure.js").ExpertRouteInfo | null;
+  providerName?: string | null;
 }
 
 /** Serve a non-stream response from the cache. Shared by the early hit path
@@ -1356,6 +1415,27 @@ async function sendNonStreamCacheHit(
     "X-Cache-Status": "HIT",
   });
   reply.code(200);
+
+  // Route exposure headers (PRD §4): cache hits report source=cache; the
+  // upstream model comes from the cached response body itself.
+  applyRouteHeaders(reply, {
+    routeInfo: args.routeInfo ?? null,
+    upstreamModel: cached.response?.model ?? null,
+    routeSourceOverride: "cache",
+    fallbackRoutedModel: (request.body as any)?.model,
+    providerName: args.providerName ?? null,
+  });
+  if (
+    cached.response &&
+    typeof cached.response === "object" &&
+    typeof cached.response.model === "string"
+  ) {
+    const modelForClient = modelFieldForClient(
+      cached.response.model,
+      args.routeInfo ?? null,
+    );
+    if (modelForClient) cached.response.model = modelForClient;
+  }
 
   // 在返回与记录前净化缓存响应，去除上游调试 instructions 字段
   let cachedResponseForClient: any = cached.response;
@@ -1400,11 +1480,14 @@ async function sendNonStreamCacheHit(
     model: getModelForLogging(request.body, currentModel),
     tokenCount,
     status: "success",
+    routeLogId: args.routeInfo?.logId ?? undefined,
+    routeTier: args.routeInfo?.tier ?? undefined,
     responseTime: duration,
     truncatedRequest,
     truncatedResponse,
     cacheHit: 1,
     cachedTokens: normCached.cachedTokens,
+    request,
     compressionStats,
     ip,
     userAgent,
@@ -1528,7 +1611,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       if (!isSuccess) {
         circuitBreaker.recordFailure(
           circuitBreakerKey,
-          new Error(`HTTP ${response.statusCode}`),
+          httpFailureError(response.statusCode),
         );
       } else {
         circuitBreaker.recordSuccess(circuitBreakerKey);
@@ -1571,6 +1654,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
               ? response.body
               : JSON.stringify(response.body)
             ).substring(0, 500),
+        request,
         truncatedRequest,
         truncatedResponse,
         cacheHit: 0,
@@ -1609,6 +1693,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
           responseTime: duration,
           errorMessage: CLIENT_ABORTED_MESSAGE,
           cacheHit: 0,
+          request,
           ip: nonStreamRequestIp,
           userAgent: nonStreamRequestUserAgent,
           piiMaskedCount: 0,
@@ -1637,6 +1722,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
         responseTime: duration,
         errorMessage: error.message,
         truncatedRequest,
+        request,
         cacheHit: 0,
         ip: nonStreamRequestIp,
         userAgent: nonStreamRequestUserAgent,
@@ -1717,10 +1803,12 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       startTime,
       virtualKey,
       providerId,
+      providerName: ctx.providerName,
       currentModel,
       modelAttributes,
       compressionStats,
       cached: cacheResult.cached,
+      routeInfo: modelResult?.routeInfo ?? null,
       retryLock:
         cacheLockKey && cacheLockOwner
           ? { key: cacheLockKey, owner: cacheLockOwner }
@@ -1824,10 +1912,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       ? maskRequestBodyInPlace(request.body, true)
       : { applied: false, context: null, maskedCount: 0 };
 
-    const options: any = {
-      ...buildChatCompletionBaseOptions(request.body as any),
-      user: (request.body as any)?.user,
-    };
+    const options: any = buildChatCompletionBaseOptions(request.body as any);
 
     // 模型名后缀解析的强制 reasoning_effort，覆盖客户端传入的值
     if (modelResult?.forcedReasoningEffort) {
@@ -1878,6 +1963,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       ip: nonStreamRequestIp,
       userAgent: nonStreamRequestUserAgent,
       piiMaskedCount: piiResult.maskedCount,
+      request,
     });
     ctx.auditLogged = true;
     if (cacheLockKey && cacheLockOwner) {
@@ -2014,7 +2100,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
 
       circuitBreaker.recordFailure(
         circuitBreakerKey,
-        new Error(`HTTP ${response.statusCode}`),
+        httpFailureError(response.statusCode),
       );
       logApiRequestAsync({
         virtualKey,
@@ -2032,6 +2118,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
         ip: nonStreamRequestIp,
         userAgent: nonStreamRequestUserAgent,
         piiMaskedCount: piiResult?.maskedCount || 0,
+        request,
       });
       ctx.auditLogged = true;
       failedAttemptAccountedFor = true;
@@ -2102,11 +2189,14 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
   // above when a retry was dispatched, so only log here when no retry occurred.
   if (!failedAttemptAccountedFor) {
     logApiRequestAsync({
+      request,
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),
       tokenCount,
       status: isSuccess ? "success" : "error",
+      routeLogId: modelResult?.routeInfo?.logId ?? undefined,
+      routeTier: modelResult?.routeInfo?.tier ?? undefined,
       responseTime: duration,
       errorMessage: isSuccess ? undefined : JSON.stringify(responseData),
       truncatedRequest,
@@ -2147,7 +2237,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
     if (!failedAttemptAccountedFor) {
       circuitBreaker.recordFailure(
         circuitBreakerKey,
-        new Error(`HTTP ${response.statusCode}`),
+        httpFailureError(response.statusCode),
       );
     }
 
@@ -2160,6 +2250,25 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       `请求失败: ${response.statusCode} | ${duration}ms | error: ${truncatedError}`,
       "Proxy",
     );
+  }
+
+  // Route exposure headers + body model field (PRD §4): applied at the final
+  // send point so any smart-routing retry has already settled the body model.
+  applyRouteHeaders(reply, {
+    routeInfo: modelResult?.routeInfo,
+    upstreamModel: protocolConfig?.model ?? (request.body as any)?.model,
+    providerName: ctx.providerName,
+  });
+  if (
+    responseData &&
+    typeof responseData === "object" &&
+    typeof responseData.model === "string"
+  ) {
+    const modelForClient = modelFieldForClient(
+      responseData.model,
+      modelResult?.routeInfo,
+    );
+    if (modelForClient) responseData.model = modelForClient;
   }
 
   reply.header("Content-Type", "application/json");

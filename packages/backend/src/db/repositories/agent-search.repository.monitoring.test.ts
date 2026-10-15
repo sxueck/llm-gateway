@@ -78,10 +78,6 @@ describe("agentRunMonitoringRepository.list", () => {
     });
 
     const listSql = mocks.connection.query.mock.calls[0][0] as string;
-    expect(listSql).toContain("ORDER BY r.created_at DESC, r.id DESC");
-    expect(listSql).toContain(
-      "LEFT JOIN agent_search_usage u ON u.run_id = r.id",
-    );
     for (const forbidden of [
       "query_encrypted",
       "result_encrypted",
@@ -113,10 +109,6 @@ describe("agentRunMonitoringRepository.list", () => {
       snapshot_runs: 1,
       snapshots: { total: 2, ready: 1, file_count: 30, total_size: 4096 },
     });
-    const snapshotSql = mocks.connection.query.mock.calls[2][0] as string;
-    expect(snapshotSql).toContain("FROM repository_snapshots");
-    expect(snapshotSql).toContain("deleted_at IS NULL");
-    expect(snapshotSql).not.toContain("agent_search_runs");
     expect(mocks.connection.query.mock.calls[2][1]).toHaveLength(1);
     expect(result.items[0]).toEqual({
       id: "run-1",

@@ -38,14 +38,6 @@ export class Budget {
     this.totalReadLines += lines;
     return true;
   }
-  tryNoteFileRead(lines: number): boolean {
-    if (this.filesRead >= this.maxFilesRead || this.totalReadLines + lines > this.maxTotalReadLines) {
-      return false;
-    }
-    this.filesRead += 1;
-    this.totalReadLines += lines;
-    return true;
-  }
 }
 
 export interface ToolContext {
@@ -160,8 +152,6 @@ function assertParams(obj: Record<string, unknown>, keys: { name: string; type: 
   return obj;
 }
 
-// ============ grep_search ============
-
 const MAX_RG_STDOUT_BYTES = 8 * 1024 * 1024;
 
 interface RgResult {
@@ -242,11 +232,8 @@ export async function grepSearch(ctx: ToolContext, params: Record<string, unknow
     throw new ToolError(`invalid regex or search error: ${res.stderr.trim().split('\n')[0] || 'ripgrep exited with 2'}`);
   }
 
-  // 解析 rg 输出：匹配行 `rel:LINE:text`、上下文行 `rel-LINE-text`、`--` 块分隔。
-  // 每文件最多保留 MAX_MATCHES_PER_FILE 个匹配（含其上下文行），其余以计数尾注带出，
-  // 防止单文件热点灌满结果窗口。grep 不占 read budget——命中行曾计入 filesRead，
-  // 一次宽 grep 就能烧光全部文件额度使后续 read_file 全部失败；输出体量由
-  // MAX_GREP_RESULTS / MAX_MATCHES_PER_FILE / MAX_TOOL_OUTPUT_CHARS 兜底。
+  // 每文件限额防止热点灌满结果；grep 不计 read budget，避免宽检索耗尽后续读取额度。
+  // 输出量由 MAX_GREP_RESULTS / MAX_MATCHES_PER_FILE / MAX_TOOL_OUTPUT_CHARS 限制。
   const perFile: { rel: string; entries: { text: string; isMatch: boolean }[]; matchTotal: number }[] = [];
   let total = 0;
   for (const raw of res.stdout.split('\n')) {
@@ -291,8 +278,6 @@ export async function grepSearch(ctx: ToolContext, params: Record<string, unknow
   return truncateOutput(header + hits.join('\n')).text;
 }
 
-// ============ read_file ============
-
 export async function readFileTool(ctx: ToolContext, params: Record<string, unknown>): Promise<string> {
   assertParams(params, [
     { name: 'path', type: 'string', required: true },
@@ -328,8 +313,6 @@ export async function readFileTool(ctx: ToolContext, params: Record<string, unkn
   return truncateOutput(header + numbered).text;
 }
 
-// ============ list_directory ============
-
 export async function listDirectory(ctx: ToolContext, params: Record<string, unknown>): Promise<string> {
   assertParams(params, [{ name: 'path', type: 'string' }]);
   const rel = params.path ? await resolveWithinRoot(ctx, String(params.path)) : '.';
@@ -350,8 +333,6 @@ export async function listDirectory(ctx: ToolContext, params: Record<string, unk
   return truncateOutput(header + lines.join('\n')).text;
 }
 
-// ============ glob_files ============
-
 export async function globFiles(ctx: ToolContext, params: Record<string, unknown>): Promise<string> {
   assertParams(params, [{ name: 'pattern', type: 'string', required: true }]);
   const re = globToRegExp(String(params.pattern));
@@ -364,8 +345,6 @@ export async function globFiles(ctx: ToolContext, params: Record<string, unknown
   const header = `${matches.length} match(es)${matches.length >= MAX_GLOB_RESULTS ? ' (capped)' : ''}\n`;
   return truncateOutput(header + matches.join('\n')).text;
 }
-
-// ============ repo structure（首消息的深度 2 全局地图） ============
 
 /** 扁平相对路径列表（目录带 `/` 后缀），供 agent 首消息瞄准检索，省掉根目录盲探索。 */
 export async function listRepoStructure(ctx: ToolContext, maxDepth: number, cap: number): Promise<string> {

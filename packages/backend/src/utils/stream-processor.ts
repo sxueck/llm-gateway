@@ -3,6 +3,7 @@ import type { FastifyReply } from 'fastify';
 import { extractReasoningFromChoice } from './request-logger.js';
 import { normalizeUsageCounts } from './usage-normalizer.js';
 import { BoundedChunkRecorder } from './bounded-chunk-recorder.js';
+import { StreamTruncatedError, writeWithBackpressure } from './stream-guards.js';
 
 import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-client.js';
 
@@ -15,6 +16,11 @@ export interface OpenAIChatStreamProcessorOptions {
   reply: FastifyReply;
   stream: AsyncIterable<any>;
   model: string;
+  /** Report this model name to the client instead of the upstream identifier
+   * (PRD §4 gateway_name exposure); absent = byte-identical passthrough. */
+  clientModel?: string;
+  /** §4C debug comment line written right after the SSE headers (opt-in). */
+  sseComment?: string;
   abortSignal?: AbortSignal;
   upstreamRequestStartedAt?: number;
 
@@ -50,6 +56,8 @@ export async function processOpenAIChatCompletionStreamToSse(
     reply,
     stream,
     model,
+    clientModel,
+    sseComment,
     abortSignal,
     upstreamRequestStartedAt,
     streamRestorer,
@@ -63,12 +71,25 @@ export async function processOpenAIChatCompletionStreamToSse(
   let lastChunkId: string | undefined;
   let lastChunkModel: string | undefined;
 
-  reply.raw.writeHead(200, {
-    'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-cache, no-transform',
-    'X-Accel-Buffering': 'no',
-  });
+  // Headers are committed on the first write so an upstream that fails or ends
+  // empty before producing output can still fall back to another target.
+  const ensureHeaders = () => {
+    if (reply.raw.headersSent) return;
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'X-Accel-Buffering': 'no',
+    });
+    // §4C: opt-in debug comment before the first event; SSE parsers must ignore
+    // lines starting with ':' per spec (pi's parser skips them too).
+    if (sseComment) {
+      reply.raw.write(`: ${sseComment}\n\n`);
+    }
+  };
 
+  let upstreamChunkCount = 0;
+  let sawTerminal = false;
+  let clientGone = false;
   let promptTokens = 0;
   let completionTokens = 0;
   let totalTokens = 0;
@@ -100,7 +121,17 @@ export async function processOpenAIChatCompletionStreamToSse(
         // Stop work if the downstream connection is gone.
         if (reply.raw.destroyed || reply.raw.writableEnded) {
           logger?.info('客户端已断开连接，停止流式传输', 'Protocol');
+          clientGone = true;
           break;
+        }
+
+        upstreamChunkCount += 1;
+        if (
+          (chunk as any)?.usage ||
+          (Array.isArray((chunk as any)?.choices) &&
+            (chunk as any).choices.some((choice: any) => choice?.finish_reason))
+        ) {
+          sawTerminal = true;
         }
 
         if (chunk && typeof chunk === 'object' && 'instructions' in chunk) {
@@ -186,6 +217,9 @@ export async function processOpenAIChatCompletionStreamToSse(
 
         if ((chunk as any)?.id) lastChunkId = String((chunk as any).id);
         if ((chunk as any)?.model) lastChunkModel = String((chunk as any).model);
+        if (clientModel && (chunk as any)?.model) {
+          (chunk as any).model = clientModel;
+        }
 
         // Record TFFB on first upstream stream event observed
         if (tffbMs === undefined && upstreamRequestStartedAt) {
@@ -199,11 +233,8 @@ export async function processOpenAIChatCompletionStreamToSse(
           const sseData = `data: ${chunkData}\n\n`;
           chunkRecorder.record(sseData);
 
-          if (!reply.raw.write(sseData)) {
-            await new Promise<void>((resolve) => {
-              reply.raw.once('drain', resolve);
-            });
-          }
+          ensureHeaders();
+          await writeWithBackpressure(reply.raw, sseData, abortSignal);
         }
 
         if ((chunk as any).usage) {
@@ -236,6 +267,16 @@ export async function processOpenAIChatCompletionStreamToSse(
           reasoningContent = extraction.reasoningContent;
           thinkingBlocks = extraction.thinkingBlocks as ThinkingBlock[];
           toolCalls = extraction.toolCalls || [];
+        }
+      }
+
+      // The SDK ends the iterator silently on a graceful close without [DONE].
+      if (!clientGone && !abortSignal?.aborted) {
+        if (upstreamChunkCount === 0) {
+          throw new StreamTruncatedError('Upstream stream ended without any data');
+        }
+        if (!sawTerminal) {
+          throw new StreamTruncatedError();
         }
       }
     } catch (error: any) {
@@ -314,15 +355,13 @@ export async function processOpenAIChatCompletionStreamToSse(
 
       const flushData = `data: ${JSON.stringify(flushChunk)}\n\n`;
       chunkRecorder.record(flushData);
-      if (!reply.raw.write(flushData)) {
-        await new Promise<void>((resolve) => {
-          reply.raw.once('drain', resolve);
-        });
-      }
+      ensureHeaders();
+      await writeWithBackpressure(reply.raw, flushData, abortSignal);
     }
   }
 
   if (!reply.raw.destroyed && !reply.raw.writableEnded) {
+    ensureHeaders();
     reply.raw.write('data: [DONE]\n\n');
     reply.raw.end();
   }

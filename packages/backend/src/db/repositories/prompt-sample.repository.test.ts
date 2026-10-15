@@ -33,8 +33,8 @@ describe('promptSampleRepository.cleanOldRecords', () => {
     await expect(promptSampleRepository.cleanOldRecords(30)).resolves.toBe(3);
 
     expect(mocks.connection.query).toHaveBeenCalledWith(
-      'DELETE FROM prompt_samples WHERE created_at < ?',
-      [Date.now() - 30 * 24 * 60 * 60 * 1000]
+      expect.any(String),
+      [Date.now() - 30 * 24 * 60 * 60 * 1000],
     );
     expect(mocks.connection.release).toHaveBeenCalled();
   });

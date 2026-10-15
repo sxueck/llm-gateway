@@ -51,20 +51,36 @@ export interface ModelAttributes {
   requestTimeout?: number;
 }
 
+export interface ModelAvailabilityBucket {
+  start: number;
+  total: number;
+  success: number;
+}
+
+export interface ModelAvailability {
+  windowHours: number;
+  total: number;
+  success: number;
+  lastUsedAt: number;
+  buckets: ModelAvailabilityBucket[];
+}
+
 export interface Model {
   id: string;
   name: string;
   providerId: string;
   providerName?: string;
   modelIdentifier: string;
+  /** 由供应商派生的可用协议（base_url→openai + protocol_mappings） */
   supportedProtocols?: string[];
-  healthCheckProtocol?: string | null;
   isVirtual?: boolean;
   routingConfigId?: string | null;
   expertRoutingId?: string | null;
   enabled: boolean;
   modelAttributes?: ModelAttributes | null;
   virtualKeyCount?: number;
+  /** 被动可用性（近24h api_requests 聚合）；无调用记录时为 null */
+  availability?: ModelAvailability | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -82,7 +98,8 @@ export interface VirtualKey {
   rateLimit?: number | null;
   cacheEnabled: boolean;
   disableLogging: boolean;
-  dynamicCompressionEnabled: boolean;
+  /** 上下文预算档位 tokens（200K/400K/600K/800K），null=关闭 */
+  contextBudgetTokens: number | null;
   imageCompressionEnabled: boolean;
   interceptZeroTemperature: boolean;
   zeroTemperatureReplacement?: number | null;
@@ -138,8 +155,6 @@ export interface CreateModelRequest {
   name: string;
   providerId: string;
   modelIdentifier: string;
-  supportedProtocols?: string[];
-  healthCheckProtocol?: string;
   isVirtual?: boolean;
   routingConfigId?: string;
   enabled?: boolean;
@@ -149,8 +164,6 @@ export interface CreateModelRequest {
 export interface UpdateModelRequest {
   name?: string;
   modelIdentifier?: string;
-  supportedProtocols?: string[];
-  healthCheckProtocol?: string;
   enabled?: boolean;
   modelAttributes?: ModelAttributes;
 }
@@ -168,7 +181,7 @@ export interface CreateVirtualKeyRequest {
   enabled?: boolean;
   cacheEnabled?: boolean;
   disableLogging?: boolean;
-  dynamicCompressionEnabled?: boolean;
+  contextBudgetTokens?: number | null;
   imageCompressionEnabled?: boolean;
   interceptZeroTemperature?: boolean;
   zeroTemperatureReplacement?: number;
@@ -187,7 +200,7 @@ export interface UpdateVirtualKeyRequest {
   rateLimit?: number;
   cacheEnabled?: boolean;
   disableLogging?: boolean;
-  dynamicCompressionEnabled?: boolean;
+  contextBudgetTokens?: number | null;
   imageCompressionEnabled?: boolean;
   interceptZeroTemperature?: boolean;
   zeroTemperatureReplacement?: number;

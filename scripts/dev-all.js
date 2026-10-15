@@ -1,4 +1,3 @@
-// Cross-platform "dev:all" runner.
 // Bun does not support shell backgrounding ("&") on Windows, so we spawn both
 // workspaces and manage their lifecycle here.
 
@@ -58,7 +57,6 @@ Promise.race(
     return { name: c.name, code };
   })
 ).then(async (firstExit) => {
-  // If any child exits, stop the other one and exit with the same code.
   console.error(`[dev:all] ${firstExit.name} exited with code ${firstExit.code}`);
   await shutdown(firstExit.code);
 });

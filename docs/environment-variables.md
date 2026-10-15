@@ -89,13 +89,14 @@ LLM Gateway 的运行时配置只有两个真实来源：**环境变量**（部�
 | `NO_PROXY`                    | 空     | 例外主机列表（逗号分隔，支持 `*` 通配），命中的地址不走代理。 |
 | `HTTP_KEEP_ALIVE_MAX_SOCKETS` | `64`   | 上游 HTTP keep-alive agent 的最大 socket 数。                 |
 
-## 意图路由 / 专家路由
+## Jev 专家路由
 
-| 变量                           | 默认值 | 说明                                                                                                                                                                                                                         |
-| ------------------------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `INTENT_ROUTER_API_URL`        | 未设置 | 外置 Intent Router API 的绝对 HTTP(S) 地址；可使用部署服务名，例如 `http://intent-router:8000`。网关请求其 `/v1/intent`。未设置或服务异常时，专家路由继续走 LLM 二次分类 / fallback，网关 `/v1/intent/classify` 返回 `503`。 |
-| `INTENT_ROUTER_API_KEY`        | 未设置 | 可选的外置服务 Bearer token，对应服务端的 `INTENT_ROUTER_API_KEYS`。                                                                                                                                                         |
-| `INTENT_ROUTER_API_TIMEOUT_MS` | `5000` | 网关调用外置 Intent Router API 的超时（毫秒）。                                                                                                                                                                              |
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `JEV_API_URL` | 未设置 | Jev Decisions 完整 HTTP(S) URL，例如 TypeSafe `/v1/systemone` 或 OpenRouter `/api/alpha/decisions`。启用专家路由时必填。 |
+| `JEV_API_KEY` | 未设置 | 上游 Bearer 密钥；仅在后端设置。启用专家路由时必填。 |
+| `JEV_MODEL` | 未设置 | 上游模型 ID，例如 `jev-1.13.0` 或 `typesafe/jev-1.13`。启用专家路由时必填。 |
+| `JEV_API_TIMEOUT_MS` | `3000` | 单次决策超时，毫秒。失败时使用显式配置的 fallback，不走 LLM 二次分类。 |
 
 ## 消息压缩与上下文规范化
 

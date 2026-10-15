@@ -2,8 +2,8 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { memoryLogger } from '../../services/logger.js';
 import { extractIp } from '../../utils/ip.js';
 import { getRequestUserAgent } from '../../utils/http.js';
-import { manualIpBlocklist } from '../../services/manual-ip-blocklist.js';
 import { extractVirtualKeyAuthHeader, authenticateVirtualKey } from './auth.js';
+import { virtualKeyRateLimiter } from '../../services/virtual-key-rate-limiter.js';
 import { resolveModelAndProvider } from './model-resolver.js';
 import { buildProviderConfig } from './provider-config-builder.js';
 
@@ -31,12 +31,6 @@ export interface ProxyPreflightContext {
 }
 
 export interface ProxyPreflightHandlers {
-  onManualBlock: (args: {
-    reply: FastifyReply;
-    requestIp: string;
-    requestUserAgent: string;
-    reason?: string;
-  }) => Promise<void> | void;
   onAntiBotBlock: (args: {
     reply: FastifyReply;
     requestIp: string;
@@ -48,6 +42,14 @@ export interface ProxyPreflightHandlers {
     requestIp: string;
     requestUserAgent: string;
     authError: any;
+  }) => Promise<void> | void;
+  onRateLimited: (args: {
+    reply: FastifyReply;
+    requestIp: string;
+    requestUserAgent: string;
+    /** RPM limit configured on virtual_keys.rate_limit. */
+    limitPerMinute: number;
+    retryAfterSeconds: number;
   }) => Promise<void> | void;
 }
 
@@ -94,28 +96,13 @@ export type ProxyPreflightResult =
   | { ok: true; context: ProxyPreflightContext }
   | { ok: false };
 
-export async function runProxyPreflight(
+export async function runProxyAuthentication(
   request: FastifyRequest,
   reply: FastifyReply,
-  handlers: ProxyPreflightHandlers
+  handlers: Pick<ProxyPreflightHandlers, 'onAntiBotBlock' | 'onAuthError'>
 ): Promise<ProxyPreflightResult> {
   const requestIp = extractIp(request);
   const requestUserAgent = getRequestUserAgent(request);
-
-  const manualBlock = await manualIpBlocklist.isBlocked(requestIp);
-  if (manualBlock) {
-    memoryLogger.warn(
-      `拦截手动屏蔽 IP 请求 | IP: ${requestIp} | UA: ${requestUserAgent} | 原因: ${manualBlock.reason || '管理员拦截'}`,
-      'ManualBlock'
-    );
-    await handlers.onManualBlock({
-      reply,
-      requestIp,
-      requestUserAgent,
-      reason: manualBlock.reason || undefined,
-    });
-    return { ok: false };
-  }
 
   const { antiBotService } = await import('../../services/anti-bot.js');
   const antiBotResult = antiBotService.detect(requestUserAgent, requestIp);
@@ -158,6 +145,36 @@ export async function runProxyPreflight(
   };
 }
 
+export async function runProxyPreflight(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  handlers: ProxyPreflightHandlers
+): Promise<ProxyPreflightResult> {
+  const authResult = await runProxyAuthentication(request, reply, handlers);
+  if (!authResult.ok) return authResult;
+  const { virtualKey, requestIp, requestUserAgent } = authResult.context;
+
+  // HTTP requests count here; WebSocket handshakes only authenticate and count each response.create.
+  const rateLimit = virtualKeyRateLimiter.check(virtualKey.id, virtualKey.rate_limit);
+  if (!rateLimit.allowed) {
+    memoryLogger.warn(
+      `虚拟密钥速率限制触发 | keyId: ${virtualKey.id} | limit: ${virtualKey.rate_limit} req/min | retryAfter: ${rateLimit.retryAfterSeconds}s | IP: ${requestIp}`,
+      'RateLimit',
+    );
+    reply.header('Retry-After', String(rateLimit.retryAfterSeconds));
+    await handlers.onRateLimited({
+      reply,
+      requestIp,
+      requestUserAgent,
+      limitPerMinute: Number(virtualKey.rate_limit),
+      retryAfterSeconds: rateLimit.retryAfterSeconds,
+    });
+    return { ok: false };
+  }
+
+  return authResult;
+}
+
 /**
  * Shared pre-check pipeline for all proxy protocols.
  *
@@ -165,9 +182,10 @@ export async function runProxyPreflight(
  * 1) IP blocklist
  * 2) Anti-bot
  * 3) Auth (virtual key)
- * 4) Protocol-specific hook (optional)
- * 5) Model/provider resolution
- * 6) Provider config build
+ * 4) Per-key rate limit (RPM)
+ * 5) Protocol-specific hook (optional)
+ * 6) Model/provider resolution
+ * 7) Provider config build
  */
 export async function runProxyPipeline(
   request: FastifyRequest,

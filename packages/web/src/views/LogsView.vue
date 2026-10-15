@@ -1,7 +1,8 @@
 <template>
   <div>
     <n-space vertical :size="24">
-      <n-card title="系统日志">
+      <PageHeader eyebrow="TOOLS" title="系统日志" />
+      <n-card>
         <template #header-extra>
           <n-space>
             <n-select
@@ -58,6 +59,7 @@ import { useMessage, NSpace, NCard, NButton, NSelect, NInput, NIcon, NEmpty } fr
 import { SearchOutline, PlayOutline, PauseOutline } from '@vicons/ionicons5';
 import { configApi, type LogEntry } from '@/api/config';
 import { formatTimestamp } from '@/utils/common';
+import PageHeader from '@/components/PageHeader.vue';
 
 const message = useMessage();
 const loading = ref(false);

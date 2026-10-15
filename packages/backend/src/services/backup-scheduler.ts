@@ -56,13 +56,11 @@ export class BackupScheduler {
       return;
     }
 
-    // Validate cron schedule
     if (!cron.validate(this.schedule)) {
       memoryLogger.error(`Invalid cron schedule: ${this.schedule}`, 'Backup');
       return;
     }
 
-    // Schedule automated backups
     this.cronJob = cron.schedule(this.schedule, async () => {
       try {
         memoryLogger.info('Scheduled backup started', 'Backup');
@@ -72,7 +70,6 @@ export class BackupScheduler {
       }
     });
 
-    // Schedule cleanup task (runs daily at 3 AM)
     this.cleanupJob = cron.schedule('0 3 * * *', async () => {
       try {
         await this.cleanupOldBackups();

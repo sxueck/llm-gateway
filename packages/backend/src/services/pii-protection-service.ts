@@ -104,11 +104,10 @@ function restoreMaskedValuesNonRegex(text: string, ctx: PiiProtectionContext): s
     const original = ctx.reverseReplacements.get(key);
     if (!original) continue;
 
-    // Simple global replace
+    // Resume after the replacement so restored text is not scanned again.
     let idx = result.indexOf(key);
     while (idx !== -1) {
       result = result.slice(0, idx) + original + result.slice(idx + key.length);
-      // Continue searching after the replacement
       idx = result.indexOf(key, idx + original.length);
     }
   }
@@ -264,7 +263,6 @@ function applyMasking(text: string, ctx: PiiProtectionContext): string {
     return text;
   }
 
-  // Detect all PII
   const detections = detectPii(text, hint.hash || undefined);
   if (detections.length === 0) {
     return text;
@@ -279,17 +277,14 @@ function applyMasking(text: string, ctx: PiiProtectionContext): string {
     const det = detections[i];
     const masked = getOrCreateMaskedValue(ctx, det.value, det.type);
 
-    // Add fragment after current detection (from det.end to lastPos)
     if (det.end < lastPos) {
       fragments.push(text.slice(det.end, lastPos));
     }
 
-    // Add masked value
     fragments.push(masked);
     lastPos = det.start;
   }
 
-  // Add remaining prefix
   if (lastPos > 0) {
     fragments.push(text.slice(0, lastPos));
   }
@@ -467,7 +462,6 @@ export class PiiStreamRestorer {
       return '';
     }
 
-    // Try to restore in the combined buffer
     const restored = this.restoreInText(combined);
 
     // Compute how much we can safely output
@@ -524,7 +518,6 @@ export class PiiStreamRestorer {
   }
 }
 
-// Export singleton service
 export const piiProtectionService = {
   maskRequestBodyInPlace,
   restoreResponseBodyInPlace,

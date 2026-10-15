@@ -2,12 +2,13 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket as WsWebSocket } from "@fastify/websocket";
 import { WebSocket } from "ws";
 import {
-  runProxyPreflight,
+  runProxyAuthentication,
   type ProxyPreflightContext,
 } from "../proxy/pipeline.js";
 import { resolveModelAndProvider } from "../proxy/model-resolver.js";
 import { buildProviderConfig } from "../proxy/provider-config-builder.js";
 import { memoryLogger } from "../../services/logger.js";
+import { virtualKeyRateLimiter } from "../../services/virtual-key-rate-limiter.js";
 import { debugModeService } from "../../services/debug-mode.js";
 import { logApiRequestAsync } from "../../services/api-request-logger.js";
 import { capturePromptSampleAsync } from "../../services/prompt-capture-service.js";
@@ -17,6 +18,7 @@ import {
   normalizeResponseCreate,
   buildErrorEvent,
   ERROR_CODES,
+  ERROR_TYPES,
   WS_CLOSE_CODES,
 } from "../../services/responses-transport/index.js";
 import { resolveTransportMode } from "../../services/responses-transport/mode-resolver.js";
@@ -43,17 +45,7 @@ export async function registerResponsesWebSocketRoutes(
   fastify: FastifyInstance,
 ) {
   const preHandler = async (request: FastifyRequest, reply: any) => {
-    const result = await runProxyPreflight(request, reply, {
-      onManualBlock: ({ reply: r }) => {
-        r.code(403).send({
-          error: {
-            message: "Access denied: IP blocked",
-            type: "access_denied",
-            param: "ip",
-            code: "ip_blocked",
-          },
-        });
-      },
+    const result = await runProxyAuthentication(request, reply, {
       onAntiBotBlock: ({ reply: r }) => {
         r.code(403).send({
           error: {
@@ -177,6 +169,17 @@ export async function handleResponsesWebSocket(
         return;
       }
 
+      const rateLimit = virtualKeyRateLimiter.check(virtualKey.id, virtualKey.rate_limit);
+      if (!rateLimit.allowed) {
+        sendGatewayError(
+          socket,
+          `Rate limit exceeded for this virtual key (limit: ${virtualKey.rate_limit} requests/min). Retry after ${rateLimit.retryAfterSeconds}s.`,
+          "rate_limit_exceeded",
+          ERROR_TYPES.RATE_LIMIT_ERROR,
+        );
+        return;
+      }
+
       inFlight = true;
       const turnStartTime = Date.now();
       const abortController = new AbortController();
@@ -268,6 +271,7 @@ export async function handleResponsesWebSocket(
         }
 
         logApiRequestAsync({
+          request,
           virtualKey,
           providerId,
           model: protocolConfig.model || "unknown",
@@ -300,6 +304,7 @@ export async function handleResponsesWebSocket(
           socket.readyState !== WebSocket.OPEN,
         );
         logApiRequestAsync({
+          request,
           virtualKey,
           providerId: turnConfig?.providerId || "unknown",
           model:
@@ -493,10 +498,10 @@ function normalizedModelFromRequest(requestBody: any): string | undefined {
   return typeof requestBody?.model === "string" ? requestBody.model : undefined;
 }
 
-function sendGatewayError(socket: WsWebSocket, message: string, code: string) {
+function sendGatewayError(socket: WsWebSocket, message: string, code: string, type?: string) {
   if (socket.readyState !== WebSocket.OPEN) return;
   try {
-    socket.send(JSON.stringify(buildErrorEvent(message, code)));
+    socket.send(JSON.stringify(buildErrorEvent(message, code, type)));
   } catch (_e) {}
 }
 

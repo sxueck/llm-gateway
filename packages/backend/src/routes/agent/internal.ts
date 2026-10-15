@@ -12,6 +12,7 @@ import {
 import { hashServiceToken } from "../../agent/run/service-token.js";
 import {
   AGENT_LOOPBACK_HEADER,
+  AGENT_RUN_ID_HEADER,
   agentLoopbackToken,
 } from "../../agent/run/loopback-token.js";
 import { runEventHub } from "../../agent/run/run-events.js";
@@ -226,6 +227,7 @@ export async function agentInternalRoutes(fastify: FastifyInstance) {
             authorization: `Bearer ${ownerKey.key_value}`,
             "content-type": "application/json",
             [AGENT_LOOPBACK_HEADER]: agentLoopbackToken(),
+            [AGENT_RUN_ID_HEADER]: run.id,
           },
           body: JSON.stringify({
             model: body.model_profile,

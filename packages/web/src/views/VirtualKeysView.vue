@@ -1,15 +1,15 @@
 <template>
   <div class="virtual-keys-view">
     <n-space vertical :size="12">
-      <n-space justify="space-between" align="center">
-        <div>
-          <h2 class="page-title">虚拟密钥管理</h2>
-          <p class="page-subtitle">
-            创建和管理虚拟 API 密钥,用于访问 LLM Gateway。可以设置过期时间和使用限制
-          </p>
-        </div>
-        <n-button type="primary" size="small" @click="showModal = true">创建虚拟密钥</n-button>
-      </n-space>
+      <PageHeader
+        eyebrow="ACCESS"
+        title="虚拟密钥管理"
+        subtitle="创建和管理虚拟 API 密钥,用于访问 LLM Gateway。可以设置过期时间和使用限制"
+      >
+        <template #actions>
+          <n-button type="primary" @click="showModal = true">创建虚拟密钥</n-button>
+        </template>
+      </PageHeader>
 
       <n-card class="table-card">
         <n-data-table
@@ -92,11 +92,18 @@
           <n-form-item label="禁用日志">
             <n-switch v-model:value="formValue.disableLogging" size="small" />
           </n-form-item>
-          <n-form-item label="动态压缩">
+          <n-form-item :label="t('virtualKeys.contextBudget')">
             <n-space vertical :size="4">
-              <n-switch v-model:value="formValue.dynamicCompressionEnabled" size="small" />
+              <n-select
+                v-model:value="formValue.contextBudgetTokens"
+                :options="contextBudgetOptions"
+                clearable
+                :placeholder="t('virtualKeys.contextBudgetOff')"
+                style="width: 160px"
+                size="small"
+              />
               <span style="font-size: 12px; color: #999">
-                自动压缩历史消息中的重复内容,节省 Token
+                {{ t('virtualKeys.contextBudgetHint') }}
               </span>
             </n-space>
           </n-form-item>
@@ -250,8 +257,12 @@ import { virtualKeyApi } from '@/api/virtual-key'
 import type { VirtualKey } from '@/types'
 import { copyToClipboard } from '@/utils/common'
 import { createDefaultVirtualKeyForm } from '@/types/virtual-key'
+import { useI18n } from 'vue-i18n'
+import { CONTEXT_BUDGET_TIERS } from '@llm-gateway/shared'
+import PageHeader from '@/components/PageHeader.vue'
 
 const message = useMessage()
+const { t } = useI18n()
 const virtualKeyStore = useVirtualKeyStore()
 const modelStore = useModelStore()
 
@@ -272,6 +283,11 @@ const rotateForm = ref<{ keyType: 'auto' | 'custom'; customKey: string }>({
 })
 
 const formValue = ref(createDefaultVirtualKeyForm())
+
+const contextBudgetOptions = CONTEXT_BUDGET_TIERS.map((tokens) => ({
+  label: `${tokens / 1000}K`,
+  value: tokens
+}))
 
 const { modelOptions } = useModelOptions({
   uniqueByIdentifier: false,
@@ -489,7 +505,7 @@ function handleEdit(vk: VirtualKey) {
     enabled: vk.enabled,
     cacheEnabled: vk.cacheEnabled,
     disableLogging: vk.disableLogging,
-    dynamicCompressionEnabled: vk.dynamicCompressionEnabled,
+    contextBudgetTokens: vk.contextBudgetTokens ?? null,
     imageCompressionEnabled: vk.imageCompressionEnabled,
     interceptZeroTemperature: vk.interceptZeroTemperature,
     zeroTemperatureReplacement: vk.zeroTemperatureReplacement || 0.7,
@@ -527,7 +543,7 @@ async function handleSubmit() {
           formValue.value.zeroTemperatureReplacement !== undefined
             ? Number(formValue.value.zeroTemperatureReplacement)
             : undefined,
-        dynamicCompressionEnabled: formValue.value.dynamicCompressionEnabled,
+        contextBudgetTokens: formValue.value.contextBudgetTokens,
         imageCompressionEnabled: formValue.value.imageCompressionEnabled,
         piiProtectionEnabled: formValue.value.piiProtectionEnabled,
         promptCaptureEnabled: formValue.value.promptCaptureEnabled

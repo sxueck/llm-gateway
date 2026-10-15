@@ -1,6 +1,6 @@
 import { createInitialAggregate, processResponsesEvent } from './responses-parser.js';
-const MAX_BODY_LENGTH = 2000; // 最大字节长度限制
-const MAX_STRING_LENGTH = 500; // 单个字符串字段的最大字符长度（保守估计，确保总体不超过 2000 字节）
+const MAX_BODY_LENGTH = 2000;
+const MAX_STRING_LENGTH = 500; // 避免单个长字符串占满正文预算。
 const MIN_STRING_LENGTH = 64;
 
 export interface ReasoningExtraction {
@@ -9,9 +9,6 @@ export interface ReasoningExtraction {
   toolCalls?: any[];
 }
 
-/**
- * 递归截断对象中所有过长的字符串字段
- */
 function truncateStringsRecursively(obj: any, maxLength: number = MAX_STRING_LENGTH): any {
   if (obj === null || obj === undefined) {
     return obj;
@@ -30,7 +27,7 @@ function truncateStringsRecursively(obj: any, maxLength: number = MAX_STRING_LEN
   if (typeof obj === 'object') {
     const result: any = {};
     for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
         result[key] = truncateStringsRecursively(obj[key], maxLength);
       }
     }
@@ -219,7 +216,6 @@ export function truncateRequestBody(body: any): string {
           ? `[${parsed.functions.length} 个函数定义]`
           : parsed.functions;
       } else {
-        // 对所有其他字段进行递归截断
         truncated[key] = truncateStringsRecursively(parsed[key]);
       }
     }
@@ -240,19 +236,21 @@ export function truncateResponseBody(body: any): string {
     // 递归移除上游调试指令字段，避免泄露与放大日志体积
     try {
       stripFieldRecursively(parsed, 'instructions');
-    } catch (_e) {}
+    } catch {
+      // 脱敏失败时不回退原文，避免不可写对象中的 instructions 泄露。
+      return JSON.stringify({ truncated: true });
+    }
 
     const truncated: any = {};
 
     for (const key in parsed) {
-      // 移除上游调试指令字段，避免泄露与异常放大日志
+      // 递归删除不处理继承属性，顶层仍需防止 instructions 泄露。
       if (key === 'instructions') {
         truncated[key] = '[removed:instructions]';
         continue;
       }
 
       if (key === 'choices' && Array.isArray(parsed.choices)) {
-        // 特殊处理 choices，需要简化 tool_calls 和 function_call
         truncated.choices = parsed.choices.map((choice: any) => {
           const truncatedChoice = truncateStringsRecursively(choice);
 
@@ -267,7 +265,6 @@ export function truncateResponseBody(body: any): string {
           return truncatedChoice;
         });
       } else {
-        // 对其他所有字段进行递归截断
         truncated[key] = truncateStringsRecursively(parsed[key]);
       }
     }

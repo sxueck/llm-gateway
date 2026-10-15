@@ -2,38 +2,18 @@ import { test, expect } from 'vitest';
 
 import { buildOpenAICompatibleUrl } from './http-client.js';
 
-test('buildOpenAICompatibleUrl handles baseUrl without /v1 and path with /v1', () => {
-  expect(
-    buildOpenAICompatibleUrl('https://api.openai.com', '/v1/images/generations')
-  ).toBe('https://api.openai.com/v1/images/generations');
+const urlCases: Array<[string | undefined, string, string]> = [
+  ['https://api.openai.com', '/v1/images/generations', 'https://api.openai.com/v1/images/generations'],
+  ['https://api.openai.com/v1', '/v1/images/generations', 'https://api.openai.com/v1/images/generations'],
+  ['https://api.openai.com/v1/', '/v1/images/generations', 'https://api.openai.com/v1/images/generations'],
+  ['https://api.openai.com/v1', 'images/generations', 'https://api.openai.com/v1/images/generations'],
+  [undefined, '/v1/images/generations', '/v1/images/generations'],
+  ['https://api.openai.com', '/images/generations', 'https://api.openai.com/images/generations'],
+];
+
+test('buildOpenAICompatibleUrl handles baseUrl/path combinations', () => {
+  for (const [baseUrl, path, expected] of urlCases) {
+    expect(buildOpenAICompatibleUrl(baseUrl, path)).toBe(expected);
+  }
 });
 
-test('buildOpenAICompatibleUrl deduplicates /v1 when both baseUrl and path contain it', () => {
-  expect(
-    buildOpenAICompatibleUrl('https://api.openai.com/v1', '/v1/images/generations')
-  ).toBe('https://api.openai.com/v1/images/generations');
-});
-
-test('buildOpenAICompatibleUrl handles baseUrl with trailing slash', () => {
-  expect(
-    buildOpenAICompatibleUrl('https://api.openai.com/v1/', '/v1/images/generations')
-  ).toBe('https://api.openai.com/v1/images/generations');
-});
-
-test('buildOpenAICompatibleUrl handles path without leading slash', () => {
-  expect(
-    buildOpenAICompatibleUrl('https://api.openai.com/v1', 'images/generations')
-  ).toBe('https://api.openai.com/v1/images/generations');
-});
-
-test('buildOpenAICompatibleUrl handles empty baseUrl', () => {
-  expect(
-    buildOpenAICompatibleUrl(undefined, '/v1/images/generations')
-  ).toBe('/v1/images/generations');
-});
-
-test('buildOpenAICompatibleUrl handles baseUrl without /v1 and path without /v1', () => {
-  expect(
-    buildOpenAICompatibleUrl('https://api.openai.com', '/images/generations')
-  ).toBe('https://api.openai.com/images/generations');
-});

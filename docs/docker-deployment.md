@@ -108,6 +108,8 @@ Agent Search 的代码快照对象默认存储在 `/app/data/agent-snapshots`(co
 
 网关通过 Docker SDK 直接 `createContainer` 拉起 worker,**不会自动拉取镜像**,宿主机上必须提前备好 `AGENT_WORKER_IMAGE` 指向的镜像,否则发起搜索时报 `No such image`:
 
+> 配了 `AGENT_WORKER_IMAGE` 但宿主机没这个镜像、或者 `docker.sock` 没挂进来时,控制台顶部铃铛(系统告警)会直接给出 `worker_image_missing` / `worker_docker_unavailable`,不必等到 run 失败才发现。
+
 ```bash
 # 拉取官方镜像(私有包需先 docker login ghcr.io)
 docker pull ghcr.io/sxueck/llm-gateway/craft-worker:latest
@@ -139,6 +141,10 @@ docker-compose logs llm-gateway | grep "Agent search executor"
 ```
 
 之后在 Web UI 的 Agent Search 页面发起一次搜索,`docker ps` 中应出现短暂的 `craft-worker-<runId>` 容器。
+
+## 数据库 v2 重建升级
+
+包含 v2 改动的新镜像提供 `node dist/upgrade.js export|rebuild`，无需源码或 tsx。旧镜像不含此入口，需先发布新镜像。升级时停止全部网关副本、保留 MySQL 运行，使用一次性 Compose 容器导出配置、演练并重建恢复；备份必须保存到持久化私有目录。完整命令、SQL 灾备与权限要求见 [数据库 v2 升级指南](database-v2-upgrade.md#线上-docker--compose-升级)。不要使用 `docker compose down -v` 清库。
 
 ## 生产环境部署建议
 

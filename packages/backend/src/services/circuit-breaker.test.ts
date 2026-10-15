@@ -1,6 +1,80 @@
 import { test, expect, vi } from 'vitest';
 
-import { CircuitBreaker, CircuitState } from './circuit-breaker.js';
+import {
+  CircuitBreaker,
+  CircuitState,
+  httpFailureError,
+  isBreakerEligibleFailure,
+} from './circuit-breaker.js';
+
+test('isBreakerEligibleFailure counts only target-health statuses', () => {
+  for (const status of [401, 403, 429, 472, 500, 502, 503, 504]) {
+    expect(isBreakerEligibleFailure(status)).toBe(true);
+  }
+  for (const status of [400, 402, 404, 405, 409, 413, 422]) {
+    expect(isBreakerEligibleFailure(status)).toBe(false);
+  }
+  expect(isBreakerEligibleFailure(undefined)).toBe(true);
+  expect(isBreakerEligibleFailure(null)).toBe(true);
+});
+
+test('CircuitBreaker ignores client-error statuses and stays closed', () => {
+  const breaker = new CircuitBreaker({
+    failureThreshold: 1,
+    successThreshold: 1,
+    timeout: 60_000,
+    halfOpenMaxAttempts: 1,
+  });
+
+  breaker.recordFailure('provider-x', { statusCode: 400, message: 'bad request' });
+  breaker.recordFailure('provider-x', { status: 404, message: 'not found' });
+  breaker.recordFailure('provider-x', httpFailureError(422));
+
+  expect(breaker.getState('provider-x')).toBe(CircuitState.CLOSED);
+  expect(breaker.isAvailable('provider-x')).toBe(true);
+});
+
+test('CircuitBreaker releases HALF_OPEN probes after ignored client errors', () => {
+  vi.useFakeTimers();
+  try {
+    const breaker = new CircuitBreaker({
+      failureThreshold: 1,
+      successThreshold: 1,
+      timeout: 10_000,
+      halfOpenMaxAttempts: 1,
+    });
+    const key = 'provider-half-open-client-error';
+    breaker.recordFailure(key, httpFailureError(503));
+    vi.advanceTimersByTime(10_000);
+
+    for (const status of [400, 404, 422]) {
+      expect(breaker.isAvailable(key)).toBe(true);
+      breaker.recordFailure(key, httpFailureError(status));
+      expect(breaker.getState(key)).toBe(CircuitState.HALF_OPEN);
+      expect(breaker.peekAvailability(key)).toBe(true);
+    }
+
+    expect(breaker.isAvailable(key)).toBe(true);
+    breaker.recordSuccess(key);
+    expect(breaker.getState(key)).toBe(CircuitState.CLOSED);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('CircuitBreaker still counts retryable statuses and transport failures', () => {
+  const breaker = new CircuitBreaker({
+    failureThreshold: 2,
+    successThreshold: 1,
+    timeout: 60_000,
+    halfOpenMaxAttempts: 1,
+  });
+
+  breaker.recordFailure('provider-y', httpFailureError(429));
+  breaker.recordFailure('provider-y', new Error('socket hang up'));
+
+  expect(breaker.getState('provider-y')).toBe(CircuitState.OPEN);
+});
 
 test('CircuitBreaker defaults cooldown timeout to 10 seconds', () => {
   const breaker = new CircuitBreaker();

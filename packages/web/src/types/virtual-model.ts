@@ -1,7 +1,3 @@
-/**
- * 虚拟模型相关的共享类型定义
- */
-
 export interface VirtualModelTarget {
   providerId: string;
   modelName?: string;

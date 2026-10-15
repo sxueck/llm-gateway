@@ -57,85 +57,85 @@ describe('output-affecting controls must not collide', () => {
 });
 
 describe('semantically equal requests must collide', () => {
-  test('same key regardless of top-level field ordering', () => {
-    const a = generateCacheKey({ model: 'gpt-5', temperature: 0.5, messages: [{ role: 'user', content: 'hi' }] }, 'vk-1');
-    const b = generateCacheKey({ messages: [{ role: 'user', content: 'hi' }], temperature: 0.5, model: 'gpt-5' }, 'vk-1');
-    expect(a).toBe(b);
-  });
-
-  test('same key regardless of nested object key ordering (response_format json_schema)', () => {
-    const formatA = {
-      type: 'json_schema',
-      json_schema: {
-        name: 'reply',
-        schema: {
+  const jsonSchemaFormat = {
+    type: 'json_schema',
+    json_schema: {
+      name: 'reply',
+      schema: {
+        type: 'object',
+        properties: {
+          answer: { type: 'string' },
+          confidence: { type: 'number' },
+        },
+        required: ['answer'],
+      },
+    },
+  };
+  const jsonSchemaFormatReordered = {
+    json_schema: {
+      schema: {
+        required: ['answer'],
+        properties: {
+          confidence: { type: 'number' },
+          answer: { type: 'string' },
+        },
+        type: 'object',
+      },
+      name: 'reply',
+    },
+    type: 'json_schema',
+  };
+  const toolsOrdered = [
+    {
+      type: 'function',
+      function: {
+        name: 'get_weather',
+        description: 'Get weather',
+        parameters: {
           type: 'object',
-          properties: {
-            answer: { type: 'string' },
-            confidence: { type: 'number' },
-          },
-          required: ['answer'],
+          properties: { city: { type: 'string' }, unit: { type: 'string' } },
         },
       },
-    };
-    const formatB = {
-      json_schema: {
-        schema: {
-          required: ['answer'],
-          properties: {
-            confidence: { type: 'number' },
-            answer: { type: 'string' },
-          },
+    },
+  ];
+  const toolsReordered = [
+    {
+      function: {
+        parameters: {
+          properties: { unit: { type: 'string' }, city: { type: 'string' } },
           type: 'object',
         },
-        name: 'reply',
+        description: 'Get weather',
+        name: 'get_weather',
       },
-      type: 'json_schema',
-    };
+      type: 'function',
+    },
+  ];
 
-    const a = generateCacheKey(baseRequest({ response_format: formatA }), 'vk-1');
-    const b = generateCacheKey(baseRequest({ response_format: formatB }), 'vk-1');
-    expect(a).toBe(b);
-  });
+  const sameKeyCases: Array<[string, Record<string, unknown>, Record<string, unknown>]> = [
+    [
+      'top-level field ordering',
+      { model: 'gpt-5', temperature: 0.5, messages: [{ role: 'user', content: 'hi' }] },
+      { messages: [{ role: 'user', content: 'hi' }], temperature: 0.5, model: 'gpt-5' },
+    ],
+    [
+      'nested object key ordering (response_format json_schema)',
+      baseRequest({ response_format: jsonSchemaFormat }),
+      baseRequest({ response_format: jsonSchemaFormatReordered }),
+    ],
+    ['nested object key ordering inside tools', baseRequest({ tools: toolsOrdered }), baseRequest({ tools: toolsReordered })],
+    [
+      'key ordering in structured message content',
+      { model: 'gpt-5', messages: [{ role: 'user', content: [{ type: 'text', text: 'hi', extra: { x: 1, y: 2 } }] }] },
+      { model: 'gpt-5', messages: [{ role: 'user', content: [{ type: 'text', text: 'hi', extra: { y: 2, x: 1 } }] }] },
+    ],
+  ];
 
-  test('same key regardless of nested object key ordering inside tools', () => {
-    const toolsA = [
-      {
-        type: 'function',
-        function: {
-          name: 'get_weather',
-          description: 'Get weather',
-          parameters: {
-            type: 'object',
-            properties: { city: { type: 'string' }, unit: { type: 'string' } },
-          },
-        },
-      },
-    ];
-    const toolsB = [
-      {
-        function: {
-          parameters: {
-            properties: { unit: { type: 'string' }, city: { type: 'string' } },
-            type: 'object',
-          },
-          description: 'Get weather',
-          name: 'get_weather',
-        },
-        type: 'function',
-      },
-    ];
-
-    const a = generateCacheKey(baseRequest({ tools: toolsA }), 'vk-1');
-    const b = generateCacheKey(baseRequest({ tools: toolsB }), 'vk-1');
-    expect(a).toBe(b);
-  });
-
-  test('same key regardless of key ordering in structured message content', () => {
-    const a = generateCacheKey({ model: 'gpt-5', messages: [{ role: 'user', content: [{ type: 'text', text: 'hi', extra: { x: 1, y: 2 } }] }] }, 'vk-1');
-    const b = generateCacheKey({ model: 'gpt-5', messages: [{ role: 'user', content: [{ type: 'text', text: 'hi', extra: { y: 2, x: 1 } }] }] }, 'vk-1');
-    expect(a).toBe(b);
-  });
+  for (const [label, requestA, requestB] of sameKeyCases) {
+    test(`same key regardless of ${label}`, () => {
+      expect(generateCacheKey(requestA, 'vk-1')).toBe(generateCacheKey(requestB, 'vk-1'));
+    });
+  }
 
   test('explicit null is equivalent to an omitted field', () => {
     const a = generateCacheKey(baseRequest({ seed: null }), 'vk-1');

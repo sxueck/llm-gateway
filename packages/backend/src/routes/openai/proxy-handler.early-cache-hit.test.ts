@@ -21,9 +21,6 @@ vi.mock('../../db/index.js', () => ({
 vi.mock('../../services/hot-config-cache.js', () => ({
   hotConfigCache: { getVirtualKeyByKeyValue: vi.fn() },
 }));
-vi.mock('../../services/manual-ip-blocklist.js', () => ({
-  manualIpBlocklist: { isBlocked: vi.fn(async () => null) },
-}));
 vi.mock('../proxy/model-resolver.js', async (importOriginal) => {
   const actual = await importOriginal<any>();
   return {

@@ -100,6 +100,7 @@ export async function handleChatStreamRequest(params: ChatStreamParams): Promise
     );
 
     await logApiRequestToDb({
+      request,
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),
@@ -141,6 +142,7 @@ export async function handleChatStreamRequest(params: ChatStreamParams): Promise
     const tokenCount = await calculateTokensIfNeeded(0, request.body);
 
     await logApiRequestToDb({
+      request,
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),

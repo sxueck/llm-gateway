@@ -1,12 +1,12 @@
 <template>
   <div class="virtual-models-view">
     <n-space vertical :size="24">
-      <n-space justify="space-between" align="center">
-        <div>
-          <h2 class="page-title">智能路由</h2>
-          <p class="page-subtitle">通过负载均衡或故障转移配置，将请求智能分发到多个实际模型，提高可用性和性能</p>
-        </div>
-        <n-space :size="8">
+      <PageHeader
+        eyebrow="MODEL MANAGEMENT"
+        title="智能路由"
+        subtitle="通过负载均衡或故障转移配置，将请求智能分发到多个实际模型，提高可用性和性能"
+      >
+        <template #actions>
           <n-button type="primary" size="small" @click="handleCreateModalOpen">
             <template #icon>
               <n-icon><AddOutline /></n-icon>
@@ -19,8 +19,8 @@
             </template>
             刷新
           </n-button>
-        </n-space>
-      </n-space>
+        </template>
+      </PageHeader>
 
       <div v-if="loading" class="loading-state">
         <n-spin size="large" />
@@ -155,6 +155,7 @@ import { useModelStore } from '@/stores/model';
 import { configApi, type RoutingStatusResponse } from '@/api/config';
 import RoutingConfigEditor from '@/components/RoutingConfigEditor.vue';
 import RoutingConfigCard from '@/components/RoutingConfigCard.vue';
+import PageHeader from '@/components/PageHeader.vue';
 import { copyToClipboard } from '@/utils/common';
 import { createDefaultVirtualModelForm, type VirtualModelFormValue, type RoutingConfigType } from '@/types/virtual-model';
 

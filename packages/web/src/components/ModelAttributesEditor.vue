@@ -106,7 +106,6 @@ const attrsByCategory = (category: AttributeCategory) => getAttributesByCategory
 
 const isUpdatingFromProps = ref(false);
 
-// 成本相关的属性键
 const COST_KEYS: Array<keyof ModelAttributes> = [
   'input_cost_per_token',
   'output_cost_per_token',

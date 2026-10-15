@@ -1,0 +1,17 @@
+{
+  "name": "@llm-gateway/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "API-level E2E suite: boots the real backend against a real MySQL and a mock upstream, and exercises the OpenAI / Anthropic / Gemini forwarding chains plus expert routing.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "mysql2": "^3.15.3",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
+  }
+}

@@ -28,22 +28,11 @@ export function generateTimeBuckets(startTime: number, endTime: number, interval
 
 export function generateShanghaiDayBuckets(startTime: number, endTime: number): number[] {
   const dayMs = 24 * 60 * 60 * 1000;
-  const timePoints: number[] = [];
-
-  // Convert to Shanghai time, find the day boundary, then convert back to UTC
-  // First Shanghai day boundary at or after startTime
-  const shanghaiStart = startTime + SHANGHAI_OFFSET_MS;
-  let currentShanghaiDay = Math.floor(shanghaiStart / dayMs) * dayMs;
-  const shanghaiEnd = endTime + SHANGHAI_OFFSET_MS;
-  const endShanghaiDay = Math.floor(shanghaiEnd / dayMs) * dayMs;
-
-  while (currentShanghaiDay <= endShanghaiDay) {
-    // Convert Shanghai day start back to UTC timestamp
-    timePoints.push(currentShanghaiDay - SHANGHAI_OFFSET_MS);
-    currentShanghaiDay += dayMs;
-  }
-
-  return timePoints;
+  return generateTimeBuckets(
+    startTime + SHANGHAI_OFFSET_MS,
+    endTime + SHANGHAI_OFFSET_MS,
+    dayMs
+  ).map(time => time - SHANGHAI_OFFSET_MS);
 }
 
 export function initializeTimeBuckets(timePoints: number[]): Map<number, any> {

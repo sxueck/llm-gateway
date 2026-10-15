@@ -18,12 +18,6 @@ const router = createRouter({
       meta: { requiresAuth: false },
     },
     {
-      path: '/status',
-      name: 'HealthStatus',
-      component: () => import('@/views/HealthStatusView.vue'),
-      meta: { requiresAuth: false },
-    },
-    {
       path: '/',
       component: () => import('@/layouts/MainLayout.vue'),
       meta: { requiresAuth: true },
@@ -63,6 +57,11 @@ const router = createRouter({
           component: () => import('@/views/ExpertRoutingView.vue'),
         },
         {
+          path: 'expert-routing/:id',
+          name: 'ExpertRoutingDetail',
+          component: () => import('@/views/ExpertRoutingDetailView.vue'),
+        },
+        {
           path: 'worker-plugins',
           name: 'WorkerPlugins',
           component: () => import('@/views/WorkerPluginsView.vue'),
@@ -71,6 +70,11 @@ const router = createRouter({
           path: 'worker-monitoring',
           name: 'WorkerMonitoring',
           component: () => import('@/views/WorkerMonitoringView.vue'),
+        },
+        {
+          path: 'worker-monitoring/runs/:id',
+          name: 'AgentRunDetail',
+          component: () => import('@/views/AgentRunDetailView.vue'),
         },
         {
           path: 'cost-analysis',
@@ -94,9 +98,9 @@ const router = createRouter({
           component: () => import('@/views/TrafficAnalysisView.vue'),
         },
         {
-          path: 'api-guide',
-          name: 'ApiGuide',
-          component: () => import('@/views/ApiGuideView.vue'),
+          path: 'playground',
+          name: 'Playground',
+          component: () => import('@/views/PlaygroundView.vue'),
         },
         {
           path: 'logs',
@@ -132,6 +136,11 @@ const router = createRouter({
           path: 'backup',
           name: 'Backup',
           component: () => import('@/views/BackupView.vue'),
+        },
+        {
+          path: 'db-maintenance',
+          name: 'DatabaseMaintenance',
+          component: () => import('@/views/DatabaseMaintenanceView.vue'),
         },
       ],
     },

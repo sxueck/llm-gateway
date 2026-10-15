@@ -224,3 +224,59 @@ describe('expertRoutingSessionBindingRepository.cleanupExpired', () => {
     expect(params).toContain(500);
   });
 });
+
+describe('expertRoutingSessionBindingRepository v47 difficulty column', () => {
+  beforeEach(() => {
+    connectionMock.setConnection(null);
+  });
+
+  test('writes candidate difficulty into the INSERT', async () => {
+    const conn = makeMockConnection({
+      insertAffected: 1,
+      selectRows: [{ expert_id: 'expert-1', difficulty: 'high' }],
+    });
+    connectionMock.setConnection(conn);
+
+    const result = await expertRoutingSessionBindingRepository.createOrSelectBinding(
+      KEY,
+      { expertId: 'expert-1', routeSource: 'session', difficulty: 'high' },
+      60,
+      3600,
+      1000
+    );
+
+    expect(result.winner).toBe(true);
+    const [insertSql, insertParams] = conn.query.mock.calls[0];
+    expect(String(insertSql)).toMatch(/\bdifficulty\b/);
+    expect(insertParams).toContain('high');
+    expect(conn.rollback).not.toHaveBeenCalled();
+  });
+
+  test('falls back to an insert without difficulty on pre-v47 schemas', async () => {
+    const conn = makeMockConnection({ insertAffected: 1 });
+    const err: any = new Error("Unknown column 'difficulty' in 'field list'");
+    err.code = 'ER_BAD_FIELD_ERROR';
+    conn.query
+      .mockImplementationOnce(async () => {
+        throw err; // first INSERT (with difficulty) fails
+      })
+      .mockImplementationOnce(async () => [{ affectedRows: 1 }]); // retry INSERT without it
+    connectionMock.setConnection(conn);
+
+    const result = await expertRoutingSessionBindingRepository.createOrSelectBinding(
+      KEY,
+      { expertId: 'expert-1', routeSource: 'session', difficulty: 'high' },
+      60,
+      3600,
+      1000
+    );
+
+    expect(result.winner).toBe(true);
+    expect(conn.rollback).toHaveBeenCalled();
+    expect(conn.commit).toHaveBeenCalled();
+    const retrySql = String(conn.query.mock.calls[1][0]);
+    expect(retrySql).not.toMatch(/\bdifficulty\b/);
+    expect(conn.release).toHaveBeenCalledTimes(1);
+    expect(conn.beginTransaction).toHaveBeenCalledTimes(2);
+  });
+});

@@ -89,6 +89,7 @@ export async function handleResponsesStreamRequest(params: ResponsesStreamParams
     );
 
     await logApiRequestToDb({
+      request,
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),
@@ -130,6 +131,7 @@ export async function handleResponsesStreamRequest(params: ResponsesStreamParams
     const tokenCount = await calculateTokensIfNeeded(0, request.body);
 
     await logApiRequestToDb({
+      request,
       virtualKey,
       providerId,
       model: getModelForLogging(request.body, currentModel),
