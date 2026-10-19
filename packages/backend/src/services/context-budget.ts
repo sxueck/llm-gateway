@@ -1,6 +1,7 @@
 import { memoryLogger } from "./logger.js";
 import {
   countMessagesCooperatively,
+  countResponsesInputCooperatively,
   countTextCooperatively,
 } from "./token-counter.js";
 
@@ -42,8 +43,8 @@ export type RequestClassification =
 export interface BudgetVerdict {
   action: "pass" | "exempt" | "block";
   classification: RequestClassification;
-  /** 仅 block 时存在：OpenAI 错误 envelope（§5.1） */
-  body?: { error: Record<string, string> };
+  /** 仅 block 时存在：按协议返回错误 envelope（OpenAI 信封 / Anthropic 信封） */
+  body?: Record<string, unknown>;
   estimatedTokens?: number;
   effectiveBudget?: number;
 }
@@ -109,6 +110,210 @@ export function classifyChatRequest(messages: any[]): RequestClassification {
   return "boundary";
 }
 
+/** Anthropic 顶层 system 字段（string 或 content blocks）→ 纯文本。 */
+export function anthropicSystemText(system: unknown): string {
+  if (typeof system === "string") return system;
+  if (Array.isArray(system)) {
+    return system
+      .map((block: any) => (block && typeof block.text === "string" ? block.text : ""))
+      .join("\n");
+  }
+  return "";
+}
+
+/**
+ * Anthropic Messages 请求分类（与 Chat 分类同规则，按 Anthropic 块形态判定）：
+ * - compaction：压缩签名命中顶层 system 或头部消息；
+ * - boundary：最后一条 user 携带非 tool_result 内容（真实用户输入），且
+ *   此前最近 assistant 的 tool_use 已全部被后续 tool_result 闭合；
+ * - 其余（assistant 续跑、tool_result 回包、任务中插话）一律 continuation。
+ */
+export function classifyAnthropicRequest(
+  messages: any[],
+  systemText = "",
+): RequestClassification {
+  if (!Array.isArray(messages) || messages.length === 0) return "unknown";
+
+  const head = messages.slice(0, 2).map(messageText).join("\n");
+  if (
+    COMPACTION_SIGNATURES.some((sig) => head.includes(sig) || systemText.includes(sig))
+  ) {
+    return "compaction";
+  }
+
+  const last = messages[messages.length - 1];
+  if (last?.role !== "user") {
+    return "continuation";
+  }
+  // tool_result-only 的 user 消息是工具回包，不是新用户输入。
+  if (
+    Array.isArray(last.content) &&
+    last.content.length > 0 &&
+    last.content.every((block: any) => block?.type === "tool_result")
+  ) {
+    return "continuation";
+  }
+  const answeredToolUseIds = new Set<string>();
+  for (let i = messages.length - 2; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role === "user" && Array.isArray(message.content)) {
+      for (const block of message.content) {
+        if (block?.type === "tool_result" && typeof block.tool_use_id === "string") {
+          answeredToolUseIds.add(block.tool_use_id);
+        }
+      }
+      continue;
+    }
+    if (message?.role === "assistant") {
+      const toolUses = Array.isArray(message.content)
+        ? message.content.filter((block: any) => block?.type === "tool_use")
+        : [];
+      const hasOpenCalls = toolUses.some((block: any) => !answeredToolUseIds.has(block?.id));
+      return hasOpenCalls ? "continuation" : "boundary";
+    }
+  }
+  return "boundary";
+}
+
+// ── OpenAI Responses API（/v1/responses） ─────────────────────────────────
+
+/** Responses instructions（协议定义为 string）→ 纯文本，宽容非字符串。 */
+function responsesInstructionsText(instructions: unknown): string {
+  return typeof instructions === "string" ? instructions : "";
+}
+
+/** Responses 消息项 content（string 或 content parts）→ 纯文本。 */
+function responsesContentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part: any) => (part && typeof part.text === "string" ? part.text : ""))
+      .join("\n");
+  }
+  return "";
+}
+
+/** input 中的 system/developer 项（含省略 type 的 EasyInputMessage）→ 纯文本。 */
+function responsesSystemishText(input: unknown): string {
+  if (!Array.isArray(input)) return "";
+  return input
+    .filter(
+      (item: any) => item?.role === "system" || item?.role === "developer",
+    )
+    .map((item: any) => responsesContentText(item.content))
+    .join("\n");
+}
+
+/** assistant 侧产出项：function_call / reasoning / *_call / assistant 消息。 */
+function isResponsesAssistantItem(item: any): boolean {
+  if (!item || typeof item !== "object") return false;
+  const type = typeof item.type === "string" ? item.type : "";
+  if (type === "function_call" || type === "reasoning") return true;
+  if (type.endsWith("_call") && !type.endsWith("_call_output")) return true;
+  return item.role === "assistant";
+}
+
+/** 兼容内联 chat 形态：消息项上的 tool_calls（Responses 正规形态是 function_call 项）。 */
+function hasOpenInlineToolCalls(item: any, answered: Set<string>): boolean {
+  if (!Array.isArray(item?.tool_calls)) return false;
+  return item.tool_calls.some((call: any) => !answered.has(call?.id));
+}
+
+/**
+ * OpenAI Responses 请求分类（与 Chat 分类同规则，按 input 项形态判定）：
+ * - unknown：previous_response_id / conversation 指向的上游会话状态网关
+ *   不可见，无法核对转发输入的完整性，一律放行（预算上限只对客户端
+ *   内联完整历史的请求生效）；
+ * - compaction：压缩签名命中 instructions 或 system/developer 项；
+ * - boundary：末尾是新用户输入（非 function_call_output 回包、非
+ *   assistant 侧产出），且此前最近一段 assistant 项的 function_call
+ *   已全部被后续 function_call_output 闭合；
+ * - 其余（assistant 续跑、工具回包、任务中插话）一律 continuation。
+ */
+export function classifyResponsesRequest(
+  input: unknown,
+  instructionsText = "",
+  hasUpstreamConversationState = false,
+): RequestClassification {
+  if (hasUpstreamConversationState) return "unknown";
+
+  if (typeof input === "string") {
+    return COMPACTION_SIGNATURES.some((sig) => instructionsText.includes(sig))
+      ? "compaction"
+      : "boundary";
+  }
+  if (!Array.isArray(input) || input.length === 0) return "unknown";
+
+  const systemText = responsesSystemishText(input);
+  if (
+    COMPACTION_SIGNATURES.some(
+      (sig) => instructionsText.includes(sig) || systemText.includes(sig),
+    )
+  ) {
+    return "compaction";
+  }
+
+  const last = input[input.length - 1];
+  // function_call_output 回包 / assistant 侧产出（含未回包的调用）都是轮次内续接。
+  if (last?.type === "function_call_output") return "continuation";
+  if (isResponsesAssistantItem(last)) return "continuation";
+  if (last?.role === "tool") return "continuation"; // 内联 chat 形态的 tool 回包
+
+  const answeredCallIds = new Set<string>();
+  for (let i = input.length - 2; i >= 0; i--) {
+    const item = input[i];
+    if (
+      item?.type === "function_call_output" &&
+      typeof item.call_id === "string"
+    ) {
+      answeredCallIds.add(item.call_id);
+      continue;
+    }
+    if (item?.role === "tool" && typeof item.tool_call_id === "string") {
+      answeredCallIds.add(item.tool_call_id);
+      continue;
+    }
+    if (isResponsesAssistantItem(item)) {
+      // 并行 function_call / reasoning 连续成段：整段全部闭合才算边界。
+      let hasOpenCalls =
+        item.type === "function_call"
+          ? !answeredCallIds.has(item.call_id)
+          : false;
+      if (hasOpenInlineToolCalls(item, answeredCallIds)) hasOpenCalls = true;
+      for (let j = i - 1; j >= 0 && isResponsesAssistantItem(input[j]); j--) {
+        const prev = input[j];
+        if (
+          prev?.type === "function_call" &&
+          !answeredCallIds.has(prev.call_id)
+        ) {
+          hasOpenCalls = true;
+        }
+        if (hasOpenInlineToolCalls(prev, answeredCallIds)) hasOpenCalls = true;
+      }
+      return hasOpenCalls ? "continuation" : "boundary";
+    }
+    // 中间的 user / system / developer 项不改变轮次状态，继续回溯。
+  }
+  return "boundary";
+}
+
+/**
+ * Responses 转发输入估算：input（string 或 item 数组，含 input/output 文本、
+ * function_call 参数、function_call_output 回包、reasoning 文本）+
+ * instructions + 工具定义，全部走共享 tiktoken 协作计数。
+ */
+export async function estimateResponsesInputTokens(
+  input: unknown,
+  instructions?: string,
+  tools?: any[],
+): Promise<number> {
+  const inputTokens = await countResponsesInputCooperatively(input);
+  const instructionTokens = instructions
+    ? await countTextCooperatively(instructions)
+    : 0;
+  return inputTokens + instructionTokens + (await estimateToolsTokens(tools));
+}
+
 /**
  * 实际转发输入的保守估算：消息走共享 tiktoken 协作计数（含 system、
  * tool_calls 参数），工具定义按序列化 JSON 计数。中文等高密度文本的
@@ -117,11 +322,13 @@ export function classifyChatRequest(messages: any[]): RequestClassification {
 export async function estimateForwardedInputTokens(
   messages: any[],
   tools?: any[],
+  systemText?: string,
 ): Promise<number> {
   const messageTokens = await countMessagesCooperatively(
     Array.isArray(messages) ? messages : [],
   );
-  return messageTokens + (await estimateToolsTokens(tools));
+  const systemTokens = systemText ? await countTextCooperatively(systemText) : 0;
+  return messageTokens + systemTokens + (await estimateToolsTokens(tools));
 }
 
 async function estimateToolsTokens(tools?: any[]): Promise<number> {
@@ -178,14 +385,28 @@ function pruneStates(now: number): void {
   }
 }
 
-function buildExceededBody(effective: number, estimated: number): {
-  error: Record<string, string>;
-} {
+function buildExceededBody(
+  effective: number,
+  estimated: number,
+  protocol: "openai" | "anthropic" | "responses" = "openai",
+): Record<string, unknown> {
+  if (protocol === "anthropic") {
+    // Anthropic 原生措辞：客户端按 /prompt (?:is )?too long/i 识别后自动压缩重试。
+    return {
+      type: "error",
+      error: {
+        type: "invalid_request_error",
+        message: `prompt is too long: ${estimated} tokens > ${effective} maximum`,
+      },
+    };
+  }
+  // OpenAI 溢出措辞（pi / opencode 均可识别）；Responses 的
+  // param 指向 input 字段，其余与 Chat Completions 完全一致。
   return {
     error: {
       message: `This model's maximum context length is ${effective} tokens. However, your messages resulted in ${estimated} tokens. Please reduce the length of the messages.`,
       type: "invalid_request_error",
-      param: "messages",
+      param: protocol === "responses" ? "input" : "messages",
       code: "context_length_exceeded",
     },
   };
@@ -193,9 +414,20 @@ function buildExceededBody(effective: number, estimated: number): {
 
 export interface CheckContextBudgetInput {
   virtualKeyId: string;
-  messages: any[];
+  /** Chat/Anthropic 协议的消息数组；responses 协议改传 input/instructions */
+  messages?: any[];
   /** 随请求转发的工具定义，计入输入预算 */
   tools?: any[];
+  /** Anthropic 顶层 system 字段（string 或 content blocks） */
+  system?: unknown;
+  /** Responses 协议的 input（string 或 item 数组） */
+  input?: unknown;
+  /** Responses 协议的 instructions（string） */
+  instructions?: unknown;
+  /** previous_response_id / conversation：上游持有历史，网关无法核对转发输入 */
+  hasUpstreamConversationState?: boolean;
+  /** 协议分支：分类规则与 block 错误 envelope；默认 openai */
+  protocol?: "openai" | "anthropic" | "responses";
   budgetTokens: number;
   contextWindow?: number;
   /** 已计数好的消息 tokens（如去重压缩统计），提供时跳过重算 */
@@ -208,7 +440,20 @@ async function estimateInputTokens(input: CheckContextBudgetInput): Promise<numb
   if (input.messagesTokens !== undefined) {
     return input.messagesTokens + (await estimateToolsTokens(input.tools));
   }
-  return estimateForwardedInputTokens(input.messages, input.tools);
+  if (input.protocol === "responses") {
+    return estimateResponsesInputTokens(
+      input.input,
+      responsesInstructionsText(input.instructions),
+      input.tools,
+    );
+  }
+  const systemText =
+    input.protocol === "anthropic" ? anthropicSystemText(input.system) : undefined;
+  return estimateForwardedInputTokens(
+    Array.isArray(input.messages) ? input.messages : [],
+    input.tools,
+    systemText,
+  );
 }
 
 /**
@@ -219,7 +464,18 @@ export async function checkContextBudget(
   input: CheckContextBudgetInput,
 ): Promise<BudgetVerdict> {
   const now = (input.now ?? Date.now)();
-  const classification = classifyChatRequest(input.messages);
+  const protocol = input.protocol ?? "openai";
+  const messages = Array.isArray(input.messages) ? input.messages : [];
+  const classification =
+    protocol === "anthropic"
+      ? classifyAnthropicRequest(messages, anthropicSystemText(input.system))
+      : protocol === "responses"
+        ? classifyResponsesRequest(
+            input.input,
+            responsesInstructionsText(input.instructions),
+            input.hasUpstreamConversationState === true,
+          )
+        : classifyChatRequest(messages);
 
   if (classification === "compaction") {
     return { action: "exempt", classification };
@@ -282,7 +538,7 @@ export async function checkContextBudget(
     classification,
     estimatedTokens: estimated,
     effectiveBudget: effective,
-    body: buildExceededBody(effective, estimated),
+    body: buildExceededBody(effective, estimated, protocol),
   };
 }
 
