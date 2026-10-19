@@ -1008,6 +1008,17 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
       truncatedResponse: shouldLogBody
         ? tokenUsage.streamChunks.join("")
         : undefined,
+      // Usage/stop_reason captured from stream events — the recorded body is
+      // bounded and may be truncated, dropping the trailing usage frames.
+      cachedTokens: tokenUsage.cachedTokens,
+      responseMeta: {
+        finish_reason: tokenUsage.stopReason,
+        input_tokens: tokenUsage.usage.inputTokens,
+        output_tokens: tokenUsage.usage.outputTokens,
+        cache_creation_input_tokens: tokenUsage.usage.cacheCreationInputTokens,
+        cache_read_input_tokens: tokenUsage.usage.cacheReadInputTokens,
+        cached_tokens: tokenUsage.cachedTokens,
+      },
       cacheHit: 0,
       ip: streamIp,
       userAgent: streamUserAgent,

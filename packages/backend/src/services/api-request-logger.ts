@@ -18,6 +18,11 @@ export interface ApiLogParams {
   errorMessage?: unknown;
   truncatedRequest?: string;
   truncatedResponse?: string;
+  /** Structured usage/stop_reason captured from stream events. Persisted to
+   *  response_meta_json as-is, independent of the truncated response body;
+   *  takes precedence over parsing truncatedResponse. Must never contain
+   *  request payloads, tool arguments or credentials. */
+  responseMeta?: Record<string, unknown>;
   cacheHit?: 0 | 1;
   cachedTokens?: number;
   compressionStats?: { originalTokens: number; savedTokens: number };
@@ -115,6 +120,19 @@ function extractResponseMetaJson(
   return JSON.stringify(meta);
 }
 
+function serializeResponseMeta(
+  meta: Record<string, unknown> | undefined,
+  responseBody: string | undefined,
+): string | undefined {
+  if (meta) {
+    const compacted = compactObject(meta);
+    return Object.keys(compacted).length > 0
+      ? JSON.stringify(compacted)
+      : undefined;
+  }
+  return extractResponseMetaJson(responseBody);
+}
+
 function normalizeErrorMessage(errorMessage: unknown): string | undefined {
   if (errorMessage === undefined || errorMessage === null) {
     return undefined;
@@ -140,7 +158,10 @@ export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
     params.piiMaskedCount,
     params.streamResume,
   );
-  const responseMetaJson = extractResponseMetaJson(params.truncatedResponse);
+  const responseMetaJson = serializeResponseMeta(
+    params.responseMeta,
+    params.truncatedResponse,
+  );
 
   // disable_logging：除已抑制的正文/参数外，ip、user_agent 和错误文本同属敏感元数据，
   // 写入侧直接置空（错误体可能回显 prompt 片段），读出侧另有字段白名单。

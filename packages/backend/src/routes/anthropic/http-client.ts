@@ -15,6 +15,12 @@ import type { PiiProtectionContext } from "../../services/pii-protection-types.j
 import { removeV1Suffix } from "../../utils/api-endpoint-builder.js";
 import { upstreamFetch } from "../../utils/upstream-fetch.js";
 import { BoundedChunkRecorder } from "../../utils/bounded-chunk-recorder.js";
+import {
+  anthropicPromptTokens,
+  createEmptyAnthropicUsage,
+  mergeAnthropicUsage,
+  type AnthropicUsageCounts,
+} from "../../utils/anthropic-usage.js";
 import { createUpstreamDeadline } from "../../utils/upstream-deadline.js";
 import { waitForDrain } from "../../utils/stream-guards.js";
 import { AnthropicStreamNormalizer } from "./stream-normalizer.js";
@@ -45,6 +51,13 @@ export interface StreamTokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  /** Cache-read tokens (included in promptTokens). */
+  cachedTokens: number;
+  /** Final usage snapshot merged from stream events; independent of the
+   *  (possibly truncated) recorded body for audit persistence. */
+  usage: AnthropicUsageCounts;
+  /** stop_reason observed in message_delta.delta, when present. */
+  stopReason?: string;
   streamChunks: string[];
   /** Time to first upstream stream event (ms), when an event was observed. */
   tffbMs?: number;
@@ -272,6 +285,9 @@ function ensureSseHeaders(reply: FastifyReply): void {
 interface StreamAttemptResult {
   promptTokens: number;
   completionTokens: number;
+  cachedTokens: number;
+  usage: AnthropicUsageCounts;
+  stopReason?: string;
   hasAssistantContent: boolean;
   streamChunks: string[];
   tffbMs?: number;
@@ -323,10 +339,8 @@ export async function consumeAnthropicStreamAttempt(
   sseComment?: string,
   abortSignal?: AbortSignal,
 ): Promise<StreamAttemptResult> {
-  let inputTokens = 0;
-  let cacheCreationInputTokens = 0;
-  let cacheReadInputTokens = 0;
-  let outputTokens = 0;
+  let usage = createEmptyAnthropicUsage();
+  let stopReason: string | undefined;
   let buffering = true;
   let tffbMs: number | undefined;
   const pendingChunks: string[] = [];
@@ -472,16 +486,13 @@ export async function consumeAnthropicStreamAttempt(
       if (clientModel && (sourceEvent.message as any)?.model) {
         (sourceEvent.message as any).model = clientModel;
       }
-      if (sourceEvent.message?.usage) {
-        inputTokens = sourceEvent.message.usage.input_tokens || 0;
-        const anyUsage: any = sourceEvent.message.usage as any;
-        cacheCreationInputTokens = anyUsage?.cache_creation_input_tokens || 0;
-        cacheReadInputTokens = anyUsage?.cache_read_input_tokens || 0;
-      }
+      usage = mergeAnthropicUsage(usage, sourceEvent.message?.usage);
     } else if (sourceEvent.type === "message_delta") {
-      const anyUsage: any = (sourceEvent as any).usage;
-      if (anyUsage && anyUsage.output_tokens !== undefined) {
-        outputTokens = anyUsage.output_tokens as number;
+      // Some providers (GLM /v1/messages) report zeros in message_start and
+      // only return real input/cache counts here — merge, don't overwrite.
+      usage = mergeAnthropicUsage(usage, (sourceEvent as any).usage);
+      if (typeof sourceEvent.delta?.stop_reason === "string" && sourceEvent.delta.stop_reason) {
+        stopReason = sourceEvent.delta.stop_reason;
       }
     }
 
@@ -514,13 +525,15 @@ export async function consumeAnthropicStreamAttempt(
     reply.raw.end();
   }
 
-  const promptTokens =
-    inputTokens + cacheCreationInputTokens + cacheReadInputTokens;
-  const completionTokens = outputTokens;
+  const promptTokens = anthropicPromptTokens(usage);
+  const completionTokens = usage.outputTokens;
 
   return {
     promptTokens,
     completionTokens,
+    cachedTokens: usage.cacheReadInputTokens,
+    usage,
+    stopReason,
     hasAssistantContent,
     streamChunks: streamChunks.chunks,
     tffbMs,
@@ -689,6 +702,9 @@ export async function makeAnthropicStreamRequest(
         completionTokens: attemptResult.completionTokens,
         totalTokens:
           attemptResult.promptTokens + attemptResult.completionTokens,
+        cachedTokens: attemptResult.cachedTokens,
+        usage: attemptResult.usage,
+        stopReason: attemptResult.stopReason,
         streamChunks: attemptResult.streamChunks,
         tffbMs: attemptResult.tffbMs,
       };

@@ -158,6 +158,50 @@ describe("extractUsageFromStreamChunks", () => {
     });
   });
 
+  it("Anthropic GLM：开头输入为 0，末尾返回真实输入/缓存/输出（生产捕获样本）", () => {
+    const chunks = [
+      'event: message_start\ndata: {"type":"message_start","message":{"model":"glm-5.3","usage":{"input_tokens":0,"output_tokens":0}}}\n\n',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}\n\n',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":136,"output_tokens":20,"cache_read_input_tokens":175360,"server_tool_use":{"web_search_requests":0},"service_tier":"standard"}}\n\n',
+      'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+    ];
+    expect(extractUsageFromStreamChunks(chunks, "anthropic")).toEqual({
+      promptTokens: 175496,
+      completionTokens: 20,
+      cachedTokens: 175360,
+      totalTokens: 175516,
+    });
+  });
+
+  it("Anthropic：末尾 usage 缺输入/缓存字段时保留开头值，重复累计事件不叠加", () => {
+    const chunks = [
+      'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":20,"cache_read_input_tokens":100,"cache_creation_input_tokens":30}}}\n\n',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{},"usage":{"input_tokens":20,"output_tokens":10}}\n\n',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{},"usage":{"input_tokens":20,"output_tokens":42}}\n\n',
+      'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+    ];
+    expect(extractUsageFromStreamChunks(chunks, "anthropic")).toEqual({
+      promptTokens: 150,
+      completionTokens: 42,
+      cachedTokens: 100,
+      totalTokens: 192,
+    });
+  });
+
+  it("Anthropic：非法字段值被忽略，保留之前值", () => {
+    const chunks = [
+      'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":20,"cache_read_input_tokens":100,"output_tokens":2}}}\n\n',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{},"usage":{"input_tokens":null,"output_tokens":-3,"cache_read_input_tokens":"12"}}\n\n',
+      'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+    ];
+    expect(extractUsageFromStreamChunks(chunks, "anthropic")).toEqual({
+      promptTokens: 120,
+      completionTokens: 2,
+      cachedTokens: 100,
+      totalTokens: 122,
+    });
+  });
+
   it("流里没有 usage 时返回 null（上游可不回传 usage / 断流累积不完整）", () => {
     expect(
       extractUsageFromStreamChunks(

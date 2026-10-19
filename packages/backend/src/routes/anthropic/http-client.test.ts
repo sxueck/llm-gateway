@@ -211,6 +211,114 @@ describe('makeAnthropicStreamRequest', () => {
     expect(reply.raw.end).toHaveBeenCalled();
   });
 
+  test('GLM sample: zeroed message_start merged with the final message_delta yields real input/cache/output', async () => {
+    // Verbatim frames captured from provider zhipu-codingplan-max (glm-5.3).
+    fetchMock.mockResolvedValue(
+      sseResponse([
+        'event: message_start\ndata: {"type":"message_start","message":{"model":"glm-5.3","usage":{"input_tokens":0,"output_tokens":0}}}\n\n',
+        'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"read","input":{}}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"path\\":\\"a.txt\\"}"}}\n\n',
+        'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":136,"output_tokens":20,"cache_read_input_tokens":175360,"server_tool_use":{"web_search_requests":0},"service_tier":"standard"}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ])
+    );
+    const reply = createReply();
+
+    const usage = await makeAnthropicStreamRequest(CONFIG, REQUEST_BODY, reply);
+
+    expect(usage.promptTokens).toBe(175496); // 136 input + 175360 cache read
+    expect(usage.completionTokens).toBe(20);
+    expect(usage.totalTokens).toBe(175516); // cache already inside promptTokens
+    expect(usage.cachedTokens).toBe(175360);
+    expect(usage.stopReason).toBe('tool_use');
+    expect(usage.usage).toEqual({
+      inputTokens: 136,
+      outputTokens: 20,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 175360,
+    });
+  });
+
+  test('final usage and stop_reason are returned as structured fields, independent of the recorded body', async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse([
+        'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":11,"cache_read_input_tokens":7}}}\n\n',
+        'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}\n\n',
+        'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ])
+    );
+
+    const usage = await makeAnthropicStreamRequest(CONFIG, REQUEST_BODY, createReply());
+
+    // Structured fields survive even if downstream drops/truncates streamChunks.
+    expect(usage.usage).toEqual({
+      inputTokens: 11,
+      outputTokens: 5,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 7,
+    });
+    expect(usage.stopReason).toBe('end_turn');
+    expect(usage.cachedTokens).toBe(7);
+  });
+
+  test('repeated cumulative message_delta usage overwrites instead of accumulating', async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse([
+        'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":1}}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","delta":{},"usage":{"input_tokens":10,"output_tokens":5}}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","delta":{},"usage":{"input_tokens":10,"output_tokens":9}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ])
+    );
+
+    const usage = await makeAnthropicStreamRequest(CONFIG, REQUEST_BODY, createReply());
+
+    expect(usage.promptTokens).toBe(10);
+    expect(usage.completionTokens).toBe(9); // not 1 + 5 + 9
+    expect(usage.totalTokens).toBe(19);
+  });
+
+  test('invalid message_delta usage values (NaN/negative/string) keep earlier report values', async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse([
+        'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":11,"cache_read_input_tokens":7,"output_tokens":2}}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","delta":{},"usage":{"input_tokens":null,"output_tokens":-3,"cache_read_input_tokens":"12"}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ])
+    );
+
+    const usage = await makeAnthropicStreamRequest(CONFIG, REQUEST_BODY, createReply());
+
+    expect(usage.promptTokens).toBe(18);
+    expect(usage.completionTokens).toBe(2);
+    expect(usage.cachedTokens).toBe(7);
+  });
+
+  test('a tool_use stream is a normal completion and records usage (not misjudged as empty output)', async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse([
+        'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":9,"cache_creation_input_tokens":4}}}\n\n',
+        'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"bash","input":{}}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"cmd\\":\\"ls\\"}"}}\n\n',
+        'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":17}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ])
+    );
+
+    const usage = await makeAnthropicStreamRequest(CONFIG, REQUEST_BODY, createReply());
+
+    expect(usage.promptTokens).toBe(13); // 9 input + 4 cache creation
+    expect(usage.completionTokens).toBe(17);
+    expect(usage.stopReason).toBe('tool_use');
+  });
+
   test('preserves native fields and forces streaming without mutating the client body', async () => {
     fetchMock.mockResolvedValue(sseResponse([
       'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\n\n',

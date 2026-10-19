@@ -1,6 +1,9 @@
 /**
  * Playground 指标纯函数集：无 DB / 无 fastify 依赖，便于单测。
  *
+ * Anthropic 流式 usage 合并复用 utils/anthropic-usage.ts 的共享助手，
+ * 与生产链路（routes/anthropic/http-client.ts）保持同一口径。
+ *
  * 这些函数是 Playground 代理（routes/playground.ts）指标展示的唯一来源。
  * 为什么不能只依赖流式 chunk：
  *  1. 上游不保证在流里回传 usage —— OpenAI 需要 stream_options.include_usage，
@@ -8,6 +11,12 @@
  *  2. 客户端断流 / 上游中断时 chunk 累积不完整，指标只能"尽力而为"。
  * 因此这里只做纯解析，缺失时返回 null，由前端决定降级展示。
  */
+
+import {
+  anthropicPromptTokens,
+  createEmptyAnthropicUsage,
+  mergeAnthropicUsage,
+} from "../utils/anthropic-usage.js";
 
 export interface PlaygroundUsage {
   promptTokens: number;
@@ -166,34 +175,30 @@ export function extractUsageFromStreamChunks(
     return null;
   }
 
-  // Anthropic：输入侧在 message_start（message.usage，含 cache 字段），
-  // 输出侧在最后一个 message_delta.usage.output_tokens。
-  let promptSide: PlaygroundUsage | null = null;
-  let outputTokens: number | null = null;
+  // Anthropic：usage 字段分散在 message_start（输入侧）与 message_delta
+  // （部分供应商仅在末尾返回真实输入/缓存量），逐字段合并取累计值。
+  let merged = createEmptyAnthropicUsage();
+  let sawUsage = false;
   for (const event of events) {
     if (event?.type === "message_start") {
-      promptSide = extractAnthropicUsage({
-        usage: event.message?.usage ?? event.usage,
-      });
-    } else if (
-      event?.type === "message_delta" &&
-      event.usage &&
-      typeof event.usage.output_tokens === "number"
-    ) {
-      outputTokens = event.usage.output_tokens;
+      const startUsage = event.message?.usage ?? event.usage;
+      if (startUsage) sawUsage = true;
+      merged = mergeAnthropicUsage(merged, startUsage);
+    } else if (event?.type === "message_delta" && event.usage) {
+      sawUsage = true;
+      merged = mergeAnthropicUsage(merged, event.usage);
     }
   }
-  if (!promptSide && outputTokens === null) return null;
+  if (!sawUsage) return null;
 
-  const promptTokens = promptSide?.promptTokens ?? 0;
-  const cachedTokens = promptSide?.cachedTokens ?? 0;
-  const completionTokens = outputTokens ?? promptSide?.completionTokens ?? 0;
-  return {
-    promptTokens,
-    completionTokens,
-    cachedTokens,
-    totalTokens: promptTokens + completionTokens,
+  const result: PlaygroundUsage = {
+    promptTokens: anthropicPromptTokens(merged),
+    completionTokens: merged.outputTokens,
+    cachedTokens: merged.cacheReadInputTokens,
+    totalTokens: 0,
   };
+  result.totalTokens = sumTokens(result);
+  return result;
 }
 
 /** 从流式 chunk 文本取模型名（OpenAI 任意 chunk.model / Anthropic message_start）。 */

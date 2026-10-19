@@ -25,6 +25,77 @@ const baseParams = {
   responseTime: 100,
 };
 
+describe("logApiRequestToDb response_meta_json / cached_tokens", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.create.mockResolvedValue(undefined);
+  });
+
+  it("stream responseMeta is persisted verbatim even when the body is truncated SSE text", async () => {
+    await logApiRequestToDb({
+      ...baseParams,
+      truncatedResponse: 'event: message_start\ndata: {"type":"message_st',
+      cachedTokens: 175360,
+      responseMeta: {
+        finish_reason: "tool_use",
+        input_tokens: 136,
+        output_tokens: 20,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 175360,
+        cached_tokens: 175360,
+      },
+    });
+
+    const row = mocks.create.mock.calls[0][0];
+    expect(row.response_meta_json).toBe(
+      JSON.stringify({
+        finish_reason: "tool_use",
+        input_tokens: 136,
+        output_tokens: 20,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 175360,
+        cached_tokens: 175360,
+      }),
+    );
+    expect(row.cached_tokens).toBe(175360);
+  });
+
+  it("undefined values inside responseMeta are dropped; an all-empty meta writes NULL", async () => {
+    await logApiRequestToDb({
+      ...baseParams,
+      truncatedResponse: undefined,
+      responseMeta: { finish_reason: undefined, input_tokens: 5 },
+    });
+    expect(mocks.create.mock.calls[0][0].response_meta_json).toBe(
+      JSON.stringify({ input_tokens: 5 }),
+    );
+
+    await logApiRequestToDb({
+      ...baseParams,
+      responseMeta: { finish_reason: undefined },
+    });
+    expect(mocks.create.mock.calls[1][0].response_meta_json).toBeUndefined();
+  });
+
+  it("without responseMeta the legacy body-parsing path still applies", async () => {
+    await logApiRequestToDb({
+      ...baseParams,
+      truncatedResponse: JSON.stringify({
+        choices: [{ finish_reason: "stop" }],
+        usage: { prompt_tokens: 7, completion_tokens: 3 },
+      }),
+    });
+
+    expect(mocks.create.mock.calls[0][0].response_meta_json).toBe(
+      JSON.stringify({
+        finish_reason: "stop",
+        input_tokens: 7,
+        output_tokens: 3,
+      }),
+    );
+  });
+});
+
 describe("logApiRequestToDb disable_logging suppression", () => {
   beforeEach(() => {
     vi.clearAllMocks();
