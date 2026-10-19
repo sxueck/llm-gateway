@@ -41,6 +41,41 @@ vi.mock('../../agent/run/scheduler.js', () => ({
 }));
 
 import { agentSearchRoutes } from './searches.js';
+import { persistNewRun, validateRunInputs } from '../../agent/run/run.service.js';
+
+describe('agent search run creation', () => {
+  it('passes the snapshot-resolved commit from validateRunInputs into persistNewRun', async () => {
+    vi.mocked(validateRunInputs).mockResolvedValue({
+      plugin: { manifest: { id: 'com.llm-gateway.code-search', version: '1.0.6' }, digest: 'sha256:' + 'a'.repeat(64) },
+      profile: 'search-fast',
+      resolvedCommit: 'deadbeef',
+    } as never);
+    vi.mocked(persistNewRun).mockResolvedValue({
+      run: { id: 'asr_2', status: 'queued', expires_at: 1 },
+      serviceToken: 'st',
+      query: 'q',
+    } as never);
+
+    const app = Fastify();
+    await agentSearchRoutes(app);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/',
+      headers: { authorization: 'Bearer key', 'content-type': 'application/json' },
+      payload: {
+        plugin: { id: 'com.llm-gateway.code-search', version: '1.0.6' },
+        source: { type: 'snapshot', snapshot_id: 'snap_1' },
+        query: 'trace the auth path',
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(persistNewRun).toHaveBeenCalledWith(
+      expect.objectContaining({ resolvedCommit: 'deadbeef' }),
+    );
+    await app.close();
+  });
+});
 
 describe('agent search cancellation', () => {
   beforeEach(() => {
