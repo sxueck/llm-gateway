@@ -725,6 +725,43 @@ export function createOpenAIProxyHandler() {
           }
         }
       }
+
+      // 上下文预算判定（OpenAI Responses API，结构与 Chat 分支对齐）：只在
+      // 用户轮次边界拦截；instructions、tools、function_call 参数与回包、
+      // reasoning 文本、input/output 文本全部计入输入预算。previous_response_id /
+      // conversation 的历史保存在上游会话状态里，网关不可见也无法计入——这类
+      // 请求按 unknown 放行只告警，预算上限只对客户端内联完整历史的请求生效。
+      // /v1/responses/compact 是客户端压缩入口，直接豁免；不改写转发历史。
+      if (
+        contextBudgetTokens > 0 &&
+        isResponsesApiPath(path) &&
+        !isResponsesCompactPath(path)
+      ) {
+        const responsesBody = request.body as any;
+        const budgetVerdict = await checkContextBudget({
+          virtualKeyId: virtualKey.id,
+          protocol: "responses",
+          input: responsesBody?.input,
+          instructions: responsesBody?.instructions,
+          tools: responsesBody?.tools,
+          hasUpstreamConversationState: Boolean(
+            responsesBody?.previous_response_id || responsesBody?.conversation,
+          ),
+          budgetTokens: contextBudgetTokens,
+          contextWindow: resolveServingLimits(parsedModelAttributes)
+            .contextWindow,
+        });
+        if (budgetVerdict.action === "block") {
+          memoryLogger.info(
+            `上下文预算拦截 | 虚拟密钥: ${vkDisplay} | 协议: responses | 分类: ${budgetVerdict.classification} | ` +
+              `估算: ${budgetVerdict.estimatedTokens} tokens > 生效预算: ${budgetVerdict.effectiveBudget} (配置: ${contextBudgetTokens})`,
+            "Proxy",
+          );
+          reply.header("x-should-retry", "false");
+          reply.header("x-gateway-budget", "enforced");
+          return reply.code(400).send(budgetVerdict.body);
+        }
+      }
       if (
         virtualKey.intercept_zero_temperature === 1 &&
         virtualKey.zero_temperature_replacement !== null &&

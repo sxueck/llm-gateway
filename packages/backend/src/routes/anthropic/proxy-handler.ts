@@ -30,6 +30,7 @@ import {
 } from "../../services/pii-protection-service.js";
 import { capturePromptSampleAsync } from "../../services/prompt-capture-service.js";
 import { applyContextNormalization } from "../../services/context-normalization/index.js";
+import { checkContextBudget } from "../../services/context-budget.js";
 import {
   clampMaxTokensFields,
   resolveServingLimits,
@@ -427,6 +428,34 @@ export function createAnthropicProxyHandler() {
       }
 
       const { protocolConfig, vkDisplay } = configResult;
+
+      // 上下文预算判定（Anthropic Messages）：只在用户轮次边界拦截，
+      // 超预算返回 400 prompt is too long，客户端（pi / Claude Code）识别后
+      // 自动压缩重试。tools 与顶层 system 均计入输入预算。
+      const contextBudgetTokens = Number(virtualKey.context_budget_tokens) || 0;
+      if (contextBudgetTokens > 0 && Array.isArray((request.body as any)?.messages)) {
+        const budgetVerdict = await checkContextBudget({
+          virtualKeyId: virtualKey.id,
+          protocol: "anthropic",
+          messages: (request.body as any).messages,
+          tools: (request.body as any)?.tools,
+          system: (request.body as any)?.system,
+          budgetTokens: contextBudgetTokens,
+          contextWindow: resolveServingLimits(
+            parseModelAttributes(currentModel?.model_attributes),
+          ).contextWindow,
+        });
+        if (budgetVerdict.action === "block") {
+          memoryLogger.info(
+            `上下文预算拦截 | 虚拟密钥: ${vkDisplay} | 协议: anthropic | 分类: ${budgetVerdict.classification} | ` +
+              `估算: ${budgetVerdict.estimatedTokens} tokens > 生效预算: ${budgetVerdict.effectiveBudget} (配置: ${contextBudgetTokens})`,
+            "Anthropic",
+          );
+          reply.header("x-should-retry", "false");
+          reply.header("x-gateway-budget", "enforced");
+          return reply.code(400).send(budgetVerdict.body);
+        }
+      }
 
       // gateway_name exposure: rewrite message_start `model` when the route
       // opts in; absent = upstream identifier passthrough (byte-identical).
