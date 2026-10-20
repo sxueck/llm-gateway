@@ -34,8 +34,16 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # grep_search 依赖 ripgrep；ubuntu-latest 不预装
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
       - name: Unit tests
         run: npm test
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-test-only-jwt-secret-must-be-at-least-32-characters
+          MYSQL_PASSWORD: ci-test-password
 
   e2e:
     name: E2E (API chains + expert routing)
