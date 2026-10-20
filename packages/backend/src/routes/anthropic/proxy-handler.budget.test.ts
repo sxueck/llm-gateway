@@ -48,10 +48,6 @@ vi.mock('../../services/api-request-logger.js', () => ({
   logApiRequestAsync: vi.fn(),
 }));
 
-vi.mock('../../services/prompt-capture-service.js', () => ({
-  capturePromptSampleAsync: vi.fn(),
-}));
-
 vi.mock('../../services/pii-protection-service.js', () => ({
   maskRequestBodyInPlace: vi.fn(() => ({ applied: false, context: null, maskedCount: 0 })),
   restoreResponseBodyInPlace: vi.fn(),
@@ -70,7 +66,6 @@ function makeVirtualKey(contextBudgetTokens: number | null) {
     enabled: 1,
     cache_enabled: 0,
     context_budget_tokens: contextBudgetTokens,
-    prompt_capture_enabled: 0,
     pii_protection_enabled: 0,
   } as any;
 }

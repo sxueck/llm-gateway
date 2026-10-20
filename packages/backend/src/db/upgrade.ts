@@ -30,7 +30,6 @@ export const CLEARED_TABLES = [
   "api_request_payloads",
   "api_request_daily_summaries",
   "api_request_hourly_summaries",
-  "prompt_samples",
   "expert_routing_logs",
   "expert_routing_session_bindings",
   "session_context_bindings",
@@ -49,7 +48,7 @@ export const CLEARED_TABLES = [
 
 export const SCHEMA_TABLES = ["schema_migrations", "schema_baseline"] as const;
 
-const RETIRED_TABLES = ["intent_classify_logs", "health_summaries", "health_runs", "health_targets", "blocked_ips", "expert_routing_session_bindings_legacy"] as const;
+const RETIRED_TABLES = ["intent_classify_logs", "health_summaries", "health_runs", "health_targets", "blocked_ips", "expert_routing_session_bindings_legacy", "prompt_samples"] as const;
 
 export const ALL_GATEWAY_TABLES: readonly string[] = [
   ...IMPORT_ORDER,
@@ -154,7 +153,6 @@ export const TABLE_COLUMNS: Record<PreservedTable, string[]> = {
     "intercept_zero_temperature",
     "zero_temperature_replacement",
     "pii_protection_enabled",
-    "prompt_capture_enabled",
     "context_normalization_enabled",
     "created_at",
     "updated_at",
@@ -198,6 +196,7 @@ const TABLE_PRIMARY_KEYS: Record<PreservedTable, string[]> = {
 export const RETIRED_COLUMNS: Partial<Record<PreservedTable, string[]>> = {
   providers: ["owner_node", "owner_pop"],
   models: ["supported_protocols", "protocol", "health_check_protocol"],
+  virtual_keys: ["prompt_capture_enabled"],
 };
 
 const MAPPABLE_LEGACY_PROTOCOLS = new Set(["openai", "anthropic", "google"]);
@@ -543,7 +542,8 @@ export function normalizeBusinessTables(raw: BusinessTables): BusinessTables {
     const rows = Array.isArray(raw[table]) ? (raw[table] as BusinessRow[]) : [];
     tables[table] = rows.map((row) => {
       // 已知退役列（providers.owner_node/owner_pop、
-      // models.supported_protocols/protocol/health_check_protocol）在投影时被丢弃
+      // models.supported_protocols/protocol/health_check_protocol、
+      // virtual_keys.prompt_capture_enabled）在投影时被丢弃
       const projected: BusinessRow = {};
       for (const column of TABLE_COLUMNS[table]) {
         projected[column] = row[column] ?? null;

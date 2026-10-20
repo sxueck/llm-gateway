@@ -1,23 +1,67 @@
 <template>
   <div class="virtual-keys-view">
     <n-space vertical :size="12">
-      <PageHeader
-        eyebrow="ACCESS"
-        title="虚拟密钥管理"
-        subtitle="创建和管理虚拟 API 密钥,用于访问 LLM Gateway。可以设置过期时间和使用限制"
-      >
+      <PageHeader eyebrow="ACCESS" :title="t('virtualKeys.title')" :subtitle="t('virtualKeys.subtitle')">
         <template #actions>
-          <n-button type="primary" @click="showModal = true">创建虚拟密钥</n-button>
+          <n-button type="primary" @click="openCreate">{{ t('virtualKeys.addKey') }}</n-button>
         </template>
       </PageHeader>
 
       <n-card class="table-card">
+        <div class="table-toolbar">
+          <n-input
+            v-model:value="searchText"
+            :placeholder="t('virtualKeys.searchPlaceholder')"
+            clearable
+            size="small"
+            style="width: 260px"
+          >
+            <template #prefix>
+              <n-icon :component="SearchOutlined" />
+            </template>
+          </n-input>
+          <n-select
+            v-model:value="enabledFilter"
+            :options="enabledOptions"
+            size="small"
+            style="width: 140px"
+          />
+          <n-radio-group v-model:value="metricsPeriod" size="small">
+            <n-radio-button value="24h">{{ t('virtualKeys.period24h') }}</n-radio-button>
+            <n-radio-button value="7d">{{ t('virtualKeys.period7d') }}</n-radio-button>
+            <n-radio-button value="30d">{{ t('virtualKeys.period30d') }}</n-radio-button>
+          </n-radio-group>
+          <n-button
+            size="small"
+            :loading="virtualKeyStore.loading"
+            @click="refreshAll"
+          >
+            <template #icon>
+              <n-icon :component="RefreshOutlined" />
+            </template>
+            {{ t('virtualKeys.refresh') }}
+          </n-button>
+        </div>
+
+        <n-alert v-if="metricsError" type="warning" closable style="margin-bottom: 8px">
+          <div class="metrics-alert">
+            <span>{{ t('virtualKeys.metricsLoadError', { message: metricsError }) }}</span>
+            <n-button size="tiny" :loading="metricsLoading" @click="refreshMetrics">
+              {{ t('virtualKeys.metricsRetry') }}
+            </n-button>
+          </div>
+        </n-alert>
+
+        <div v-if="metricsNotes.length" class="metrics-notes">
+          <span v-for="note in metricsNotes" :key="note" class="metrics-note">{{ note }}</span>
+        </div>
+
         <n-data-table
           :columns="columns"
-          :data="virtualKeyStore.virtualKeys"
+          :data="filteredKeys"
           :loading="virtualKeyStore.loading"
-          :pagination="{ pageSize: 10 }"
-          :scroll-x="1100"
+          :pagination="pagination"
+          :scroll-x="1300"
           :bordered="false"
           size="small"
         />
@@ -27,7 +71,7 @@
     <n-modal
       v-model:show="showModal"
       preset="card"
-      :title="editingId ? '编辑虚拟密钥' : '创建虚拟密钥'"
+      :title="editingId ? t('virtualKeys.editKey') : t('virtualKeys.addKey')"
       class="key-modal"
       :style="{ width: '760px', maxWidth: '92vw', maxHeight: '85vh' }"
       :segmented="{
@@ -41,55 +85,65 @@
           :model="formValue"
           :rules="rules"
           label-placement="left"
-          label-width="90"
+          label-width="110"
           size="small"
         >
-          <n-form-item label="密钥名称" path="name">
-            <n-input v-model:value="formValue.name" placeholder="如: 生产环境密钥" size="small" />
+          <n-divider title-placement="left" class="form-section">{{ t('virtualKeys.formBasic') }}</n-divider>
+          <n-form-item :label="t('virtualKeys.keyName')" path="name">
+            <n-input v-model:value="formValue.name" :placeholder="t('virtualKeys.keyNamePlaceholder')" size="small" />
           </n-form-item>
-          <n-form-item label="关联模型" path="modelIds">
+          <n-form-item :label="t('virtualKeys.models')" path="modelIds">
             <n-select
               v-model:value="formValue.modelIds"
               :options="modelOptions"
-              placeholder="选择一个或多个模型"
+              :placeholder="t('virtualKeys.modelsPlaceholder')"
               filterable
               multiple
               clearable
               size="small"
             />
           </n-form-item>
-          <n-form-item v-if="!editingId" label="生成方式" path="keyType">
-            <n-radio-group v-model:value="formValue.keyType" size="small">
-              <n-space :size="12">
-                <n-radio value="auto">自动生成</n-radio>
-                <n-radio value="custom">自定义</n-radio>
-              </n-space>
-            </n-radio-group>
+          <n-form-item :label="t('virtualKeys.enabled')">
+            <n-switch v-model:value="formValue.enabled" size="small" />
           </n-form-item>
-          <n-form-item
-            v-if="!editingId && formValue.keyType === 'custom'"
-            label="自定义密钥"
-            path="customKey"
-          >
-            <n-input
-              v-model:value="formValue.customKey"
-              placeholder="8-64字符,仅支持字母、数字、下划线、连字符"
-              size="small"
-            />
-          </n-form-item>
-          <n-form-item label="速率限制" path="rateLimit">
+
+          <template v-if="!editingId">
+            <n-divider title-placement="left" class="form-section">{{ t('virtualKeys.formAccess') }}</n-divider>
+            <n-form-item :label="t('virtualKeys.generateMode')" path="keyType">
+              <n-radio-group v-model:value="formValue.keyType" size="small">
+                <n-space :size="12">
+                  <n-radio value="auto">{{ t('virtualKeys.generateAuto') }}</n-radio>
+                  <n-radio value="custom">{{ t('virtualKeys.generateCustom') }}</n-radio>
+                </n-space>
+              </n-radio-group>
+            </n-form-item>
+            <n-form-item
+              v-if="formValue.keyType === 'custom'"
+              :label="t('virtualKeys.customKey')"
+              path="customKey"
+            >
+              <n-input
+                v-model:value="formValue.customKey"
+                :placeholder="t('virtualKeys.customKeyPlaceholder')"
+                size="small"
+              />
+            </n-form-item>
+          </template>
+
+          <n-divider title-placement="left" class="form-section">{{ t('virtualKeys.formAdvanced') }}</n-divider>
+          <n-form-item :label="t('virtualKeys.rateLimit')" path="rateLimit">
             <n-input-number
               v-model:value="formValue.rateLimit"
-              placeholder="请求/分钟"
-              :min="0"
+              :placeholder="t('virtualKeys.rateLimitPlaceholder')"
+              :min="1"
               style="width: 100%"
               size="small"
             />
           </n-form-item>
-          <n-form-item label="启用缓存">
+          <n-form-item :label="t('virtualKeys.enableCache')">
             <n-switch v-model:value="formValue.cacheEnabled" size="small" />
           </n-form-item>
-          <n-form-item label="禁用日志">
+          <n-form-item :label="t('virtualKeys.disableLogging')">
             <n-switch v-model:value="formValue.disableLogging" size="small" />
           </n-form-item>
           <n-form-item :label="t('virtualKeys.contextBudget')">
@@ -102,20 +156,16 @@
                 style="width: 160px"
                 size="small"
               />
-              <span style="font-size: 12px; color: #999">
-                {{ t('virtualKeys.contextBudgetHint') }}
-              </span>
+              <span class="form-hint">{{ t('virtualKeys.contextBudgetHint') }}</span>
             </n-space>
           </n-form-item>
-          <n-form-item label="图像压缩">
+          <n-form-item :label="t('virtualKeys.imageCompression')">
             <n-space vertical :size="4">
               <n-switch v-model:value="formValue.imageCompressionEnabled" size="small" />
-              <span style="font-size: 12px; color: #999">
-                仅处理 base64 图片,自动缩放最长边到 768px（png/jpeg/webp）
-              </span>
+              <span class="form-hint">{{ t('virtualKeys.imageCompressionHint') }}</span>
             </n-space>
           </n-form-item>
-          <n-form-item label="拦截空温度">
+          <n-form-item :label="t('virtualKeys.interceptZeroTemp')">
             <n-space vertical :size="4">
               <n-space :size="12" align="center">
                 <n-switch v-model:value="formValue.interceptZeroTemperature" size="small" />
@@ -125,42 +175,26 @@
                   :min="0"
                   :max="2"
                   :step="0.1"
-                  placeholder="例如: 0.7"
                   style="width: 150px"
                   size="small"
                 />
               </n-space>
-              <span style="font-size: 12px; color: #999">
-                开启后,将传入的 temperature=0 替换为指定值
-              </span>
+              <span class="form-hint">{{ t('virtualKeys.interceptZeroTempHint') }}</span>
             </n-space>
           </n-form-item>
-          <n-form-item label="PII 保护">
+          <n-form-item :label="t('virtualKeys.piiProtection')">
             <n-space vertical :size="4">
               <n-switch v-model:value="formValue.piiProtectionEnabled" size="small" />
-              <span style="font-size: 12px; color: #999">
-                开启后,将检测并替换请求中的敏感信息(secret、IP、邮箱)
-              </span>
+              <span class="form-hint">{{ t('virtualKeys.piiProtectionHint') }}</span>
             </n-space>
-          </n-form-item>
-          <n-form-item label="Prompt 捕获">
-            <n-space vertical :size="4">
-              <n-switch v-model:value="formValue.promptCaptureEnabled" size="small" />
-              <span style="font-size: 12px; color: #999">
-                捕获每个会话首个提问的清洗后样本，可在 Prompt 样本中下载
-              </span>
-            </n-space>
-          </n-form-item>
-          <n-form-item label="启用">
-            <n-switch v-model:value="formValue.enabled" size="small" />
           </n-form-item>
         </n-form>
       </div>
       <template #footer>
         <n-space justify="end" :size="8">
-          <n-button @click="showModal = false" size="small">取消</n-button>
+          <n-button @click="showModal = false" size="small">{{ t('virtualKeys.cancel') }}</n-button>
           <n-button type="primary" :loading="submitting" @click="handleSubmit" size="small">
-            {{ editingId ? '更新' : '创建' }}
+            {{ editingId ? t('virtualKeys.update') : t('virtualKeys.create') }}
           </n-button>
         </n-space>
       </template>
@@ -169,19 +203,37 @@
     <n-modal
       v-model:show="showKeyModal"
       preset="card"
-      :title="keyModalTitle"
-      style="width: 500px; max-width: 92vw"
+      :title="resultTitle"
+      style="width: 640px; max-width: 92vw"
     >
-      <n-space vertical>
-        <n-alert type="success">{{ keyModalMessage }}</n-alert>
+      <n-space vertical :size="12">
+        <n-alert type="success">{{ resultMessage }}</n-alert>
         <n-input-group>
           <n-input :value="createdKeyValue" readonly />
-          <n-button @click="copyKey">复制</n-button>
+          <n-button @click="copyKey">{{ t('virtualKeys.copy') }}</n-button>
         </n-input-group>
+
+        <template v-if="curlSnippets">
+          <n-divider style="margin: 4px 0">{{ t('virtualKeys.curlTitle') }}</n-divider>
+          <span class="curl-base">{{ t('virtualKeys.curlBase', { base: curlBaseUrl }) }}</span>
+          <span v-if="curlOriginAssumed" class="curl-base curl-origin-note">{{ t('virtualKeys.curlOriginAssumed') }}</span>
+          <div v-for="entry in curlEntries" :key="entry.label" class="curl-block">
+            <div class="curl-block-head">
+              <span>{{ entry.label }}</span>
+              <n-button size="tiny" @click="copyText(entry.command, 'virtualKeys.copyCurl')">
+                {{ t('virtualKeys.copyCurl') }}
+              </n-button>
+            </div>
+            <pre class="curl-pre">{{ entry.command }}</pre>
+          </div>
+        </template>
+        <n-alert v-else-if="resultVirtualKey" type="warning">
+          {{ t('virtualKeys.curlNoModel') }}
+        </n-alert>
       </n-space>
       <template #footer>
         <n-space justify="end">
-          <n-button type="primary" @click="showKeyModal = false">确定</n-button>
+          <n-button type="primary" @click="showKeyModal = false">{{ t('virtualKeys.confirm') }}</n-button>
         </n-space>
       </template>
     </n-modal>
@@ -189,26 +241,24 @@
     <n-modal
       v-model:show="showRotateModal"
       preset="card"
-      title="轮转密钥"
+      :title="t('virtualKeys.rotateTitle')"
       style="width: 480px; max-width: 92vw"
     >
       <n-space vertical>
-        <n-alert type="warning">
-          轮转后将生成新的密钥值，旧密钥立即失效，请及时更新使用该密钥的客户端。
-        </n-alert>
-        <n-form label-placement="left" label-width="90" size="small">
-          <n-form-item label="生成方式">
+        <n-alert type="warning">{{ t('virtualKeys.rotateWarning') }}</n-alert>
+        <n-form label-placement="left" label-width="110" size="small">
+          <n-form-item :label="t('virtualKeys.generateMode')">
             <n-radio-group v-model:value="rotateForm.keyType" size="small">
               <n-space :size="12">
-                <n-radio value="auto">自动生成</n-radio>
-                <n-radio value="custom">自定义</n-radio>
+                <n-radio value="auto">{{ t('virtualKeys.generateAuto') }}</n-radio>
+                <n-radio value="custom">{{ t('virtualKeys.generateCustom') }}</n-radio>
               </n-space>
             </n-radio-group>
           </n-form-item>
-          <n-form-item v-if="rotateForm.keyType === 'custom'" label="自定义密钥">
+          <n-form-item v-if="rotateForm.keyType === 'custom'" :label="t('virtualKeys.customKey')">
             <n-input
               v-model:value="rotateForm.customKey"
-              placeholder="8-64字符,仅支持字母、数字、下划线、连字符"
+              :placeholder="t('virtualKeys.customKeyPlaceholder')"
               size="small"
             />
           </n-form-item>
@@ -216,20 +266,150 @@
       </n-space>
       <template #footer>
         <n-space justify="end" :size="8">
-          <n-button @click="showRotateModal = false" size="small">取消</n-button>
+          <n-button @click="showRotateModal = false" size="small">{{ t('virtualKeys.cancel') }}</n-button>
           <n-button type="primary" :loading="rotating" @click="handleRotate" size="small">
-            确认轮转
+            {{ t('virtualKeys.rotateConfirm') }}
           </n-button>
         </n-space>
       </template>
     </n-modal>
+
+    <n-drawer v-model:show="showDrawer" :width="480" placement="right">
+      <n-drawer-content :title="t('virtualKeys.drawerTitle')" closable>
+        <div v-if="drawerKey" class="drawer-body">
+          <n-divider title-placement="left" class="form-section">{{ t('virtualKeys.sectionBasic') }}</n-divider>
+          <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.keyName') }}</span>
+            <span class="detail-value">{{ drawerKey.name }}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.fieldKeyValue') }}</span>
+            <span class="detail-value key-mono">
+              {{ drawerKey.keyValue }}
+              <n-button size="tiny" quaternary @click="copyText(drawerKey.keyValue, 'virtualKeys.copyKey')">
+                {{ t('virtualKeys.copy') }}
+              </n-button>
+            </span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.colStatus') }}</span>
+            <span class="detail-value">
+              {{ drawerKey.enabled ? t('virtualKeys.filterEnabled') : t('virtualKeys.filterDisabled') }}
+            </span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.fieldRateLimit') }}</span>
+            <span class="detail-value">
+              {{ drawerKey.rateLimit ? t('virtualKeys.rateLimitPerMin', { n: drawerKey.rateLimit }) : '-' }}
+            </span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.fieldRoutingStrategy') }}</span>
+            <span class="detail-value">{{ drawerKey.routingStrategy || '-' }}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.fieldProvider') }}</span>
+            <span class="detail-value">{{ drawerKey.providerId || '-' }}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.fieldSingleModel') }}</span>
+            <span class="detail-value">{{ drawerKey.modelId || '-' }}</span>
+          </div>
+          <div v-if="drawerKey.routingConfig" class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.fieldRoutingConfig') }}</span>
+            <span class="detail-value key-mono">{{ JSON.stringify(drawerKey.routingConfig) }}</span>
+          </div>
+
+          <n-divider title-placement="left" class="form-section">{{ t('virtualKeys.sectionModels') }}</n-divider>
+          <n-space :size="4" wrap>
+            <n-tag
+              v-for="entry in drawerModelEntries"
+              :key="entry.id"
+              :type="entry.resolved ? (entry.virtual ? 'info' : 'default') : 'warning'"
+              size="small"
+              :round="entry.resolved && entry.virtual"
+            >
+              {{ entry.label }}
+            </n-tag>
+            <span v-if="drawerModelEntries.length === 0">-</span>
+          </n-space>
+
+          <n-divider title-placement="left" class="form-section">{{ t('virtualKeys.sectionPolicy') }}</n-divider>
+          <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.policyCache') }}</span>
+            <span class="detail-value">{{ onOff(drawerKey.cacheEnabled) }}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.policyLogging') }}</span>
+            <span class="detail-value">
+              {{ drawerKey.disableLogging ? t('virtualKeys.valueOff') : t('virtualKeys.valueOn') }}
+            </span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.policyBudget') }}</span>
+            <span class="detail-value">
+              {{
+                drawerKey.contextBudgetTokens
+                  ? `${drawerKey.contextBudgetTokens / 1000}K`
+                  : t('virtualKeys.budgetOff')
+              }}
+            </span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.policyImage') }}</span>
+            <span class="detail-value">{{ onOff(drawerKey.imageCompressionEnabled) }}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.policyZeroTemp') }}</span>
+            <span class="detail-value">
+              {{
+                drawerKey.interceptZeroTemperature
+                  ? `${t('virtualKeys.valueOn')} · ${t('virtualKeys.policyZeroTempValue')} ${
+                      drawerKey.zeroTemperatureReplacement ?? '-'
+                    }`
+                  : t('virtualKeys.valueOff')
+              }}
+            </span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.policyPii') }}</span>
+            <span class="detail-value">{{ onOff(drawerKey.piiProtectionEnabled) }}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.policyNormalization') }}</span>
+            <span class="detail-value">
+              {{ drawerKey.contextNormalizationEnabled === undefined ? t('virtualKeys.valueUnknown') : onOff(drawerKey.contextNormalizationEnabled) }}
+            </span>
+          </div>
+
+          <n-divider title-placement="left" class="form-section">{{ t('virtualKeys.sectionMeta') }}</n-divider>
+          <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.fieldCreatedAt') }}</span>
+            <span class="detail-value">{{ formatDateTime(drawerKey.createdAt) }}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.fieldUpdatedAt') }}</span>
+            <span class="detail-value">{{ formatDateTime(drawerKey.updatedAt) }}</span>
+          </div>
+          <n-button size="small" @click="goToRequests(drawerKey.id)">
+            <template #icon>
+              <n-icon :component="OpenInNewOutlined" />
+            </template>
+            {{ t('virtualKeys.viewRequests') }}
+          </n-button>
+        </div>
+      </n-drawer-content>
+    </n-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted, watch } from 'vue'
+import { computed, h, onMounted, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
+import { useMessage } from 'naive-ui'
+import type { DataTableColumns, PaginationProps } from 'naive-ui'
 import {
-  useMessage,
   NSpace,
   NButton,
   NDataTable,
@@ -239,55 +419,177 @@ import {
   NFormItem,
   NInput,
   NInputNumber,
+  NInputGroup,
   NSwitch,
   NTag,
   NPopconfirm,
   NSelect,
   NRadioGroup,
   NRadio,
+  NRadioButton,
   NAlert,
-  NInputGroup,
-  NIcon
+  NIcon,
+  NDrawer,
+  NDrawerContent,
+  NDivider,
+  NTooltip
 } from 'naive-ui'
-import { EditOutlined, DeleteOutlined, ContentCopyOutlined, AutorenewOutlined } from '@vicons/material'
+import {
+  EditOutlined,
+  DeleteOutlined,
+  ContentCopyOutlined,
+  AutorenewOutlined,
+  SearchOutlined,
+  RefreshOutlined,
+  OpenInNewOutlined
+} from '@vicons/material'
 import { useVirtualKeyStore } from '@/stores/virtual-key'
 import { useModelStore } from '@/stores/model'
 import { useModelOptions } from '@/composables/useModelOptions'
 import { virtualKeyApi } from '@/api/virtual-key'
+import { configApi } from '@/api/config'
+import type { OpsPeriod } from '@/api/ops-metrics'
 import type { VirtualKey } from '@/types'
 import { copyToClipboard } from '@/utils/common'
+import { formatDateTime } from '@/utils/date'
+import { formatTokenNumber } from '@/utils/format'
+import { buildVirtualKeyCurlSnippets } from '@/utils/curl-snippet'
+import {
+  VK_METRICS_BACKEND_DIMENSION_LIMIT,
+  VK_METRICS_MAX_PAGES,
+  VK_METRICS_PAGE_SIZE,
+  collectBoundModelIds,
+  createVirtualKeyMetricsLoader,
+  filterVirtualKeys,
+  resolveFirstModelIdentifier,
+  type VirtualKeyEnabledFilter,
+  type VirtualKeyMetricsData
+} from '@/utils/virtual-key-helpers'
 import { createDefaultVirtualKeyForm } from '@/types/virtual-key'
-import { useI18n } from 'vue-i18n'
 import { CONTEXT_BUDGET_TIERS } from '@llm-gateway/shared'
 import PageHeader from '@/components/PageHeader.vue'
 
 const message = useMessage()
+const router = useRouter()
 const { t } = useI18n()
 const virtualKeyStore = useVirtualKeyStore()
 const modelStore = useModelStore()
 
-const showModal = ref(false)
-const showKeyModal = ref(false)
-const formRef = ref()
-const submitting = ref(false)
-const editingId = ref<string | null>(null)
-const createdKeyValue = ref('')
-const keyModalTitle = ref('虚拟密钥已创建')
-const keyModalMessage = ref('密钥创建成功！请妥善保管密钥值。')
-const showRotateModal = ref(false)
-const rotating = ref(false)
-const rotatingKey = ref<VirtualKey | null>(null)
-const rotateForm = ref<{ keyType: 'auto' | 'custom'; customKey: string }>({
-  keyType: 'auto',
-  customKey: ''
+const searchText = ref('')
+const enabledFilter = ref<VirtualKeyEnabledFilter>('all')
+const metricsPeriod = ref<OpsPeriod>('24h')
+
+const enabledOptions = computed(() => [
+  { label: t('virtualKeys.filterAll'), value: 'all' },
+  { label: t('virtualKeys.filterEnabled'), value: 'enabled' },
+  { label: t('virtualKeys.filterDisabled'), value: 'disabled' }
+])
+
+watch([searchText, enabledFilter], () => {
+  // Keeping the old page number after filtering can land on an empty page.
+  pagination.page = 1
 })
 
-const formValue = ref(createDefaultVirtualKeyForm())
+const metrics = ref<VirtualKeyMetricsData | null>(null)
+const metricsLoading = ref(false)
+const metricsError = ref('')
+const loadMetrics = createVirtualKeyMetricsLoader()
+// The loader is the single source of truth for staleness; this counter only keeps the
+// spinner up while any request is in flight, which a newest-request id cannot express.
+let metricsInFlight = 0
 
-const contextBudgetOptions = CONTEXT_BUDGET_TIERS.map((tokens) => ({
-  label: `${tokens / 1000}K`,
-  value: tokens
-}))
+async function refreshMetrics() {
+  metricsInFlight += 1
+  metricsLoading.value = true
+  // Drop the previous window immediately: showing old-period numbers under a
+  // new period (while pending or after a failure) would be misleading.
+  metrics.value = null
+  metricsError.value = ''
+  try {
+    const outcome = await loadMetrics(metricsPeriod.value)
+    if (outcome.stale) return
+    metrics.value = outcome
+  } catch (error: any) {
+    // The loader only rejects for the newest request, so this error is current.
+    metricsError.value = error?.message || String(error)
+  } finally {
+    metricsInFlight -= 1
+    if (metricsInFlight === 0) metricsLoading.value = false
+  }
+}
+
+watch(metricsPeriod, () => {
+  void refreshMetrics()
+})
+
+const metricsById = computed(() => metrics.value?.byId ?? {})
+
+// A missing dimension may be read as "no calls" only when the fetch covered
+// the whole window: no client-side page cap, no backend dimension cap, and
+// backend coverage reported as exact without gaps.
+const metricsComplete = computed(
+  () =>
+    Boolean(metrics.value) &&
+    !metrics.value!.truncated &&
+    !metrics.value!.backendCapHit &&
+    !metrics.value!.hasCoverageGaps
+)
+
+const periodLabel = computed(
+  () =>
+    ({
+      '24h': t('virtualKeys.period24h'),
+      '7d': t('virtualKeys.period7d'),
+      '30d': t('virtualKeys.period30d')
+    })[metricsPeriod.value]
+)
+
+const metricsNotes = computed(() => {
+  const notes: string[] = []
+  if (!metrics.value) return notes
+  if (metricsComplete.value) {
+    notes.push(t('virtualKeys.metricsWindowNote', { period: periodLabel.value }))
+  }
+  if (metrics.value.truncated) {
+    notes.push(t('virtualKeys.metricsTruncated', { limit: VK_METRICS_PAGE_SIZE * VK_METRICS_MAX_PAGES }))
+  }
+  if (metrics.value.backendCapHit) {
+    notes.push(t('virtualKeys.metricsBackendCap', { limit: VK_METRICS_BACKEND_DIMENSION_LIMIT }))
+  }
+  if (metrics.value.hasCoverageGaps) {
+    notes.push(t('virtualKeys.metricsCoverageGaps'))
+  }
+  return notes
+})
+
+// One shared lookup map instead of repeated Array.find over the model list.
+const modelById = computed(() => new Map(modelStore.models.map((m) => [m.id, m])))
+
+const filteredKeys = computed(() =>
+  filterVirtualKeys(
+    virtualKeyStore.virtualKeys,
+    {
+      search: searchText.value,
+      enabled: enabledFilter.value
+    },
+    (modelId) => modelById.value.get(modelId)?.name
+  )
+)
+
+const pagination = reactive<PaginationProps>({
+  page: 1,
+  pageSize: 10,
+  pageSizes: [10, 20, 50],
+  showSizePicker: true,
+  prefix: (info) => t('virtualKeys.totalCount', { n: info.itemCount ?? 0 }),
+  onUpdatePage: (page: number) => {
+    pagination.page = page
+  },
+  onUpdatePageSize: (pageSize: number) => {
+    pagination.pageSize = pageSize
+    pagination.page = 1
+  }
+})
 
 const { modelOptions } = useModelOptions({
   uniqueByIdentifier: false,
@@ -295,14 +597,278 @@ const { modelOptions } = useModelOptions({
   valueField: 'id'
 })
 
-const rules = {
-  name: [{ required: true, message: '请输入密钥名称', trigger: 'blur' }],
+const contextBudgetOptions = CONTEXT_BUDGET_TIERS.map((tokens) => ({
+  label: `${tokens / 1000}K`,
+  value: tokens
+}))
+
+// Set once the first model fetch settles; until then a cache miss is a pending
+// lookup, not evidence that a model was deleted.
+const modelsLoaded = ref(false)
+
+async function loadModels() {
+  try {
+    await modelStore.fetchModels()
+  } finally {
+    modelsLoaded.value = true
+  }
+}
+
+function modelChipState(id: string): { label: string; resolved: boolean } {
+  const model = modelById.value.get(id)
+  if (model) return { label: model.name, resolved: true }
+  if (!modelsLoaded.value) return { label: id, resolved: true }
+  return { label: t('virtualKeys.modelsUnresolved', { id }), resolved: false }
+}
+
+// The table shows at most 2 model chips; the full list (including unresolved
+// ids) stays reachable through the hover tooltip and the drawer.
+function renderModelChips(row: VirtualKey) {
+  const ids = collectBoundModelIds(row)
+  if (ids.length === 0) return '-'
+  const max = 2
+  const states = ids.map((id) => modelChipState(id))
+  const chips = states.slice(0, max).map((state) =>
+    h(
+      NTag,
+      {
+        size: 'small',
+        round: true,
+        type: state.resolved ? 'default' : 'warning'
+      },
+      { default: () => state.label }
+    )
+  )
+  const remaining = ids.length - max
+  if (remaining > 0) {
+    chips.push(
+      h(
+        NTooltip,
+        {},
+        {
+          trigger: () =>
+            h(
+              'span',
+              {
+                tabindex: 0,
+                role: 'button',
+                'aria-label': states.map((state) => state.label).join(', ')
+              },
+              [h(NTag, { size: 'small' }, { default: () => t('virtualKeys.modelsMore', { n: remaining }) })]
+            ),
+          default: () =>
+            h('div', { style: 'max-width: 280px' }, states.map((state) => h('div', {}, state.label)))
+        }
+      )
+    )
+  }
+  return h('div', { class: 'model-cell' }, chips)
+}
+
+const drawerModelEntries = computed(() => {
+  if (!drawerKey.value) return []
+  return collectBoundModelIds(drawerKey.value).map((id) => ({
+    id,
+    ...modelChipState(id),
+    virtual: Boolean(modelById.value.get(id)?.isVirtual)
+  }))
+})
+
+const pendingToggleIds = reactive(new Set<string>())
+
+function metricOf(row: VirtualKey) {
+  return metricsById.value[row.id]
+}
+
+function sortNumber(read: (row: VirtualKey) => number | null | undefined) {
+  return (a: VirtualKey, b: VirtualKey) => {
+    const av = read(a) ?? null
+    const bv = read(b) ?? null
+    if (av === null && bv === null) return 0
+    if (av === null) return 1
+    if (bv === null) return -1
+    return av - bv
+  }
+}
+
+const columns = computed<DataTableColumns<VirtualKey>>(() => [
+  {
+    title: t('virtualKeys.colName'),
+    key: 'name',
+    minWidth: 160,
+    ellipsis: { tooltip: true },
+    sorter: (a, b) => a.name.localeCompare(b.name),
+    render: (row) =>
+      h(
+        NButton,
+        {
+          text: true,
+          type: 'primary',
+          onClick: () => openDrawer(row),
+          'aria-label': t('virtualKeys.viewDetail')
+        },
+        { default: () => row.name }
+      )
+  },
+  {
+    title: t('virtualKeys.colKeyValue'),
+    key: 'keyValue',
+    width: 160,
+    ellipsis: { tooltip: true },
+    render: (row) => h('span', { class: 'key-mono' }, row.keyValue)
+  },
+  {
+    title: t('virtualKeys.colModels'),
+    key: 'modelIds',
+    width: 210,
+    render: renderModelChips
+  },
+  {
+    title: t('virtualKeys.colStatus'),
+    key: 'enabled',
+    width: 80,
+    render: (row) =>
+      h(NSwitch, {
+        size: 'small',
+        value: row.enabled,
+        loading: pendingToggleIds.has(row.id),
+        disabled: pendingToggleIds.has(row.id),
+        onUpdateValue: (value: boolean) => handleToggleEnabled(row, value)
+      })
+  },
+  {
+    title: t('virtualKeys.colRateLimit'),
+    key: 'rateLimit',
+    width: 100,
+    sorter: sortNumber((row) => row.rateLimit),
+    render: (row) =>
+      row.rateLimit ? t('virtualKeys.rateLimitPerMin', { n: row.rateLimit }) : '-'
+  },
+  {
+    title: t('virtualKeys.colRequests'),
+    key: 'requestCount',
+    width: 90,
+    sorter: sortNumber((row) => metricOf(row)?.requestCount ?? null),
+    render: (row) => {
+      const metric = metricOf(row)
+      // A missing dimension only means "no calls" when the fetch was complete;
+      // otherwise never fabricate a 0.
+      if (!metric) return metricsComplete.value ? '0' : '-'
+      return String(metric.requestCount)
+    }
+  },
+  {
+    title: t('virtualKeys.colTokens'),
+    key: 'totalTokens',
+    width: 110,
+    sorter: sortNumber((row) => metricOf(row)?.totalTokens ?? null),
+    render: (row) => {
+      const metric = metricOf(row)
+      if (!metric) return metricsComplete.value ? '0' : '-'
+      return formatTokenNumber(metric.totalTokens)
+    }
+  },
+  {
+    title: t('virtualKeys.colLastUsed'),
+    key: 'lastUsedAt',
+    width: 150,
+    sorter: sortNumber((row) => metricOf(row)?.lastUsedAt ?? null),
+    render: (row) => {
+      const metric = metricOf(row)
+      if (!metric?.lastUsedAt) return '-'
+      return formatDateTime(metric.lastUsedAt)
+    }
+  },
+  {
+    title: t('virtualKeys.colActions'),
+    key: 'actions',
+    width: 150,
+    fixed: 'right',
+    render: (row) =>
+      h(
+        NSpace,
+        { size: 4, wrap: false },
+        {
+          default: () => [
+            actionButton(ContentCopyOutlined, t('virtualKeys.copyKey'), () => copyText(row.keyValue, 'virtualKeys.copyKey')),
+            actionButton(AutorenewOutlined, t('virtualKeys.rotate'), () => handleRotateClick(row)),
+            actionButton(EditOutlined, t('virtualKeys.edit'), () => handleEdit(row)),
+            h(
+              NPopconfirm,
+              { onPositiveClick: () => handleDelete(row.id) },
+              {
+                trigger: () => actionButton(DeleteOutlined, t('virtualKeys.remove'), () => {}),
+                default: () => t('virtualKeys.deleteConfirm')
+              }
+            )
+          ]
+        }
+      )
+  }
+])
+
+function actionButton(icon: typeof EditOutlined, tooltip: string, onClick: () => void) {
+  return h(
+    NTooltip,
+    {},
+    {
+      trigger: () =>
+        h(
+          NButton,
+          {
+            size: 'small',
+            quaternary: true,
+            circle: true,
+            'aria-label': tooltip,
+            onClick
+          },
+          { icon: () => h(NIcon, null, { default: () => h(icon) }) }
+        ),
+      default: () => tooltip
+    }
+  )
+}
+
+const showDrawer = ref(false)
+// The drawer resolves its id against the current store data on every render:
+// concurrent refreshes/toggles are reflected live, and a key deleted from the
+// store closes the drawer instead of showing a stale snapshot.
+const drawerKeyId = ref<string | null>(null)
+const drawerKey = computed(
+  () => virtualKeyStore.virtualKeys.find((key) => key.id === drawerKeyId.value) ?? null
+)
+
+function openDrawer(row: VirtualKey) {
+  drawerKeyId.value = row.id
+  showDrawer.value = true
+}
+
+watch(drawerKey, (key) => {
+  if (!key && showDrawer.value) showDrawer.value = false
+})
+
+function onOff(value: boolean) {
+  return value ? t('virtualKeys.valueOn') : t('virtualKeys.valueOff')
+}
+
+function goToRequests(virtualKeyId: string) {
+  router.push({ path: '/api-requests', query: { virtualKeyId } })
+}
+
+const showModal = ref(false)
+const formRef = ref()
+const submitting = ref(false)
+const editingId = ref<string | null>(null)
+const formValue = ref(createDefaultVirtualKeyForm())
+
+const rules = computed(() => ({
+  name: [{ required: true, message: t('virtualKeys.nameRequired'), trigger: 'blur' }],
   modelIds: [
     {
       required: true,
       validator: (_rule: any, value: string[]) => {
         if (!value || value.length === 0) {
-          return new Error('请至少选择一个模型')
+          return new Error(t('virtualKeys.modelsRequired'))
         }
         return true
       },
@@ -314,215 +880,60 @@ const rules = {
       required: true,
       validator: (_rule: any, value: string) => {
         if (formValue.value.keyType === 'custom' && !value) {
-          return new Error('请输入自定义密钥')
+          return new Error(t('virtualKeys.customKeyRequired'))
         }
         return true
       },
       trigger: 'blur'
     }
   ]
+}))
+
+function openCreate() {
+  resetForm()
+  showModal.value = true
 }
 
-const columns = [
-  { title: '名称', key: 'name', width: 180, ellipsis: { tooltip: true } },
-  { title: '密钥值', key: 'keyValue', width: 160, ellipsis: { tooltip: true } },
-  {
-    title: '关联模型',
-    key: 'modelIds',
-    width: 280,
-    render: (row: VirtualKey) => {
-      const modelIds: string[] = []
-      if (row.modelId) modelIds.push(row.modelId)
-      if (row.modelIds && Array.isArray(row.modelIds)) {
-        modelIds.push(...row.modelIds)
-      }
-
-      const uniqueModelIds = [...new Set(modelIds)]
-      if (uniqueModelIds.length === 0) return '-'
-
-      const models = uniqueModelIds
-        .map(id => modelStore.models.find(m => m.id === id))
-        .filter(Boolean)
-
-      return h(
-        NSpace,
-        { size: 4, wrap: true },
-        {
-          default: () => {
-            const max = 5
-            const tags = models
-              .slice(0, max)
-              .map(model => {
-                if (!model) return null
-                if (model.isVirtual) {
-                  return h(
-                    NTag,
-                    { type: 'info', size: 'small', round: true },
-                    { default: () => model.name }
-                  )
-                }
-                return h(NTag, { type: 'default', size: 'small' }, { default: () => model.name })
-              })
-              .filter(Boolean)
-            const remaining = models.length - max
-            if (remaining > 0) {
-              tags.push(
-                h(NTag, { type: 'default', size: 'small' }, { default: () => `+${remaining}` })
-              )
-            }
-            return tags
-          }
-        }
-      )
-    }
-  },
-  {
-    title: '状态',
-    key: 'enabled',
-    render: (row: VirtualKey) =>
-      h(
-        NTag,
-        { type: row.enabled ? 'success' : 'default' },
-        { default: () => (row.enabled ? '启用' : '禁用') }
-      )
-  },
-  {
-    title: '缓存',
-    key: 'cacheEnabled',
-    render: (row: VirtualKey) => {
-      if (!row.cacheEnabled) {
-        return h(NTag, { type: 'default', size: 'small' }, { default: () => '未启用' })
-      }
-      return h(NTag, { type: 'success', size: 'small' }, { default: () => '已启用' })
-    }
-  },
-  {
-    title: '日志记录',
-    key: 'disableLogging',
-    render: (row: VirtualKey) => {
-      if (row.disableLogging) {
-        return h(NTag, { type: 'warning', size: 'small' }, { default: () => '已禁用' })
-      }
-      return h(NTag, { type: 'success', size: 'small' }, { default: () => '已启用' })
-    }
-  },
-  {
-    title: '速率限制',
-    key: 'rateLimit',
-    render: (row: VirtualKey) => (row.rateLimit ? `${row.rateLimit} 请求/分钟` : '-')
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 185,
-    render: (row: VirtualKey) =>
-      h(
-        NSpace,
-        { size: 6 },
-        {
-          default: () => [
-            h(
-              NButton,
-              {
-                'size': 'small',
-                'quaternary': true,
-                'circle': true,
-                'aria-label': '复制密钥',
-                'onClick': () => copyKeyValue(row.keyValue)
-              },
-              {
-                icon: () => h(NIcon, null, { default: () => h(ContentCopyOutlined) })
-              }
-            ),
-            h(
-              NButton,
-              {
-                'size': 'small',
-                'quaternary': true,
-                'circle': true,
-                'aria-label': '轮转密钥',
-                'onClick': () => handleRotateClick(row)
-              },
-              {
-                icon: () => h(NIcon, null, { default: () => h(AutorenewOutlined) })
-              }
-            ),
-            h(
-              NButton,
-              {
-                'size': 'small',
-                'quaternary': true,
-                'circle': true,
-                'aria-label': '编辑',
-                'onClick': () => handleEdit(row)
-              },
-              {
-                icon: () => h(NIcon, null, { default: () => h(EditOutlined) })
-              }
-            ),
-            h(
-              NPopconfirm,
-              {
-                onPositiveClick: () => handleDelete(row.id)
-              },
-              {
-                trigger: () =>
-                  h(
-                    NButton,
-                    {
-                      'size': 'small',
-                      'quaternary': true,
-                      'circle': true,
-                      'aria-label': '删除'
-                    },
-                    {
-                      icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) })
-                    }
-                  ),
-                default: () => '确定删除此虚拟密钥吗？'
-              }
-            )
-          ]
-        }
-      )
+watch(showModal, (open) => {
+  if (open) {
+    void loadModels()
+  } else {
+    // Reset on close so cancel-after-edit never leaks the previous key's values.
+    resetForm()
+    formRef.value?.restoreValidation?.()
   }
-]
+})
 
 function handleEdit(vk: VirtualKey) {
   editingId.value = vk.id
-  const modelIds: string[] = []
-  if (vk.modelId) modelIds.push(vk.modelId)
-  if (vk.modelIds && Array.isArray(vk.modelIds)) {
-    modelIds.push(...vk.modelIds)
-  }
-
   formValue.value = {
     name: vk.name,
-    modelIds: [...new Set(modelIds)],
+    modelIds: collectBoundModelIds(vk),
     keyType: 'auto',
     customKey: '',
-    rateLimit: vk.rateLimit || undefined,
+    rateLimit: vk.rateLimit ?? null,
     enabled: vk.enabled,
     cacheEnabled: vk.cacheEnabled,
     disableLogging: vk.disableLogging,
     contextBudgetTokens: vk.contextBudgetTokens ?? null,
     imageCompressionEnabled: vk.imageCompressionEnabled,
     interceptZeroTemperature: vk.interceptZeroTemperature,
-    zeroTemperatureReplacement: vk.zeroTemperatureReplacement || 0.7,
-    piiProtectionEnabled: vk.piiProtectionEnabled,
-    promptCaptureEnabled: vk.promptCaptureEnabled
+    // `??` keeps a legitimate replacement of 0 (`||` would swallow it into the default)
+    zeroTemperatureReplacement: vk.zeroTemperatureReplacement ?? 0.7,
+    piiProtectionEnabled: vk.piiProtectionEnabled
   }
   showModal.value = true
 }
 
-async function handleDelete(id: string) {
-  try {
-    await virtualKeyApi.delete(id)
-    message.success('删除成功')
-    await virtualKeyStore.fetchVirtualKeys()
-  } catch (error: any) {
-    message.error(error.message)
-  }
+function resetForm() {
+  editingId.value = null
+  formValue.value = createDefaultVirtualKeyForm()
+}
+
+/** Off or an emptied box sends an explicit null, which is what actually clears the stored value. */
+function zeroTemperaturePayload(): number | null {
+  if (!formValue.value.interceptZeroTemperature) return null
+  return formValue.value.zeroTemperatureReplacement ?? null
 }
 
 async function handleSubmit() {
@@ -539,37 +950,32 @@ async function handleSubmit() {
         cacheEnabled: formValue.value.cacheEnabled,
         disableLogging: formValue.value.disableLogging,
         interceptZeroTemperature: formValue.value.interceptZeroTemperature,
-        zeroTemperatureReplacement:
-          formValue.value.zeroTemperatureReplacement !== undefined
-            ? Number(formValue.value.zeroTemperatureReplacement)
-            : undefined,
+        zeroTemperatureReplacement: zeroTemperaturePayload(),
         contextBudgetTokens: formValue.value.contextBudgetTokens,
         imageCompressionEnabled: formValue.value.imageCompressionEnabled,
-        piiProtectionEnabled: formValue.value.piiProtectionEnabled,
-        promptCaptureEnabled: formValue.value.promptCaptureEnabled
+        piiProtectionEnabled: formValue.value.piiProtectionEnabled
       })
-      message.success('更新成功')
+      message.success(t('virtualKeys.updateSuccess'))
       showModal.value = false
     } else {
-      const createData = {
+      const result = await virtualKeyApi.create({
         ...formValue.value,
-        zeroTemperatureReplacement:
-          formValue.value.zeroTemperatureReplacement !== undefined
-            ? Number(formValue.value.zeroTemperatureReplacement)
-            : undefined
-      }
-      const result = await virtualKeyApi.create(createData)
+        zeroTemperatureReplacement: zeroTemperaturePayload()
+      })
       createdKeyValue.value = result.keyValue
-      keyModalTitle.value = '虚拟密钥已创建'
-      keyModalMessage.value = '密钥创建成功！请妥善保管密钥值。'
+      resultVirtualKey.value = result.virtualKey
+      resultTitle.value = t('virtualKeys.resultTitleCreate')
+      resultMessage.value = t('virtualKeys.resultMessageCreate')
       showModal.value = false
+      await ensureCurlBaseUrl()
       showKeyModal.value = true
     }
 
     resetForm()
     await virtualKeyStore.fetchVirtualKeys()
   } catch (error: any) {
-    if (error.message) {
+    // Validation failures (no message string) are shown by the form items; don't double-toast.
+    if (typeof error?.message === 'string' && error.message) {
       message.error(error.message)
     }
   } finally {
@@ -577,18 +983,94 @@ async function handleSubmit() {
   }
 }
 
-function resetForm() {
-  editingId.value = null
-  formValue.value = createDefaultVirtualKeyForm()
+async function handleToggleEnabled(row: VirtualKey, value: boolean) {
+  // Per-row guard: ignore re-entrant toggles while this row's update is pending.
+  if (pendingToggleIds.has(row.id)) return
+  pendingToggleIds.add(row.id)
+  try {
+    const updated = await virtualKeyApi.update(row.id, { enabled: value })
+    // Resolve the row against the store again: a concurrent refresh may have
+    // replaced the row object that triggered this handler.
+    const current = virtualKeyStore.virtualKeys.find((key) => key.id === row.id)
+    if (current) current.enabled = updated?.enabled ?? value
+  } catch (error: any) {
+    // The local value was never touched, so the switch reverts; the error stays visible.
+    message.error(
+      t('virtualKeys.toggleError', { message: error?.message || String(error ?? 'unknown') })
+    )
+  } finally {
+    pendingToggleIds.delete(row.id)
+  }
 }
 
-function copyKeyValue(keyValue: string) {
-  copyToClipboard(keyValue)
+async function handleDelete(id: string) {
+  try {
+    await virtualKeyApi.delete(id)
+    message.success(t('virtualKeys.deleteSuccess'))
+    await virtualKeyStore.fetchVirtualKeys()
+    // A shrinking result set can leave the current page past the last page.
+    const pageSize = pagination.pageSize ?? 10
+    const lastPage = Math.max(1, Math.ceil(filteredKeys.value.length / pageSize))
+    if ((pagination.page ?? 1) > lastPage) pagination.page = lastPage
+  } catch (error: any) {
+    message.error(error?.message || String(error ?? 'unknown'))
+  }
 }
 
 function copyKey() {
-  copyToClipboard(createdKeyValue.value)
+  void copyText(createdKeyValue.value, 'virtualKeys.copyKey')
 }
+
+async function copyText(text: string, successKey: 'virtualKeys.copyKey' | 'virtualKeys.copyCurl') {
+  try {
+    await copyToClipboard(text)
+    message.success(t(successKey))
+  } catch {
+    message.error(t('virtualKeys.copyFailed'))
+  }
+}
+
+const showKeyModal = ref(false)
+const createdKeyValue = ref('')
+const resultTitle = ref('')
+const resultMessage = ref('')
+const resultVirtualKey = ref<VirtualKey | null>(null)
+const publicUrl = ref('')
+// Set when the system settings request failed and the cURL examples fall back
+// to window.location.origin; the modal labels that assumption explicitly.
+const curlOriginAssumed = ref(false)
+
+const showRotateModal = ref(false)
+const rotating = ref(false)
+const rotatingKey = ref<VirtualKey | null>(null)
+const rotateForm = ref<{ keyType: 'auto' | 'custom'; customKey: string }>({
+  keyType: 'auto',
+  customKey: ''
+})
+
+const curlBaseUrl = computed(() =>
+  (publicUrl.value || window.location.origin).replace(/\/+$/, '')
+)
+
+const curlSnippets = computed(() => {
+  if (!resultVirtualKey.value) return null
+  const modelIdentifier = resolveFirstModelIdentifier(resultVirtualKey.value, modelStore.models)
+  if (!modelIdentifier) return null
+  return buildVirtualKeyCurlSnippets({
+    baseUrl: curlBaseUrl.value,
+    keyValue: createdKeyValue.value,
+    modelIdentifier
+  })
+})
+
+const curlEntries = computed(() => {
+  const snippets = curlSnippets.value
+  if (!snippets) return []
+  return [
+    { label: t('virtualKeys.curlOpenai'), command: snippets.openai },
+    { label: t('virtualKeys.curlAnthropic'), command: snippets.anthropic }
+  ]
+})
 
 function handleRotateClick(vk: VirtualKey) {
   rotatingKey.value = vk
@@ -599,7 +1081,7 @@ function handleRotateClick(vk: VirtualKey) {
 async function handleRotate() {
   if (!rotatingKey.value) return
   if (rotateForm.value.keyType === 'custom' && !rotateForm.value.customKey) {
-    message.error('请输入自定义密钥')
+    message.error(t('virtualKeys.rotateCustomRequired'))
     return
   }
 
@@ -610,13 +1092,15 @@ async function handleRotate() {
       customKey: rotateForm.value.keyType === 'custom' ? rotateForm.value.customKey : undefined
     })
     createdKeyValue.value = result.keyValue
-    keyModalTitle.value = '密钥已轮转'
-    keyModalMessage.value = '密钥轮转成功，旧密钥已立即失效。请妥善保管新密钥值。'
+    resultVirtualKey.value = rotatingKey.value
+    resultTitle.value = t('virtualKeys.resultTitleRotate')
+    resultMessage.value = t('virtualKeys.resultMessageRotate')
     showRotateModal.value = false
+    await ensureCurlBaseUrl()
     showKeyModal.value = true
     await virtualKeyStore.fetchVirtualKeys()
   } catch (error: any) {
-    if (error.message) {
+    if (error?.message) {
       message.error(error.message)
     }
   } finally {
@@ -624,14 +1108,39 @@ async function handleRotate() {
   }
 }
 
-onMounted(async () => {
-  await Promise.all([virtualKeyStore.fetchVirtualKeys(), modelStore.fetchModels()])
-})
+function refreshAll() {
+  virtualKeyStore.fetchVirtualKeys().catch((error: any) => {
+    message.error(error?.message || String(error ?? 'unknown'))
+  })
+  void loadModels()
+  void refreshMetrics()
+}
 
-watch(showModal, async val => {
-  if (val) {
-    await modelStore.fetchModels()
+// The configured gateway address is only consumed by the cURL examples, so it is read
+// when a result modal is about to open instead of on every mount.
+let curlBaseUrlPending = true
+
+async function ensureCurlBaseUrl() {
+  if (!curlBaseUrlPending) return
+  try {
+    const settings = await configApi.getSystemSettings()
+    if (settings?.publicUrl) {
+      publicUrl.value = settings.publicUrl
+      curlOriginAssumed.value = false
+    } else {
+      // Configured-but-empty is an answer: the examples use the browsing origin and the
+      // modal says so instead of retrying a setting that will stay empty.
+      curlOriginAssumed.value = true
+    }
+    curlBaseUrlPending = false
+  } catch {
+    // Transient failure: keep the fallback labelled and ask again on the next modal.
+    curlOriginAssumed.value = true
   }
+}
+
+onMounted(() => {
+  refreshAll()
 })
 </script>
 
@@ -639,6 +1148,104 @@ watch(showModal, async val => {
 .virtual-keys-view {
   max-width: 1400px;
   margin: 0 auto;
+}
+
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.metrics-alert {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.metrics-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.metrics-note {
+  font-size: 12px;
+  color: #999;
+}
+
+.model-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  height: 24px;
+  white-space: nowrap;
+}
+
+.model-cell :deep(.n-tag) {
+  flex-shrink: 0;
+}
+
+.key-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.detail-row {
+  display: flex;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.detail-label {
+  width: 120px;
+  flex-shrink: 0;
+  color: #999;
+}
+
+.detail-value {
+  color: #333;
+  word-break: break-all;
+}
+
+.form-hint {
+  font-size: 12px;
+  color: #999;
+}
+
+.form-section {
+  margin-top: 4px;
+}
+
+.curl-base {
+  font-size: 12px;
+  color: #999;
+}
+
+.curl-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.curl-pre {
+  margin: 0;
+  padding: 8px;
+  background: #f6f6f6;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
 }
 
 .table-card {

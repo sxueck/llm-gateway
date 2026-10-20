@@ -33,7 +33,6 @@ import { geminiRoutes } from "./routes/gemini.js";
 import { modelPresetsRoutes } from "./routes/model-presets.js";
 import { expertRoutingRoutes } from "./routes/expert-routing.js";
 import { costMappingRoutes } from "./routes/cost-mapping.js";
-import { promptSampleRoutes } from "./routes/prompt-samples.js";
 import { workerPluginRoutes } from "./routes/worker-plugins.js";
 import backupRoutes from "./routes/backup.js";
 import dbMaintenanceRoutes from "./routes/db-maintenance.js";
@@ -281,9 +280,6 @@ await fastify.register(expertRoutingRoutes, {
 });
 await fastify.register(costMappingRoutes, {
   prefix: "/api/admin/cost-mappings",
-});
-await fastify.register(promptSampleRoutes, {
-  prefix: "/api/admin/prompt-samples",
 });
 await fastify.register(workerPluginRoutes, {
   prefix: "/api/admin/worker-plugins",

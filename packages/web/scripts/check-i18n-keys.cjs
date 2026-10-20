@@ -23,6 +23,7 @@ const files = [
   'src/views/CostAnalysisView.vue',
   'src/views/DeveloperSettingsView.vue',
   'src/views/ApiRequestsView.vue',
+  'src/views/VirtualKeysView.vue',
   'src/views/DashboardView.vue',
 ];
 

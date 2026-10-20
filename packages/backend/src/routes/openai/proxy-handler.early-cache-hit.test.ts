@@ -38,7 +38,6 @@ const virtualKey = {
   key_value: KEY_VALUE,
   enabled: 1,
   cache_enabled: 1,
-  prompt_capture_enabled: 0,
   pii_protection_enabled: 0,
 };
 const requestBody = {

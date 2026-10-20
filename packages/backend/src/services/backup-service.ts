@@ -22,8 +22,7 @@ const BACKUP_TABLES = [
 
 const LOG_TABLES = [
   'api_requests',
-  'expert_routing_logs',
-  'prompt_samples'
+  'expert_routing_logs'
 ];
 
 export class BackupService {

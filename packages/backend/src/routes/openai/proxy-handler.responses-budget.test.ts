@@ -78,10 +78,6 @@ vi.mock('../../services/request-header-forwarding.js', () => ({
   },
 }));
 
-vi.mock('../../services/prompt-capture-service.js', () => ({
-  capturePromptSampleAsync: vi.fn(),
-}));
-
 const KEY_VALUE = 'sk-responses-budget-test-key';
 
 function makeVirtualKey(contextBudgetTokens: number) {
@@ -91,7 +87,6 @@ function makeVirtualKey(contextBudgetTokens: number) {
     enabled: 1,
     cache_enabled: 0,
     context_budget_tokens: contextBudgetTokens,
-    prompt_capture_enabled: 0,
     pii_protection_enabled: 0,
   };
 }

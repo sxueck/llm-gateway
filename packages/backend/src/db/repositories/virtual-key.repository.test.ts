@@ -43,7 +43,6 @@ describe('virtualKeyRepository.create', () => {
       intercept_zero_temperature: 0,
       zero_temperature_replacement: null,
       pii_protection_enabled: 0,
-      prompt_capture_enabled: 0,
     } as any);
 
     const [sql, values] = mocks.connection.query.mock.calls[0];
@@ -62,5 +61,36 @@ describe('virtualKeyRepository.rotate', () => {
 
     const [, values] = mocks.connection.query.mock.calls[0];
     expect(values).toEqual(['sk-rotated', 'hash-rotated', expect.any(Number), 'vk-1']);
+  });
+});
+
+describe('virtualKeyRepository.countByModels', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.connection.query.mockResolvedValue([
+      [
+        { id: 'vk-a', model_id: 'model-1', model_ids: null, routing_config: null },
+        { id: 'vk-b', model_id: null, model_ids: JSON.stringify(['model-1', 'model-1']), routing_config: null },
+        { id: 'vk-c', model_id: null, model_ids: null, routing_config: JSON.stringify({ targets: [{ provider: 'prov', override_params: { model: 'gpt-x' } }] }) },
+      ],
+    ]);
+  });
+
+  it('counts direct, multi-binding and routing-config references with dedupe', async () => {
+    const counts = await virtualKeyRepository.countByModels([
+      { id: 'model-1', provider_id: 'prov', model_identifier: 'gpt-x', name: 'GPT X' },
+      { id: 'model-2', provider_id: 'prov', model_identifier: 'gpt-y', name: 'GPT Y' },
+    ]);
+
+    expect(counts.get('model-1')).toBe(3);
+    expect(counts.get('model-2')).toBe(0);
+    expect(mocks.connection.query).toHaveBeenCalledWith(
+      `SELECT id, model_id, model_ids, routing_config FROM virtual_keys`
+    );
+  });
+
+  it('no longer exposes the legacy id-only counters', () => {
+    expect((virtualKeyRepository as any).countByModelId).toBeUndefined();
+    expect((virtualKeyRepository as any).countByModelIds).toBeUndefined();
   });
 });

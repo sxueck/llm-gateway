@@ -100,7 +100,6 @@ import {
   ServerOutline,
   KeyOutline,
   LogOutOutline,
-  DocumentTextOutline,
   TerminalOutline,
   CubeOutline,
   GitNetworkOutline,
@@ -146,7 +145,6 @@ const mainMenuParentByKey: Record<string, string> = {
   playground: 'tools',
   logs: 'tools',
   'api-requests': 'tools',
-  'prompt-samples': 'tools',
   'db-maintenance': 'settings',
 };
 const generalMenuParentByKey: Record<string, string> = {
@@ -293,11 +291,6 @@ const menuOptions = computed(() => [
         label: t('menu.apiRequests'),
         key: 'api-requests',
         icon: () => h(NIcon, null, { default: () => h(ListOutline) }),
-      },
-      {
-        label: t('menu.promptSamples'),
-        key: 'prompt-samples',
-        icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }),
       },
     ],
   },

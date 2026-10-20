@@ -118,6 +118,71 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    // Prompt 样本已下线：删表，并去掉虚拟密钥上的采集开关。
+    version: 3,
+    name: "drop_prompt_samples",
+    up: async (conn) => {
+      const [tables] = await conn.query(
+        `SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('prompt_samples', 'virtual_keys')`,
+      );
+      const names = new Set(
+        (tables as Array<{ name: string }>).map((row) => row.name),
+      );
+      if (names.size === 0) return;
+      if (names.has("prompt_samples")) {
+        await conn.query("DROP TABLE prompt_samples");
+      }
+      if (!names.has("virtual_keys")) return;
+      const [columns] = await conn.query(
+        `SELECT COLUMN_NAME AS name FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'virtual_keys' AND COLUMN_NAME = 'prompt_capture_enabled'`,
+      );
+      if ((columns as Array<{ name: string }>).length > 0) {
+        await conn.query(
+          "ALTER TABLE virtual_keys DROP COLUMN prompt_capture_enabled",
+        );
+      }
+    },
+    down: async (conn) => {
+      const [tables] = await conn.query(
+        `SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'virtual_keys'`,
+      );
+      if ((tables as Array<{ name: string }>).length === 0) return;
+      const [columns] = await conn.query(
+        `SELECT COLUMN_NAME AS name FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'virtual_keys' AND COLUMN_NAME = 'prompt_capture_enabled'`,
+      );
+      if ((columns as Array<{ name: string }>).length === 0) {
+        await conn.query(
+          "ALTER TABLE virtual_keys ADD COLUMN prompt_capture_enabled TINYINT DEFAULT 0 AFTER pii_protection_enabled",
+        );
+      }
+      const [sampleTables] = await conn.query(
+        `SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'prompt_samples'`,
+      );
+      if ((sampleTables as Array<{ name: string }>).length === 0) {
+        await conn.query(`
+          CREATE TABLE prompt_samples (
+            id VARCHAR(255) PRIMARY KEY,
+            virtual_key_id VARCHAR(255) NOT NULL,
+            model VARCHAR(255) NOT NULL DEFAULT 'unknown',
+            protocol VARCHAR(50) NOT NULL,
+            intent_text MEDIUMTEXT NOT NULL,
+            prompt_tokens INT NOT NULL DEFAULT 0,
+            intent_truncated TINYINT NOT NULL DEFAULT 0,
+            created_at BIGINT NOT NULL,
+            INDEX idx_prompt_samples_virtual_key (virtual_key_id, created_at),
+            INDEX idx_prompt_samples_created_at (created_at),
+            FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE CASCADE
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+      }
+    },
+  },
 ];
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {

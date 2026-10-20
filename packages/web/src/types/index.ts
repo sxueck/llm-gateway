@@ -104,7 +104,8 @@ export interface VirtualKey {
   interceptZeroTemperature: boolean;
   zeroTemperatureReplacement?: number | null;
   piiProtectionEnabled: boolean;
-  promptCaptureEnabled: boolean;
+  /** 后端自 db 行映射返回；类型上保持可选，未返回时展示为未知而非默认值 */
+  contextNormalizationEnabled?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -171,39 +172,38 @@ export interface UpdateModelRequest {
 export interface CreateVirtualKeyRequest {
   name: string;
   providerId?: string;
-  modelId?: string;
+  modelId?: string | null;
   routingStrategy?: "single" | "load-balance" | "failover";
   modelIds?: string[];
   routingConfig?: RoutingConfig;
   keyType: "auto" | "custom";
   customKey?: string;
-  rateLimit?: number;
+  /** Explicit null clears a setting; omitting it leaves the stored value alone. */
+  rateLimit?: number | null;
   enabled?: boolean;
   cacheEnabled?: boolean;
   disableLogging?: boolean;
   contextBudgetTokens?: number | null;
   imageCompressionEnabled?: boolean;
   interceptZeroTemperature?: boolean;
-  zeroTemperatureReplacement?: number;
+  zeroTemperatureReplacement?: number | null;
   piiProtectionEnabled?: boolean;
-  promptCaptureEnabled?: boolean;
 }
 
 export interface UpdateVirtualKeyRequest {
   name?: string;
   providerId?: string;
-  modelId?: string;
+  modelId?: string | null;
   routingStrategy?: string;
   modelIds?: string[];
   routingConfig?: RoutingConfig;
   enabled?: boolean;
-  rateLimit?: number;
+  rateLimit?: number | null;
   cacheEnabled?: boolean;
   disableLogging?: boolean;
   contextBudgetTokens?: number | null;
   imageCompressionEnabled?: boolean;
   interceptZeroTemperature?: boolean;
-  zeroTemperatureReplacement?: number;
+  zeroTemperatureReplacement?: number | null;
   piiProtectionEnabled?: boolean;
-  promptCaptureEnabled?: boolean;
 }

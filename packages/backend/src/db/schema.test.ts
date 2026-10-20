@@ -23,6 +23,6 @@ describe("v2 schema", () => {
     }
     expect(sql.find((text) => text.includes("CREATE TABLE IF NOT EXISTS api_requests (")))
       .toContain("INDEX idx_api_requests_route_log_id (route_log_id)");
-    expect(sql.join("\n")).not.toMatch(/health_check_protocol|owner_node|owner_pop|supported_protocols/);
+    expect(sql.join("\n")).not.toMatch(/health_check_protocol|owner_node|owner_pop|supported_protocols|prompt_capture_enabled|prompt_samples/);
   });
 });

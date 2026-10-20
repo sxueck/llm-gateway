@@ -28,7 +28,6 @@ import {
   maskRequestBodyInPlace,
   restoreResponseBodyInPlace,
 } from "../../services/pii-protection-service.js";
-import { capturePromptSampleAsync } from "../../services/prompt-capture-service.js";
 import { applyContextNormalization } from "../../services/context-normalization/index.js";
 import { checkContextBudget } from "../../services/context-budget.js";
 import {
@@ -387,7 +386,6 @@ export function createAnthropicProxyHandler() {
             return false;
           }
 
-          capturePromptSampleAsync(virtualKey, request, "anthropic");
           return true;
         },
       });

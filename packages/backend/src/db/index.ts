@@ -32,7 +32,6 @@ import { expertRoutingLogRepository } from "./repositories/expert-routing-log.re
 import { expertRoutingSessionBindingRepository } from "./repositories/expert-routing-session-binding.repository.js";
 import { costMappingRepository } from "./repositories/cost-mapping.repository.js";
 import { circuitBreakerStatsRepository } from "./repositories/circuit-breaker-stats.repository.js";
-import { promptSampleRepository } from "./repositories/prompt-sample.repository.js";
 import { contextNormalizationRepository } from "./repositories/context-normalization.repository.js";
 import {
   repositorySnapshotRepository,
@@ -62,7 +61,6 @@ export const expertRoutingSessionBindingDb =
   expertRoutingSessionBindingRepository;
 export const costMappingDb = costMappingRepository;
 export const circuitBreakerStatsDb = circuitBreakerStatsRepository;
-export const promptSampleDb = promptSampleRepository;
 export const contextNormalizationDb = contextNormalizationRepository;
 export const repositorySnapshotDb = repositorySnapshotRepository;
 export const agentSearchRunDb = agentSearchRunRepository;

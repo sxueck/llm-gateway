@@ -42,7 +42,6 @@ function makeVirtualKey(overrides: Partial<VirtualKey> = {}): VirtualKey {
     intercept_zero_temperature: 0,
     zero_temperature_replacement: null,
     pii_protection_enabled: 0,
-    prompt_capture_enabled: 1,
     context_normalization_enabled: 0,
     created_at: 1_700_000_000_000,
     updated_at: 1_700_000_000_000,

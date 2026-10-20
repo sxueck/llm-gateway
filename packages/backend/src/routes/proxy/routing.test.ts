@@ -1,4 +1,10 @@
-import { describe, it, test, expect } from 'vitest';
+import { describe, it, test, expect, vi } from 'vitest';
+
+// Routing imports config transitively; collection must not require local credentials.
+vi.hoisted(() => {
+  process.env.JWT_SECRET ??= 'routing-test-secret-at-least-32-characters';
+  process.env.MYSQL_PASSWORD ??= 'routing-test-password';
+});
 
 import { circuitBreaker } from '../../services/circuit-breaker.js';
 import { getTargetKey, hasAvailableRoutingTargets, selectRoutingTarget, getAnonymousAffinityTargetKey, countExplicitSessionBindings, shouldRetrySmartRouting, normalizeRoutingStrategy, extractRequestRoutingStrategy, resolveConfigDefaultStrategy, computeBlendedPrice, sortTargetsForStrategy, type RoutingConfig } from './routing.js';

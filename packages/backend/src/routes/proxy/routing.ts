@@ -7,6 +7,7 @@ import type { ExpertRouteInfo } from '../../services/expert-router/exposure.js';
 import { BREAKER_ELIGIBLE_STATUS_CODES, CircuitState, circuitBreaker } from '../../services/circuit-breaker.js';
 import { parsePositiveInt } from '../../utils/parse-positive-int.js';
 import { blendedPriceOf } from '../../services/expert-router/bands.js';
+import { normalizeRoutingStrategy, type PerRequestRoutingStrategy } from './routing-strategy.js';
 
 export interface RoutingTarget {
   provider: string;
@@ -29,20 +30,8 @@ export interface RoutingConfig {
   targets: RoutingTarget[];
 }
 
-export type PerRequestRoutingStrategy = 'default' | 'price' | 'throughput' | 'latency';
-
-const PER_REQUEST_ROUTING_STRATEGIES: ReadonlySet<string> = new Set([
-  'default', 'price', 'throughput', 'latency'
-]);
-
-export function normalizeRoutingStrategy(raw: unknown): PerRequestRoutingStrategy | null {
-  if (typeof raw !== 'string') return null;
-  const value = raw.trim().toLowerCase();
-  if (!value) return null;
-  if (value === 'single') return 'default';
-  if (!PER_REQUEST_ROUTING_STRATEGIES.has(value)) return null;
-  return value as PerRequestRoutingStrategy;
-}
+export { normalizeRoutingStrategy };
+export type { PerRequestRoutingStrategy };
 
 export function extractRequestRoutingStrategy(
   request?: ProxyRequest

@@ -150,32 +150,6 @@ async function countVirtualKeysByModels(
   }
 }
 
-/**
- * Legacy function - kept for backward compatibility.
- * Use countVirtualKeysByModels() for new code.
- */
-async function countVirtualKeysByModelIds(modelIds: string[]): Promise<Map<string, number>> {
-  const pool = getDatabase();
-  const conn = await pool.getConnection();
-  try {
-    const placeholders = modelIds.map(() => '?').join(',');
-    const [rows] = await conn.query(
-      `SELECT id, provider_id, model_identifier, name FROM models WHERE id IN (${placeholders})`,
-      modelIds
-    );
-    const models = (rows as any[]).map(row => ({
-      id: row.id,
-      provider_id: row.provider_id,
-      model_identifier: row.model_identifier,
-      name: row.name
-    })) as ModelReferenceInfo[];
-
-    return countVirtualKeysByModels(models);
-  } finally {
-    conn.release();
-  }
-}
-
 
 export const virtualKeyRepository = {
   async getAll(): Promise<VirtualKey[]> {
@@ -224,8 +198,8 @@ export const virtualKeyRepository = {
         `INSERT INTO virtual_keys (
           id, key_value, key_hash, name, provider_id, model_id,
           routing_strategy, model_ids, routing_config,
-           enabled, rate_limit, cache_enabled, disable_logging, context_budget_tokens, image_compression_enabled, intercept_zero_temperature, zero_temperature_replacement, pii_protection_enabled, prompt_capture_enabled, context_normalization_enabled, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           enabled, rate_limit, cache_enabled, disable_logging, context_budget_tokens, image_compression_enabled, intercept_zero_temperature, zero_temperature_replacement, pii_protection_enabled, context_normalization_enabled, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           vk.id,
           vk.key_value,
@@ -245,7 +219,6 @@ export const virtualKeyRepository = {
           vk.intercept_zero_temperature || 0,
           vk.zero_temperature_replacement,
           vk.pii_protection_enabled || 0,
-          vk.prompt_capture_enabled || 0,
           vk.context_normalization_enabled || 0,
           now,
           now
@@ -308,15 +281,6 @@ export const virtualKeyRepository = {
     } finally {
       conn.release();
     }
-  },
-
-  async countByModelId(modelId: string): Promise<number> {
-    const map = await countVirtualKeysByModelIds([modelId]);
-    return map.get(modelId) || 0;
-  },
-
-  async countByModelIds(modelIds: string[]): Promise<Map<string, number>> {
-    return countVirtualKeysByModelIds(modelIds);
   },
 
   /**

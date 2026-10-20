@@ -79,7 +79,6 @@ export async function createTables(connection?: Connection) {
         intercept_zero_temperature TINYINT DEFAULT 0,
          zero_temperature_replacement DECIMAL(3,2) DEFAULT NULL,
          pii_protection_enabled TINYINT DEFAULT 0,
-         prompt_capture_enabled TINYINT DEFAULT 0,
          context_normalization_enabled TINYINT DEFAULT 0,
         created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
 	        updated_at BIGINT NOT NULL,
@@ -105,22 +104,6 @@ export async function createTables(connection?: Connection) {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `,
     );
-
-    await conn.query(`
-      CREATE TABLE IF NOT EXISTS prompt_samples (
-        id VARCHAR(255) PRIMARY KEY,
-        virtual_key_id VARCHAR(255) NOT NULL,
-        model VARCHAR(255) NOT NULL DEFAULT 'unknown',
-        protocol VARCHAR(50) NOT NULL,
-        intent_text MEDIUMTEXT NOT NULL,
-        prompt_tokens INT NOT NULL DEFAULT 0,
-        intent_truncated TINYINT NOT NULL DEFAULT 0,
-        created_at BIGINT NOT NULL,
-        INDEX idx_prompt_samples_virtual_key (virtual_key_id, created_at),
-        INDEX idx_prompt_samples_created_at (created_at),
-        FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE CASCADE
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    `);
 
     // API 请求日志表
     await conn.query(`

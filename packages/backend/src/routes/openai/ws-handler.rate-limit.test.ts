@@ -19,7 +19,6 @@ vi.mock('../../services/hot-config-cache.js', () => ({
 vi.mock('../proxy/model-resolver.js', () => ({ resolveModelAndProvider: vi.fn() }));
 vi.mock('../proxy/provider-config-builder.js', () => ({ buildProviderConfig: vi.fn() }));
 vi.mock('../../services/api-request-logger.js', () => ({ logApiRequestAsync: vi.fn() }));
-vi.mock('../../services/prompt-capture-service.js', () => ({ capturePromptSampleAsync: vi.fn() }));
 vi.mock('../../services/debug-mode.js', () => ({ debugModeService: { isActive: () => false } }));
 vi.mock('../../services/logger.js', () => ({
   memoryLogger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },

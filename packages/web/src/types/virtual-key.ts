@@ -5,7 +5,8 @@ export interface VirtualKeyFormValue {
   modelIds: string[];
   keyType: VirtualKeyFormKeyType;
   customKey: string;
-  rateLimit: number | undefined;
+  /** null = 不限（NInputNumber 清空时 emit null，与后端显式清除契约一致） */
+  rateLimit: number | null;
   enabled: boolean;
   cacheEnabled: boolean;
   disableLogging: boolean;
@@ -13,9 +14,9 @@ export interface VirtualKeyFormValue {
   contextBudgetTokens: number | null;
   imageCompressionEnabled: boolean;
   interceptZeroTemperature: boolean;
-  zeroTemperatureReplacement: number | undefined;
+  /** null = 未设置替换值 */
+  zeroTemperatureReplacement: number | null;
   piiProtectionEnabled: boolean;
-  promptCaptureEnabled: boolean;
 }
 
 export function createDefaultVirtualKeyForm(): VirtualKeyFormValue {
@@ -24,7 +25,7 @@ export function createDefaultVirtualKeyForm(): VirtualKeyFormValue {
     modelIds: [],
     keyType: 'auto',
     customKey: '',
-    rateLimit: undefined,
+    rateLimit: null,
     enabled: true,
     cacheEnabled: false,
     disableLogging: false,
@@ -33,6 +34,5 @@ export function createDefaultVirtualKeyForm(): VirtualKeyFormValue {
     interceptZeroTemperature: false,
     zeroTemperatureReplacement: 0.7,
     piiProtectionEnabled: false,
-    promptCaptureEnabled: false,
   };
 }

@@ -61,7 +61,6 @@ import {
   maybeCompressImagesInOpenAIRequestBodyInPlace,
   logImageCompressionStats,
 } from "../../services/image-compression.js";
-import { capturePromptSampleAsync } from "../../services/prompt-capture-service.js";
 import { applyContextNormalization } from "../../services/context-normalization/index.js";
 import {
   clampMaxTokensFields,
@@ -553,8 +552,6 @@ export function createOpenAIProxyHandler() {
               "Proxy",
             );
           }
-          capturePromptSampleAsync(virtualKey, request, "openai");
-
           // Response cache: compute the logical key from the pristine client body
           // BEFORE model resolution / smart routing rewrite request.body, so one
           // logical request maps to exactly one cache entry regardless of which

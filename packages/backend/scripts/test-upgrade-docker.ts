@@ -99,6 +99,7 @@ try {
   await insert("user_plugin_enrollments", { user_id: "u1", plugin_id: "w1", version: "1", updated_at: 1 });
   await insert("api_requests", { id: "log1", virtual_key_id: "vk1", provider_id: "p1", model: "fixture-model", status: "success", prompt_tokens: 2, completion_tokens: 3, created_at: 1 });
   await insert("api_request_daily_summaries", { summary_date: "2026-01-01", model: "fixture-model", request_count: 1 });
+  await conn.query("CREATE TABLE prompt_samples (id VARCHAR(255) PRIMARY KEY, virtual_key_id VARCHAR(255) NOT NULL, protocol VARCHAR(50) NOT NULL, intent_text MEDIUMTEXT NOT NULL, created_at BIGINT NOT NULL)");
   await insert("prompt_samples", { id: "sample1", virtual_key_id: "vk1", protocol: "openai", intent_text: "synthetic prompt", created_at: 1 });
   await insert("session_context_bindings", { virtual_key_scope: "vk1", session_id: "session1", fingerprint: "0".repeat(64), protocol: "openai", created_at: 1, last_seen_at: 1, idle_expires_at: 2, absolute_expires_at: 3 });
   await insert("agent_search_runs", { id: "run1", user_id: "u1", plugin_id: "w1", plugin_version: "1", plugin_digest: "fixture-digest", source_type: "public_git", query_encrypted: "synthetic", model_profile: "fixture", created_at: 1, expires_at: 2 });
@@ -164,7 +165,9 @@ try {
   const [scratch] = await conn.query("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME LIKE 'upgrade_fixture_verify_%'");
   assert.equal((scratch as unknown[]).length, 0);
   assert(cli([...rebuild, "--retry-restore"], 1).includes("RETRY_NOT_EMPTY"));
-  console.log("PASS all 10 business tables restored (IDs, keys, JSON and links); 19 historical tables empty; retired columns removed; scratch database cleaned");
+  const [sampleTable] = await conn.query("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'prompt_samples'");
+  assert.equal((sampleTable as unknown[]).length, 0);
+  console.log("PASS all 10 business tables restored (IDs, keys, JSON and links); 18 historical tables empty; retired columns removed; scratch database cleaned");
 
   // Only this disposable fixture is emptied to exercise recovery after a rolled-back import.
   for (const table of [...IMPORT_ORDER].reverse()) await conn.query(`DELETE FROM \`${table}\``);

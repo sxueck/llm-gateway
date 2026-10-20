@@ -113,11 +113,6 @@ const router = createRouter({
           component: () => import('@/views/ApiRequestsView.vue'),
         },
         {
-          path: 'prompt-samples',
-          name: 'PromptSamples',
-          component: () => import('@/views/PromptSamplesView.vue'),
-        },
-        {
           path: 'settings',
           name: 'Settings',
           component: () => import('@/views/SettingsView.vue'),
