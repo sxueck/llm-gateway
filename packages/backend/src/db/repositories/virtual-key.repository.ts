@@ -1,4 +1,5 @@
 import { getDatabase } from '../connection.js';
+import type { PoolConnection } from 'mysql2/promise';
 import { VirtualKey } from '../../types/index.js';
 
 /**
@@ -273,13 +274,12 @@ export const virtualKeyRepository = {
     }
   },
 
-  async delete(id: string): Promise<void> {
-    const pool = getDatabase();
-    const conn = await pool.getConnection();
+  async delete(id: string, connection?: PoolConnection): Promise<void> {
+    const conn = connection ?? await getDatabase().getConnection();
     try {
       await conn.query('DELETE FROM virtual_keys WHERE id = ?', [id]);
     } finally {
-      conn.release();
+      if (!connection) conn.release();
     }
   },
 

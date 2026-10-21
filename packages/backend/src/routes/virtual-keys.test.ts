@@ -10,10 +10,13 @@ const mocks = vi.hoisted(() => ({
   rotate: vi.fn(),
   delete: vi.fn(),
   deleteBindingsByScope: vi.fn(),
+  withTransaction: vi.fn(),
   modelGetById: vi.fn(),
   providerGetById: vi.fn(),
   invalidateVirtualKey: vi.fn(),
   hashKey: vi.fn(() => 'hashed'),
+  maskKey: vi.fn((key: string) => (key.length <= 8 ? '***' : `***${key.slice(-4)}`)),
+  txConnection: { __testTransactionConnection: true },
 }));
 
 vi.mock('../db/index.js', () => ({
@@ -29,6 +32,7 @@ vi.mock('../db/index.js', () => ({
   modelDb: { getById: mocks.modelGetById },
   providerDb: { getById: mocks.providerGetById },
   contextNormalizationDb: { deleteBindingsByScope: mocks.deleteBindingsByScope },
+  withTransaction: mocks.withTransaction,
 }));
 
 vi.mock('../services/hot-config-cache.js', () => ({
@@ -36,7 +40,7 @@ vi.mock('../services/hot-config-cache.js', () => ({
 }));
 
 // Keeps the config module (JWT_SECRET) out of the test process.
-vi.mock('../utils/crypto.js', () => ({ hashKey: mocks.hashKey }));
+vi.mock('../utils/crypto.js', () => ({ hashKey: mocks.hashKey, maskKey: mocks.maskKey }));
 
 import { virtualKeyRoutes } from './virtual-keys.js';
 import type { VirtualKey } from '../types/index.js';
@@ -95,7 +99,12 @@ describe('virtual key routing strategy contract', () => {
         payload: createPayload({ routingStrategy }),
       });
 
-      expect(res.statusCode).toBe(500);
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatchObject({
+        type: 'invalid_request_error',
+        code: 'validation_error',
+        param: 'routingStrategy',
+      });
       expect(mocks.create).not.toHaveBeenCalled();
     }
   );
@@ -127,7 +136,7 @@ describe('virtual key routing strategy contract', () => {
       url: '/vk_1',
       payload: { routingStrategy: 'load-balance' },
     });
-    expect(rejected.statusCode).toBe(500);
+    expect(rejected.statusCode).toBe(400);
     expect(mocks.update).not.toHaveBeenCalled();
 
     mocks.getById.mockResolvedValueOnce(makeVirtualKey()).mockResolvedValueOnce(
@@ -264,6 +273,19 @@ describe('virtual key explicit-clear contract', () => {
     });
   });
 
+  it('keeps an untouched model_id pin when the re-bound list still contains it', async () => {
+    const app = await buildApp();
+    mocks.getById.mockResolvedValue(makeVirtualKey({ model_id: 'm_legacy', model_ids: '["m_legacy"]' }));
+    mocks.modelGetById.mockResolvedValue({ id: 'm_legacy', name: 'Legacy', model_identifier: 'legacy' } as any);
+
+    const res = await app.inject({ method: 'PUT', url: '/vk_1', payload: { modelIds: ['m_legacy'] } });
+
+    expect(res.statusCode).toBe(200);
+    // Exact-object match: a cleared pin here would silently turn the key's runtime
+    // override into name matching (model-resolver) and break existing clients.
+    expect(mocks.update).toHaveBeenCalledWith('vk_1', { model_ids: JSON.stringify(['m_legacy']) });
+  });
+
   it('keeps an explicitly supplied model_id over the auto-clear', async () => {
     const app = await buildApp();
     mocks.getById.mockResolvedValue(makeVirtualKey({ model_id: 'm_legacy' }));
@@ -312,7 +334,133 @@ describe('virtual key explicit-clear contract', () => {
 
     const res = await app.inject({ method: 'PUT', url: '/vk_1', payload: { modelIds: [] } });
 
-    expect(res.statusCode).toBeGreaterThanOrEqual(400);
+    expect(res.statusCode).toBe(400);
     expect(mocks.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('virtual key plaintext exposure surface', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getAll.mockResolvedValue([makeVirtualKey({ key_value: 'vk_plain_secret_value_1234' })]);
+    mocks.getById.mockResolvedValue(makeVirtualKey({ key_value: 'vk_plain_secret_value_1234' }));
+    mocks.create.mockImplementation(async (vk: VirtualKey) => ({ ...vk }));
+  });
+
+  it('masks keyValue in the list response and leaks no plaintext', async () => {
+    const app = await buildApp();
+    const res = await app.inject({ method: 'GET', url: '/' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().virtualKeys[0].keyValue).toBe('***1234');
+    expect(res.body).not.toContain('vk_plain_secret_value_1234');
+  });
+
+  it('masks keyValue in the detail response', async () => {
+    const app = await buildApp();
+    const res = await app.inject({ method: 'GET', url: '/vk_1' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().keyValue).toBe('***1234');
+    expect(res.body).not.toContain('vk_plain_secret_value_1234');
+  });
+
+  it('create hands the plaintext over exactly once, masked inside virtualKey', async () => {
+    const app = await buildApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/',
+      payload: createPayload(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const json = res.json();
+    expect(json.keyValue).toMatch(/^vk_/);
+    expect(json.virtualKey.keyValue).toBe(`***${json.keyValue.slice(-4)}`);
+  });
+});
+
+describe('virtual key duplicate-key races', () => {
+  const duplicateEntry = () => Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getById.mockResolvedValue(makeVirtualKey());
+    mocks.getByKeyValue.mockResolvedValue(undefined);
+  });
+
+  it('create maps a UNIQUE race to 400 instead of a raw 500', async () => {
+    mocks.create.mockRejectedValueOnce(duplicateEntry());
+    const app = await buildApp();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/',
+      payload: createPayload({ keyType: 'custom', customKey: 'sk-raced-key-value' }),
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('密钥值已存在');
+  });
+
+  it('rotate maps a UNIQUE race to 400 instead of a raw 500', async () => {
+    mocks.rotate.mockRejectedValueOnce(duplicateEntry());
+    const app = await buildApp();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/vk_1/rotate',
+      payload: { keyType: 'custom', customKey: 'sk-raced-key-value' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('密钥值已存在');
+  });
+
+  it('other database failures still propagate as 500', async () => {
+    mocks.rotate.mockRejectedValueOnce(new Error('connection lost'));
+    const app = await buildApp();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/vk_1/rotate',
+      payload: { keyType: 'auto' },
+    });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json().error).toMatchObject({ type: 'internal_error' });
+  });
+});
+
+describe('virtual key deletion transactionality', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getById.mockResolvedValue(makeVirtualKey());
+    mocks.withTransaction.mockImplementation(async (operation: any) => operation(mocks.txConnection));
+  });
+
+  it('deletes the key and its session bindings on one connection', async () => {
+    const app = await buildApp();
+
+    const res = await app.inject({ method: 'DELETE', url: '/vk_1' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ success: true });
+    expect(mocks.withTransaction).toHaveBeenCalledTimes(1);
+    expect(mocks.delete).toHaveBeenCalledWith('vk_1', mocks.txConnection);
+    expect(mocks.deleteBindingsByScope).toHaveBeenCalledWith('vk_1', mocks.txConnection);
+    // Cache invalidation happens after the commit, not inside the transaction.
+    expect(mocks.invalidateVirtualKey).toHaveBeenCalledWith('sk-vk-1');
+  });
+
+  it('propagates transaction failure as 500 without partial writes', async () => {
+    mocks.withTransaction.mockRejectedValueOnce(new Error('rollback'));
+    const app = await buildApp();
+
+    const res = await app.inject({ method: 'DELETE', url: '/vk_1' });
+
+    expect(res.statusCode).toBe(500);
+    expect(mocks.delete).not.toHaveBeenCalled();
+    expect(mocks.deleteBindingsByScope).not.toHaveBeenCalled();
   });
 });

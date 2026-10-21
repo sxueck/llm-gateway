@@ -286,9 +286,6 @@
             <span class="detail-label">{{ t('virtualKeys.fieldKeyValue') }}</span>
             <span class="detail-value key-mono">
               {{ drawerKey.keyValue }}
-              <n-button size="tiny" quaternary @click="copyText(drawerKey.keyValue, 'virtualKeys.copyKey')">
-                {{ t('virtualKeys.copy') }}
-              </n-button>
             </span>
           </div>
           <div class="detail-row">
@@ -437,7 +434,6 @@ import {
 import {
   EditOutlined,
   DeleteOutlined,
-  ContentCopyOutlined,
   AutorenewOutlined,
   SearchOutlined,
   RefreshOutlined,
@@ -790,7 +786,6 @@ const columns = computed<DataTableColumns<VirtualKey>>(() => [
         { size: 4, wrap: false },
         {
           default: () => [
-            actionButton(ContentCopyOutlined, t('virtualKeys.copyKey'), () => copyText(row.keyValue, 'virtualKeys.copyKey')),
             actionButton(AutorenewOutlined, t('virtualKeys.rotate'), () => handleRotateClick(row)),
             actionButton(EditOutlined, t('virtualKeys.edit'), () => handleEdit(row)),
             h(

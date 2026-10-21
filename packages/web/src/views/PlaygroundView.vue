@@ -344,6 +344,7 @@ import {
 } from '@vicons/ionicons5';
 import PageHeader from '@/components/PageHeader.vue';
 import { configApi } from '@/api/config';
+import { shellSingleQuote } from '@/utils/curl-snippet';
 import {
   playgroundApi,
   streamPlayground,
@@ -433,18 +434,12 @@ const publicUrl = ref('');
 // naive-ui 的 SelectMixedOption 是带 type 判别字段的联合，自定义字段须挂在 SelectOption 交叉类型上
 type VirtualKeySelectOption = SelectOption & { maskedKey?: string };
 
-function maskKey(key: string): string {
-  if (!key) return '';
-  if (key.length <= 12) return `${key.slice(0, 4)}****`;
-  return `${key.slice(0, 8)}****${key.slice(-4)}`;
-}
-
 const virtualKeyOptions = computed<VirtualKeySelectOption[]>(() =>
   virtualKeyStore.virtualKeys.map(vk => ({
     label: vk.name || vk.keyValue,
     value: vk.id,
     disabled: !vk.enabled,
-    maskedKey: maskKey(vk.keyValue),
+    maskedKey: vk.keyValue,
   })),
 );
 
@@ -455,10 +450,6 @@ function renderVirtualKeyLabel(option: SelectOption): VNode {
     opt.maskedKey ? h('span', { class: 'vk-option-key' }, opt.maskedKey) : null,
   ]);
 }
-
-const selectedVirtualKey = computed(() =>
-  virtualKeyStore.virtualKeys.find(vk => vk.id === virtualKeyId.value),
-);
 
 function persist(key: string, value: unknown) {
   try {
@@ -916,14 +907,15 @@ const payloadPreview = computed(() =>
 const curlSnippet = computed(() => {
   const base = (publicUrl.value || window.location.origin).replace(/\/+$/, '');
   const path = protocol.value === 'openai' ? '/v1/chat/completions' : '/v1/messages';
-  const key = selectedVirtualKey.value?.keyValue || 'YOUR_VIRTUAL_KEY';
+  // 列表接口只回掩码，不能把掩码值嵌进可执行的 curl；真实密钥仅在创建/轮换弹窗里可见。
+  const key = 'YOUR_VIRTUAL_KEY';
   const headerLines = [
     '-H "Content-Type: application/json"',
     `-H "Authorization: Bearer ${key}"`,
     ...(protocol.value === 'anthropic' ? ['-H "anthropic-version: 2023-06-01"'] : []),
   ];
   const body = safeJsonStringify(buildUpstreamBody(conversationForPayload(), streamEnabled.value));
-  return [`curl -X POST ${base}${path}`, ...headerLines.map(l => `  ${l} \\`), `  -d '${body.replace(/'/g, `'\\''`)}'`].join(
+  return [`curl -X POST ${base}${path}`, ...headerLines.map(l => `  ${l} \\`), `  -d ${shellSingleQuote(body)}`].join(
     '\n',
   );
 });

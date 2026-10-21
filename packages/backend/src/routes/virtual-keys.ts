@@ -1,16 +1,11 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import { virtualKeyDb, providerDb, modelDb, contextNormalizationDb } from '../db/index.js';
+import { virtualKeyDb, providerDb, modelDb, contextNormalizationDb, withTransaction } from '../db/index.js';
 import { hotConfigCache } from '../services/hot-config-cache.js';
-import { hashKey } from '../utils/crypto.js';
+import { hashKey, maskKey } from '../utils/crypto.js';
 import { validateCustomKey } from '../utils/validation.js';
-import { isValidRoutingStrategyInput } from './proxy/routing-strategy.js';
-import { contextBudgetTokensSchema } from '@llm-gateway/shared';
-
-const routingStrategySchema = z.string().refine(isValidRoutingStrategyInput, {
-  message: '路由策略必须是 single/default/price/throughput/latency 之一',
-});
+import { contextBudgetTokensSchema, virtualKeyRoutingStrategySchema } from '@llm-gateway/shared';
 
 // `null` means "clear this setting" and is distinct from an omitted field, which
 // means "leave it alone". NInputNumber emits null when its box is emptied, so the
@@ -25,7 +20,7 @@ const createVirtualKeySchema = z.object({
   name: z.string(),
   providerId: z.string().optional(),
   modelId: z.string().nullable().optional(),
-  routingStrategy: routingStrategySchema.optional(),
+  routingStrategy: virtualKeyRoutingStrategySchema.optional(),
   modelIds: modelIdsSchema,
   routingConfig: z.record(z.any()).optional(),
   keyType: z.enum(['auto', 'custom']),
@@ -46,7 +41,7 @@ const updateVirtualKeySchema = z.object({
   name: z.string().optional(),
   providerId: z.string().optional(),
   modelId: z.string().nullable().optional(),
-  routingStrategy: routingStrategySchema.optional(),
+  routingStrategy: virtualKeyRoutingStrategySchema.optional(),
   modelIds: modelIdsSchema,
   routingConfig: z.record(z.any()).optional(),
   enabled: z.boolean().optional(),
@@ -61,24 +56,53 @@ const updateVirtualKeySchema = z.object({
   contextNormalizationEnabled: z.boolean().optional(),
 });
 
-const validateKeySchema = z.object({
-  customKey: z.string(),
-});
-
 const rotateVirtualKeySchema = z.object({
   keyType: z.enum(['auto', 'custom']),
   customKey: z.string().optional(),
 });
 
+// The getByKeyValue pre-check only covers the common case; UNIQUE(key_value) is the
+// real guard, and a concurrent writer surfaces here as ER_DUP_ENTRY.
+function isDuplicateKeyError(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === 'ER_DUP_ENTRY';
+}
+
 export async function virtualKeyRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
+
+  // Zod .parse throws inside the handlers and the global error handler has no
+  // validation branch, so an invalid admin payload would otherwise reach the client
+  // as 500 internal_error — indistinguishable from a real server fault.
+  fastify.setErrorHandler((error: any, _request, reply) => {
+    if (error instanceof z.ZodError) {
+      const [issue] = error.issues;
+      return reply.code(400).send({
+        error: {
+          message: issue?.message ?? '请求参数验证失败',
+          type: 'invalid_request_error',
+          param: issue?.path.length ? issue.path.join('.') : null,
+          code: 'validation_error',
+        },
+      });
+    }
+
+    return reply.code(error.statusCode || 500).send({
+      error: {
+        message: error.message || '服务器内部错误',
+        type: 'internal_error',
+        param: null,
+        code: 'internal_server_error',
+      },
+    });
+  });
 
   fastify.get('/', async () => {
     const virtualKeys = await virtualKeyDb.getAll();
     return {
       virtualKeys: virtualKeys.map(vk => ({
         id: vk.id,
-        keyValue: vk.key_value,
+        // 明文只允许在 create/rotate 的响应里出现一次；列表/详情一律掩码。
+        keyValue: maskKey(vk.key_value),
         name: vk.name,
         providerId: vk.provider_id,
         modelId: vk.model_id,
@@ -111,7 +135,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
 
     return {
       id: vk.id,
-      keyValue: vk.key_value,
+      keyValue: maskKey(vk.key_value),
       name: vk.name,
       providerId: vk.provider_id,
       modelId: vk.model_id,
@@ -200,10 +224,12 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       keyValue = body.customKey;
     }
 
-    const vk = await virtualKeyDb.create({
-      id: nanoid(),
-      key_value: keyValue,
-      key_hash: hashKey(keyValue),
+    let vk;
+    try {
+      vk = await virtualKeyDb.create({
+        id: nanoid(),
+        key_value: keyValue,
+        key_hash: hashKey(keyValue),
       name: body.name,
       provider_id: body.providerId || null,
       model_id: body.modelId || null,
@@ -219,13 +245,19 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       intercept_zero_temperature: body.interceptZeroTemperature ? 1 : 0,
       zero_temperature_replacement: body.zeroTemperatureReplacement ?? null,
       pii_protection_enabled: body.piiProtectionEnabled ? 1 : 0,
-      context_normalization_enabled: body.contextNormalizationEnabled ? 1 : 0,
-    });
+        context_normalization_enabled: body.contextNormalizationEnabled ? 1 : 0,
+      });
+    } catch (error) {
+      if (isDuplicateKeyError(error)) {
+        return reply.code(400).send({ error: '密钥值已存在' });
+      }
+      throw error;
+    }
 
     return {
       virtualKey: {
         id: vk.id,
-        keyValue: vk.key_value,
+        keyValue: maskKey(vk.key_value),
         name: vk.name,
         providerId: vk.provider_id,
         modelId: vk.model_id,
@@ -308,10 +340,13 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     if (body.routingStrategy !== undefined) updates.routing_strategy = body.routingStrategy;
     if (body.modelIds !== undefined) {
       updates.model_ids = JSON.stringify(body.modelIds);
-      // model_ids is the binding source of truth for any write that supplies it:
-      // the legacy model_id pin outranks it in routes/proxy/model-resolver.ts, so a
-      // stale pin left behind would keep routing to a model the caller just removed.
-      if (body.modelId === undefined) updates.model_id = null;
+      // The legacy model_id pin outranks model_ids in routes/proxy/model-resolver.ts.
+      // Drop it only when the caller actually removed that model: clearing an untouched
+      // pin would silently turn "always serve the pinned model" into "match the requested
+      // model name", and clients relying on the override would get model_not_found.
+      if (body.modelId === undefined && vk.model_id && !body.modelIds.includes(vk.model_id)) {
+        updates.model_id = null;
+      }
     }
     if (body.routingConfig !== undefined) updates.routing_config = JSON.stringify(body.routingConfig);
     if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
@@ -387,7 +422,15 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       keyValue = body.customKey;
     }
 
-    const updated = await virtualKeyDb.rotate(id, keyValue, hashKey(keyValue));
+    let updated;
+    try {
+      updated = await virtualKeyDb.rotate(id, keyValue, hashKey(keyValue));
+    } catch (error) {
+      if (isDuplicateKeyError(error)) {
+        return reply.code(400).send({ error: '密钥值已存在' });
+      }
+      throw error;
+    }
     if (!updated) {
       throw new Error('虚拟密钥不存在');
     }
@@ -409,26 +452,13 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: '虚拟密钥不存在' });
     }
 
-    await virtualKeyDb.delete(id);
-    await contextNormalizationDb.deleteBindingsByScope(id);
+    // 两表清理必须同生共死：不包事务的话，中途失败会留下孤儿 session 绑定。
+    await withTransaction(async (connection) => {
+      await virtualKeyDb.delete(id, connection);
+      await contextNormalizationDb.deleteBindingsByScope(id, connection);
+    });
     hotConfigCache.invalidateVirtualKey(vk.key_value);
 
     return { success: true };
-  });
-
-  fastify.post('/validate', async (request) => {
-    const body = validateKeySchema.parse(request.body);
-
-    const validation = validateCustomKey(body.customKey);
-    if (!validation.valid) {
-      return { valid: false, message: validation.message };
-    }
-
-    const existing = await virtualKeyDb.getByKeyValue(body.customKey);
-    if (existing) {
-      return { valid: false, message: '密钥值已存在' };
-    }
-
-    return { valid: true };
   });
 }

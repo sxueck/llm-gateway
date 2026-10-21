@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { PoolConnection } from 'mysql2/promise';
 import { getDatabase } from '../connection.js';
 import { EXPERT_ROUTING_ANONYMOUS_SCOPE } from '@llm-gateway/shared';
 
@@ -215,9 +216,8 @@ export const contextNormalizationRepository = {
     }
   },
 
-  async deleteBindingsByScope(virtualKeyScope: string): Promise<number> {
-    const pool = getDatabase();
-    const conn = await pool.getConnection();
+  async deleteBindingsByScope(virtualKeyScope: string, connection?: PoolConnection): Promise<number> {
+    const conn = connection ?? await getDatabase().getConnection();
     try {
       const [result] = await conn.query(
         `DELETE FROM session_context_bindings WHERE virtual_key_scope = ?`,
@@ -225,7 +225,7 @@ export const contextNormalizationRepository = {
       );
       return (result as any).affectedRows || 0;
     } finally {
-      conn.release();
+      if (!connection) conn.release();
     }
   },
 

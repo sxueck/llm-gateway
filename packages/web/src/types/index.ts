@@ -1,3 +1,5 @@
+import type { VirtualKeyRoutingStrategy } from "@llm-gateway/shared";
+
 export interface User {
   id: string;
   username: string;
@@ -87,6 +89,8 @@ export interface Model {
 
 export interface VirtualKey {
   id: string;
+  // Masked by the backend in list/get responses; plaintext arrives only once,
+  // in the top-level keyValue of create/rotate responses.
   keyValue: string;
   name: string;
   providerId?: string | null;
@@ -173,7 +177,7 @@ export interface CreateVirtualKeyRequest {
   name: string;
   providerId?: string;
   modelId?: string | null;
-  routingStrategy?: "single" | "load-balance" | "failover";
+  routingStrategy?: VirtualKeyRoutingStrategy;
   modelIds?: string[];
   routingConfig?: RoutingConfig;
   keyType: "auto" | "custom";
@@ -194,7 +198,7 @@ export interface UpdateVirtualKeyRequest {
   name?: string;
   providerId?: string;
   modelId?: string | null;
-  routingStrategy?: string;
+  routingStrategy?: VirtualKeyRoutingStrategy;
   modelIds?: string[];
   routingConfig?: RoutingConfig;
   enabled?: boolean;
