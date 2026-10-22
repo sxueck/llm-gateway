@@ -84,6 +84,23 @@ function buildHeaders(
   return merged;
 }
 
+/**
+ * 显式声明上游响应的 Accept-Encoding，不把选择权交给 undici 默认的 "br, gzip, deflate"。
+ * Node 的 brotli 解码器出过越界写（CVE-2026-111497，可远程 RCE），而 br 对网关没有收益，
+ * 去掉这一档就少一条可达的解码路径；gzip/deflate 保留。
+ */
+function sanitizeAcceptEncoding(init: RequestInit): RequestInit {
+  const headers = new Headers(init.headers as RequestInit['headers']);
+  const declared = headers.get('accept-encoding') ?? 'gzip, deflate';
+  const kept = declared
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .filter((part) => !/^(br|brotli)(;|$)/i.test(part));
+  headers.set('accept-encoding', kept.length > 0 ? kept.join(', ') : 'identity');
+  return { ...init, headers };
+}
+
 function createComposedAbortSignal(timeoutMs: number, existingSignal?: AbortSignal): AbortSignal | null {
   if (existingSignal?.aborted) {
     return null;
@@ -286,6 +303,7 @@ export async function upstreamFetch(
   } else {
     fetchOptions = { ...options };
   }
+  fetchOptions = sanitizeAcceptEncoding(fetchOptions);
 
   let composedSignal: AbortSignal | undefined;
   if (options.timeoutMs && options.timeoutMs > 0) {

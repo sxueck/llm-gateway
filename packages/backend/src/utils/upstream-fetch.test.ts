@@ -213,6 +213,90 @@ describe('upstreamFetch abort behavior', () => {
   });
 });
 
+// CVE-2026-111497（brotli 解码器越界写）只能经由 br 响应触发，所以出站一律不声明 br。
+// 这三条断言就是「暴露面收敛」的回归门：任何分支重新放开 br 都会失败。
+describe('upstreamFetch Accept-Encoding surface reduction', () => {
+  let originalSkipVerify: boolean;
+  let originalProxy: string | undefined;
+  let fetchSpy: MockInstance | undefined;
+
+  const encodingOf = (init: any): string | null =>
+    new Headers(init?.headers).get('accept-encoding');
+
+  beforeEach(() => {
+    originalSkipVerify = upstreamSslConfigService.isSkipVerify();
+    originalProxy = process.env.HTTPS_PROXY;
+    delete process.env.HTTPS_PROXY;
+    undiciMocks.Agent.mockClear();
+    undiciMocks.ProxyAgent.mockClear();
+    undiciMocks.fetch.mockReset();
+    clearProxyAgentCache();
+  });
+
+  afterEach(() => {
+    (upstreamSslConfigService as any).skipVerify = originalSkipVerify;
+    if (originalProxy === undefined) {
+      delete process.env.HTTPS_PROXY;
+    } else {
+      process.env.HTTPS_PROXY = originalProxy;
+    }
+    clearProxyAgentCache();
+    fetchSpy?.mockRestore();
+    fetchSpy = undefined;
+  });
+
+  it('native fetch 分支默认只声明 gzip/deflate', async () => {
+    (upstreamSslConfigService as any).skipVerify = false;
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
+
+    await upstreamFetch('https://api.example.com/v1/chat');
+
+    expect(encodingOf(fetchSpy.mock.calls[0][1])).toBe('gzip, deflate');
+  });
+
+  it('direct skipVerify（undici）分支同样不发 br', async () => {
+    (upstreamSslConfigService as any).skipVerify = true;
+    undiciMocks.fetch.mockResolvedValue(new Response('ok'));
+
+    await upstreamFetch('https://api.example.com/v1/chat');
+
+    expect(encodingOf(undiciMocks.fetch.mock.calls[0][1])).toBe('gzip, deflate');
+  });
+
+  it('proxy 分支同样不发 br', async () => {
+    process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+    (upstreamSslConfigService as any).skipVerify = false;
+    undiciMocks.fetch.mockResolvedValue(new Response('ok'));
+
+    await upstreamFetch('https://api.example.com/v1/chat');
+
+    expect(undiciMocks.ProxyAgent).toHaveBeenCalledTimes(1);
+    expect(encodingOf(undiciMocks.fetch.mock.calls[0][1])).toBe('gzip, deflate');
+  });
+
+  it('调用方显式要求的 br 被剔除，其余编码与权重保留', async () => {
+    (upstreamSslConfigService as any).skipVerify = false;
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
+
+    await upstreamFetch('https://api.example.com/v1/chat', {
+      headers: { 'accept-encoding': 'br, gzip;q=0.5' },
+    });
+
+    expect(encodingOf(fetchSpy.mock.calls[0][1])).toBe('gzip;q=0.5');
+  });
+
+  it('只剩 br 时退化为 identity，而不是透传', async () => {
+    (upstreamSslConfigService as any).skipVerify = false;
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
+
+    await upstreamFetch('https://api.example.com/v1/chat', {
+      headers: { 'accept-encoding': 'br' },
+    });
+
+    expect(encodingOf(fetchSpy.mock.calls[0][1])).toBe('identity');
+  });
+});
+
 // Guardrail: any change that flips the production default to rejectUnauthorized:false will fail these tests.
 describe('upstreamFetch TLS configuration', () => {
   let originalSkipVerify: boolean;
@@ -433,7 +517,8 @@ describe('upstreamFetch RequestInit passthrough', () => {
       expect(fetchSpy).toHaveBeenCalledTimes(1);
       const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
       expect(init.method).toBe('PUT');
-      expect(init.headers).toBe(request.headers);
+      // 出站前会重写 accept-encoding，headers 是等价副本而非原对象
+      expect(new Headers(init.headers).get('content-type')).toBe('application/json');
       expect(init.body).toBe(request.body);
     } finally {
       fetchSpy.mockRestore();

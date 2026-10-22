@@ -4,7 +4,7 @@
 
 [![GitHub Wiki](https://img.shields.io/badge/docs-wiki-blue?style=flat-square)](https://github.com/sxueck/llm-gateway/wiki)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node->=v22-339933?style=flat-square&logo=node.js)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/node->=v24.22.1-339933?style=flat-square&logo=node.js)](https://nodejs.org/)
 [![Bun](https://img.shields.io/badge/bun->=v1.0-black?style=flat-square&logo=bun)](https://bun.sh/)
 
 **English** | [中文](./README.md)
@@ -57,7 +57,7 @@
 
 | Dependency | Version | Description |
 |------------|---------|-------------|
-| Node.js | >= v22 | Runtime environment |
+| Node.js | >= v24.22.1 | Runtime environment (24.22.1 is the first 24 LTS release that distrusts the leaked eMudhra intermediate CAs and fixes CVE-2026-111497) |
 | Bun | >= v1.0 | Monorepo scripts based on Bun workspaces |
 | MySQL | 8.x | Database (or MySQL-compatible database) |
 | Docker | - | Optional, for containerized deployment |

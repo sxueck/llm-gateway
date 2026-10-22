@@ -1,4 +1,6 @@
-FROM node:22-slim AS node-runtime
+# 钉补丁版：24.22.1 是 Node 24 LTS 里首个不信任 eMudhra 泄露中间 CA、且含 CVE-2026-111497（brotli RCE）修复的版本。
+# 该 stage 同时是最终镜像的运行层。
+FROM node:24.22.1-slim AS node-runtime
 
 FROM node-runtime AS bun-base
 
@@ -18,11 +20,12 @@ RUN set -eux; \
   arch="${TARGETARCH:-}"; \
   if [ -z "$arch" ]; then arch="$(dpkg --print-architecture)"; fi; \
   case "$arch" in \
-    amd64) bun_zip="bun-linux-x64-baseline.zip" ;; \
-    arm64) bun_zip="bun-linux-aarch64.zip" ;; \
+    amd64) bun_zip="bun-linux-x64-baseline.zip"; bun_sha="6bddacd6a65855698b9816f2d74871eda4dd0b7fa921140c6445248f94a742fd" ;; \
+    arm64) bun_zip="bun-linux-aarch64.zip"; bun_sha="ed01000f85bd97785228ad2845dc92a1860b8054856826d7317690ac8f8ee74b" ;; \
     *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
   esac; \
   curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/${bun_zip}" -o /tmp/bun.zip; \
+  echo "${bun_sha}  /tmp/bun.zip" | sha256sum -c -; \
   unzip -q /tmp/bun.zip -d /tmp; \
   bun_dir="$(ls -d /tmp/bun-* | head -n 1)"; \
   test -n "$bun_dir"; \

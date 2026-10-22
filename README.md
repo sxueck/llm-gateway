@@ -4,7 +4,7 @@
 
 [![GitHub Wiki](https://img.shields.io/badge/docs-wiki-blue?style=flat-square)](https://github.com/sxueck/llm-gateway/wiki)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node->=v22-339933?style=flat-square&logo=node.js)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/node->=v24.22.1-339933?style=flat-square&logo=node.js)](https://nodejs.org/)
 [![Bun](https://img.shields.io/badge/bun->=v1.0-black?style=flat-square&logo=bun)](https://bun.sh/)
 
 [English](./README_EN.md) | **中文**
@@ -54,7 +54,7 @@
 
 | 依赖 | 版本要求 | 说明 |
 | ------ | ---------- | ------ |
-| Node.js | >= v22 | 运行时环境 |
+| Node.js | >= v24.22.1 | 运行时环境（24.22.1 是含 eMudhra 中间 CA 不信任与 CVE-2026-111497 修复的首个 24 LTS 版本） |
 | Bun | >= v1.0 | Monorepo 脚本基于 Bun workspaces |
 | MySQL | 8.x | 数据库（或兼容 MySQL 协议） |
 | Docker | - | 可选，用于容器化部署 |
