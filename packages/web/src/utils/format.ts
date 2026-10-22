@@ -9,9 +9,6 @@ export interface FormatOptions {
 export function formatNumber(num: number, options?: FormatOptions): string {
   const { decimals = 1, useGrouping = false } = options || {}
 
-  if (num >= 1_000_000) {
-    return numeral(num).format(`0.${'0'.repeat(decimals)}a`).toUpperCase()
-  }
   if (num >= 1000) {
     return numeral(num).format(`0.${'0'.repeat(decimals)}a`).toUpperCase()
   }

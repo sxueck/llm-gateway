@@ -1,5 +1,3 @@
-import { PROVIDER_PRESETS } from '@/constants/providers';
-
 export function validateProviderId(id: string): {
   isValid: boolean;
   message?: string;
@@ -43,25 +41,6 @@ export function validateProviderId(id: string): {
   return {
     isValid: true,
   };
-}
-
-/**
- * 获取提供商 ID 建议
- */
-export function getProviderIdSuggestions(input: string): string[] {
-  if (!input || input.length < 2) {
-    return [];
-  }
-
-  const suggestions = PROVIDER_PRESETS
-    .filter(p => 
-      p.id.includes(input.toLowerCase()) || 
-      p.name.toLowerCase().includes(input.toLowerCase())
-    )
-    .map(p => p.id)
-    .slice(0, 5);
-
-  return suggestions;
 }
 
 export function validateBaseUrl(url: string): {

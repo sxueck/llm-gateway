@@ -69,10 +69,6 @@ vi.mock('../../services/request-header-forwarding.js', () => ({
   },
 }));
 
-vi.mock('../../services/prompt-capture-service.js', () => ({
-  capturePromptSampleAsync: vi.fn(),
-}));
-
 function makeCtx() {
   const closeListeners: (() => void)[] = [];
   const raw: any = {

@@ -3,6 +3,7 @@ import { ProtocolAdapter, type ProtocolConfig } from '../../services/protocol-ad
 import { stripFieldRecursively } from '../../utils/request-logger.js';
 import { normalizeOpenAIError } from '../../utils/http-error-normalizer.js';
 import { upstreamFetch } from '../../utils/upstream-fetch.js';
+import { createUpstreamDeadline } from '../../utils/upstream-deadline.js';
 import { sanitizeCustomHeaders, filterForwardedHeaders } from '../../utils/header-sanitizer.js';
 
 export interface HttpResponse {
@@ -42,6 +43,7 @@ export interface RequestOptions {
 }
 
 const protocolAdapter = new ProtocolAdapter();
+const DEFAULT_IMAGE_REQUEST_TIMEOUT_MS = 300_000;
 
 function normalizeError(error: any): { statusCode: number; errorResponse: any } {
   const norm = normalizeOpenAIError(error);
@@ -177,12 +179,20 @@ export async function makeImageGenerationProxyRequest(
     Object.assign(headers, filteredForwarded);
   }
 
+  const configuredTimeout = config.modelAttributes?.timeout;
+  const deadline = createUpstreamDeadline(
+    abortSignal,
+    typeof configuredTimeout === 'number' && Number.isFinite(configuredTimeout) && configuredTimeout > 0
+      ? configuredTimeout
+      : DEFAULT_IMAGE_REQUEST_TIMEOUT_MS
+  );
+
   try {
     const response = await upstreamFetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: abortSignal,
+      signal: deadline.signal,
     });
 
     const responseBody = await response.text();
@@ -209,6 +219,21 @@ export async function makeImageGenerationProxyRequest(
       body: parsedBody,
     };
   } catch (error: any) {
+    if (deadline.timedOut) {
+      return {
+        statusCode: 504,
+        headers: { 'content-type': 'application/json' },
+        body: {
+          error: {
+            message: 'Upstream image request timed out',
+            type: 'api_error',
+            param: null,
+            code: 'upstream_timeout',
+          },
+        },
+      };
+    }
+
     if (error.name === 'AbortError') {
       throw error;
     }
@@ -226,6 +251,8 @@ export async function makeImageGenerationProxyRequest(
         },
       },
     };
+  } finally {
+    deadline.dispose();
   }
 }
 

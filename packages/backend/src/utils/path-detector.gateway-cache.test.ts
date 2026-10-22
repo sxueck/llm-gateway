@@ -2,41 +2,36 @@ import { test, expect } from 'vitest';
 
 import { shouldBypassGatewayCache, isImagesPath, detectEndpointType, EndpointType } from './path-detector.js';
 
-test('shouldBypassGatewayCache returns true for embeddings endpoint', () => {
-  expect(shouldBypassGatewayCache('/v1/embeddings')).toBe(true);
+const bypassCases: Array<[string, boolean]> = [
+  ['/v1/embeddings', true],
+  ['/v1/responses/compact', true],
+  ['/V1/RESPONSES/COMPACT', true],
+  ['/v1/chat/completions', false],
+  ['/v1/responses', false],
+  ['/v1/images/generations', true],
+  ['/images/generations', true],
+  ['/v1/images/edits', true],
+];
+test('shouldBypassGatewayCache returns the expected result per path', () => {
+  for (const [path, expected] of bypassCases) {
+    expect(shouldBypassGatewayCache(path)).toBe(expected);
+  }
 });
 
-test('shouldBypassGatewayCache returns true for responses compact endpoint', () => {
-  expect(shouldBypassGatewayCache('/v1/responses/compact')).toBe(true);
-  expect(shouldBypassGatewayCache('/V1/RESPONSES/COMPACT')).toBe(true);
-});
-
-test('shouldBypassGatewayCache returns false for chat and regular responses endpoints', () => {
-  expect(shouldBypassGatewayCache('/v1/chat/completions')).toBe(false);
-  expect(shouldBypassGatewayCache('/v1/responses')).toBe(false);
-});
-
-test('shouldBypassGatewayCache returns true for images endpoints', () => {
-  expect(shouldBypassGatewayCache('/v1/images/generations')).toBe(true);
-  expect(shouldBypassGatewayCache('/images/generations')).toBe(true);
-  expect(shouldBypassGatewayCache('/v1/images/edits')).toBe(true);
-});
-
-test('isImagesPath returns true for images endpoints', () => {
-  expect(isImagesPath('/v1/images/generations')).toBe(true);
-  expect(isImagesPath('/images/generations')).toBe(true);
-  expect(isImagesPath('/v1/images/edits')).toBe(true);
-  expect(isImagesPath('/v1/images/variations')).toBe(true);
-});
-
-test('isImagesPath returns false for non-images endpoints', () => {
-  expect(isImagesPath('/v1/chat/completions')).toBe(false);
-  expect(isImagesPath('/v1/embeddings')).toBe(false);
-  expect(isImagesPath('/v1/responses')).toBe(false);
-});
-
-test('detectEndpointType returns IMAGES for images paths', () => {
-  expect(detectEndpointType('/v1/images/generations')).toBe(EndpointType.IMAGES);
-  expect(detectEndpointType('/images/edits')).toBe(EndpointType.IMAGES);
-  expect(detectEndpointType('/v1/images/variations')).toBe(EndpointType.IMAGES);
+const imagesCases: Array<[string, boolean, EndpointType | undefined]> = [
+  ['/v1/images/generations', true, EndpointType.IMAGES],
+  ['/images/generations', true, EndpointType.IMAGES],
+  ['/v1/images/edits', true, EndpointType.IMAGES],
+  ['/v1/images/variations', true, EndpointType.IMAGES],
+  ['/v1/chat/completions', false, undefined],
+  ['/v1/embeddings', false, undefined],
+  ['/v1/responses', false, undefined],
+];
+test('isImagesPath/detectEndpointType return the expected result per path', () => {
+  for (const [path, isImages, endpointType] of imagesCases) {
+    expect(isImagesPath(path)).toBe(isImages);
+    if (endpointType !== undefined) {
+      expect(detectEndpointType(path)).toBe(endpointType);
+    }
+  }
 });

@@ -41,6 +41,17 @@ export interface CostStats {
     promptTokens: number;
     completionTokens: number;
     cachedTokens: number;
+    /** 取价来源：direct 原名命中 / official 归一到官方牌价 / mapping 人工规则 / approx 同家族参考价 */
+    pricingSource?: 'direct' | 'official' | 'mapping' | 'approx';
+    pricingModel?: string;
+    pricingProvider?: string;
+  }>;
+  /** 区间内有 token 流量但取不到牌价的模型——这部分成本被记为 0 */
+  unpricedModels?: Array<{
+    model: string;
+    promptTokens: number;
+    completionTokens: number;
+    cachedTokens: number;
   }>;
 }
 
@@ -59,11 +70,6 @@ export interface ApiStats {
   legacyTokenSemantics?: boolean;
   dbSize?: number;
   dbUptime?: number;
-}
-
-export interface IntentClassifyStats {
-  totalRequests: number;
-  avgClassificationTime: number;
 }
 
 export interface ModelStat {
@@ -202,6 +208,52 @@ export type AgentRunStatus =
   | "budget_exceeded"
   | "expired";
 
+export interface AgentRunEvent {
+  seq: number;
+  type: string;
+  payload: Record<string, unknown>;
+  created_at: number;
+}
+
+export interface AgentRunDetailRun {
+  id: string;
+  user_id: number;
+  virtual_key_id: number;
+  plugin: {
+    id: string;
+    version: string;
+    digest: string;
+  };
+  source: {
+    type: "snapshot" | "public_git";
+    snapshot_id: string | null;
+    requested_ref: string | null;
+    commit: string | null;
+  };
+  model_profile: string;
+  status: AgentRunStatus;
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+  expires_at: number;
+  cancellation_requested_at: number | null;
+  duration_ms: number | null;
+  error: { code: string; message: string | null } | null;
+  usage: {
+    turn_count: number;
+    tool_call_count: number;
+    input_tokens: number;
+    output_tokens: number;
+    cost: number;
+  } | null;
+}
+
+export interface AgentRunDetailResponse {
+  run: AgentRunDetailRun;
+  events: AgentRunEvent[];
+  events_truncated: boolean;
+}
+
 export interface AgentRunMonitoringItem {
   id: string;
   plugin_id: string;
@@ -267,7 +319,6 @@ type GetStatsResponse = {
   period: string;
   stats: ApiStats;
   trend: VirtualKeyTrend[];
-  intentClassifyStats: IntentClassifyStats;
   modelStats: ModelStat[];
   modelResponseTimeStats: ModelResponseTimeStat[];
   circuitBreakerStats?: CircuitBreakerStats;
@@ -285,21 +336,8 @@ type GetStatsSummaryResponse = {
 type LookupRequestSourceResponse = {
   ip: string;
   geo: RequestSourceGeoInfo | null;
-  blocked: boolean;
-  blockedReason: string | null;
   lastSeen: number | null;
   userAgent: string | null;
-};
-
-type BlockRequestSourceRequest = { ip: string; reason?: string };
-
-type BlockRequestSourceResponse = {
-  success: boolean;
-  blocked: {
-    ip: string;
-    reason: string | null;
-    timestamp: number;
-  };
 };
 
 type RoutingConfigsResponse = { configs: any[] };
@@ -343,8 +381,6 @@ type SystemSettingsResponse = {
   publicUrl: string;
   litellmCompatEnabled: boolean;
   streamResumeEnabled: boolean;
-  healthMonitoringEnabled: boolean;
-  persistentMonitoringEnabled: boolean;
   developerDebugEnabled: boolean;
   developerDebugExpiresAt: number | null;
   dashboardHideRequestSourceCard: boolean;
@@ -368,8 +404,6 @@ type UpdateSystemSettingsRequest = {
   publicUrl?: string;
   litellmCompatEnabled?: boolean;
   streamResumeEnabled?: boolean;
-  healthMonitoringEnabled?: boolean;
-  persistentMonitoringEnabled?: boolean;
   developerDebugEnabled?: boolean;
   dashboardHideRequestSourceCard?: boolean;
   forwardClientUserAgent?: boolean;
@@ -437,8 +471,6 @@ export interface TrafficAnalysisHistoryDayResponse {
   isWorkday: boolean;
 }
 
-type HealthTargetsResponse = { targets: any[] };
-
 export interface RoutingTargetStatus {
   targetKey: string;
   circuitState: "CLOSED" | "OPEN" | "HALF_OPEN";
@@ -458,20 +490,6 @@ export interface RoutingStatusResponse {
   };
 }
 
-type CreateHealthTargetRequest = {
-  type: "model" | "virtual_model";
-  target_id: string;
-  check_interval_seconds?: number;
-  check_prompt?: string;
-};
-
-type UpdateHealthTargetRequest = {
-  display_title?: string | null;
-  enabled?: boolean;
-  check_interval_seconds?: number;
-  check_prompt?: string;
-};
-
 const adminConfigPath = (suffix: string) =>
   `${ADMIN_CONFIG_BASE_PATH}${suffix}`;
 
@@ -480,12 +498,8 @@ const ADMIN_STATS_PATH = adminConfigPath("/stats");
 const ADMIN_REQUEST_SOURCES_LOOKUP_PATH = adminConfigPath(
   "/request-sources/lookup",
 );
-const ADMIN_REQUEST_SOURCES_BLOCK_PATH = adminConfigPath(
-  "/request-sources/block",
-);
 const ADMIN_ROUTING_CONFIGS_PATH = adminConfigPath("/routing-configs");
 const ADMIN_SYSTEM_SETTINGS_PATH = adminConfigPath("/system-settings");
-const ADMIN_HEALTH_TARGETS_PATH = adminConfigPath("/health-targets");
 const ADMIN_PERFORMANCE_METRICS_PATH = adminConfigPath("/performance-metrics");
 const ADMIN_AGENT_RUNS_PATH = "/admin/agent-runs";
 const ADMIN_ROUTING_STATUS_PATH = adminConfigPath("/routing-status");
@@ -517,12 +531,6 @@ export const configApi = {
 
   lookupRequestSource(ip: string): Promise<LookupRequestSourceResponse> {
     return request.get(ADMIN_REQUEST_SOURCES_LOOKUP_PATH, { params: { ip } });
-  },
-
-  blockRequestSource(
-    data: BlockRequestSourceRequest,
-  ): Promise<BlockRequestSourceResponse> {
-    return request.post(ADMIN_REQUEST_SOURCES_BLOCK_PATH, data);
   },
 
   getRoutingConfigs(): Promise<RoutingConfigsResponse> {
@@ -558,25 +566,6 @@ export const configApi = {
     return request.post(ADMIN_SYSTEM_SETTINGS_PATH, data);
   },
 
-  getHealthTargets(): Promise<HealthTargetsResponse> {
-    return request.get(ADMIN_HEALTH_TARGETS_PATH);
-  },
-
-  createHealthTarget(data: CreateHealthTargetRequest): Promise<any> {
-    return request.post(ADMIN_HEALTH_TARGETS_PATH, data);
-  },
-
-  updateHealthTarget(
-    id: string,
-    data: UpdateHealthTargetRequest,
-  ): Promise<any> {
-    return request.put(withId(ADMIN_HEALTH_TARGETS_PATH, id), data);
-  },
-
-  deleteHealthTarget(id: string): Promise<DeleteResponse> {
-    return request.delete(withId(ADMIN_HEALTH_TARGETS_PATH, id));
-  },
-
   getPerformanceMetrics(): Promise<PerformanceMetricsResponse> {
     return request.get(ADMIN_PERFORMANCE_METRICS_PATH);
   },
@@ -588,6 +577,10 @@ export const configApi = {
     offset?: number;
   }): Promise<AgentRunMonitoringResponse> {
     return request.get(ADMIN_AGENT_RUNS_PATH, { params });
+  },
+
+  getAgentRunDetail(id: string): Promise<AgentRunDetailResponse> {
+    return request.get(`${ADMIN_AGENT_RUNS_PATH}/${id}`);
   },
 
   getRoutingStatus(): Promise<RoutingStatusResponse> {

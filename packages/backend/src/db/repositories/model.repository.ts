@@ -1,3 +1,4 @@
+import type { PoolConnection } from 'mysql2/promise';
 import { getDatabase } from '../connection.js';
 import { Model } from '../types.js';
 
@@ -64,36 +65,33 @@ export const modelRepository = {
     }
   },
 
-  async getByExpertRoutingId(expertRoutingId: string): Promise<Model[]> {
-    const pool = getDatabase();
-    const conn = await pool.getConnection();
+  async getByExpertRoutingId(expertRoutingId: string, connection?: PoolConnection): Promise<Model[]> {
+    const conn = connection ?? await getDatabase().getConnection();
     try {
       const [rows] = await conn.query('SELECT * FROM models WHERE expert_routing_id = ? ORDER BY created_at DESC', [expertRoutingId]);
       return rows as Model[];
     } finally {
-      conn.release();
+      if (!connection) conn.release();
     }
   },
 
-  async create(model: Omit<Model, 'created_at' | 'updated_at'>): Promise<Model> {
+  async create(model: Omit<Model, 'created_at' | 'updated_at'>, connection?: PoolConnection): Promise<Model> {
     const now = Date.now();
-    const pool = getDatabase();
-    const conn = await pool.getConnection();
+    const conn = connection ?? await getDatabase().getConnection();
     try {
       await conn.query(
-        'INSERT INTO models (id, name, provider_id, model_identifier, supported_protocols, health_check_protocol, is_virtual, routing_config_id, expert_routing_id, enabled, model_attributes, compression_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [model.id, model.name, model.provider_id, model.model_identifier, model.supported_protocols || '["openai"]', model.health_check_protocol || 'openai', model.is_virtual, model.routing_config_id, model.expert_routing_id || null, model.enabled, model.model_attributes, model.compression_config, now, now]
+        'INSERT INTO models (id, name, provider_id, model_identifier, is_virtual, routing_config_id, expert_routing_id, enabled, model_attributes, compression_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [model.id, model.name, model.provider_id, model.model_identifier, model.is_virtual, model.routing_config_id, model.expert_routing_id || null, model.enabled, model.model_attributes, model.compression_config, now, now]
       );
       return { ...model, created_at: now, updated_at: now };
     } finally {
-      conn.release();
+      if (!connection) conn.release();
     }
   },
 
-  async update(id: string, updates: Partial<Omit<Model, 'id' | 'created_at' | 'updated_at'>>): Promise<void> {
+  async update(id: string, updates: Partial<Omit<Model, 'id' | 'created_at' | 'updated_at'>>, connection?: PoolConnection): Promise<void> {
     const now = Date.now();
-    const pool = getDatabase();
-    const conn = await pool.getConnection();
+    const conn = connection ?? await getDatabase().getConnection();
     try {
       const fields: string[] = [];
       const values: any[] = [];
@@ -111,7 +109,7 @@ export const modelRepository = {
 
       await conn.query(`UPDATE models SET ${fields.join(', ')} WHERE id = ?`, values);
     } finally {
-      conn.release();
+      if (!connection) conn.release();
     }
   },
 

@@ -259,7 +259,7 @@ describe("SearchRunScheduler", () => {
 
     await waitFor(() => mocks.runs.get("asr_ok").status === "running");
     // executor.start 滞后于置 running 状态（workspace 准备在此之间），轮询等待副作用
-    await waitFor(() => executor.lastEnv !== undefined);
+    await waitFor(() => executor.lastEnv !== null);
     expect(executor.lastEnv?.AGENT_SERVICE_TOKEN).toBe("tok123");
     expect(executor.lastEnv?.AGENT_RUN_ID).toBe("asr_ok");
     expect(executor.lastEnv?.AGENT_GATEWAY_INTERNAL_URL).toBe(

@@ -242,7 +242,7 @@ test("selection returns null when the rebuilt provider config fails, without dis
         message: "unsupported protocol",
         type: "invalid_request_error",
         param: null,
-        code: "unsupported_model_protocol",
+        code: "unsupported_provider_protocol",
       },
     },
   } as any);

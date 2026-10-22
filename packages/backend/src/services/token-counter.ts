@@ -69,6 +69,18 @@ function acquireEncoding(): EncodingInstance {
   return sharedEncoding;
 }
 
+// Inline binary/opaque payloads (Anthropic document + redacted_thinking, Responses
+// input_file file_data) carry content the gateway cannot tokenize. Anthropic bills a
+// PDF page at roughly 1.5K tokens, i.e. ~16 decoded bytes per token for a typical
+// text page — far below the chars/4 text ratio on purpose, so an attachment estimate
+// cannot manufacture a false block on its own. Upgrade path: sniff page counts.
+const INLINE_BINARY_BYTES_PER_TOKEN = 16;
+
+function estimateInlinePayloadTokens(base64Chars: number): number {
+  if (!base64Chars) return 0;
+  return Math.ceil((base64Chars * 3) / 4 / INLINE_BINARY_BYTES_PER_TOKEN);
+}
+
 export function countTokensForText(text: string): number {
   if (!text || typeof text !== 'string') {
     return 0;
@@ -78,6 +90,22 @@ export function countTokensForText(text: string): number {
     const encoding = acquireEncoding();
     const tokens = encoding.encode(text);
     return tokens.length;
+  } catch {
+    sharedEncoding = null;
+    return Math.ceil(text.length / 4);
+  }
+}
+
+/**
+ * Cooperative variant of countTokensForText: identical fallback, but yields
+ * periodically so encoding a long payload (serialized tool definitions on the
+ * budget path) cannot stall the event loop.
+ */
+export async function countTextCooperatively(text: string): Promise<number> {
+  if (!text) return 0;
+  try {
+    const enc = createYieldingEncoder(acquireEncoding());
+    return await enc.countLong(text);
   } catch {
     sharedEncoding = null;
     return Math.ceil(text.length / 4);
@@ -197,6 +225,46 @@ export function countTokensForMessages(messages: any[]): number {
               totalTokens += encoding.encode(item.text).length;
             } else if (item.type === 'image_url') {
               totalTokens += 85;
+            } else if (item.type === 'image') {
+              // Anthropic image block: keep the same weight as image_url.
+              totalTokens += 85;
+            } else if (item.type === 'thinking') {
+              // Clients replay assistant thinking text on every later turn.
+              totalTokens += encoding.encode(item.thinking || '').length;
+            } else if (item.type === 'redacted_thinking') {
+              totalTokens += estimateInlinePayloadTokens((item.data || '').length);
+            } else if (item.type === 'document') {
+              const data = typeof item.source?.data === 'string' ? item.source.data : '';
+              totalTokens += data
+                ? item.source.type === 'text'
+                  ? encoding.encode(data).length
+                  : estimateInlinePayloadTokens(data.length)
+                : 0;
+            } else if (item.type === 'tool_use') {
+              totalTokens += encoding.encode(item.name || '').length;
+              if (item.input !== undefined) {
+                totalTokens += encoding.encode(JSON.stringify(item.input)).length;
+              }
+            } else if (item.type === 'tool_result') {
+              totalTokens += 4;
+              if (typeof item.content === 'string') {
+                totalTokens += encoding.encode(item.content).length;
+              } else if (Array.isArray(item.content)) {
+                for (const part of item.content) {
+                  if (part?.type === 'text' && part.text) {
+                    totalTokens += encoding.encode(part.text).length;
+                  } else if (part?.type === 'image') {
+                    totalTokens += 85;
+                  } else if (part?.type === 'document') {
+                    const data = typeof part.source?.data === 'string' ? part.source.data : '';
+                    totalTokens += data
+                      ? part.source.type === 'text'
+                        ? encoding.encode(data).length
+                        : estimateInlinePayloadTokens(data.length)
+                      : 0;
+                  }
+                }
+              }
             }
           }
         }
@@ -279,6 +347,48 @@ export async function countMessagesCooperatively(
               totalTokens += await enc.countLong(item.text);
             } else if (item.type === 'image_url') {
               totalTokens += 85;
+            } else if (item.type === 'image') {
+              // Anthropic image block: flat heuristic, same budget weight as image_url.
+              totalTokens += 85;
+            } else if (item.type === 'thinking') {
+              // Clients replay assistant thinking text on every later turn.
+              totalTokens += await enc.countLong(item.thinking || '');
+            } else if (item.type === 'redacted_thinking') {
+              totalTokens += estimateInlinePayloadTokens((item.data || '').length);
+            } else if (item.type === 'document') {
+              const data = typeof item.source?.data === 'string' ? item.source.data : '';
+              if (data) {
+                totalTokens += item.source.type === 'text'
+                  ? await enc.countLong(data)
+                  : estimateInlinePayloadTokens(data.length);
+              }
+            } else if (item.type === 'tool_use') {
+              // Anthropic assistant tool call: name + serialized input.
+              totalTokens += enc.countShort(item.name || '');
+              if (item.input !== undefined) {
+                totalTokens += await enc.countLong(JSON.stringify(item.input));
+              }
+            } else if (item.type === 'tool_result') {
+              // Anthropic user tool回包：content 为 string 或 blocks。
+              totalTokens += 4;
+              if (typeof item.content === 'string') {
+                totalTokens += await enc.countLong(item.content);
+              } else if (Array.isArray(item.content)) {
+                for (const part of item.content) {
+                  if (part?.type === 'text' && part.text) {
+                    totalTokens += await enc.countLong(part.text);
+                  } else if (part?.type === 'image') {
+                    totalTokens += 85;
+                  } else if (part?.type === 'document') {
+                    const data = typeof part.source?.data === 'string' ? part.source.data : '';
+                    if (data) {
+                      totalTokens += part.source.type === 'text'
+                        ? await enc.countLong(data)
+                        : estimateInlinePayloadTokens(data.length);
+                    }
+                  }
+                }
+              }
             }
           }
         }
@@ -314,6 +424,158 @@ export async function countMessagesCooperatively(
       typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
     ).join('');
     return Math.ceil(totalText.length / 4);
+  }
+}
+
+/**
+ * Cooperative token count for an OpenAI Responses API `input` payload
+ * (string or item array). Counts every text the upstream re-reads each turn:
+ * message input_text/output_text content, function_call name+arguments,
+ * function_call_output payloads, reasoning summary/content text and item
+ * reference ids. Images keep the flat 85-token heuristic used elsewhere.
+ */
+export async function countResponsesInputCooperatively(
+  input: unknown
+): Promise<number> {
+  if (typeof input === 'string') {
+    return input ? countTextCooperatively(input) : 0;
+  }
+  if (!Array.isArray(input) || input.length === 0) {
+    return 0;
+  }
+
+  try {
+    const enc = createYieldingEncoder(acquireEncoding());
+    let totalTokens = 0;
+
+    for (const item of input) {
+      if (!item || typeof item !== 'object') {
+        continue;
+      }
+
+      const type = typeof item.type === 'string' ? item.type : '';
+
+      if (type === 'function_call') {
+        // Assistant tool call: name + serialized arguments (arguments is a
+        // JSON string per spec, but tolerate objects).
+        totalTokens += 4;
+        totalTokens += enc.countShort(item.name || '');
+        if (item.arguments !== undefined && item.arguments !== null) {
+          totalTokens += await enc.countLong(
+            typeof item.arguments === 'string'
+              ? item.arguments
+              : JSON.stringify(item.arguments)
+          );
+        }
+        await enc.maybeYield();
+        continue;
+      }
+
+      if (type === 'function_call_output') {
+        // Tool output: `output` is a string per spec; tolerate block arrays
+        // ({ text } parts) and opaque objects via serialization.
+        totalTokens += 4;
+        if (typeof item.output === 'string') {
+          totalTokens += await enc.countLong(item.output);
+        } else if (Array.isArray(item.output)) {
+          for (const part of item.output) {
+            if (typeof part?.text === 'string' && part.text) {
+              totalTokens += await enc.countLong(part.text);
+            }
+          }
+        } else if (item.output !== undefined && item.output !== null) {
+          totalTokens += await enc.countLong(JSON.stringify(item.output));
+        }
+        await enc.maybeYield();
+        continue;
+      }
+
+      if (type === 'reasoning') {
+        // Reasoning items: summary_text + reasoning_text both re-enter the
+        // context on subsequent turns.
+        totalTokens += 4;
+        for (const field of ['summary', 'content'] as const) {
+          const blocks = Array.isArray(item[field]) ? item[field] : [];
+          for (const block of blocks) {
+            if (typeof block?.text === 'string' && block.text) {
+              totalTokens += await enc.countLong(block.text);
+            }
+          }
+        }
+        await enc.maybeYield();
+        continue;
+      }
+
+      if (type === 'item_reference') {
+        totalTokens += 4;
+        if (typeof item.id === 'string') {
+          totalTokens += enc.countShort(item.id);
+        }
+        continue;
+      }
+
+      if (type.endsWith('_call')) {
+        // web_search_call / computer_call / mcp_call …: opaque action items,
+        // counted as serialized JSON.
+        totalTokens += 4;
+        totalTokens += await enc.countLong(JSON.stringify(item));
+        await enc.maybeYield();
+        continue;
+      }
+
+      // Message items: typed 'message' plus type-less EasyInputMessage.
+      totalTokens += 4;
+      if (item.role) {
+        totalTokens += enc.countShort(item.role);
+      }
+
+      const content = item.content;
+      if (typeof content === 'string') {
+        totalTokens += await enc.countLong(content);
+      } else if (Array.isArray(content)) {
+        for (const part of content) {
+          if (typeof part?.text === 'string' && part.text) {
+            // input_text / output_text / summary_text … all count.
+            totalTokens += await enc.countLong(part.text);
+          } else if (part?.type === 'input_image' || part?.type === 'image') {
+            totalTokens += 85;
+          } else if (part?.type === 'input_file') {
+            if (typeof part.filename === 'string') {
+              totalTokens += enc.countShort(part.filename);
+            }
+            // file_id / file_url resolve upstream; only inline file_data is visible here.
+            if (typeof part.file_data === 'string') {
+              totalTokens += estimateInlinePayloadTokens(part.file_data.length);
+            }
+          }
+        }
+      }
+
+      if (item.name) {
+        totalTokens += enc.countShort(item.name) - 1;
+      }
+
+      // Legacy chat-style inline calls inside a message item.
+      if (item.function_call) {
+        totalTokens += enc.countShort(item.function_call.name || '');
+        totalTokens += enc.countShort(item.function_call.arguments || '');
+      }
+      if (item.tool_calls) {
+        for (const toolCall of item.tool_calls) {
+          if (toolCall.function) {
+            totalTokens += enc.countShort(toolCall.function.name || '');
+            totalTokens += enc.countShort(toolCall.function.arguments || '');
+          }
+        }
+      }
+
+      await enc.maybeYield();
+    }
+
+    return totalTokens;
+  } catch {
+    sharedEncoding = null;
+    return Math.ceil(JSON.stringify(input).length / 4);
   }
 }
 

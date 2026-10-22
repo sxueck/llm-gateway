@@ -24,17 +24,30 @@ export interface UpdateCostMappingParams {
   enabled?: boolean;
 }
 
+/**
+ * 取价来源：direct=预设表原名精确命中；official=归一后命中官方实验室牌价；
+ * mapping=人工通配规则；approx=同家族版本最近邻（参考价）；unknown=无价。
+ */
+export type PricingSource = 'direct' | 'official' | 'mapping' | 'approx' | 'unknown';
+
 export interface CostResolution {
-  source: 'direct' | 'mapping';
+  source: PricingSource;
   model?: string;
   mapping_pattern?: string;
   target_model?: string;
+  /** 真正取到牌价的预设键（归一命中时与原模型名不同） */
+  pricing_model?: string;
+  /** 牌价所属供应商 */
+  pricing_provider?: string;
   info: any; // ModelPresetInfo
 }
 
 export interface ModelPrice {
   model: string;
   provider?: string;
+  source?: PricingSource;
+  pricing_model?: string;
+  pricing_provider?: string;
   input_cost_per_token?: number;
   output_cost_per_token?: number;
   max_tokens?: number;

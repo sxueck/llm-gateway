@@ -229,13 +229,11 @@ export function getOrCreateMaskedValue(
   original: string,
   type: PiiType
 ): string {
-  // Check if we already have a mapping for this original
   const existing = ctx.replacements.get(original);
   if (existing !== undefined) {
     return existing;
   }
 
-  // Generate new masked value
   let variant = 0;
   let masked = generateMaskedValue(original, type, variant);
   while (ctx.reverseReplacements.has(masked) && ctx.reverseReplacements.get(masked) !== original) {
@@ -253,7 +251,6 @@ export function getOrCreateMaskedValue(
     masked = generateMaskedValue(original, type, variant);
   }
 
-  // Store mappings
   ctx.replacements.set(original, masked);
   ctx.reverseReplacements.set(masked, original);
   ctx.restorationCacheVersion += 1;

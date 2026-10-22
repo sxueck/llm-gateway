@@ -1,55 +1,59 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import { virtualKeyDb, providerDb, modelDb, contextNormalizationDb } from '../db/index.js';
+import { virtualKeyDb, providerDb, modelDb, contextNormalizationDb, withTransaction } from '../db/index.js';
 import { hotConfigCache } from '../services/hot-config-cache.js';
-import { hashKey } from '../utils/crypto.js';
+import { hashKey, maskKey } from '../utils/crypto.js';
 import { validateCustomKey } from '../utils/validation.js';
+import { contextBudgetTokensSchema, virtualKeyRoutingStrategySchema } from '@llm-gateway/shared';
+
+// `null` means "clear this setting" and is distinct from an omitted field, which
+// means "leave it alone". NInputNumber emits null when its box is emptied, so the
+// clearable fields must accept it or the admin form cannot unset anything.
+const nullablePositiveNumberSchema = z.number().nullable();
+const nullableTemperatureSchema = z.number().min(0).max(2).nullable();
+// A key with zero bindings resolves to neither model_id nor model_ids and every
+// proxied request then fails with invalid_model_config, so an empty list is refused.
+const modelIdsSchema = z.array(z.string()).min(1).optional();
 
 const createVirtualKeySchema = z.object({
   name: z.string(),
   providerId: z.string().optional(),
-  modelId: z.string().optional(),
-  routingStrategy: z.enum(['single', 'load-balance', 'failover']).optional(),
-  modelIds: z.array(z.string()).optional(),
+  modelId: z.string().nullable().optional(),
+  routingStrategy: virtualKeyRoutingStrategySchema.optional(),
+  modelIds: modelIdsSchema,
   routingConfig: z.record(z.any()).optional(),
   keyType: z.enum(['auto', 'custom']),
   customKey: z.string().optional(),
-  rateLimit: z.number().optional(),
+  rateLimit: nullablePositiveNumberSchema.optional(),
   enabled: z.boolean().optional(),
   cacheEnabled: z.boolean().optional(),
   disableLogging: z.boolean().optional(),
-  dynamicCompressionEnabled: z.boolean().optional(),
+  contextBudgetTokens: contextBudgetTokensSchema.optional(),
   imageCompressionEnabled: z.boolean().optional(),
   interceptZeroTemperature: z.boolean().optional(),
-  zeroTemperatureReplacement: z.number().min(0).max(2).optional(),
+  zeroTemperatureReplacement: nullableTemperatureSchema.optional(),
   piiProtectionEnabled: z.boolean().optional(),
-  promptCaptureEnabled: z.boolean().optional(),
   contextNormalizationEnabled: z.boolean().optional(),
 });
 
 const updateVirtualKeySchema = z.object({
   name: z.string().optional(),
   providerId: z.string().optional(),
-  modelId: z.string().optional(),
-  routingStrategy: z.string().optional(),
-  modelIds: z.array(z.string()).optional(),
+  modelId: z.string().nullable().optional(),
+  routingStrategy: virtualKeyRoutingStrategySchema.optional(),
+  modelIds: modelIdsSchema,
   routingConfig: z.record(z.any()).optional(),
   enabled: z.boolean().optional(),
-  rateLimit: z.number().optional(),
+  rateLimit: nullablePositiveNumberSchema.optional(),
   cacheEnabled: z.boolean().optional(),
   disableLogging: z.boolean().optional(),
-  dynamicCompressionEnabled: z.boolean().optional(),
+  contextBudgetTokens: contextBudgetTokensSchema.optional(),
   imageCompressionEnabled: z.boolean().optional(),
   interceptZeroTemperature: z.boolean().optional(),
-  zeroTemperatureReplacement: z.number().min(0).max(2).optional(),
+  zeroTemperatureReplacement: nullableTemperatureSchema.optional(),
   piiProtectionEnabled: z.boolean().optional(),
-  promptCaptureEnabled: z.boolean().optional(),
   contextNormalizationEnabled: z.boolean().optional(),
-});
-
-const validateKeySchema = z.object({
-  customKey: z.string(),
 });
 
 const rotateVirtualKeySchema = z.object({
@@ -57,15 +61,48 @@ const rotateVirtualKeySchema = z.object({
   customKey: z.string().optional(),
 });
 
+// The getByKeyValue pre-check only covers the common case; UNIQUE(key_value) is the
+// real guard, and a concurrent writer surfaces here as ER_DUP_ENTRY.
+function isDuplicateKeyError(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === 'ER_DUP_ENTRY';
+}
+
 export async function virtualKeyRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', fastify.authenticate);
+
+  // Zod .parse throws inside the handlers and the global error handler has no
+  // validation branch, so an invalid admin payload would otherwise reach the client
+  // as 500 internal_error — indistinguishable from a real server fault.
+  fastify.setErrorHandler((error: any, _request, reply) => {
+    if (error instanceof z.ZodError) {
+      const [issue] = error.issues;
+      return reply.code(400).send({
+        error: {
+          message: issue?.message ?? '请求参数验证失败',
+          type: 'invalid_request_error',
+          param: issue?.path.length ? issue.path.join('.') : null,
+          code: 'validation_error',
+        },
+      });
+    }
+
+    return reply.code(error.statusCode || 500).send({
+      error: {
+        message: error.message || '服务器内部错误',
+        type: 'internal_error',
+        param: null,
+        code: 'internal_server_error',
+      },
+    });
+  });
 
   fastify.get('/', async () => {
     const virtualKeys = await virtualKeyDb.getAll();
     return {
       virtualKeys: virtualKeys.map(vk => ({
         id: vk.id,
-        keyValue: vk.key_value,
+        // 明文只允许在 create/rotate 的响应里出现一次；列表/详情一律掩码。
+        keyValue: maskKey(vk.key_value),
         name: vk.name,
         providerId: vk.provider_id,
         modelId: vk.model_id,
@@ -76,12 +113,11 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
         rateLimit: vk.rate_limit,
         cacheEnabled: vk.cache_enabled === 1,
         disableLogging: vk.disable_logging === 1,
-        dynamicCompressionEnabled: vk.dynamic_compression_enabled === 1,
+        contextBudgetTokens: vk.context_budget_tokens ?? null,
         imageCompressionEnabled: vk.image_compression_enabled === 1,
         interceptZeroTemperature: vk.intercept_zero_temperature === 1,
-        zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
+        zeroTemperatureReplacement: vk.zero_temperature_replacement != null ? Number(vk.zero_temperature_replacement) : null,
         piiProtectionEnabled: vk.pii_protection_enabled === 1,
-        promptCaptureEnabled: vk.prompt_capture_enabled === 1,
         contextNormalizationEnabled: vk.context_normalization_enabled === 1,
         createdAt: vk.created_at,
         updatedAt: vk.updated_at,
@@ -99,7 +135,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
 
     return {
       id: vk.id,
-      keyValue: vk.key_value,
+      keyValue: maskKey(vk.key_value),
       name: vk.name,
       providerId: vk.provider_id,
       modelId: vk.model_id,
@@ -110,12 +146,11 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       rateLimit: vk.rate_limit,
       cacheEnabled: vk.cache_enabled === 1,
       disableLogging: vk.disable_logging === 1,
-      dynamicCompressionEnabled: vk.dynamic_compression_enabled === 1,
+      contextBudgetTokens: vk.context_budget_tokens ?? null,
       imageCompressionEnabled: vk.image_compression_enabled === 1,
       interceptZeroTemperature: vk.intercept_zero_temperature === 1,
-      zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
+      zeroTemperatureReplacement: vk.zero_temperature_replacement != null ? Number(vk.zero_temperature_replacement) : null,
       piiProtectionEnabled: vk.pii_protection_enabled === 1,
-      promptCaptureEnabled: vk.prompt_capture_enabled === 1,
       contextNormalizationEnabled: vk.context_normalization_enabled === 1,
       createdAt: vk.created_at,
       updatedAt: vk.updated_at,
@@ -189,10 +224,12 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       keyValue = body.customKey;
     }
 
-    const vk = await virtualKeyDb.create({
-      id: nanoid(),
-      key_value: keyValue,
-      key_hash: hashKey(keyValue),
+    let vk;
+    try {
+      vk = await virtualKeyDb.create({
+        id: nanoid(),
+        key_value: keyValue,
+        key_hash: hashKey(keyValue),
       name: body.name,
       provider_id: body.providerId || null,
       model_id: body.modelId || null,
@@ -203,19 +240,24 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       rate_limit: body.rateLimit || null,
       cache_enabled: body.cacheEnabled ? 1 : 0,
       disable_logging: body.disableLogging ? 1 : 0,
-      dynamic_compression_enabled: body.dynamicCompressionEnabled ? 1 : 0,
+      context_budget_tokens: body.contextBudgetTokens ?? null,
       image_compression_enabled: body.imageCompressionEnabled ? 1 : 0,
       intercept_zero_temperature: body.interceptZeroTemperature ? 1 : 0,
-      zero_temperature_replacement: body.zeroTemperatureReplacement || null,
+      zero_temperature_replacement: body.zeroTemperatureReplacement ?? null,
       pii_protection_enabled: body.piiProtectionEnabled ? 1 : 0,
-      prompt_capture_enabled: body.promptCaptureEnabled ? 1 : 0,
-      context_normalization_enabled: body.contextNormalizationEnabled ? 1 : 0,
-    });
+        context_normalization_enabled: body.contextNormalizationEnabled ? 1 : 0,
+      });
+    } catch (error) {
+      if (isDuplicateKeyError(error)) {
+        return reply.code(400).send({ error: '密钥值已存在' });
+      }
+      throw error;
+    }
 
     return {
       virtualKey: {
         id: vk.id,
-        keyValue: vk.key_value,
+        keyValue: maskKey(vk.key_value),
         name: vk.name,
         providerId: vk.provider_id,
         modelId: vk.model_id,
@@ -226,12 +268,11 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
         rateLimit: vk.rate_limit,
         cacheEnabled: vk.cache_enabled === 1,
         disableLogging: vk.disable_logging === 1,
-        dynamicCompressionEnabled: vk.dynamic_compression_enabled === 1,
+        contextBudgetTokens: vk.context_budget_tokens ?? null,
         imageCompressionEnabled: vk.image_compression_enabled === 1,
         interceptZeroTemperature: vk.intercept_zero_temperature === 1,
-        zeroTemperatureReplacement: vk.zero_temperature_replacement ? Number(vk.zero_temperature_replacement) : null,
+        zeroTemperatureReplacement: vk.zero_temperature_replacement != null ? Number(vk.zero_temperature_replacement) : null,
         piiProtectionEnabled: vk.pii_protection_enabled === 1,
-        promptCaptureEnabled: vk.prompt_capture_enabled === 1,
         contextNormalizationEnabled: vk.context_normalization_enabled === 1,
         createdAt: vk.created_at,
         updatedAt: vk.updated_at,
@@ -249,7 +290,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: '虚拟密钥不存在' });
     }
 
-    if (body.modelId !== undefined) {
+    if (body.modelId) {
       const model = await modelDb.getById(body.modelId);
       if (!model) {
         return reply.code(400).send({ error: '模型不存在' });
@@ -297,18 +338,26 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     if (body.providerId !== undefined) updates.provider_id = body.providerId;
     if (body.modelId !== undefined) updates.model_id = body.modelId;
     if (body.routingStrategy !== undefined) updates.routing_strategy = body.routingStrategy;
-    if (body.modelIds !== undefined) updates.model_ids = JSON.stringify(body.modelIds);
+    if (body.modelIds !== undefined) {
+      updates.model_ids = JSON.stringify(body.modelIds);
+      // The legacy model_id pin outranks model_ids in routes/proxy/model-resolver.ts.
+      // Drop it only when the caller actually removed that model: clearing an untouched
+      // pin would silently turn "always serve the pinned model" into "match the requested
+      // model name", and clients relying on the override would get model_not_found.
+      if (body.modelId === undefined && vk.model_id && !body.modelIds.includes(vk.model_id)) {
+        updates.model_id = null;
+      }
+    }
     if (body.routingConfig !== undefined) updates.routing_config = JSON.stringify(body.routingConfig);
     if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
     if (body.rateLimit !== undefined) updates.rate_limit = body.rateLimit;
     if (body.cacheEnabled !== undefined) updates.cache_enabled = body.cacheEnabled ? 1 : 0;
     if (body.disableLogging !== undefined) updates.disable_logging = body.disableLogging ? 1 : 0;
-    if (body.dynamicCompressionEnabled !== undefined) updates.dynamic_compression_enabled = body.dynamicCompressionEnabled ? 1 : 0;
+    if (body.contextBudgetTokens !== undefined) updates.context_budget_tokens = body.contextBudgetTokens;
     if (body.imageCompressionEnabled !== undefined) updates.image_compression_enabled = body.imageCompressionEnabled ? 1 : 0;
     if (body.interceptZeroTemperature !== undefined) updates.intercept_zero_temperature = body.interceptZeroTemperature ? 1 : 0;
     if (body.zeroTemperatureReplacement !== undefined) updates.zero_temperature_replacement = body.zeroTemperatureReplacement;
     if (body.piiProtectionEnabled !== undefined) updates.pii_protection_enabled = body.piiProtectionEnabled ? 1 : 0;
-    if (body.promptCaptureEnabled !== undefined) updates.prompt_capture_enabled = body.promptCaptureEnabled ? 1 : 0;
     if (body.contextNormalizationEnabled !== undefined) updates.context_normalization_enabled = body.contextNormalizationEnabled ? 1 : 0;
 
     await virtualKeyDb.update(id, updates);
@@ -332,12 +381,11 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       rateLimit: updated.rate_limit,
       cacheEnabled: updated.cache_enabled === 1,
       disableLogging: updated.disable_logging === 1,
-      dynamicCompressionEnabled: updated.dynamic_compression_enabled === 1,
+      contextBudgetTokens: updated.context_budget_tokens ?? null,
       imageCompressionEnabled: updated.image_compression_enabled === 1,
       interceptZeroTemperature: updated.intercept_zero_temperature === 1,
-      zeroTemperatureReplacement: updated.zero_temperature_replacement ? Number(updated.zero_temperature_replacement) : null,
+      zeroTemperatureReplacement: updated.zero_temperature_replacement != null ? Number(updated.zero_temperature_replacement) : null,
       piiProtectionEnabled: updated.pii_protection_enabled === 1,
-      promptCaptureEnabled: updated.prompt_capture_enabled === 1,
       contextNormalizationEnabled: updated.context_normalization_enabled === 1,
       createdAt: updated.created_at,
       updatedAt: updated.updated_at,
@@ -374,7 +422,15 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       keyValue = body.customKey;
     }
 
-    const updated = await virtualKeyDb.rotate(id, keyValue, hashKey(keyValue));
+    let updated;
+    try {
+      updated = await virtualKeyDb.rotate(id, keyValue, hashKey(keyValue));
+    } catch (error) {
+      if (isDuplicateKeyError(error)) {
+        return reply.code(400).send({ error: '密钥值已存在' });
+      }
+      throw error;
+    }
     if (!updated) {
       throw new Error('虚拟密钥不存在');
     }
@@ -396,26 +452,13 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: '虚拟密钥不存在' });
     }
 
-    await virtualKeyDb.delete(id);
-    await contextNormalizationDb.deleteBindingsByScope(id);
+    // 两表清理必须同生共死：不包事务的话，中途失败会留下孤儿 session 绑定。
+    await withTransaction(async (connection) => {
+      await virtualKeyDb.delete(id, connection);
+      await contextNormalizationDb.deleteBindingsByScope(id, connection);
+    });
     hotConfigCache.invalidateVirtualKey(vk.key_value);
 
     return { success: true };
-  });
-
-  fastify.post('/validate', async (request) => {
-    const body = validateKeySchema.parse(request.body);
-
-    const validation = validateCustomKey(body.customKey);
-    if (!validation.valid) {
-      return { valid: false, message: validation.message };
-    }
-
-    const existing = await virtualKeyDb.getByKeyValue(body.customKey);
-    if (existing) {
-      return { valid: false, message: '密钥值已存在' };
-    }
-
-    return { valid: true };
   });
 }

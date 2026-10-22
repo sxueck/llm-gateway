@@ -116,6 +116,42 @@ test('suffix match is case-sensitive', () => {
   expect(parseModelSuffix('gpt-5-Max', DEFAULT_SUFFIXES)).toBeNull();
 });
 
+test('returns an OpenAI 400 invalid_request_error when routing strategy conflicts with a pinned model', async () => {
+  const model = { id: 'model-1', name: 'gpt-5', model_identifier: 'gpt-5', provider_id: 'provider-1' };
+  vi.mocked(hotConfigCache.getModelById).mockResolvedValue(model as any);
+  vi.mocked(resolveProviderFromModel).mockRejectedValue(Object.assign(
+    new Error('Routing strategy is not applicable to a pinned model target'),
+    { statusCode: 400, code: 'invalid_routing_strategy' },
+  ));
+  const result = await resolveModelAndProvider(
+    { id: 'vk-1', model_id: 'model-1' },
+    { body: { model: 'gpt-5', routing: 'price' }, headers: {}, protocol: 'openai', url: '/v1/chat/completions' } as any,
+    'vk-value',
+  );
+  expect(result).toMatchObject({
+    code: 400,
+    body: { error: { type: 'invalid_request_error', code: 'invalid_routing_strategy', param: null } },
+  });
+});
+
+test('a pinned model still serves a request naming a different model', async () => {
+  const model = { id: 'model-1', name: 'gpt-5', model_identifier: 'gpt-5', provider_id: 'provider-1' };
+  const provider = { id: 'provider-1', name: 'provider-1' };
+  vi.mocked(hotConfigCache.getModelById).mockResolvedValue(model as any);
+  vi.mocked(resolveProviderFromModel).mockResolvedValue({ provider, providerId: 'provider-1' } as any);
+
+  const result = await resolveModelAndProvider(
+    { id: 'vk-1', model_id: 'model-1' },
+    { body: { model: 'unbound-model-name' }, headers: {}, protocol: 'openai', url: '/v1/chat/completions' } as any,
+    'vk-value',
+  );
+
+  // The pin branch ignores the requested name. Clearing model_id on every binding write
+  // (routes/virtual-keys.ts PUT) would drop this request into the model_ids branch and
+  // answer it with 404 model_not_found instead.
+  expect(result).toMatchObject({ providerId: 'provider-1', modelId: 'model-1' });
+});
+
 test('resolves a suffix request to its base model and records the forced effort', async () => {
   const model = { id: 'model-1', name: 'gpt-5', model_identifier: 'gpt-5', provider_id: 'provider-1' };
   const provider = { id: 'provider-1', name: 'provider-1' };

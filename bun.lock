@@ -37,13 +37,13 @@
         "mysql2": "^3.15.3",
         "nanoid": "^5.0.9",
         "node-cron": "^4.2.1",
-        "openai": "7.22.0",
+        "openai": "7.25.0",
         "pino": "^9.6.0",
         "pino-pretty": "^13.0.0",
         "sharp": "^0.33.5",
         "tar": "^7.5.2",
         "tiktoken": "^1.0.22",
-        "undici": "^7.0.0",
+        "undici": "^7.30.1",
         "uuid": "^13.0.0",
         "zod": "^3.24.1",
       },
@@ -54,6 +54,16 @@
         "@types/tar": "^6.1.13",
         "@vitest/coverage-v8": "3.2.6",
         "esbuild": "^0.27.2",
+        "typescript": "^5.7.2",
+        "vitest": "^3.0.0",
+      },
+    },
+    "packages/e2e": {
+      "name": "@llm-gateway/e2e",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/node": "^22.10.2",
+        "mysql2": "^3.15.3",
         "typescript": "^5.7.2",
         "vitest": "^3.0.0",
       },
@@ -374,6 +384,8 @@
     "@llm-gateway/backend": ["@llm-gateway/backend@workspace:packages/backend"],
 
     "@llm-gateway/craft-worker": ["@llm-gateway/craft-worker@workspace:packages/worker"],
+
+    "@llm-gateway/e2e": ["@llm-gateway/e2e@workspace:packages/e2e"],
 
     "@llm-gateway/shared": ["@llm-gateway/shared@workspace:packages/shared"],
 
@@ -1011,7 +1023,7 @@
 
     "once": ["once@1.4.0", "https://registry.npmmirror.com/once/-/once-1.4.0.tgz", { "dependencies": { "wrappy": "1" } }, "sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w=="],
 
-    "openai": ["openai@7.22.0", "https://registry.npmmirror.com/openai/-/openai-7.22.0.tgz", { "peerDependencies": { "@aws-sdk/credential-provider-node": ">=3.972.0 <4", "@smithy/hash-node": ">=4.3.0 <5", "@smithy/signature-v4": ">=5.4.0 <6", "undici": ">=5 <9", "ws": "^8.21.0", "zod": "^3.25 || ^4.0" }, "optionalPeers": ["@aws-sdk/credential-provider-node", "@smithy/hash-node", "@smithy/signature-v4", "undici", "ws", "zod"] }, "sha512-C4bv09YtQQb1qcFrEAENJXkuCZA72kGRwws6QIXgf0oJW6pDOmDC2WaZpQVII3Rl+RNE3Z+TQI92uNfetGwY3w=="],
+    "openai": ["openai@7.25.0", "", { "peerDependencies": { "@aws-sdk/credential-provider-node": ">=3.972.0 <4", "@smithy/hash-node": ">=4.3.0 <5", "@smithy/signature-v4": ">=5.4.0 <6", "undici": ">=5 <9", "ws": "^8.21.0", "zod": "^3.25 || ^4.0" }, "optionalPeers": ["@aws-sdk/credential-provider-node", "@smithy/hash-node", "@smithy/signature-v4", "undici", "ws", "zod"] }, "sha512-cnk0d4QT58Vq0vl2KG+DCa/C2+cXthsK2rUeaqtprq33mKv9dlX8o7fWSS283wa2IE/aVdsRyX1+Dqwz551olg=="],
 
     "p-limit": ["p-limit@3.1.0", "https://registry.npmmirror.com/p-limit/-/p-limit-3.1.0.tgz", { "dependencies": { "yocto-queue": "^0.1.0" } }, "sha512-TYOanM3wGwNGsZN2cVTYPArw454xnXj5qmWF1bEoAc4+cU/ol7GVh7odevjp1FNHduHc3KZMcFduxU5Xc6uJRQ=="],
 
@@ -1187,7 +1199,7 @@
 
     "typescript": ["typescript@5.9.3", "https://registry.npmmirror.com/typescript/-/typescript-5.9.3.tgz", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
-    "undici": ["undici@7.24.5", "https://registry.npmmirror.com/undici/-/undici-7.24.5.tgz", {}, "sha512-3IWdCpjgxp15CbJnsi/Y9TCDE7HWVN19j1hmzVhoAkY/+CJx449tVxT5wZc1Gwg8J+P0LWvzlBzxYRnHJ+1i7Q=="],
+    "undici": ["undici@7.30.1", "https://registry.npmmirror.com/undici/-/undici-7.30.1.tgz", {}, "sha512-03KrMbjIFDWQR5RNPrSw3bd1r12JpyFQl9/yxjUbJtqkjmllqC5lFjZh6ujeuJCKr8EOQvRW872Oy/az+nLYxg=="],
 
     "undici-types": ["undici-types@6.21.0", "https://registry.npmmirror.com/undici-types/-/undici-types-6.21.0.tgz", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Installs git hooks for local development.
 # Run automatically via `npm install` (prepare script) or manually: npm run prepare
 set -euo pipefail
 

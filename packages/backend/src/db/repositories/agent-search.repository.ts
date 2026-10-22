@@ -548,6 +548,31 @@ export const agentSearchRunEventRepository = {
     }
   },
 
+  /**
+   * 事件保留期满的 run_id（expires_at + 保留期 < now ⇔ expires_at < cutoff）。
+   * 仅返回 DISTINCT run_id 且限量 —— 与 deleteByRunIds 配对构成有界批删，
+   * 每 tick 清理一点，大 backlog 分多次 cron 排干（LiteLLM 同款模式）。
+   */
+  async findRunIdsWithEventsBefore(
+    cutoff: number,
+    limit = 100,
+  ): Promise<string[]> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query(
+        `SELECT DISTINCT e.run_id FROM agent_search_run_events e
+         JOIN agent_search_runs r ON r.id = e.run_id
+         WHERE r.expires_at < ?
+         LIMIT ?`,
+        [cutoff, limit],
+      );
+      return (rows as any[]).map((row) => String(row.run_id));
+    } finally {
+      conn.release();
+    }
+  },
+
   async deleteByRunIds(runIds: string[]): Promise<void> {
     if (runIds.length === 0) return;
     const pool = getDatabase();

@@ -395,3 +395,102 @@ test("buildResumeMessages appends partial assistant text plus continue instructi
   expect(resume[3].content).toBe(STREAM_RESUME_INSTRUCTION);
   expect(STREAM_RESUME_INSTRUCTION.length).toBeGreaterThan(40);
 });
+
+test("a stream that ends after content without finish_reason is a truncation error", async () => {
+  const { raw, written } = createReplyStub();
+
+  await expect(
+    processOpenAIChatCompletionStreamToSse({
+      reply: { raw } as any,
+      stream: healthyStream([textChunk("id1", "partial")]),
+      model: "test-model",
+    }),
+  ).rejects.toMatchObject({ name: "StreamTruncatedError", status: 502 });
+
+  expect(written.join("")).not.toContain("data: [DONE]");
+  expect(raw.writableEnded).toBe(false);
+});
+
+test("a truncated stream is continued through the resume factory", async () => {
+  const { raw, written } = createReplyStub();
+  const factory = vi.fn(async () =>
+    healthyStream([
+      textChunk("id2", " end"),
+      finishChunk("id2", { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }),
+    ]),
+  );
+
+  const usage = await processOpenAIChatCompletionStreamToSse({
+    reply: { raw } as any,
+    stream: healthyStream([textChunk("id1", "start")]),
+    model: "test-model",
+    resumeStreamFactory: factory,
+  });
+
+  expect(factory).toHaveBeenCalledWith("start");
+  expect(usage.streamResumed).toBe(true);
+  expect(written.join("")).toContain("data: [DONE]");
+});
+
+test("an empty upstream stream fails before any header is committed", async () => {
+  const { raw } = createReplyStub();
+
+  await expect(
+    processOpenAIChatCompletionStreamToSse({
+      reply: { raw } as any,
+      stream: healthyStream([]),
+      model: "test-model",
+    }),
+  ).rejects.toMatchObject({ name: "StreamTruncatedError" });
+
+  expect(raw.headersSent).toBe(false);
+});
+
+test("an upstream error before the first chunk leaves headers uncommitted for fallback", async () => {
+  const { raw } = createReplyStub();
+
+  await expect(
+    processOpenAIChatCompletionStreamToSse({
+      reply: { raw } as any,
+      stream: brokenStream([], "first frame was an error"),
+      model: "test-model",
+    }),
+  ).rejects.toThrow("first frame was an error");
+
+  expect(raw.headersSent).toBe(false);
+});
+
+test("headers and the debug comment are written once, right before the first chunk", async () => {
+  const { raw, written } = createReplyStub();
+  const writeHead = vi.spyOn(raw, "writeHead");
+
+  await processOpenAIChatCompletionStreamToSse({
+    reply: { raw } as any,
+    stream: healthyStream([textChunk("id1", "hi"), finishChunk("id1", undefined)]),
+    model: "test-model",
+    sseComment: "debug",
+  });
+
+  expect(writeHead).toHaveBeenCalledTimes(1);
+  expect(written[0]).toBe(": debug\n\n");
+});
+
+test("a client that disconnects while waiting for drain does not hang the stream", async () => {
+  const { raw } = createReplyStub();
+  const listeners = new Map<string, () => void>();
+  raw.write = () => false;
+  raw.on = (event: string, fn: () => void) => listeners.set(event, fn);
+  raw.off = () => {};
+
+  const pending = processOpenAIChatCompletionStreamToSse({
+    reply: { raw } as any,
+    stream: healthyStream([textChunk("id1", "hi"), finishChunk("id1", undefined)]),
+    model: "test-model",
+  });
+
+  await vi.waitFor(() => expect(listeners.has("close")).toBe(true));
+  raw.destroyed = true;
+  listeners.get("close")!();
+
+  await expect(pending).resolves.toBeDefined();
+});

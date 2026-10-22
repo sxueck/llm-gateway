@@ -1,51 +1,56 @@
 # AGENTS.md
 
-This file provides guidance for agentic coding agents working in this repository.
+Guidance for coding agents working in this repository.
 
-## Project Overview
+## Overview
 
-LLM Gateway is a lightweight gateway management system for multiple LLM providers with a Web UI: virtual API keys, routing strategies (load balancing, fallback, hash-based, affinity), prompt management, expert routing, message compression, health monitoring, and real-time monitoring.
+LLM Gateway: a multi-provider LLM gateway with a Web UI — virtual API keys, routing strategies (load balancing, fallback, hash, affinity), prompt management, expert routing, message compression, a model Playground, worker (craft-agent) runs, and cost/traffic monitoring.
 
-**Tech Stack:** Fastify (Node.js) + TypeScript + Bun backend · Vue 3 + Naive UI + Vite + Pinia frontend · MySQL with connection pooling · Monorepo workspaces: `packages/backend`, `packages/web`, `packages/shared`.
+**Stack:** Fastify + TypeScript backend · Vue 3 + Naive UI + Pinia + Vite frontend · MySQL (pooled) · workspaces `packages/backend`, `packages/web`, `packages/shared`, `packages/worker` (`@llm-gateway/craft-worker`).
 
-## Build Commands
+## Commands
+
+Run from the repo root with **npm** — the root scripts are themselves `npm run … --workspaces`, so invoking them through bun makes them re-expand forever (`bun run lint` never terminates; `bun run dev:all`/`typecheck` are the two that do work). Package binaries are in the root `node_modules/.bin`.
 
 ```bash
-bun run dev:all         # Start backend + frontend dev servers (repo root)
-bun run build           # Build all packages
-bun run typecheck       # Type check all packages
-bun run lint            # Lint all packages (TSC / vue-tsc)
+npm run dev:all         # backend + web dev servers (bun only)
+npm run dev:backend     # tsx watch, port 3000        npm run dev:web -> vite, port 5173
+npm run build           # all packages (backend bundles with esbuild)
+npm run typecheck       # all packages (bun --cwd under the hood)
+npm run lint            # all packages — this IS the typecheck (tsc / vue-tsc), no linter configured
+npm test --workspaces --if-present          # backend + worker vitest suites
+node_modules/.bin/vitest run --root packages/web              # web suites (no test script)
+node_modules/.bin/vitest run --root packages/backend <file>   # single test file
 ```
 
-The same script names exist inside each package (`packages/backend`, `packages/web`, `packages/shared`); `cd` into the package to run them. Backend extras: `bun run dev` (Bun watch), `bun run dev:node` (tsx watch), `bun run fix:db` (DB migration/fix scripts). Web dev server runs on port 5173.
+Per-package script names match these (`cd packages/backend && npm run test`). `cd packages/web && npm run check:i18n` verifies every `t()` key resolves in both locales. A `pre-commit` hook runs `scripts/pre-commit-secret-scan.sh`.
 
-## Code Style
+## Code rules
 
-- TypeScript `strict: true` everywhere (`packages/tsconfig/base.json`); ES modules only — **always include the `.js` extension in relative import specifiers**.
-- Domain types live in `packages/shared/src/types/`; validate runtime input with Zod (`packages/shared/src/types/index.ts`).
-- Formatting: Prettier, config in `.prettierrc`; run `bunx prettier --write .`.
-- Naming: API routes kebab-case (`/api/admin/providers`), DB tables snake_case (`api_requests`, `virtual_keys`); everything else follows existing code.
-- API errors use the OpenAI-style envelope `{ "error": { "message", "type", "param", "code" } }`; reply via `reply.code(...).send({ error: ... })`.
-- Logging: `memoryLogger` from `src/services/logger.js` — `memoryLogger.info(message, category)` with categories such as 'System', 'Proxy', 'ExpertRouter', 'Routing'; request logging uses Pino.
-- Database: use the exported `*Db` objects from `packages/backend/src/db/index.js`; all operations are promises; use transactions for multi-table writes.
-- Frontend: Composition API with `<script setup>`, Pinia stores, Naive UI components.
+- TypeScript `strict: true`; ESM only — **relative import specifiers must end in `.js`**, also for `.ts` sources.
+- Shared domain types and request validation (Zod) live in `packages/shared/src/types/`.
+- **No formatter or linter is configured** (backend uses double quotes, web single — deliberately). Match the file's local style; never run a global `--write` format pass or reformat untouched lines.
+- API errors use the OpenAI envelope `{ "error": { "message", "type", "param", "code" } }` via `reply.code(...).send({ error })`; log with `memoryLogger.info(message, category)` from `services/logger.js` (HTTP request logging is Pino).
+- Data access goes through the promise-based `*Db` repositories exported from `packages/backend/src/db/index.js`; multi-table writes use a transaction.
+- Frontend: `<script setup>` + Pinia + Naive UI; user-visible strings go through `t('...')` in **both** `i18n/locales/{zh-CN,en-US}.ts`; page titles use `components/PageHeader.vue`.
+- Any schema change needs a `db/schema.ts` edit **and** a new idempotent migration appended to `db/migrations.ts` (bump `db/migrations.test.ts`); startup applies migrations automatically.
 
 ## Architecture
 
-Request flow: `packages/backend/src/index.ts` (Fastify init) → `routes/proxy/` handlers (`/v1/chat/completions`, `/v1/messages`, ...) → `routes/proxy/auth.ts` (virtual key auth) → `model-resolver.ts` → `routing.ts` (strategies) → services.
+Proxy flow: `packages/backend/src/index.ts` (Fastify init + route registration) → `routes/proxy/` handlers (`/v1/chat/completions`, `/v1/messages`, …) → `routes/proxy/auth.ts` (virtual-key auth) → `routes/proxy/model-resolver.ts` → `routes/proxy/routing.ts` (strategy resolution via `resolveProviderFromModel`) → services.
 
-Key services (`packages/backend/src/services/`): `expert-router.ts` (classification-based routing), `protocol-adapter.ts` (OpenAI/Anthropic/Google conversion), `message-compressor.ts` (history compression), `circuit-breaker.ts` + `health-checker.ts` (provider health).
+Key services (`packages/backend/src/services/`): `expert-router.ts` (classification-based routing), `protocol-adapter.ts` (OpenAI/Anthropic/Google conversion), `message-compressor.ts` (history compression), `circuit-breaker.ts` (provider health), `agent-classifier.ts` + `agent-metrics.ts` (traffic attribution), `playground-metrics.ts`.
 
-DB schema: `packages/backend/src/db/schema.ts` — `users`, `providers`, `models`, `virtual_keys`, `routing_configs`, `api_requests` (buffered writes), `health_targets`/`health_runs`, `backup_records`/`restore_records`.
+Worker runs: `routes/agent/` (run API + internal loopback to `/v1`); one Docker container per run launched through dockerode; the plugin manifest pins a `model_policy.profile` that must exist as an enabled row in `models`.
+
+Schema: `packages/backend/src/db/schema.ts` — `users`, `providers`, `models`, `virtual_keys`, `routing_configs`, `api_requests` (buffered writes), `agent_search_runs`/`agent_search_usage`, `backup_records`/`restore_records`.
 
 ## Testing
 
-No automated test suite. Manual loop: `bun run dev:all` → Web UI at http://localhost:5173 → configure providers/models/virtual keys → exercise API endpoints with virtual keys.
+Vitest covers backend, worker and web; there is no browser/E2E layer, so UI changes still need the manual loop: start the dev servers → http://localhost:5173 → configure providers/models/virtual keys → call `/v1/*` with a virtual key. Debug the request flow with `GET /api/admin/config/logs` or `LOG_LEVEL=debug`.
 
-Debug request flow: `GET /api/admin/config/logs` (memory logs), `LOG_LEVEL=debug` in `.env`, live tail via `GET /api/admin/config/debug-stream`.
-
-Adding a routing strategy: extend `RoutingConfig` in `routes/proxy/routing.ts` and implement it in `resolveProvider`.
+Adding a routing strategy: extend `RoutingConfig` in `routes/proxy/routing.ts` and implement the selection in `resolveProviderFromModel`.
 
 ## Environment
 
-Copy `.env.example` to `.env`: configure `MYSQL_*`, set `JWT_SECRET` (min 32 chars). Optional: `PUBLIC_URL`, `PORT` (default 3000), `LOG_LEVEL`, `DEMO_MODE` (demo mode with auto-reset).
+Copy `.env.example` to `.env`: `MYSQL_*`, `JWT_SECRET` (min 32 chars). Optional: `PORT` (3000), `PUBLIC_URL`, `LOG_LEVEL`, `GEO_IP_ENABLED`. Backend tests that import `config` need these injected (see `vi.hoisted` usage in `routes/agent/monitoring.test.ts`) or they fail at collect time.

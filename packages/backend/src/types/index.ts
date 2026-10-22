@@ -39,12 +39,11 @@ export interface VirtualKey {
   rate_limit: number | null;
   cache_enabled: number;
   disable_logging: number;
-  dynamic_compression_enabled: number;
+  context_budget_tokens: number | null;
   image_compression_enabled: number;
   intercept_zero_temperature: number;
   zero_temperature_replacement: number | null;
   pii_protection_enabled: number;
-  prompt_capture_enabled: number;
   context_normalization_enabled: number;
   created_at: number;
   updated_at: number;
@@ -81,6 +80,8 @@ export interface PromptConfig {
 }
 
 export interface ExpertRoutingConfig {
+  /** v2 configs always carry version 2; missing = legacy (pre-v2) row. */
+  version?: 2;
   id: string;
   name: string;
   description?: string;
@@ -91,15 +92,21 @@ export interface ExpertRoutingConfig {
     strip_code_blocks?: boolean;
     strip_system_prompt?: boolean;
   };
-  llm_second_pass: import("./expert-routing.js").LlmSecondPassConfig;
+  /** PR-2: terminal behaviour when the fallback chain is exhausted
+   * (default "fallback"). "error" preserves the legacy throw. */
+  fail_open?: import("./expert-routing.js").FailOpenMode;
   experts: import("./expert-routing.js").ExpertTarget[];
   fallback?: {
     type: "virtual" | "real";
     model_id?: string;
     provider_id?: string;
     model?: string;
-  };
-  session_binding_policy: import("./expert-routing.js").SessionBindingPolicy;
+  } | null;
+  session_policy: import("./expert-routing.js").SessionPolicy;
+  /** @deprecated legacy pre-v2 key; kept so unmigrated rows still parse. */
+  session_binding_policy?: import("./expert-routing.js").SessionPolicy;
+  classifier?: import("./expert-routing.js").ClassifierConfig;
+  exposure?: import("./expert-routing.js").ExposureConfig;
 }
 
 export interface ExpertRoutingLog {

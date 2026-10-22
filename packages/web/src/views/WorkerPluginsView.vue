@@ -26,6 +26,7 @@ import {
   type WorkerPluginVersion,
 } from "@/api/worker-plugin";
 import { formatTimestamp } from "@/utils/common";
+import PageHeader from "@/components/PageHeader.vue";
 
 const message = useMessage();
 const loading = ref(false);
@@ -320,21 +321,20 @@ onMounted(load);
 
 <template>
   <div class="worker-plugins-view">
-    <NCard class="plugin-center-card" :bordered="false">
-      <div class="page-toolbar">
-        <div>
-          <div class="eyebrow">EXPERIMENTAL</div>
-          <h2>Worker 插件中心</h2>
-          <p>管理版本化的只读 Worker 角色包与个人默认版本。</p>
-        </div>
-        <NSpace class="toolbar-actions">
-          <NButton size="small" @click="load" :loading="loading">刷新</NButton>
-          <NButton size="small" type="primary" @click="showPublishModal = true">
-            发布新版本
-          </NButton>
-        </NSpace>
-      </div>
+    <PageHeader
+      eyebrow="EXPERIMENTAL"
+      title="Worker 插件中心"
+      subtitle="管理版本化的只读 Worker 角色包与个人默认版本。"
+    >
+      <template #actions>
+        <NButton size="small" @click="load" :loading="loading">刷新</NButton>
+        <NButton size="small" type="primary" @click="showPublishModal = true">
+          发布新版本
+        </NButton>
+      </template>
+    </PageHeader>
 
+    <NCard class="plugin-center-card" :bordered="false">
       <NAlert type="info" class="plugin-notice" :show-icon="true">
         版本发布后不可变；每次 run 固定使用 id、version 与 digest。撤销版本会拒绝新的 run，已创建的 run 可继续完成；删除版本会移除该版本记录，需先确保无排队/运行中的 run 与用户订阅。
       </NAlert>
@@ -513,15 +513,6 @@ onMounted(load);
   overflow: hidden;
 }
 
-.page-toolbar {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 24px;
-}
-
-.eyebrow,
 .section-label {
   color: var(--n-text-color-3);
   font-size: 11px;
@@ -530,24 +521,12 @@ onMounted(load);
   text-transform: uppercase;
 }
 
-.page-toolbar h2 {
-  margin: 4px 0 6px;
-  color: var(--n-text-color-1);
-  font-size: 24px;
-  line-height: 1.25;
-}
-
-.page-toolbar p,
 .plugin-description,
 .detail-section p {
   margin: 0;
   color: var(--n-text-color-3);
   font-size: 13px;
   line-height: 1.7;
-}
-
-.toolbar-actions {
-  flex: none;
 }
 
 .plugin-notice {
@@ -604,21 +583,6 @@ onMounted(load);
 
 .danger-label {
   color: var(--n-error-color);
-}
-
-@media (max-width: 700px) {
-  .page-toolbar {
-    display: grid;
-    gap: 16px;
-  }
-
-  .toolbar-actions {
-    justify-content: flex-start;
-  }
-
-  .page-toolbar h2 {
-    font-size: 21px;
-  }
 }
 </style>
 

@@ -6,7 +6,8 @@ export const expertRoutingLogRepository = {
     virtual_key_id: string | null;
     expert_routing_id: string;
     request_hash: string;
-    classifier_model: string;
+    /** Null when no classifier ran (e.g. session-reused verdicts). */
+    classifier_model: string | null;
     classification_result: string;
     selected_expert_id: string;
     selected_expert_type: string;
@@ -18,6 +19,13 @@ export const expertRoutingLogRepository = {
     route_source?: string;
     prompt_tokens?: number;
     cleaned_content_length?: number;
+    // v47 difficulty/classifier-observation columns (optional, back-compatible).
+    difficulty?: string | null;
+    band?: string | null;
+    verdict_reused?: boolean | number;
+    classifier_time_ms?: number | null;
+    // v54 feedback-loop column (optional, back-compatible).
+    intent_text?: string | null;
     // Deprecated (v24 removed column). Kept for compatibility with older callers.
     semantic_score?: number | null;
   }) {
@@ -37,8 +45,9 @@ export const expertRoutingLogRepository = {
             classifier_model, classification_result, selected_expert_id,
             selected_expert_type, selected_expert_name, classification_time,
             original_request, classifier_request, classifier_response, created_at,
-            route_source, prompt_tokens, cleaned_content_length
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            route_source, prompt_tokens, cleaned_content_length,
+            difficulty, band, verdict_reused, classifier_time_ms, intent_text
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             log.id,
             log.virtual_key_id || null,
@@ -56,7 +65,12 @@ export const expertRoutingLogRepository = {
             now,
             log.route_source || null,
             log.prompt_tokens || 0,
-            log.cleaned_content_length || 0
+            log.cleaned_content_length || 0,
+            log.difficulty || null,
+            log.band || null,
+            log.verdict_reused ? 1 : 0,
+            log.classifier_time_ms ?? null,
+            log.intent_text ?? null
           ]
         );
         return;
@@ -66,7 +80,7 @@ export const expertRoutingLogRepository = {
         const code = String(e?.code || '');
         const isMissingColumn =
           code === 'ER_BAD_FIELD_ERROR' ||
-          /Unknown column\s+'(route_source|prompt_tokens|cleaned_content_length)'/i.test(message);
+          /Unknown column\s+'(route_source|prompt_tokens|cleaned_content_length|difficulty|band|verdict_reused|classifier_time_ms|intent_text)'/i.test(message);
         if (!isMissingColumn) throw e;
       }
 
@@ -143,6 +157,83 @@ export const expertRoutingLogRepository = {
     }
   },
 
+  /**
+   * v47 difficulty/band/verdict-reuse distribution for a config.
+   * Returns [] on pre-v47 schemas so callers can degrade gracefully.
+   */
+  /** Raw classifier latencies (ms, ascending) for percentile monitoring (§5.5). */
+  async getClassifierLatencies(
+    configId: string,
+    timeRange?: number,
+    limit: number = 2000
+  ): Promise<number[]> {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      let query = `
+        SELECT classifier_time_ms
+        FROM expert_routing_logs
+        WHERE expert_routing_id = ?
+          AND classifier_time_ms IS NOT NULL`;
+      const params: any[] = [configId];
+      if (timeRange) {
+        const cutoffTime = Date.now() - timeRange;
+        query += ' AND created_at >= ?';
+        params.push(cutoffTime);
+      }
+      query += ' ORDER BY created_at DESC LIMIT ?';
+      params.push(limit);
+      const [rows] = await conn.query(query, params);
+      return (rows as any[])
+        .map((row) => Number(row.classifier_time_ms))
+        .filter((value) => Number.isFinite(value))
+        .sort((a, b) => a - b);
+    } finally {
+      conn.release();
+    }
+  },
+
+  async getDifficultyStats(configId: string, timeRange?: number) {
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    try {
+      let query = `
+        SELECT
+          difficulty,
+          band,
+          COUNT(*) as count,
+          SUM(verdict_reused) as verdict_reused_count,
+          AVG(classifier_time_ms) as avg_classifier_time_ms
+        FROM expert_routing_logs
+        WHERE expert_routing_id = ?
+      `;
+
+      const params: any[] = [configId];
+      if (timeRange) {
+        query += ' AND created_at >= ?';
+        params.push(Date.now() - timeRange);
+      }
+
+      query += ' GROUP BY difficulty, band';
+
+      try {
+        const [rows] = await conn.query(query, params);
+        return rows;
+      } catch (e: any) {
+        const message = String(e?.message || '');
+        const code = String(e?.code || '');
+        const isMissingColumn =
+          code === 'ER_BAD_FIELD_ERROR' ||
+          /Unknown column\s+'(difficulty|band|verdict_reused|classifier_time_ms)'/i.test(message) ||
+          /no such column:\s*(difficulty|band|verdict_reused|classifier_time_ms)/i.test(message);
+        if (!isMissingColumn) throw e;
+        return [];
+      }
+    } finally {
+      conn.release();
+    }
+  },
+
   // Fallback for deployments without v22 stats columns.
   // Uses classifier_model to infer layer/source distribution.
   async getClassifierModelStats(configId: string, timeRange?: number) {
@@ -182,7 +273,8 @@ export const expertRoutingLogRepository = {
           id, virtual_key_id, expert_routing_id, request_hash,
           classifier_model, classification_result, selected_expert_id,
           selected_expert_type, selected_expert_name, classification_time,
-          classifier_request, route_source, created_at
+          classifier_request, route_source, created_at,
+          difficulty, band, verdict_reused, classifier_time_ms
         FROM expert_routing_logs
         WHERE expert_routing_id = ?
         ORDER BY created_at DESC
@@ -201,7 +293,6 @@ export const expertRoutingLogRepository = {
     try {
       let query = `
         SELECT
-          classification_result,
           COUNT(*) as count,
           AVG(classification_time) as avg_time
         FROM expert_routing_logs
@@ -215,8 +306,6 @@ export const expertRoutingLogRepository = {
         params.push(cutoffTime);
       }
 
-      query += ' GROUP BY classification_result';
-
       const [rows] = await conn.query(query, params);
       return rows;
     } finally {
@@ -224,23 +313,23 @@ export const expertRoutingLogRepository = {
     }
   },
 
-  async getByCategory(configId: string, category: string, limit: number = 100) {
+  /** §5.8: routing decisions (id → selected expert/band) for cost correlation. */
+  async getRecentRoutingDecisions(configId: string, timeRange?: number) {
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
-      const [rows] = await conn.query(
-        `SELECT
-          id, virtual_key_id, expert_routing_id, request_hash,
-          classifier_model, classification_result, selected_expert_id,
-          selected_expert_type, selected_expert_name, classification_time,
-          classifier_request, route_source, created_at
+      let query = `
+        SELECT id, selected_expert_id, band
         FROM expert_routing_logs
-        WHERE expert_routing_id = ? AND classification_result = ?
-        ORDER BY created_at DESC
-        LIMIT ?`,
-        [configId, category, limit]
-      );
-      return rows;
+        WHERE expert_routing_id = ?`;
+      const params: any[] = [configId];
+      if (timeRange) {
+        query += ' AND created_at >= ?';
+        params.push(Date.now() - timeRange);
+      }
+      query += ' ORDER BY created_at DESC LIMIT 2000';
+      const [rows] = await conn.query(query, params);
+      return rows as any[];
     } finally {
       conn.release();
     }

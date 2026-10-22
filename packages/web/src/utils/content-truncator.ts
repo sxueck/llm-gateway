@@ -1,5 +1,5 @@
 
-const MAX_TEXT_LENGTH = 400; // 文本内容最大长度
+const MAX_TEXT_LENGTH = 400;
 
 export function extractContentPreview(content: any, maxLength: number = MAX_TEXT_LENGTH): string {
   if (!content) return '';
@@ -17,56 +17,19 @@ export function extractContentPreview(content: any, maxLength: number = MAX_TEXT
   return JSON.stringify(content).substring(0, maxLength) + '...';
 }
 
-/**
- * 从请求体中提取预览内容
- */
 export function extractRequestPreview(requestBody: string | null): string {
   if (!requestBody) return '-';
   
   try {
     const parsed = JSON.parse(requestBody);
     const messageContent = parsed.messages?.[0]?.content;
-    
     if (messageContent) {
-      return extractContentPreview(messageContent);
+      const preview = extractContentPreview(messageContent);
+      if (preview) return preview;
     }
-    
-    if (parsed.model) {
-      return parsed.model;
-    }
-    
-    return '...';
+
+    return '-';
   } catch {
     return requestBody.substring(0, 50) + '...';
-  }
-}
-
-/**
- * 从响应体中提取预览内容
- */
-export function extractResponsePreview(responseBody: string | null): string {
-  if (!responseBody) return '-';
-  
-  try {
-    const parsed = JSON.parse(responseBody);
-    const messageContent = parsed.choices?.[0]?.message?.content;
-    
-    if (messageContent) {
-      return extractContentPreview(messageContent);
-    }
-
-    // Responses API 兼容：当 output 为空时，回退读取 output_text
-    if (parsed.output_text) {
-      return extractContentPreview(parsed.output_text);
-    }
-    
-    if (parsed.error?.message) {
-      return parsed.error.message.substring(0, MAX_TEXT_LENGTH) + 
-             (parsed.error.message.length > MAX_TEXT_LENGTH ? '...' : '');
-    }
-    
-    return '...';
-  } catch {
-    return responseBody.substring(0, 50) + '...';
   }
 }

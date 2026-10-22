@@ -1,5 +1,7 @@
 import { nanoid } from "nanoid";
 import { apiRequestDb } from "../db/index.js";
+import { agentRunIdFromHeaders } from "../agent/run/loopback-token.js";
+import { extractExpertRoutingSessionId } from "./expert-router/session-binding.js";
 import type { VirtualKey } from "../types/index.js";
 import type { TokenCalculationResult } from "../routes/proxy/token-calculator.js";
 import { memoryLogger } from "./logger.js";
@@ -16,6 +18,11 @@ export interface ApiLogParams {
   errorMessage?: unknown;
   truncatedRequest?: string;
   truncatedResponse?: string;
+  /** Structured usage/stop_reason captured from stream events. Persisted to
+   *  response_meta_json as-is, independent of the truncated response body;
+   *  takes precedence over parsing truncatedResponse. Must never contain
+   *  request payloads, tool arguments or credentials. */
+  responseMeta?: Record<string, unknown>;
   cacheHit?: 0 | 1;
   cachedTokens?: number;
   compressionStats?: { originalTokens: number; savedTokens: number };
@@ -24,13 +31,22 @@ export interface ApiLogParams {
   piiMaskedCount?: number;
   requestType?: string;
   streamResume?: { attempts: number; chars: number };
+  /** agent run 关联显式值；缺省时从 request 头提取（需有效 loopback token） */
+  agentRunId?: string;
+  /** 会话标识显式值；缺省时从 request 头 + 已落库的请求体提取 */
+  sessionId?: string | null;
+  /** §5.8 难度分级路由关联：决策日志 id + 命中档位 */
+  routeLogId?: string | null;
+  routeTier?: string | null;
+  /** 原始请求，仅用于提取 loopback 可信的 run 关联头部与未截断的会话标识 */
+  request?: { headers: unknown; body?: unknown };
 }
 
 function safeParseJson(text: string | undefined): any | null {
   if (!text) return null;
   try {
     return JSON.parse(text);
-  } catch (_e) {
+  } catch {
     return null;
   }
 }
@@ -104,6 +120,19 @@ function extractResponseMetaJson(
   return JSON.stringify(meta);
 }
 
+function serializeResponseMeta(
+  meta: Record<string, unknown> | undefined,
+  responseBody: string | undefined,
+): string | undefined {
+  if (meta) {
+    const compacted = compactObject(meta);
+    return Object.keys(compacted).length > 0
+      ? JSON.stringify(compacted)
+      : undefined;
+  }
+  return extractResponseMetaJson(responseBody);
+}
+
 function normalizeErrorMessage(errorMessage: unknown): string | undefined {
   if (errorMessage === undefined || errorMessage === null) {
     return undefined;
@@ -115,19 +144,24 @@ function normalizeErrorMessage(errorMessage: unknown): string | undefined {
 
   try {
     return JSON.stringify(errorMessage);
-  } catch (_e) {
+  } catch {
     return String(errorMessage);
   }
 }
 
 export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
   const normalizedErrorMessage = normalizeErrorMessage(params.errorMessage);
+  const agentRunId =
+    params.agentRunId ?? agentRunIdFromHeaders(params.request?.headers);
   const requestParamsJson = extractRequestParamsJson(
     params.truncatedRequest,
     params.piiMaskedCount,
     params.streamResume,
   );
-  const responseMetaJson = extractResponseMetaJson(params.truncatedResponse);
+  const responseMetaJson = serializeResponseMeta(
+    params.responseMeta,
+    params.truncatedResponse,
+  );
 
   // disable_logging：除已抑制的正文/参数外，ip、user_agent 和错误文本同属敏感元数据，
   // 写入侧直接置空（错误体可能回显 prompt 片段），读出侧另有字段白名单。
@@ -135,6 +169,17 @@ export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
   const safeErrorMessage = suppressSensitiveMetadata
     ? undefined
     : normalizedErrorMessage;
+  // 会话标识与 ip/user_agent 同属客户端身份元数据：disable_logging 密钥不入库。
+  // 提不到显式 session 时写 NULL，读取侧回落到 (ip, virtual_key_id) + 间隔的启发式分段。
+  // 优先取原始 body：truncatedRequest 超长时是摘要，metadata.session_id 已被丢掉。
+  const sessionId = suppressSensitiveMetadata
+    ? null
+    : params.sessionId ??
+      extractExpertRoutingSessionId({
+        headers: params.request?.headers,
+        body: params.request?.body ?? safeParseJson(params.truncatedRequest),
+      }) ??
+      null;
 
   await apiRequestDb.create({
     id: nanoid(),
@@ -159,6 +204,10 @@ export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
     compression_saved_tokens: params.compressionStats?.savedTokens,
     ip: suppressSensitiveMetadata ? undefined : params.ip,
     user_agent: suppressSensitiveMetadata ? undefined : params.userAgent,
+    run_id: agentRunId,
+    session_id: sessionId,
+    route_log_id: params.routeLogId ?? undefined,
+    route_tier: params.routeTier ?? undefined,
   });
 }
 

@@ -5,6 +5,7 @@ import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-clien
 import { PiiStreamRestorer } from './pii-protection-service.js';
 import { HttpClientFactory } from './http-client-factory.js';
 import { processOpenAIChatCompletionStreamToSse } from '../utils/stream-processor.js';
+import { withStreamIdleTimeout } from '../utils/stream-guards.js';
 import {
   DEFAULT_RESPONSES_EMPTY_OUTPUT_MAX_RETRIES,
   processOpenAIResponsesStreamToSseWithRetry,
@@ -20,6 +21,14 @@ export interface ProtocolConfig {
   baseUrl?: string;
   nativeBaseUrl?: string;
   model: string;
+  /**
+   * Model name to report to the client in chunk `model` fields (PRD §4 B
+   * layer). Set only for exposure.model_field=gateway_name; absent keeps
+   * the upstream identifier byte-identical.
+   */
+  clientModel?: string;
+  /** §4C debug comment line for SSE streams (opt-in, exposure.sse_comment). */
+  sseComment?: string;
   protocol?: string;
   modelAttributes?: any;
   /** Preferred upstream transport for Responses API streaming.
@@ -50,6 +59,12 @@ export interface ProtocolResponse {
 }
 
 
+/** Client-caused validation failure: status 400 keeps it out of the circuit
+ *  breaker and maps it to invalid_request_error downstream. */
+function invalidRequestError(message: string): Error {
+  return Object.assign(new Error(message), { status: 400 });
+}
+
 export function applyReasoningEffortNoneTranslation(
   requestParams: any,
   options: any
@@ -75,6 +90,14 @@ export class ProtocolAdapter {
    */
   private getForwardedHeaders(config: ProtocolConfig, options: any): Record<string, string> | undefined {
     return filterForwardedHeaders(config.modelAttributes?.headers, (options as any)?.__forwardedHeaders);
+  }
+
+  /** The SDK's own timeout stops at the response headers, so streams get a separate idle bound. */
+  private resolveStreamIdleTimeoutMs(config: ProtocolConfig, options: any): number {
+    const configured = config.modelAttributes?.timeout;
+    const perRequest = options?.requestTimeout ?? config.modelAttributes?.requestTimeout;
+    const base = typeof configured === 'number' && Number.isFinite(configured) && configured > 0 ? configured : 300_000;
+    return typeof perRequest === 'number' && Number.isFinite(perRequest) ? Math.max(base, perRequest) : base;
   }
 
   private applyForwardedHeadersToRequestOptions(requestOptions: any, config: ProtocolConfig, options: any): void {
@@ -117,7 +140,7 @@ export class ProtocolAdapter {
 
   private validateAndCleanMessages(messages: any[], options?: any): any[] {
     if (!Array.isArray(messages) || messages.length === 0) {
-      throw new Error('messages 数组不能为空');
+      throw invalidRequestError('messages 数组不能为空');
     }
 
     const cleanedMessages = messages.filter(msg => {
@@ -152,7 +175,7 @@ export class ProtocolAdapter {
     });
 
     if (cleanedMessages.length === 0) {
-      throw new Error('过滤后的 messages 数组为空，所有消息内容均为空白');
+      throw invalidRequestError('过滤后的 messages 数组为空，所有消息内容均为空白');
     }
 
     return this.ensureReasoningContentForToolCalls(cleanedMessages, options);
@@ -189,10 +212,13 @@ export class ProtocolAdapter {
     };
 
     if (options.temperature !== undefined) requestParams.temperature = options.temperature;
-    if (options.max_tokens !== undefined) {
+    // Forward the token cap exactly as the client sent it: renaming
+    // max_completion_tokens to max_tokens is rejected by OpenAI reasoning
+    // models (o-series / gpt-5), which only accept max_completion_tokens.
+    if (options.max_completion_tokens !== undefined) {
+      requestParams.max_completion_tokens = options.max_completion_tokens;
+    } else if (options.max_tokens !== undefined) {
       requestParams.max_tokens = options.max_tokens;
-    } else if (options.max_completion_tokens !== undefined) {
-      requestParams.max_tokens = options.max_completion_tokens;
     }
     if (options.top_p !== undefined) requestParams.top_p = options.top_p;
     if (options.frequency_penalty !== undefined) requestParams.frequency_penalty = options.frequency_penalty;
@@ -201,6 +227,9 @@ export class ProtocolAdapter {
     if (options.n !== undefined) requestParams.n = options.n;
     if (options.logit_bias !== undefined) requestParams.logit_bias = options.logit_bias;
     if (options.user !== undefined) requestParams.user = options.user;
+    if (options.logprobs !== undefined) requestParams.logprobs = options.logprobs;
+    if (options.top_logprobs !== undefined) requestParams.top_logprobs = options.top_logprobs;
+    if (options.metadata !== undefined) requestParams.metadata = options.metadata;
 
     if (options.tools !== undefined) {
       requestParams.tools = options.tools;
@@ -279,10 +308,11 @@ export class ProtocolAdapter {
     };
 
     if (options.temperature !== undefined) requestParams.temperature = options.temperature;
-    if (options.max_tokens !== undefined) {
+    // Forward the token cap exactly as the client sent it (see openaiChatCompletion).
+    if (options.max_completion_tokens !== undefined) {
+      requestParams.max_completion_tokens = options.max_completion_tokens;
+    } else if (options.max_tokens !== undefined) {
       requestParams.max_tokens = options.max_tokens;
-    } else if (options.max_completion_tokens !== undefined) {
-      requestParams.max_tokens = options.max_completion_tokens;
     }
 
     if (options.tools !== undefined) {
@@ -299,6 +329,11 @@ export class ProtocolAdapter {
     if (options.response_format !== undefined) requestParams.response_format = options.response_format;
     if (options.seed !== undefined) requestParams.seed = options.seed;
     if (options.store !== undefined) requestParams.store = options.store;
+    if (options.user !== undefined) requestParams.user = options.user;
+    if (options.logit_bias !== undefined) requestParams.logit_bias = options.logit_bias;
+    if (options.logprobs !== undefined) requestParams.logprobs = options.logprobs;
+    if (options.top_logprobs !== undefined) requestParams.top_logprobs = options.top_logprobs;
+    if (options.metadata !== undefined) requestParams.metadata = options.metadata;
     if ((options as any).stream_options !== undefined) {
       // Always include usage for internal accounting.
       requestParams.stream_options = { ...(options as any).stream_options, include_usage: true };
@@ -324,6 +359,8 @@ export class ProtocolAdapter {
 
     this.applyForwardedHeadersToRequestOptions(requestOptions, config, options);
 
+    const streamIdleTimeoutMs = this.resolveStreamIdleTimeoutMs(config, options);
+
     // Stream resume (system setting `stream_resume_enabled`): on a mid-stream
     // upstream failure the processor asks this factory for a continuation
     // stream built from the text already delivered downstream.
@@ -335,13 +372,16 @@ export class ProtocolAdapter {
         // SAFETY: OpenAI SDK returns a Stream<ChatCompletionChunk>-like async iterable in
         // streaming mode; its generated union type doesn't narrow, but the resume
         // consumer iterates the same SSE chunk objects as the primary stream.
-        return await client.chat.completions.create(
-          {
-            ...requestParams,
-            messages: buildResumeMessages(cleanedMessages, partialText),
-          },
-          Object.keys(requestOptions).length > 0 ? requestOptions : undefined
-        ) as unknown as AsyncIterable<any>;
+        return withStreamIdleTimeout(
+          await client.chat.completions.create(
+            {
+              ...requestParams,
+              messages: buildResumeMessages(cleanedMessages, partialText),
+            },
+            Object.keys(requestOptions).length > 0 ? requestOptions : undefined
+          ) as unknown as AsyncIterable<any>,
+          streamIdleTimeoutMs
+        );
       } catch (resumeError: any) {
         memoryLogger.debug(`断点续传请求创建失败: ${resumeError?.message || resumeError}`, 'Protocol');
         return null;
@@ -352,14 +392,19 @@ export class ProtocolAdapter {
     // SAFETY: OpenAI SDK returns a Stream<ChatCompletionChunk>-like async iterable in
     // streaming mode; its generated union type doesn't narrow here, but every consumer
     // iterates SSE chunk objects.
-    const stream = await client.chat.completions.create(
-      requestParams,
-      Object.keys(requestOptions).length > 0 ? requestOptions : undefined
-    ) as unknown as AsyncIterable<any>;
+    const stream = withStreamIdleTimeout(
+      await client.chat.completions.create(
+        requestParams,
+        Object.keys(requestOptions).length > 0 ? requestOptions : undefined
+      ) as unknown as AsyncIterable<any>,
+      streamIdleTimeoutMs
+    );
     return await processOpenAIChatCompletionStreamToSse({
       reply,
       stream,
       model: config.model,
+      clientModel: config.clientModel,
+      sseComment: config.sseComment,
       abortSignal,
       upstreamRequestStartedAt,
       streamRestorer,
@@ -637,12 +682,16 @@ export class ProtocolAdapter {
     const totalAttempts = Math.max(1, modelRetryLimit + 1);
     const baseUpstreamRequestOptions = Object.keys(requestOptions).length > 0 ? requestOptions : undefined;
 
-    const initTimeoutMs = Math.min(
-      8_000,
-      typeof requestTimeoutMs === 'number' && Number.isFinite(requestTimeoutMs)
-        ? requestTimeoutMs
-        : 8_000
-    );
+    const initTimeoutOverride = config.modelAttributes?.responses_init_timeout_ms;
+    const initTimeoutMs =
+      typeof initTimeoutOverride === 'number' && Number.isFinite(initTimeoutOverride) && initTimeoutOverride >= 0
+        ? initTimeoutOverride
+        : Math.min(
+            8_000,
+            typeof requestTimeoutMs === 'number' && Number.isFinite(requestTimeoutMs)
+              ? requestTimeoutMs
+              : 8_000
+          );
 
     return await processOpenAIResponsesStreamToSseWithRetry({
       client,
@@ -654,6 +703,7 @@ export class ProtocolAdapter {
       abortSignal,
       totalAttempts,
       initTimeoutMs,
+      streamIdleTimeoutMs: this.resolveStreamIdleTimeoutMs(config, options),
       streamRestorer,
       logger: memoryLogger,
     });

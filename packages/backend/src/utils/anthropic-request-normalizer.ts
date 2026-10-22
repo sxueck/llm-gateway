@@ -1,12 +1,13 @@
 import type { AnthropicRequest } from '../types/anthropic.js';
 
 /**
- * Models that only support adaptive thinking. On these models, setting
- * sampling parameters (temperature/top_p/top_k) to a non-default value and
- * manual extended thinking (`{type: "enabled", budget_tokens}`) both return
- * HTTP 400. See the Claude model migration guides.
+ * Claude 5 protocol only. Every Claude model is treated as adaptive-thinking:
+ * manual extended thinking (`{type: "enabled", budget_tokens}`) is converted
+ * to `{type: "adaptive"}` and non-default sampling parameters are stripped,
+ * both of which return HTTP 400 on these models. Upstreams that still expect
+ * the legacy budget_tokens protocol are not supported through the gateway.
  */
-const ADAPTIVE_ONLY_MODEL_PATTERNS = ['claude-sonnet-5', 'claude-opus-4-7', 'claude-opus-4-8', 'claude-fable-5', 'claude-mythos-5'];
+const CLAUDE_MODEL_PATTERN = /(^|[^a-z])claude([^a-z]|$)/;
 
 function matchesModelPattern(model: string, patterns: readonly string[]): boolean {
   return patterns.some(pattern => model.includes(pattern));
@@ -22,15 +23,11 @@ function matchesModelPattern(model: string, patterns: readonly string[]): boolea
  */
 const THINKING_UNSET_ONLY_MODEL_PATTERNS = ['claude-fable-5', 'claude-mythos-5'];
 
-const SONNET_WITH_ADAPTIVE_THINKING_PATTERNS = ['claude-sonnet-5', 'claude-sonnet-4-6'];
-
 export function normalizeAnthropicRequest(model: string, request: AnthropicRequest): AnthropicRequest {
   const normalizedModel = model.toLowerCase();
-  const adaptiveOnlyModel = matchesModelPattern(normalizedModel, ADAPTIVE_ONLY_MODEL_PATTERNS);
-  const sonnetWithAdaptiveThinking = matchesModelPattern(normalizedModel, SONNET_WITH_ADAPTIVE_THINKING_PATTERNS);
-  let normalized = request;
+  if (!CLAUDE_MODEL_PATTERN.test(normalizedModel)) return request;
 
-  if (!adaptiveOnlyModel && !sonnetWithAdaptiveThinking) return normalized;
+  let normalized = request;
 
   if (matchesModelPattern(normalizedModel, THINKING_UNSET_ONLY_MODEL_PATTERNS) && normalized.thinking !== undefined) {
     const { thinking: _thinking, ...rest } = normalized;
@@ -38,15 +35,16 @@ export function normalizeAnthropicRequest(model: string, request: AnthropicReque
   }
 
   if (normalized.thinking?.type === 'enabled') {
-    normalized = { ...normalized, thinking: { type: 'adaptive' } };
+    const display = (normalized.thinking as { display?: 'summarized' | 'omitted' }).display;
+    normalized = { ...normalized, thinking: { type: 'adaptive', ...(display ? { display } : {}) } };
   }
 
-  if (adaptiveOnlyModel && (normalized.temperature !== undefined || normalized.top_p !== undefined || normalized.top_k !== undefined)) {
+  if (normalized.temperature !== undefined || normalized.top_p !== undefined || normalized.top_k !== undefined) {
     const { temperature: _temperature, top_p: _topP, top_k: _topK, ...rest } = normalized;
     normalized = rest;
   }
 
-  if (sonnetWithAdaptiveThinking && normalized.thinking?.type === 'adaptive' && normalized.thinking.display === undefined) {
+  if (normalized.thinking?.type === 'adaptive' && normalized.thinking.display === undefined) {
     normalized = {
       ...normalized,
       thinking: { ...normalized.thinking, display: 'summarized' }

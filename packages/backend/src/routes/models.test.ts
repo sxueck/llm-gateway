@@ -1,6 +1,35 @@
 import { describe, expect, it } from "vitest";
 
-import { modelAttributesSchema } from "./models.js";
+import { modelAttributesSchema, resolveTestProbeProtocol } from "./models.js";
+
+describe("resolveTestProbeProtocol", () => {
+  const provider = {
+    base_url: "https://api.example.com",
+    protocol_mappings: JSON.stringify({
+      anthropic: "https://api.example.com/anthropic",
+    }),
+  };
+
+  it("falls back to the first provider protocol when none is requested", () => {
+    expect(resolveTestProbeProtocol(provider, undefined)).toBe("openai");
+  });
+
+  it("honours an explicit protocol the provider offers", () => {
+    expect(resolveTestProbeProtocol(provider, "anthropic")).toBe(
+      "anthropic",
+    );
+  });
+
+  it("rejects a protocol the provider does not offer", () => {
+    expect(resolveTestProbeProtocol(provider, "google")).toBeNull();
+  });
+
+  it("returns null for a provider without any usable protocol", () => {
+    expect(
+      resolveTestProbeProtocol({ base_url: "", protocol_mappings: null }, undefined),
+    ).toBeNull();
+  });
+});
 
 describe("modelAttributesSchema", () => {
   it("preserves capability metadata from upstream /v1/models entries", () => {

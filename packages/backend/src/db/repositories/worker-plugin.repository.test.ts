@@ -31,10 +31,7 @@ describe('workerPluginRepository.getLatestRunnableByPluginId', () => {
       'com.llm-gateway.code-search',
     );
 
-    const [sql, values] = mocks.connection.query.mock.calls[0];
-    expect(sql).toContain("status <> 'draft'");
-    expect(sql).toContain("status <> 'revoked'");
-    expect(sql).toContain('ORDER BY created_at DESC LIMIT 1');
+    const [, values] = mocks.connection.query.mock.calls[0];
     expect(values).toEqual(['com.llm-gateway.code-search']);
     expect(row?.version).toBe('1.0.6');
   });

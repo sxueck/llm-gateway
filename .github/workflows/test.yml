@@ -1,0 +1,100 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+      - v2
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Unit tests (backend / web / worker)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      # actions/checkout v5.1.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+
+      # actions/setup-node v5.0.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '24.22.1'
+
+      # oven-sh/setup-bun v2.2.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.2.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # grep_search 依赖 ripgrep；ubuntu-latest 不预装
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Unit tests
+        run: npm test
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-test-only-jwt-secret-must-be-at-least-32-characters
+          MYSQL_PASSWORD: ci-test-password
+
+  e2e:
+    name: E2E (API chains + expert routing)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: e2e-root-password
+          MYSQL_DATABASE: llm_gateway_e2e
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: '3306'
+      MYSQL_USER: root
+      MYSQL_PASSWORD: e2e-root-password
+      MYSQL_DATABASE: llm_gateway_e2e
+
+    steps:
+      # actions/checkout v5.1.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+
+      # actions/setup-node v5.0.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '24.22.1'
+
+      # oven-sh/setup-bun v2.2.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.2.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: E2E tests
+        run: npm run test:e2e
+
+      # actions/upload-artifact v5.0.0
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+        if: failure()
+        with:
+          name: e2e-gateway-log
+          path: packages/e2e/.gateway.log
+          if-no-files-found: ignore

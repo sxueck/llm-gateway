@@ -109,7 +109,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Test S3 connection
   fastify.post('/api/admin/backup/test-s3', {
     onRequest: [fastify.authenticate],
     handler: async (_request, reply) => {
@@ -128,7 +127,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
             error: result.error
           });
         } else {
-          // Test with saved config
           const s3Service = getS3Service();
           const result = await s3Service.testConnection();
 
@@ -182,7 +180,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // List backups
   fastify.get('/api/admin/backup/list', {
     onRequest: [fastify.authenticate],
     handler: async (request, reply) => {
@@ -217,7 +214,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Sync backups from S3
   fastify.post('/api/admin/backup/sync', {
     onRequest: [fastify.authenticate],
     handler: async (_request, reply) => {
@@ -367,7 +363,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // List restores
   fastify.get('/api/admin/restore/list', {
     onRequest: [fastify.authenticate],
     handler: async (request, reply) => {
@@ -433,7 +428,6 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Rollback restore
   fastify.post('/api/admin/restore/:id/rollback', {
     onRequest: [fastify.authenticate],
     handler: async (request, reply) => {

@@ -91,18 +91,19 @@ afterEach(async () => {
   await rm(workspace, { recursive: true, force: true });
 });
 
-async function run(impl: typeof fetch) {
+async function run(impl: typeof fetch, overrides?: { manifest?: WorkerPluginManifest; now?: () => number }) {
   const config: WorkerRunConfig = {
     runId: 'asr_test',
     query: 'find the 401',
     modelProfile: 'search-fast',
-    manifest,
+    manifest: overrides?.manifest ?? manifest,
     promptMd: 'prompt',
     outputSchemaJson: '{}',
     workspaceRoot: workspace,
     baseUrl: 'http://gateway.test',
     serviceToken: 'tok',
     fetchImpl: impl,
+    now: overrides?.now,
   };
   return runSearchAgent(config);
 }
@@ -211,6 +212,105 @@ describe('runSearchAgent', () => {
     const early = completions[2].body.messages.find((m: any) => m.tool_call_id === 'g2');
     expect(early.content).not.toContain('disabled');
     expect(calls.find((c) => c.url.endsWith('/report'))?.body.kind).toBe('completed');
+  });
+
+  it('executes tools serially in call order when they share a turn with submit_result', async () => {
+    // Mixed turn: read_file must run (and its tool.completed event fire) before
+    // the submit_result in the same message is validated and completes the run.
+    const { impl, calls } = fakeFetch([
+      () => jsonRes(assistantToolCall([
+        { id: 'r1', name: 'read_file', args: { path: 'src/a.ts', offset: 1, limit: 1 } },
+        { id: 's1', name: 'submit_result', args: { result: validResult } },
+      ])),
+    ]);
+    await run(impl);
+
+    const reportIndex = calls.findIndex((c) => c.url.endsWith('/report'));
+    const completedEventIndex = calls.findIndex(
+      (c) => c.url.endsWith('/events') && c.body.type === 'tool.completed',
+    );
+    const report = calls[reportIndex];
+    expect(report?.body.kind).toBe('completed');
+    expect(report?.body.usage.tool_calls).toBe(1);
+    expect(completedEventIndex).toBeGreaterThan(-1);
+    expect(completedEventIndex).toBeLessThan(reportIndex);
+  });
+
+  it('caps parallel fan-out at max_parallel_calls and reports overflow as errors', async () => {
+    const limited: WorkerPluginManifest = {
+      ...manifest,
+      tool_policy: { ...manifest.tool_policy, max_parallel_calls: 2 },
+    };
+    const { impl, calls } = fakeFetch([
+      () => jsonRes(assistantToolCall([
+        { id: 'g1', name: 'grep_search', args: { pattern: '401' } },
+        { id: 'g2', name: 'glob_files', args: { pattern: 'src/*.ts' } },
+        { id: 'g3', name: 'grep_search', args: { pattern: 'refresh' } },
+      ])),
+      () => jsonRes(assistantToolCall([{ id: 's1', name: 'submit_result', args: { result: validResult } }])),
+    ]);
+    await run(impl, { manifest: limited });
+
+    const completion = calls.filter((call) => call.url.endsWith('/completions'))[1];
+    const byId = (id: string) => completion.body.messages.find((m: any) => m.tool_call_id === id);
+    expect(byId('g1')?.content).toContain('match(es)');
+    expect(byId('g2')?.content).toContain('match(es)');
+    expect(byId('g3')?.content).toBe('error: max_parallel_calls is 2');
+    const report = calls.find((c) => c.url.endsWith('/report'));
+    expect(report?.body.usage.tool_calls).toBe(3);
+  });
+
+  it('rejects mixed-turn tool execution once the deadline passes mid-run', async () => {
+    let clock = 0;
+    const invalid = { status: 'completed', files: [] };
+    const { impl, calls } = fakeFetch([
+      () => {
+        // Deadline (30s timeout - 5s safety margin = 25s) passes after the model
+        // answered but before the same-turn read_file is executed. The rejected
+        // call must short-circuit before any tool event yet still count in stats.
+        clock = 100_000;
+        return jsonRes(assistantToolCall([
+          { id: 'r1', name: 'read_file', args: { path: 'src/a.ts', offset: 1, limit: 1 } },
+          { id: 's1', name: 'submit_result', args: { result: invalid } },
+        ]));
+      },
+    ]);
+    await run(impl, { now: () => clock });
+
+    const report = calls.find((c) => c.url.endsWith('/report'));
+    // The next turn-start deadline check fails the run before repair can happen.
+    expect(report?.body.kind).toBe('failed');
+    expect(report?.body.error_code).toBe('timeout');
+    expect(report?.body.usage.tool_calls).toBe(1);
+    expect(calls.filter((c) => c.url.endsWith('/events')).map((c) => c.body.type)).toEqual([]);
+  });
+
+  it('still disables discovery tools in the convergence phase on mixed turns', async () => {
+    const invalid = { status: 'completed', files: [] };
+    const { impl, calls } = fakeFetch([
+      () => jsonRes(assistantToolCall([{ id: 'g1', name: 'grep_search', args: { pattern: '401' } }])),
+      () => jsonRes(assistantToolCall([{ id: 'g2', name: 'grep_search', args: { pattern: 'refresh' } }])),
+      () => jsonRes(assistantToolCall([
+        { id: 'g3', name: 'grep_search', args: { pattern: 'late wandering' } },
+        { id: 's1', name: 'submit_result', args: { result: invalid } },
+      ])),
+      // The invalid submit forces a repair round so the turn-3 tool messages are
+      // actually replayed to the model and the serial-path denial is observable.
+      () => jsonRes(assistantToolCall([{ id: 's2', name: 'submit_result', args: { result: validResult } }])),
+    ]);
+    await run(impl);
+
+    const completions = calls.filter((call) => call.url.endsWith('/completions'));
+    // manifest fixture has max_turns 4 -> convergeTurn 3; the turn-3 mixed batch
+    // must deny grep_search through the serial path yet still process submit_result.
+    const replay = completions[3].body.messages;
+    expect(replay.find((m: any) => m.tool_call_id === 'g3')?.content).toContain(
+      'discovery tools are disabled from turn 3',
+    );
+    expect(replay.find((m: any) => m.tool_call_id === 's1')?.content).toContain('rejected:');
+    const report = calls.find((c) => c.url.endsWith('/report'));
+    expect(report?.body.kind).toBe('completed');
+    expect(report?.body.usage.tool_calls).toBe(3);
   });
 
   it('ends with budget_exceeded when turns run out', async () => {

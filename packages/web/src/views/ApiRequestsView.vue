@@ -1,11 +1,9 @@
 <template>
   <div class="api-requests-view">
     <n-space vertical :size="24">
+      <PageHeader eyebrow="TOOLS" :title="t('apiRequests.title')" />
       <n-card>
-        <template #header>
-          <span class="card-title">API 请求日志</span>
-        </template>
-        <template #header-extra>
+        <n-space vertical :size="16">
           <n-space class="filter-toolbar">
             <n-date-picker
               v-model:value="timeRange"
@@ -18,7 +16,7 @@
               v-model:value="filterVirtualKeyId"
               :options="virtualKeyOptions"
               class="filter-control filter-key-select"
-              placeholder="虚拟密钥"
+              :placeholder="t('apiRequests.colVirtualKey')"
               clearable
               filterable
               @update:value="resetPageAndLoad"
@@ -27,7 +25,7 @@
               v-model:value="filterProviderId"
               :options="providerOptions"
               class="filter-control filter-provider-select"
-              placeholder="供应商"
+              :placeholder="t('apiRequests.colProvider')"
               clearable
               filterable
               @update:value="resetPageAndLoad"
@@ -36,33 +34,62 @@
               v-model:value="filterModel"
               :options="modelOptions"
               class="filter-control filter-model-select"
-              placeholder="模型"
+              :placeholder="t('apiRequests.model')"
               clearable
               filterable
               tag
               @update:value="resetPageAndLoad"
             />
             <n-select
+              v-model:value="filterRequestType"
+              :options="requestTypeOptions"
+              class="filter-control filter-request-type-select"
+              :placeholder="t('apiRequests.filterProtocol')"
+              clearable
+              @update:value="resetPageAndLoad"
+            />
+            <n-select
+              v-model:value="filterCacheHit"
+              :options="cacheHitOptions"
+              class="filter-control filter-cache-select"
+              :placeholder="t('apiRequests.filterCacheHit')"
+              clearable
+              @update:value="resetPageAndLoad"
+            />
+            <n-input
+              v-model:value="filterIp"
+              class="filter-control filter-ip-input"
+              :placeholder="t('apiRequests.filterIp')"
+              clearable
+              @keyup.enter="resetPageAndLoad"
+              @clear="resetPageAndLoad"
+            />
+            <n-input
+              v-model:value="filterSessionId"
+              class="filter-control filter-session-input"
+              :placeholder="t('apiRequests.filterSessionId')"
+              clearable
+              @keyup.enter="resetPageAndLoad"
+              @clear="resetPageAndLoad"
+            />
+            <n-select
               v-model:value="filterStatus"
               :options="statusOptions"
               class="filter-control filter-status-select"
-              placeholder="状态"
+              :placeholder="t('apiRequests.status')"
               clearable
               @update:value="resetPageAndLoad"
             />
             <n-button class="filter-action-btn" :disabled="!hasActiveFilters" @click="clearFilters">
-              清除筛选
+              {{ t('apiRequests.clearFilters') }}
             </n-button>
             <n-button class="filter-action-btn" @click="loadRequests" :loading="loading">
-              刷新
+              {{ t('common.refresh') }}
             </n-button>
             <n-button class="filter-action-btn" @click="showCleanDialog = true" type="warning">
-              清理旧日志
+              {{ t('apiRequests.cleanOldLogs') }}
             </n-button>
           </n-space>
-        </template>
-
-        <n-space vertical :size="16">
           <n-data-table
             :columns="columns"
             :data="requests"
@@ -71,7 +98,7 @@
             :row-key="(row: ApiRequest) => row.id"
             :row-props="rowProps"
             :row-class-name="rowClassName"
-            :scroll-x="1180"
+            :scroll-x="1290"
             remote
             striped
           />
@@ -80,62 +107,73 @@
     </n-space>
 
     <n-drawer v-model:show="showDetail" :width="drawerWidth" placement="right">
-      <n-drawer-content title="请求详情" closable class="request-detail-drawer">
+      <n-drawer-content :title="t('apiRequests.requestDetail')" closable class="request-detail-drawer">
         <n-space vertical :size="20" v-if="selectedRequest">
           <n-card size="small" :bordered="false" class="detail-meta-card">
             <n-descriptions :column="2" bordered size="medium" label-placement="left">
-              <n-descriptions-item label="请求 ID" :span="2">
+              <n-descriptions-item :label="t('apiRequests.requestId')" :span="2">
                 <n-text code class="detail-code-id">{{ selectedRequest.id }}</n-text>
               </n-descriptions-item>
-              <n-descriptions-item label="请求时间">
+              <n-descriptions-item :label="t('apiRequests.requestTime')">
                 {{ formatTimestamp(selectedRequest.created_at) }}
               </n-descriptions-item>
-              <n-descriptions-item label="响应时间">
+              <n-descriptions-item :label="t('apiRequests.responseTime')">
                 <n-tag v-if="selectedRequest.response_time" type="info" size="small">
                   {{ selectedRequest.response_time }}ms
                 </n-tag>
                 <span v-else>-</span>
               </n-descriptions-item>
-              <n-descriptions-item label="TFFB">
+              <n-descriptions-item :label="t('apiRequests.tffb')">
                 <n-tag v-if="selectedRequest.tffb_ms !== null" type="warning" size="small">
                   {{ selectedRequest.tffb_ms }}ms
                 </n-tag>
                 <span v-else>-</span>
               </n-descriptions-item>
-              <n-descriptions-item label="模型">
+              <n-descriptions-item :label="t('apiRequests.model')">
                 <n-text strong>{{ selectedRequest.model || '-' }}</n-text>
               </n-descriptions-item>
-              <n-descriptions-item label="状态">
+              <n-descriptions-item :label="t('apiRequests.status')">
                 <n-tag
                   :type="selectedRequest.status === 'success' ? 'success' : 'error'"
                   size="medium"
                 >
-                  {{ selectedRequest.status === 'success' ? '成功' : '失败' }}
+                  {{
+                    selectedRequest.status === 'success'
+                      ? t('common.success')
+                      : t('common.failed')
+                  }}
                 </n-tag>
               </n-descriptions-item>
               <n-descriptions-item
-                label="断点续传"
+                :label="t('apiRequests.streamResume')"
                 v-if="getRequestParams(selectedRequest!)?.stream_resumed"
               >
                 <n-tag type="warning" size="small">
-                  已续传 {{ getRequestParams(selectedRequest!)?.stream_resume_chars ?? 0 }} 字符
+                  {{
+                    t('apiRequests.streamResumedChars', {
+                      chars: getRequestParams(selectedRequest!)?.stream_resume_chars ?? 0
+                    })
+                  }}
                 </n-tag>
               </n-descriptions-item>
-              <n-descriptions-item label="输入 Tokens">
+              <n-descriptions-item :label="t('apiRequests.inputTokens')">
                 <n-tag type="default" size="small">
                   {{ getTokens(selectedRequest!, 'input') }}
                 </n-tag>
               </n-descriptions-item>
-              <n-descriptions-item label="输出 Tokens">
+              <n-descriptions-item :label="t('apiRequests.outputTokens')">
                 <n-tag type="default" size="small">
                   {{ getTokens(selectedRequest!, 'output') }}
                 </n-tag>
               </n-descriptions-item>
-              <n-descriptions-item label="缓存 Tokens" v-if="selectedRequest.cached_tokens">
+              <n-descriptions-item
+                :label="t('apiRequests.cachedTokens')"
+                v-if="selectedRequest.cached_tokens"
+              >
                 <n-tag type="warning" size="small">{{ selectedRequest.cached_tokens }}</n-tag>
               </n-descriptions-item>
               <n-descriptions-item
-                label="压缩前 Tokens"
+                :label="t('apiRequests.compressionOriginalTokens')"
                 v-if="selectedRequest.compression_original_tokens"
               >
                 <n-tag type="info" size="small">
@@ -143,23 +181,107 @@
                 </n-tag>
               </n-descriptions-item>
               <n-descriptions-item
-                label="压缩节省 Tokens"
+                :label="t('apiRequests.compressionSavedTokens')"
                 v-if="selectedRequest.compression_saved_tokens"
               >
                 <n-tag type="success" size="small">
                   {{ selectedRequest.compression_saved_tokens }}
                 </n-tag>
               </n-descriptions-item>
-              <n-descriptions-item label="虚拟密钥 ID" v-if="selectedRequest.virtual_key_id">
-                <n-text code class="detail-code-id">{{ selectedRequest.virtual_key_id }}</n-text>
+              <n-descriptions-item :label="t('apiRequests.colVirtualKey')" v-if="selectedRequest.virtual_key_id">
+                <div class="detail-named-id">
+                  <n-text strong>{{ selectedRequest.virtual_key_name || t('apiRequests.unnamedKey') }}</n-text>
+                  <n-text code class="detail-code-id">{{ selectedRequest.virtual_key_id }}</n-text>
+                </div>
               </n-descriptions-item>
-              <n-descriptions-item label="提供商 ID" v-if="selectedRequest.provider_id">
-                <n-text code class="detail-code-id">{{ selectedRequest.provider_id }}</n-text>
+              <n-descriptions-item :label="t('apiRequests.colProvider')" v-if="selectedRequest.provider_id">
+                <div class="detail-named-id">
+                  <n-text strong>{{ selectedRequest.provider_name || t('apiRequests.unknownProvider') }}</n-text>
+                  <n-text code class="detail-code-id">{{ selectedRequest.provider_id }}</n-text>
+                </div>
+              </n-descriptions-item>
+              <n-descriptions-item :label="t('apiRequests.filterIp')" v-if="selectedRequest.ip">
+                <n-text code class="detail-code-id">{{ selectedRequest.ip }}</n-text>
+              </n-descriptions-item>
+              <n-descriptions-item :label="t('apiRequests.detailClient')" v-if="selectedRequest.user_agent" :span="2">
+                <n-text class="detail-user-agent">{{ selectedRequest.user_agent }}</n-text>
               </n-descriptions-item>
             </n-descriptions>
           </n-card>
 
-          <n-card v-if="selectedRequest.request_body" title="请求体" size="small" hoverable>
+          <n-card size="small" :bordered="false" class="session-nav-card">
+            <template #header>
+              <n-space align="center" :size="8">
+                <span>{{ t('apiRequests.sessionNav') }}</span>
+                <n-tag
+                  v-if="session"
+                  size="tiny"
+                  :bordered="false"
+                  :type="session.strategy === 'explicit' ? 'success' : 'warning'"
+                >
+                  {{ session.strategy === 'explicit' ? t('apiRequests.sessionExplicit') : t('apiRequests.sessionInferred') }}
+                </n-tag>
+              </n-space>
+            </template>
+            <n-spin :show="sessionLoading">
+              <n-space vertical :size="12">
+                <n-space align="center" :size="8">
+                  <n-button
+                    size="small"
+                    :disabled="!session || !session.requests.length"
+                    @click="gotoSessionRequest(0)"
+                  >
+                    {{ t('apiRequests.sessionFirst') }}
+                  </n-button>
+                  <n-button
+                    size="small"
+                    :disabled="!session || sessionIndex <= 0"
+                    @click="gotoSessionRequest(sessionIndex - 1)"
+                  >
+                    {{ t('apiRequests.sessionPrev') }}
+                  </n-button>
+                  <n-button
+                    size="small"
+                    :disabled="!session || sessionIndex < 0 || sessionIndex >= (session?.requests.length ?? 0) - 1"
+                    @click="gotoSessionRequest(sessionIndex + 1)"
+                  >
+                    {{ t('apiRequests.sessionNext') }}
+                  </n-button>
+                  <n-button
+                    size="small"
+                    :disabled="!session || sessionIndex < 0 || sessionIndex >= (session?.requests.length ?? 0) - 1"
+                    @click="gotoSessionRequest((session?.requests.length ?? 1) - 1)"
+                  >
+                    {{ t('apiRequests.sessionLatest') }}
+                  </n-button>
+                  <n-text depth="3" class="session-position">
+                    {{ session && sessionIndex >= 0 ? t('apiRequests.sessionPosition', { index: sessionIndex + 1, total: session.requests.length }) : '' }}
+                  </n-text>
+                </n-space>
+                <n-space align="center" :size="8" wrap>
+                  <n-text v-if="session?.sessionId" code class="detail-code-id">
+                    {{ session.sessionId }}
+                  </n-text>
+                  <n-button size="tiny" :disabled="!session" @click="filterOnlySession">
+                    {{ t('apiRequests.sessionOnly') }}
+                  </n-button>
+                </n-space>
+                <n-text v-if="session?.truncated" depth="3" class="session-hint">
+                  {{ t('apiRequests.sessionTruncatedHint', { count: session.requests.length }) }}
+                </n-text>
+                <n-text v-else-if="session && session.strategy === 'heuristic'" depth="3" class="session-hint">
+                  {{ t('apiRequests.sessionHeuristicHint') }}
+                </n-text>
+              </n-space>
+            </n-spin>
+          </n-card>
+
+          <n-card
+            v-if="selectedRequest.request_body"
+            :title="t('apiRequests.requestBody')"
+            size="small"
+            hoverable
+          >
             <n-code
               :code="formatJson(selectedRequest.request_body)"
               language="json"
@@ -168,7 +290,12 @@
             />
           </n-card>
 
-          <n-card v-if="selectedRequest.response_body" title="响应体" size="small" hoverable>
+          <n-card
+            v-if="selectedRequest.response_body"
+            :title="t('apiRequests.responseBody')"
+            size="small"
+            hoverable
+          >
             <n-code
               :code="formatJson(selectedRequest.response_body)"
               language="json"
@@ -177,7 +304,12 @@
             />
           </n-card>
 
-          <n-card v-if="selectedRequest.error_message" title="错误信息" size="small" hoverable>
+          <n-card
+            v-if="selectedRequest.error_message"
+            :title="t('apiRequests.errorMessage')"
+            size="small"
+            hoverable
+          >
             <n-alert type="error" class="error-message-alert">
               {{ selectedRequest.error_message }}
             </n-alert>
@@ -189,31 +321,31 @@
     <n-modal
       v-model:show="showCleanDialog"
       preset="dialog"
-      title="清理旧日志"
+      :title="t('apiRequests.cleanOldLogs')"
       class="clean-dialog-modal"
       :style="{ maxHeight: '85vh' }"
     >
       <template #default>
         <div class="modal-content-wrapper">
           <n-space vertical :size="16">
-            <n-text>删除超过指定天数的请求日志记录</n-text>
+            <n-text>{{ t('apiRequests.cleanDialogDesc') }}</n-text>
             <n-input-number
               v-model:value="cleanDays"
               :min="1"
               :max="365"
-              placeholder="保留天数"
+              :placeholder="t('apiRequests.daysToKeep')"
               class="clean-days-input"
             >
-              <template #suffix>天</template>
+              <template #suffix>{{ t('apiRequests.days') }}</template>
             </n-input-number>
           </n-space>
         </div>
       </template>
       <template #action>
         <n-space>
-          <n-button @click="showCleanDialog = false">取消</n-button>
+          <n-button @click="showCleanDialog = false">{{ t('common.cancel') }}</n-button>
           <n-button type="warning" @click="handleCleanLogs" :loading="cleanLoading">
-            确认清理
+            {{ t('apiRequests.confirmClean') }}
           </n-button>
         </n-space>
       </template>
@@ -222,8 +354,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, h, onMounted, reactive } from 'vue'
+import { ref, computed, h, onMounted, reactive, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import {
   useMessage,
   NSpace,
@@ -241,19 +374,23 @@ import {
   NModal,
   NText,
   NInputNumber,
+  NInput,
+  NSpin,
   NAlert
 } from 'naive-ui'
-import { apiRequestApi, type ApiRequest } from '@/api/api-request'
+import { apiRequestApi, type ApiRequest, type ApiRequestSession } from '@/api/api-request'
 import { virtualKeyApi } from '@/api/virtual-key'
 import { providerApi } from '@/api/provider'
 import { modelApi } from '@/api/model'
 import type { DataTableColumns, PaginationProps } from 'naive-ui'
 import { formatJson, formatTimestamp } from '@/utils/common'
 import { isSessionStartBody } from '@/utils/session-start'
-import { extractRequestPreview, extractResponsePreview } from '@/utils/content-truncator'
+import { extractRequestPreview } from '@/utils/content-truncator'
 import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize'
+import PageHeader from '@/components/PageHeader.vue'
 
 const message = useMessage()
+const { t } = useI18n()
 const loading = ref(false)
 const requests = ref<ApiRequest[]>([])
 const showDetail = ref(false)
@@ -263,6 +400,10 @@ const filterStatus = ref<string | undefined>(undefined)
 const filterVirtualKeyId = ref<string | undefined>(undefined)
 const filterProviderId = ref<string | undefined>(undefined)
 const filterModel = ref<string | undefined>(undefined)
+const filterRequestType = ref<string | undefined>(undefined)
+const filterCacheHit = ref<0 | 1 | undefined>(undefined)
+const filterIp = ref<string>('')
+const filterSessionId = ref<string>('')
 const virtualKeyOptions = ref<Array<{ label: string; value: string }>>([])
 const providerOptions = ref<Array<{ label: string; value: string }>>([])
 const modelOptions = ref<Array<{ label: string; value: string }>>([])
@@ -276,7 +417,11 @@ const hasActiveFilters = computed(
     !!filterStatus.value ||
     !!filterVirtualKeyId.value ||
     !!filterProviderId.value ||
-    !!filterModel.value
+    !!filterModel.value ||
+    !!filterRequestType.value ||
+    filterCacheHit.value !== undefined ||
+    !!filterIp.value.trim() ||
+    !!filterSessionId.value.trim()
 )
 
 // Drill-down entry: ops monitoring pushes startTime/endTime/virtualKeyId/
@@ -301,6 +446,18 @@ const applyRouteQuery = () => {
   if (q.status === 'success' || q.status === 'error') {
     filterStatus.value = q.status
   }
+  if (typeof q.requestType === 'string' && q.requestType) {
+    filterRequestType.value = q.requestType
+  }
+  if (q.cacheHit === '1' || q.cacheHit === '0') {
+    filterCacheHit.value = q.cacheHit === '1' ? 1 : 0
+  }
+  if (typeof q.ip === 'string' && q.ip) {
+    filterIp.value = q.ip
+  }
+  if (typeof q.sessionId === 'string' && q.sessionId) {
+    filterSessionId.value = q.sessionId
+  }
 }
 
 const clearFilters = () => {
@@ -309,7 +466,11 @@ const clearFilters = () => {
   filterVirtualKeyId.value = undefined
   filterProviderId.value = undefined
   filterModel.value = undefined
-  // 清除过滤后重置分页；同时移除钻取携带的 URL 参数
+  filterRequestType.value = undefined
+  filterCacheHit.value = undefined
+  filterIp.value = ''
+  filterSessionId.value = ''
+  // 清除过滤后重置分页；同时移除携带的 URL 参数
   pagination.page = 1
   if (Object.keys(route.query).length > 0) {
     router.replace({ path: route.path })
@@ -340,10 +501,6 @@ const parseJsonLike = (value: JsonLike): Record<string, any> | null => {
 
 const getRequestParams = (row: ApiRequest): Record<string, any> | null => {
   return parseJsonLike(row.request_params_json)
-}
-
-const getResponseMeta = (row: ApiRequest): Record<string, any> | null => {
-  return parseJsonLike(row.response_meta_json)
 }
 
 const previewFromJson = (value: JsonLike): string => {
@@ -416,13 +573,6 @@ const getRequestPreview = (row: ApiRequest): string => {
   return previewFromJson(row.request_params_json)
 }
 
-const getResponsePreview = (row: ApiRequest): string => {
-  if (row.response_body) {
-    return extractResponsePreview(row.response_body)
-  }
-  return previewFromJson(getResponseMeta(row))
-}
-
 const getModelDisplay = (row: ApiRequest): string => {
   const modelName = row.model || '-'
   if (!row.model) return modelName
@@ -455,25 +605,39 @@ const pagination = reactive<PaginationProps>({
   pageCount: 0,
   pageSizes: [10, 20, 50, 100],
   showSizePicker: true,
-  prefix: info => `共 ${info.itemCount} 条`,
+  prefix: info => t('apiRequests.totalCount', { count: info.itemCount }),
   onChange: handlePageChange,
   onUpdatePageSize: handlePageSizeChange
 })
 
-const statusOptions = [
-  { label: '成功', value: 'success' },
-  { label: '失败', value: 'error' }
+const statusOptions = computed(() => [
+  { label: t('common.success'), value: 'success' },
+  { label: t('common.failed'), value: 'error' }
+])
+
+// 与后端 request_type 写入值对齐；openai-responses-ws 等内部入口不预置选项，
+// 但控件为 tag 输入，仍可手工填入完整值筛选。
+const requestTypeOptions = [
+  { label: 'OpenAI Chat', value: 'chat' },
+  { label: 'OpenAI Responses', value: 'openai-responses' },
+  { label: 'Anthropic', value: 'anthropic' },
+  { label: 'Gemini', value: 'gemini' }
 ]
 
-const columns: DataTableColumns<ApiRequest> = [
+const cacheHitOptions = computed(() => [
+  { label: t('apiRequests.cacheHitOnly'), value: 1 as const },
+  { label: t('apiRequests.cacheMissOnly'), value: 0 as const }
+])
+
+const columns = computed<DataTableColumns<ApiRequest>>(() => [
   {
-    title: '请求时间',
+    title: t('apiRequests.requestTime'),
     key: 'created_at',
     width: 160,
     render: row => h('span', { class: 'table-time' }, formatTimestamp(row.created_at))
   },
   {
-    title: '模型',
+    title: t('apiRequests.model'),
     key: 'model',
     width: 190,
     ellipsis: {
@@ -482,7 +646,35 @@ const columns: DataTableColumns<ApiRequest> = [
     render: row => h('span', { class: 'table-model' }, getModelDisplay(row))
   },
   {
-    title: '状态',
+    title: t('apiRequests.colVirtualKey'),
+    key: 'virtual_key_name',
+    width: 150,
+    ellipsis: {
+      tooltip: true
+    },
+    render: row =>
+      h(
+        'span',
+        { class: row.virtual_key_name ? 'table-key' : 'table-placeholder' },
+        row.virtual_key_name || row.virtual_key_id || '-'
+      )
+  },
+  {
+    title: t('apiRequests.colProvider'),
+    key: 'provider_name',
+    width: 120,
+    ellipsis: {
+      tooltip: true
+    },
+    render: row =>
+      h(
+        'span',
+        { class: row.provider_name ? 'table-key' : 'table-placeholder' },
+        row.provider_name || row.provider_id || '-'
+      )
+  },
+  {
+    title: t('apiRequests.status'),
     key: 'status',
     width: 70,
     render: row => {
@@ -492,12 +684,14 @@ const columns: DataTableColumns<ApiRequest> = [
           type: row.status === 'success' ? 'success' : 'error',
           size: 'small'
         },
-        { default: () => (row.status === 'success' ? '成功' : '失败') }
+        {
+          default: () => (row.status === 'success' ? t('common.success') : t('common.failed'))
+        }
       )
     }
   },
   {
-    title: '响应时间',
+    title: t('apiRequests.responseTime'),
     key: 'response_time',
     width: 90,
     render: row =>
@@ -508,7 +702,7 @@ const columns: DataTableColumns<ApiRequest> = [
       )
   },
   {
-    title: 'TFFB',
+    title: t('apiRequests.tffb'),
     key: 'tffb_ms',
     width: 90,
     render: row =>
@@ -519,13 +713,36 @@ const columns: DataTableColumns<ApiRequest> = [
       )
   },
   {
-    title: 'Tokens',
+    title: t('apiRequests.colSession'),
+    key: 'session_id',
+    width: 90,
+    render: row => {
+      if (row.session_id) {
+        return h(
+          NTag,
+          { size: 'small', type: 'success', bordered: false, title: row.session_id },
+          { default: () => t('apiRequests.tagExplicit') }
+        )
+      }
+      // 无显式标识时只能靠“本轮无 assistant 回合”推断首条，口径仅供导航参考。
+      if (isSessionStartBody(row.request_body)) {
+        return h(
+          NTag,
+          { size: 'small', type: 'warning', bordered: false },
+          { default: () => t('apiRequests.tagSessionStart') }
+        )
+      }
+      return h('span', { class: 'table-placeholder' }, '-')
+    }
+  },
+  {
+    title: t('apiRequests.tokens'),
     key: 'tokens',
     width: 180,
     render: row => {
       const items = [
-        h('div', { class: 'token-line' }, `输入: ${getTokens(row, 'input')}`),
-        h('div', { class: 'token-line' }, `输出: ${getTokens(row, 'output')}`)
+        h('div', { class: 'token-line' }, `${t('apiRequests.input')}: ${getTokens(row, 'input')}`),
+        h('div', { class: 'token-line' }, `${t('apiRequests.output')}: ${getTokens(row, 'output')}`)
       ]
 
       if (row.compression_saved_tokens && row.compression_saved_tokens > 0) {
@@ -533,7 +750,7 @@ const columns: DataTableColumns<ApiRequest> = [
           h(
             'div',
             { class: 'token-line token-line-saving' },
-            `节省: ${row.compression_saved_tokens}`
+            `${t('apiRequests.saved')}: ${row.compression_saved_tokens}`
           )
         )
       }
@@ -542,24 +759,15 @@ const columns: DataTableColumns<ApiRequest> = [
     }
   },
   {
-    title: '请求预览',
+    title: t('apiRequests.requestPreview'),
     key: 'request_body',
-    width: 200,
+    width: 140,
     ellipsis: {
       tooltip: true
     },
     render: row => h('span', { class: 'table-preview' }, getRequestPreview(row))
-  },
-  {
-    title: '响应预览',
-    key: 'response_body',
-    width: 200,
-    ellipsis: {
-      tooltip: true
-    },
-    render: row => h('span', { class: 'table-preview' }, getResponsePreview(row))
   }
-]
+])
 
 const loadRequests = async () => {
   loading.value = true
@@ -590,12 +798,30 @@ const loadRequests = async () => {
       params.model = filterModel.value
     }
 
+    if (filterRequestType.value) {
+      params.requestType = filterRequestType.value
+    }
+
+    if (filterCacheHit.value !== undefined) {
+      params.cacheHit = filterCacheHit.value
+    }
+
+    const ip = filterIp.value.trim()
+    if (ip) {
+      params.ip = ip
+    }
+
+    const sessionId = filterSessionId.value.trim()
+    if (sessionId) {
+      params.sessionId = sessionId
+    }
+
     const response = await apiRequestApi.getAll(params)
     requests.value = response.data
     pagination.itemCount = response.total
     pagination.pageCount = response.totalPages
   } catch (error: any) {
-    message.error(error.message || '加载请求日志失败')
+    message.error(error.message || t('apiRequests.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -606,17 +832,66 @@ const handleTimeRangeChange = () => {
   loadRequests()
 }
 
-const handleViewDetail = async (request: ApiRequest) => {
+const session = ref<ApiRequestSession | null>(null)
+const sessionLoading = ref(false)
+const sessionIndex = computed(() => session.value?.anchorIndex ?? -1)
+
+const loadSession = async (id: string) => {
+  sessionLoading.value = true
+  try {
+    session.value = await apiRequestApi.getSession(id)
+  } catch (error: any) {
+    session.value = null
+  } finally {
+    sessionLoading.value = false
+  }
+}
+
+const gotoSessionRequest = async (index: number) => {
+  const target = session.value?.requests[index]
+  if (!target) return
+  await openRequestById(target.id)
+}
+
+// 只看此会话：显式会话直接按 session_id 筛；推断会话没有唯一键，
+// 退到同密钥 + 同 IP + 该段起止时间窗，与抽屉里看到的结果一致。
+const filterOnlySession = () => {
+  const rows = session.value?.requests ?? []
+  if (rows.length === 0) return
+  const first = rows[0].created_at
+  const last = rows[rows.length - 1].created_at
+  timeRange.value = [first, last + 1]
+
+  if (session.value?.sessionId) {
+    filterSessionId.value = session.value.sessionId
+  } else {
+    filterVirtualKeyId.value = selectedRequest.value?.virtual_key_id || undefined
+    filterIp.value = selectedRequest.value?.ip || ''
+  }
+  showDetail.value = false
+  resetPageAndLoad()
+}
+
+const openRequestById = async (id: string) => {
   loading.value = true
   try {
-    selectedRequest.value = await apiRequestApi.getById(request.id)
+    selectedRequest.value = await apiRequestApi.getById(id)
     showDetail.value = true
+    await loadSession(id)
   } catch (error: any) {
-    message.error(error.message || '加载请求详情失败')
+    message.error(error.message || t('apiRequests.loadDetailFailed'))
   } finally {
     loading.value = false
   }
 }
+
+const handleViewDetail = async (request: ApiRequest) => {
+  await openRequestById(request.id)
+}
+
+watch(showDetail, open => {
+  if (!open) session.value = null
+})
 
 const rowProps = (row: ApiRequest) => {
   return {
@@ -636,7 +911,7 @@ const handleCleanLogs = async () => {
     showCleanDialog.value = false
     loadRequests()
   } catch (error: any) {
-    message.error(error.message || '清理日志失败')
+    message.error(error.message || t('apiRequests.cleanFailed'))
   } finally {
     cleanLoading.value = false
   }
@@ -650,7 +925,7 @@ const loadVirtualKeys = async () => {
       value: vk.id
     }))
   } catch (error: any) {
-    message.error(error.message || '加载虚拟密钥列表失败')
+    message.error(error.message || t('apiRequests.loadVirtualKeysFailed'))
   }
 }
 const loadProviderAndModelOptions = async () => {
@@ -669,11 +944,11 @@ const loadProviderAndModelOptions = async () => {
     }))
     ensureDrilledOptionPresent()
   } catch (error: any) {
-    message.error(error.message || '加载筛选选项失败')
+    message.error(error.message || t('apiRequests.loadFilterOptionsFailed'))
   }
 }
 
-// 钻取携带的模型/供应商可能不在已配置列表（实际模型、已删除供应商），
+// 携带的模型/供应商可能不在已配置列表（实际模型、已删除供应商），
 // 保留为选项以保证控件能回显参数值
 const ensureDrilledOptionPresent = () => {
   if (filterProviderId.value && !providerOptions.value.some(o => o.value === filterProviderId.value)) {
@@ -704,21 +979,12 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.card-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--color-title);
-  letter-spacing: -0.015em;
-  line-height: 1.3;
-  white-space: nowrap;
-  display: inline-block;
-}
-
 .filter-toolbar {
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
+  width: 100%;
 }
 
 .filter-control {
@@ -743,6 +1009,22 @@ onMounted(() => {
 
 .filter-status-select {
   width: 120px;
+}
+
+.filter-request-type-select {
+  width: 150px;
+}
+
+.filter-cache-select {
+  width: 130px;
+}
+
+.filter-ip-input {
+  width: 150px;
+}
+
+.filter-session-input {
+  width: 180px;
 }
 
 .filter-action-btn {
@@ -802,6 +1084,38 @@ onMounted(() => {
 .table-preview {
   color: #475569;
   font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.table-key {
+  color: #1f2937;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.detail-named-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.detail-user-agent {
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.session-nav-card {
+  background: #f8fafc;
+  border-radius: 12px;
+}
+
+.session-position {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-hint {
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -918,10 +1232,6 @@ onMounted(() => {
 }
 
 @media (max-width: 768px) {
-  .card-title {
-    font-size: 18px;
-  }
-
   .filter-toolbar {
     justify-content: flex-start;
   }

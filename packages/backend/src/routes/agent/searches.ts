@@ -96,7 +96,7 @@ export async function agentSearchRoutes(fastify: FastifyInstance) {
 
     const principal = { virtualKeyId: auth.virtualKey.id };
     try {
-      const { plugin, profile } = await validateRunInputs(
+      const { plugin, profile, resolvedCommit } = await validateRunInputs(
         principal,
         parsed.data,
       );
@@ -105,6 +105,7 @@ export async function agentSearchRoutes(fastify: FastifyInstance) {
         body: parsed.data,
         plugin,
         profile,
+        resolvedCommit,
       });
       await runEventHub.append(run.id, "run.queued", {
         plugin: `${plugin.manifest.id}@${plugin.manifest.version}`,

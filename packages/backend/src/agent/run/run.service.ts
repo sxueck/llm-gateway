@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { encryptText, decryptText, getMasterKey } from '../snapshot/encryption.js';
-import { resolvePlugin, PluginStoreError } from '../plugins/store.js';
+import { resolvePlugin, PluginStoreError, type ResolvedPlugin } from '../plugins/store.js';
 import { modelDb, agentSearchRunDb, agentSearchUsageDb } from '../../db/index.js';
 import { generateServiceToken } from './service-token.js';
 import {
@@ -35,7 +35,12 @@ export class RunError extends Error {
   }
 }
 
-export async function validateRunInputs(principal: { virtualKeyId: string }, body: CreateSearchRunRequest) {
+export async function validateRunInputs(principal: { virtualKeyId: string }, body: CreateSearchRunRequest): Promise<{
+  plugin: ResolvedPlugin;
+  profile: string;
+  /** 快照源解析出的 head_commit（快照未携带时为 null），随 run 落库为 resolved_commit。 */
+  resolvedCommit: string | null;
+}> {
   let plugin;
   try {
     plugin = await resolvePlugin(body.plugin.id, body.plugin.version);
@@ -72,6 +77,7 @@ export async function validateRunInputs(principal: { virtualKeyId: string }, bod
     });
   }
 
+  let resolvedCommit: string | null = null;
   if (body.source.type === 'snapshot') {
     // 属主校验在 service 内（不泄露存在性）
     const snapshot = await getOwnedSnapshot(body.source.snapshot_id, principal);
@@ -84,9 +90,11 @@ export async function validateRunInputs(principal: { virtualKeyId: string }, bod
     if (Date.now() > snapshot.expires_at) {
       throw new RunError({ code: 'snapshot_expired', message: `snapshot ${snapshot.id} expired` });
     }
+    // head_commit 在快照创建时已固定，此处直接解析入 run；快照未携带时保持 null。
+    resolvedCommit = snapshot.head_commit;
   }
 
-  return { plugin, profile };
+  return { plugin, profile, resolvedCommit };
 }
 
 export async function persistNewRun(params: {
@@ -94,6 +102,7 @@ export async function persistNewRun(params: {
   body: CreateSearchRunRequest;
   plugin: { manifest: { id: string; version: string }; digest: string };
   profile: string;
+  resolvedCommit: string | null;
 }): Promise<{ run: AgentSearchRun; serviceToken: string; query: string }> {
   const { principal, body, plugin, profile } = params;
   const id = `asr_${nanoid(21)}`;
@@ -112,7 +121,7 @@ export async function persistNewRun(params: {
     snapshot_id: body.source.type === 'snapshot' ? body.source.snapshot_id : null,
     public_git_url_encrypted: null,
     requested_ref: null,
-    resolved_commit: null,
+    resolved_commit: params.resolvedCommit,
     query_encrypted: encryptText(masterKey, body.query),
     model_profile: profile,
     status: 'queued',

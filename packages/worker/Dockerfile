@@ -11,6 +11,7 @@ COPY packages/backend/package.json ./packages/backend/package.json
 COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/web/package.json ./packages/web/package.json
 COPY packages/worker/package.json ./packages/worker/package.json
+COPY packages/e2e/package.json ./packages/e2e/package.json
 COPY packages/tsconfig ./packages/tsconfig
 COPY scripts/install-hooks.sh ./scripts/install-hooks.sh
 RUN bun install --frozen-lockfile
@@ -20,7 +21,7 @@ COPY packages/worker ./packages/worker
 
 RUN bun run --cwd=packages/worker build
 
-FROM node:22-alpine
+FROM node:24.22.1-alpine
 
 # ripgrep：grep_search 工具的运行时依赖（以参数数组 spawn，无 shell）
 RUN apk add --no-cache ripgrep \

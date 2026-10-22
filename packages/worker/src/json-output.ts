@@ -1,7 +1,4 @@
-/**
- * 从模型输出中提取结构化结果 JSON（FR-7）：
- * 1) 直接 parse；2) ```json 围栏；3) 首个平衡的 {...} 块。
- */
+// 模型可能将 JSON 包在 Markdown 或说明文字中，不能只解析整段输出。
 export function extractJson(text: string): { ok: true; value: unknown } | { ok: false; error: string } {
   const trimmed = text.trim();
   if (trimmed.startsWith('{')) {
@@ -56,10 +53,7 @@ function firstBalancedObject(text: string): string | null {
   return null;
 }
 
-/**
- * 轻量结构校验（网关侧 zod 是最终闸门）：
- * 检查必填字段、行区间合法性与路径形态。
- */
+// 这里只做可修复的结构预检，网关侧 Zod 仍是最终校验闸门。
 export function lightValidateResult(value: unknown): string[] {
   const errors: string[] = [];
   if (!value || typeof value !== 'object' || Array.isArray(value)) {

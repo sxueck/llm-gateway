@@ -123,7 +123,7 @@ export async function flushApiRequestBuffer() {
         userAgent = truncateToByteLength(userAgent, 500);
       }
 
-      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       values.push(
         request.id,
         request.virtual_key_id || null,
@@ -144,6 +144,10 @@ export async function flushApiRequestBuffer() {
         request.compression_saved_tokens || null,
         ip || null,
         userAgent || null,
+        request.run_id || null,
+        request.session_id || null,
+        request.route_log_id || null,
+        request.route_tier || null,
         now
       );
 
@@ -164,7 +168,8 @@ export async function flushApiRequestBuffer() {
           id, virtual_key_id, provider_id, model,
           prompt_tokens, completion_tokens, cached_tokens,
           status, response_time, tffb_ms, error_message, request_params_json, response_meta_json, cache_hit,
-          request_type, compression_original_tokens, compression_saved_tokens, ip, user_agent, created_at
+          request_type, compression_original_tokens, compression_saved_tokens, ip, user_agent, run_id,
+          session_id, route_log_id, route_tier, created_at
         ) VALUES ${placeholders.join(', ')}`,
         values
       );
@@ -185,7 +190,8 @@ export async function flushApiRequestBuffer() {
     if (conn) {
       try {
         await conn.rollback();
-      } catch (_rollbackError) {
+      } catch (rollbackError: any) {
+        console.warn('[API日志] 回滚失败(已忽略):', rollbackError?.message || rollbackError);
       }
     }
 

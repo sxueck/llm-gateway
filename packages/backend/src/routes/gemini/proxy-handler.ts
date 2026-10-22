@@ -10,7 +10,6 @@ import { shouldLogRequestBody } from "../proxy/handlers/shared.js";
 import { parseModelAttributes } from "../proxy/model-handlers.js";
 import { cloneSmartRoutingRetryBody } from "../proxy/retry-handler.js";
 import { applyDisableThinking } from "../../utils/thinking-control.js";
-import { capturePromptSampleAsync } from "../../services/prompt-capture-service.js";
 import { applyContextNormalization } from "../../services/context-normalization/index.js";
 
 /** Extract the model name from a Gemini-native URL (e.g. /v1beta/models/gemini-pro:generateContent). */
@@ -158,17 +157,6 @@ export function createGeminiProxyHandler() {
       const pipelineResult = await runProxyPipeline(request, reply, {
         protocol: "gemini",
         handlers: {
-          onManualBlock: ({ reply }) => {
-            reply
-              .code(403)
-              .send({
-                error: {
-                  message: "Access denied: IP blocked",
-                  code: 403,
-                  status: "PERMISSION_DENIED",
-                },
-              });
-          },
           onAntiBotBlock: ({ reply }) => {
             reply
               .code(403)
@@ -183,6 +171,16 @@ export function createGeminiProxyHandler() {
           onAuthError: ({ reply, authError }) => {
             reply.code(authError.code).send(authError.body);
           },
+          onRateLimited: ({ reply, limitPerMinute, retryAfterSeconds }) => {
+            reply.code(429).send({
+              error: {
+                message: `Rate limit exceeded for this virtual key (limit: ${limitPerMinute} requests/min). Retry after ${retryAfterSeconds}s.`,
+                type: "rate_limit_error",
+                param: null,
+                code: "rate_limit_exceeded",
+              },
+            });
+          },
           onModelError: ({ reply, modelError }) => {
             reply.code(modelError.code).send(modelError.body);
           },
@@ -190,7 +188,7 @@ export function createGeminiProxyHandler() {
             reply.code(providerConfigError.code).send(providerConfigError.body);
           },
         },
-        afterAuth: ({ virtualKey, virtualKeyValue: vkValue }) => {
+        afterAuth: ({ virtualKeyValue: vkValue }) => {
           virtualKeyValue = vkValue;
 
           // Extract model from URL for Gemini Native (e.g. /v1beta/models/gemini-pro:generateContent)
@@ -203,8 +201,6 @@ export function createGeminiProxyHandler() {
           if (modelFromUrl && !(request.body as any).model) {
             (request.body as any).model = modelFromUrl;
           }
-
-          capturePromptSampleAsync(virtualKey, request, "gemini");
 
           return true;
         },
@@ -282,6 +278,7 @@ export function createGeminiProxyHandler() {
           if (virtualKey) {
             const shouldLogBody = shouldLogRequestBody(virtualKey);
             logApiRequestAsync({
+              request,
               virtualKey,
               providerId,
               model: currentModel?.name || "unknown",
