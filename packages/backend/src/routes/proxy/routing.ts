@@ -1152,13 +1152,8 @@ export async function resolveProviderFromModel(
       request.body = request.body || {};
       request.body.model = smartRoutingResult.modelOverride;
     }
-    return {
-      provider: smartRoutingResult.provider,
-      providerId: smartRoutingResult.providerId,
-      circuitBreakerKey: smartRoutingResult.circuitBreakerKey,
-      excludeTargetKeys: smartRoutingResult.excludeTargetKeys,
-      resolvedModel: smartRoutingResult.resolvedModel
-    };
+
+    return { ...smartRoutingResult };
   }
 
   if (!model.provider_id) {
