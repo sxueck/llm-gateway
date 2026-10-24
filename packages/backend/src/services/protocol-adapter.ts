@@ -65,6 +65,101 @@ function invalidRequestError(message: string): Error {
   return Object.assign(new Error(message), { status: 400 });
 }
 
+const CHAT_PASSTHROUGH_KEYS = [
+  'temperature',
+  'top_p',
+  'frequency_penalty',
+  'presence_penalty',
+  'stop',
+  'n',
+  'logit_bias',
+  'logprobs',
+  'top_logprobs',
+  'user',
+  'seed',
+  'metadata',
+  'store',
+  'tools',
+  'tool_choice',
+  'parallel_tool_calls',
+  'functions',
+  'function_call',
+  'response_format',
+  'service_tier',
+  'safety_identifier',
+  'prompt_cache_key',
+  'prompt_cache_retention',
+  'reasoning_effort',
+  'verbosity',
+  'modalities',
+  'audio',
+  'prediction',
+  'web_search_options',
+  'thinking',
+  'enable_thinking',
+  'tool_search',
+  'phase',
+] as const;
+
+const RESPONSES_PASSTHROUGH_KEYS = [
+  'instructions',
+  'background',
+  'conversation',
+  'context_management',
+  'temperature',
+  'top_p',
+  'store',
+  'metadata',
+  'tools',
+  'tool_choice',
+  'parallel_tool_calls',
+  'stream_options',
+  'service_tier',
+  'mcp',
+  'reasoning',
+  'thinking',
+  'text',
+  'max_output_tokens',
+  'max_tool_calls',
+  'truncation',
+  'user',
+  'include',
+  'prompt',
+  'prompt_cache_key',
+  'prompt_cache_retention',
+  'safety_identifier',
+  'tool_search',
+  'phase',
+] as const;
+
+export function assignResponsesRequestParams(
+  target: any,
+  source: any,
+  includePreviousResponseId: boolean
+): void {
+  if (!source) return;
+  for (const key of RESPONSES_PASSTHROUGH_KEYS) {
+    if (source[key] !== undefined) target[key] = source[key];
+  }
+  if (includePreviousResponseId && source.previous_response_id !== undefined) {
+    target.previous_response_id = source.previous_response_id;
+  }
+}
+
+function assignChatCompletionParams(requestParams: any, options: any): void {
+  for (const key of CHAT_PASSTHROUGH_KEYS) {
+    if (options[key] !== undefined) requestParams[key] = options[key];
+  }
+  // Forward the token cap exactly as the client sent it: renaming
+  // max_completion_tokens to max_tokens is rejected by OpenAI reasoning
+  // models (o-series / gpt-5), which only accept max_completion_tokens.
+  if (options.max_completion_tokens !== undefined) {
+    requestParams.max_completion_tokens = options.max_completion_tokens;
+  } else if (options.max_tokens !== undefined) {
+    requestParams.max_tokens = options.max_tokens;
+  }
+}
+
 export function applyReasoningEffortNoneTranslation(
   requestParams: any,
   options: any
@@ -211,45 +306,7 @@ export class ProtocolAdapter {
       stream: false,
     };
 
-    if (options.temperature !== undefined) requestParams.temperature = options.temperature;
-    // Forward the token cap exactly as the client sent it: renaming
-    // max_completion_tokens to max_tokens is rejected by OpenAI reasoning
-    // models (o-series / gpt-5), which only accept max_completion_tokens.
-    if (options.max_completion_tokens !== undefined) {
-      requestParams.max_completion_tokens = options.max_completion_tokens;
-    } else if (options.max_tokens !== undefined) {
-      requestParams.max_tokens = options.max_tokens;
-    }
-    if (options.top_p !== undefined) requestParams.top_p = options.top_p;
-    if (options.frequency_penalty !== undefined) requestParams.frequency_penalty = options.frequency_penalty;
-    if (options.presence_penalty !== undefined) requestParams.presence_penalty = options.presence_penalty;
-    if (options.stop !== undefined) requestParams.stop = options.stop;
-    if (options.n !== undefined) requestParams.n = options.n;
-    if (options.logit_bias !== undefined) requestParams.logit_bias = options.logit_bias;
-    if (options.user !== undefined) requestParams.user = options.user;
-    if (options.logprobs !== undefined) requestParams.logprobs = options.logprobs;
-    if (options.top_logprobs !== undefined) requestParams.top_logprobs = options.top_logprobs;
-    if (options.metadata !== undefined) requestParams.metadata = options.metadata;
-
-    if (options.tools !== undefined) {
-      requestParams.tools = options.tools;
-    }
-
-    if (options.tool_choice !== undefined) requestParams.tool_choice = options.tool_choice;
-    if (options.parallel_tool_calls !== undefined) requestParams.parallel_tool_calls = options.parallel_tool_calls;
-    if (options.response_format !== undefined) requestParams.response_format = options.response_format;
-    if (options.seed !== undefined) requestParams.seed = options.seed;
-    if (options.store !== undefined) requestParams.store = options.store;
-    // stream_options is only valid for stream=true requests
-    if ((options as any).service_tier !== undefined) (requestParams as any).service_tier = (options as any).service_tier;
-    if ((options as any).prompt_cache_key !== undefined) (requestParams as any).prompt_cache_key = (options as any).prompt_cache_key;
-    if ((options as any).safety_identifier !== undefined) (requestParams as any).safety_identifier = (options as any).safety_identifier;
-    if ((options as any).reasoning_effort !== undefined) (requestParams as any).reasoning_effort = (options as any).reasoning_effort;
-    if ((options as any).verbosity !== undefined) (requestParams as any).verbosity = (options as any).verbosity;
-    if ((options as any).thinking !== undefined) (requestParams as any).thinking = (options as any).thinking;
-    if ((options as any).enable_thinking !== undefined) (requestParams as any).enable_thinking = (options as any).enable_thinking;
-    if ((options as any).tool_search !== undefined) (requestParams as any).tool_search = (options as any).tool_search;
-    if ((options as any).phase !== undefined) (requestParams as any).phase = (options as any).phase;
+    assignChatCompletionParams(requestParams, options);
     applyReasoningEffortNoneTranslation(requestParams, options);
 
     const requestOptions: any = {};
@@ -307,46 +364,11 @@ export class ProtocolAdapter {
       stream_options: { include_usage: true },
     };
 
-    if (options.temperature !== undefined) requestParams.temperature = options.temperature;
-    // Forward the token cap exactly as the client sent it (see openaiChatCompletion).
-    if (options.max_completion_tokens !== undefined) {
-      requestParams.max_completion_tokens = options.max_completion_tokens;
-    } else if (options.max_tokens !== undefined) {
-      requestParams.max_tokens = options.max_tokens;
-    }
-
-    if (options.tools !== undefined) {
-      requestParams.tools = options.tools;
-    }
-
-    if (options.tool_choice !== undefined) requestParams.tool_choice = options.tool_choice;
-    if (options.parallel_tool_calls !== undefined) requestParams.parallel_tool_calls = options.parallel_tool_calls;
-    if (options.top_p !== undefined) requestParams.top_p = options.top_p;
-    if (options.frequency_penalty !== undefined) requestParams.frequency_penalty = options.frequency_penalty;
-    if (options.presence_penalty !== undefined) requestParams.presence_penalty = options.presence_penalty;
-    if (options.stop !== undefined) requestParams.stop = options.stop;
-    if (options.n !== undefined) requestParams.n = options.n;
-    if (options.response_format !== undefined) requestParams.response_format = options.response_format;
-    if (options.seed !== undefined) requestParams.seed = options.seed;
-    if (options.store !== undefined) requestParams.store = options.store;
-    if (options.user !== undefined) requestParams.user = options.user;
-    if (options.logit_bias !== undefined) requestParams.logit_bias = options.logit_bias;
-    if (options.logprobs !== undefined) requestParams.logprobs = options.logprobs;
-    if (options.top_logprobs !== undefined) requestParams.top_logprobs = options.top_logprobs;
-    if (options.metadata !== undefined) requestParams.metadata = options.metadata;
+    assignChatCompletionParams(requestParams, options);
     if ((options as any).stream_options !== undefined) {
-      // Always include usage for internal accounting.
+      // stream_options is only valid for stream=true; usage stays on for accounting.
       requestParams.stream_options = { ...(options as any).stream_options, include_usage: true };
     }
-    if ((options as any).service_tier !== undefined) (requestParams as any).service_tier = (options as any).service_tier;
-    if ((options as any).prompt_cache_key !== undefined) (requestParams as any).prompt_cache_key = (options as any).prompt_cache_key;
-    if ((options as any).safety_identifier !== undefined) (requestParams as any).safety_identifier = (options as any).safety_identifier;
-    if ((options as any).reasoning_effort !== undefined) (requestParams as any).reasoning_effort = (options as any).reasoning_effort;
-    if ((options as any).verbosity !== undefined) (requestParams as any).verbosity = (options as any).verbosity;
-    if ((options as any).thinking !== undefined) (requestParams as any).thinking = (options as any).thinking;
-    if ((options as any).enable_thinking !== undefined) (requestParams as any).enable_thinking = (options as any).enable_thinking;
-    if ((options as any).tool_search !== undefined) (requestParams as any).tool_search = (options as any).tool_search;
-    if ((options as any).phase !== undefined) (requestParams as any).phase = (options as any).phase;
     applyReasoningEffortNoneTranslation(requestParams, options);
 
     const requestOptions: any = {};
@@ -369,9 +391,6 @@ export class ProtocolAdapter {
     ): Promise<AsyncIterable<any> | null> => {
       if (!(await isStreamResumeEnabled())) return null;
       try {
-        // SAFETY: OpenAI SDK returns a Stream<ChatCompletionChunk>-like async iterable in
-        // streaming mode; its generated union type doesn't narrow, but the resume
-        // consumer iterates the same SSE chunk objects as the primary stream.
         return withStreamIdleTimeout(
           await client.chat.completions.create(
             {
@@ -473,33 +492,7 @@ export class ProtocolAdapter {
 
   private buildResponsesRequestParams(options: any, includePreviousResponseId: boolean): any {
     const params: any = {};
-    if (options.instructions !== undefined) params.instructions = options.instructions;
-    if ((options as any).background !== undefined) (params as any).background = (options as any).background;
-    if ((options as any).conversation !== undefined) (params as any).conversation = (options as any).conversation;
-    if ((options as any).context_management !== undefined) (params as any).context_management = (options as any).context_management;
-    if (options.temperature !== undefined) params.temperature = options.temperature;
-    if (options.top_p !== undefined) params.top_p = options.top_p;
-    if (options.store !== undefined) params.store = options.store;
-    if (options.metadata !== undefined) params.metadata = options.metadata;
-    if (options.tools !== undefined) params.tools = options.tools;
-    if (options.tool_choice !== undefined) params.tool_choice = options.tool_choice;
-    if (options.parallel_tool_calls !== undefined) params.parallel_tool_calls = options.parallel_tool_calls;
-    if ((options as any).stream_options !== undefined) (params as any).stream_options = (options as any).stream_options;
-    if ((options as any).service_tier !== undefined) (params as any).service_tier = (options as any).service_tier;
-    // 透传 MCP 配置（用于远程 MCP servers），与工具定义中的 type: 'mcp' 一起生效
-    if ((options as any).mcp !== undefined) (params as any).mcp = (options as any).mcp;
-    if (options.reasoning !== undefined) params.reasoning = options.reasoning;
-    if ((options as any).thinking !== undefined) (params as any).thinking = (options as any).thinking;
-    if (options.text !== undefined) params.text = options.text;
-    if (includePreviousResponseId && options.previous_response_id !== undefined) params.previous_response_id = options.previous_response_id;
-    if ((options as any).max_tool_calls !== undefined) (params as any).max_tool_calls = (options as any).max_tool_calls;
-    if (options.truncation !== undefined) params.truncation = options.truncation;
-    if (options.user !== undefined) params.user = options.user;
-    if (options.include !== undefined) params.include = options.include;
-    if ((options as any).prompt_cache_key !== undefined) (params as any).prompt_cache_key = (options as any).prompt_cache_key;
-    if ((options as any).safety_identifier !== undefined) (params as any).safety_identifier = (options as any).safety_identifier;
-    if ((options as any).tool_search !== undefined) (params as any).tool_search = (options as any).tool_search;
-    if ((options as any).phase !== undefined) (params as any).phase = (options as any).phase;
+    assignResponsesRequestParams(params, options, includePreviousResponseId);
     return params;
   }
 
@@ -687,10 +680,10 @@ export class ProtocolAdapter {
       typeof initTimeoutOverride === 'number' && Number.isFinite(initTimeoutOverride) && initTimeoutOverride >= 0
         ? initTimeoutOverride
         : Math.min(
-            8_000,
+            30_000,
             typeof requestTimeoutMs === 'number' && Number.isFinite(requestTimeoutMs)
               ? requestTimeoutMs
-              : 8_000
+              : 30_000
           );
 
     return await processOpenAIResponsesStreamToSseWithRetry({

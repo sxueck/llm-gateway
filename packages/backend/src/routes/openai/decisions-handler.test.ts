@@ -5,7 +5,7 @@ vi.hoisted(() => {
   process.env.JWT_SECRET ??= 'vitest-placeholder-secret-32-chars!!';
 });
 
-import { createDecisionsProxyHandler, stripTrailingV1 } from './decisions-handler.js';
+import { createDecisionsProxyHandler } from './decisions-handler.js';
 import { runProxyPipeline } from '../proxy/pipeline.js';
 import { makeImageGenerationProxyRequest } from '../proxy/http-client.js';
 import { calculateTokensIfNeeded } from '../proxy/token-calculator.js';
@@ -144,13 +144,6 @@ beforeEach(() => {
   });
 });
 
-test('stripTrailingV1 removes trailing /v1 and slashes from chat baseUrls', () => {
-  expect(stripTrailingV1('https://openrouter.ai/api/v1')).toBe('https://openrouter.ai/api');
-  expect(stripTrailingV1('https://openrouter.ai/api/v1/')).toBe('https://openrouter.ai/api');
-  expect(stripTrailingV1('https://api.typesafe.ai')).toBe('https://api.typesafe.ai');
-  expect(stripTrailingV1(undefined)).toBe('');
-});
-
 test('missing state returns 400 and never reaches upstream', async () => {
   mockPipelineSuccess();
   const handler = createDecisionsProxyHandler();
@@ -219,29 +212,6 @@ test('success: forwards client path as-is against the provider baseUrl (official
       tokenCount: { promptTokens: 451, completionTokens: 72, totalTokens: 523 },
     })
   );
-});
-
-test('model_attributes.decisions_path overrides path for OpenRouter (endpoint outside /v1)', async () => {
-  mockPipelineSuccess({
-    provider: 'openrouter',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    model: 'typesafe/jev-1.13',
-    modelAttributes: { decisions_path: 'alpha/decisions' },
-  });
-  vi.mocked(makeImageGenerationProxyRequest).mockResolvedValue({
-    statusCode: 200,
-    headers: {},
-    body: { answers: {}, usage: { input_tokens: 1 } },
-  } as any);
-  const handler = createDecisionsProxyHandler();
-  const reply = createReply();
-
-  await handler(createRequest({ state: 's', questions: { q: { type: 'noul' } } }), reply);
-
-  const [config, path, upstreamBody] = vi.mocked(makeImageGenerationProxyRequest).mock.calls[0];
-  expect(config.baseUrl).toBe('https://openrouter.ai/api');
-  expect(path).toBe('alpha/decisions');
-  expect(upstreamBody.model).toBe('typesafe/jev-1.13');
 });
 
 test('upstream non-2xx passes through status/body and records a circuit failure', async () => {

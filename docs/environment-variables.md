@@ -177,3 +177,4 @@ LLM Gateway 的运行时配置只有两个真实来源：**环境变量**（部�
 | ---------------------- | ------------------------------------------------------------------- | -------------------------------- |
 | `GEO_IP_ENABLED`       | 启用                                                                | 设为 `false` 时关闭 GeoIP 解析。 |
 | `THREAT_IP_SOURCE_URL` | `https://raw.githubusercontent.com/stamparm/ipsum/master/ipsum.txt` | 威胁 IP 黑名单拉取地址。         |
+| `THREAT_IP_MIN_HITS`   | `2`                                                                 | 行内有收录次数时，低于该值不拦截。无次数字段的行仍加入。`0` 表示不过滤。 |

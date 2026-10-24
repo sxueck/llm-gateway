@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import type { ProtocolConfig } from '../protocol-adapter.js';
+import { assignResponsesRequestParams, type ProtocolConfig } from '../protocol-adapter.js';
 import type {
   ResponsesServerEvent,
   NormalizedResponsesRequest,
@@ -27,34 +27,7 @@ function buildRequestParams(config: ProtocolConfig, request: NormalizedResponses
     stream: true,
   };
 
-  // Mirror ProtocolAdapter.buildResponsesRequestParams (allow previous_response_id)
-  if (body.instructions !== undefined) params.instructions = body.instructions;
-  if (body.background !== undefined) params.background = body.background;
-  if (body.conversation !== undefined) params.conversation = body.conversation;
-  if (body.context_management !== undefined) params.context_management = body.context_management;
-  if (body.temperature !== undefined) params.temperature = body.temperature;
-  if (body.top_p !== undefined) params.top_p = body.top_p;
-  if (body.store !== undefined) params.store = body.store;
-  if (body.metadata !== undefined) params.metadata = body.metadata;
-  if (body.tools !== undefined) params.tools = body.tools;
-  if (body.tool_choice !== undefined) params.tool_choice = body.tool_choice;
-  if (body.parallel_tool_calls !== undefined) params.parallel_tool_calls = body.parallel_tool_calls;
-  if (body.stream_options !== undefined) params.stream_options = body.stream_options;
-  if (body.service_tier !== undefined) params.service_tier = body.service_tier;
-  if (body.mcp !== undefined) params.mcp = body.mcp;
-  if (body.reasoning !== undefined) params.reasoning = body.reasoning;
-  if (body.thinking !== undefined) params.thinking = body.thinking;
-  if (body.text !== undefined) params.text = body.text;
-  if (body.previous_response_id !== undefined) params.previous_response_id = body.previous_response_id;
-  if (body.max_tool_calls !== undefined) params.max_tool_calls = body.max_tool_calls;
-  if (body.truncation !== undefined) params.truncation = body.truncation;
-  if (body.user !== undefined) params.user = body.user;
-  if (body.include !== undefined) params.include = body.include;
-  if (body.prompt_cache_key !== undefined) params.prompt_cache_key = body.prompt_cache_key;
-  if (body.safety_identifier !== undefined) params.safety_identifier = body.safety_identifier;
-  if (body.tool_search !== undefined) params.tool_search = body.tool_search;
-  if (body.phase !== undefined) params.phase = body.phase;
-
+  assignResponsesRequestParams(params, body, true);
   return params;
 }
 

@@ -22,10 +22,6 @@ import { normalizeUsageCounts } from "../../utils/usage-normalizer.js";
 import { CLIENT_ABORTED_MESSAGE } from "../../utils/client-abort.js";
 import { circuitBreaker, httpFailureError } from "../../services/circuit-breaker.js";
 
-export function stripTrailingV1(baseUrl?: string): string {
-  return (baseUrl || "").replace(/\/+$/, "").replace(/\/v1$/i, "");
-}
-
 function invalidDecisionsRequest(message: string, param: string) {
   return {
     error: {
@@ -120,18 +116,7 @@ export function createDecisionsProxyHandler() {
     }
 
     const { protocolConfig, path: clientPath } = configResult;
-    const modelAttributes = protocolConfig.modelAttributes || {};
-
-    let upstreamBaseUrl: string | undefined = protocolConfig.baseUrl;
-    let upstreamPath = clientPath;
-    if (
-      typeof modelAttributes.decisions_path === "string" &&
-      modelAttributes.decisions_path
-    ) {
-      upstreamBaseUrl = stripTrailingV1(protocolConfig.baseUrl);
-      upstreamPath = modelAttributes.decisions_path;
-    }
-    const upstreamUrl = buildOpenAICompatibleUrl(upstreamBaseUrl, upstreamPath);
+    const upstreamUrl = buildOpenAICompatibleUrl(protocolConfig.baseUrl, clientPath);
 
     const upstreamBody = { ...body, model: protocolConfig.model };
     const forwardedHeaders =
@@ -167,8 +152,8 @@ export function createDecisionsProxyHandler() {
 
     try {
       const response = await makeImageGenerationProxyRequest(
-        { ...protocolConfig, baseUrl: upstreamBaseUrl },
-        upstreamPath,
+        protocolConfig,
+        clientPath,
         upstreamBody,
         forwardedHeaders,
         abortController.signal,
