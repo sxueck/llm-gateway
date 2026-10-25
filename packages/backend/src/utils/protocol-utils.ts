@@ -48,8 +48,6 @@ export function getProviderSupportedProtocols(
   return ['openai', 'anthropic', 'google'].filter(p => offered.has(p));
 }
 
-
-
 /**
  * 根据模型协议获取正确的 baseURL
  * 支持多协议：优先使用 protocol_mappings 中的 URL，否则使用默认 base_url

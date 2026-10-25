@@ -108,9 +108,12 @@ interface AttemptResult {
   tffbMs?: number;
 }
 
+const RESPONSES_PENDING_CHARS_LIMIT = 1024 * 1024;
+
 class SseWriter {
   private readonly recorded = new BoundedChunkRecorder();
   private readonly pending: string[] = [];
+  private pendingChars = 0;
   private phase: AttemptPhase = 'buffering';
 
   constructor(
@@ -142,6 +145,12 @@ class SseWriter {
   /** Buffer a frame while in the buffering phase. */
   async enqueue(data: string): Promise<void> {
     if (this.phase === 'buffering') {
+      this.pendingChars += data.length;
+      if (this.pendingChars > RESPONSES_PENDING_CHARS_LIMIT) {
+        const overflow: any = new Error('Responses upstream sent too much data before any output');
+        overflow.status = 502;
+        throw overflow;
+      }
       this.pending.push(data);
     } else {
       await this.write(data);

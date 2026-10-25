@@ -3,9 +3,6 @@ import { memoryLogger } from '../services/logger.js';
 import { EmptyOutputError } from '../errors/empty-output-error.js';
 import { writeWithBackpressure } from './stream-guards.js';
 
-/**
- * 流式缓冲管理器 - 处理背压和缓冲逻辑
- */
 export class StreamBuffer {
   private pendingChunks: string[] = [];
   private buffering = true;
@@ -15,9 +12,6 @@ export class StreamBuffer {
     this.reply = reply;
   }
 
-  /**
-   * 直接写入到响应流，处理背压
-   */
   private async writeDirect(chunk: string): Promise<void> {
     if (this.reply.raw.destroyed || this.reply.raw.writableEnded) {
       return;
@@ -25,9 +19,6 @@ export class StreamBuffer {
     await writeWithBackpressure(this.reply.raw, chunk);
   }
 
-  /**
-   * 入队一个chunk，根据缓冲状态决定是否立即写入
-   */
   async enqueue(chunk: string): Promise<void> {
     if (this.buffering) {
       this.pendingChunks.push(chunk);
@@ -36,38 +27,26 @@ export class StreamBuffer {
     }
   }
 
-  /**
-   * 刷新所有待处理的chunks到响应流
-   */
   async flush(): Promise<void> {
     if (!this.buffering) return;
     this.buffering = false;
     while (this.pendingChunks.length > 0) {
       const pending = this.pendingChunks.shift();
-      if (pending) {
+      if (pending !== undefined) {
         await this.writeDirect(pending);
       }
     }
   }
 
-  /**
-   * 检查是否仍在缓冲
-   */
   isBuffering(): boolean {
     return this.buffering;
   }
 
-  /**
-   * 获取已缓冲的chunks（用于返回值）
-   */
   getBufferedChunks(): string[] {
     return [...this.pendingChunks];
   }
 }
 
-/**
- * 流式重试配置
- */
 export interface StreamRetryConfig<T> {
   source: 'gemini' | 'responses';
   maxRetries: number;
@@ -78,19 +57,10 @@ export interface StreamRetryConfig<T> {
   onRetryWarning?: (attempt: number, totalAttempts: number, aggregate: T) => void;
 }
 
-/**
- * 流式处理器 - 处理单次流式尝试
- */
 export interface StreamProcessor<T> {
-  /**
-   * 处理流式数据，返回聚合结果
-   */
   process(buffer: StreamBuffer, abortSignal?: AbortSignal): Promise<T>;
 }
 
-/**
- * 通用流式重试管理器
- */
 export class StreamRetryManager<T> {
   private config: StreamRetryConfig<T>;
 
@@ -98,9 +68,6 @@ export class StreamRetryManager<T> {
     this.config = config;
   }
 
-  /**
-   * 执行带重试的流式处理
-   */
   async executeWithRetry(processor: StreamProcessor<T>): Promise<T> {
     const totalAttempts = Math.max(1, this.config.maxRetries + 1);
     let lastEmptyError: EmptyOutputError | null = null;
@@ -122,13 +89,13 @@ export class StreamRetryManager<T> {
         const shouldBypass = this.config.detectBypassCondition(aggregate);
 
         if (!isEmpty || shouldBypass) {
-          // 成功获得输出，或遇到应该旁路的条件
+          // 上游错误等旁路条件即使没有 assistant 输出，也要把缓冲交给客户端
           await buffer.flush();
           finalAggregate = aggregate;
           break;
         }
 
-        // 检测到空输出，准备重试
+        // 空输出不 flush，丢弃这次缓冲后再重试
         lastEmptyError = new EmptyOutputError(
           `${this.config.source === 'gemini' ? 'Gemini' : 'Responses API'} stream completed without assistant output`,
           {
@@ -178,16 +145,13 @@ export class StreamRetryManager<T> {
   }
 }
 
-/**
- * 获取重试限制的辅助函数
- */
 export function getRetryLimit(
   envVarName: string,
   defaultValue: number,
   modelAttributes?: any,
   attributeKey?: string
 ): number {
-  // 优先从模型属性读取
+  // 模型属性优先，其次环境变量，最后默认值
   if (attributeKey && modelAttributes?.[attributeKey] !== undefined) {
     const configured = modelAttributes[attributeKey];
     if (typeof configured === 'number' && Number.isFinite(configured)) {
@@ -195,12 +159,13 @@ export function getRetryLimit(
     }
   }
 
-  // 其次从环境变量读取
   const envValue = process.env[envVarName];
   if (envValue !== undefined) {
-    return Math.max(parseInt(envValue, 10) || 0, 0);
+    const parsed = parseInt(envValue, 10);
+    if (Number.isFinite(parsed)) {
+      return Math.max(parsed, 0);
+    }
   }
 
-  // 最后使用默认值
   return Math.max(defaultValue, 0);
 }

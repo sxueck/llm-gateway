@@ -17,7 +17,7 @@ export type Band = "low" | "medium" | "high";
 
 export type SessionPolicyMode = "per_turn" | "sticky" | "escalate_only";
 
-/** v2 session policy (PRD §5.1). */
+/** v2 session policy. */
 export interface SessionPolicy {
   mode: SessionPolicyMode;
   idle_ttl_seconds: number;
@@ -30,7 +30,7 @@ export interface ClassifierConfig {
   min_confidence?: number;
 }
 
-/** How routing facts are exposed to clients (PRD §4). */
+/** How routing facts are exposed to clients. */
 export interface ExposureConfig {
   headers?: boolean;
   provider_header?: boolean;
@@ -153,7 +153,7 @@ export interface ExpertRoutingStatistics {
   difficultyDistribution?: Record<string, number>;
   bandDistribution?: Record<string, number>;
   failOpenRate?: number | null;
-  /** §5.8: computed from actual api_requests tokens linked via route_log_id;
+  /** Computed from actual api_requests tokens linked via route_log_id;
    * null when no priced high-tier expert exists to baseline against. */
   estimatedSavingVsHighBand?: {
     actualCost: number;
@@ -211,7 +211,7 @@ export interface ExpertRoutingLogDetail {
   classifier_time_ms?: number | null;
 }
 
-/** §3.3 RoutingSimulator response. */
+/** RoutingSimulator response. */
 export interface RoutingSimulation {
   intentText: string;
   stats?: {
@@ -230,7 +230,7 @@ export interface RoutingSimulation {
   wouldHit: string | null;
 }
 
-/** §5.9 feedback training record (replay set). */
+/** Feedback training record (replay set). */
 export interface TrainingRecord {
   id: string;
   input_hash: string;
@@ -245,7 +245,7 @@ export interface TrainingRecord {
   updated_at: number;
 }
 
-/** §5.5 classifier runtime status. */
+/** Classifier runtime status. */
 export interface JevStatus {
   configured: boolean;
   model: string | null;
@@ -295,7 +295,7 @@ export const expertRoutingApi = {
     return request.get(`/admin/expert-routing/${id}/logs/${logId}/details`);
   },
 
-  /** §5.9 misclassification feedback (too_low / too_high → corrected tier). */
+  /** Misclassification feedback (too_low / too_high → corrected tier). */
   submitLogFeedback(
     id: string,
     logId: string,
@@ -307,7 +307,7 @@ export const expertRoutingApi = {
     );
   },
 
-  /** §5.9 replay-set export. */
+  /** Replay-set export. */
   getTrainingRecords(
     id: string,
     params?: { status?: string; limit?: number },

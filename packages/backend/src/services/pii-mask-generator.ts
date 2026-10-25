@@ -5,6 +5,7 @@
  * - Total length
  * - Character class per position (letter/number/symbol)
  * - Structure (separators, format)
+ * - Email domain (only the local part changes)
  *
  * Same original value always maps to the same masked value within a request.
  */
@@ -191,19 +192,21 @@ function maskEmail(value: string, variant = 0): string {
     return maskSecret(value, variant);
   }
 
+  // Keep the domain so host checks and mail routing in code stay valid.
+  // The local part is the mailbox identifier.
   const valueSeed = hashSeed(value);
-  let result = '';
-  for (let i = 0; i < value.length; i++) {
+  let local = '';
+  for (let i = 0; i < atIndex; i++) {
     const c = value[i];
-    if (c === '@' || c === '.' || c === '_' || c === '-' || c === '+') {
-      result += c;
+    if (c === '.' || c === '_' || c === '-' || c === '+') {
+      local += c;
       continue;
     }
 
-    result += generateMaskedChar(classifyChar(c), i, 'email', variant, valueSeed);
+    local += generateMaskedChar(classifyChar(c), i, 'email', variant, valueSeed);
   }
 
-  return result;
+  return local + value.slice(atIndex);
 }
 
 export function generateMaskedValue(value: string, type: PiiType, variant = 0): string {

@@ -61,7 +61,7 @@
           :data="filteredKeys"
           :loading="virtualKeyStore.loading"
           :pagination="pagination"
-          :scroll-x="1300"
+          :scroll-x="1040"
           :bordered="false"
           size="small"
         />
@@ -676,6 +676,16 @@ function metricOf(row: VirtualKey) {
   return metricsById.value[row.id]
 }
 
+function formatLastUsedAgo(ts: number | null): string {
+  if (!ts) return '-'
+  const minutes = Math.floor(Math.max(0, Date.now() - ts) / 60_000)
+  if (minutes < 1) return t('agentMetrics.relative.justNow')
+  if (minutes < 60) return t('agentMetrics.relative.minutesAgo', { n: minutes })
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return t('agentMetrics.relative.hoursAgo', { n: hours })
+  return t('agentMetrics.relative.daysAgo', { n: Math.floor(hours / 24) })
+}
+
 function sortNumber(read: (row: VirtualKey) => number | null | undefined) {
   return (a: VirtualKey, b: VirtualKey) => {
     const av = read(a) ?? null
@@ -707,13 +717,6 @@ const columns = computed<DataTableColumns<VirtualKey>>(() => [
       )
   },
   {
-    title: t('virtualKeys.colKeyValue'),
-    key: 'keyValue',
-    width: 160,
-    ellipsis: { tooltip: true },
-    render: (row) => h('span', { class: 'key-mono' }, row.keyValue)
-  },
-  {
     title: t('virtualKeys.colModels'),
     key: 'modelIds',
     width: 210,
@@ -731,14 +734,6 @@ const columns = computed<DataTableColumns<VirtualKey>>(() => [
         disabled: pendingToggleIds.has(row.id),
         onUpdateValue: (value: boolean) => handleToggleEnabled(row, value)
       })
-  },
-  {
-    title: t('virtualKeys.colRateLimit'),
-    key: 'rateLimit',
-    width: 100,
-    sorter: sortNumber((row) => row.rateLimit),
-    render: (row) =>
-      row.rateLimit ? t('virtualKeys.rateLimitPerMin', { n: row.rateLimit }) : '-'
   },
   {
     title: t('virtualKeys.colRequests'),
@@ -767,13 +762,9 @@ const columns = computed<DataTableColumns<VirtualKey>>(() => [
   {
     title: t('virtualKeys.colLastUsed'),
     key: 'lastUsedAt',
-    width: 150,
+    width: 120,
     sorter: sortNumber((row) => metricOf(row)?.lastUsedAt ?? null),
-    render: (row) => {
-      const metric = metricOf(row)
-      if (!metric?.lastUsedAt) return '-'
-      return formatDateTime(metric.lastUsedAt)
-    }
+    render: (row) => formatLastUsedAgo(metricOf(row)?.lastUsedAt ?? null)
   },
   {
     title: t('virtualKeys.colActions'),

@@ -6,7 +6,7 @@ import {
 } from "./token-counter.js";
 
 /**
- * 上下文预算（客户端压缩 2.0，docs/async-context-compaction-prd.md）。
+ * 上下文预算。
  *
  * 网关不改写历史、不生成摘要；只在用户轮次边界检查转发输入：
  * 超预算返回 400 context_length_exceeded，已验证客户端（pi / opencode）
@@ -16,15 +16,15 @@ import {
 
 // 输出预留：生效预算不得吃满模型窗口，否则重试后输出可能撞上游真实上限。
 const OUTPUT_RESERVE_TOKENS = 16_384;
-// 分词估算误差安全余量（PRD §4.2 默认 5%）。
+// 分词估算误差安全余量（默认 5%）。
 const ESTIMATE_SAFETY_MARGIN = 0.95;
-// 拦截后宽限窗口：兜底签名失配，豁免客户端紧随其后的压缩/重试请求（PRD §6.2）。
+// 拦截后宽限窗口：兜底签名失配，豁免客户端紧随其后的压缩/重试请求。
 const GRACE_WINDOW_MS = 120_000;
 const GRACE_REQUESTS = 2;
-// 连续拦截循环告警（PRD §7：默认 3 次 / 10 分钟）。
+// 连续拦截循环告警（默认 3 次 / 10 分钟）。
 const LOOP_ALERT_THRESHOLD = 3;
 const LOOP_WINDOW_MS = 600_000;
-// 轻量会话状态上限（PRD §8：不保存消息正文）。
+// 轻量会话状态上限（不保存消息正文）。
 const STATE_MAX_ENTRIES = 1024;
 const STATE_TTL_MS = 1_800_000;
 
@@ -61,7 +61,7 @@ function messageText(message: any): string {
 }
 
 /**
- * 请求分类（PRD §6）：
+ * 请求分类：
  * - compaction：命中客户端压缩签名；
  * - boundary：最后一条消息是新用户输入（非 tool 回包，且此前最近的
  *   assistant 消息没有未闭合的 tool_calls）——唯一会被拦截的类别；
@@ -457,8 +457,8 @@ async function estimateInputTokens(input: CheckContextBudgetInput): Promise<numb
 }
 
 /**
- * 预算判定（PRD §4.1）。必须在任何响应字节发出前调用；
- * block 时调用方直接返回 400 JSON（流式请求同样如此，PRD §5.3）。
+ * 预算判定。必须在任何响应字节发出前调用；
+ * block 时调用方直接返回 400 JSON（流式请求同样如此）。
  */
 export async function checkContextBudget(
   input: CheckContextBudgetInput,
@@ -486,7 +486,7 @@ export async function checkContextBudget(
     if (estimated > effective) {
       memoryLogger.warn(
         `上下文预算超限放行 | 虚拟密钥: ${input.virtualKeyId} | 分类: ${classification} | ` +
-          `估算: ${estimated} > 预算: ${effective}（轮次内不拦截，PRD §4.3）`,
+          `估算: ${estimated} > 预算: ${effective}（轮次内不拦截）`,
         "Proxy",
       );
     }
@@ -494,7 +494,7 @@ export async function checkContextBudget(
   }
 
   const state = states.get(input.virtualKeyId);
-  // 拦截后的宽限窗口：豁免签名失配的压缩请求与其重试（PRD §6.2 第二层）。
+  // 拦截后的宽限窗口：豁免签名失配的压缩请求与其重试。
   if (
     state &&
     state.graceRemaining > 0 &&

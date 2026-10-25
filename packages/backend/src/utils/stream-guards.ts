@@ -73,8 +73,11 @@ export function withStreamIdleTimeout<T>(
             timer = setTimeout(() => reject(new StreamIdleTimeoutError(idleMs)), idleMs);
           });
           let result: IteratorResult<T>;
+          // 超时先结算后，abort 仍会拒绝这次 next()；先接住，避免未处理拒绝。
+          const next = iterator.next();
+          void next.catch(() => {});
           try {
-            result = await Promise.race([iterator.next(), idle]);
+            result = await Promise.race([next, idle]);
           } finally {
             clearTimeout(timer);
           }

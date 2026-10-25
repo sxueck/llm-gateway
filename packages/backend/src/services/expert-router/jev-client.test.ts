@@ -41,13 +41,13 @@ test("validates explicit endpoint and credentials", () => {
   expect(() => getJevConfiguration()).toThrow("must be configured");
 });
 
-test("default classifier timeout drops to 800ms (§5.5)", () => {
+test("default classifier timeout drops to 800ms", () => {
   expect(getJevConfiguration().timeoutMs).toBe(800);
   process.env.JEV_API_TIMEOUT_MS = "5000";
   expect(getJevConfiguration().timeoutMs).toBe(5000);
 });
 
-describe("jev circuit breaker (§5.5)", () => {
+describe("jev circuit breaker", () => {
   test("opens after consecutive failures and skips the network call", async () => {
     mocks.upstreamFetch.mockRejectedValue(new Error("connect ECONNREFUSED"));
     for (let i = 0; i < 3; i++) {

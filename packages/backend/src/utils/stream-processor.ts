@@ -7,6 +7,9 @@ import { StreamTruncatedError, writeWithBackpressure } from './stream-guards.js'
 
 import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-client.js';
 
+// 续写会把已输出文本再送回上游。超过这个长度就不再续，避免一次必然失败的请求。
+const STREAM_RESUME_MAX_CHARS = 64 * 1024;
+
 type SyncStreamRestorer = {
   process: (key: string, content: string) => string;
   flush: (key: string) => string;
@@ -16,10 +19,10 @@ export interface OpenAIChatStreamProcessorOptions {
   reply: FastifyReply;
   stream: AsyncIterable<any>;
   model: string;
-  /** Report this model name to the client instead of the upstream identifier
-   * (PRD §4 gateway_name exposure); absent = byte-identical passthrough. */
+  /** Report this model name to the client instead of the upstream identifier;
+   * absent = byte-identical passthrough. */
   clientModel?: string;
-  /** §4C debug comment line written right after the SSE headers (opt-in). */
+  /** Debug comment line written right after the SSE headers (opt-in). */
   sseComment?: string;
   abortSignal?: AbortSignal;
   upstreamRequestStartedAt?: number;
@@ -80,7 +83,7 @@ export async function processOpenAIChatCompletionStreamToSse(
       'Cache-Control': 'no-cache, no-transform',
       'X-Accel-Buffering': 'no',
     });
-    // §4C: opt-in debug comment before the first event; SSE parsers must ignore
+    // Opt-in debug comment before the first event; SSE parsers must ignore
     // lines starting with ':' per spec (pi's parser skips them too).
     if (sseComment) {
       reply.raw.write(`: ${sseComment}\n\n`);
@@ -115,6 +118,38 @@ export async function processOpenAIChatCompletionStreamToSse(
   // TFFB (Time to First Byte) is triggered by the first upstream stream event observed by gateway.
   // This measures gateway-level first event timing, not raw TCP bytes or first content/tool_call.
 
+  const emitRestorerTail = async () => {
+    if (!streamRestorer || bufferedKeys.size === 0 || reply.raw.destroyed || reply.raw.writableEnded) {
+      return;
+    }
+    for (const key of bufferedKeys) {
+      const flushText = streamRestorer.flush(key);
+      if (!flushText) continue;
+
+      const match = key.match(/^chat:(\d+):content$/);
+      const choiceIndex = match ? Number(match[1]) : 0;
+      if (finishedByChoiceIndex.has(choiceIndex)) continue;
+
+      const flushChunk: any = {
+        id: lastChunkId || `pii_flush_${Date.now()}`,
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model: lastChunkModel || model,
+        choices: [
+          {
+            index: choiceIndex,
+            delta: { content: flushText },
+            finish_reason: null,
+          },
+        ],
+      };
+      const flushData = `data: ${JSON.stringify(flushChunk)}\n\n`;
+      chunkRecorder.record(flushData);
+      ensureHeaders();
+      await writeWithBackpressure(reply.raw, flushData, abortSignal);
+    }
+  };
+
   streamLoop: while (true) {
     try {
       for await (const chunk of activeStream) {
@@ -136,6 +171,17 @@ export async function processOpenAIChatCompletionStreamToSse(
 
         if (chunk && typeof chunk === 'object' && 'instructions' in chunk) {
           delete (chunk as any).instructions;
+        }
+
+        // 续写提示用上游原文。还原结果只写给客户端，不能再送回上游。
+        let rawDeltaContent = '';
+        if (!resumeSegment && Array.isArray((chunk as any).choices)) {
+          for (const choice of (chunk as any).choices) {
+            const content = choice?.delta?.content;
+            if (typeof content === 'string' && content.length > 0) {
+              rawDeltaContent += content;
+            }
+          }
         }
 
         // Builtin PII protection: restore masked values in stream
@@ -171,6 +217,10 @@ export async function processOpenAIChatCompletionStreamToSse(
         // Stream-resume bookkeeping on what has already been delivered.
         if (Array.isArray((chunk as any).choices)) {
           for (const choice of (chunk as any).choices) {
+            if (choice?.finish_reason) {
+              const idx = typeof choice?.index === 'number' ? choice.index : 0;
+              finishedByChoiceIndex.add(idx);
+            }
             const delta: any = choice?.delta;
             if (!delta || typeof delta !== 'object') continue;
             if (
@@ -185,9 +235,6 @@ export async function processOpenAIChatCompletionStreamToSse(
             }
             if (typeof choice?.index === 'number' && choice.index > 0) {
               sawNonZeroChoiceIndex = true;
-            }
-            if (!resumeSegment && typeof delta.content === 'string') {
-              partialContent += delta.content;
             }
           }
         }
@@ -235,6 +282,9 @@ export async function processOpenAIChatCompletionStreamToSse(
 
           ensureHeaders();
           await writeWithBackpressure(reply.raw, sseData, abortSignal);
+          if (rawDeltaContent) {
+            partialContent += rawDeltaContent;
+          }
         }
 
         if ((chunk as any).usage) {
@@ -292,16 +342,23 @@ export async function processOpenAIChatCompletionStreamToSse(
         resumeStreamFactory &&
         resumeAttempts === 0 &&
         partialContent.length > 0 &&
+        partialContent.length <= STREAM_RESUME_MAX_CHARS &&
         !sawNonTextDelta &&
         !sawNonZeroChoiceIndex &&
-        finishedByChoiceIndex.size === 0 &&
+        !sawTerminal &&
         !reply.raw.destroyed &&
         !reply.raw.writableEnded
       ) {
         let nextStream: AsyncIterable<any> | null = null;
         try {
+          // 先把还原器扣下的尾巴交给客户端，再清空它，避免接到续写开头。
+          await emitRestorerTail();
+          if (reply.raw.destroyed || reply.raw.writableEnded) {
+            throw error;
+          }
           nextStream = await resumeStreamFactory(partialContent);
-        } catch {
+        } catch (resumeError) {
+          if (resumeError === error) throw resumeError;
           nextStream = null;
         }
         if (nextStream) {
@@ -325,40 +382,7 @@ export async function processOpenAIChatCompletionStreamToSse(
     break;
   }
 
-  // Flush placeholder tails that did not coincide with an upstream finish_reason.
-  if (streamRestorer && bufferedKeys.size > 0 && !reply.raw.destroyed && !reply.raw.writableEnded) {
-    for (const key of bufferedKeys) {
-      const flushText = streamRestorer.flush(key);
-      if (!flushText) continue;
-
-      const match = key.match(/^chat:(\d+):content$/);
-      const choiceIndex = match ? Number(match[1]) : 0;
-
-      // Don't emit extra content after completion.
-      if (finishedByChoiceIndex.has(choiceIndex)) {
-        continue;
-      }
-
-      const flushChunk: any = {
-        id: lastChunkId || `pii_flush_${Date.now()}`,
-        object: 'chat.completion.chunk',
-        created: Math.floor(Date.now() / 1000),
-        model: lastChunkModel || model,
-        choices: [
-          {
-            index: choiceIndex,
-            delta: { content: flushText },
-            finish_reason: null,
-          },
-        ],
-      };
-
-      const flushData = `data: ${JSON.stringify(flushChunk)}\n\n`;
-      chunkRecorder.record(flushData);
-      ensureHeaders();
-      await writeWithBackpressure(reply.raw, flushData, abortSignal);
-    }
-  }
+  await emitRestorerTail();
 
   if (!reply.raw.destroyed && !reply.raw.writableEnded) {
     ensureHeaders();

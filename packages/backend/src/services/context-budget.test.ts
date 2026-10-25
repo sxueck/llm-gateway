@@ -162,7 +162,7 @@ describe("checkContextBudget", () => {
     vi.restoreAllMocks();
   });
 
-  it("blocks an over-budget boundary request with the §5.1 error envelope", async () => {
+  it("blocks an over-budget boundary request with the error envelope", async () => {
     const verdict = await checkContextBudget({
       virtualKeyId: "vk-1",
       messages: boundaryHistory(10),

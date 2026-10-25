@@ -1,5 +1,5 @@
 /**
- * Continuation-turn detection (PRD §5.2). Agent loops send tool results and
+ * Continuation-turn detection. Agent loops send tool results and
  * assistant continuations as follow-up turns; these must reuse the previous
  * routing decision instead of re-classifying — saves classifier latency and
  * avoids switching models mid tool loop.

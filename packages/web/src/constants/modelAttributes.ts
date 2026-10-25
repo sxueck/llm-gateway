@@ -39,7 +39,7 @@ export const MODEL_ATTRIBUTE_CONFIGS: AttributeConfig[] = [
     key: 'disable_thinking',
     label: '关闭思考',
     labelKey: 'modelAttributes.disableThinking.label',
-    description: '开启后网关会移除请求中的思考控制参数（reasoning_effort / reasoning），并在 OpenAI/Anthropic 协议强制 thinking: { type: disabled }，Gemini 协议将 thinkingBudget 置 0。适合 instant 等无需思考的场景；MiMo 等 OpenAI 兼容上游使用此参数关闭思考。',
+    description: '开启后，OpenAI Chat 写入 reasoning_effort=none、enable_thinking=false 和 thinking.type=disabled，Responses 写入 reasoning.effort=none。Gemini 写入 thinkingLevel=low，并去掉 thinkingBudget。Anthropic 仍写入 thinking.type=disabled。',
     descriptionKey: 'modelAttributes.disableThinking.description',
     type: 'boolean',
     category: '服务限制',

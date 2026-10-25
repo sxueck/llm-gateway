@@ -187,7 +187,7 @@ export class SearchRunScheduler {
       // plugin bundle + run 输入（worker 只读挂载）
       await mkdir(runDir, { recursive: true });
       const { resolvePlugin } = await import("../plugins/store.js");
-      // 已入队的 run 固定了当时的 digest；发布后新撤销的版本允许存量 run 完成（PRD §14.2）
+      // 已入队的 run 固定了当时的 digest；发布后新撤销的版本允许存量 run 完成
       const plugin = await resolvePlugin(run.plugin_id, run.plugin_version, {
         allowRevoked: true,
       });

@@ -22,7 +22,7 @@ export interface ModelResolutionResult {
   canRetry?: boolean; // 是否支持重试（仅智能路由模式）
   modelId?: string; // 用于重试时重新解析
   forcedReasoningEffort?: string; // 由模型名后缀解析得到的强制 reasoning_effort
-  routeInfo?: ExpertRouteInfo; // 难度分级路由透出信息（PRD §4）
+  routeInfo?: ExpertRouteInfo; // 难度分级路由透出信息
 }
 
 /**
@@ -259,7 +259,7 @@ export async function resolveModelAndProvider(
         const matchedModels = await collectModelMatches(parsedModelIds, requestedModel);
 
         if (matchedModels.length === 0) {
-          // §5.6 manual tier suffix: `<model>-auto-high|medium|low` resolves to
+          // Manual tier suffix: `<model>-auto-high|medium|low` resolves to
           // the base model and forces that routing tier (expert-routed models
           // only — a plain match simply routes normally, the forced tier is
           // ignored by non-tiered targets).

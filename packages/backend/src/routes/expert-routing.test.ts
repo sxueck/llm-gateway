@@ -201,7 +201,7 @@ describe('expertRoutingRoutes', () => {
         ],
       }),
     });
-    // §5.8 saving: cheap in/out 1e-6/2e-6 (cache 1e-7); high-tier baseline 1e-5/2e-5.
+    // Saving: cheap in/out 1e-6/2e-6 (cache 1e-7); high-tier baseline 1e-5/2e-5.
     mocks.modelDb.getById.mockImplementation(async (mid: string) => ({
       id: mid,
       enabled: 1,
@@ -247,7 +247,7 @@ describe('expertRoutingRoutes', () => {
     expect(response.classifierLatency).toEqual({ count: 10, p50: 50, p95: 200, avg: 65 });
     expect(response.routeSourceDistribution.fail_open).toBe(1);
     expect(response.failOpenRate).toBe(0.3);
-    // §5.8: actual = (1000-400)*1e-6 + 400*1e-7 + 200*2e-6 = 0.00104;
+    // actual = (1000-400)*1e-6 + 400*1e-7 + 200*2e-6 = 0.00104;
     // all-high baseline = 1000*1e-5 + 200*2e-5 = 0.014 → saving 0.01296 (92.57%).
     expect(response.estimatedSavingVsHighBand).toEqual({
       actualCost: 0.00104,
@@ -464,7 +464,7 @@ describe('expertRoutingRoutes', () => {
     });
   });
 
-  describe('§5.9 feedback', () => {
+  describe('feedback', () => {
     it('upserts a corrected-tier training record from a routing log', async () => {
       mocks.expertRoutingConfigDb.getById.mockResolvedValue({ id: 'routing-1' });
       mocks.expertRoutingLogDb.getById.mockResolvedValue({

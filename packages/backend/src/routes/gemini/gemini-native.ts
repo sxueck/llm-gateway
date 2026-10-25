@@ -19,6 +19,7 @@ import { getRequestUserAgent } from "../../utils/http.js";
 import { requestHeaderForwardingService } from "../../services/request-header-forwarding.js";
 import { upstreamFetch } from "../../utils/upstream-fetch.js";
 import { BoundedChunkRecorder } from "../../utils/bounded-chunk-recorder.js";
+import { writeWithBackpressure } from "../../utils/stream-guards.js";
 import {
   CLIENT_ABORTED_MESSAGE,
   isClientAbort,
@@ -416,7 +417,7 @@ export async function handleGeminiNativeNonStreamRequest(
         reply.header(key, value);
       }
     });
-    // Route exposure headers (PRD §4) on the non-stream passthrough send.
+    // Route exposure headers on the non-stream passthrough send.
     applyRouteHeaders(reply, {
       routeInfo: options?.modelResult?.routeInfo,
       upstreamModel: (request.body as any)?.model,
@@ -825,8 +826,8 @@ export async function handleGeminiNativeStreamRequest(
         return;
       }
 
-      if (!headersSent) {
-        // Route exposure headers (PRD §4): setHeader survives the writeHead.
+      const ensureSseHeaders = () => {
+        if (headersSent || reply.raw.headersSent) return;
         applyRouteHeaders(reply, {
           routeInfo: options?.modelResult?.routeInfo,
           upstreamModel: (request.body as any)?.model,
@@ -837,13 +838,14 @@ export async function handleGeminiNativeStreamRequest(
           "X-Accel-Buffering": "no",
         });
         headersSent = true;
-      }
+      };
 
       attemptResult = await streamGeminiAttempt(
         upstreamResponse,
         reply,
         abortController.signal,
         attemptStartedAt,
+        ensureSseHeaders,
       );
 
       if (!attemptResult.hasAssistantContent && !attemptResult.bypassGuard) {
@@ -886,7 +888,7 @@ export async function handleGeminiNativeStreamRequest(
         }
         return;
       }
-      if (!reply.raw.writableEnded) {
+      if (reply.raw.headersSent && !reply.raw.writableEnded) {
         reply.raw.end();
       }
       throw (
@@ -1034,8 +1036,7 @@ export async function handleGeminiNativeStreamRequest(
         options.auditState.auditLogged = true;
       }
     }
-    // client. Empty-output failures have already sent SSE headers by the time
-    // they surface, so the guard below keeps them on the legacy path.
+    // 空输出不再预先写 SSE 头。响应还没提交时，下面可以换目标或写 JSON。
     const statusForRetry = (error?.statusCode ||
       error?.status ||
       500) as number;
@@ -1092,11 +1093,14 @@ export async function handleGeminiNativeStreamRequest(
   }
 }
 
+const GEMINI_PENDING_CHARS_LIMIT = 1024 * 1024;
+
 async function streamGeminiAttempt(
   upstreamResponse: Response,
   reply: FastifyReply,
   abortSignal: AbortSignal,
   upstreamRequestStartedAt: number,
+  ensureHeaders: () => void,
 ): Promise<GeminiStreamAttemptResult> {
   const reader = upstreamResponse.body?.getReader();
   if (!reader) {
@@ -1106,12 +1110,14 @@ async function streamGeminiAttempt(
   const decoder = new TextDecoder();
   const streamChunks = new BoundedChunkRecorder();
   const pendingChunks: string[] = [];
+  let pendingChars = 0;
   let buffering = true;
   let hasAssistantContent = false;
   let bypassGuard = false;
   let parserBuffer = "";
   let totalBytes = 0;
   let tffbMs: number | undefined;
+  let earlyEmptyStop = false;
   let earlyEmptyDetectionTimeout: NodeJS.Timeout | null = null;
   const EARLY_EMPTY_DETECTION_TIMEOUT_MS = parseInt(
     process.env.GEMINI_EARLY_EMPTY_DETECTION_TIMEOUT_MS || "10000",
@@ -1122,11 +1128,8 @@ async function streamGeminiAttempt(
     if (reply.raw.destroyed || reply.raw.writableEnded) {
       return;
     }
-    if (!reply.raw.write(chunk)) {
-      await new Promise<void>((resolve) => {
-        reply.raw.once("drain", resolve);
-      });
-    }
+    ensureHeaders();
+    await writeWithBackpressure(reply.raw, chunk, abortSignal);
   };
 
   const flushPendingChunks = async () => {
@@ -1134,7 +1137,7 @@ async function streamGeminiAttempt(
     buffering = false;
     while (pendingChunks.length > 0) {
       const pending = pendingChunks.shift();
-      if (pending) {
+      if (pending !== undefined) {
         await writeDirect(pending);
       }
     }
@@ -1143,6 +1146,14 @@ async function streamGeminiAttempt(
   const enqueueChunk = async (chunk: string) => {
     streamChunks.record(chunk);
     if (buffering) {
+      pendingChars += chunk.length;
+      if (pendingChars > GEMINI_PENDING_CHARS_LIMIT) {
+        const overflow: any = new Error(
+          "Gemini upstream sent too much data before any output",
+        );
+        overflow.statusCode = 502;
+        throw overflow;
+      }
       pendingChunks.push(chunk);
     } else {
       await writeDirect(chunk);
@@ -1189,7 +1200,8 @@ async function streamGeminiAttempt(
             clearTimeout(earlyEmptyDetectionTimeout);
             earlyEmptyDetectionTimeout = null;
           }
-          reader.cancel();
+          earlyEmptyStop = true;
+          reader.cancel().catch(() => {});
         }
       }, EARLY_EMPTY_DETECTION_TIMEOUT_MS);
     }
@@ -1202,7 +1214,16 @@ async function streamGeminiAttempt(
         break;
       }
 
-      const { done, value } = await reader.read();
+      let readResult: Awaited<ReturnType<typeof reader.read>>;
+      try {
+        readResult = await reader.read();
+      } catch (readError) {
+        if (earlyEmptyStop && !hasAssistantContent && !bypassGuard) {
+          break;
+        }
+        throw readError;
+      }
+      const { done, value } = readResult;
 
       if (done) {
         break;

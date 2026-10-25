@@ -142,32 +142,6 @@ export default {
 }
 ```
 
-## 最佳实践
-
-1. **使用语义化的键名**: 使用清晰、有意义的键名,如 `dashboard.title` 而不是 `d1`
-2. **保持结构一致**: 中英文语言包应保持相同的结构
-3. **使用 computed**: 在需要响应式更新的场景中使用 computed 包装翻译
-4. **避免硬编码**: 所有用户可见的文本都应该通过 i18n 翻译
-5. **分模块组织**: 按功能模块组织翻译键,便于维护
-
-## 已实现的翻译模块
-
-- ✅ 通用文本 (common)
-- ✅ 布局和菜单 (layout, menu)
-- ✅ 仪表盘 (dashboard)
-- ✅ 提供商管理 (providers)
-- ✅ 模型管理 (models)
-- ✅ 智能路由 (virtualModels)
-- ✅ 虚拟密钥 (virtualKeys)
-- ✅ API 使用说明 (apiGuide)
-- ✅ 日志查看 (logs)
-- ✅ API 请求日志 (apiRequests)
-- ✅ 系统设置 (settings)
-- ✅ LiteLLM 集成 (litellm)
-- ✅ 向导组件 (wizard)
-- ✅ 表单验证 (validation)
-- ✅ 消息提示 (messages)
-
 ## 待完成的工作
 
 其他视图和组件的翻译可以按照相同的模式继续添加:

@@ -197,6 +197,7 @@ export interface WeeklyEmpiricalModel {
   globalSum: number[]; // [hour]
   globalCount: number[];
   priorStrength: number;
+  levelFactor: number;
   trainingSamples: number;
 }
 
@@ -230,7 +231,100 @@ function shrink(sum: number, count: number, prior: number, k: number): number {
  *   - 区域感知天然继承；
  *   - 法定节假日(工作日历中的非工作日)会落入非工作日簇，按周末规律预测，而不会污染正常工作日的格子；
  *   - 调休补班日(周末但 isWorkday=true)则落入工作日簇，按工作日规律预测。
+ *
+ * 季节形状之外，若最近两个完整日相对该形状同向偏高或偏低，则按更保守的那个
+ * 比值做阻尼修正。只持续一天的尖峰两日方向不一致，水平保持为 1。
  */
+const LEVEL_WINDOW_MS = DAY_MS;
+const LEVEL_MIN_HOURS = 18;
+const LEVEL_DEADBAND = 0.02;
+const LEVEL_DAMPING = 0.7;
+const LEVEL_MIN = 0.6;
+const LEVEL_MAX = 1.6;
+
+function seasonalCount(model: WeeklyEmpiricalModel, timestampMs: number, isWorkday: boolean): number {
+  const hour = getLocalHour(timestampMs);
+  const dayOfWeek = getLocalDayOfWeek(timestampMs);
+  const dayType = isWorkday ? 1 : 0;
+  const k = model.priorStrength;
+
+  const global = model.globalCount[hour] > 0 ? model.globalSum[hour] / model.globalCount[hour] : 0;
+  const cluster = shrink(model.clusterSum[dayType][hour], model.clusterCount[dayType][hour], global, k);
+  const fine = shrink(model.fineSum[dayType][dayOfWeek][hour], model.fineCount[dayType][dayOfWeek][hour], cluster, k);
+
+  return Math.max(0, fine);
+}
+
+function windowLevelRatio(
+  model: WeeklyEmpiricalModel,
+  samples: TrainingData[],
+  startExclusive: number,
+  endInclusive: number,
+): number | null {
+  let actual = 0;
+  let predicted = 0;
+  let hours = 0;
+
+  for (const sample of samples) {
+    if (sample.timestampMs <= startExclusive || sample.timestampMs > endInclusive) {
+      continue;
+    }
+    if (!Number.isFinite(sample.count) || sample.count < 0) {
+      continue;
+    }
+
+    actual += sample.count;
+    predicted += seasonalCount(model, sample.timestampMs, sample.isWorkday);
+    hours += 1;
+  }
+
+  if (hours < LEVEL_MIN_HOURS || predicted <= 0) {
+    return null;
+  }
+
+  const ratio = actual / predicted;
+  if (!Number.isFinite(ratio)) {
+    return null;
+  }
+  return Math.abs(ratio - 1) < LEVEL_DEADBAND ? 1 : ratio;
+}
+
+function estimateLevelFactor(model: WeeklyEmpiricalModel, samples: TrainingData[]): number {
+  let latest = Number.NEGATIVE_INFINITY;
+  for (const sample of samples) {
+    if (!Number.isFinite(sample.count) || sample.count < 0) {
+      continue;
+    }
+    if (sample.timestampMs > latest) {
+      latest = sample.timestampMs;
+    }
+  }
+  if (!Number.isFinite(latest)) {
+    return 1;
+  }
+
+  const recent = windowLevelRatio(model, samples, latest - LEVEL_WINDOW_MS, latest);
+  const previous = windowLevelRatio(
+    model,
+    samples,
+    latest - 2 * LEVEL_WINDOW_MS,
+    latest - LEVEL_WINDOW_MS,
+  );
+  if (recent == null || previous == null) {
+    return 1;
+  }
+  if ((recent - 1) * (previous - 1) <= 0) {
+    return 1;
+  }
+
+  const conservative = Math.abs(recent - 1) < Math.abs(previous - 1) ? recent : previous;
+  const damped = 1 + (conservative - 1) * LEVEL_DAMPING;
+  if (!Number.isFinite(damped)) {
+    return 1;
+  }
+  return Math.min(LEVEL_MAX, Math.max(LEVEL_MIN, damped));
+}
+
 export function trainWeeklyEmpirical(
   samples: TrainingData[],
   priorStrength: number = DEFAULT_PRIOR_STRENGTH
@@ -262,7 +356,7 @@ export function trainWeeklyEmpirical(
     trainingSamples += 1;
   }
 
-  return {
+  const model: WeeklyEmpiricalModel = {
     fineSum,
     fineCount,
     clusterSum,
@@ -270,8 +364,11 @@ export function trainWeeklyEmpirical(
     globalSum,
     globalCount,
     priorStrength: Math.max(0, priorStrength),
+    levelFactor: 1,
     trainingSamples,
   };
+  model.levelFactor = estimateLevelFactor(model, samples);
+  return model;
 }
 
 export function predictWeeklyEmpirical(
@@ -279,16 +376,9 @@ export function predictWeeklyEmpirical(
   timestampMs: number,
   isWorkday: boolean
 ): number {
-  const hour = getLocalHour(timestampMs);
-  const dayOfWeek = getLocalDayOfWeek(timestampMs);
-  const dayType = isWorkday ? 1 : 0;
-  const k = model.priorStrength;
-
-  const global = model.globalCount[hour] > 0 ? model.globalSum[hour] / model.globalCount[hour] : 0;
-  const cluster = shrink(model.clusterSum[dayType][hour], model.clusterCount[dayType][hour], global, k);
-  const fine = shrink(model.fineSum[dayType][dayOfWeek][hour], model.fineCount[dayType][dayOfWeek][hour], cluster, k);
-
-  return Math.max(0, fine);
+  const level = model.levelFactor;
+  const scale = Number.isFinite(level) && level > 0 ? level : 1;
+  return seasonalCount(model, timestampMs, isWorkday) * scale;
 }
 
 /**

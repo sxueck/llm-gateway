@@ -35,7 +35,7 @@ export interface ApiLogParams {
   agentRunId?: string;
   /** 会话标识显式值；缺省时从 request 头 + 已落库的请求体提取 */
   sessionId?: string | null;
-  /** §5.8 难度分级路由关联：决策日志 id + 命中档位 */
+  /** 难度分级路由关联：决策日志 id + 命中档位 */
   routeLogId?: string | null;
   routeTier?: string | null;
   /** 原始请求，仅用于提取 loopback 可信的 run 关联头部与未截断的会话标识 */

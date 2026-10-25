@@ -2,7 +2,7 @@ import type { FastifyReply } from "fastify";
 import type { ExposureConfig, RoutingBand } from "../../types/expert-routing.js";
 
 /**
- * Routing facts for one proxied request (PRD §4). Produced by ExpertRouter
+ * Routing facts for one proxied request. Produced by ExpertRouter
  * and threaded through model resolution into the protocol handlers, where
  * they are exposed via response headers and (optionally) the body model field.
  */

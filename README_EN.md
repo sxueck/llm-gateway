@@ -57,7 +57,7 @@
 
 | Dependency | Version | Description |
 |------------|---------|-------------|
-| Node.js | >= v24.22.1 | Runtime environment (24.22.1 is the first 24 LTS release that distrusts the leaked eMudhra intermediate CAs and fixes CVE-2026-111497) |
+| Node.js | >= v24.22.1 | Runtime environment |
 | Bun | >= v1.0 | Monorepo scripts based on Bun workspaces |
 | MySQL | 8.x | Database (or MySQL-compatible database) |
 | Docker | - | Optional, for containerized deployment |

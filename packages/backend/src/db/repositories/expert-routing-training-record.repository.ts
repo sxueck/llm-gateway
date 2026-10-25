@@ -6,7 +6,7 @@ export interface TrainingRecordFilter {
 }
 
 /**
- * §5.9 misclassification feedback loop. The historical judge-flow columns are
+ * Misclassification feedback loop. The historical judge-flow columns are
  * repurposed: judge_* fields carry the original routing decision, final_*
  * fields carry the operator's correction. `input_hash` (from the routing log's
  * request_hash) dedupes repeated feedback for the same prompt.

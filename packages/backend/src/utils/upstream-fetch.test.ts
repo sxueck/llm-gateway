@@ -213,8 +213,6 @@ describe('upstreamFetch abort behavior', () => {
   });
 });
 
-// CVE-2026-111497（brotli 解码器越界写）只能经由 br 响应触发，所以出站一律不声明 br。
-// 这三条断言就是「暴露面收敛」的回归门：任何分支重新放开 br 都会失败。
 describe('upstreamFetch Accept-Encoding surface reduction', () => {
   let originalSkipVerify: boolean;
   let originalProxy: string | undefined;

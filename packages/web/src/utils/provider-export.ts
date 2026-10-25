@@ -1,5 +1,4 @@
 import type { Provider } from '@/types';
-import { getProviderById } from '@/constants/providers';
 
 export interface ProviderExportData {
   version: string;
@@ -18,17 +17,13 @@ export function exportProviders(providers: Provider[]): ProviderExportData {
   const exportData: ProviderExportData = {
     version: '1.0.0',
     exportTime: new Date().toISOString(),
-    providers: providers.map(provider => {
-      const preset = getProviderById(provider.id);
-      return {
-        id: provider.id,
-        name: provider.name,
-        description: provider.description || undefined,
-        baseUrl: provider.baseUrl,
-        enabled: provider.enabled,
-        category: preset?.category,
-      };
-    }),
+    providers: providers.map(provider => ({
+      id: provider.id,
+      name: provider.name,
+      description: provider.description || undefined,
+      baseUrl: provider.baseUrl,
+      enabled: provider.enabled,
+    })),
   };
 
   return exportData;

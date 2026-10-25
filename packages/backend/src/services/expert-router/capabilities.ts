@@ -3,7 +3,7 @@ import { hotConfigCache } from "../hot-config-cache.js";
 import type { ExpertTarget } from "../../types/expert-routing.js";
 
 /**
- * §5.4 capability-constraint detection: candidates must survive a capability
+ * Capability-constraint detection: candidates must survive a capability
  * filter before tier selection — images require vision, tools require function
  * calling, and oversized prompts force escalation to larger context windows.
  */

@@ -87,7 +87,7 @@ function buildHeaders(
 /**
  * 显式声明上游响应的 Accept-Encoding，不把选择权交给 undici 默认的 "br, gzip, deflate"。
  * Node 的 brotli 解码器出过越界写（CVE-2026-111497，可远程 RCE），而 br 对网关没有收益，
- * 去掉这一档就少一条可达的解码路径；gzip/deflate 保留。
+ * 去掉这一档就少一条可达的解码路径；gzip/deflate 保留，先暂时留着这个补丁，后续随着 Node 版本升级再考虑去掉
  */
 function sanitizeAcceptEncoding(init: RequestInit): RequestInit {
   const headers = new Headers(init.headers as RequestInit['headers']);

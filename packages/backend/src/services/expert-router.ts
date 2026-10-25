@@ -51,9 +51,9 @@ interface RoutingMeta {
   failOpen?: FailOpenMode;
   verdictReused?: boolean;
   classifierTimeMs?: number | null;
-  /** §5.2: agent tool-result / assistant continuation turn. */
+  /** Agent tool-result / assistant continuation turn. */
   continuation?: boolean;
-  /** §5.4: capability constraints removed at least one candidate. */
+  /** Capability constraints removed at least one candidate. */
   capabilityFiltered?: boolean;
 }
 
@@ -86,7 +86,7 @@ export function groupByBand(experts: ExpertTarget[]): ExpertRoutingBands {
 }
 
 /**
- * §5.6 manual tier override: X-Gateway-Tier request header, or the
+ * Manual tier override: X-Gateway-Tier request header, or the
  * model-suffix resolution (__forcedTier) set by model-resolver for
  * `<model>-auto-high|medium|low` requests.
  */
@@ -100,7 +100,7 @@ function readManualTier(request: ProxyRequest): RoutingBand | undefined {
 
 export class ExpertRouter {
   /**
-   * §5.4: capability check for the reuse path. Only image/tool constraints
+   * Capability check for the reuse path. Only image/tool constraints
    * apply here (synchronous caps + one metadata lookup when relevant); the
    * context-window check needs token counting and runs on the classify path.
    */
@@ -154,11 +154,11 @@ export class ExpertRouter {
       };
     // per_turn skips bindings entirely; sticky/escalate_only reuse them.
     const useBindings = Boolean(sessionId) && policy.mode !== "per_turn";
-    // §5.2: continuation turns (tool results / assistant follow-ups) must
+    // Continuation turns (tool results / assistant follow-ups) must
     // never re-classify while a binding exists; without any stored decision
     // (per_turn or expired binding) classification is the only fallback.
     const continuationTurn = isContinuationTurn(request.body);
-    // §5.4: vision/tool constraints from the request shape (cheap, sync).
+    // Vision/tool constraints from the request shape (cheap, sync).
     const caps = detectRequestCapabilities(request.body);
 
     let binding: Awaited<ReturnType<typeof expertRoutingSessionBindingDb.getActiveBinding>> = null;
@@ -185,14 +185,14 @@ export class ExpertRouter {
         : difficultyToBand(bindingDifficulty)
       : undefined;
 
-    // §5.1 sticky / §5.2 continuation: reuse the bound expert as-is.
+    // Sticky session or continuation: reuse the bound expert as-is.
     // escalate_only re-classifies only on fresh user turns.
     const reuseWithoutClassification =
       Boolean(binding && boundExpert) &&
       (policy.mode !== "escalate_only" || continuationTurn);
     if (binding && boundExpert && reuseWithoutClassification) {
       if (await this.reuseBlockedByCapabilities(boundExpert, caps)) {
-        // §5.4: the bound model no longer satisfies the request (e.g. a new
+        // The bound model no longer satisfies the request (e.g. a new
         // image turn on a text-only model) — drop the binding and re-classify.
         await expertRoutingSessionBindingDb.deleteBinding(bindingKey);
         binding = null;
@@ -213,7 +213,7 @@ export class ExpertRouter {
     }
 
     const signal = await SignalBuilder.buildRoutingSignal(request, config.preprocessing);
-    // §5.9: persist the cleaned intent text (truncated) for feedback replay.
+    // Persist the cleaned intent text (truncated) for feedback replay.
     const logStats = signal.stats
       ? { ...signal.stats, intentText: signal.intentText?.slice(0, 2000) }
       : undefined;
@@ -246,7 +246,7 @@ export class ExpertRouter {
       }
     }
 
-    // §5.1 escalate_only with an existing binding: keep the bound tier unless
+    // escalate_only with an existing binding: keep the bound tier unless
     // the fresh verdict is strictly higher (downgrades would drop prompt-cache
     // and break mid-loop context consistency).
     const escalateActive = policy.mode === "escalate_only" && Boolean(binding && boundExpert);
@@ -271,7 +271,7 @@ export class ExpertRouter {
     const effectiveBand: RoutingBand = keepBoundTier ? boundTier! : (manualTier ?? verdictBand);
 
     try {
-      // §5.4 capability filter runs BEFORE tier selection: drop candidates that
+      // Capability filter runs BEFORE tier selection: drop candidates that
       // cannot serve the request (vision/tools/context window; unknown metadata
       // never filters), then tier-select among the survivors so an oversized or
       // image-bearing prompt escalates to a capable tier instead of erroring.
@@ -425,7 +425,7 @@ export class ExpertRouter {
     stats?: {
       promptTokens: number;
       cleanedLength: number;
-      /** §5.9: cleaned intent text (truncated) for the feedback replay set. */
+      /** Cleaned intent text (truncated) for the feedback replay set. */
       intentText?: string;
     },
     failure?: string,

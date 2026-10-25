@@ -30,7 +30,7 @@ export function buildModelBaseInfo(model: any): any {
 }
 
 /**
- * §5.10: tiered-routing models expose their tier membership in /v1/models
+ * Tiered-routing models expose their tier membership in /v1/models
  * metadata so clients can display what each band contains. Best-effort — an
  * unreadable config simply omits the field.
  */
@@ -113,7 +113,7 @@ export async function getModelsHandler(request: FastifyRequest, reply: FastifyRe
       return applyServingLimits(mergeModelAttributes(baseInfo, attributes), attributes);
     });
 
-    // §5.10: attach tier membership for tiered-routing (expert-routed) models.
+    // Attach tier membership for tiered-routing (expert-routed) models.
     const tiersCache = new Map<string, Record<string, string[]> | null>();
     for (let i = 0; i < models.length; i++) {
       const routingId = models[i]?.expert_routing_id;

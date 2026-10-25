@@ -161,7 +161,7 @@ export const expertRoutingLogRepository = {
    * v47 difficulty/band/verdict-reuse distribution for a config.
    * Returns [] on pre-v47 schemas so callers can degrade gracefully.
    */
-  /** Raw classifier latencies (ms, ascending) for percentile monitoring (§5.5). */
+  /** Raw classifier latencies (ms, ascending) for percentile monitoring. */
   async getClassifierLatencies(
     configId: string,
     timeRange?: number,
@@ -313,7 +313,7 @@ export const expertRoutingLogRepository = {
     }
   },
 
-  /** §5.8: routing decisions (id → selected expert/band) for cost correlation. */
+  /** Routing decisions (id → selected expert/band) for cost correlation. */
   async getRecentRoutingDecisions(configId: string, timeRange?: number) {
     const pool = getDatabase();
     const conn = await pool.getConnection();

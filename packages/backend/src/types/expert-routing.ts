@@ -31,7 +31,7 @@ export interface ExpertRoutingBands {
 }
 
 /**
- * Session policy (v2 §5.1). `escalate_only` re-classifies each new user turn
+ * Session policy. `escalate_only` re-classifies each new user turn
  * and only allows moving up; `per_turn` re-classifies every turn without
  * bindings; `sticky` keeps the legacy first-verdict binding.
  */
@@ -46,14 +46,14 @@ export interface SessionPolicy {
 /** Legacy alias kept for historical configs still using the old key. */
 export type SessionBindingPolicy = SessionPolicy;
 
-/** Classifier tuning (v2 §5.5): timeout and low-confidence handling. */
+/** Classifier tuning: timeout and low-confidence handling. */
 export interface ClassifierConfig {
   timeout_ms?: number;
   on_low_confidence?: "escalate" | "keep";
   min_confidence?: number;
 }
 
-/** How routing facts are exposed to the client (v2 §4). */
+/** How routing facts are exposed to the client. */
 export interface ExposureConfig {
   /** Emit X-Gateway-Route-* response headers (default true). */
   headers?: boolean;

@@ -1,43 +1,88 @@
 /**
  * Per-model "disable thinking" enforcement (model_attributes.disable_thinking).
  *
- * Translates the single operator-facing switch into per-protocol request
- * rewrites, applied on the live proxy paths BEFORE options/params are built,
- * so a client cannot force thinking on models meant to answer instantly:
- * - openai: strip reasoning_effort/reasoning; force thinking={type:'disabled'}
- *   (the OpenAI SDK's extra_body serializes this as the top-level MiMo field)
+ * Applied on the live proxy paths before options are built.
+ * - openai: Chat reads reasoning_effort / enable_thinking / thinking;
+ *   Responses reads reasoning.effort. Each off switch is written, not deleted,
+ *   because omitting it leaves the upstream default (often thinking on).
  * - anthropic: thinking={type:'disabled'}
- * - gemini: generationConfig.thinkingConfig.thinkingBudget=0, drop thinkingLevel
+ * - gemini: thinkingConfig.thinkingLevel=low. thinkingBudget is removed;
+ *   the current API uses thinkingLevel and rejects the two fields together.
  */
 
 export type ThinkingControlProtocol = 'openai' | 'anthropic' | 'gemini';
 
-function getOrCreateField(obj: any, camel: string, snake: string): any {
-  for (const key of [camel, snake]) {
-    if (obj[key] !== undefined && obj[key] !== null && typeof obj[key] === 'object') {
-      return obj[key];
-    }
+const GEMINI_THINKING_LEVEL = 'low';
+
+function isPlainObject(value: unknown): value is Record<string, any> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function assignIfDifferent(obj: Record<string, any>, key: string, value: unknown): boolean {
+  if (obj[key] === value) return false;
+  obj[key] = value;
+  return true;
+}
+
+function deleteIfPresent(obj: Record<string, any>, key: string): boolean {
+  if (obj[key] === undefined) return false;
+  delete obj[key];
+  return true;
+}
+
+function configObjects(parent: Record<string, any>, camel: string, snake: string): Record<string, any>[] {
+  const found: Record<string, any>[] = [];
+  if (isPlainObject(parent[camel])) found.push(parent[camel]);
+  if (isPlainObject(parent[snake])) found.push(parent[snake]);
+  if (found.length === 0) {
+    const created: Record<string, any> = {};
+    parent[camel] = created;
+    found.push(created);
   }
-  return (obj[camel] = {});
+  return found;
+}
+
+function disableGeminiThinkingConfig(config: Record<string, any>): boolean {
+  let changed = false;
+  changed = deleteIfPresent(config, 'thinkingBudget') || changed;
+  changed = deleteIfPresent(config, 'thinking_budget') || changed;
+  changed = deleteIfPresent(config, 'thinking_level') || changed;
+  changed = assignIfDifferent(config, 'thinkingLevel', GEMINI_THINKING_LEVEL) || changed;
+  return changed;
+}
+
+function forceFalse(obj: Record<string, any>, key: string): boolean {
+  if (obj[key] === false) return false;
+  obj[key] = false;
+  return true;
 }
 
 export function applyDisableThinking(body: any, protocol: ThinkingControlProtocol): boolean {
-  if (!body || typeof body !== 'object') {
+  if (!isPlainObject(body)) {
     return false;
   }
 
   switch (protocol) {
     case 'openai': {
       let changed = false;
-      for (const field of ['reasoning_effort', 'reasoning'] as const) {
-        if (body[field] !== undefined) {
-          delete body[field];
-          changed = true;
-        }
+      changed = assignIfDifferent(body, 'reasoning_effort', 'none') || changed;
+      if (!isPlainObject(body.reasoning) || body.reasoning.effort !== 'none') {
+        body.reasoning = {
+          ...(isPlainObject(body.reasoning) ? body.reasoning : {}),
+          effort: 'none',
+        };
+        changed = true;
       }
       if (body.thinking?.type !== 'disabled') {
         body.thinking = { type: 'disabled' };
         changed = true;
+      }
+      changed = forceFalse(body, 'enable_thinking') || changed;
+      if (isPlainObject(body.extra_body)) {
+        changed = forceFalse(body.extra_body, 'enable_thinking') || changed;
+      }
+      if (isPlainObject(body.chat_template_kwargs)) {
+        changed = forceFalse(body.chat_template_kwargs, 'enable_thinking') || changed;
       }
       return changed;
     }
@@ -49,16 +94,11 @@ export function applyDisableThinking(body: any, protocol: ThinkingControlProtoco
       return true;
     }
     case 'gemini': {
-      const generationConfig = getOrCreateField(body, 'generationConfig', 'generation_config');
-      const thinkingConfig = getOrCreateField(generationConfig, 'thinkingConfig', 'thinking_config');
       let changed = false;
-      if (thinkingConfig.thinkingBudget !== 0) {
-        thinkingConfig.thinkingBudget = 0;
-        changed = true;
-      }
-      if (thinkingConfig.thinkingLevel !== undefined) {
-        delete thinkingConfig.thinkingLevel;
-        changed = true;
+      for (const generationConfig of configObjects(body, 'generationConfig', 'generation_config')) {
+        for (const thinkingConfig of configObjects(generationConfig, 'thinkingConfig', 'thinking_config')) {
+          changed = disableGeminiThinkingConfig(thinkingConfig) || changed;
+        }
       }
       return changed;
     }

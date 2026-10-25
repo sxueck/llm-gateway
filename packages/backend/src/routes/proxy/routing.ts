@@ -246,7 +246,7 @@ export interface ResolveProviderResult {
   resolvedModel?: any;
   excludeTargetKeys?: Set<string>;
   canRetry?: boolean;
-  /** Difficulty-routing facts for response exposure (PRD §4); present only
+  /** Difficulty-routing facts for response exposure; present only
    * when this request was routed by an expert-routing config. */
   routeInfo?: import("../../services/expert-router/exposure.js").ExpertRouteInfo;
 }

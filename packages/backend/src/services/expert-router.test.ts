@@ -202,7 +202,7 @@ describe("ExpertRouter difficulty routing", () => {
     expect(mocks.chooseDifficulty).not.toHaveBeenCalled();
   });
 
-  test("tool_result continuation turn with a binding skips classification (§5.2)", async () => {
+  test("tool_result continuation turn with a binding skips classification", async () => {
     mocks.expertRoutingSessionBindingDb.getActiveBinding.mockResolvedValue({
       expert_id: "review", route_source: "jev", difficulty: "high" });
     const continuationRequest = {
@@ -254,7 +254,7 @@ describe("ExpertRouter difficulty routing", () => {
     expect(mocks.expertRoutingSessionBindingDb.createOrSelectBinding).not.toHaveBeenCalled();
   });
 
-  test("image requests escalate past vision-incapable low-tier candidates (§5.4)", async () => {
+  test("image requests escalate past vision-incapable low-tier candidates", async () => {
     mocks.expertRoutingConfigDb.getById.mockResolvedValue({
       id: "routing", enabled: 1,
       config: JSON.stringify(config({
@@ -296,7 +296,7 @@ describe("ExpertRouter difficulty routing", () => {
     expect(payload.capabilityFiltered).toBe(true);
   });
 
-  test("X-Gateway-Tier header forces the tier without classification (§5.6)", async () => {
+  test("X-Gateway-Tier header forces the tier without classification", async () => {
     const manualRequest = {
       body: { messages: [{ role: "user", content: "你好" }] },
       headers: { "x-gateway-tier": "high" },
@@ -344,7 +344,7 @@ describe("ExpertRouter difficulty routing", () => {
   });
 });
 
-describe("ExpertRouter §5.1 escalate_only", () => {
+describe("ExpertRouter escalate_only", () => {
   const escalateConfig = config({
     session_policy: { mode: "escalate_only", idle_ttl_seconds: 60, absolute_ttl_seconds: 3600 },
   });

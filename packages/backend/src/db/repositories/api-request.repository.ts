@@ -53,7 +53,7 @@ export const apiRequestRepository = {
     }
   },
 
-  /** §5.8: actual token usage linked to routing decisions (expert_routing_logs ids). */
+  /** Actual token usage linked to routing decisions (expert_routing_logs ids). */
   async getUsageByRouteLogIds(routeLogIds: string[]) {
     if (routeLogIds.length === 0) return [];
     const pool = getDatabase();
@@ -208,10 +208,10 @@ export const apiRequestRepository = {
 
       if (needsSummary) {
         const lastSummaryDay = new Date(detailStart - 1);
-        // 按 PRD（docs/operations-monitoring.md §3「禁用日志」）：聚合统计纳入
+        // 聚合统计纳入
         // disable_logging 密钥（正文已在写入侧禁用，聚合不暴露敏感元数据）。
         // 历史口径缺口：旧版汇总 SQL 排除了 disable_logging 密钥，相关日汇总行
-        // 不存在，明细已清理后无法回补，不做推测性回填（PRD §4.2）。
+        // 不存在，明细已清理后无法回补，不做推测性回填。
 
         const [summaryRows] = await conn.query(
           `SELECT
@@ -861,7 +861,7 @@ export const apiRequestRepository = {
           Number((candidateCountResult as any[])[0]?.candidate_count) || 0;
 
         // Token 口径与首页明细一致：prompt/completion/total 仅统计 cache_hit = 0 的请求；
-        // cached_tokens 与 cache_hit_count 统计全部请求。disable_logging 密钥按 PRD
+        // cached_tokens 与 cache_hit_count 统计全部请求。disable_logging 密钥
         // 纳入统计（敏感元数据已在写入侧/迁移置空）。
         await conn.query(
           `INSERT INTO api_request_daily_summaries (

@@ -332,7 +332,6 @@ function serializeSseEvent(event: { type: string }): string {
 export async function consumeAnthropicStreamAttempt(
   events: AsyncIterable<AnthropicStreamEvent>,
   reply: FastifyReply,
-  flushOnEmptyOutput: boolean,
   piiCtx?: PiiProtectionContext | null,
   upstreamRequestStartedAt?: number,
   clientModel?: string,
@@ -363,7 +362,7 @@ export async function consumeAnthropicStreamAttempt(
     if (!buffering) return;
     buffering = false;
     ensureSseHeaders(reply);
-    // §4C: opt-in debug comment before the first buffered event.
+    // Opt-in debug comment before the first buffered event.
     if (sseComment) {
       writeRaw(`: ${sseComment}\n\n`);
     }
@@ -509,7 +508,7 @@ export async function consumeAnthropicStreamAttempt(
     flushAllPiiKeys();
   }
 
-  if (hasAssistantContent || flushOnEmptyOutput) {
+  if (hasAssistantContent) {
     flushPendingChunks();
   }
 
@@ -667,7 +666,6 @@ export async function makeAnthropicStreamRequest(
       const attemptResult = await consumeAnthropicStreamAttempt(
         parseSseEvents(response, deadline.touch),
         reply,
-        attempt === totalAttempts,
         piiCtx,
         upstreamRequestStartedAt,
         clientModel,
@@ -710,9 +708,7 @@ export async function makeAnthropicStreamRequest(
       };
     } catch (error: any) {
       if (error instanceof EmptyOutputError) {
-        // The empty-output terminal state may have already flushed buffered
-        // chunks (headers sent). The handler owns response termination so it can
-        // still attempt a smart-routing retry when nothing was written.
+        // 空尝试不写响应。调用方在响应头未发出时仍可换目标。
         throw error;
       }
       if (deadline.timedOut) {

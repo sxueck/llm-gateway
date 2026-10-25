@@ -1234,7 +1234,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         );
         for (
           let ts = trainingRaw[0].timestampMs;
-          ts <= lastHourStart;
+          ts < lastHourStart;
           ts += hourMs
         ) {
           trainingSamples.push({
@@ -1409,10 +1409,12 @@ export async function configRoutes(fastify: FastifyInstance) {
         const trainingMap = new Map(
           trainingRaw.map((r) => [r.timestampMs, r.count]),
         );
+        const currentHourStart = Math.floor(now / hourMs) * hourMs;
         const lastTrainingTs = trainingRaw[trainingRaw.length - 1].timestampMs;
+        const trainEnd = Math.min(lastTrainingTs, currentHourStart - hourMs);
         for (
           let ts = trainingRaw[0].timestampMs;
-          ts <= lastTrainingTs;
+          ts <= trainEnd;
           ts += hourMs
         ) {
           trainingSamples.push({

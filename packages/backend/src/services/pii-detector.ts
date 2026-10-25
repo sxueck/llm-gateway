@@ -155,7 +155,7 @@ function _detectPii(text: string): DetectedPii[] {
   const ipv4Regex = resetRegex(IPV4_REGEX);
   while ((match = ipv4Regex.exec(text)) !== null) {
     const value = match[0];
-    if (!looksLikeVersionNumber(value)) {
+    if (!shouldSkipIpv4(value)) {
       if (!addCandidate('ip', value, match.index, match.index + value.length, SECRET_PATTERNS.length)) {
         return finalizeCandidates(candidates);
       }
@@ -289,6 +289,30 @@ function looksLikeVersionNumber(value: string): boolean {
 
   const nums = parts.map(p => parseInt(p, 10));
   if (nums.every(n => n < 10)) return true;
+
+  return false;
+}
+
+// Non-global addresses are code and routing constants. Replacing 192.168.1.10
+// with a public-looking surrogate makes the model treat it as a public host,
+// and a gateway it derives from that surrogate is not restored.
+function shouldSkipIpv4(value: string): boolean {
+  if (looksLikeVersionNumber(value)) return true;
+
+  const parts = value.split('.');
+  if (parts.length !== 4) return true;
+
+  const nums = parts.map(part => parseInt(part, 10));
+  if (nums.some(n => Number.isNaN(n))) return true;
+
+  const a = nums[0];
+  const b = nums[1];
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a >= 224) return true;
 
   return false;
 }

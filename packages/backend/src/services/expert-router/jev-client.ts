@@ -155,7 +155,7 @@ export function getJevConfiguration() {
 export async function chooseDifficulty(input: string): Promise<JevDifficultyDecision> {
   const breakerState = getJevBreakerState();
   if (breakerState.open) {
-    // §5.5: skip the network call entirely while the breaker is open so a
+    // Skip the network call entirely while the breaker is open so a
     // dead Jev endpoint fails open instantly instead of burning the timeout
     // on every request.
     throw new Error(

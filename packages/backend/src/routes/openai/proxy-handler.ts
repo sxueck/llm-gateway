@@ -219,7 +219,7 @@ export interface ProxyRequestContext {
    */
   logicalCacheKey?: string | null;
   /**
-   * Exactly-once audit guard (PRD: unified api_requests logging): set as soon
+   * Exactly-once audit guard (unified api_requests logging): set as soon
    * as this attempt has written its audit row. The route's outer catch
    * consults it so a rethrown/late error (post-log setCacheIfNeeded /
    * reply.send, rethrown transport failures) never produces a second row for
@@ -698,7 +698,7 @@ export function createOpenAIProxyHandler() {
 
           // 上下文预算判定（去重之后、目标级改写之前，不重试重判）：
           // 只在用户轮次边界拦截，超预算返回 context_length_exceeded，
-          // 客户端自动压缩后重试（PRD async-context-compaction §5.1/§6.1）。
+          // 客户端自动压缩后重试。
           // tools 定义随请求转发，必须计入输入预算。
           const budgetVerdict = await checkContextBudget({
             virtualKeyId: virtualKey.id,
@@ -950,14 +950,14 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
     reply.raw.setHeader("X-Max-Completion-Tokens", capHeader);
   }
 
-  // Route exposure headers (PRD §4): written before the first byte so they
+  // Route exposure headers: written before the first byte so they
   // survive the raw writeHead below; upstreamModel reflects any retry rewrite.
   applyRouteHeaders(reply, {
     routeInfo: modelResult?.routeInfo,
     upstreamModel: protocolConfig.model ?? (request.body as any)?.model,
     providerName: ctx.providerName,
   });
-  // §4C: opt-in SSE debug comment line (default off).
+  // Opt-in SSE debug comment line (default off).
   if (modelResult?.routeInfo?.exposure?.sse_comment) {
     protocolConfig.sseComment = `x-gateway-route ${JSON.stringify({
       model: protocolConfig.model ?? (request.body as any)?.model ?? "",
@@ -1450,7 +1450,7 @@ async function sendNonStreamCacheHit(
   });
   reply.code(200);
 
-  // Route exposure headers (PRD §4): cache hits report source=cache; the
+  // Route exposure headers: cache hits report source=cache; the
   // upstream model comes from the cached response body itself.
   applyRouteHeaders(reply, {
     routeInfo: args.routeInfo ?? null,
@@ -2286,7 +2286,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
     );
   }
 
-  // Route exposure headers + body model field (PRD §4): applied at the final
+  // Route exposure headers + body model field: applied at the final
   // send point so any smart-routing retry has already settled the body model.
   applyRouteHeaders(reply, {
     routeInfo: modelResult?.routeInfo,

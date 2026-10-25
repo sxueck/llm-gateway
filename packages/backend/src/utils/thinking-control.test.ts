@@ -8,25 +8,41 @@ describe("applyDisableThinking", () => {
     expect(applyDisableThinking("junk", "gemini")).toBe(false);
   });
 
-  it("strips client-requested reasoning knobs and forces MiMo-compatible thinking disabled", () => {
+  it("forces every OpenAI off switch the upstream actually reads", () => {
     const body: any = {
       model: "mimo-v2.5-pro",
       messages: [],
       reasoning_effort: "high",
-      reasoning: { effort: "high" },
+      reasoning: { effort: "high", summary: "auto" },
       thinking: { type: "enabled" },
+      enable_thinking: true,
+      extra_body: { enable_thinking: true },
+      chat_template_kwargs: { enable_thinking: true },
     };
 
     expect(applyDisableThinking(body, "openai")).toBe(true);
-    expect(body.reasoning_effort).toBeUndefined();
-    expect(body.reasoning).toBeUndefined();
+    expect(body.reasoning_effort).toBe("none");
+    expect(body.reasoning).toEqual({ effort: "none", summary: "auto" });
     expect(body.thinking).toEqual({ type: "disabled" });
+    expect(body.enable_thinking).toBe(false);
+    expect(body.extra_body.enable_thinking).toBe(false);
+    expect(body.chat_template_kwargs.enable_thinking).toBe(false);
   });
 
   it("is idempotent on already-disabled openai bodies", () => {
-    const body: any = { thinking: { type: "disabled" } };
+    const body: any = {
+      reasoning_effort: "none",
+      reasoning: { effort: "none" },
+      thinking: { type: "disabled" },
+      enable_thinking: false,
+    };
     expect(applyDisableThinking(body, "openai")).toBe(false);
-    expect(body.thinking).toEqual({ type: "disabled" });
+    expect(body).toEqual({
+      reasoning_effort: "none",
+      reasoning: { effort: "none" },
+      thinking: { type: "disabled" },
+      enable_thinking: false,
+    });
   });
 
   it("forces thinking disabled on anthropic bodies", () => {
@@ -35,18 +51,29 @@ describe("applyDisableThinking", () => {
     expect(body.thinking).toEqual({ type: "disabled" });
   });
 
-  it("sets thinkingBudget=0 and drops thinkingLevel on gemini bodies", () => {
+  it("sets thinkingLevel=low and drops budget fields on gemini bodies", () => {
     const body: any = {
-      generationConfig: { thinkingConfig: { thinkingBudget: 8192, thinkingLevel: "high" } },
+      generationConfig: {
+        thinkingConfig: {
+          thinkingBudget: 8192,
+          thinkingLevel: "high",
+          thinking_budget: 8192,
+          thinking_level: "high",
+        },
+      },
+      generation_config: {
+        thinking_config: { thinking_budget: 4096, thinking_level: "high" },
+      },
     };
 
     expect(applyDisableThinking(body, "gemini")).toBe(true);
-    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
+    expect(body.generation_config.thinking_config).toEqual({ thinkingLevel: "low" });
   });
 
   it("supports snake_case gemini spellings", () => {
     const body: any = { generation_config: { thinking_config: {} } };
     expect(applyDisableThinking(body, "gemini")).toBe(true);
-    expect(body.generation_config.thinking_config).toEqual({ thinkingBudget: 0 });
+    expect(body.generation_config.thinking_config).toEqual({ thinkingLevel: "low" });
   });
 });

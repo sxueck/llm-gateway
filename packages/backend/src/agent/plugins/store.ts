@@ -190,7 +190,7 @@ export async function listPluginVersions(): Promise<PluginVersionInfo[]> {
 
 /**
  * 解析可被 run 使用的插件版本：draft 视为不存在；revoked 默认拒绝（新 run），
- * 已入队/运行中的 run 可传 allowRevoked 以允许完成（PRD §14.2 紧急策略二选一）。
+ * 已入队/运行中的 run 可传 allowRevoked 以允许完成。
  * 每次解析都重新执行发布级校验并复验 digest（运行端防篡改）。
  */
 export async function resolvePlugin(

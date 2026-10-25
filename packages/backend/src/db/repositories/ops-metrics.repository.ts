@@ -3,8 +3,8 @@ import { getDatabase } from "../connection.js";
 /**
  * Unified ops-monitoring aggregation reads.
  *
- * One metric convention feeds the ops page and the homepage rolling windows
- * (PRD 7.1/7.3). Reads are split into provable segments:
+ * One metric convention feeds the ops page and the homepage rolling windows.
+ * Reads are split into provable segments:
  *
  * - HOURLY segment: api_request_hourly_summaries rows for sealed full hours;
  * - DETAIL segment: api_requests rows for everything else (unsealed hours

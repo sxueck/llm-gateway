@@ -401,7 +401,7 @@ async function handleRowClick(log: ExpertRoutingLog) {
   }
 }
 
-/** §5.9: mark a verdict as too low / too high; the corrected tier is persisted. */
+/** Mark a verdict as too low / too high; the corrected tier is persisted. */
 async function submitFeedback(rating: 'too_low' | 'too_high') {
   if (!detailLogId.value) return;
   feedbackLoading.value = true;
@@ -421,7 +421,7 @@ async function submitFeedback(rating: 'too_low' | 'too_high') {
   }
 }
 
-/** §5.9: download the replay set as JSON for classifier tuning. */
+/** Download the replay set as JSON for classifier tuning. */
 async function exportTrainingRecords() {
   exporting.value = true;
   try {

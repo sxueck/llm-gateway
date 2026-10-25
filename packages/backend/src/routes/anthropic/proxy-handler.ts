@@ -127,7 +127,7 @@ export interface AnthropicProxyRequestContext {
    */
   retryBodySnapshot?: any;
   /**
-   * Exactly-once audit guard (PRD: unified api_requests logging): set as soon
+   * Exactly-once audit guard (unified api_requests logging): set as soon
    * as this attempt has written its audit row. The route's outer catch
    * consults it so a rethrown/late error never produces a second row for the
    * same attempt — the richer inner-context row (with piiResult.maskedCount)
@@ -619,7 +619,7 @@ export async function handleAnthropicNonStreamRequest(
     }
   });
 
-  // Route exposure headers (PRD §4): setHeader on the raw response survives
+  // Route exposure headers: setHeader on the raw response survives
   // the stream writeHead inside makeAnthropicStreamRequest.
   applyRouteHeaders(reply, {
     routeInfo: modelResult?.routeInfo,
@@ -762,7 +762,7 @@ export async function handleAnthropicNonStreamRequest(
       );
 
       reply.header("Content-Type", "application/json");
-      // Route exposure headers + body model field (PRD §4) at the final send.
+      // Route exposure headers + body model field at the final send.
       applyRouteHeaders(reply, {
         routeInfo: modelResult?.routeInfo,
         upstreamModel: protocolConfig?.model ?? requestBody.model,
@@ -933,7 +933,7 @@ async function handleAnthropicStreamRequest(ctx: AnthropicProxyRequestContext) {
   const streamIp = extractIp(request);
   const forwardedHeaders = anthropicForwardedHeaders(request);
 
-  // Route exposure headers (PRD §4): raw setHeader survives the writeHead
+  // Route exposure headers: raw setHeader survives the writeHead
   // inside makeAnthropicStreamRequest.
   applyRouteHeaders(reply, {
     routeInfo: modelResult?.routeInfo,

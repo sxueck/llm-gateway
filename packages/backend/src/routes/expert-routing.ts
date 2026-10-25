@@ -432,7 +432,7 @@ function percentile(sorted: number[], p: number): number | null {
 export async function expertRoutingRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
-  // §5.5: classifier runtime status for the read-only classifier panel.
+  // Classifier runtime status for the read-only classifier panel.
   fastify.get("/jev/status", async () => {
     let configured = true;
     let model: string | null = null;
@@ -867,7 +867,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
   });
 
   /**
-   * §3.3 RoutingSimulator: classify a prompt against a config WITHOUT calling
+   * RoutingSimulator: classify a prompt against a config WITHOUT calling
    * any upstream and WITHOUT writing session bindings or routing logs. Shared
    * by the unsaved-config endpoint (/simulate) and the saved-config one.
    */
@@ -1108,7 +1108,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
         failOpenRate = Math.round((failOpenCount / totalRequests) * 10000) / 10000;
       }
 
-      // §5.8: saving vs all-high computed from actual api_requests tokens
+      // Saving vs all-high computed from actual api_requests tokens
       // linked via route_log_id. Cache-hit tokens price at the selected
       // model's cached input rate (fallback: full input price — never an
       // imaginary discount); the baseline prices every token at the CHEAPEST
@@ -1306,7 +1306,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
   });
 
   /**
-   * §5.9 misclassification feedback: mark a routing log as judged too low or
+   * Misclassification feedback: mark a routing log as judged too low or
    * too high; the corrected tier is persisted as a replay-set training record
    * (reusing expert_routing_training_records, upserted by request hash).
    */
@@ -1357,7 +1357,7 @@ export async function expertRoutingRoutes(fastify: FastifyInstance) {
     return { success: true, corrected };
   });
 
-  /** §5.9 replay-set export for classifier tuning. */
+  /** Replay-set export for classifier tuning. */
   fastify.get("/:id/training/records", async (request) => {
     const { id } = request.params as { id: string };
     const { status, limit } = request.query as { status?: string; limit?: string };

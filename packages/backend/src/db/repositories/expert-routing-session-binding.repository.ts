@@ -197,7 +197,7 @@ export const expertRoutingSessionBindingRepository = {
   },
 
   /**
-   * escalate_only tier promotion (PRD §5.1): update an existing binding to a
+   * escalate_only tier promotion: update an existing binding to a
    * higher tier / newly selected expert. Returns updated row count (0 when the
    * binding vanished — caller falls back to createOrSelect).
    */

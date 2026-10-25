@@ -22,12 +22,12 @@ export interface ProtocolConfig {
   nativeBaseUrl?: string;
   model: string;
   /**
-   * Model name to report to the client in chunk `model` fields (PRD §4 B
-   * layer). Set only for exposure.model_field=gateway_name; absent keeps
+   * Model name to report to the client in chunk `model` fields.
+   * Set only for exposure.model_field=gateway_name; absent keeps
    * the upstream identifier byte-identical.
    */
   clientModel?: string;
-  /** §4C debug comment line for SSE streams (opt-in, exposure.sse_comment). */
+  /** Debug comment line for SSE streams (opt-in, exposure.sse_comment). */
   sseComment?: string;
   protocol?: string;
   modelAttributes?: any;

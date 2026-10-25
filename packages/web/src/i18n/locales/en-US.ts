@@ -233,7 +233,7 @@ export default {
     },
     disableThinking: {
       label: 'Disable Thinking',
-      description: 'When enabled, the gateway strips reasoning controls (reasoning_effort / reasoning), forces thinking: { type: disabled } on the OpenAI and Anthropic protocols, and sets thinkingBudget to 0 on the Gemini protocol. Suited for instant-style scenarios where thinking is never wanted; MiMo and other OpenAI-compatible upstreams use this parameter to disable thinking.',
+      description: 'When enabled, OpenAI Chat is sent with reasoning_effort=none, enable_thinking=false, and thinking.type=disabled; Responses is sent with reasoning.effort=none. Gemini is sent with thinkingLevel=low and thinkingBudget removed. Anthropic still gets thinking.type=disabled.',
     },
   },
   virtualModels: {

@@ -1185,7 +1185,7 @@ function goToTab(tab: TabKey) {
   activeTab.value = tab;
 }
 
-// Filter changes re-pin endTime (per PRD: fixed on refresh or condition change).
+// Filter changes re-pin endTime (fixed on refresh or condition change).
 watch([period, filterVirtualKeyId, filterModel, filterProviderId], () => {
   refresh(true);
 });

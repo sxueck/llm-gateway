@@ -45,8 +45,6 @@ COPY packages/backend/package.json ./packages/backend/package.json
 COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/web/package.json ./packages/web/package.json
 COPY packages/worker/package.json ./packages/worker/package.json
-# e2e 仅参与根 workspaces 解析：缺其 manifest 时 `bun install --frozen-lockfile` 报
-# "lockfile had changes, but lockfile is frozen"，整条构建链失败。
 COPY packages/e2e/package.json ./packages/e2e/package.json
 COPY packages/tsconfig ./packages/tsconfig
 COPY scripts/install-hooks.sh ./scripts/install-hooks.sh
