@@ -15,7 +15,7 @@ import {
   validateUserAgentList,
 } from "../utils/anti-bot-config.js";
 import { debugModeService } from "../services/debug-mode.js";
-import { costMappingService, hasTokenPricing } from "../services/cost-mapping.js";
+import { computeUsageCost, costMappingService, hasTokenPricing } from "../services/cost-mapping.js";
 import { runtimeSystemConfigCache } from "../services/runtime-system-config-cache.js";
 import { threatIpBlocker } from "../services/threat-ip-blocker.js";
 import { requestHeaderForwardingService } from "../services/request-header-forwarding.js";
@@ -634,26 +634,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         const hasPricing = hasTokenPricing(costInfo?.info);
 
         if (costInfo?.info) {
-          const info = costInfo.info;
-          let modelCost = 0;
-
-          if (info.input_cost_per_token && usage.promptTokens) {
-            modelCost += usage.promptTokens * Number(info.input_cost_per_token);
-          }
-
-          if (info.output_cost_per_token && usage.completionTokens) {
-            modelCost +=
-              usage.completionTokens * Number(info.output_cost_per_token);
-          }
-
-          // 使用模型定义的缓存读取成本，若未定义则使用输入成本作为回退
-          if (usage.cachedTokens) {
-            const cacheReadCostPerToken =
-              info.cache_read_cost_per_token ?? info.input_cost_per_token;
-            if (cacheReadCostPerToken) {
-              modelCost += usage.cachedTokens * Number(cacheReadCostPerToken);
-            }
-          }
+          const modelCost = computeUsageCost(costInfo.info, usage);
 
           totalCost += modelCost;
 

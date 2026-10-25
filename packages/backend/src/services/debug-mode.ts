@@ -6,6 +6,33 @@ interface DebugStreamClient {
   heartbeat: NodeJS.Timeout | null;
 }
 
+// Must redact every header the gateway itself accepts as a credential: the
+// virtual-key auth headers (extractVirtualKeyAuthHeader in routes/proxy/auth.ts)
+// and the agent loopback secret (AGENT_LOOPBACK_HEADER in agent/run/loopback-token.ts).
+const SENSITIVE_DEBUG_HEADERS = new Set([
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+  'set-cookie',
+  'x-api-key',
+  'x-goog-api-key',
+  'x-google-api-key',
+  'x-agent-loopback',
+]);
+
+function redactRequestHeaders(
+  headers: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!headers) return headers;
+  const redacted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    redacted[key] = SENSITIVE_DEBUG_HEADERS.has(key.toLowerCase())
+      ? '[redacted]'
+      : value;
+  }
+  return redacted;
+}
+
 export interface DebugApiEvent {
   type: 'api_request';
   id: string;
@@ -109,6 +136,11 @@ class DebugModeService {
 
   broadcast(event: DebugApiEvent) {
     if (!this.isActive()) return;
+
+    event = {
+      ...event,
+      requestHeaders: redactRequestHeaders(event.requestHeaders),
+    };
 
     this.eventBuffer.push(event);
     if (this.eventBuffer.length > this.maxBufferedEvents) {

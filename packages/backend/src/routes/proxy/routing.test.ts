@@ -360,7 +360,7 @@ test('fallback periodically probes cooled-down targets even when one healthy tar
   }
 });
 
-test('getAnonymousAffinityTargetKey returns the sticky target for anonymous affinity and does not count as explicit session', () => {
+test('affinity without a session does not pin anonymous traffic', () => {
   circuitBreaker.resetAll();
 
   const config: RoutingConfig = {
@@ -372,10 +372,44 @@ test('getAnonymousAffinityTargetKey returns the sticky target for anonymous affi
   };
 
   const selected = selectRoutingTarget(config, 'affinity', 'anonymous-affinity-test-2');
-  const stickyKey = getAnonymousAffinityTargetKey('anonymous-affinity-test-2');
-
-  expect(stickyKey).toBe(getTargetKey(selected!));
+  expect(selected).toBeTruthy();
+  expect(getAnonymousAffinityTargetKey('anonymous-affinity-test-2')).toBeNull();
   expect(countExplicitSessionBindings('anonymous-affinity-test-2', getTargetKey(selected!))).toBe(0);
+});
+
+test('affinity honors strategy.affinityTTL and rebinds after it elapses', () => {
+  circuitBreaker.resetAll();
+  vi.useFakeTimers();
+
+  const originalRandom = Math.random;
+  let callCount = 0;
+  Math.random = () => (callCount++ === 0 ? 0 : 0.999);
+
+  try {
+    const config: RoutingConfig = {
+      strategy: { mode: 'affinity', affinityTTL: 60_000 },
+      targets: [
+        { provider: 'provider-a', weight: 100 },
+        { provider: 'provider-b', weight: 1 },
+      ],
+    };
+
+    const first = selectRoutingTarget(config, 'affinity', 'affinity-ttl-test-1', 'session-1');
+    expect(first?.provider).toBe('provider-a');
+
+    // TTL 内命中：绑定续期并保持粘滞（不触发随机选择）
+    const sticky = selectRoutingTarget(config, 'affinity', 'affinity-ttl-test-1', 'session-1');
+    expect(sticky?.provider).toBe('provider-a');
+
+    // 超过 affinityTTL：绑定过期，按权重重新选择
+    vi.setSystemTime(Date.now() + 61_000);
+    const reselected = selectRoutingTarget(config, 'affinity', 'affinity-ttl-test-1', 'session-1');
+    expect(reselected?.provider).toBe('provider-b');
+  } finally {
+    vi.useRealTimers();
+    Math.random = originalRandom;
+    circuitBreaker.resetAll();
+  }
 });
 
 test('getAnonymousAffinityTargetKey returns null when no anonymous affinity exists', () => {

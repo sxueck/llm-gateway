@@ -2,6 +2,42 @@ import { costMappingDb } from '../db/index.js';
 import { modelPresetsService, type ModelPresetInfo } from './model-presets.js';
 import type { PricingMatchStrategy } from './pricing-normalize.js';
 
+/**
+ * promptTokens 已含 cache read（OpenAI prompt_tokens / Anthropic input+cache_creation+cache_read）。
+ * 未缓存部分按输入价，cache read 按 cache_read 价（缺省回退输入价），避免同一段 token 计两次。
+ */
+export function computeUsageCost(
+  info: {
+    input_cost_per_token?: number;
+    output_cost_per_token?: number;
+    cache_read_cost_per_token?: number;
+  },
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    cachedTokens?: number;
+  },
+): number {
+  const cached = Math.max(0, Number(usage.cachedTokens) || 0);
+  const billablePrompt = Math.max(0, (Number(usage.promptTokens) || 0) - cached);
+  const completion = Number(usage.completionTokens) || 0;
+  let cost = 0;
+  if (info.input_cost_per_token && billablePrompt) {
+    cost += billablePrompt * Number(info.input_cost_per_token);
+  }
+  if (info.output_cost_per_token && completion) {
+    cost += completion * Number(info.output_cost_per_token);
+  }
+  if (cached) {
+    const cacheReadCostPerToken =
+      info.cache_read_cost_per_token ?? info.input_cost_per_token;
+    if (cacheReadCostPerToken) {
+      cost += cached * Number(cacheReadCostPerToken);
+    }
+  }
+  return cost;
+}
+
 export function hasTokenPricing(
   info: Partial<ModelPresetInfo> | null | undefined,
 ): boolean {
@@ -89,7 +125,7 @@ export class CostMappingService {
 
   /**
    * 单一成本口径：token 用量 × 模型单价，与 /api/admin/config/stats 的
-   * calculateCostStats 完全一致（缓存读取先取 cache_read_cost_per_token，缺省回退输入价）。
+   * calculateCostStats 共用 computeUsageCost。
    * 返回 null 表示该模型无价格信息，调用方应展示“未知”而非 0。
    */
   async estimateUsageCost(
@@ -104,22 +140,7 @@ export class CostMappingService {
     const costInfo = await this.resolveModelCost(modelName);
     if (!costInfo?.info) return null;
 
-    const info = costInfo.info;
-    let cost = 0;
-    if (info.input_cost_per_token && usage.promptTokens) {
-      cost += usage.promptTokens * Number(info.input_cost_per_token);
-    }
-    if (info.output_cost_per_token && usage.completionTokens) {
-      cost += usage.completionTokens * Number(info.output_cost_per_token);
-    }
-    if (usage.cachedTokens) {
-      const cacheReadCostPerToken =
-        info.cache_read_cost_per_token ?? info.input_cost_per_token;
-      if (cacheReadCostPerToken) {
-        cost += usage.cachedTokens * Number(cacheReadCostPerToken);
-      }
-    }
-    return cost;
+    return computeUsageCost(costInfo.info, usage);
   }
 }
 

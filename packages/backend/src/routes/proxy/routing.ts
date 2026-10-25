@@ -24,7 +24,7 @@ export interface RoutingConfig {
     mode: 'loadbalance' | 'fallback' | 'hash' | 'affinity';
     // hash模式：使用哪个字段作为哈希key
     hashSource?: 'virtualKey' | 'request';
-    // affinity模式：亲和性持续时间（毫秒），默认5分钟
+    // affinity模式：显式 session 的空闲粘滞时长（毫秒）；缺省回退 EXPLICIT_AFFINITY_IDLE_TTL_MS
     affinityTTL?: number;
   };
   targets: RoutingTarget[];
@@ -732,46 +732,34 @@ export function selectRoutingTarget(
         selectedTarget = selectedTarget || targetsToUse[0] || null;
       }
     } else if (type === 'affinity' || config.strategy?.mode === 'affinity') {
-      // affinity 模式使用完整的 availableTargets 以保持路由稳定性，不受 probe 调度影响
+      // 显式 session 才粘滞；没有 session 的请求按权重分散，避免全体匿名流量钉在同一个 target。
       const targetPool = availableTargets;
-      if (!configId) {
+      const affinityScopeKey = configId ? normalizeAffinityScopeKey(hashKey) : undefined;
+      if (!configId || !affinityScopeKey) {
         selectedTarget = selectLoadBalanceTarget(targetPool, config, configId, localExcludeTargetKeys);
       } else {
-        const ttl = config.strategy?.affinityTTL || 5 * 60 * 1000;
         const now = Date.now();
-        const affinityScopeKey = normalizeAffinityScopeKey(hashKey);
-        const hasExplicitSession = !!affinityScopeKey;
-        const affinityCacheKey = hasExplicitSession
-          ? buildAffinityCacheKey(String(configId), affinityScopeKey)
-          : buildAnonymousAffinityCacheKey(String(configId));
+        const configuredAffinityTtl = config.strategy?.affinityTTL;
+        const affinityIdleTtlMs = configuredAffinityTtl && configuredAffinityTtl > 0
+          ? configuredAffinityTtl
+          : EXPLICIT_AFFINITY_IDLE_TTL_MS;
+        const affinityCacheKey = buildAffinityCacheKey(String(configId), affinityScopeKey);
         const state = affinityStateMap.get(affinityCacheKey);
 
         if (state) {
           const currentTarget = targetPool.find(target => getTargetKey(target) === state.targetKey);
-          if (currentTarget) {
-            if (state.kind === 'explicit') {
-              if (now >= state.expiresAt) {
-                affinityStateMap.delete(affinityCacheKey);
-              } else {
-                setMapValueWithCapacity(
-                  affinityStateMap,
-                  affinityCacheKey,
-                  { ...state, timestamp: now, expiresAt: now + EXPLICIT_AFFINITY_IDLE_TTL_MS },
-                  MAX_AFFINITY_STATE_ENTRIES
-                );
-                selectedTarget = currentTarget;
-              }
-            }
-
-            if (!selectedTarget && now < state.expiresAt) {
-              selectedTarget = currentTarget;
-            }
-          }
-
-          if (!selectedTarget) {
+          if (currentTarget && now < state.expiresAt) {
+            setMapValueWithCapacity(
+              affinityStateMap,
+              affinityCacheKey,
+              { ...state, timestamp: now, expiresAt: now + affinityIdleTtlMs },
+              MAX_AFFINITY_STATE_ENTRIES
+            );
+            selectedTarget = currentTarget;
+          } else {
             affinityStateMap.delete(affinityCacheKey);
             memoryLogger.debug(
-              `Affinity路由: ${state.kind === 'explicit' ? '显式 session' : '匿名粘性'} 绑定的 target=${state.targetKey} ${currentTarget ? '已过期' : '不可用'}，重新选择`,
+              `Affinity路由: 显式 session 绑定的 target=${state.targetKey} ${currentTarget ? '已过期' : '不可用'}，重新选择`,
               'Routing'
             );
           }
@@ -783,14 +771,14 @@ export function selectRoutingTarget(
             targetKey: getTargetKey(selectedTarget),
             providerId: selectedTarget.provider,
             timestamp: now,
-            kind: hasExplicitSession ? 'explicit' : 'anonymous',
-            expiresAt: now + (hasExplicitSession ? EXPLICIT_AFFINITY_IDLE_TTL_MS : ttl)
+            kind: 'explicit',
+            expiresAt: now + affinityIdleTtlMs
           };
 
           setMapValueWithCapacity(affinityStateMap, affinityCacheKey, nextState, MAX_AFFINITY_STATE_ENTRIES);
 
           memoryLogger.info(
-            `Affinity路由: ${hasExplicitSession ? `显式 session 绑定` : `匿名粘性选择`} target=${getTargetKey(selectedTarget)}，TTL=${Math.floor((hasExplicitSession ? EXPLICIT_AFFINITY_IDLE_TTL_MS : ttl) / 1000)}秒`,
+            `Affinity路由: 显式 session 绑定 target=${getTargetKey(selectedTarget)}，TTL=${Math.floor(affinityIdleTtlMs / 1000)}秒`,
             'Routing'
           );
         }

@@ -194,10 +194,13 @@ import {
 import { useI18n } from 'vue-i18n';
 import PageHeader from '@/components/PageHeader.vue';
 import { configApi } from '@/api/config';
+import { useAuthStore } from '@/stores/auth';
 import { formatJson, formatTimestamp } from '@/utils/common';
+import { streamSSE } from '@/utils/sse';
 
 const { t } = useI18n();
 const message = useMessage();
+const authStore = useAuthStore();
 
 interface DebugApiEvent {
   type: 'api_request';
@@ -235,14 +238,14 @@ const remainingSeconds = ref<number | null>(null);
 
 const events = ref<DebugApiEvent[]>([]);
 const expandedEvents = ref<Record<string, boolean>>({});
-const eventSource = ref<EventSource | null>(null);
+let streamAbort: AbortController | null = null;
 const connectionStatus = ref<'disconnected' | 'connecting' | 'connected' | 'error'>(
   'disconnected'
 );
 let countdownTimer: number | null = null;
 
 const isConnected = computed(() => connectionStatus.value === 'connected');
-const canConnect = computed(() => true);
+const canConnect = computed(() => developerDebugEnabled.value);
 
 const connectionBadgeType = computed(() => {
   switch (connectionStatus.value) {
@@ -362,44 +365,44 @@ function clearCountdownTimer() {
 }
 
 function connect() {
-  if (eventSource.value) {
-    eventSource.value.close();
-    eventSource.value = null;
-  }
-
+  disconnect();
   connectionStatus.value = 'connecting';
+  const controller = new AbortController();
+  streamAbort = controller;
 
-  const stream = new EventSource('/api/admin/config/debug-stream');
-  eventSource.value = stream;
-
-  stream.onopen = () => {
-    connectionStatus.value = 'connected';
-  };
-
-  stream.onerror = () => {
-    connectionStatus.value = 'error';
-  };
-
-  stream.onmessage = (event) => {
-    try {
-      const data: DebugMessage = JSON.parse(event.data);
-      if (data.type === 'debug_state') {
-        handleDebugState(data);
-      } else if (data.type === 'api_request') {
-        handleDebugEvent(data as DebugApiEvent);
+  void streamSSE('/api/admin/config/debug-stream', {
+    token: authStore.token ?? undefined,
+    signal: controller.signal,
+    onEvent: (sse) => {
+      if (streamAbort !== controller || !sse.data) return;
+      connectionStatus.value = 'connected';
+      try {
+        const data = JSON.parse(sse.data) as DebugMessage;
+        if (data.type === 'debug_state') {
+          handleDebugState(data);
+        } else if (data.type === 'api_request') {
+          handleDebugEvent(data);
+        }
+      } catch (err) {
+        console.error('Failed to parse debug message', err);
       }
-    } catch (err) {
-      console.error('Failed to parse debug message', err);
-    }
-  };
+    },
+  }).then(() => {
+    if (streamAbort !== controller) return;
+    streamAbort = null;
+    connectionStatus.value = 'disconnected';
+  }).catch(() => {
+    if (controller.signal.aborted || streamAbort !== controller) return;
+    streamAbort = null;
+    connectionStatus.value = 'error';
+  });
 }
 
 function disconnect() {
-  if (eventSource.value) {
-    eventSource.value.close();
-    eventSource.value = null;
-  }
+  const controller = streamAbort;
+  streamAbort = null;
   connectionStatus.value = 'disconnected';
+  controller?.abort();
 }
 
 function reconnect() {

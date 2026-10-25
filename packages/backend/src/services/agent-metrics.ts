@@ -137,10 +137,10 @@ export interface WorkerRunOverview {
 
 /**
  * estimateUsageCost 内部有 DB 读，逐行调用会放大查询量。其对 token 用量
- * 是线性的（单价 × 数量求和，见 cost-mapping.ts），故每个 distinct model
- * 只探测 3 次（输入/输出/缓存各 1 token）得到单价，再在内存里按量求和，
- * 结果与逐行调用完全一致。任一探测返回 null 即该模型无价格（与直接调用
- * 返回 null 等价）。
+ * 是线性的（见 cost-mapping.ts：prompt 已含 cache read，先扣掉再乘输入价）。
+ * 每个 distinct model 只探测 3 次（输入/输出/缓存各 1 token）得到单价，
+ * 再在内存里按同样方式求和，结果与逐行调用完全一致。任一探测返回 null
+ * 即该模型无价格（与直接调用返回 null 等价）。
  */
 interface ModelUnitCost {
   input: number;
@@ -190,10 +190,12 @@ async function buildModelUnitCosts(
 
 function computeCost(unit: ModelUnitCost | null, usage: TokenUsage): number | null {
   if (unit === null) return null;
+  const cached = usage.cachedTokens;
+  const prompt = Math.max(0, usage.promptTokens - cached);
   return (
-    usage.promptTokens * unit.input +
+    prompt * unit.input +
     usage.completionTokens * unit.output +
-    usage.cachedTokens * unit.cached
+    cached * unit.cached
   );
 }
 

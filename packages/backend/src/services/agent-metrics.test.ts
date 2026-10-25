@@ -180,7 +180,7 @@ describe('getCodingAgentOverview', () => {
     expect(claude.userAgents).toContain('claude-cli/1.0.51 (external, cli)');
     expect(claude.userAgents).toContain('claude-code/2.0.0');
     // 与 computeCost 相同的运算顺序，精确相等
-    expect(claude.estimatedCost).toBe(130 * unit.input + 70 * unit.output + 20 * unit.cached);
+    expect(claude.estimatedCost).toBe((130 - 20) * unit.input + 70 * unit.output + 20 * unit.cached);
 
     // 空 UA 落到 unknown 且计入 totals.unattributed
     const unknown = overview.agents[2];
@@ -374,7 +374,7 @@ describe('getAgentSessions', () => {
       virtualKeyId: 'vk_9',
     });
     expect(later.estimatedCost).toBe(
-      130 * unit.input + 50 * unit.output + 7 * unit.cached,
+      (130 - 7) * unit.input + 50 * unit.output + 7 * unit.cached,
     );
 
     expect(earlier).toMatchObject({
@@ -391,7 +391,7 @@ describe('getAgentSessions', () => {
       virtualKeyId: 'vk_9',
     });
     expect(earlier.estimatedCost).toBe(
-      150 * unit.input + 50 * unit.output + 5 * unit.cached,
+      (150 - 5) * unit.input + 50 * unit.output + 5 * unit.cached,
     );
   });
 

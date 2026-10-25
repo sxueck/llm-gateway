@@ -675,51 +675,56 @@ export async function handleAnthropicNonStreamRequest(
     }
 
     const duration = Date.now() - startTime;
-    const isSuccess = response.statusCode >= 200 && response.statusCode < 300;
+    const httpOk = response.statusCode >= 200 && response.statusCode < 300;
+    const parsedOnSuccess = httpOk
+      ? parseAnthropicUpstreamBody(response.body)
+      : null;
+    const isSuccess = httpOk && !!parsedOnSuccess && !parsedOnSuccess.parseFailed;
 
-    if (isSuccess) {
+    if (httpOk && parsedOnSuccess?.parseFailed) {
+      circuitBreaker.recordFailure(
+        circuitBreakerKey,
+        httpFailureError(502),
+      );
+      memoryLogger.error(
+        `Anthropic 上游返回非 JSON 响应体 (HTTP ${response.statusCode})，已原样透传`,
+        "Anthropic",
+      );
+
+      const shouldLogBody = shouldLogRequestBody(virtualKey);
+      logApiRequestAsync({
+        request,
+        virtualKey,
+        providerId,
+        model: modelForLogging,
+        tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        status: "error",
+        responseTime: duration,
+        errorMessage: `Non-JSON upstream response (HTTP ${response.statusCode})`,
+        truncatedRequest: shouldLogBody
+          ? JSON.stringify(requestBody)
+          : undefined,
+        truncatedResponse: shouldLogBody
+          ? String(response.body).substring(0, 500)
+          : undefined,
+        cacheHit: 0,
+        ip: requestIp,
+        userAgent: requestUserAgent,
+        piiMaskedCount: piiResult.maskedCount,
+      });
+      ctx.auditLogged = true;
+
+      const upstreamContentType = String(
+        (response.headers as any)?.["content-type"] || "text/plain",
+      );
+      reply.header("Content-Type", upstreamContentType);
+      return reply.code(response.statusCode).send(response.body);
+    }
+
+    if (isSuccess && parsedOnSuccess) {
       circuitBreaker.recordSuccess(circuitBreakerKey);
 
-      const parsedUpstreamBody = parseAnthropicUpstreamBody(response.body);
-      if (parsedUpstreamBody.parseFailed) {
-        // 2xx with a non-JSON payload (e.g., HTML interceptor page): pass the raw
-        // payload and upstream status through instead of failing into a 500.
-        memoryLogger.error(
-          `Anthropic 上游返回非 JSON 响应体 (HTTP ${response.statusCode})，已原样透传`,
-          "Anthropic",
-        );
-
-        const shouldLogBody = shouldLogRequestBody(virtualKey);
-        logApiRequestAsync({
-          request,
-          virtualKey,
-          providerId,
-          model: modelForLogging,
-          tokenCount: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-          status: "error",
-          responseTime: duration,
-          errorMessage: `Non-JSON upstream response (HTTP ${response.statusCode})`,
-          truncatedRequest: shouldLogBody
-            ? JSON.stringify(requestBody)
-            : undefined,
-          truncatedResponse: shouldLogBody
-            ? String(response.body).substring(0, 500)
-            : undefined,
-          cacheHit: 0,
-          ip: requestIp,
-          userAgent: requestUserAgent,
-          piiMaskedCount: piiResult.maskedCount,
-        });
-        ctx.auditLogged = true;
-
-        const upstreamContentType = String(
-          (response.headers as any)?.["content-type"] || "text/plain",
-        );
-        reply.header("Content-Type", upstreamContentType);
-        return reply.code(response.statusCode).send(response.body);
-      }
-
-      const responseData = parsedUpstreamBody.data;
+      const responseData = parsedOnSuccess.data;
 
       // PII protection: restore original values before sending to client
       if (piiResult.context) {

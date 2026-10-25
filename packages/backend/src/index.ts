@@ -129,15 +129,19 @@ fastify.decorate("authenticate", async function (request: any, reply: any) {
 });
 
 // Developer debug HTTP stream endpoint (SSE)
-fastify.get("/api/admin/config/debug-stream", (_request, reply) => {
-  reply.raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-  reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
-  reply.raw.setHeader("Connection", "keep-alive");
-  reply.raw.setHeader("X-Accel-Buffering", "no");
-  reply.hijack();
+fastify.get(
+  "/api/admin/config/debug-stream",
+  { onRequest: [fastify.authenticate] },
+  (_request, reply) => {
+    reply.raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
+    reply.raw.setHeader("Connection", "keep-alive");
+    reply.raw.setHeader("X-Accel-Buffering", "no");
+    reply.hijack();
 
-  debugModeService.addStreamClient(reply);
-});
+    debugModeService.addStreamClient(reply);
+  },
+);
 
 await initDatabase();
 // 与运行时行为保持一致：Jev 未配置不阻断启动，只警告；实际请求会走 fallback。

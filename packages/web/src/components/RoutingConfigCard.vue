@@ -190,7 +190,7 @@
         </div>
         <div class="strategy-meta" v-if="config.type === 'affinity'">
           <n-icon><TimeOutline /></n-icon>
-          <span>{{ t('virtualModels.affinityTtl', { seconds: (config.config.strategy.affinityTTL || 0) / 1000 }) }}</span>
+          <span>{{ t('virtualModels.affinityTtl', { seconds: (config.config.strategy.affinityTTL > 0 ? config.config.strategy.affinityTTL : DEFAULT_AFFINITY_TTL_MS) / 1000 }) }}</span>
         </div>
         <div class="strategy-meta" v-if="config.type === 'hash'">
           <n-icon><KeyOutline /></n-icon>
@@ -226,6 +226,9 @@ const props = defineProps<{
 defineEmits(['edit', 'preview', 'delete']);
 
 const { t } = useI18n();
+
+// 后端未配置 affinityTTL 时的回退值：与 EXPLICIT_AFFINITY_IDLE_TTL_MS 默认值（60 分钟）保持一致。
+const DEFAULT_AFFINITY_TTL_MS = 3_600_000;
 
 const typeConfig = computed(() => {
   const map: Record<string, any> = {

@@ -426,6 +426,14 @@ function filterResponseHeaders(
   return result;
 }
 
+/** True when a 2xx payload is an error envelope or not an object — the upstream failed despite the status code. */
+function isUnusableUpstreamPayload(data: unknown): boolean {
+  if (!data || typeof data !== "object") return true;
+  const error = (data as { error?: unknown }).error;
+  if (typeof error === "string") return error.length > 0;
+  return !!error && typeof error === "object";
+}
+
 /** Parse a string response body into a data object, handling JSON and non-JSON. */
 function parseResponseBody(
   responseBody: string,
@@ -2091,7 +2099,15 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
     );
   }
   const duration = Date.now() - startTime;
-  const isSuccess = response.statusCode >= 200 && response.statusCode < 300;
+  const payloadUnusable =
+    response.statusCode >= 200 &&
+    response.statusCode < 300 &&
+    isUnusableUpstreamPayload(responseData);
+  const outcomeStatus = payloadUnusable ? 502 : response.statusCode;
+  if (payloadUnusable) {
+    reply.code(502);
+  }
+  const isSuccess = outcomeStatus >= 200 && outcomeStatus < 300;
 
   const shouldLogBody = shouldLogRequestBody(virtualKey);
 
@@ -2126,15 +2142,15 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
   let failedAttemptAccountedFor = false;
   if (!isSuccess && modelResult && virtualKeyValue) {
     const { shouldRetrySmartRouting } = await import("../proxy/routing.js");
-    if (modelResult.canRetry && shouldRetrySmartRouting(response.statusCode)) {
+    if (modelResult.canRetry && shouldRetrySmartRouting(outcomeStatus)) {
       memoryLogger.info(
-        `智能路由重试: 检测到失败 (${response.statusCode})，尝试下一个目标`,
+        `智能路由重试: 检测到失败 (${outcomeStatus})，尝试下一个目标`,
         "Proxy",
       );
 
       circuitBreaker.recordFailure(
         circuitBreakerKey,
-        httpFailureError(response.statusCode),
+        httpFailureError(outcomeStatus),
       );
       logApiRequestAsync({
         virtualKey,
@@ -2162,7 +2178,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       const retried = await handleNonStreamRetry(
         request,
         reply,
-        response.statusCode,
+        outcomeStatus,
         {
           virtualKey,
           virtualKeyValue,
@@ -2199,7 +2215,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
         path,
         stream: false,
         success: isSuccess,
-        statusCode: response.statusCode,
+        statusCode: outcomeStatus,
         fromCache,
         virtualKeyId: virtualKey.id,
         virtualKeyName: (virtualKey as any).name,
@@ -2271,7 +2287,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
     if (!failedAttemptAccountedFor) {
       circuitBreaker.recordFailure(
         circuitBreakerKey,
-        httpFailureError(response.statusCode),
+        httpFailureError(outcomeStatus),
       );
     }
 
@@ -2281,7 +2297,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
         ? `${errorStr.substring(0, 500)}... (total length: ${errorStr.length} chars)`
         : errorStr;
     memoryLogger.error(
-      `请求失败: ${response.statusCode} | ${duration}ms | error: ${truncatedError}`,
+      `请求失败: ${outcomeStatus} | ${duration}ms | error: ${truncatedError}`,
       "Proxy",
     );
   }

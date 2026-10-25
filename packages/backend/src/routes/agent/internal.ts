@@ -17,7 +17,7 @@ import {
 } from "../../agent/run/loopback-token.js";
 import { runEventHub } from "../../agent/run/run-events.js";
 import { searchRunScheduler } from "../../agent/run/scheduler.js";
-import { costMappingService } from "../../services/cost-mapping.js";
+import { computeUsageCost, costMappingService } from "../../services/cost-mapping.js";
 import { normalizeUsageCounts } from "../../utils/usage-normalizer.js";
 import type { AgentSearchRun } from "../../db/types.js";
 
@@ -112,22 +112,7 @@ async function computeCost(
   const counts = normalizeUsageCounts(usage);
   const costInfo = await costMappingService.resolveModelCost(model);
   if (!costInfo?.info) return 0;
-  const info = costInfo.info;
-  let cost = 0;
-  if (info.input_cost_per_token && counts.promptTokens) {
-    cost += counts.promptTokens * Number(info.input_cost_per_token);
-  }
-  if (info.output_cost_per_token && counts.completionTokens) {
-    cost += counts.completionTokens * Number(info.output_cost_per_token);
-  }
-  if (counts.cachedTokens) {
-    const cacheReadCostPerToken =
-      info.cache_read_cost_per_token ?? info.input_cost_per_token;
-    if (cacheReadCostPerToken) {
-      cost += counts.cachedTokens * Number(cacheReadCostPerToken);
-    }
-  }
-  return cost;
+  return computeUsageCost(costInfo.info, counts);
 }
 
 /** 把网关侧计量累加到 run 用量行（token/cost 的唯一权威来源）。 */

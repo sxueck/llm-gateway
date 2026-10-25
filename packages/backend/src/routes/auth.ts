@@ -45,11 +45,17 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: '用户名已存在' });
     }
 
+    const isFirstUser = (await userDb.getAll()).length === 0;
+
     const user = await userDb.create({
       id: nanoid(),
       username: body.username,
       password_hash: hashPassword(body.password),
     });
+
+    if (isFirstUser) {
+      await systemConfigDb.set('allow_registration', 'false', '是否允许新用户注册');
+    }
 
     const token = fastify.jwt.sign({ userId: user.id, username: user.username });
 

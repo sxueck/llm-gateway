@@ -96,8 +96,8 @@ describe('estimateUsageCost', () => {
       completionTokens: 100_000,
       cachedTokens: 500_000,
     });
-    // 5M in + 2.5M out(=2.5) + cache_read 0.5/M*0.5M(0.25)
-    expect(cost).toBeCloseTo(5 + 2.5 + 0.25, 6);
+    // prompt 已含 0.5M cache read：未缓存 0.5M×5 + 输出 0.1M×25 + cache read 0.5M×0.5
+    expect(cost).toBeCloseTo(2.5 + 2.5 + 0.25, 6);
   });
 
   it('无价模型返回 null 而不是 0', async () => {
