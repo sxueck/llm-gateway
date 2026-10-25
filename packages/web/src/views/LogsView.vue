@@ -1,7 +1,7 @@
 <template>
   <div>
     <n-space vertical :size="24">
-      <PageHeader eyebrow="TOOLS" title="系统日志" />
+      <PageHeader eyebrow="TOOLS" :title="t('logs.title')" :subtitle="t('logs.subtitle')" />
       <n-card>
         <template #header-extra>
           <n-space>
@@ -9,7 +9,7 @@
               v-model:value="selectedLevel"
               :options="levelOptions"
               style="width: 120px;"
-              placeholder="日志级别"
+              :placeholder="t('logs.level')"
             />
             <n-select
               v-model:value="logLimit"
@@ -24,10 +24,10 @@
                   <PauseOutline v-else />
                 </n-icon>
               </template>
-              {{ isAutoRefreshPaused ? '恢复刷新' : '暂停刷新' }}
+              {{ isAutoRefreshPaused ? t('logs.resumeRefresh') : t('logs.pauseRefresh') }}
             </n-button>
             <n-button @click="loadLogs" :loading="loading">
-              刷新
+              {{ t('common.refresh') }}
             </n-button>
           </n-space>
         </template>
@@ -35,7 +35,7 @@
         <n-space vertical :size="12">
           <n-input
             v-model:value="searchText"
-            placeholder="搜索日志内容..."
+            :placeholder="t('logs.searchPlaceholder')"
             clearable
           >
             <template #prefix>
@@ -45,7 +45,7 @@
 
           <div class="terminal-container">
             <pre v-if="filteredLogText" class="terminal-output">{{ filteredLogText }}</pre>
-            <n-empty v-else description="暂无日志数据" :show-icon="false" />
+            <n-empty v-else :description="t('logs.empty')" :show-icon="false" />
           </div>
         </n-space>
       </n-card>
@@ -55,6 +55,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useMessage, NSpace, NCard, NButton, NSelect, NInput, NIcon, NEmpty } from 'naive-ui';
 import { SearchOutline, PlayOutline, PauseOutline } from '@vicons/ionicons5';
 import { configApi, type LogEntry } from '@/api/config';
@@ -62,6 +63,7 @@ import { formatTimestamp } from '@/utils/common';
 import PageHeader from '@/components/PageHeader.vue';
 
 const message = useMessage();
+const { t } = useI18n();
 const loading = ref(false);
 const allLogsText = ref('');
 const searchText = ref('');
@@ -78,13 +80,12 @@ const levelOptions = [
   { label: 'DEBUG', value: 'DEBUG' },
 ];
 
-const limitOptions = [
-  { label: '最近 50 条', value: 50 },
-  { label: '最近 100 条', value: 100 },
-  { label: '最近 200 条', value: 200 },
-  { label: '最近 500 条', value: 500 },
-  { label: '最近 1000 条', value: 1000 },
-];
+const limitOptions = computed(() =>
+  [50, 100, 200, 500, 1000].map(count => ({
+    label: t('logs.recent', { count }),
+    value: count,
+  })),
+);
 
 const filteredLogText = computed(() => {
   let text = allLogsText.value;
@@ -151,10 +152,10 @@ function toggleAutoRefresh() {
   
   if (isAutoRefreshPaused.value) {
     stopAutoRefresh();
-    message.info('已暂停自动刷新');
+    message.info(t('logs.paused'));
   } else {
     startAutoRefresh();
-    message.success('已恢复自动刷新');
+    message.success(t('logs.resumed'));
   }
 }
 

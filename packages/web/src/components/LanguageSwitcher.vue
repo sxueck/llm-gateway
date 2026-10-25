@@ -14,10 +14,8 @@
 import { h, computed } from 'vue';
 import { NButton, NDropdown, NIcon } from 'naive-ui';
 import { LanguageOutline, CheckmarkOutline } from '@vicons/ionicons5';
-import { useI18n } from 'vue-i18n';
 import { useLocaleStore, type Locale } from '@/stores/locale';
 
-const { locale } = useI18n();
 const localeStore = useLocaleStore();
 
 const languageOptions = computed(() => [
@@ -38,9 +36,7 @@ const languageOptions = computed(() => [
 ]);
 
 function handleLanguageSelect(key: string) {
-  const newLocale = key as Locale;
-  localeStore.setLocale(newLocale);
-  locale.value = newLocale;
+  localeStore.setLocale(key as Locale);
 }
 </script>
 

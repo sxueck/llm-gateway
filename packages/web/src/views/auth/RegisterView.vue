@@ -3,17 +3,17 @@
     <div class="auth-container">
       <div class="auth-brand">
         <h1 class="brand-name">LLM Gateway</h1>
-        <p class="brand-tagline">统一的大语言模型接入网关</p>
+        <p class="brand-tagline">{{ t('auth.tagline') }}</p>
       </div>
 
       <n-card class="auth-card" :bordered="false">
         <div class="auth-header">
-          <h2 class="auth-title">创建账号</h2>
-          <p class="auth-subtitle">注册以开始使用系统</p>
+          <h2 class="auth-title">{{ t('auth.createAccount') }}</h2>
+          <p class="auth-subtitle">{{ t('auth.registerSubtitle') }}</p>
         </div>
 
         <n-alert v-if="!allowRegistration" type="warning" class="registration-warning">
-          当前已关闭注册，仅允许已有用户登录
+          {{ t('auth.registrationClosed') }}
         </n-alert>
 
         <n-form
@@ -23,10 +23,10 @@
           size="large"
           class="auth-form"
         >
-          <n-form-item path="username" label="用户名">
+          <n-form-item path="username" :label="t('auth.username')">
             <n-input
               v-model:value="formValue.username"
-              placeholder="请输入用户名"
+              :placeholder="t('auth.usernamePlaceholder')"
               :disabled="!allowRegistration"
             >
               <template #prefix>
@@ -35,12 +35,12 @@
             </n-input>
           </n-form-item>
 
-          <n-form-item path="password" label="密码">
+          <n-form-item path="password" :label="t('auth.password')">
             <n-input
               v-model:value="formValue.password"
               type="password"
               show-password-on="click"
-              placeholder="请输入密码"
+              :placeholder="t('auth.passwordPlaceholder')"
               :disabled="!allowRegistration"
               class="password-input"
             >
@@ -50,12 +50,12 @@
             </n-input>
           </n-form-item>
 
-          <n-form-item path="confirmPassword" label="确认密码">
+          <n-form-item path="confirmPassword" :label="t('auth.confirmPassword')">
             <n-input
               v-model:value="formValue.confirmPassword"
               type="password"
               show-password-on="click"
-              placeholder="请再次输入密码"
+              :placeholder="t('auth.confirmPasswordPlaceholder')"
               @keydown.enter="handleRegister"
               :disabled="!allowRegistration"
               class="password-input"
@@ -79,7 +79,7 @@
               <template #icon>
                 <n-icon><PersonAddOutline /></n-icon>
               </template>
-              注册
+              {{ t('auth.register') }}
             </n-button>
 
             <n-button
@@ -88,21 +88,22 @@
               class="register-link"
               @click="$router.push('/login')"
             >
-              已有账号？<span class="link-text">立即登录</span>
+              {{ t('auth.hasAccount') }}<span class="link-text">{{ t('auth.loginNow') }}</span>
             </n-button>
           </n-space>
         </n-form>
       </n-card>
 
       <p class="auth-footer">
-        LLM Gateway - 智能模型路由与管理平台
+        {{ t('auth.footer') }}
       </p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import {
   useMessage,
@@ -127,6 +128,7 @@ import { useSystemConfig } from '@/composables/useSystemConfig'
 const router = useRouter()
 const message = useMessage()
 const authStore = useAuthStore()
+const { t } = useI18n()
 
 const { allowRegistration } = useSystemConfig()
 
@@ -138,26 +140,26 @@ const formValue = ref({
   confirmPassword: ''
 })
 
-const rules = {
+const rules = computed(() => ({
   username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 32, message: '用户名长度必须在 3-32 个字符之间', trigger: 'blur' }
+    { required: true, message: t('auth.usernamePlaceholder'), trigger: 'blur' },
+    { min: 3, max: 32, message: t('auth.usernameLength'), trigger: 'blur' }
   ],
   password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码长度至少为 6 个字符', trigger: 'blur' }
+    { required: true, message: t('auth.passwordPlaceholder'), trigger: 'blur' },
+    { min: 6, message: t('auth.passwordLength'), trigger: 'blur' }
   ],
   confirmPassword: [
-    { required: true, message: '请再次输入密码', trigger: 'blur' },
+    { required: true, message: t('auth.confirmPasswordPlaceholder'), trigger: 'blur' },
     {
       validator: (_rule: any, value: string) => {
         return value === formValue.value.password
       },
-      message: '两次输入的密码不一致',
+      message: t('auth.passwordMismatch'),
       trigger: 'blur'
     }
   ]
-}
+}))
 
 async function handleRegister() {
   try {
@@ -167,7 +169,7 @@ async function handleRegister() {
       username: formValue.value.username,
       password: formValue.value.password
     })
-    message.success('注册成功')
+    message.success(t('auth.registerSuccess'))
     router.push('/dashboard')
   } catch (error: any) {
     if (error.message) {

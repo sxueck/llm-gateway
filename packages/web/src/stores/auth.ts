@@ -25,8 +25,8 @@ export const useAuthStore = defineStore('auth', () => {
     if (!token.value) return;
     try {
       user.value = await authApi.getProfile();
-    } catch (error) {
-      logout();
+    } catch {
+      // 401 已由请求拦截器退出；网络或 5xx 保留 token，避免一次失败把登录态清掉
     }
   }
 

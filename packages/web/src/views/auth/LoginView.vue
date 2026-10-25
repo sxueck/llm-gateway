@@ -3,13 +3,13 @@
     <div class="auth-container">
       <div class="auth-brand">
         <h1 class="brand-name">LLM Gateway</h1>
-        <p class="brand-tagline">统一的大语言模型接入网关</p>
+        <p class="brand-tagline">{{ t('auth.tagline') }}</p>
       </div>
 
       <n-card class="auth-card" :bordered="false">
         <div class="auth-header">
-          <h2 class="auth-title">欢迎回来</h2>
-          <p class="auth-subtitle">请登录您的账号</p>
+          <h2 class="auth-title">{{ t('auth.welcome') }}</h2>
+          <p class="auth-subtitle">{{ t('auth.loginSubtitle') }}</p>
         </div>
 
         <n-form
@@ -19,10 +19,10 @@
           size="large"
           class="auth-form"
         >
-          <n-form-item path="username" label="用户名">
+          <n-form-item path="username" :label="t('auth.username')">
             <n-input
               v-model:value="formValue.username"
-              placeholder="请输入用户名"
+              :placeholder="t('auth.usernamePlaceholder')"
               @keydown.enter="handleLogin"
             >
               <template #prefix>
@@ -31,12 +31,12 @@
             </n-input>
           </n-form-item>
 
-          <n-form-item path="password" label="密码">
+          <n-form-item path="password" :label="t('auth.password')">
             <n-input
               v-model:value="formValue.password"
               type="password"
               show-password-on="click"
-              placeholder="请输入密码"
+              :placeholder="t('auth.passwordPlaceholder')"
               @keydown.enter="handleLogin"
               class="password-input"
             >
@@ -58,7 +58,7 @@
               <template #icon>
                 <n-icon><LogInOutline /></n-icon>
               </template>
-              登录
+              {{ t('auth.login') }}
             </n-button>
 
             <n-button
@@ -68,21 +68,22 @@
               class="register-link"
               @click="$router.push('/register')"
             >
-              还没有账号？<span class="link-text">立即注册</span>
+              {{ t('auth.noAccount') }}<span class="link-text">{{ t('auth.registerNow') }}</span>
             </n-button>
           </n-space>
         </n-form>
       </n-card>
 
       <p class="auth-footer">
-        LLM Gateway - 智能模型路由与管理平台
+        {{ t('auth.footer') }}
       </p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import {
   useMessage,
@@ -105,6 +106,7 @@ import { useSystemConfig } from '@/composables/useSystemConfig'
 const router = useRouter()
 const message = useMessage()
 const authStore = useAuthStore()
+const { t } = useI18n()
 
 const { allowRegistration } = useSystemConfig()
 
@@ -115,17 +117,17 @@ const formValue = ref({
   password: ''
 })
 
-const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
-}
+const rules = computed(() => ({
+  username: [{ required: true, message: t('auth.usernamePlaceholder'), trigger: 'blur' }],
+  password: [{ required: true, message: t('auth.passwordPlaceholder'), trigger: 'blur' }]
+}))
 
 async function handleLogin() {
   try {
     await formRef.value?.validate()
     loading.value = true
     await authStore.login(formValue.value)
-    message.success('登录成功')
+    message.success(t('auth.loginSuccess'))
     router.push('/dashboard')
   } catch (error: any) {
     if (error.message) {

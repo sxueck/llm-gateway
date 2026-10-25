@@ -2,7 +2,12 @@
  * Usage normalizer: unify token counting across Responses and Chat Completions.
  * - Supports input_tokens/output_tokens and prompt_tokens/completion_tokens
  * - Prefers total_tokens when provided; otherwise sums prompt+completion
- * - Adds cached tokens (OpenAI and Anthropic) only when base is 0 to avoid double counting
+ * - Adds cached tokens (OpenAI) only when base is 0 to avoid double counting
+ * - Anthropic Messages dialect (top-level cache_read/cache_creation_input_tokens):
+ *   input_tokens EXCLUDES the cache fields, so prompt folds them in and cached means
+ *   cache READ only — the exact numbers the streaming path already records via
+ *   anthropicPromptTokens(); non-stream rows must match (fixes stream/non-stream
+ *   accounting divergence for identical upstream usage).
  */
 
 export interface NormalizedTokenCounts {
@@ -39,7 +44,21 @@ export function normalizeUsageCounts(usage: any): NormalizedTokenCounts {
     ? usage.cache_read_input_tokens
     : 0;
 
-  const totalCached = openaiCached + anthropicCacheCreation + anthropicCacheRead;
+  const anthropicDialect =
+    typeof usage.cache_creation_input_tokens === 'number' ||
+    typeof usage.cache_read_input_tokens === 'number';
+
+  if (anthropicDialect) {
+    prompt = prompt + anthropicCacheCreation + anthropicCacheRead;
+    return {
+      promptTokens: prompt || 0,
+      completionTokens: completion || 0,
+      totalTokens: (prompt + completion) || 0,
+      cachedTokens: anthropicCacheRead || 0,
+    };
+  }
+
+  const totalCached = openaiCached;
 
   // Only add cached tokens when base is zero (defensive, avoid double counting)
   if (prompt === 0) {

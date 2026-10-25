@@ -1,6 +1,8 @@
 import axios from 'axios';
 import type { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
 import { useAuthStore } from '@/stores/auth';
+import router from '@/router';
+import i18n from '@/i18n';
 
 interface CustomAxiosInstance extends Omit<AxiosInstance, 'get' | 'post' | 'put' | 'delete' | 'patch'> {
   get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>;
@@ -12,7 +14,7 @@ interface CustomAxiosInstance extends Omit<AxiosInstance, 'get' | 'post' | 'put'
 
 const axiosInstance: AxiosInstance = axios.create({
   baseURL: '/api',
-  timeout: 10000,
+  timeout: 120000,
 });
 
 axiosInstance.interceptors.request.use(
@@ -35,24 +37,33 @@ axiosInstance.interceptors.response.use(
   (error: AxiosError<{ error: unknown }>) => {
     if (error.response?.status === 401) {
       const authStore = useAuthStore();
+      const path = router.currentRoute.value.path;
       authStore.logout();
-      if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
-        window.location.href = '/login';
+      if (path !== '/login' && path !== '/register') {
+        void router.push('/login');
       }
     }
 
-    const errorData = error.response?.data?.error;
+    const t = i18n.global.t;
+    if (error.code === 'ECONNABORTED') {
+      error.message = t('messages.timeout');
+      return Promise.reject(error);
+    }
 
-    let message = '请求失败';
+    const errorData = error.response?.data?.error;
+    let message = t('messages.requestFailed');
 
     if (typeof errorData === 'string') {
       message = errorData;
     } else if (errorData && typeof errorData === 'object') {
       const maybeMessage = (errorData as { message?: unknown }).message;
       message = typeof maybeMessage === 'string' ? maybeMessage : JSON.stringify(errorData);
+    } else if (!error.response && error.message) {
+      message = error.message;
     }
 
-    return Promise.reject(new Error(message));
+    error.message = message;
+    return Promise.reject(error);
   }
 );
 

@@ -465,7 +465,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import {
   useMessage,
   NSpace,
@@ -981,10 +981,8 @@ async function loadInitialData() {
   await Promise.all([
     providerStore.fetchProviders(),
     virtualKeyStore.fetchVirtualKeys(),
-    loadStatsSummary()
+    loadStats()
   ])
-  // 摘要加载完成后，后台静默加载完整统计（趋势、模型、成本、熔断器、请求来源等）
-  await loadStats({ silent: true })
 }
 
 async function refreshDashboard() {
@@ -993,26 +991,6 @@ async function refreshDashboard() {
     virtualKeyStore.fetchVirtualKeys(),
     loadStats()
   ])
-}
-
-async function loadStatsSummary() {
-  loading.value = true
-  loadError.value = null
-  try {
-    const result = await configApi.getStatsSummary(selectedPeriod.value)
-
-    if (!result || !result.stats) {
-      throw new Error('获取统计概览失败')
-    }
-
-    stats.value = result.stats
-  } catch (error: any) {
-    const errorMsg = error.message || '加载数据失败'
-    loadError.value = errorMsg
-    message.error(errorMsg)
-  } finally {
-    loading.value = false
-  }
 }
 
 async function loadStats(opts: { silent?: boolean } = {}) {
@@ -1068,14 +1046,8 @@ const formatCost = (cost: number) => {
   return cost.toFixed(2)
 }
 
-onMounted(async () => {
+onMounted(() => {
   loadInitialData()
-  // When cost mapping rules change, refresh dashboard stats so cost analysis updates in real time
-  window.addEventListener('cost-mapping-updated', loadStats as any)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('cost-mapping-updated', loadStats as any)
 })
 </script>
 

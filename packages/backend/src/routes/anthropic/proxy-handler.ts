@@ -40,6 +40,10 @@ import {
   CLIENT_ABORTED_MESSAGE,
   isClientAbort,
 } from "../../utils/client-abort.js";
+import {
+  createEmptyAnthropicUsage,
+  mergeAnthropicUsage,
+} from "../../utils/anthropic-usage.js";
 
 function shouldLogRequestBody(virtualKey: VirtualKey): boolean {
   return !virtualKey.disable_logging;
@@ -733,6 +737,12 @@ export async function handleAnthropicNonStreamRequest(
         responseData,
       );
 
+      const usageCounts = mergeAnthropicUsage(
+        createEmptyAnthropicUsage(),
+        responseData?.usage,
+      );
+      const cachedTokens = usageCounts.cacheReadInputTokens;
+
       logApiRequestAsync({
         request,
         virtualKey,
@@ -749,6 +759,18 @@ export async function handleAnthropicNonStreamRequest(
         truncatedResponse: shouldLogBody
           ? JSON.stringify(responseData)
           : undefined,
+        cachedTokens,
+        responseMeta: {
+          finish_reason:
+            typeof responseData?.stop_reason === "string"
+              ? responseData.stop_reason
+              : undefined,
+          input_tokens: usageCounts.inputTokens,
+          output_tokens: usageCounts.outputTokens,
+          cache_creation_input_tokens: usageCounts.cacheCreationInputTokens,
+          cache_read_input_tokens: usageCounts.cacheReadInputTokens,
+          cached_tokens: cachedTokens,
+        },
         cacheHit: 0,
         ip: requestIp,
         userAgent: requestUserAgent,

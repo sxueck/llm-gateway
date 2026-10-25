@@ -11,24 +11,24 @@
     >
       <div class="form-section">
         <div class="section-header">
-          <span class="section-title">基础配置</span>
+          <span class="section-title">{{ t('providers.form.basic') }}</span>
         </div>
 
         <div class="section-content">
-            <n-form-item label="显示名称" path="name">
+            <n-form-item :label="t('providers.form.displayName')" path="name">
               <n-input 
                 v-model:value="formValue.name" 
-                placeholder="如: My LLM Service" 
+                :placeholder="t('providers.form.displayNamePlaceholder')" 
                 size="small"
               />
             </n-form-item>
 
-            <n-form-item label="提供商 ID" path="id">
+            <n-form-item :label="t('providers.form.providerId')" path="id">
               <n-space vertical style="width: 100%" :size="4">
                 <n-input
                   v-model:value="formValue.id"
                   :disabled="!!editingId"
-                  placeholder="唯一标识符，如: my-llm"
+                  :placeholder="t('providers.form.providerIdPlaceholder')"
                   size="small"
                   :status="getFieldStatus(idValidation.isValid, formValue.id)"
                   @update:value="handleIdInput"
@@ -57,17 +57,17 @@
               </n-space>
             </n-form-item>
             
-            <n-form-item label="描述">
+            <n-form-item :label="t('common.description')">
               <n-input 
                 v-model:value="formValue.description" 
-                placeholder="备注信息（可选）" 
+                :placeholder="t('providers.form.descriptionPlaceholder')" 
                 size="small" 
                 type="textarea" 
                 :autosize="{ minRows: 1, maxRows: 3 }" 
               />
             </n-form-item>
 
-            <n-form-item label="多协议支持">
+            <n-form-item :label="t('providers.form.multiProtocol')">
               <n-switch v-model:value="multiProtocolEnabled" size="small" />
             </n-form-item>
 
@@ -132,7 +132,7 @@
       </div>
 
       <div class="form-section highlight-section">
-        <div class="section-header">认证与连接</div>
+        <div class="section-header">{{ t('providers.apiKey') }}</div>
         <div class="section-content">
           <n-form-item label="API Key" path="apiKey">
             <n-space vertical style="width: 100%" :size="4">
@@ -141,7 +141,7 @@
                   v-model:value="formValue.apiKey"
                   type="password"
                   show-password-on="click"
-                  :placeholder="editingId ? '留空保持不变' : 'sk-...'"
+                  :placeholder="editingId ? t('providers.form.apiKeyKeep') : 'sk-...'"
                   size="small"
                   :status="getFieldStatus(keyValidation.isValid, formValue.apiKey)"
                   @blur="validateKey"
@@ -166,7 +166,7 @@
                       <template #icon><n-icon :component="ClipboardOutline" /></template>
                     </n-button>
                   </template>
-                  粘贴
+                  {{ t('providers.form.paste') }}
                 </n-tooltip>
               </n-input-group>
               
@@ -175,7 +175,7 @@
                 class="field-hint"
               >
                 <n-icon :component="InformationCircle" class="field-hint__icon" />
-                <span>当前已配置密钥，如需更新请输入新密钥</span>
+                <span>{{ t('providers.form.keyConfiguredHint') }}</span>
               </div>
               
               <div
@@ -199,33 +199,33 @@
                   <template #icon>
                     <n-icon :component="LinkOutline" />
                   </template>
-                  {{ fetchingModels ? '连接中...' : '测试连接并获取模型' }}
+                  {{ fetchingModels ? t('providers.form.connecting') : t('providers.form.fetchModels') }}
                 </n-button>
               </div>
 
               <n-collapse-transition :show="Boolean(fetchError)">
                 <div class="field-feedback field-feedback--warning">
                   <div class="field-feedback__title">{{ fetchError }}</div>
-                  <div class="field-feedback__desc">连接失败或该提供商不支持标准模型列表接口。</div>
+                  <div class="field-feedback__desc">{{ t('providers.form.fetchModelsFailedHint') }}</div>
                 </div>
               </n-collapse-transition>
             </n-space>
           </n-form-item>
 
           <n-collapse-transition :show="availableModels.length > 0">
-            <n-form-item label="选择模型">
+            <n-form-item :label="t('providers.form.selectModels')">
               <n-space vertical style="width: 100%" :size="6">
                 <n-select
                   v-model:value="selectedModels"
                   :options="modelOptions"
                   multiple
                   filterable
-                  placeholder="选择要启用的模型"
+                  :placeholder="t('providers.form.selectModelsPlaceholder')"
                   max-tag-count="responsive"
                   size="small"
                 />
                 <n-text depth="3" style="font-size: 11px">
-                  已发现 {{ availableModels.length }} 个模型，已添加 {{ addedModelCount }} 个，当前选中 {{ selectedModels.length }} 个
+                  {{ t('providers.form.modelSummary', { found: availableModels.length, added: addedModelCount, selected: selectedModels.length }) }}
                 </n-text>
               </n-space>
             </n-form-item>
@@ -234,7 +234,7 @@
       </div>
 
       <div class="form-section">
-        <n-form-item label="立即启用" :show-feedback="false" style="margin-bottom: 0;">
+        <n-form-item :label="t('providers.form.enableNow')" :show-feedback="false" style="margin-bottom: 0;">
           <n-switch v-model:value="formValue.enabled" size="small" />
         </n-form-item>
       </div>
@@ -245,6 +245,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import {
   NForm,
   NFormItem,
@@ -295,6 +296,7 @@ const emit = defineEmits<{
 }>();
 
 const message = useMessage();
+const { t } = useI18n();
 const formRef = ref();
 
 const idValidation = ref<ReturnType<typeof validateProviderId>>({ isValid: true });
@@ -376,26 +378,26 @@ const addedModelCount = computed(() => {
   return availableModels.value.filter(model => existingModelIdentifiers.has(model.id)).length;
 });
 
-const rules = {
+const rules = computed(() => ({
   id: [
-    { required: true, message: '请输入提供商 ID', trigger: 'blur' },
+    { required: true, message: t('providers.form.idRule'), trigger: 'blur' },
     {
       validator: (_rule: any, value: string) => {
         if (!value) return true;
         return validateProviderId(value).isValid;
       },
-      message: '格式：字母、数字、连字符',
+      message: t('providers.form.idFormat'),
       trigger: 'blur',
     },
   ],
-  name: [{ required: true, message: '请输入显示名称', trigger: 'blur' }],
+  name: [{ required: true, message: t('providers.form.nameRequired'), trigger: 'blur' }],
   baseUrl: [
     {
       validator: (_rule: any, value: string) => {
         if (multiProtocolEnabled.value) return true;
         return !value || validateBaseUrl(value).isValid;
       },
-      message: '请输入有效的 Base URL',
+      message: t('providers.form.baseUrlInvalid'),
       trigger: 'blur',
     },
   ],
@@ -408,11 +410,11 @@ const rules = {
         const validation = validateApiKey(value, formValue.value.id)
         return validation.isValid
       },
-      message: '请输入 API Key',
+      message: t('providers.form.apiKeyRequired'),
       trigger: 'blur',
     },
   ],
-};
+}));
 
 async function pasteApiKey() {
   try {
@@ -420,10 +422,10 @@ async function pasteApiKey() {
     if (text) {
       formValue.value.apiKey = text;
       validateKey();
-      message.success('已粘贴');
+      message.success(t('providers.form.pasted'));
     }
   } catch (err) {
-    message.error('无法读取剪贴板');
+    message.error(t('providers.form.clipboardDenied'));
   }
 }
 
@@ -459,7 +461,7 @@ async function handleFetchModels() {
     : formValue.value.baseUrl;
 
   if (!baseUrlToUse || !formValue.value.apiKey) {
-    message.warning('请先填写 Base URL 和 API Key');
+    message.warning(t('providers.form.needUrlAndKey'));
     return;
   }
 
@@ -482,7 +484,7 @@ async function handleFetchModels() {
     }
   } catch (error: any) {
     availableModels.value = [];
-    fetchError.value = error.message || '获取模型列表失败';
+    fetchError.value = error.message || t('providers.form.fetchModelsFailed');
   } finally {
     fetchingModels.value = false;
   }

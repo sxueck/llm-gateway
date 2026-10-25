@@ -73,8 +73,7 @@ const BASE = '/admin/playground';
 
 /**
  * 非流式走 fetch 而不是 request.ts 的 axios：后端在 4xx/5xx 时仍然回完整的
- * PlaygroundResult 信封（status + 上游错误 body），而 axios 拦截器会把它们压成
- * 一个只有 message 的 Error；另外 axios 全局 10s 超时会掩掉慢模型（后端上限 120s）。
+ * PlaygroundResult 信封（status + 上游错误 body），axios 失败分支只有 message。
  */
 async function postJson(path: 'chat' | 'messages', payload: unknown): Promise<PlaygroundResult> {
   const authStore = useAuthStore();

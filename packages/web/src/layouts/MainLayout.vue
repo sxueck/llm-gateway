@@ -145,14 +145,13 @@ const mainMenuParentByKey: Record<string, string> = {
   playground: 'tools',
   logs: 'tools',
   'api-requests': 'tools',
-  'db-maintenance': 'settings',
 };
 const generalMenuParentByKey: Record<string, string> = {
-  settings: 'settings',
-  'security-settings': 'settings',
-  backup: 'settings',
-  'developer-settings': 'settings',
-  'db-maintenance': 'settings',
+  settings: 'settings-group',
+  'security-settings': 'settings-group',
+  backup: 'settings-group',
+  'developer-settings': 'settings-group',
+  'db-maintenance': 'settings-group',
 };
 
 const toggleSidebar = () => {
@@ -190,9 +189,19 @@ function syncMenuExpandedKeys() {
   generalMenuExpandedKeys.value = getDefaultGeneralMenuExpandedKeys();
 }
 
+function ensureActiveMenuExpanded() {
+  const mainParent = mainMenuParentByKey[activeKey.value];
+  if (mainParent && !mainMenuExpandedKeys.value.includes(mainParent)) {
+    mainMenuExpandedKeys.value = dedupeKeys([...mainMenuExpandedKeys.value, mainParent]);
+  }
+  const generalParent = generalMenuParentByKey[activeKey.value];
+  if (generalParent && !generalMenuExpandedKeys.value.includes(generalParent)) {
+    generalMenuExpandedKeys.value = dedupeKeys([...generalMenuExpandedKeys.value, generalParent]);
+  }
+}
+
 const { windowHeight } = useDebouncedWindowSize(200, (width) => {
   collapsed.value = width < 1024;
-  syncMenuExpandedKeys();
 });
 
 const menuOptions = computed(() => [
@@ -299,7 +308,7 @@ const menuOptions = computed(() => [
 const generalMenuOptions = computed(() => [
   {
     label: t('menu.settings'),
-    key: 'settings',
+    key: 'settings-group',
     icon: () => h(NIcon, null, { default: () => h(OptionsOutline) }),
     children: [
       {
@@ -344,7 +353,16 @@ const activeKey = computed(() => {
   return path || 'dashboard';
 });
 
+const GROUP_MENU_KEYS = new Set([
+  'model-management',
+  'monitoring',
+  'experimental-features',
+  'tools',
+  'settings-group',
+]);
+
 function handleMenuSelect(key: string) {
+  if (GROUP_MENU_KEYS.has(key)) return;
   router.push(`/${key}`);
 }
 
@@ -363,9 +381,15 @@ function handleUserAction(key: string) {
   }
 }
 
+syncMenuExpandedKeys();
+
 watch(activeKey, () => {
+  ensureActiveMenuExpanded();
+});
+
+watch(isCompactSidebar, () => {
   syncMenuExpandedKeys();
-}, { immediate: true });
+});
 
 onMounted(async () => {
   if (authStore.token && !authStore.user) {

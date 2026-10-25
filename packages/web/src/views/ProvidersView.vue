@@ -3,22 +3,22 @@
     <div class="providers-stack">
       <PageHeader
         eyebrow="MODEL MANAGEMENT"
-        title="提供商管理"
-        subtitle="配置和管理 AI 模型提供商,包括 API 密钥、Base URL 等信息。支持导入导出配置"
+        :title="t('providers.title')"
+        :subtitle="t('providers.subtitle')"
       >
         <template #actions>
           <n-button @click="testAllProviders" :loading="isTestingAll">
             <template #icon>
               <n-icon><SpeedTestIcon /></n-icon>
             </template>
-            测速
+            {{ t('providers.speedTest') }}
           </n-button>
           <n-dropdown :options="exportOptions" @select="handleExportSelect">
             <n-button>
               <template #icon>
                 <n-icon><DownloadIcon /></n-icon>
               </template>
-              导出
+              {{ t('providers.export') }}
             </n-button>
           </n-dropdown>
           <n-upload :show-file-list="false" accept=".json" @change="handleImportFile">
@@ -26,10 +26,10 @@
               <template #icon>
                 <n-icon><UploadIcon /></n-icon>
               </template>
-              导入
+              {{ t('providers.import') }}
             </n-button>
           </n-upload>
-          <n-button type="primary" @click="showModal = true">添加提供商</n-button>
+          <n-button type="primary" @click="showModal = true">{{ t('providers.addProvider') }}</n-button>
         </template>
       </PageHeader>
 
@@ -37,13 +37,13 @@
 
       <n-card class="table-card">
         <template #header>
-          <span class="table-card-title">提供商列表</span>
+          <span class="table-card-title">{{ t('providers.list') }}</span>
         </template>
         <template #header-extra>
           <n-input
             v-model:value="searchQuery"
             class="provider-search"
-            placeholder="搜索名称 / Base URL / 描述"
+            :placeholder="t('providers.searchPlaceholder')"
             clearable
             round
           >
@@ -70,7 +70,7 @@
     <n-modal
       v-model:show="showModal"
       preset="card"
-      :title="editingId ? '编辑提供商' : '添加提供商'"
+      :title="editingId ? t('providers.editProvider') : t('providers.addProvider')"
       class="provider-modal"
       :style="{ width: '800px', maxWidth: '92vw', maxHeight: '90vh' }"
       :segmented="{
@@ -90,9 +90,9 @@
       </div>
       <template #footer>
         <n-space justify="end" :size="8">
-          <n-button @click="showModal = false" size="small">取消</n-button>
+          <n-button @click="showModal = false" size="small">{{ t('common.cancel') }}</n-button>
           <n-button type="primary" size="small" :loading="submitting" @click="handleSubmit">
-            {{ editingId ? '更新' : '创建' }}
+            {{ editingId ? t('common.update') : t('common.create') }}
           </n-button>
         </n-space>
       </template>
@@ -102,6 +102,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, h, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   useMessage,
   useDialog,
@@ -139,6 +140,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import { downloadProvidersConfig, parseImportFile } from '@/utils/provider-export'
 
 const message = useMessage()
+const { t } = useI18n()
 const dialog = useDialog()
 const providerStore = useProviderStore()
 const modelStore = useModelStore()
@@ -155,7 +157,7 @@ const pagination = reactive<PaginationProps>({
   itemCount: 0,
   pageSizes: [10, 20, 50],
   showSizePicker: true,
-  prefix: info => `共 ${info.itemCount} 条`,
+  prefix: info => t('common.totalCount', { count: info.itemCount }),
   onChange: page => {
     pagination.page = page
   },
@@ -184,16 +186,16 @@ watch([filteredProviders, () => pagination.pageSize], () => {
   if ((pagination.page ?? 1) > maxPage) pagination.page = maxPage
 })
 
-const exportOptions = [
+const exportOptions = computed(() => [
   {
-    label: '导出所有提供商',
+    label: t('providers.exportAll'),
     key: 'all'
   },
   {
-    label: '仅导出已启用的提供商',
+    label: t('providers.exportEnabled'),
     key: 'enabled'
   }
-]
+])
 
 const formValue = ref<ProviderFormValue>(createDefaultProviderForm())
 
@@ -211,13 +213,13 @@ const testingStates = ref<Record<string, boolean>>({})
 const isTestingAll = ref(false)
 const inFlightTests = new Map<string, Promise<void>>()
 
-const columns = [
+const columns = computed(() => [
   { title: 'ID', key: 'id', width: 100, ellipsis: { tooltip: true } },
-  { title: '名称', key: 'name', width: 150, ellipsis: { tooltip: true } },
-  { title: '描述', key: 'description', ellipsis: { tooltip: true } },
+  { title: t('common.name'), key: 'name', width: 150, ellipsis: { tooltip: true } },
+  { title: t('common.description'), key: 'description', ellipsis: { tooltip: true } },
   { title: 'Base URL', key: 'baseUrl', width: 220, ellipsis: { tooltip: true } },
   {
-    title: '延迟',
+    title: t('providers.latency'),
     key: 'latency',
     width: 120,
     render: (row: Provider) => {
@@ -225,7 +227,7 @@ const columns = [
       const latency = latencies.value[row.id]
 
       if (isTesting) {
-        return h('span', { style: 'color: #999; font-size: 12px' }, '测速中...')
+        return h('span', { style: 'color: #999; font-size: 12px' }, t('providers.speedTesting'))
       }
 
       if (latency === undefined || latency === null) {
@@ -271,17 +273,17 @@ const columns = [
     }
   },
   {
-    title: '状态',
+    title: t('common.status'),
     key: 'enabled',
     render: (row: Provider) =>
       h(
         NTag,
         { type: row.enabled ? 'success' : 'default' },
-        { default: () => (row.enabled ? '启用' : '禁用') }
+        { default: () => (row.enabled ? t('common.enabled') : t('common.disabled')) }
       )
   },
   {
-    title: '操作',
+    title: t('common.actions'),
     key: 'actions',
     width: 150,
     render: (row: Provider) =>
@@ -297,7 +299,7 @@ const columns = [
                 'quaternary': true,
                 'circle': true,
                 'disabled': !!testingStates.value[row.id],
-                'aria-label': '测速',
+                'aria-label': t('providers.speedTest'),
                 'onClick': () => handleTest(row.id)
               },
               {
@@ -310,7 +312,7 @@ const columns = [
                 'size': 'small',
                 'quaternary': true,
                 'circle': true,
-                'aria-label': '编辑',
+                'aria-label': t('common.edit'),
                 'onClick': () => handleEdit(row)
               },
               {
@@ -330,21 +332,21 @@ const columns = [
                       'size': 'small',
                       'quaternary': true,
                       'circle': true,
-                      'aria-label': '删除',
+                      'aria-label': t('common.delete'),
                       'onClick': () => {}
                     },
                     {
                       icon: () => h(NIcon, null, { default: () => h(DeleteOutlined) })
                     }
                   ),
-                default: () => '确定删除此提供商吗？'
+                default: () => t('providers.deleteConfirm')
               }
             )
           ]
         }
       )
   }
-]
+])
 
 async function handleEdit(provider: Provider) {
   editingId.value = provider.id
@@ -367,7 +369,7 @@ async function handleEdit(provider: Provider) {
       enabled: fullProvider.enabled
     }
   } catch (error: any) {
-    message.error('获取提供商信息失败: ' + error.message)
+    message.error(t('providers.loadFailed', { message: error.message }))
     return
   }
 
@@ -389,7 +391,7 @@ async function handleTest(id: string, showToast = true) {
       if (result.success) {
         latencies.value[id] = latency
         if (showToast) {
-          const latencyText = latency !== null ? ` (延迟: ${latency}ms)` : ''
+          const latencyText = latency !== null ? ` (${t('providers.latencyValue', { ms: latency })})` : ''
           message.success(`${result.message}${latencyText}`)
         }
       } else {
@@ -416,16 +418,16 @@ async function handleTest(id: string, showToast = true) {
 async function testAllProviders() {
   const providers = providerStore.providers.filter(p => p.enabled)
   if (providers.length === 0) {
-    message.warning('没有已启用的提供商')
+    message.warning(t('providers.noEnabled'))
     return
   }
 
   isTestingAll.value = true
-  message.loading('正在测试所有提供商连接...', { duration: 2000 })
+  message.loading(t('providers.testingAll'), { duration: 2000 })
 
   try {
     await Promise.all(providers.map(p => handleTest(p.id, false)))
-    message.success('测试完成')
+    message.success(t('providers.testDone'))
   } finally {
     isTestingAll.value = false
   }
@@ -434,7 +436,7 @@ async function testAllProviders() {
 async function handleDelete(id: string) {
   try {
     await providerApi.delete(id)
-    message.success('删除成功')
+    message.success(t('providers.deleted'))
     await providerStore.fetchProviders()
   } catch (error: any) {
     message.error(error.message)
@@ -451,10 +453,10 @@ async function handleSubmit() {
       apiKeyChanged.value = true
       const confirmed = await new Promise<boolean>(resolve => {
         dialog.warning({
-          title: 'API Key 已变更',
-          content: '检测到您修改了 API Key，确定要保存新的密钥吗？',
-          positiveText: '确定保存',
-          negativeText: '取消',
+          title: t('providers.apiKeyChangedTitle'),
+          content: t('providers.apiKeyChangedContent'),
+          positiveText: t('providers.confirmSave'),
+          negativeText: t('common.cancel'),
           onPositiveClick: () => {
             resolve(true)
           },
@@ -504,15 +506,15 @@ async function handleSubmit() {
           try {
             await modelApi.batchCreate(modelsToCreate)
             await modelStore.fetchModels()
-            message.success(`更新成功，新增 ${modelsToCreate.length} 个模型`)
+            message.success(t('providers.updatedWithModels', { count: modelsToCreate.length }))
           } catch (error: any) {
-            message.warning(`提供商更新成功，但部分模型创建失败: ${error.message}`)
+            message.warning(t('providers.updatedModelsPartial', { message: error.message }))
           }
         } else {
-          message.success('更新成功')
+          message.success(t('providers.updateSuccess'))
         }
       } else {
-        message.success('更新成功')
+        message.success(t('providers.updateSuccess'))
       }
     } else {
       const selectedModelsInfo = formRef.value?.getSelectedModelsInfo?.() || []
@@ -534,12 +536,12 @@ async function handleSubmit() {
         try {
           await modelApi.batchCreate(modelsToCreate)
           await modelStore.fetchModels()
-          message.success(`创建成功，已添加 ${selectedModelsInfo.length} 个模型`)
+          message.success(t('providers.createdWithModels', { count: selectedModelsInfo.length }))
         } catch (error: any) {
-          message.warning(`提供商创建成功，但部分模型创建失败: ${error.message}`)
+          message.warning(t('providers.createdModelsPartial', { message: error.message }))
         }
       } else {
-        message.success('创建成功，您可以在模型管理页面使用"批量添加"功能手动添加模型')
+        message.success(t('providers.createdManualHint'))
       }
     }
 
@@ -567,12 +569,12 @@ function handleExportSelect(key: string) {
     key === 'enabled' ? providerStore.providers.filter(p => p.enabled) : providerStore.providers
 
   if (providers.length === 0) {
-    message.warning('没有可导出的提供商')
+    message.warning(t('providers.nothingToExport'))
     return
   }
 
   downloadProvidersConfig(providers)
-  message.success(`已导出 ${providers.length} 个提供商配置`)
+  message.success(t('providers.exported', { count: providers.length }))
 }
 
 async function handleImportFile(data: {
@@ -583,7 +585,7 @@ async function handleImportFile(data: {
   const file = data.file.file
 
   if (!file) {
-    message.error('文件为空，无法导入')
+    message.error(t('providers.emptyFile'))
     return
   }
 
@@ -591,32 +593,32 @@ async function handleImportFile(data: {
     const { data: importData, validation } = await parseImportFile(file)
 
     if (!validation.isValid) {
-      message.error(`导入失败: ${validation.errors.join(', ')}`)
+      message.error(t('providers.importFailed', { message: validation.errors.join(', ') }))
       return
     }
 
     if (validation.warnings.length > 0) {
-      message.warning(`导入警告: ${validation.warnings.join(', ')}`)
+      message.warning(t('providers.importWarning', { message: validation.warnings.join(', ') }))
     }
 
     if (!importData) {
-      message.error('导入数据为空')
+      message.error(t('providers.importEmpty'))
       return
     }
 
     const providersToImport = importData.providers
 
     dialog.warning({
-      title: '确认导入',
-      content: `即将导入 ${providersToImport.length} 个提供商配置。\n\n注意：导入的提供商需要您手动设置 API Key，因为安全原因导出文件中不包含 API Key。\n\n已存在的提供商将被跳过。`,
-      positiveText: '确认导入',
-      negativeText: '取消',
+      title: t('providers.importConfirmTitle'),
+      content: t('providers.importConfirmContent', { count: providersToImport.length }),
+      positiveText: t('providers.importConfirm'),
+      negativeText: t('common.cancel'),
       onPositiveClick: async () => {
         await executeImport(providersToImport)
       }
     })
   } catch (error: any) {
-    message.error(`导入失败: ${error.message}`)
+    message.error(t('providers.importFailed', { message: error.message }))
   }
 }
 
@@ -644,7 +646,7 @@ async function executeImport(
       if (result.results.errors.length > 0) {
         const errorMessages = result.results.errors.map(e => `${e.id}: ${e.error}`).join('\n')
         dialog.error({
-          title: '部分导入失败',
+          title: t('providers.importPartialTitle'),
           content: errorMessages
         })
       }
@@ -654,7 +656,7 @@ async function executeImport(
       if (result.results.errors.length > 0) {
         const errorMessages = result.results.errors.map(e => `${e.id}: ${e.error}`).join('\n')
         dialog.error({
-          title: '导入错误详情',
+          title: t('providers.importErrorTitle'),
           content: errorMessages
         })
       }
@@ -662,7 +664,7 @@ async function executeImport(
 
     await providerStore.fetchProviders()
   } catch (error: any) {
-    message.error(`导入失败: ${error.message}`)
+    message.error(t('providers.importFailed', { message: error.message }))
   }
 }
 
@@ -674,6 +676,7 @@ watch(showModal, visible => {
 
 onMounted(() => {
   providerStore.fetchProviders()
+  modelStore.fetchModels()
 })
 </script>
 

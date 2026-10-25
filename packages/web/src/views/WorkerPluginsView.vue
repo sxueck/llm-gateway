@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, h, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import type { DataTableColumns } from "naive-ui";
 import {
   NAlert,
@@ -29,6 +30,7 @@ import { formatTimestamp } from "@/utils/common";
 import PageHeader from "@/components/PageHeader.vue";
 
 const message = useMessage();
+const { t } = useI18n();
 const loading = ref(false);
 const plugins = ref<WorkerPluginVersion[]>([]);
 const enrollments = ref<PluginEnrollment[]>([]);
@@ -68,7 +70,7 @@ async function load() {
       if (!selectedPlugin.value) showDetails.value = false;
     }
   } catch (error: any) {
-    message.error(error?.response?.data?.error?.message || "加载插件列表失败");
+    message.error(error?.message || t("workerPlugins.loadFailed"));
   } finally {
     loading.value = false;
   }
@@ -84,12 +86,12 @@ const statusTagType: Record<
   draft: "default",
 };
 
-const statusLabel: Record<WorkerPluginVersion["status"], string> = {
-  published: "已发布",
-  deprecated: "已废弃",
-  revoked: "已撤销",
-  draft: "草稿",
-};
+const statusLabel = computed(() => ({
+  published: t("workerPlugins.status.published"),
+  deprecated: t("workerPlugins.status.deprecated"),
+  revoked: t("workerPlugins.status.revoked"),
+  draft: t("workerPlugins.status.draft"),
+}));
 
 function enrollmentState(row: WorkerPluginVersion) {
   const enrollment = enrollmentByPlugin.value.get(row.id);
@@ -117,7 +119,7 @@ async function toggleEnabled(row: WorkerPluginVersion, enabled: boolean) {
     });
     await load();
   } catch (error: any) {
-    message.error(error?.response?.data?.error?.message || "更新启用状态失败");
+    message.error(error?.message || t("workerPlugins.enrollFailed"));
   }
 }
 
@@ -130,7 +132,7 @@ async function setDefault(row: WorkerPluginVersion) {
     });
     await load();
   } catch (error: any) {
-    message.error(error?.response?.data?.error?.message || "设置默认版本失败");
+    message.error(error?.message || t("workerPlugins.setDefaultFailed"));
   }
 }
 
@@ -140,10 +142,10 @@ async function transition(
 ) {
   try {
     await workerPluginApi[action](row.id, row.version);
-    message.success(`插件 ${row.id}@${row.version} 状态已更新`);
+    message.success(t("workerPlugins.statusUpdated", { id: row.id, version: row.version }));
     await load();
   } catch (error: any) {
-    message.error(error?.response?.data?.error?.message || "状态更新失败");
+    message.error(error?.message || t("workerPlugins.statusUpdateFailed"));
   }
 }
 
@@ -154,7 +156,7 @@ function errorText(error: unknown, fallback: string): string {
 async function removeVersion(row: WorkerPluginVersion) {
   try {
     await workerPluginApi.remove(row.id, row.version);
-    message.success(`已删除 ${row.id}@${row.version}`);
+    message.success(t("workerPlugins.deleted", { id: row.id, version: row.version }));
     if (
       selectedPlugin.value?.id === row.id &&
       selectedPlugin.value?.version === row.version
@@ -164,17 +166,17 @@ async function removeVersion(row: WorkerPluginVersion) {
     }
     await load();
   } catch (error: any) {
-    message.error(errorText(error, "删除版本失败"));
+    message.error(errorText(error, t("workerPlugins.deleteFailed")));
   }
 }
 
 async function unenroll(row: WorkerPluginVersion) {
   try {
     await workerPluginApi.unenroll(row.id);
-    message.success(`已取消订阅 ${row.id}`);
+    message.success(t("workerPlugins.unenrolled", { id: row.id }));
     await load();
   } catch (error: any) {
-    message.error(errorText(error, "取消订阅失败"));
+    message.error(errorText(error, t("workerPlugins.unenrollFailed")));
   }
 }
 
@@ -183,22 +185,22 @@ async function submitPublish() {
   try {
     payload = JSON.parse(publishBundleText.value);
   } catch {
-    message.error("Bundle JSON 解析失败，请检查格式");
+    message.error(t("workerPlugins.bundleInvalid"));
     return;
   }
   if (!payload?.manifest || !payload?.files) {
-    message.error("Bundle 必须包含 manifest 与 files 两个字段");
+    message.error(t("workerPlugins.bundleFields"));
     return;
   }
   publishing.value = true;
   try {
     const res = await workerPluginApi.publish(payload);
-    message.success(`已发布 ${res.id}@${res.version}`);
+    message.success(t("workerPlugins.published", { id: res.id, version: res.version }));
     showPublishModal.value = false;
     publishBundleText.value = "";
     await load();
   } catch (error: any) {
-    message.error(error?.response?.data?.error?.message || "发布失败");
+    message.error(error?.message || t("workerPlugins.publishFailed"));
   } finally {
     publishing.value = false;
   }
@@ -229,9 +231,9 @@ function rowClassName(row: WorkerPluginVersion) {
   return row.status === "revoked" ? "plugin-row-revoked" : "";
 }
 
-const columns: DataTableColumns<WorkerPluginVersion> = [
+const columns = computed<DataTableColumns<WorkerPluginVersion>>(() => [
   {
-    title: "插件版本",
+    title: t("workerPlugins.colVersion"),
     key: "name",
     minWidth: 230,
     render: (row) => {
@@ -243,7 +245,7 @@ const columns: DataTableColumns<WorkerPluginVersion> = [
           h("strong", null, row.name),
           h(NTag, { size: "small", bordered: false }, { default: () => `v${row.version}` }),
           ...(isLatest
-            ? [h(NTag, { size: "small", type: "primary", bordered: false }, { default: () => "最新" })]
+            ? [h(NTag, { size: "small", type: "primary", bordered: false }, { default: () => t("workerPlugins.latest") })]
             : []),
         ]),
         h("code", { class: "plugin-identity-id" }, row.id),
@@ -251,33 +253,33 @@ const columns: DataTableColumns<WorkerPluginVersion> = [
     },
   },
   {
-    title: "状态",
+    title: t("common.status"),
     key: "status",
     width: 100,
     render: (row) =>
       h(
         NTag,
         { type: statusTagType[row.status], size: "small" },
-        { default: () => statusLabel[row.status] },
+        { default: () => statusLabel.value[row.status] },
       ),
   },
   {
-    title: "运行配置",
+    title: t("workerPlugins.colRuntime"),
     key: "configuration",
     minWidth: 190,
     render: (row) =>
       h("div", { class: "configuration-summary" }, [
         h("code", { class: "configuration-profile" }, row.model_profile),
-        h("span", null, `${row.tools.length} 个工具`),
-        h("span", null, `${row.max_turns} 轮 · ${row.timeout_seconds}s`),
+        h("span", null, t("workerPlugins.toolCount", { count: row.tools.length })),
+        h("span", null, t("workerPlugins.turnBudget", { turns: row.max_turns, seconds: row.timeout_seconds })),
       ]),
   },
   {
-    title: "我的设置",
+    title: t("workerPlugins.colMine"),
     key: "enrollment",
     width: 180,
     render: (row) => {
-      if (row.status === "revoked") return h("span", { class: "muted-value" }, "不可用");
+      if (row.status === "revoked") return h("span", { class: "muted-value" }, t("workerPlugins.unavailable"));
       const state = enrollmentState(row);
       return h(NSpace, { size: 8, align: "center", wrap: false }, {
         default: () => [
@@ -287,7 +289,7 @@ const columns: DataTableColumns<WorkerPluginVersion> = [
             onUpdateValue: (value: boolean) => toggleEnabled(row, value),
           }),
           state.enrollment?.is_default && state.isCurrent
-            ? h(NTag, { size: "small", type: "info", bordered: false }, { default: () => "默认" })
+            ? h(NTag, { size: "small", type: "info", bordered: false }, { default: () => t("common.default") })
             : h(
                 NButton,
                 {
@@ -296,7 +298,7 @@ const columns: DataTableColumns<WorkerPluginVersion> = [
                   disabled: row.status === "draft",
                   onClick: () => setDefault(row),
                 },
-                { default: () => "设为默认" },
+                { default: () => t("workerPlugins.setDefault") },
               ),
         ],
       });
@@ -311,10 +313,10 @@ const columns: DataTableColumns<WorkerPluginVersion> = [
       h(
         NButton,
         { size: "small", tertiary: true, onClick: () => openDetails(row) },
-        { default: () => "详情" },
+        { default: () => t("workerPlugins.details") },
       ),
   },
-];
+]);
 
 onMounted(load);
 </script>
@@ -323,20 +325,20 @@ onMounted(load);
   <div class="worker-plugins-view">
     <PageHeader
       eyebrow="EXPERIMENTAL"
-      title="Worker 插件中心"
-      subtitle="管理版本化的只读 Worker 角色包与个人默认版本。"
+      :title="t('workerPlugins.title')"
+      :subtitle="t('workerPlugins.subtitle')"
     >
       <template #actions>
-        <NButton size="small" @click="load" :loading="loading">刷新</NButton>
+        <NButton size="small" @click="load" :loading="loading">{{ t('common.refresh') }}</NButton>
         <NButton size="small" type="primary" @click="showPublishModal = true">
-          发布新版本
+          {{ t('workerPlugins.publish') }}
         </NButton>
       </template>
     </PageHeader>
 
     <NCard class="plugin-center-card" :bordered="false">
       <NAlert type="info" class="plugin-notice" :show-icon="true">
-        版本发布后不可变；每次 run 固定使用 id、version 与 digest。撤销版本会拒绝新的 run，已创建的 run 可继续完成；删除版本会移除该版本记录，需先确保无排队/运行中的 run 与用户订阅。
+        {{ t('workerPlugins.immutableHint') }}
       </NAlert>
 
       <NDataTable
@@ -360,22 +362,22 @@ onMounted(load);
             <NTag size="small" :type="statusTagType[selectedPlugin.status]">
               {{ statusLabel[selectedPlugin.status] }}
             </NTag>
-            <NButton size="small" tertiary @click="load" :loading="loading">刷新</NButton>
+            <NButton size="small" tertiary @click="load" :loading="loading">{{ t('common.refresh') }}</NButton>
           </div>
         </template>
 
         <div class="drawer-body">
           <code class="plugin-id">{{ selectedPlugin.id }}@{{ selectedPlugin.version }}</code>
-          <p class="plugin-description">{{ selectedPlugin.description || "暂无插件说明。" }}</p>
+          <p class="plugin-description">{{ selectedPlugin.description || t('workerPlugins.noDescription') }}</p>
 
           <NDescriptions label-placement="left" :column="1" bordered size="small">
-            <NDescriptionsItem label="模型 Profile">
+            <NDescriptionsItem :label="t('workerPlugins.modelProfile')">
               {{ selectedPlugin.model_profile }}
             </NDescriptionsItem>
-            <NDescriptionsItem label="执行预算">
-              {{ selectedPlugin.max_turns }} 轮 · {{ selectedPlugin.timeout_seconds }} 秒
+            <NDescriptionsItem :label="t('workerPlugins.budget')">
+              {{ t('workerPlugins.budgetValue', { turns: selectedPlugin.max_turns, seconds: selectedPlugin.timeout_seconds }) }}
             </NDescriptionsItem>
-            <NDescriptionsItem label="发布时间">
+            <NDescriptionsItem :label="t('workerPlugins.publishedAt')">
               {{ selectedPlugin.published_at ? formatTimestamp(selectedPlugin.published_at) : "—" }}
             </NDescriptionsItem>
             <NDescriptionsItem label="Digest">
@@ -384,7 +386,7 @@ onMounted(load);
           </NDescriptions>
 
           <section class="detail-section">
-            <span class="section-label">允许工具</span>
+            <span class="section-label">{{ t('workerPlugins.allowedTools') }}</span>
             <NSpace size="small" wrap>
               <NTag v-for="tool in selectedPlugin.tools" :key="tool" size="small" :bordered="false">
                 {{ tool }}
@@ -397,9 +399,9 @@ onMounted(load);
             class="detail-section enrollment-section"
           >
             <div>
-              <span class="section-label">个人订阅</span>
-              <p v-if="selectedPlugin.status === 'revoked'">该版本已撤销；如需删除此版本，请先取消订阅。</p>
-              <p v-else>{{ enrollmentState(selectedPlugin).enabled ? "当前版本可用于默认选择。" : "当前版本已禁用。" }}</p>
+              <span class="section-label">{{ t('workerPlugins.enrollment') }}</span>
+              <p v-if="selectedPlugin.status === 'revoked'">{{ t('workerPlugins.revokedHint') }}</p>
+              <p v-else>{{ enrollmentState(selectedPlugin).enabled ? t('workerPlugins.enrollmentEnabled') : t('workerPlugins.enrollmentDisabled') }}</p>
             </div>
             <NSpace align="center">
               <NSwitch
@@ -412,9 +414,9 @@ onMounted(load);
                 @positive-click="unenroll(selectedPlugin)"
               >
                 <template #trigger>
-                  <NButton size="small" quaternary>取消订阅</NButton>
+                  <NButton size="small" quaternary>{{ t('workerPlugins.unenroll') }}</NButton>
                 </template>
-                取消订阅会删除该插件的个人启用与默认版本设置，不影响其他用户。确认取消？
+                {{ t('workerPlugins.unenrollConfirm') }}
               </NPopconfirm>
             </NSpace>
           </section>
@@ -426,21 +428,21 @@ onMounted(load);
             type="info"
             @click="setDefault(selectedPlugin)"
           >
-            设为默认版本
+            {{ t('workerPlugins.setDefaultVersion') }}
           </NButton>
 
           <NDivider />
 
           <section class="detail-section">
-            <span class="section-label danger-label">版本状态</span>
-            <p>状态变更只影响新建 run；撤销不可恢复。</p>
+            <span class="section-label danger-label">{{ t('workerPlugins.versionStatus') }}</span>
+            <p>{{ t('workerPlugins.statusHint') }}</p>
             <NSpace>
               <NButton
                 v-if="selectedPlugin.status === 'published'"
                 size="small"
                 @click="transition(selectedPlugin, 'deprecate')"
               >
-                标记为废弃
+                {{ t('workerPlugins.markDeprecated') }}
               </NButton>
               <NButton
                 v-if="selectedPlugin.status === 'deprecated'"
@@ -449,22 +451,22 @@ onMounted(load);
                 secondary
                 @click="transition(selectedPlugin, 'republish')"
               >
-                恢复发布
+                {{ t('workerPlugins.republish') }}
               </NButton>
               <NPopconfirm
                 v-if="selectedPlugin.status === 'published' || selectedPlugin.status === 'deprecated'"
                 @positive-click="transition(selectedPlugin, 'revoke')"
               >
                 <template #trigger>
-                  <NButton size="small" type="error" secondary>撤销版本</NButton>
+                  <NButton size="small" type="error" secondary>{{ t('workerPlugins.revoke') }}</NButton>
                 </template>
-                撤销后不能再创建新的 run，且不可恢复。确认撤销？
+                {{ t('workerPlugins.revokeConfirm') }}
               </NPopconfirm>
               <NPopconfirm @positive-click="removeVersion(selectedPlugin)">
                 <template #trigger>
-                  <NButton size="small" type="error">删除版本</NButton>
+                  <NButton size="small" type="error">{{ t('workerPlugins.deleteVersion') }}</NButton>
                 </template>
-                删除后该版本无法再被引用或恢复。存在排队/运行中的 run 或用户订阅时会拒绝删除。确认删除 {{ selectedPlugin.id }}@{{ selectedPlugin.version }}？
+                {{ t('workerPlugins.deleteConfirm', { id: selectedPlugin.id, version: selectedPlugin.version }) }}
               </NPopconfirm>
             </NSpace>
           </section>
@@ -475,28 +477,23 @@ onMounted(load);
     <NModal
       v-model:show="showPublishModal"
       preset="card"
-      title="发布插件版本"
+      :title="t('workerPlugins.publishTitle')"
       :style="{ width: '720px', maxWidth: '92vw' }"
     >
       <NSpace vertical size="large">
         <NAlert type="warning" :show-icon="true">
-          仅发布官方 bundle：manifest 与 prompt.md、input.schema.json、output.schema.json 三个 bundle 文件。含可执行文件的 bundle 会被拒绝。
+          {{ t('workerPlugins.publishHint') }}
         </NAlert>
         <NInput
           v-model:value="publishBundleText"
           type="textarea"
-          placeholder='粘贴 bundle JSON，例如：
-{
-  "manifest": { "schema_version": "1", "id": "com.llm-gateway.code-search", "version": "1.0.1", ... },
-  "files": { "prompt.md": "...", "input.schema.json": "...", "output.schema.json": "..." },
-  "changelog": "可选，版本变更说明"
-}'
+          :placeholder="t('workerPlugins.bundlePlaceholder')"
           :rows="14"
           style="font-family: monospace"
         />
         <NSpace justify="end">
-          <NButton @click="showPublishModal = false">取消</NButton>
-          <NButton type="primary" :loading="publishing" @click="submitPublish">发布</NButton>
+          <NButton @click="showPublishModal = false">{{ t('common.cancel') }}</NButton>
+          <NButton type="primary" :loading="publishing" @click="submitPublish">{{ t('workerPlugins.publishAction') }}</NButton>
         </NSpace>
       </NSpace>
     </NModal>

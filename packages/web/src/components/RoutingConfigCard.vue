@@ -24,7 +24,7 @@
               </template>
             </n-button>
           </template>
-          查看配置
+          {{ t('virtualModels.viewConfig') }}
         </n-tooltip>
         <n-tooltip trigger="hover">
           <template #trigger>
@@ -34,7 +34,7 @@
               </template>
             </n-button>
           </template>
-          编辑
+          {{ t('common.edit') }}
         </n-tooltip>
         <n-popconfirm @positive-click="$emit('delete', config.id)">
           <template #trigger>
@@ -44,7 +44,7 @@
               </template>
             </n-button>
           </template>
-          确定删除此智能路由？
+          {{ t('virtualModels.deleteThis') }}
         </n-popconfirm>
       </div>
     </template>
@@ -84,16 +84,16 @@
                     type="info"
                     class="status-badge is-secondary"
                   >
-                    当前周期选中
+                    {{ t('virtualModels.selectedThisWindow') }}
                   </n-tag>
                 </div>
               </div>
               <div class="target-meta" v-if="index > 0 && target.onStatusCodes?.length">
-                <span class="meta-label">触发条件:</span>
+                <span class="meta-label">{{ t('virtualModels.trigger') }}</span>
                 <span class="status-codes">{{ target.onStatusCodes.join(', ') }}</span>
               </div>
               <div class="target-subline" v-if="getBoundSessionCount(target) > 0">
-                绑定了 {{ getBoundSessionCount(target) }} 个 session
+                {{ t('virtualModels.boundSessions', { count: getBoundSessionCount(target) }) }}
               </div>
             </div>
             <div class="priority-badge">P{{ index + 1 }}</div>
@@ -130,7 +130,7 @@
                     type="info"
                     class="status-badge is-secondary"
                   >
-                    当前周期选中
+                    {{ t('virtualModels.selectedThisWindow') }}
                   </n-tag>
                 </div>
                 <span class="weight-label">{{ (target.weight * 100).toFixed(0) }}%</span>
@@ -146,7 +146,7 @@
             processing
           />
           <div class="target-subline" v-if="getBoundSessionCount(target) > 0">
-            绑定了 {{ getBoundSessionCount(target) }} 个 session
+            {{ t('virtualModels.boundSessions', { count: getBoundSessionCount(target) }) }}
           </div>
         </div>
       </div>
@@ -179,22 +179,22 @@
                   type="info"
                   class="status-badge is-secondary"
                 >
-                  当前周期选中
+                  {{ t('virtualModels.selectedThisWindow') }}
                 </n-tag>
               </div>
             </div>
             <div class="target-subline" v-if="getBoundSessionCount(target) > 0">
-              绑定了 {{ getBoundSessionCount(target) }} 个 session
+              {{ t('virtualModels.boundSessions', { count: getBoundSessionCount(target) }) }}
             </div>
           </div>
         </div>
         <div class="strategy-meta" v-if="config.type === 'affinity'">
           <n-icon><TimeOutline /></n-icon>
-          <span>亲和保持: {{ (config.config.strategy.affinityTTL || 0) / 1000 }}s (需session标识)</span>
+          <span>{{ t('virtualModels.affinityTtl', { seconds: (config.config.strategy.affinityTTL || 0) / 1000 }) }}</span>
         </div>
         <div class="strategy-meta" v-if="config.type === 'hash'">
           <n-icon><KeyOutline /></n-icon>
-          <span>Hash源: {{ config.config.strategy.hashSource }}</span>
+          <span>{{ t('virtualModels.hashSource', { source: config.config.strategy.hashSource }) }}</span>
         </div>
       </div>
     </div>
@@ -203,6 +203,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { 
   NCard, NTag, NText, NIcon, NButton, NTooltip, NPopconfirm, 
   NProgress 
@@ -224,12 +225,14 @@ const props = defineProps<{
 
 defineEmits(['edit', 'preview', 'delete']);
 
+const { t } = useI18n();
+
 const typeConfig = computed(() => {
   const map: Record<string, any> = {
-    'loadbalance': { label: '负载均衡', tagType: 'info' },
-    'fallback': { label: '故障转移', tagType: 'warning' },
-    'hash': { label: '一致性哈希', tagType: 'success' },
-    'affinity': { label: '时间窗口亲和', tagType: 'error' }
+    'loadbalance': { label: t('virtualModels.typeLoadBalance'), tagType: 'info' },
+    'fallback': { label: t('virtualModels.typeFallback'), tagType: 'warning' },
+    'hash': { label: t('virtualModels.typeHash'), tagType: 'success' },
+    'affinity': { label: t('virtualModels.typeAffinity'), tagType: 'error' }
   };
   return map[props.config.type] || { label: props.config.type, tagType: 'default' };
 });
@@ -267,12 +270,12 @@ function getCircuitStateType(state: string): 'success' | 'error' | 'warning' {
 function getCircuitStateLabel(state: string): string {
   switch (state) {
     case 'OPEN':
-      return '熔断开启';
+      return t('virtualModels.circuitOpen');
     case 'HALF_OPEN':
-      return '半开试探';
+      return t('virtualModels.circuitHalfOpen');
     case 'CLOSED':
     default:
-      return '正常';
+      return t('virtualModels.circuitClosed');
   }
 }
 

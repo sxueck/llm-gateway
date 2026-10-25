@@ -470,13 +470,6 @@ function handleModelSelect(result: any) {
   formModel.value.target_model = result.modelName
 }
 
-function notifyCostMappingUpdated() {
-  try {
-    // Broadcast an event so the dashboard can refresh its cost statistics in real time
-    window.dispatchEvent(new CustomEvent('cost-mapping-updated'))
-  } catch (e) {}
-}
-
 async function handleSave() {
   try {
     await formRef.value?.validate()
@@ -491,7 +484,6 @@ async function handleSave() {
       }
       showModal.value = false
       fetchMappings()
-      notifyCostMappingUpdated()
     } catch (error) {
       message.error(t('messages.operationFailed'))
     } finally {
@@ -507,7 +499,6 @@ async function handleDelete(row: CostMapping) {
     await costMappingApi.delete(row.id)
     message.success(t('costAnalysis.deleteSuccess'))
     fetchMappings()
-    notifyCostMappingUpdated()
   } catch (error) {
     message.error(t('messages.operationFailed'))
   }

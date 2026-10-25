@@ -1,16 +1,16 @@
 <template>
   <div>
     <n-space vertical :size="24">
-      <PageHeader eyebrow="SETTINGS" title="备份与恢复" />
-      <n-card title="S3 存储配置">
+      <PageHeader eyebrow="SETTINGS" :title="t('backup.title')" />
+      <n-card :title="t('backup.s3Title')">
         <n-alert type="info" style="margin-bottom: 16px">
-          支持所有 S3 兼容存储服务：AWS S3、MinIO、Cloudflare R2、阿里云 OSS 等
+          {{ t('backup.s3Hint') }}
         </n-alert>
 
         <n-form :model="s3Config" label-placement="left" label-width="120" :label-align="'left'">
           <n-grid :cols="2" :x-gap="24">
             <n-gi>
-              <n-form-item label="端点地址" required>
+              <n-form-item :label="t('backup.endpoint')" required>
                 <n-input v-model:value="s3Config.endpoint" placeholder="http://localhost:9000">
                   <template #suffix>
                     <n-popover trigger="hover">
@@ -19,31 +19,31 @@
                           <SvgIcon :path="HELP_CIRCLE_PATH" viewBox="0 0 512 512" :size="18" />
                         </n-icon>
                       </template>
-                      AWS S3 留空，其他服务填写完整 URL
+                      {{ t('backup.endpointHint') }}
                     </n-popover>
                   </template>
                 </n-input>
               </n-form-item>
             </n-gi>
             <n-gi>
-              <n-form-item label="存储桶" required>
+              <n-form-item :label="t('backup.bucket')" required>
                 <n-input v-model:value="s3Config.bucketName" placeholder="llm-gateway-backups" />
               </n-form-item>
             </n-gi>
             <n-gi>
-              <n-form-item label="区域" required>
+              <n-form-item :label="t('backup.region')" required>
                 <n-input v-model:value="s3Config.region" placeholder="us-east-1" />
               </n-form-item>
             </n-gi>
             <n-gi>
-              <n-form-item label="路径样式">
+              <n-form-item :label="t('backup.pathStyle')">
                 <n-space vertical>
                   <n-switch v-model:value="s3Config.forcePathStyle">
-                    <template #checked>启用</template>
-                    <template #unchecked>禁用</template>
+                    <template #checked>{{ t('common.enabled') }}</template>
+                    <template #unchecked>{{ t('common.disabled') }}</template>
                   </n-switch>
                   <n-text depth="3" style="font-size: 12px">
-                    MinIO 需要启用，阿里云 OSS 需要禁用
+                    {{ t('backup.pathStyleHint') }}
                   </n-text>
                 </n-space>
               </n-form-item>
@@ -59,7 +59,7 @@
                   v-model:value="s3Config.secretAccessKey"
                   type="password"
                   show-password-on="click"
-                  placeholder="留空则保持不变"
+                  :placeholder="t('backup.secretKeep')"
                 />
               </n-form-item>
             </n-gi>
@@ -68,21 +68,21 @@
 
         <n-space style="margin-top: 16px">
           <n-button type="primary" @click="saveS3Config" :loading="savingS3Config">
-            保存配置
+            {{ t('backup.saveConfig') }}
           </n-button>
-          <n-button @click="testS3Connection" :loading="testingConnection">测试连接</n-button>
-          <n-button @click="loadS3Config">刷新配置</n-button>
+          <n-button @click="testS3Connection" :loading="testingConnection">{{ t('providers.testConnection') }}</n-button>
+          <n-button @click="loadS3Config">{{ t('backup.refreshConfig') }}</n-button>
         </n-space>
       </n-card>
 
-      <n-card title="备份计划配置">
+      <n-card :title="t('backup.scheduleTitle')">
         <n-descriptions bordered :column="3">
-          <n-descriptions-item label="调度状态">
+          <n-descriptions-item :label="t('backup.schedulerStatus')">
             <n-tag :type="backupConfig.schedulerRunning ? 'success' : 'default'">
-              {{ backupConfig.schedulerRunning ? '运行中' : '未运行' }}
+              {{ backupConfig.schedulerRunning ? t('backup.running') : t('backup.stopped') }}
             </n-tag>
           </n-descriptions-item>
-          <n-descriptions-item label="备份计划">
+          <n-descriptions-item :label="t('backup.schedule')">
             <n-input
               v-model:value="backupConfig.schedule"
               size="small"
@@ -90,7 +90,7 @@
               style="width: 150px"
             />
           </n-descriptions-item>
-          <n-descriptions-item label="保留天数">
+          <n-descriptions-item :label="t('backup.retentionDays')">
             <n-input-number
               v-model:value="backupConfig.retentionDays"
               :min="1"
@@ -99,7 +99,7 @@
               style="width: 100px"
             />
           </n-descriptions-item>
-          <n-descriptions-item label="最大数量">
+          <n-descriptions-item :label="t('backup.maxCount')">
             <n-input-number
               v-model:value="backupConfig.maxBackupCount"
               :min="1"
@@ -108,7 +108,7 @@
               style="width: 100px"
             />
           </n-descriptions-item>
-          <n-descriptions-item label="包含日志">
+          <n-descriptions-item :label="t('backup.includeLogs')">
             <n-switch v-model:value="backupConfig.includeLogs" size="small" />
           </n-descriptions-item>
           <n-descriptions-item>
@@ -118,23 +118,23 @@
               @click="updateBackupConfig"
               :loading="updatingConfig"
             >
-              更新配置
+              {{ t('backup.updateConfig') }}
             </n-button>
           </n-descriptions-item>
         </n-descriptions>
       </n-card>
 
-      <n-card title="备份列表">
+      <n-card :title="t('backup.listTitle')">
         <template #header-extra>
           <n-space>
-            <n-button type="primary" @click="showCreateBackupModal = true">创建备份</n-button>
+            <n-button type="primary" @click="showCreateBackupModal = true">{{ t('backup.create') }}</n-button>
             <n-button type="info" @click="syncBackupsFromS3" :loading="syncingBackups">
               <template #icon>
                 <n-icon>
                   <SvgIcon :path="CLOUD_DOWNLOAD_PATH" viewBox="0 0 640 512" :size="18" />
                 </n-icon>
               </template>
-              从S3同步
+              {{ t('backup.syncS3') }}
             </n-button>
             <n-button @click="loadBackupList">
               <template #icon>
@@ -142,7 +142,7 @@
                   <SvgIcon :path="REFRESH_PATH" viewBox="0 0 512 512" :size="18" />
                 </n-icon>
               </template>
-              刷新
+              {{ t('common.refresh') }}
             </n-button>
           </n-space>
         </template>
@@ -157,7 +157,7 @@
         />
       </n-card>
 
-      <n-card title="恢复记录">
+      <n-card :title="t('backup.restoresTitle')">
         <template #header-extra>
           <n-button @click="loadRestoreList">
             <template #icon>
@@ -165,7 +165,7 @@
                 <SvgIcon :path="REFRESH_PATH" viewBox="0 0 512 512" :size="18" />
               </n-icon>
             </template>
-            刷新
+            {{ t('common.refresh') }}
           </n-button>
         </template>
 
@@ -183,24 +183,24 @@
     <n-modal
       v-model:show="showCreateBackupModal"
       preset="dialog"
-      title="创建备份"
+      :title="t('backup.create')"
       :trap-focus="true"
     >
       <n-form :model="createBackupForm" label-placement="left" label-width="100">
-        <n-form-item label="包含日志">
+        <n-form-item :label="t('backup.includeLogs')">
           <n-switch v-model:value="createBackupForm.includeLogs" />
         </n-form-item>
       </n-form>
 
       <n-alert type="info" style="margin-top: 16px">
-        完整备份将包含所有配置数据(提供商、模型、虚拟密钥等),并上传到 S3 存储。
+        {{ t('backup.fullHint') }}
       </n-alert>
 
       <template #action>
         <n-space>
-          <n-button @click="showCreateBackupModal = false">取消</n-button>
+          <n-button @click="showCreateBackupModal = false">{{ t('common.cancel') }}</n-button>
           <n-button type="primary" @click="confirmCreateBackup" :loading="creatingBackup">
-            确认创建
+            {{ t('backup.confirmCreate') }}
           </n-button>
         </n-space>
       </template>
@@ -209,72 +209,72 @@
     <n-modal
       v-model:show="showRestoreModal"
       preset="dialog"
-      title="恢复备份"
+      :title="t('backup.restoreTitle')"
       style="width: 600px; max-width: 92vw"
       :trap-focus="true"
     >
       <n-descriptions bordered :column="1" size="small">
-        <n-descriptions-item label="备份文件">
+        <n-descriptions-item :label="t('backup.backupFile')">
           {{ selectedBackup?.backup_key }}
         </n-descriptions-item>
-        <n-descriptions-item label="备份类型">
-          <n-tag type="success" size="small">完整备份</n-tag>
+        <n-descriptions-item :label="t('backup.backupType')">
+          <n-tag type="success" size="small">{{ t('backup.fullBackup') }}</n-tag>
         </n-descriptions-item>
-        <n-descriptions-item label="创建时间">
+        <n-descriptions-item :label="t('common.time')">
           {{ formatTimestamp(selectedBackup?.created_at) }}
         </n-descriptions-item>
-        <n-descriptions-item label="文件大小">
+        <n-descriptions-item :label="t('backup.fileSize')">
           {{ formatFileSize(selectedBackup?.file_size) }}
         </n-descriptions-item>
-        <n-descriptions-item label="数据记录">
-          {{ selectedBackup?.record_count }} 条
+        <n-descriptions-item :label="t('backup.recordCount')">
+          {{ t('backup.recordCountValue', { count: selectedBackup?.record_count }) }}
         </n-descriptions-item>
       </n-descriptions>
 
       <n-divider />
 
       <n-form :model="restoreForm" label-placement="left" label-width="140">
-        <n-form-item label="恢复类型">
+        <n-form-item :label="t('backup.restoreType')">
           <n-radio-group v-model:value="restoreForm.restoreType">
             <n-space vertical>
-              <n-radio value="full">完整恢复</n-radio>
-              <n-radio value="partial">部分恢复</n-radio>
+              <n-radio value="full">{{ t('backup.fullRestore') }}</n-radio>
+              <n-radio value="partial">{{ t('backup.partialRestore') }}</n-radio>
             </n-space>
           </n-radio-group>
         </n-form-item>
 
-        <n-form-item v-if="restoreForm.restoreType === 'partial'" label="选择恢复的表">
+        <n-form-item v-if="restoreForm.restoreType === 'partial'" :label="t('backup.tables')">
           <n-checkbox-group v-model:value="restoreForm.tablesToRestore">
             <n-space vertical>
-              <n-checkbox value="providers" label="提供商配置" />
-              <n-checkbox value="models" label="模型配置" />
-              <n-checkbox value="virtual_keys" label="虚拟密钥" />
-              <n-checkbox value="routing_configs" label="路由配置" />
-              <n-checkbox value="expert_routing_configs" label="专家路由配置" />
-              <n-checkbox value="system_config" label="系统配置" />
+              <n-checkbox value="providers" :label="t('backup.tableProviders')" />
+              <n-checkbox value="models" :label="t('backup.tableModels')" />
+              <n-checkbox value="virtual_keys" :label="t('backup.tableVirtualKeys')" />
+              <n-checkbox value="routing_configs" :label="t('backup.tableRouting')" />
+              <n-checkbox value="expert_routing_configs" :label="t('backup.tableExpertRouting')" />
+              <n-checkbox value="system_config" :label="t('backup.tableSystem')" />
             </n-space>
           </n-checkbox-group>
         </n-form-item>
 
-        <n-form-item label="恢复前备份当前数据">
+        <n-form-item :label="t('backup.backupBeforeRestore')">
           <n-switch v-model:value="restoreForm.createBackupBeforeRestore" />
-          <n-text depth="3" style="font-size: 12px; margin-left: 12px">强烈建议启用</n-text>
+          <n-text depth="3" style="font-size: 12px; margin-left: 12px">{{ t('backup.backupBeforeRestoreHint') }}</n-text>
         </n-form-item>
       </n-form>
 
       <n-alert type="warning" style="margin-top: 16px">
-        <template #header>⚠️ 警告</template>
+        <template #header>{{ t('backup.warning') }}</template>
         <template v-if="restoreForm.restoreType === 'full'">
-          此操作将覆盖当前所有配置数据！请确认您了解此操作的后果。
+          {{ t('backup.fullOverwrite') }}
         </template>
-        <template v-else>此操作将覆盖选中表的数据！请确认您了解此操作的后果。</template>
+        <template v-else>{{ t('backup.partialOverwrite') }}</template>
       </n-alert>
 
       <template #action>
         <n-space>
-          <n-button @click="showRestoreModal = false">取消</n-button>
+          <n-button @click="showRestoreModal = false">{{ t('common.cancel') }}</n-button>
           <n-button type="error" @click="confirmRestoreBackup" :loading="restoringBackup">
-            确认恢复
+            {{ t('backup.confirmRestore') }}
           </n-button>
         </n-space>
       </template>
@@ -283,7 +283,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, h } from 'vue'
+import { ref, computed, onMounted, h } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   useMessage,
   NButton,
@@ -324,6 +325,7 @@ const REFRESH_PATH =
   'M105.1 202.6c7.7-21.8 20.2-42.3 37.8-59.8c62.5-62.5 163.8-62.5 226.3 0L386.3 160H336c-17.7 0-32 14.3-32 32s14.3 32 32 32H463.5c0 0 0 0 0 0h.4c17.7 0 32-14.3 32-32V64c0-17.7-14.3-32-32-32s-32 14.3-32 32v51.2L414.4 97.6c-87.5-87.5-229.3-87.5-316.8 0C73.2 122 55.6 150.7 44.8 181.4c-5.9 16.7 2.9 34.9 19.5 40.8s34.9-2.9 40.8-19.5zM39 289.3c-5 1.5-9.8 4.2-13.7 8.2c-4 4-6.7 8.8-8.1 14c-.3 1.2-.6 2.5-.8 3.8c-.3 1.7-.4 3.4-.4 5.1V448c0 17.7 14.3 32 32 32s32-14.3 32-32V396.9l17.6 17.5 0 0c87.5 87.4 229.3 87.4 316.7 0c24.4-24.4 42.1-53.1 52.9-83.7c5.9-16.7-2.9-34.9-19.5-40.8s-34.9 2.9-40.8 19.5c-7.7 21.8-20.2 42.3-37.8 59.8c-62.5 62.5-163.8 62.5-226.3 0l-.1-.1L125.6 352H176c17.7 0 32-14.3 32-32s-14.3-32-32-32H48.4c-1.6 0-3.2 .1-4.8 .3s-3.1 .5-4.6 1z'
 
 const message = useMessage()
+const { t, locale } = useI18n()
 
 const s3Config = ref({
   endpoint: 'http://localhost:9000',
@@ -402,30 +404,30 @@ const restorePagination = ref({
   }
 })
 
-const backupColumns = [
+const backupColumns = computed(() => [
   {
-    title: '备份 ID',
+    title: t('backup.backupId'),
     key: 'id',
     width: 200,
     ellipsis: { tooltip: true }
   },
   {
-    title: '状态',
+    title: t('common.status'),
     key: 'status',
     width: 100,
     render(row: any) {
       const statusMap: any = {
-        pending: { type: 'default', text: '等待中' },
-        running: { type: 'info', text: '运行中' },
-        completed: { type: 'success', text: '已完成' },
-        failed: { type: 'error', text: '失败' }
+        pending: { type: 'default', text: t('backup.pending') },
+        running: { type: 'info', text: t('backup.running') },
+        completed: { type: 'success', text: t('backup.completed') },
+        failed: { type: 'error', text: t('common.failed') }
       }
       const status = statusMap[row.status] || { type: 'default', text: row.status }
       return h(NTag, { type: status.type, size: 'small' }, () => status.text)
     }
   },
   {
-    title: '大小',
+    title: t('backup.size'),
     key: 'file_size',
     width: 120,
     render(row: any) {
@@ -433,12 +435,12 @@ const backupColumns = [
     }
   },
   {
-    title: '记录数',
+    title: t('backup.records'),
     key: 'record_count',
     width: 100
   },
   {
-    title: '创建时间',
+    title: t('common.time'),
     key: 'created_at',
     width: 180,
     render(row: any) {
@@ -446,7 +448,7 @@ const backupColumns = [
     }
   },
   {
-    title: '操作',
+    title: t('common.actions'),
     key: 'actions',
     width: 180,
     render(row: any) {
@@ -459,7 +461,7 @@ const backupColumns = [
             disabled: row.status !== 'completed',
             onClick: () => openRestoreModal(row)
           },
-          () => '恢复'
+          () => t('backup.restore')
         ),
         h(
           NPopconfirm,
@@ -467,46 +469,46 @@ const backupColumns = [
             onPositiveClick: () => deleteBackup(row.id)
           },
           {
-            trigger: () => h(NButton, { size: 'small', type: 'error' }, () => '删除'),
-            default: () => '确定删除此备份吗？'
+            trigger: () => h(NButton, { size: 'small', type: 'error' }, () => t('common.delete')),
+            default: () => t('backup.deleteConfirm')
           }
         )
       ])
     }
   }
-]
+])
 
-const restoreColumns = [
+const restoreColumns = computed(() => [
   {
-    title: '恢复 ID',
+    title: t('backup.restoreId'),
     key: 'id',
     width: 200,
     ellipsis: { tooltip: true }
   },
   {
-    title: '状态',
+    title: t('common.status'),
     key: 'status',
     width: 100,
     render(row: any) {
       const statusMap: any = {
-        pending: { type: 'default', text: '等待中' },
-        running: { type: 'info', text: '运行中' },
-        completed: { type: 'success', text: '已完成' },
-        failed: { type: 'error', text: '失败' },
-        rollback: { type: 'warning', text: '已回滚' }
+        pending: { type: 'default', text: t('backup.pending') },
+        running: { type: 'info', text: t('backup.running') },
+        completed: { type: 'success', text: t('backup.completed') },
+        failed: { type: 'error', text: t('common.failed') },
+        rollback: { type: 'warning', text: t('backup.rolledBack') }
       }
       const status = statusMap[row.status] || { type: 'default', text: row.status }
       return h(NTag, { type: status.type, size: 'small' }, () => status.text)
     }
   },
   {
-    title: '备份源',
+    title: t('backup.backupSource'),
     key: 'backup_record_id',
     width: 200,
     ellipsis: { tooltip: true }
   },
   {
-    title: '创建时间',
+    title: t('common.time'),
     key: 'created_at',
     width: 180,
     render(row: any) {
@@ -514,16 +516,16 @@ const restoreColumns = [
     }
   },
   {
-    title: '耗时',
+    title: t('backup.duration'),
     key: 'duration',
     width: 100,
     render(row: any) {
       if (!row.started_at || !row.completed_at) return '-'
       const duration = row.completed_at - row.started_at
-      return `${Math.round(duration / 1000)}秒`
+      return t('backup.durationSeconds', { count: Math.round(duration / 1000) })
     }
   }
-]
+])
 
 async function loadS3Config() {
   try {
@@ -538,7 +540,7 @@ async function loadS3Config() {
       forcePathStyle: data.forcePathStyle
     }
   } catch (error: any) {
-    message.error(`加载S3配置失败: ${error.message}`)
+    message.error(t('backup.s3LoadFailed', { message: error.message }))
   }
 }
 
@@ -547,9 +549,9 @@ async function saveS3Config() {
   try {
     await request.put('/admin/backup/s3-config', s3Config.value)
 
-    message.success('S3配置保存成功')
+    message.success(t('backup.s3Saved'))
   } catch (error: any) {
-    message.error(`保存S3配置失败: ${error.message}`)
+    message.error(t('backup.s3SaveFailed', { message: error.message }))
   } finally {
     savingS3Config.value = false
   }
@@ -561,13 +563,13 @@ async function testS3Connection() {
     const data = await request.post('/admin/backup/test-s3', s3Config.value)
 
     if (data.connected) {
-      message.success('S3 连接测试成功')
+      message.success(t('backup.s3TestOk'))
     } else {
-      const errorMsg = data.error || '未知错误'
-      message.error(`S3 连接测试失败: ${errorMsg}`)
+      const errorMsg = data.error || t('messages.unknownError')
+      message.error(t('backup.s3TestFailed', { message: errorMsg }))
     }
   } catch (error: any) {
-    message.error(`S3 连接测试失败: ${error.response?.data?.error?.message || error.message}`)
+    message.error(t('backup.s3TestFailed', { message: error.message }))
   } finally {
     testingConnection.value = false
   }
@@ -585,7 +587,7 @@ async function loadBackupConfig() {
       schedulerRunning: data.scheduler_running
     }
   } catch (error: any) {
-    message.error(`加载配置失败: ${error.message}`)
+    message.error(t('backup.configLoadFailed', { message: error.message }))
   }
 }
 
@@ -599,10 +601,10 @@ async function updateBackupConfig() {
       include_logs: backupConfig.value.includeLogs
     })
 
-    message.success('配置更新成功')
+    message.success(t('backup.configUpdated'))
     await loadBackupConfig()
   } catch (error: any) {
-    message.error(`配置更新失败: ${error.message}`)
+    message.error(t('backup.configUpdateFailed', { message: error.message }))
   } finally {
     updatingConfig.value = false
   }
@@ -622,7 +624,7 @@ async function loadBackupList() {
     backupList.value = data.backups
     backupPagination.value.itemCount = data.total
   } catch (error: any) {
-    message.error(`加载备份列表失败: ${error.message}`)
+    message.error(t('backup.listLoadFailed', { message: error.message }))
   } finally {
     loadingBackups.value = false
   }
@@ -642,7 +644,7 @@ async function loadRestoreList() {
     restoreList.value = data.restores
     restorePagination.value.itemCount = data.total
   } catch (error: any) {
-    message.error(`加载恢复列表失败: ${error.message}`)
+    message.error(t('backup.restoreListLoadFailed', { message: error.message }))
   } finally {
     loadingRestores.value = false
   }
@@ -659,14 +661,14 @@ async function createBackup() {
       includes_logs: createBackupForm.value.includeLogs
     })
 
-    message.success('备份任务已启动，请稍后刷新列表查看进度')
+    message.success(t('backup.createStarted'))
     showCreateBackupModal.value = false
 
     setTimeout(() => {
       loadBackupList()
     }, 2000)
   } catch (error: any) {
-    message.error(`创建备份失败: ${error.response?.data?.error?.message || error.message}`)
+    message.error(t('backup.createFailed', { message: error.message }))
   } finally {
     creatingBackup.value = false
   }
@@ -680,7 +682,7 @@ async function syncBackupsFromS3() {
     message.success(data.message)
     await loadBackupList()
   } catch (error: any) {
-    message.error(`同步备份失败: ${error.message}`)
+    message.error(t('backup.syncFailed', { message: error.message }))
   } finally {
     syncingBackups.value = false
   }
@@ -703,7 +705,7 @@ async function confirmRestoreBackup() {
     restoreForm.value.restoreType === 'partial' &&
     restoreForm.value.tablesToRestore.length === 0
   ) {
-    message.error('请至少选择一个要恢复的表')
+    message.error(t('backup.selectTable'))
     return
   }
 
@@ -727,14 +729,14 @@ async function restoreBackup() {
 
     await request.post('/admin/restore', payload)
 
-    message.success('恢复任务已启动，请稍后刷新列表查看进度')
+    message.success(t('backup.restoreStarted'))
     showRestoreModal.value = false
 
     setTimeout(() => {
       loadRestoreList()
     }, 2000)
   } catch (error: any) {
-    message.error(`恢复失败: ${error.message}`)
+    message.error(t('backup.restoreFailed', { message: error.message }))
   } finally {
     restoringBackup.value = false
   }
@@ -744,16 +746,16 @@ async function deleteBackup(id: string) {
   try {
     await request.delete(`/admin/backup/${id}`)
 
-    message.success('备份已删除')
+    message.success(t('backup.deleted'))
     await loadBackupList()
   } catch (error: any) {
-    message.error(`删除备份失败: ${error.message}`)
+    message.error(t('backup.deleteFailed', { message: error.message }))
   }
 }
 
 function formatTimestamp(timestamp?: number): string {
   if (!timestamp) return '-'
-  return new Date(timestamp).toLocaleString('zh-CN')
+  return new Date(timestamp).toLocaleString(locale.value)
 }
 
 function formatFileSize(bytes?: number): string {

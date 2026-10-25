@@ -1,3 +1,7 @@
+import i18n from '@/i18n';
+
+const t = i18n.global.t;
+
 export function validateProviderId(id: string): {
   isValid: boolean;
   message?: string;
@@ -5,7 +9,7 @@ export function validateProviderId(id: string): {
   if (!id || id.trim() === '') {
     return {
       isValid: false,
-      message: '提供商 ID 不能为空',
+      message: t('providers.idEmpty'),
     };
   }
 
@@ -13,28 +17,28 @@ export function validateProviderId(id: string): {
   if (!formatRegex.test(id)) {
     return {
       isValid: false,
-      message: '提供商 ID 只能包含小写字母、数字和连字符',
+      message: t('providers.idCharset'),
     };
   }
 
   if (id.startsWith('-') || id.endsWith('-')) {
     return {
       isValid: false,
-      message: '提供商 ID 不能以连字符开头或结尾',
+      message: t('providers.idHyphenEdge'),
     };
   }
 
   if (id.includes('--')) {
     return {
       isValid: false,
-      message: '提供商 ID 不能包含连续的连字符',
+      message: t('providers.idDoubleHyphen'),
     };
   }
 
   if (id.length < 2 || id.length > 50) {
     return {
       isValid: false,
-      message: '提供商 ID 长度应在 2-50 个字符之间',
+      message: t('providers.idLength'),
     };
   }
 
@@ -50,7 +54,7 @@ export function validateBaseUrl(url: string): {
   if (!url || url.trim() === '') {
     return {
       isValid: false,
-      message: 'Base URL 不能为空',
+      message: t('providers.baseUrlEmpty'),
     };
   }
 
@@ -60,14 +64,14 @@ export function validateBaseUrl(url: string): {
     if (urlObj.protocol !== 'https:' && urlObj.protocol !== 'http:') {
       return {
         isValid: false,
-        message: 'Base URL 必须使用 HTTP 或 HTTPS 协议',
+        message: t('providers.baseUrlProtocol'),
       };
     }
 
     if (!urlObj.hostname) {
       return {
         isValid: false,
-        message: 'Base URL 必须包含有效的主机名',
+        message: t('providers.baseUrlHost'),
       };
     }
 
@@ -77,7 +81,7 @@ export function validateBaseUrl(url: string): {
   } catch (error) {
     return {
       isValid: false,
-      message: '请输入有效的 URL 格式',
+      message: t('providers.baseUrlInvalid'),
     };
   }
 }
@@ -89,14 +93,14 @@ export function validateApiKey(apiKey: string, providerId?: string): {
   if (!apiKey || apiKey.trim() === '') {
     return {
       isValid: false,
-      message: 'API Key 不能为空',
+      message: t('providers.apiKeyEmpty'),
     };
   }
 
   if (apiKey.length < 10) {
     return {
       isValid: false,
-      message: 'API Key 长度过短，请检查是否完整',
+      message: t('providers.apiKeyShort'),
     };
   }
 
@@ -107,7 +111,7 @@ export function validateApiKey(apiKey: string, providerId?: string): {
         if (!apiKey.startsWith('sk-')) {
           return {
             isValid: false,
-            message: 'OpenAI API Key 应以 "sk-" 开头',
+            message: t('providers.apiKeyOpenAI'),
           };
         }
         break;
@@ -115,7 +119,7 @@ export function validateApiKey(apiKey: string, providerId?: string): {
         if (!apiKey.startsWith('sk-ant-')) {
           return {
             isValid: false,
-            message: 'Anthropic API Key 应以 "sk-ant-" 开头',
+            message: t('providers.apiKeyAnthropic'),
           };
         }
         break;
@@ -123,7 +127,7 @@ export function validateApiKey(apiKey: string, providerId?: string): {
         if (!apiKey.startsWith('sk-')) {
           return {
             isValid: false,
-            message: 'DeepSeek API Key 应以 "sk-" 开头',
+            message: t('providers.apiKeyDeepSeek'),
           };
         }
         break;

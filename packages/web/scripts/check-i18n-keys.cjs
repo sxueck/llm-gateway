@@ -25,6 +25,13 @@ const files = [
   'src/views/ApiRequestsView.vue',
   'src/views/VirtualKeysView.vue',
   'src/views/DashboardView.vue',
+  'src/views/BackupView.vue',
+  'src/views/LogsView.vue',
+  'src/views/ProvidersView.vue',
+  'src/views/VirtualModelsView.vue',
+  'src/views/WorkerPluginsView.vue',
+  'src/views/auth/LoginView.vue',
+  'src/views/auth/RegisterView.vue',
 ];
 
 const used = new Map();

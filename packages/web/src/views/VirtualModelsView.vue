@@ -3,21 +3,21 @@
     <n-space vertical :size="24">
       <PageHeader
         eyebrow="MODEL MANAGEMENT"
-        title="智能路由"
-        subtitle="通过负载均衡或故障转移配置，将请求智能分发到多个实际模型，提高可用性和性能"
+        :title="t('virtualModels.title')"
+        :subtitle="t('virtualModels.pageSubtitle')"
       >
         <template #actions>
           <n-button type="primary" size="small" @click="handleCreateModalOpen">
             <template #icon>
               <n-icon><AddOutline /></n-icon>
             </template>
-            创建智能路由
+            {{ t('virtualModels.addVirtualModel') }}
           </n-button>
           <n-button size="small" @click="handleRefresh">
             <template #icon>
               <n-icon><RefreshOutline /></n-icon>
             </template>
-            刷新
+            {{ t('common.refresh') }}
           </n-button>
         </template>
       </PageHeader>
@@ -27,10 +27,10 @@
       </div>
 
       <div v-else-if="configs.length === 0" class="empty-state">
-        <n-empty description="暂无智能路由配置">
+        <n-empty :description="t('virtualModels.empty')">
           <template #extra>
             <n-button size="small" @click="handleCreateModalOpen">
-              创建第一个路由
+              {{ t('virtualModels.createFirst') }}
             </n-button>
           </template>
         </n-empty>
@@ -52,7 +52,7 @@
         </n-grid>
 
         <div class="pagination-bar">
-          <span class="pagination-total">共 {{ configs.length }} 条</span>
+          <span class="pagination-total">{{ t('common.totalCount', { count: configs.length }) }}</span>
           <n-space align="center" :size="12" wrap>
             <n-select
               v-model:value="pageSize"
@@ -75,7 +75,7 @@
     <n-modal
       v-model:show="showCreateModal"
       preset="card"
-      :title="editingId ? '编辑智能路由' : '创建智能路由'"
+      :title="editingId ? t('virtualModels.editVirtualModel') : t('virtualModels.addVirtualModel')"
       class="virtual-model-modal"
       :style="{ width: '1000px', maxWidth: '92vw', maxHeight: '90vh' }"
       :segmented="{
@@ -101,7 +101,7 @@
     <n-modal
       v-model:show="showPreviewModal"
       preset="card"
-      title="配置预览"
+      :title="t('virtualModels.preview')"
       class="preview-modal"
       :style="{ width: '700px', maxWidth: '92vw', maxHeight: '85vh' }"
       :segmented="{
@@ -116,12 +116,12 @@
       </div>
       <template #footer>
         <n-space justify="end">
-          <n-button @click="showPreviewModal = false">关闭</n-button>
+          <n-button @click="showPreviewModal = false">{{ t('common.close') }}</n-button>
           <n-button type="primary" @click="handleCopyConfig">
             <template #icon>
               <n-icon><CopyOutline /></n-icon>
             </template>
-            复制配置
+            {{ t('virtualModels.copyConfig') }}
           </n-button>
         </n-space>
       </template>
@@ -131,6 +131,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import {
   useMessage,
   NSpace,
@@ -160,6 +161,7 @@ import { copyToClipboard } from '@/utils/common';
 import { createDefaultVirtualModelForm, type VirtualModelFormValue, type RoutingConfigType } from '@/types/virtual-model';
 
 const message = useMessage();
+const { t } = useI18n();
 const providerStore = useProviderStore();
 const modelStore = useModelStore();
 
@@ -178,21 +180,19 @@ let routingStatusInterval: ReturnType<typeof setInterval> | null = null;
 
 const formValue = ref<VirtualModelFormValue>(createDefaultVirtualModelForm());
 
-const pageSizeOptions = [
-  { label: '12 / 页', value: 12 },
-  { label: '24 / 页', value: 24 },
-  { label: '48 / 页', value: 48 },
-];
+const pageSizeOptions = computed(() =>
+  [12, 24, 48].map(count => ({ label: t('virtualModels.perPage', { count }), value: count })),
+);
 
-const statusCodeOptions = [
-  { label: '401 - 未授权', value: 401 },
-  { label: '403 - 禁止访问', value: 403 },
-  { label: '429 - 请求过多', value: 429 },
-  { label: '500 - 服务器错误', value: 500 },
-  { label: '502 - 网关错误', value: 502 },
-  { label: '503 - 服务不可用', value: 503 },
-  { label: '504 - 网关超时', value: 504 },
-];
+const statusCodeOptions = computed(() => [
+  { label: t('virtualModels.status401'), value: 401 },
+  { label: t('virtualModels.status403'), value: 403 },
+  { label: t('virtualModels.status429'), value: 429 },
+  { label: t('virtualModels.status500'), value: 500 },
+  { label: t('virtualModels.status502'), value: 502 },
+  { label: t('virtualModels.status503'), value: 503 },
+  { label: t('virtualModels.status504'), value: 504 },
+]);
 
 const providerOptions = computed(() => {
   return providerStore.providers
@@ -287,7 +287,7 @@ async function handleSave() {
         config: config,
         virtualModelName: formValue.value.virtualModelName,
       });
-      message.success('虚拟模型已更新');
+      message.success(t('virtualModels.updated'));
     } else {
       const result = await configApi.createRoutingConfig({
         name: formValue.value.virtualModelName,
@@ -299,9 +299,9 @@ async function handleSave() {
       });
 
       if (result.virtualModel) {
-        message.success(`智能路由 "${result.virtualModel.name}" 已创建`);
+        message.success(t('virtualModels.createdNamed', { name: result.virtualModel.name }));
       } else {
-        message.success('智能路由已创建');
+        message.success(t('virtualModels.created'));
       }
     }
 
@@ -353,7 +353,7 @@ function handlePreview(row: any) {
 async function handleDelete(id: string) {
   try {
     await configApi.deleteRoutingConfig(id);
-    message.success('智能路由已删除');
+    message.success(t('virtualModels.deleted'));
     await loadConfigs();
   } catch (error: any) {
     message.error(error.message);
