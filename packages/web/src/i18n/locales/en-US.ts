@@ -803,7 +803,7 @@ export default {
     reasoningEffortSuffixesPlaceholder: 'minimal\nlow\nmedium\nhigh',
     reasoningEffortSuffixesDefault: 'Default: minimal, low, medium, high',
     modelDailyTokenQuota: 'Model Daily Token Quota',
-    modelDailyTokenQuotaDesc: 'Cap how many tokens a single model may consume per day (Asia/Shanghai calendar day), in M (millions). A virtual model holds its own budget and all virtual keys share that one model budget. Requests above the cap get 429 and the budget resets at midnight. Remove a row to leave that model uncapped',
+    modelDailyTokenQuotaDesc: 'Cap total input and output tokens per model per day (Asia/Shanghai calendar day), including cached tokens, in M (millions). This is a token quota, not a monetary budget. A virtual model holds its own budget and all virtual keys share that one model budget. New requests get 429 once the quota is exhausted; it resets at midnight. Remove a row and save to leave that model uncapped',
     modelDailyTokenQuotaModelPlaceholder: 'Select or type a model name',
     modelDailyTokenQuotaAdd: 'Add model quota',
     modelDailyTokenQuotaUsed: 'Used today {used} / {limit}',
@@ -1144,6 +1144,7 @@ export default {
     tabs: {
       mappings: 'Mapping Rules',
       prices: 'Model Pricing',
+      budgets: 'Model budget',
     },
     prices: {
       model: 'Model',

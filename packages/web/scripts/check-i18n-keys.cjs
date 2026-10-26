@@ -21,6 +21,7 @@ const files = [
   'src/layouts/MainLayout.vue',
   'src/components/AlertCenter.vue',
   'src/views/CostAnalysisView.vue',
+  'src/components/ModelBudgetSettings.vue',
   'src/views/DeveloperSettingsView.vue',
   'src/views/ApiRequestsView.vue',
   'src/views/VirtualKeysView.vue',
