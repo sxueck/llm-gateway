@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { renderToString } from 'vue/server-renderer';
 import { createI18n } from 'vue-i18n';
 import { darkTheme, NConfigProvider, NMessageProvider } from 'naive-ui';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { resolveConfig } from 'vite';
 import { setup as setupCssSsr } from '@css-render/vue3-ssr';
 import TierModelCard from '../components/TierModelCard.vue';
@@ -12,6 +12,8 @@ import RoutingLogTable from '../components/RoutingLogTable.vue';
 import ExpertRoutingStatistics from '../components/ExpertRoutingStatistics.vue';
 import zhCN from '../i18n/locales/zh-CN';
 import enUS from '../i18n/locales/en-US';
+
+vi.mock('@/utils/request', () => ({ default: { get: vi.fn() } }));
 
 async function renderCard(locale = 'zh-CN', dark = false, first = true, last = false) {
   const app = createSSRApp({

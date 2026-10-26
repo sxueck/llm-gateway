@@ -9,6 +9,8 @@ import {
   resolveFirstModelIdentifier,
 } from './virtual-key-helpers';
 
+vi.mock('@/utils/request', () => ({ default: { get: vi.fn() } }));
+
 function vk(partial: Partial<VirtualKey> & { id: string }): VirtualKey {
   return {
     keyValue: 'vk-test-' + partial.id,

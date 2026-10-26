@@ -11,6 +11,10 @@ const { api, push } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/api/ops-metrics", () => ({ opsMetricsApi: api }));
+vi.mock("@/utils/request", () => ({ default: { get: vi.fn() } }));
+vi.mock("@/composables/useSystemConfig", () => ({
+  useSystemConfig: () => ({ dashboardHideRequestSourceCard: ref(false) }),
+}));
 vi.mock("vue-router", () => ({ useRouter: () => ({ push }) }));
 vi.mock("vue-i18n", () => ({
   useI18n: () => ({ t: (key: string) => key, locale: ref("zh-CN") }),
