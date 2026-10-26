@@ -161,6 +161,70 @@
             </n-text>
           </n-space>
 
+          <n-divider style="margin: 8px 0;" />
+
+          <n-space vertical :size="8" style="width: 100%;">
+            <div>
+              <div>{{ $t('settings.modelDailyTokenQuota') }}</div>
+              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.modelDailyTokenQuotaDesc') }}</n-text>
+            </div>
+
+            <n-space
+              v-for="(row, index) in quotaRows"
+              :key="index"
+              align="center"
+              :size="8"
+              style="width: 100%;"
+            >
+              <n-select
+                v-model:value="row.model"
+                :options="quotaModelOptions"
+                filterable
+                tag
+                :placeholder="$t('settings.modelDailyTokenQuotaModelPlaceholder')"
+                style="width: 280px;"
+              />
+              <n-input-number
+                v-model:value="row.limitMillions"
+                :min="0.001"
+                :step="1"
+                :show-spin-buttons="true"
+                size="small"
+                style="width: 140px;"
+              />
+              <n-text depth="3" style="font-size: 12px;">M</n-text>
+              <n-text v-if="quotaUsageOf(row.model)" depth="3" style="font-size: 12px;">
+                {{
+                  $t('settings.modelDailyTokenQuotaUsed', {
+                    used: formatTokens(quotaUsageOf(row.model)!.usedTokens),
+                    limit: formatTokens(quotaUsageOf(row.model)!.limitTokens),
+                  })
+                }}
+              </n-text>
+              <n-button size="tiny" quaternary @click="quotaRows.splice(index, 1)">
+                {{ $t('common.delete') }}
+              </n-button>
+            </n-space>
+
+            <n-space :size="8">
+              <n-button size="small" @click="quotaRows.push({ model: null, limitMillions: 1 })">
+                {{ $t('settings.modelDailyTokenQuotaAdd') }}
+              </n-button>
+              <n-button
+                type="primary"
+                size="small"
+                :loading="savingQuota"
+                :disabled="!isQuotaChanged"
+                @click="onSaveModelQuotas"
+              >
+                {{ $t('common.save') }}
+              </n-button>
+              <n-button size="small" :disabled="!isQuotaChanged" @click="onResetModelQuotas">
+                {{ $t('common.reset') }}
+              </n-button>
+            </n-space>
+          </n-space>
+
         </n-space>
       </n-card>
 
@@ -196,11 +260,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { NSpace, NCard, NDescriptions, NDescriptionsItem, NSwitch, NAlert, NText, NDivider, NInput, NButton, NSelect, useMessage, useDialog } from 'naive-ui';
+import { NSpace, NCard, NDescriptions, NDescriptionsItem, NSwitch, NAlert, NText, NDivider, NInput, NButton, NSelect, NInputNumber, useMessage, useDialog } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/auth';
 import { useProviderStore } from '@/stores/provider';
 import { useVirtualKeyStore } from '@/stores/virtual-key';
+import { useModelStore } from '@/stores/model';
+import type { ModelDailyTokenLimit } from '@/api/config';
 import type { User } from '@/types';
 import { useSystemConfig } from '@/composables/useSystemConfig';
 import PageHeader from '@/components/PageHeader.vue';
@@ -212,6 +278,7 @@ const { t } = useI18n();
 const authStore = useAuthStore();
 const providerStore = useProviderStore();
 const virtualKeyStore = useVirtualKeyStore();
+const modelStore = useModelStore();
 const { dashboardHideRequestSourceCard } = useSystemConfig();
  
 const message = useMessage();
@@ -231,6 +298,84 @@ const reasoningEffortSuffixesInput = ref('');
 const reasoningEffortSuffixesOriginal = ref('');
 const savingReasoningEffortSuffixes = ref(false);
 const isReasoningEffortSuffixesChanged = computed(() => reasoningEffortSuffixesInput.value !== reasoningEffortSuffixesOriginal.value);
+
+interface QuotaRow {
+  model: string | null;
+  limitMillions: number | null;
+}
+
+const quotaRows = ref<QuotaRow[]>([]);
+const quotaRowsOriginal = ref('[]');
+const quotaUsage = ref<ModelDailyTokenLimit[]>([]);
+const savingQuota = ref(false);
+
+// 额度按模型名计量：虚拟模型与它路由到的真实模型各自一条，不合并。
+const quotaModelOptions = computed(() => {
+  const seen = new Set<string>();
+  const options: Array<{ label: string; value: string }> = [];
+  for (const model of modelStore.models) {
+    if (seen.has(model.name)) continue;
+    seen.add(model.name);
+    options.push({
+      label: model.isVirtual ? `${model.name} (${t('models.virtualModel')})` : model.name,
+      value: model.name,
+    });
+  }
+  return options;
+});
+
+function quotaUsageOf(model: string | null): ModelDailyTokenLimit | undefined {
+  if (!model) return undefined;
+  return quotaUsage.value.find(entry => entry.model === model.trim());
+}
+
+function normalizeQuotaRows(rows: QuotaRow[]): string {
+  return JSON.stringify(
+    rows
+      .map(row => ({ model: (row.model || '').trim(), limitMillions: row.limitMillions }))
+      .filter(row => row.model)
+      .sort((a, b) => a.model.localeCompare(b.model)),
+  );
+}
+
+const isQuotaChanged = computed(() => normalizeQuotaRows(quotaRows.value) !== quotaRowsOriginal.value);
+
+function formatTokens(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(2)}M`;
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`;
+  return String(tokens);
+}
+
+async function onSaveModelQuotas() {
+  const payload = quotaRows.value
+    .map(row => ({ model: (row.model || '').trim(), limitMillions: row.limitMillions }))
+    .filter(row => row.model && typeof row.limitMillions === 'number' && row.limitMillions > 0);
+  try {
+    savingQuota.value = true;
+    await configApi.updateSystemSettings({ modelDailyTokenLimits: payload });
+    await refreshModelQuotas();
+    message.success(t('messages.operationSuccess'));
+  } catch (e: any) {
+    message.error(e.message || t('messages.operationFailed'));
+  } finally {
+    savingQuota.value = false;
+  }
+}
+
+function onResetModelQuotas() {
+  applyQuotaRows(quotaUsage.value);
+}
+
+function applyQuotaRows(entries: ModelDailyTokenLimit[]) {
+  quotaRows.value = entries.map(entry => ({ model: entry.model, limitMillions: entry.limitMillions }));
+  quotaRowsOriginal.value = normalizeQuotaRows(quotaRows.value);
+}
+
+async function refreshModelQuotas() {
+  const s = await configApi.getSystemSettings();
+  quotaUsage.value = s.modelDailyTokenLimits || [];
+  applyQuotaRows(quotaUsage.value);
+}
 
 const isPublicUrlChanged = computed(() => {
   return publicUrlInput.value.trim() !== '' && publicUrlInput.value !== publicUrl.value;
@@ -381,6 +526,8 @@ onMounted(async () => {
     publicUrlInput.value = s.publicUrl;
     trafficAnalysisRegion.value = s.trafficAnalysisRegion ?? null;
     dashboardHideRequestSourceCard.value = s.dashboardHideRequestSourceCard || false;
+    quotaUsage.value = s.modelDailyTokenLimits || [];
+    applyQuotaRows(quotaUsage.value);
 
     const suffixesText = (s.reasoningEffortModelSuffixes || []).join('\n');
     reasoningEffortSuffixesInput.value = suffixesText;
@@ -392,10 +539,11 @@ onMounted(async () => {
       console.error('获取用户列表失败:', error);
     }
 
-    // 并行加载提供商、虚拟密钥、地域列表
+    // 并行加载提供商、虚拟密钥、地域列表、模型列表（额度配置需要模型名）
     await Promise.all([
       providerStore.fetchProviders(),
       virtualKeyStore.fetchVirtualKeys(),
+      modelStore.fetchModels(),
       loadTrafficAnalysisRegions(),
     ]);
   } catch (error: any) {

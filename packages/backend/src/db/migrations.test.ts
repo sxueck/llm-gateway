@@ -89,10 +89,22 @@ describe("migration 1: api_requests.session_id", () => {
   });
 
   test("does not re-apply recorded migrations once all versions are applied", async () => {
-    const conn = provisionedConn(3);
+    const conn = provisionedConn(4);
     await applyMigrations(conn as unknown as Connection);
     expect(conn.beginTransaction).not.toHaveBeenCalled();
     expect(conn.query.mock.calls.some(([sql]) => String(sql).includes("ALTER TABLE"))).toBe(false);
+  });
+});
+
+describe("migration 4: model_daily_usage_batches", () => {
+  test("creates the idempotency marker table idempotently", async () => {
+    const conn = connection();
+    await migrations[3].up!(conn as unknown as Connection);
+    await migrations[3].up!(conn as unknown as Connection);
+
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(issued).toHaveLength(2);
+    expect(issued.every((sql) => sql.includes("CREATE TABLE IF NOT EXISTS model_daily_usage_batches"))).toBe(true);
   });
 });
 

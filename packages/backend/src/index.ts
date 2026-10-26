@@ -42,6 +42,10 @@ import { agentInternalRoutes } from "./routes/agent/internal.js";
 import { agentMonitoringRoutes } from "./routes/agent/monitoring.js";
 import { searchRunScheduler } from "./agent/run/scheduler.js";
 import { memoryLogger } from "./services/logger.js";
+import {
+  modelDailyQuota,
+  runWithQuotaContext,
+} from "./services/model-daily-quota.js";
 import { modelPresetsService } from "./services/model-presets.js";
 import { getBackupScheduler } from "./services/backup-scheduler.js";
 import {
@@ -256,6 +260,14 @@ fastify.addHook("onRequest", async (request, reply) => {
     reply.header("Access-Control-Allow-Origin", "null");
     reply.header("Access-Control-Allow-Credentials", "false");
   }
+});
+
+// Request-scoped quota context: the proxy pipeline stamps the addressed model
+// name and the logging choke point charges that model's daily budget. Callback
+// style is required — an async hook would leave the async-local scope before the
+// handler body runs.
+fastify.addHook("onRequest", (_request, _reply, done) => {
+  runWithQuotaContext(done);
 });
 
 fastify.get("/health", async () => {
@@ -526,6 +538,9 @@ const gracefulShutdown = async (signal: string) => {
 
     await fastify.close();
     memoryLogger.info("Fastify 服务已关闭", "System");
+
+    // Persist the day's un-flushed usage before the pool goes away.
+    await modelDailyQuota.flush();
 
     await shutdownDatabase();
     memoryLogger.info("数据库已安全关闭", "System");

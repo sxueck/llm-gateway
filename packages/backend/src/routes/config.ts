@@ -17,6 +17,11 @@ import {
 import { debugModeService } from "../services/debug-mode.js";
 import { computeUsageCost, costMappingService, hasTokenPricing } from "../services/cost-mapping.js";
 import { runtimeSystemConfigCache } from "../services/runtime-system-config-cache.js";
+import {
+  MODEL_DAILY_TOKEN_LIMITS_CONFIG_KEY,
+  MODEL_DAILY_TOKEN_LIMITS_DESCRIPTION,
+  modelDailyQuota,
+} from "../services/model-daily-quota.js";
 import { threatIpBlocker } from "../services/threat-ip-blocker.js";
 import { requestHeaderForwardingService } from "../services/request-header-forwarding.js";
 import { upstreamSslConfigService } from "../services/upstream-ssl-config.js";
@@ -107,6 +112,8 @@ export async function configRoutes(fastify: FastifyInstance) {
       ? normalizeSuffixes(reasoningSuffixesCfg.value)
       : [...DEFAULT_REASONING_EFFORT_MODEL_SUFFIXES];
 
+    const modelDailyTokenLimits = await modelDailyQuota.snapshot();
+
     const now = Date.now();
     const rawExpiresAt = debugExpiresCfg ? Number(debugExpiresCfg.value) : 0;
     const activeDebug = debugEnabledCfg?.value === "true" && rawExpiresAt > now;
@@ -135,6 +142,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       trafficAnalysisRegion: trafficAnalysisRegionCfg?.value || null,
       antiBot,
       reasoningEffortModelSuffixes,
+      modelDailyTokenLimits,
     };
   });
 
@@ -203,6 +211,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       trafficAnalysisRegion,
       antiBot,
       reasoningEffortModelSuffixes,
+      modelDailyTokenLimits,
     } = request.body as {
       allowRegistration?: boolean;
       corsEnabled?: boolean;
@@ -225,6 +234,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         blockedUserAgents?: string[];
       };
       reasoningEffortModelSuffixes?: string[];
+      modelDailyTokenLimits?: Array<{ model: string; limitMillions: number | null }>;
     };
 
     try {
@@ -503,6 +513,34 @@ export async function configRoutes(fastify: FastifyInstance) {
         await reasoningEffortSuffixesCache.reload();
         memoryLogger.info(
           `reasoning_effort 后缀白名单已更新: [${normalized.join(", ")}]`,
+          "Config",
+        );
+      }
+
+      if (modelDailyTokenLimits !== undefined) {
+        const byModel: Record<string, number> = {};
+        for (const entry of modelDailyTokenLimits) {
+          const model =
+            typeof entry?.model === "string" ? entry.model.trim() : "";
+          if (!model) throw new Error("模型额度配置缺少模型名");
+          const millions = Number(entry?.limitMillions);
+          // 非法或 <=0 的条目表示不限制，不写入配置。
+          if (Number.isFinite(millions) && millions > 0) {
+            byModel[model] = Math.round(millions * 1000) / 1000;
+          }
+        }
+        await systemConfigDb.set(
+          MODEL_DAILY_TOKEN_LIMITS_CONFIG_KEY,
+          JSON.stringify(byModel),
+          MODEL_DAILY_TOKEN_LIMITS_DESCRIPTION,
+        );
+        modelDailyQuota.invalidateLimits();
+        memoryLogger.info(
+          `模型每日 token 额度已更新: ${
+            Object.entries(byModel)
+              .map(([m, v]) => `${m}=${v}M`)
+              .join(", ") || "(全部不限)"
+          }`,
           "Config",
         );
       }

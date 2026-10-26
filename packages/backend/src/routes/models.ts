@@ -1,8 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { nanoid } from "nanoid";
-import { apiRequestDb, modelDb, providerDb, routingConfigDb, virtualKeyDb } from "../db/index.js";
+import { apiRequestDb, modelDb, providerDb, routingConfigDb, virtualKeyDb, withTransaction } from "../db/index.js";
 import { hotConfigCache } from "../services/hot-config-cache.js";
+import { modelDailyQuota } from "../services/model-daily-quota.js";
 import { decryptApiKey } from "../utils/crypto.js";
 import { probeService } from "../services/probe-service.js";
 import {
@@ -309,7 +310,18 @@ export async function modelRoutes(fastify: FastifyInstance) {
           : null;
     }
 
-    await modelDb.update(id, updates);
+    const renamed = updates.name && updates.name !== model.name;
+    if (renamed) {
+      // 模型名、额度配置和当天用量必须同事务提交，失败时一起回滚。
+      let commitQuotaRename = () => {};
+      await withTransaction(async (connection) => {
+        await modelDb.update(id, updates, connection);
+        commitQuotaRename = await modelDailyQuota.renameModelKey(model.name, updates.name, connection);
+      });
+      commitQuotaRename();
+    } else {
+      await modelDb.update(id, updates);
+    }
     hotConfigCache.invalidateModel(id);
 
     const updated = await modelDb.getById(id);

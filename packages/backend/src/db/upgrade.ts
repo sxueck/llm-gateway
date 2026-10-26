@@ -30,6 +30,8 @@ export const CLEARED_TABLES = [
   "api_request_payloads",
   "api_request_daily_summaries",
   "api_request_hourly_summaries",
+  "model_daily_usage",
+  "model_daily_usage_batches",
   "expert_routing_logs",
   "expert_routing_session_bindings",
   "session_context_bindings",

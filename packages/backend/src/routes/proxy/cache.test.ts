@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { requestCache } from '../../services/request-cache.js';
-import { checkCacheWithKey, computeLogicalCacheKey, releaseCacheLock, tryAcquireCacheLock, waitForCacheFill } from './cache.js';
+import { checkCacheWithKey, computeLogicalCacheKey, releaseCacheLock, setCacheIfNeeded, tryAcquireCacheLock, waitForCacheFill } from './cache.js';
 import { generateCacheKey } from '../../utils/cache-key-generator.js';
 
 describe('tryAcquireCacheLock', () => {
@@ -118,6 +118,15 @@ describe('checkCacheWithKey', () => {
     const result = checkCacheWithKey(vk(), key);
     expect(result.cached?.response).toEqual({ ok: 'logical' });
     expect(result.cached?.headers['x-test']).toBe('1');
+  });
+});
+
+describe('setCacheIfNeeded', () => {
+  it('retains the normalized quota identity with the cached response', () => {
+    const key = 'quota-model-entry';
+    setCacheIfNeeded(key, true, false, { ok: true }, {}, 'gpt-x');
+
+    expect(checkCacheWithKey(vk(), key).cached?.quotaModel).toBe('gpt-x');
   });
 });
 

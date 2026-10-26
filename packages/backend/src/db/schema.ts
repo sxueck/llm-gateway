@@ -604,6 +604,30 @@ export async function createTables(connection?: Connection) {
         INDEX idx_hourly_model (model, bucket_hour)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+
+    // 模型每日 token 用量：按「客户端请求的模型名 models.name」累计，虚拟模型与它路由到的
+    // 真实模型各自独立成行（api_requests.model 存的是解析后的真实模型，无法区分），
+    // 因此额度计量必须单独落表。
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS model_daily_usage (
+        usage_date DATE NOT NULL COMMENT 'Asia/Shanghai 自然日',
+        model VARCHAR(255) NOT NULL COMMENT '客户端请求的模型名 models.name（额度计量单位）',
+        consumed_tokens BIGINT NOT NULL DEFAULT 0 COMMENT 'prompt+completion 累计；命中缓存不打折，同样计入',
+        request_count INT NOT NULL DEFAULT 0,
+        created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+        updated_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+        PRIMARY KEY (usage_date, model),
+        INDEX idx_model_daily_usage_model (model, usage_date)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // 每个用量批次只应用一次；未知结果的写入可用同一 batch_id 安全重试。
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS model_daily_usage_batches (
+        batch_id VARCHAR(64) PRIMARY KEY COMMENT '单次用量 flush 的幂等标识',
+        created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
   } finally {
     if (!connection) (conn as PoolConnection).release();
   }

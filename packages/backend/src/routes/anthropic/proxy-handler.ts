@@ -320,6 +320,19 @@ export function createAnthropicProxyHandler() {
             );
             reply.code(429).send(anthropicError);
           },
+          onQuotaExceeded: ({
+            reply,
+            modelName,
+            limitTokens,
+            usedTokens,
+            retryAfterSeconds,
+          }) => {
+            const anthropicError = createAnthropicError(
+              `Model "${modelName}" has used ${usedTokens} of its ${limitTokens} daily token quota. Retry after ${retryAfterSeconds}s.`,
+              "rate_limit_error",
+            );
+            reply.code(429).send(anthropicError);
+          },
           onModelError: ({ reply, modelError }) => {
             const anthropicError = createAnthropicError(
               modelError.body.error?.message || "Model resolution failed",

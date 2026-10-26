@@ -43,6 +43,7 @@
 | **Virtual Keys** | Create and manage virtual API keys with rate limiting and access control |
 | **Routing Configuration** | Load balancing and failover strategies to improve service availability |
 | **Model Management** | Unified management of models from all providers with batch import and custom configuration |
+| **Model Daily Token Quota** | Cap how many tokens a model may consume per calendar day (unit: M) from the Settings page; virtual models are metered separately, the budget is shared by all virtual keys, and over-limit requests get 429 |
 | **Multi-Endpoint Support** | Compatible with `/v1/chat/completions`, `/v1/responses`, `/v1/messages` and other endpoints |
 | **User Authentication** | Secure authentication mechanism based on JWT |
 | **Real-time Monitoring** | Dashboard displaying system status and configuration information |

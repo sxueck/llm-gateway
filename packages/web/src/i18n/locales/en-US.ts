@@ -802,6 +802,11 @@ export default {
     reasoningEffortSuffixesDesc: 'Clients can force OpenAI Chat / Responses thinking depth via <model>-<suffix> (e.g. gpt-5-high). One suffix per line; leave empty to disable suffix parsing',
     reasoningEffortSuffixesPlaceholder: 'minimal\nlow\nmedium\nhigh',
     reasoningEffortSuffixesDefault: 'Default: minimal, low, medium, high',
+    modelDailyTokenQuota: 'Model Daily Token Quota',
+    modelDailyTokenQuotaDesc: 'Cap how many tokens a single model may consume per day (Asia/Shanghai calendar day), in M (millions). A virtual model holds its own budget and all virtual keys share that one model budget. Requests above the cap get 429 and the budget resets at midnight. Remove a row to leave that model uncapped',
+    modelDailyTokenQuotaModelPlaceholder: 'Select or type a model name',
+    modelDailyTokenQuotaAdd: 'Add model quota',
+    modelDailyTokenQuotaUsed: 'Used today {used} / {limit}',
     antiBot: {
       title: 'Anti-Bot Settings',
       enabled: 'Enable Anti-Bot Protection',

@@ -5,6 +5,11 @@ import { getRequestUserAgent } from '../../utils/http.js';
 import { extractVirtualKeyAuthHeader, authenticateVirtualKey } from './auth.js';
 import { virtualKeyRateLimiter } from '../../services/virtual-key-rate-limiter.js';
 import { resolveModelAndProvider } from './model-resolver.js';
+import {
+  currentQuotaModel,
+  modelDailyQuota,
+  stampQuotaModel,
+} from '../../services/model-daily-quota.js';
 import { buildProviderConfig } from './provider-config-builder.js';
 
 export type ProxyProtocol = 'openai' | 'anthropic' | 'gemini';
@@ -54,6 +59,16 @@ export interface ProxyPreflightHandlers {
 }
 
 export interface ProxyPipelineHandlers extends ProxyPreflightHandlers {
+  /** Model daily token budget exhausted (system_config model_daily_token_limits). */
+  onQuotaExceeded: (args: {
+    reply: FastifyReply;
+    requestIp: string;
+    requestUserAgent: string;
+    modelName: string;
+    limitTokens: number;
+    usedTokens: number;
+    retryAfterSeconds: number;
+  }) => Promise<void> | void;
   onModelError: (args: {
     reply: FastifyReply;
     requestIp: string;
@@ -85,6 +100,8 @@ export interface ProxyPipelineOptions {
     requestUserAgent: string;
     virtualKey: any;
     virtualKeyValue: string;
+    /** Check before an early success response (for example, a gateway-cache hit). */
+    checkQuota: (modelName?: string) => Promise<boolean>;
   }) => Promise<boolean | void> | boolean | void;
 }
 
@@ -172,6 +189,15 @@ export async function runProxyPreflight(
     return { ok: false };
   }
 
+  // Charge gateway-cache hits too: they return from `afterAuth` before model
+  // resolution, so the addressed name is only readable from the client body.
+  // runProxyPipeline re-stamps with the post-resolution (suffix-stripped) name.
+  const clientModel =
+    typeof (request.body as any)?.model === 'string'
+      ? (request.body as any).model
+      : undefined;
+  if (clientModel) stampQuotaModel(clientModel);
+
   return authResult;
 }
 
@@ -184,7 +210,7 @@ export async function runProxyPreflight(
  * 3) Auth (virtual key)
  * 4) Per-key rate limit (RPM)
  * 5) Protocol-specific hook (optional)
- * 6) Model/provider resolution
+ * 6) Model/provider resolution + model daily token budget
  * 7) Provider config build
  */
 export async function runProxyPipeline(
@@ -205,6 +231,29 @@ export async function runProxyPipeline(
     virtualKeyValue,
   } = preflightResult.context;
 
+  const checkQuota = async (modelName?: string): Promise<boolean> => {
+    const quotaModel = modelName ?? currentQuotaModel();
+    stampQuotaModel(quotaModel);
+    const quota = await modelDailyQuota.check(quotaModel);
+    if (quota.allowed) return true;
+
+    memoryLogger.warn(
+      `模型每日 token 额度耗尽 | model: ${quota.model} | used: ${quota.usedTokens}/${quota.limitTokens} | retryAfter: ${quota.retryAfterSeconds}s | keyId: ${virtualKey.id} | IP: ${requestIp}`,
+      'Quota',
+    );
+    reply.header('Retry-After', String(quota.retryAfterSeconds));
+    await options.handlers.onQuotaExceeded({
+      reply,
+      requestIp,
+      requestUserAgent,
+      modelName: quota.model,
+      limitTokens: quota.limitTokens,
+      usedTokens: quota.usedTokens,
+      retryAfterSeconds: quota.retryAfterSeconds,
+    });
+    return false;
+  };
+
   if (options.afterAuth) {
     const hookResult = await options.afterAuth({
       request,
@@ -213,6 +262,7 @@ export async function runProxyPipeline(
       requestUserAgent,
       virtualKey,
       virtualKeyValue,
+      checkQuota,
     });
     if (hookResult === false) {
       return { ok: false };
@@ -245,6 +295,17 @@ export async function runProxyPipeline(
   }
 
   const { provider, providerId, currentModel } = modelResult;
+
+  // Daily token budget of the addressed model: the name the client sent (after
+  // suffix / tier resolution that is the base model name), so a virtual model
+  // keeps its own budget and every virtual key draws from the same pool.
+  const requestedModel =
+    typeof (request.body as any)?.model === 'string'
+      ? (request.body as any).model
+      : undefined;
+  if (!(await checkQuota(requestedModel))) {
+    return { ok: false };
+  }
 
   const configResult = await buildProviderConfig(
     provider,

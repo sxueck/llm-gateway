@@ -4,6 +4,7 @@ import { LRUCache } from '../utils/lru-cache.js';
 interface CacheEntry {
   response: any;
   headers: Record<string, string>;
+  quotaModel?: string;
   timestamp: number;
   ttl: number;
   size: number; // 缓存条目字节大小
@@ -67,7 +68,7 @@ export class RequestCache {
   /**
    * 计算响应数据的近似字节大小
    */
-  private calculateEntrySize(response: any, headers: Record<string, string>): number {
+  private calculateEntrySize(response: any, headers: Record<string, string>, quotaModel?: string): number {
     let size = 0;
 
     if (typeof response === 'string') {
@@ -87,6 +88,7 @@ export class RequestCache {
       size += Buffer.byteLength(key, 'utf8');
       size += Buffer.byteLength(value, 'utf8');
     }
+    if (quotaModel) size += Buffer.byteLength(quotaModel, 'utf8');
     
     // 基础条目开销 (timestamp, ttl 等字段)
     size += 64;
@@ -166,8 +168,8 @@ export class RequestCache {
     }
   }
 
-  set(key: string, response: any, headers: Record<string, string>, ttl?: number): void {
-    const entrySize = this.calculateEntrySize(response, headers);
+  set(key: string, response: any, headers: Record<string, string>, ttl?: number, quotaModel?: string): void {
+    const entrySize = this.calculateEntrySize(response, headers, quotaModel);
 
     // 检查单条是否超过体积上限，超大响应不进入缓存
     if (this.isEntryTooLarge(entrySize) || entrySize > this.maxBytes) {
@@ -184,6 +186,7 @@ export class RequestCache {
     const newEntry: CacheEntry = {
       response: this.cloneCachedValue(response),
       headers: { ...headers },
+      quotaModel,
       timestamp: Date.now(),
       ttl: ttl || this.defaultTTL,
       size: entrySize
@@ -199,7 +202,7 @@ export class RequestCache {
     );
   }
 
-  get(key: string): { response: any; headers: Record<string, string> } | null {
+  get(key: string): { response: any; headers: Record<string, string>; quotaModel?: string } | null {
     const entry = this.cache.get(key);
 
     if (!entry) {
@@ -229,7 +232,8 @@ export class RequestCache {
 
     return {
       response: this.cloneCachedValue(entry.response),
-      headers: { ...entry.headers }
+      headers: { ...entry.headers },
+      quotaModel: entry.quotaModel,
     };
   }
 

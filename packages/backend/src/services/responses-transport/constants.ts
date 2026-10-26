@@ -58,6 +58,8 @@ export const ERROR_CODES = {
   PROVIDER_CONFIG_ERROR: 'provider_config_error',
   /** Missing upstream URL or API key. */
   MISSING_UPSTREAM: 'missing_upstream',
+  /** Model daily token budget exhausted. */
+  MODEL_QUOTA_EXCEEDED: 'model_daily_token_quota_exceeded',
 } as const;
 
 /** Error types used in the `error.type` field sent to clients. */

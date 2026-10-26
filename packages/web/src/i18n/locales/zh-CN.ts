@@ -802,6 +802,11 @@ export default {
     reasoningEffortSuffixesDesc: '客户端可通过 <模型名>-<后缀> 强制 OpenAI Chat / Responses 思考深度（如 gpt-5-high）。每行一个后缀，留空则禁用后缀解析',
     reasoningEffortSuffixesPlaceholder: 'minimal\nlow\nmedium\nhigh',
     reasoningEffortSuffixesDefault: '默认值: minimal, low, medium, high',
+    modelDailyTokenQuota: '模型每日 Token 额度',
+    modelDailyTokenQuotaDesc: '限制单个模型一天（Asia/Shanghai 自然日）可消耗的 token 总量，单位 M（100 万）。虚拟模型独立计额度，所有虚拟密钥共享同一个模型额度；超限后该模型的新请求返回 429，次日零点自动重置。删掉某行即不限制该模型',
+    modelDailyTokenQuotaModelPlaceholder: '选择或输入模型名',
+    modelDailyTokenQuotaAdd: '添加模型额度',
+    modelDailyTokenQuotaUsed: '今日已用 {used} / {limit}',
     antiBot: {
       title: '反爬虫设置',
       enabled: '启用反爬虫功能',

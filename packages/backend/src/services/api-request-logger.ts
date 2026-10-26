@@ -5,12 +5,21 @@ import { extractExpertRoutingSessionId } from "./expert-router/session-binding.j
 import type { VirtualKey } from "../types/index.js";
 import type { TokenCalculationResult } from "../routes/proxy/token-calculator.js";
 import { memoryLogger } from "./logger.js";
+import {
+  currentQuotaModel,
+  modelDailyQuota,
+} from "./model-daily-quota.js";
 
 export interface ApiLogParams {
   virtualKey: VirtualKey;
   /** Undefined on early cache hits, where model/provider resolution never ran. */
   providerId: string | undefined;
   model: string;
+  /**
+   * Model name the client addressed (the quota unit). When omitted it is read
+   * from the request-scoped quota context stamped by the proxy pipeline.
+   */
+  quotaModel?: string;
   tokenCount: TokenCalculationResult; // { promptTokens, completionTokens, totalTokens }
   status: "success" | "error";
   responseTime: number;
@@ -150,6 +159,13 @@ function normalizeErrorMessage(errorMessage: unknown): string | undefined {
 }
 
 export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
+  // Single accounting choke point for the daily model budget: prompt+completion
+  // in full, with no deduction for prompt-cache or gateway-cache hits.
+  modelDailyQuota.record(
+    params.quotaModel ?? currentQuotaModel(),
+    params.tokenCount.totalTokens,
+  );
+
   const normalizedErrorMessage = normalizeErrorMessage(params.errorMessage);
   const agentRunId =
     params.agentRunId ?? agentRunIdFromHeaders(params.request?.headers);

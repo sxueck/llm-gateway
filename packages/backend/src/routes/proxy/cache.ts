@@ -79,11 +79,12 @@ export function setCacheIfNeeded(
   shouldCache: boolean,
   fromCache: boolean,
   responseData: any,
-  responseHeaders: Record<string, string>
+  responseHeaders: Record<string, string>,
+  quotaModel?: string,
 ): void {
   if (cacheKey && shouldCache && !fromCache) {
     const cacheHeaders: Record<string, string> = { ...responseHeaders };
-    requestCache.set(cacheKey, responseData, cacheHeaders);
+    requestCache.set(cacheKey, responseData, cacheHeaders, undefined, quotaModel);
   }
 }
 

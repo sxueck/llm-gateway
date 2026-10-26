@@ -1,4 +1,18 @@
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000; // Asia/Shanghai is UTC+8
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** 'YYYY-MM-DD' calendar day in Asia/Shanghai — the key of daily quota rows. */
+export function getShanghaiDateKey(timestampMs: number = Date.now()): string {
+  return new Date(timestampMs + SHANGHAI_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** UTC-ms instant when the Asia/Shanghai day containing `timestampMs` started. */
+export function getShanghaiDayStartOf(timestampMs: number): number {
+  return (
+    Math.floor((timestampMs + SHANGHAI_OFFSET_MS) / DAY_MS) * DAY_MS -
+    SHANGHAI_OFFSET_MS
+  );
+}
 
 export function getShanghaiDayStart(daysOffset: number = 0): number {
   const now = new Date();

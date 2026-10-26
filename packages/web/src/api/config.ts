@@ -389,6 +389,16 @@ type SystemSettingsResponse = {
   trafficAnalysisRegion: string | null;
   antiBot: AntiBotSettings;
   reasoningEffortModelSuffixes: string[];
+  modelDailyTokenLimits: ModelDailyTokenLimit[];
+};
+
+/** Per-model daily token budget: ceiling in millions + today's consumption. */
+export type ModelDailyTokenLimit = {
+  model: string;
+  limitMillions: number;
+  limitTokens: number;
+  usedTokens: number;
+  requestCount: number;
 };
 
 type PublicSystemSettingsResponse = {
@@ -420,6 +430,7 @@ type UpdateSystemSettingsRequest = {
     blockedUserAgents?: string[];
   };
   reasoningEffortModelSuffixes?: string[];
+  modelDailyTokenLimits?: Array<{ model: string; limitMillions: number | null }>;
 };
 
 export interface HourlyActual {

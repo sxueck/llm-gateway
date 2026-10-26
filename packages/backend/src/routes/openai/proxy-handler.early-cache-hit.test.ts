@@ -14,9 +14,33 @@ import { hotConfigCache } from '../../services/hot-config-cache.js';
 import { computeLogicalCacheKey } from '../proxy/cache.js';
 import { resolveModelAndProvider } from '../proxy/model-resolver.js';
 import { createOpenAIProxyHandler } from './proxy-handler.js';
+import {
+  modelDailyQuota,
+  runWithQuotaContext,
+} from '../../services/model-daily-quota.js';
+
+const quotaMocks = vi.hoisted(() => ({
+  get: vi.fn(),
+  addUsage: vi.fn(),
+  getDayUsage: vi.fn(),
+  getDayTotals: vi.fn(),
+  renameDayUsage: vi.fn(),
+  deleteBefore: vi.fn(),
+}));
 
 vi.mock('../../db/index.js', () => ({
   apiRequestDb: { create: vi.fn(async () => {}) },
+  systemConfigDb: { get: quotaMocks.get, set: vi.fn() },
+  modelDailyUsageDb: {
+    addUsage: quotaMocks.addUsage,
+    getDayUsage: quotaMocks.getDayUsage,
+    getDayTotals: quotaMocks.getDayTotals,
+    renameDayUsage: quotaMocks.renameDayUsage,
+    deleteBefore: quotaMocks.deleteBefore,
+  },
+}));
+vi.mock('../../services/threat-ip-blocker.js', () => ({
+  threatIpBlocker: { isThreat: vi.fn(() => false), refresh: vi.fn() },
 }));
 vi.mock('../../services/hot-config-cache.js', () => ({
   hotConfigCache: { getVirtualKeyByKeyValue: vi.fn() },
@@ -61,6 +85,13 @@ const cachedResponse = {
 beforeEach(() => {
   vi.clearAllMocks();
   requestCache.clear();
+  modelDailyQuota.resetForTesting();
+  quotaMocks.get.mockResolvedValue({
+    value: JSON.stringify({ [requestBody.model]: 1, 'gpt-x': 1 }),
+  });
+  quotaMocks.getDayUsage.mockResolvedValue({ consumedTokens: 0, requestCount: 0 });
+  quotaMocks.getDayTotals.mockResolvedValue([]);
+  quotaMocks.addUsage.mockResolvedValue(undefined);
   vi.mocked(hotConfigCache.getVirtualKeyByKeyValue).mockResolvedValue(virtualKey as any);
 });
 
@@ -109,6 +140,61 @@ test('no early hit without a cached entry: model resolution runs as usual', asyn
   expect(resolverCalls()).toBe(1);
   expect(res.statusCode).toBe(500);
 });
+
+test('early cache hit is rejected after the cached model exhausts its quota', async () => {
+  const logicalKey = computeLogicalCacheKey(virtualKey, requestBody, false, false)!;
+  requestCache.set(logicalKey, cachedResponse, { 'content-type': 'application/json' }, 60_000);
+  modelDailyQuota.record(requestBody.model, 1_000_000);
+
+  const app = Fastify();
+  app.post('/v1/chat/completions', createOpenAIProxyHandler());
+  const res = await app.inject({
+    method: 'POST',
+    url: '/v1/chat/completions',
+    headers: { authorization: `Bearer ${KEY_VALUE}` },
+    payload: requestBody,
+  });
+  await app.close();
+
+  expect(res.statusCode).toBe(429);
+  expect(res.json().error.code).toBe('model_daily_token_quota_exceeded');
+  expect(resolverCalls()).toBe(0);
+});
+
+test.each(['gpt-x-high', 'gpt-x-auto-high'])(
+  'early cache hit charges the normalized quota identity stored with %s',
+  async (model) => {
+    const suffixedBody = { ...requestBody, model };
+    quotaMocks.get.mockResolvedValue({
+      value: JSON.stringify({ 'gpt-x': 1, [model]: 1 }),
+    });
+    const logicalKey = computeLogicalCacheKey(virtualKey, suffixedBody, false, false)!;
+    requestCache.set(
+      logicalKey,
+      cachedResponse,
+      { 'content-type': 'application/json' },
+      60_000,
+      'gpt-x',
+    );
+
+    const app = Fastify();
+    app.addHook('onRequest', (_request, _reply, done) => {
+      runWithQuotaContext(done);
+    });
+    app.post('/v1/chat/completions', createOpenAIProxyHandler());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: { authorization: `Bearer ${KEY_VALUE}` },
+      payload: suffixedBody,
+    });
+    await app.close();
+
+    expect(res.statusCode).toBe(200);
+    expect((await modelDailyQuota.check('gpt-x')).usedTokens).toBe(23);
+    expect((await modelDailyQuota.check(model)).usedTokens).toBe(0);
+  },
+);
 
 function resolverCalls(): number {
   return (resolveModelAndProvider as unknown as ReturnType<typeof vi.fn>).mock.calls.length;

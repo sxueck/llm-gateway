@@ -63,6 +63,22 @@ export function createDecisionsProxyHandler() {
             },
           });
         },
+        onQuotaExceeded: ({
+          reply,
+          modelName,
+          limitTokens,
+          usedTokens,
+          retryAfterSeconds,
+        }) => {
+          reply.code(429).send({
+            error: {
+              message: `Model "${modelName}" has used ${usedTokens} of its ${limitTokens} daily token quota. Retry after ${retryAfterSeconds}s.`,
+              type: "rate_limit_error",
+              param: "model",
+              code: "model_daily_token_quota_exceeded",
+            },
+          });
+        },
         onModelError: ({ reply, modelError }) => {
           reply.code(modelError.code).send(modelError.body);
         },

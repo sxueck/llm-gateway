@@ -44,6 +44,7 @@ import {
   getModelForLogging,
 } from "../proxy/handlers/shared.js";
 import { logApiRequestAsync } from "../../services/api-request-logger.js";
+import { currentQuotaModel } from "../../services/model-daily-quota.js";
 import { normalizeUsageCounts } from "../../utils/usage-normalizer.js";
 import {
   isChatCompletionsPath,
@@ -520,6 +521,22 @@ export function createOpenAIProxyHandler() {
               },
             });
           },
+          onQuotaExceeded: ({
+            reply,
+            modelName,
+            limitTokens,
+            usedTokens,
+            retryAfterSeconds,
+          }) => {
+            reply.code(429).send({
+              error: {
+                message: `Model "${modelName}" has used ${usedTokens} of its ${limitTokens} daily token quota. Retry after ${retryAfterSeconds}s.`,
+                type: "rate_limit_error",
+                param: "model",
+                code: "model_daily_token_quota_exceeded",
+              },
+            });
+          },
           onModelError: ({ reply, modelError }) => {
             reply.code(modelError.code).send(modelError.body);
           },
@@ -534,6 +551,7 @@ export function createOpenAIProxyHandler() {
           requestUserAgent,
           virtualKey,
           virtualKeyValue: vkValue,
+          checkQuota,
         }): Promise<boolean | void> => {
           virtualKeyValue = vkValue;
 
@@ -579,6 +597,14 @@ export function createOpenAIProxyHandler() {
               logicalCacheKeyForRequest,
             );
             if (early.cached) {
+              const earlyQuotaModel =
+                early.cached.quotaModel ??
+                (typeof (request.body as any)?.model === 'string'
+                  ? (request.body as any).model
+                  : undefined);
+              if (!(await checkQuota(earlyQuotaModel))) {
+                return false;
+              }
               await sendNonStreamCacheHit({
                 request,
                 reply,
@@ -1412,7 +1438,7 @@ interface NonStreamCacheHitArgs {
   currentModel?: any;
   modelAttributes?: any;
   compressionStats?: { originalTokens: number; savedTokens: number };
-  cached: { response: any; headers: Record<string, string> };
+  cached: { response: any; headers: Record<string, string>; quotaModel?: string };
   /** Present when a retry re-entry found the entry filled by another request. */
   retryLock?: { key: string; owner: string };
   ip: string;
@@ -1520,6 +1546,7 @@ async function sendNonStreamCacheHit(
     virtualKey,
     providerId,
     model: getModelForLogging(request.body, currentModel),
+    quotaModel: cached.quotaModel,
     tokenCount,
     status: "success",
     routeLogId: args.routeInfo?.logId ?? undefined,
@@ -2270,6 +2297,7 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
       fromCache,
       responseData,
       responseHeaders,
+      currentQuotaModel(),
     );
 
     if (cacheResult.cacheKey && cacheResult.shouldCache && !fromCache) {

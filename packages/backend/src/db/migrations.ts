@@ -183,6 +183,21 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 4,
+    name: "model_daily_usage_batches",
+    up: async (conn) => {
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS model_daily_usage_batches (
+          batch_id VARCHAR(64) PRIMARY KEY COMMENT '单次用量 flush 的幂等标识',
+          created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+    },
+    down: async (conn) => {
+      await conn.query("DROP TABLE IF EXISTS model_daily_usage_batches");
+    },
+  },
 ];
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {
