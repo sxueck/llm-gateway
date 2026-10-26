@@ -14,6 +14,22 @@ import { buildProviderConfig } from './provider-config-builder.js';
 
 export type ProxyProtocol = 'openai' | 'anthropic' | 'gemini';
 
+/**
+ * Human-readable retry duration for client-facing quota errors: hours when
+ * possible, falling back to minutes/seconds so values just past midnight
+ * don't render as "0.0h".
+ */
+export function formatRetryDuration(seconds: number): string {
+  if (seconds >= 3600) {
+    const hours = seconds / 3600;
+    return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
+  }
+  if (seconds >= 60) {
+    return `${Math.ceil(seconds / 60)}m`;
+  }
+  return `${Math.max(1, Math.ceil(seconds))}s`;
+}
+
 export interface ProxyPipelineContext {
   requestIp: string;
   requestUserAgent: string;

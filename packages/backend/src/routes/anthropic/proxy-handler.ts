@@ -2,7 +2,7 @@ import { FastifyRequest, FastifyReply } from "fastify";
 import { memoryLogger } from "../../services/logger.js";
 import { extractIp } from "../../utils/ip.js";
 import { getRequestUserAgent } from "../../utils/http.js";
-import { runProxyPipeline } from "../proxy/pipeline.js";
+import { formatRetryDuration, runProxyPipeline } from "../proxy/pipeline.js";
 import { circuitBreaker, httpFailureError } from "../../services/circuit-breaker.js";
 import { applyRouteHeaders, modelFieldForClient } from "../../services/expert-router/exposure.js";
 import { shouldRetrySmartRouting } from "../proxy/routing.js";
@@ -320,15 +320,9 @@ export function createAnthropicProxyHandler() {
             );
             reply.code(429).send(anthropicError);
           },
-          onQuotaExceeded: ({
-            reply,
-            modelName,
-            limitTokens,
-            usedTokens,
-            retryAfterSeconds,
-          }) => {
+          onQuotaExceeded: ({ reply, modelName, retryAfterSeconds }) => {
             const anthropicError = createAnthropicError(
-              `Model "${modelName}" has used ${usedTokens} of its ${limitTokens} daily token quota. Retry after ${retryAfterSeconds}s.`,
+              `Model "${modelName}" has reached its daily token quota. Retry after ${formatRetryDuration(retryAfterSeconds)}.`,
               "rate_limit_error",
             );
             reply.code(429).send(anthropicError);

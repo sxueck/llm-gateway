@@ -7,7 +7,7 @@ import {
   modelDailyQuota,
   runWithQuotaContext,
 } from '../../services/model-daily-quota.js';
-import { runProxyPipeline } from './pipeline.js';
+import { formatRetryDuration, runProxyPipeline } from './pipeline.js';
 import { resolveModelAndProvider } from './model-resolver.js';
 import { buildProviderConfig } from './provider-config-builder.js';
 
@@ -76,10 +76,10 @@ function makeHandlers() {
     onAntiBotBlock: vi.fn(),
     onAuthError: vi.fn(),
     onRateLimited: vi.fn(),
-    onQuotaExceeded: vi.fn(({ reply, modelName, limitTokens, usedTokens }: any) => {
+    onQuotaExceeded: vi.fn(({ reply, modelName, retryAfterSeconds }: any) => {
       reply.code(429).send({
         error: {
-          message: `Model "${modelName}" has used ${usedTokens} of its ${limitTokens} daily token quota.`,
+          message: `Model "${modelName}" has reached its daily token quota. Retry after ${formatRetryDuration(retryAfterSeconds)}.`,
           type: 'rate_limit_error',
           param: 'model',
           code: 'model_daily_token_quota_exceeded',

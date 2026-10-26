@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket as WsWebSocket } from "@fastify/websocket";
 import { WebSocket } from "ws";
 import {
+  formatRetryDuration,
   runProxyAuthentication,
   type ProxyPreflightContext,
 } from "../proxy/pipeline.js";
@@ -440,7 +441,7 @@ export async function resolveWebSocketTurnConfig(
       "Quota",
     );
     throw errorFromGatewayPayload(
-      `Model has used ${quota.usedTokens} of its ${quota.limitTokens} daily token quota. Retry after ${quota.retryAfterSeconds}s.`,
+      `Model has reached its daily token quota. Retry after ${formatRetryDuration(quota.retryAfterSeconds)}.`,
       ERROR_CODES.MODEL_QUOTA_EXCEEDED,
     );
   }

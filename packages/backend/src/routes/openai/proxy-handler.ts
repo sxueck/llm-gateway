@@ -35,7 +35,7 @@ import {
   tryAcquireCacheLock,
   waitForCacheFill,
 } from "../proxy/cache.js";
-import { runProxyPipeline } from "../proxy/pipeline.js";
+import { formatRetryDuration, runProxyPipeline } from "../proxy/pipeline.js";
 import { calculateTokensIfNeeded } from "../proxy/token-calculator.js";
 import { circuitBreaker, httpFailureError } from "../../services/circuit-breaker.js";
 import { applyRouteHeaders, modelFieldForClient } from "../../services/expert-router/exposure.js";
@@ -521,16 +521,10 @@ export function createOpenAIProxyHandler() {
               },
             });
           },
-          onQuotaExceeded: ({
-            reply,
-            modelName,
-            limitTokens,
-            usedTokens,
-            retryAfterSeconds,
-          }) => {
+          onQuotaExceeded: ({ reply, modelName, retryAfterSeconds }) => {
             reply.code(429).send({
               error: {
-                message: `Model "${modelName}" has used ${usedTokens} of its ${limitTokens} daily token quota. Retry after ${retryAfterSeconds}s.`,
+                message: `Model "${modelName}" has reached its daily token quota. Retry after ${formatRetryDuration(retryAfterSeconds)}.`,
                 type: "rate_limit_error",
                 param: "model",
                 code: "model_daily_token_quota_exceeded",
