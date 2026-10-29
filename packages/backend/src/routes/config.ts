@@ -830,7 +830,6 @@ export async function configRoutes(fastify: FastifyInstance) {
       sessionId,
       ip,
       requestType,
-      // Fastify 的 query 恒为字符串；只认显式的真/假值，其他值视为不筛选。
       cacheHit:
         cacheHit === undefined || cacheHit === ""
           ? undefined

@@ -265,7 +265,7 @@ describe('apiRequestRepository 请求来源读取遵守页面筛选器', () => {
     expect(issuedQueries()[1].params).toEqual([FIXED_NOW, FIXED_NOW + 1, 50]);
   });
 
-  it('getAll 把会话/IP/协议/缓存命中筛选写进 SQL 与参数', async () => {
+  it('getAll 对列表和总数应用协议、缓存命中、会话和 IP 筛选', async () => {
     mocks.connection.query
       .mockResolvedValueOnce([[{ total: 0 }]])
       .mockResolvedValueOnce([[]]);
@@ -280,9 +280,14 @@ describe('apiRequestRepository 请求来源读取遵守页面筛选器', () => {
       cacheHit: false,
     });
 
-    const dataQuery = issuedQueries()[1];
-    // 参数顺序必须与 WHERE 拼接顺序一致，否则错位筛选。
+    const [countQuery, dataQuery] = issuedQueries();
+    expect(countQuery.params).toEqual(['vk-1', 's-1', '1.2.3.4', 'anthropic', 0]);
     expect(dataQuery.params).toEqual(['vk-1', 's-1', '1.2.3.4', 'anthropic', 0, 20, 0]);
+    for (const query of [countQuery, dataQuery]) {
+      expect(query.sql).toContain('ar.session_id = ?');
+      expect(query.sql).toContain('ar.request_type = ?');
+      expect(query.sql).toContain('ar.cache_hit = ?');
+    }
   });
 });
 

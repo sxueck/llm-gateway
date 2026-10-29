@@ -40,22 +40,6 @@
               tag
               @update:value="resetPageAndLoad"
             />
-            <n-select
-              v-model:value="filterRequestType"
-              :options="requestTypeOptions"
-              class="filter-control filter-request-type-select"
-              :placeholder="t('apiRequests.filterProtocol')"
-              clearable
-              @update:value="resetPageAndLoad"
-            />
-            <n-select
-              v-model:value="filterCacheHit"
-              :options="cacheHitOptions"
-              class="filter-control filter-cache-select"
-              :placeholder="t('apiRequests.filterCacheHit')"
-              clearable
-              @update:value="resetPageAndLoad"
-            />
             <n-input
               v-model:value="filterIp"
               class="filter-control filter-ip-input"
@@ -400,8 +384,6 @@ const filterStatus = ref<string | undefined>(undefined)
 const filterVirtualKeyId = ref<string | undefined>(undefined)
 const filterProviderId = ref<string | undefined>(undefined)
 const filterModel = ref<string | undefined>(undefined)
-const filterRequestType = ref<string | undefined>(undefined)
-const filterCacheHit = ref<0 | 1 | undefined>(undefined)
 const filterIp = ref<string>('')
 const filterSessionId = ref<string>('')
 const virtualKeyOptions = ref<Array<{ label: string; value: string }>>([])
@@ -418,8 +400,6 @@ const hasActiveFilters = computed(
     !!filterVirtualKeyId.value ||
     !!filterProviderId.value ||
     !!filterModel.value ||
-    !!filterRequestType.value ||
-    filterCacheHit.value !== undefined ||
     !!filterIp.value.trim() ||
     !!filterSessionId.value.trim()
 )
@@ -446,17 +426,8 @@ const applyRouteQuery = () => {
   if (q.status === 'success' || q.status === 'error') {
     filterStatus.value = q.status
   }
-  if (typeof q.requestType === 'string' && q.requestType) {
-    filterRequestType.value = q.requestType
-  }
-  if (q.cacheHit === '1' || q.cacheHit === '0') {
-    filterCacheHit.value = q.cacheHit === '1' ? 1 : 0
-  }
   if (typeof q.ip === 'string' && q.ip) {
     filterIp.value = q.ip
-  }
-  if (typeof q.sessionId === 'string' && q.sessionId) {
-    filterSessionId.value = q.sessionId
   }
 }
 
@@ -466,8 +437,6 @@ const clearFilters = () => {
   filterVirtualKeyId.value = undefined
   filterProviderId.value = undefined
   filterModel.value = undefined
-  filterRequestType.value = undefined
-  filterCacheHit.value = undefined
   filterIp.value = ''
   filterSessionId.value = ''
   // 清除过滤后重置分页；同时移除携带的 URL 参数
@@ -613,20 +582,6 @@ const pagination = reactive<PaginationProps>({
 const statusOptions = computed(() => [
   { label: t('common.success'), value: 'success' },
   { label: t('common.failed'), value: 'error' }
-])
-
-// 与后端 request_type 写入值对齐；openai-responses-ws 等内部入口不预置选项，
-// 但控件为 tag 输入，仍可手工填入完整值筛选。
-const requestTypeOptions = [
-  { label: 'OpenAI Chat', value: 'chat' },
-  { label: 'OpenAI Responses', value: 'openai-responses' },
-  { label: 'Anthropic', value: 'anthropic' },
-  { label: 'Gemini', value: 'gemini' }
-]
-
-const cacheHitOptions = computed(() => [
-  { label: t('apiRequests.cacheHitOnly'), value: 1 as const },
-  { label: t('apiRequests.cacheMissOnly'), value: 0 as const }
 ])
 
 const columns = computed<DataTableColumns<ApiRequest>>(() => [
@@ -796,14 +751,6 @@ const loadRequests = async () => {
 
     if (filterModel.value) {
       params.model = filterModel.value
-    }
-
-    if (filterRequestType.value) {
-      params.requestType = filterRequestType.value
-    }
-
-    if (filterCacheHit.value !== undefined) {
-      params.cacheHit = filterCacheHit.value
     }
 
     const ip = filterIp.value.trim()
@@ -1009,14 +956,6 @@ onMounted(() => {
 
 .filter-status-select {
   width: 120px;
-}
-
-.filter-request-type-select {
-  width: 150px;
-}
-
-.filter-cache-select {
-  width: 130px;
 }
 
 .filter-ip-input {

@@ -618,11 +618,9 @@ export const apiRequestRepository = {
       }
 
       if (options?.cacheHit !== undefined) {
-        // 缓存命中请求不计入 Token 统计算法，列表需要能单独隔离这部分流量。
-        const value = options.cacheHit ? 1 : 0;
         countQuery += " AND ar.cache_hit = ?";
         dataQuery += " AND ar.cache_hit = ?";
-        params.push(value);
+        params.push(options.cacheHit ? 1 : 0);
       }
 
       const [countRows] = await conn.query(countQuery, params);

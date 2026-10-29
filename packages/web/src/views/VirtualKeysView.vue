@@ -531,21 +531,9 @@ const metricsComplete = computed(
     !metrics.value!.hasCoverageGaps
 )
 
-const periodLabel = computed(
-  () =>
-    ({
-      '24h': t('virtualKeys.period24h'),
-      '7d': t('virtualKeys.period7d'),
-      '30d': t('virtualKeys.period30d')
-    })[metricsPeriod.value]
-)
-
 const metricsNotes = computed(() => {
   const notes: string[] = []
   if (!metrics.value) return notes
-  if (metricsComplete.value) {
-    notes.push(t('virtualKeys.metricsWindowNote', { period: periodLabel.value }))
-  }
   if (metrics.value.truncated) {
     notes.push(t('virtualKeys.metricsTruncated', { limit: VK_METRICS_PAGE_SIZE * VK_METRICS_MAX_PAGES }))
   }

@@ -33,11 +33,9 @@
         </template>
       </PageHeader>
 
-      <ProviderOverview :providers="providerStore.providers" />
-
       <n-card class="table-card">
         <template #header>
-          <span class="table-card-title">{{ t('providers.list') }}</span>
+          <span class="table-card-title">{{ t('providers.list') }} ({{ enabledProviderCount }}/{{ providerStore.providers.length }})</span>
         </template>
         <template #header-extra>
           <n-input
@@ -135,7 +133,6 @@ import type { Provider } from '@/types'
 import type { ProviderFormValue } from '@/types/provider'
 import { createDefaultProviderForm } from '@/types/provider'
 import ProviderForm from '@/components/ProviderForm.vue'
-import ProviderOverview from '@/components/ProviderOverview.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { downloadProvidersConfig, parseImportFile } from '@/utils/provider-export'
 
@@ -166,6 +163,8 @@ const pagination = reactive<PaginationProps>({
     pagination.page = 1
   }
 })
+
+const enabledProviderCount = computed(() => providerStore.providers.filter(provider => provider.enabled).length)
 
 const filteredProviders = computed(() => {
   const keyword = searchQuery.value.trim().toLowerCase()

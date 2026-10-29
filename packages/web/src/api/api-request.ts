@@ -55,7 +55,6 @@ export interface ApiRequestQueryParams {
   sessionId?: string;
   ip?: string;
   requestType?: string;
-  /** 1 = 只看缓存命中，0 = 只看未命中；未传则不筛选 */
   cacheHit?: 0 | 1;
 }
 
