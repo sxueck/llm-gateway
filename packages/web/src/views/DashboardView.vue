@@ -1,5 +1,5 @@
 <template>
-  <div class="dashboard-view">
+  <div class="dashboard-view" :aria-busy="requestLoading">
     <div class="dashboard-stack">
       <section class="dashboard-command-center">
         <PageHeader
@@ -9,7 +9,7 @@
       >
         <template #actions>
           <n-space :size="12" class="dashboard-controls">
-            <n-button secondary round @click="refreshDashboard">
+            <n-button secondary round :loading="requestLoading" @click="refreshDashboard">
               <template #icon>
                 <n-icon><RefreshOutline /></n-icon>
               </template>
@@ -17,6 +17,7 @@
             </n-button>
             <n-select
               v-model:value="selectedPeriod"
+              :disabled="requestLoading"
               :options="periodOptions"
               size="medium"
               :style="{ width: windowWidth < 640 ? '140px' : '160px' }"
@@ -26,12 +27,16 @@
         </template>
       </PageHeader>
 
+      <n-alert v-if="loadError && stats" type="error" :show-icon="true">
+        {{ loadError }}
+      </n-alert>
+
       <n-alert v-if="stats?.legacyTokenSemantics || (isTokenCardFlipped && statsAllTime?.legacyTokenSemantics)" type="warning" :show-icon="true">
         {{ t('dashboard.legacyTokenWarning') }}
       </n-alert>
 
       <n-grid class="dashboard-primary" :cols="gridCols" :x-gap="gridGap" :y-gap="gridGap">
-        <n-gi class="stagger-item" style="--delay: 0ms">
+        <n-gi>
           <div class="switchable-card" @click="toggleTokenCard">
             <n-card v-if="!isTokenCardFlipped" class="stat-card stat-card-primary">
               <div class="stat-content">
@@ -40,10 +45,8 @@
                   <n-icon size="14" class="flip-icon"><RefreshOutline /></n-icon>
                 </div>
                 <div class="stat-main-value">
-                  <Transition name="stat-value" mode="out-in">
-                    <n-skeleton v-if="loading" key="loading" text style="width: 60%; height: 42px" :sharp="false" />
-                    <span v-else :key="stats?.totalTokens || 0">{{ formatTokenNumber(stats?.totalTokens || 0) }}</span>
-                  </Transition>
+                  <n-skeleton v-if="loading" key="loading" text style="width: 60%; height: 42px" :sharp="false" />
+                  <span v-else :key="stats?.totalTokens || 0">{{ formatTokenNumber(stats?.totalTokens || 0) }}</span>
                 </div>
                 <div class="stat-details">
                   <span class="stat-detail-item">
@@ -90,15 +93,13 @@
             </n-card>
           </div>
         </n-gi>
-        <n-gi class="stagger-item" style="--delay: 50ms">
+        <n-gi>
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.totalRequests') }}</div>
               <div class="stat-main-value">
-                <Transition name="stat-value" mode="out-in">
-                  <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
-                  <span v-else :key="stats?.totalRequests || 0">{{ formatNumber(stats?.totalRequests || 0) }}</span>
-                </Transition>
+                <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
+                <span v-else :key="stats?.totalRequests || 0">{{ formatNumber(stats?.totalRequests || 0) }}</span>
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item stat-detail-success">
@@ -119,18 +120,16 @@
             </div>
           </n-card>
         </n-gi>
-        <n-gi class="stagger-item" style="--delay: 100ms">
+        <n-gi>
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.successRate') }}</div>
               <div class="stat-main-value">
-                <Transition name="stat-value" mode="out-in">
-                  <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
-                  <span v-else :key="successRate">
-                    {{ formatPercentage(successRate) }}
-                    <span class="stat-unit">%</span>
-                  </span>
-                </Transition>
+                <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
+                <span v-else :key="successRate">
+                  {{ formatPercentage(successRate) }}
+                  <span class="stat-unit">%</span>
+                </span>
               </div>
               <div class="stat-progress">
                 <div
@@ -141,22 +140,20 @@
             </div>
           </n-card>
         </n-gi>
-        <n-gi class="stagger-item" style="--delay: 150ms">
+        <n-gi>
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.avgResponseTime') }}</div>
               <div class="stat-main-value">
-                <Transition name="stat-value" mode="out-in">
-                  <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
-                  <span v-else :key="avgResponseTime">
-                    {{
-                      avgResponseTime >= 1000
-                        ? (avgResponseTime / 1000).toFixed(2)
-                        : formatResponseTime(avgResponseTime)
-                    }}
-                    <span class="stat-unit">{{ avgResponseTime >= 1000 ? 's' : 'ms' }}</span>
-                  </span>
-                </Transition>
+                <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
+                <span v-else :key="avgResponseTime">
+                  {{
+                    avgResponseTime >= 1000
+                      ? (avgResponseTime / 1000).toFixed(2)
+                      : formatResponseTime(avgResponseTime)
+                  }}
+                  <span class="stat-unit">{{ avgResponseTime >= 1000 ? 's' : 'ms' }}</span>
+                </span>
               </div>
             </div>
           </n-card>
@@ -177,6 +174,7 @@
                   <n-button
                     :type="chartMetric === 'requests' ? 'primary' : 'default'"
                     size="small"
+                    :disabled="requestLoading"
                     @click="chartMetric = 'requests'"
                   >
                     {{ t('dashboard.requestCount') }}
@@ -184,6 +182,7 @@
                   <n-button
                     :type="chartMetric === 'tokens' ? 'primary' : 'default'"
                     size="small"
+                    :disabled="requestLoading"
                     @click="chartMetric = 'tokens'"
                   >
                     {{ t('dashboard.tokenConsumption') }}
@@ -191,10 +190,10 @@
                 </n-space>
               </n-space>
             </template>
-            <div v-if="loading" class="trend-loading">
-              <n-spin size="large" />
+            <div v-if="loading" class="trend-loading" :aria-label="t('common.loading')" role="status">
+              <div class="chart-placeholder" aria-hidden="true"></div>
             </div>
-            <div v-else-if="loadError" class="trend-error">
+            <div v-else-if="loadError && !stats" class="trend-error">
               <n-result status="error" :title="loadError" :description="t('dashboard.retryLater')">
                 <template #footer>
                   <n-button @click="() => loadStats()">{{ t('dashboard.reload') }}</n-button>
@@ -216,6 +215,7 @@
                   <n-button
                     :type="chartMetric === 'requests' ? 'primary' : 'default'"
                     size="small"
+                    :disabled="requestLoading"
                     @click="chartMetric = 'requests'"
                   >
                     {{ t('dashboard.requestCount') }}
@@ -223,6 +223,7 @@
                   <n-button
                     :type="chartMetric === 'tokens' ? 'primary' : 'default'"
                     size="small"
+                    :disabled="requestLoading"
                     @click="chartMetric = 'tokens'"
                   >
                     {{ t('dashboard.tokenMetric') }}
@@ -230,9 +231,10 @@
                 </n-space>
               </n-space>
             </template>
-            <div v-if="loading" class="trend-loading">
-              <n-spin size="large" />
+            <div v-if="loading" class="trend-loading" :aria-label="t('common.loading')" role="status">
+              <div class="chart-placeholder" aria-hidden="true"></div>
             </div>
+            <n-result v-else-if="loadError && !stats" class="trend-error" status="error" :title="loadError" :description="t('dashboard.retryLater')" />
             <div v-else-if="modelStats.length > 0" class="trend-chart-container">
               <v-chart :option="modelDistributionOption" :autoresize="true" class="trend-chart" />
             </div>
@@ -242,15 +244,13 @@
       </n-grid>
 
       <n-grid class="dashboard-secondary" :cols="gridCols" :x-gap="gridGap" :y-gap="gridGap">
-        <n-gi class="stagger-item" style="--delay: 200ms">
+        <n-gi>
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.cachedTokens') }}</div>
               <div class="stat-main-value">
-                <Transition name="stat-value" mode="out-in">
-                  <n-skeleton v-if="loading" key="loading" text style="width: 60%; height: 42px" :sharp="false" />
-                  <span v-else :key="stats?.cachedTokens || 0">{{ formatTokenNumber(stats?.cachedTokens || 0) }}</span>
-                </Transition>
+                <n-skeleton v-if="loading" key="loading" text style="width: 60%; height: 42px" :sharp="false" />
+                <span v-else :key="stats?.cachedTokens || 0">{{ formatTokenNumber(stats?.cachedTokens || 0) }}</span>
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
@@ -271,18 +271,16 @@
             </div>
           </n-card>
         </n-gi>
-        <n-gi class="stagger-item" style="--delay: 250ms">
+        <n-gi>
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.avgEfficiency') }}</div>
               <div class="stat-main-value">
-                <Transition name="stat-value" mode="out-in">
-                  <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
-                  <span v-else :key="avgTokensPerRequest">
-                    {{ formatNumber(avgTokensPerRequest) }}
-                    <span class="stat-unit">Tk/Req</span>
-                  </span>
-                </Transition>
+                <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
+                <span v-else :key="avgTokensPerRequest">
+                  {{ formatNumber(avgTokensPerRequest) }}
+                  <span class="stat-unit">Tk/Req</span>
+                </span>
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
@@ -303,16 +301,14 @@
             </div>
           </n-card>
         </n-gi>
-        <n-gi class="stagger-item" style="--delay: 300ms">
+        <n-gi>
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.activeAgents') }}</div>
               <div class="stat-main-value">
-                <Transition name="stat-value" mode="out-in">
-                  <n-skeleton v-if="agentStatsLoading" key="loading" text style="width: 40%; height: 42px" :sharp="false" />
-                  <span v-else-if="agentStatsError" key="error">—</span>
-                  <span v-else :key="activeAgentCount">{{ formatNumber(activeAgentCount) }}</span>
-                </Transition>
+                <n-skeleton v-if="agentStatsLoading" key="loading" text style="width: 40%; height: 42px" :sharp="false" />
+                <span v-else-if="agentStatsError && !agentTotals" key="error">—</span>
+                <span v-else :key="activeAgentCount">{{ formatNumber(activeAgentCount) }}</span>
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
@@ -333,15 +329,13 @@
             </div>
           </n-card>
         </n-gi>
-        <n-gi class="stagger-item" style="--delay: 350ms">
+        <n-gi>
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.popularModel') }}</div>
               <div class="stat-main-value top-model-name">
-                <Transition name="stat-value" mode="out-in">
-                  <n-skeleton v-if="loading" key="loading" text style="width: 70%; height: 24px" :sharp="false" />
-                  <span v-else :key="topModel">{{ topModel }}</span>
-                </Transition>
+                <n-skeleton v-if="loading" key="loading" text style="width: 70%; height: 24px" :sharp="false" />
+                <span v-else :key="topModel">{{ topModel }}</span>
               </div>
               <div class="stat-provider">
                 <n-skeleton v-if="loading" text style="width: 40%" />
@@ -366,15 +360,13 @@
             </div>
           </n-card>
         </n-gi>
-        <n-gi class="stagger-item" style="--delay: 400ms">
+        <n-gi>
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.piiProtections') }}</div>
               <div class="stat-main-value">
-                <Transition name="stat-value" mode="out-in">
-                  <n-skeleton v-if="loading" key="loading" text style="width: 40%; height: 42px" :sharp="false" />
-                  <span v-else :key="piiProtectionCount">{{ formatNumber(piiProtectionCount) }}</span>
-                </Transition>
+                <n-skeleton v-if="loading" key="loading" text style="width: 40%; height: 42px" :sharp="false" />
+                <span v-else :key="piiProtectionCount">{{ formatNumber(piiProtectionCount) }}</span>
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
@@ -388,18 +380,16 @@
             </div>
           </n-card>
         </n-gi>
-        <n-gi class="stagger-item" style="--delay: 450ms">
+        <n-gi>
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.costAnalysis') }}</div>
               <div class="stat-main-value">
-                <Transition name="stat-value" mode="out-in">
-                  <n-skeleton v-if="loading" key="loading" text style="width: 60%; height: 42px" :sharp="false" />
-                  <span v-else :key="costStats?.totalCost || 0">
-                    {{ formatCost(costStats?.totalCost || 0) }}
-                    <span class="stat-unit">USD</span>
-                  </span>
-                </Transition>
+                <n-skeleton v-if="loading" key="loading" text style="width: 60%; height: 42px" :sharp="false" />
+                <span v-else :key="costStats?.totalCost || 0">
+                  {{ formatCost(costStats?.totalCost || 0) }}
+                  <span class="stat-unit">USD</span>
+                </span>
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
@@ -413,18 +403,16 @@
             </div>
           </n-card>
         </n-gi>
-        <n-gi class="stagger-item" style="--delay: 500ms">
+        <n-gi>
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.dbStatus') }}</div>
               <div class="stat-main-value">
-                <Transition name="stat-value" mode="out-in">
-                  <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
-                  <span v-else :key="stats?.dbSize || 0">
-                    {{ stats?.dbSize || 0 }}
-                    <span class="stat-unit">MB</span>
-                  </span>
-                </Transition>
+                <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
+                <span v-else :key="stats?.dbSize || 0">
+                  {{ stats?.dbSize || 0 }}
+                  <span class="stat-unit">MB</span>
+                </span>
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
@@ -442,7 +430,7 @@
             </div>
           </n-card>
         </n-gi>
-        <n-gi class="stagger-item" style="--delay: 550ms">
+        <n-gi>
           <n-card class="stat-card">
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.circuitBreakerTriggers') }}</div>
@@ -450,10 +438,8 @@
                 class="stat-main-value"
                 :class="{ 'stat-value-error': (circuitBreakerStats?.totalTriggers || 0) > 0 }"
               >
-                <Transition name="stat-value" mode="out-in">
-                  <n-skeleton v-if="loading" key="loading" text style="width: 40%; height: 42px" :sharp="false" />
-                  <span v-else :key="circuitBreakerStats?.totalTriggers || 0">{{ formatNumber(circuitBreakerStats?.totalTriggers || 0) }}</span>
-                </Transition>
+                <n-skeleton v-if="loading" key="loading" text style="width: 40%; height: 42px" :sharp="false" />
+                <span v-else :key="circuitBreakerStats?.totalTriggers || 0">{{ formatNumber(circuitBreakerStats?.totalTriggers || 0) }}</span>
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
@@ -478,15 +464,18 @@
         <div class="overview-grid">
           <div class="overview-item">
             <span class="overview-label">{{ t('dashboard.providers') }}</span>
-            <span class="overview-value">{{ t('dashboard.itemCount', { count: providerStore.providers.length }) }}</span>
+            <n-skeleton v-if="providerStore.loading && !providerStore.providers.length" text width="80px" />
+            <span v-else class="overview-value">{{ t('dashboard.itemCount', { count: providerStore.providers.length }) }}</span>
           </div>
           <div class="overview-item">
             <span class="overview-label">{{ t('dashboard.virtualKeys') }}</span>
-            <span class="overview-value">{{ t('dashboard.itemCount', { count: virtualKeyStore.virtualKeys.length }) }}</span>
+            <n-skeleton v-if="virtualKeyStore.loading && !virtualKeyStore.virtualKeys.length" text width="80px" />
+            <span v-else class="overview-value">{{ t('dashboard.itemCount', { count: virtualKeyStore.virtualKeys.length }) }}</span>
           </div>
           <div class="overview-item">
             <span class="overview-label">{{ t('common.enabledKeys') }}</span>
-            <span class="overview-value">{{ t('dashboard.itemCount', { count: enabledKeysCount }) }}</span>
+            <n-skeleton v-if="virtualKeyStore.loading && !virtualKeyStore.virtualKeys.length" text width="80px" />
+            <span v-else class="overview-value">{{ t('dashboard.itemCount', { count: enabledKeysCount }) }}</span>
           </div>
         </div>
       </n-card>
@@ -506,8 +495,8 @@ import {
   NEmpty,
   NButton,
   NIcon,
-  NSpin,
   NResult,
+  NAlert,
   NSkeleton
 } from 'naive-ui'
 import { RefreshOutline } from '@vicons/ionicons5'
@@ -550,7 +539,8 @@ const isTokenCardFlipped = ref(false)
 const trendData = ref<VirtualKeyTrend[]>([])
 const agentTotals = ref<CodingAgentTotals | null>(null)
 const topAgent = ref<CodingAgentSummary | null>(null)
-const agentStatsLoading = ref(false)
+const agentRequestLoading = ref(true)
+const agentStatsLoading = computed(() => agentRequestLoading.value && !agentTotals.value)
 const agentStatsError = ref<string | null>(null)
 const modelStats = ref<ModelStat[]>([])
 const circuitBreakerStats = ref<{
@@ -563,24 +553,26 @@ const threatIpStats = ref<ThreatIpStats | null>(null)
 const piiProtectionCount = ref<number>(0)
 const selectedPeriod = ref<'24h' | '7d' | '30d'>('24h')
 const chartMetric = ref<'requests' | 'tokens'>('requests')
-const loading = ref(false)
+const requestLoading = ref(true)
+const loading = computed(() => requestLoading.value && !stats.value)
 const loadError = ref<string | null>(null)
 const { windowWidth } = useDebouncedWindowSize()
 const heatmapRef = ref<{ load: () => Promise<void> } | null>(null)
 
 async function toggleTokenCard() {
-  isTokenCardFlipped.value = !isTokenCardFlipped.value
-  if (isTokenCardFlipped.value && !statsAllTime.value) {
+  if (requestLoading.value) return
+  if (!isTokenCardFlipped.value && !statsAllTime.value) {
     try {
       const result = await configApi.getStatsSummary('all')
-      if (result && result.stats) {
-        statsAllTime.value = result.stats
-      }
+      if (!result?.stats) throw new Error(t('dashboard.allTimeLoadFailed'))
+      statsAllTime.value = result.stats
     } catch (e) {
       console.error('Failed to load all-time stats', e)
       message.error(t('dashboard.allTimeLoadFailed'))
+      return
     }
   }
+  isTokenCardFlipped.value = !isTokenCardFlipped.value
 }
 
 const periodOptions = computed(() => [
@@ -647,7 +639,7 @@ const topAgentLabel = computed(() => {
 
 // Agent 归因走独立接口：首页主卡不等这条较重查询，失败也只影响这一张卡。
 const loadAgentStats = async () => {
-  agentStatsLoading.value = true
+  agentRequestLoading.value = true
   agentStatsError.value = null
   try {
     const result = await agentMetricsApi.getCodingAgents({ period: selectedPeriod.value })
@@ -655,11 +647,9 @@ const loadAgentStats = async () => {
     topAgent.value =
       [...(result.agents || [])].sort((a, b) => b.requests - a.requests)[0] || null
   } catch (error: any) {
-    agentTotals.value = null
-    topAgent.value = null
     agentStatsError.value = error?.message || t('dashboard.agentStatsFailed')
   } finally {
-    agentStatsLoading.value = false
+    agentRequestLoading.value = false
   }
 }
 
@@ -1027,9 +1017,7 @@ async function refreshDashboard() {
 }
 
 async function loadStats(opts: { silent?: boolean } = {}) {
-  if (!opts.silent) {
-    loading.value = true
-  }
+  requestLoading.value = true
   loadError.value = null
   void loadAgentStats()
   try {
@@ -1057,9 +1045,7 @@ async function loadStats(opts: { silent?: boolean } = {}) {
       message.error(errorMsg)
     }
   } finally {
-    if (!opts.silent) {
-      loading.value = false
-    }
+    requestLoading.value = false
   }
 }
 
@@ -1087,14 +1073,15 @@ onMounted(() => {
 <style scoped src="@/styles/dashboard.css"></style>
 
 <style scoped>
-.stat-value-enter-active,
-.stat-value-leave-active {
-  transition: opacity 160ms ease;
+@media (prefers-reduced-motion: no-preference) {
+  .stat-main-value > span {
+    animation: stat-value-appear 180ms ease;
+  }
 }
 
-.stat-value-enter-from,
-.stat-value-leave-to {
-  opacity: 0;
+@keyframes stat-value-appear {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
 }
 
 .stat-progress-bar {
@@ -1102,8 +1089,6 @@ onMounted(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .stat-value-enter-active,
-  .stat-value-leave-active,
   .stat-progress-bar {
     transition: none;
   }
