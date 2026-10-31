@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="traffic-analysis-view">
     <n-space vertical :size="24">
       <PageHeader eyebrow="MONITORING" :title="t('trafficAnalysis.title')" :subtitle="t('trafficAnalysis.subtitle')" />
       <n-card>
@@ -529,12 +529,20 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.traffic-analysis-view {
+  min-width: 0;
+  padding-bottom: 32px;
+}
+
+.traffic-analysis-view :deep(.n-card) {
+  border: 1px solid #e8eeea;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
 .stat-label-hint {
   border-bottom: 1px dashed currentColor;
   cursor: help;
-}
-.trend-card {
-  border-radius: 8px;
 }
 .trend-header {
   width: 100%;

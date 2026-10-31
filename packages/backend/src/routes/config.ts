@@ -33,7 +33,7 @@ import {
 } from "../services/reasoning-effort-suffixes.js";
 import { getGeoInfo, normalizeIp } from "../utils/ip.js";
 import { getRequestSourceStats } from "../services/ops-metrics.js";
-import { getShanghaiDayStart } from "../db/utils/time-buckets.js";
+import { getShanghaiDayStart, getShanghaiDateKey } from "../db/utils/time-buckets.js";
 import { circuitBreaker } from "../services/circuit-breaker.js";
 import {
   getTargetKey,
@@ -785,6 +785,44 @@ export async function configRoutes(fastify: FastifyInstance) {
       stats,
     };
   });
+
+  fastify.get<{ Querystring: { days?: string } }>(
+    "/stats/request-heatmap",
+    async (request) => {
+      const requestedDays = Math.floor(Number(request.query.days));
+      const days = Number.isFinite(requestedDays)
+        ? Math.min(730, Math.max(1, requestedDays))
+        : 365;
+
+      const dayMs = 24 * 60 * 60 * 1000;
+      const windowEnd = getShanghaiDayStart(0) + dayMs;
+      const windowStart = windowEnd - days * dayMs;
+
+      const heatmap = await apiRequestDb.getDailyRequestHeatmap({
+        startTime: windowStart,
+        endTime: windowEnd,
+      });
+
+      // 每日 token 明细与首页统计同口径（仓库层保证明细/汇总边界互斥）：
+      // total/prompt/completion 只含 cache_hit = 0 的请求，cached 含全部请求。
+      return {
+        now: Date.now(),
+        days,
+        windowStart,
+        windowEnd,
+        detailStart: heatmap.detailStart,
+        items: heatmap.days.map((day) => ({
+          date: getShanghaiDateKey(day.timestamp),
+          timestamp: day.timestamp,
+          requestCount: day.requestCount,
+          totalTokens: day.totalTokens,
+          promptTokens: day.promptTokens,
+          completionTokens: day.completionTokens,
+          cachedTokens: day.cachedTokens,
+        })),
+      };
+    },
+  );
 
   fastify.get("/api-requests", async (request) => {
     const {

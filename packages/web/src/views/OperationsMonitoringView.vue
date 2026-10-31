@@ -89,7 +89,7 @@
     </n-alert>
 
     <n-card class="filter-card" :bordered="false">
-      <n-space align="center" :wrap="true" :size="16">
+      <n-space align="end" :wrap="true" :size="16">
         <div class="filter-item">
           <div class="filter-label">
             {{ t("operationsMonitoring.filters.virtualKey") }}
@@ -1991,8 +1991,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .ops-monitoring-container {
-  max-width: 1500px;
-  margin: 0 auto;
+  min-width: 0;
   padding: 0 0 32px 0;
 }
 
@@ -2034,7 +2033,9 @@ onBeforeUnmount(() => {
 
 .filter-card {
   margin-bottom: 20px;
-  background-color: #fafafa;
+  background-color: #fff;
+  border: 1px solid #e8eeea;
+  border-radius: 12px;
 }
 
 .filter-item {

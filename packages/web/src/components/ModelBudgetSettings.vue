@@ -1,8 +1,15 @@
 <template>
   <n-space vertical :size="8" style="width: 100%;">
-    <div>
-      <div>{{ $t('settings.modelDailyTokenQuota') }}</div>
-      <n-text depth="3" style="font-size: 12px;">{{ $t('settings.modelDailyTokenQuotaDesc') }}</n-text>
+    <div class="quota-heading">
+      <span>{{ $t('settings.modelDailyTokenQuota') }}</span>
+      <n-popover trigger="click" placement="bottom-start" :style="{ maxWidth: 'min(360px, 85vw)' }">
+        <template #trigger>
+          <n-button quaternary circle size="tiny" :aria-label="$t('settings.modelDailyTokenQuotaInfo')">
+            <template #icon><n-icon><InformationCircleOutline /></n-icon></template>
+          </n-button>
+        </template>
+        {{ $t('settings.modelDailyTokenQuotaDesc') }}
+      </n-popover>
     </div>
 
     <n-space
@@ -64,7 +71,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { NSpace, NText, NButton, NSelect, NInputNumber, useMessage } from 'naive-ui';
+import { NSpace, NText, NButton, NSelect, NInputNumber, NPopover, NIcon, useMessage } from 'naive-ui';
+import { InformationCircleOutline } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
 import { useModelStore } from '@/stores/model';
 import { configApi, type ModelDailyTokenLimit } from '@/api/config';
@@ -163,3 +171,11 @@ onMounted(async () => {
   }
 });
 </script>
+
+<style scoped>
+.quota-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+</style>

@@ -7,161 +7,151 @@
         :subtitle="$t('settings.subtitle')"
       />
       <n-card>
-        <n-space vertical :size="16">
-          <n-space align="center" justify="space-between">
-            <div>
-              <div>{{ $t('settings.allowRegistration') }}</div>
-              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.allowRegistrationDesc') }}</n-text>
-            </div>
-            <n-switch :value="allowRegistration" @update:value="onToggleAllowRegistration" />
-          </n-space>
+        <section class="settings-section" aria-labelledby="settings-registrationSecurity">
+          <h2 id="settings-registrationSecurity" class="settings-section-title">{{ $t('settings.registrationSecurity') }}</h2>
+          <div class="settings-section-content">
+            <n-space class="setting-row" align="center" justify="space-between" :wrap="false">
+              <div>
+                <div class="setting-label">{{ $t('settings.allowRegistration') }}</div>
+                <n-text depth="3" class="setting-description">{{ $t('settings.allowRegistrationDesc') }}</n-text>
+              </div>
+              <n-switch :value="allowRegistration" @update:value="onToggleAllowRegistration" />
+            </n-space>
+            <n-space class="setting-row" align="center" justify="space-between" :wrap="false">
+              <div>
+                <div class="setting-label">{{ $t('settings.enableCors') }}</div>
+                <n-text depth="3" class="setting-description">{{ $t('settings.enableCorsDesc') }}</n-text>
+              </div>
+              <n-switch :value="corsEnabled" @update:value="onToggleCorsEnabled" />
+            </n-space>
 
-          <n-divider style="margin: 8px 0;" />
+            <n-alert type="warning" v-if="corsEnabled">
+              <template #header>
+                <div style="font-size: 14px; font-weight: 500;">{{ $t('settings.corsWarning.title') }}</div>
+              </template>
+              <n-text style="font-size: 13px;">{{ $t('settings.corsWarning.content') }}</n-text>
+            </n-alert>
 
-          <n-space align="center" justify="space-between">
-            <div>
-              <div>{{ $t('settings.dashboardHideRequestSourceCard') }}</div>
-              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.dashboardHideRequestSourceCardDesc') }}</n-text>
-            </div>
-            <n-switch :value="dashboardHideRequestSourceCard" @update:value="onToggleDashboardHideRequestSourceCard" />
-          </n-space>
-
-          <n-divider style="margin: 8px 0;" />
-
-          <n-space align="center" justify="space-between">
-            <div>
-              <div>{{ $t('settings.enableCors') }}</div>
-              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.enableCorsDesc') }}</n-text>
-            </div>
-            <n-switch :value="corsEnabled" @update:value="onToggleCorsEnabled" />
-          </n-space>
-
-          <n-alert type="warning" v-if="corsEnabled">
-            <template #header>
-              <div style="font-size: 14px; font-weight: 500;">{{ $t('settings.corsWarning.title') }}</div>
-            </template>
-            <n-text style="font-size: 13px;">{{ $t('settings.corsWarning.content') }}</n-text>
-          </n-alert>
-
-          <n-alert type="info" v-else>
-            <template #header>
-              <div style="font-size: 14px; font-weight: 500;">{{ $t('settings.corsDisabled.title') }}</div>
-            </template>
-            <n-text style="font-size: 13px;">{{ $t('settings.corsDisabled.content') }}</n-text>
-          </n-alert>
-
-          <n-divider style="margin: 8px 0;" />
-
-          <n-space align="center" justify="space-between">
-            <div>
-              <div>{{ $t('settings.litellmCompat') }}</div>
-              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.litellmCompatDesc') }}</n-text>
-            </div>
-            <n-switch :value="litellmCompatEnabled" @update:value="onToggleLitellmCompat" />
-          </n-space>
-
-          <n-divider style="margin: 8px 0;" />
-
-          <n-space align="center" justify="space-between">
-            <div>
-              <div>{{ $t('settings.streamResume') }}</div>
-              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.streamResumeDesc') }}</n-text>
-            </div>
-            <n-switch :value="streamResumeEnabled" @update:value="onToggleStreamResume" />
-          </n-space>
-
-
-          <n-divider style="margin: 8px 0;" />
-
-          <n-space vertical :size="8" style="width: 100%;">
-            <div>
-              <div>{{ $t('settings.publicUrl') }}</div>
-              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.publicUrlDesc') }}</n-text>
-            </div>
-            <n-space :size="8" style="width: 100%;">
+            <n-alert type="info" v-else>
+              <template #header>
+                <div style="font-size: 14px; font-weight: 500;">{{ $t('settings.corsDisabled.title') }}</div>
+              </template>
+              <n-text style="font-size: 13px;">{{ $t('settings.corsDisabled.content') }}</n-text>
+            </n-alert>
+          </div>
+        </section>
+        <section class="settings-section" aria-labelledby="settings-apiCompatibility">
+          <h2 id="settings-apiCompatibility" class="settings-section-title">{{ $t('settings.apiCompatibility') }}</h2>
+          <div class="settings-section-content">
+            <n-space class="setting-row" align="center" justify="space-between" :wrap="false">
+              <div>
+                <div class="setting-label">{{ $t('settings.litellmCompat') }}</div>
+                <n-text depth="3" class="setting-description">{{ $t('settings.litellmCompatDesc') }}</n-text>
+              </div>
+              <n-switch :value="litellmCompatEnabled" @update:value="onToggleLitellmCompat" />
+            </n-space>
+            <n-space class="setting-row" align="center" justify="space-between" :wrap="false">
+              <div>
+                <div class="setting-label">{{ $t('settings.streamResume') }}</div>
+                <n-text depth="3" class="setting-description">{{ $t('settings.streamResumeDesc') }}</n-text>
+              </div>
+              <n-switch :value="streamResumeEnabled" @update:value="onToggleStreamResume" />
+            </n-space>
+            <n-space vertical :size="8" style="width: 100%;">
+              <div>
+                <div class="setting-label">{{ $t('settings.reasoningEffortSuffixes') }}</div>
+                <n-text depth="3" class="setting-description">{{ $t('settings.reasoningEffortSuffixesDesc') }}</n-text>
+              </div>
               <n-input
-                v-model:value="publicUrlInput"
-                placeholder="http://example.com:3000"
-                style="flex: 1;"
-                size="small"
-                :disabled="savingPublicUrl"
+                v-model:value="reasoningEffortSuffixesInput"
+                type="textarea"
+                :placeholder="$t('settings.reasoningEffortSuffixesPlaceholder')"
+                :rows="4"
               />
-              <n-button
-                type="primary"
-                size="small"
-                :loading="savingPublicUrl"
-                :disabled="!isPublicUrlChanged"
-                @click="onSavePublicUrl"
-              >
-                {{ $t('common.save') }}
-              </n-button>
-              <n-button
-                size="small"
-                :disabled="!isPublicUrlChanged"
-                @click="onResetPublicUrl"
-              >
-                {{ $t('common.reset') }}
-              </n-button>
+              <n-space :size="8">
+                <n-button
+                  type="primary"
+                  size="small"
+                  :disabled="!isReasoningEffortSuffixesChanged"
+                  :loading="savingReasoningEffortSuffixes"
+                  @click="onSaveReasoningEffortSuffixes"
+                >
+                  {{ $t('common.save') }}
+                </n-button>
+                <n-button
+                  size="small"
+                  :disabled="!isReasoningEffortSuffixesChanged"
+                  @click="onResetReasoningEffortSuffixes"
+                >
+                  {{ $t('common.reset') }}
+                </n-button>
+              </n-space>
+              <n-text depth="3" class="setting-description">
+                {{ $t('settings.reasoningEffortSuffixesDefault') }}
+              </n-text>
             </n-space>
-            <n-text depth="3" style="font-size: 12px;">
-              {{ $t('settings.publicUrlCurrent', { url: publicUrl }) }}
-            </n-text>
-          </n-space>
-
-          <n-divider style="margin: 8px 0;" />
-
-          <n-space vertical :size="8" style="width: 100%;">
-            <div>
-              <div>{{ $t('settings.trafficAnalysisRegion') }}</div>
-              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.trafficAnalysisRegionDesc') }}</n-text>
-            </div>
-            <n-select
-              v-model:value="trafficAnalysisRegion"
-              :options="trafficAnalysisRegionOptions"
-              :placeholder="$t('settings.trafficAnalysisRegionPlaceholder')"
-              clearable
-              filterable
-              @update:value="onUpdateTrafficAnalysisRegion"
-            />
-          </n-space>
-
-          <n-divider style="margin: 8px 0;" />
-
-          <n-space vertical :size="8" style="width: 100%;">
-            <div>
-              <div>{{ $t('settings.reasoningEffortSuffixes') }}</div>
-              <n-text depth="3" style="font-size: 12px;">{{ $t('settings.reasoningEffortSuffixesDesc') }}</n-text>
-            </div>
-            <n-input
-              v-model:value="reasoningEffortSuffixesInput"
-              type="textarea"
-              :placeholder="$t('settings.reasoningEffortSuffixesPlaceholder')"
-              :rows="4"
-            />
-            <n-space :size="8">
-              <n-button
-                type="primary"
-                size="small"
-                :disabled="!isReasoningEffortSuffixesChanged"
-                :loading="savingReasoningEffortSuffixes"
-                @click="onSaveReasoningEffortSuffixes"
-              >
-                {{ $t('common.save') }}
-              </n-button>
-              <n-button
-                size="small"
-                :disabled="!isReasoningEffortSuffixesChanged"
-                @click="onResetReasoningEffortSuffixes"
-              >
-                {{ $t('common.reset') }}
-              </n-button>
+          </div>
+        </section>
+        <section class="settings-section" aria-labelledby="settings-accessConfiguration">
+          <h2 id="settings-accessConfiguration" class="settings-section-title">{{ $t('settings.accessConfiguration') }}</h2>
+          <div class="settings-section-content">
+            <n-space vertical :size="8" style="width: 100%;">
+              <div>
+                <div class="setting-label">{{ $t('settings.publicUrl') }}</div>
+                <n-text depth="3" class="setting-description">{{ $t('settings.publicUrlDesc') }}</n-text>
+              </div>
+              <n-space :size="8" style="width: 100%;">
+                <n-input
+                  v-model:value="publicUrlInput"
+                  placeholder="http://example.com:3000"
+                  style="flex: 1;"
+                  size="small"
+                  :disabled="savingPublicUrl"
+                />
+                <n-button
+                  type="primary"
+                  size="small"
+                  :loading="savingPublicUrl"
+                  :disabled="!isPublicUrlChanged"
+                  @click="onSavePublicUrl"
+                >
+                  {{ $t('common.save') }}
+                </n-button>
+                <n-button
+                  size="small"
+                  :disabled="!isPublicUrlChanged"
+                  @click="onResetPublicUrl"
+                >
+                  {{ $t('common.reset') }}
+                </n-button>
+              </n-space>
+              <n-text depth="3" class="setting-description">
+                {{ $t('settings.publicUrlCurrent', { url: publicUrl }) }}
+              </n-text>
             </n-space>
-            <n-text depth="3" style="font-size: 12px;">
-              {{ $t('settings.reasoningEffortSuffixesDefault') }}
-            </n-text>
-          </n-space>
-
-        </n-space>
+            <n-space vertical :size="8" style="width: 100%;">
+              <div>
+                <div class="setting-label">{{ $t('settings.trafficAnalysisRegion') }}</div>
+                <n-text depth="3" class="setting-description">{{ $t('settings.trafficAnalysisRegionDesc') }}</n-text>
+              </div>
+              <n-select
+                v-model:value="trafficAnalysisRegion"
+                :options="trafficAnalysisRegionOptions"
+                :placeholder="$t('settings.trafficAnalysisRegionPlaceholder')"
+                clearable
+                filterable
+                @update:value="onUpdateTrafficAnalysisRegion"
+              />
+            </n-space>
+            <n-space class="setting-row" align="center" justify="space-between" :wrap="false">
+              <div>
+                <div class="setting-label">{{ $t('settings.dashboardHideRequestSourceCard') }}</div>
+                <n-text depth="3" class="setting-description">{{ $t('settings.dashboardHideRequestSourceCardDesc') }}</n-text>
+              </div>
+              <n-switch :value="dashboardHideRequestSourceCard" @update:value="onToggleDashboardHideRequestSourceCard" />
+            </n-space>
+          </div>
+        </section>
       </n-card>
 
       <n-card :title="$t('common.systemInfo')">
@@ -196,7 +186,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { NSpace, NCard, NDescriptions, NDescriptionsItem, NSwitch, NAlert, NText, NDivider, NInput, NButton, NSelect, useMessage, useDialog } from 'naive-ui';
+import { NSpace, NCard, NDescriptions, NDescriptionsItem, NSwitch, NAlert, NText, NInput, NButton, NSelect, useMessage, useDialog } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/auth';
 import { useProviderStore } from '@/stores/provider';
@@ -406,6 +396,47 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.settings-section + .settings-section {
+  border-top: 1px solid var(--color-border, rgba(128, 128, 128, 0.2));
+  margin-top: 28px;
+  padding-top: 28px;
+}
+
+.settings-section-title {
+  color: var(--color-title);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+
+.settings-section-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.setting-label {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.setting-description {
+  display: block;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+.setting-row {
+  width: 100%;
+}
+
+.setting-row :deep(.n-switch) {
+  flex-shrink: 0;
+}
+
 :deep(.n-card-header__main) {
   color: var(--color-title);
 }

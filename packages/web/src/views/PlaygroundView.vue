@@ -969,8 +969,7 @@ onMounted(async () => {
 
 <style scoped>
 .playground-page {
-  max-width: 1400px;
-  margin: 0 auto;
+  min-width: 0;
   padding: 0 0 32px 0;
 }
 

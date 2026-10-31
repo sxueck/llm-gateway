@@ -1,7 +1,8 @@
 <template>
   <div class="dashboard-view">
-    <n-space vertical :size="24">
-      <PageHeader
+    <div class="dashboard-stack">
+      <section class="dashboard-command-center">
+        <PageHeader
         eyebrow="OVERVIEW"
         :title="t('dashboard.title')"
         :subtitle="t('dashboard.subtitle')"
@@ -29,7 +30,7 @@
         历史汇总中存在旧版缓存命中 Token 口径；相关统计可能偏高，已清理的明细无法精确回算。
       </n-alert>
 
-      <n-grid :cols="gridCols" :x-gap="gridGap" :y-gap="gridGap">
+      <n-grid class="dashboard-primary" :cols="gridCols" :x-gap="gridGap" :y-gap="gridGap">
         <n-gi class="stagger-item" style="--delay: 0ms">
           <div class="switchable-card" @click="toggleTokenCard">
             <n-card v-if="!isTokenCardFlipped" class="stat-card stat-card-primary">
@@ -39,8 +40,10 @@
                   <n-icon size="14" class="flip-icon"><RefreshOutline /></n-icon>
                 </div>
                 <div class="stat-main-value">
-                  <n-skeleton v-if="loading" text style="width: 60%; height: 42px" :sharp="false" />
-                  <span v-else>{{ formatTokenNumber(stats?.totalTokens || 0) }}</span>
+                  <Transition name="stat-value" mode="out-in">
+                    <n-skeleton v-if="loading" key="loading" text style="width: 60%; height: 42px" :sharp="false" />
+                    <span v-else :key="stats?.totalTokens || 0">{{ formatTokenNumber(stats?.totalTokens || 0) }}</span>
+                  </Transition>
                 </div>
                 <div class="stat-details">
                   <span class="stat-detail-item">
@@ -92,8 +95,10 @@
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.totalRequests') }}</div>
               <div class="stat-main-value">
-                <n-skeleton v-if="loading" text style="width: 50%; height: 42px" :sharp="false" />
-                <span v-else>{{ formatNumber(stats?.totalRequests || 0) }}</span>
+                <Transition name="stat-value" mode="out-in">
+                  <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
+                  <span v-else :key="stats?.totalRequests || 0">{{ formatNumber(stats?.totalRequests || 0) }}</span>
+                </Transition>
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item stat-detail-success">
@@ -119,16 +124,18 @@
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.successRate') }}</div>
               <div class="stat-main-value">
-                <n-skeleton v-if="loading" text style="width: 50%; height: 42px" :sharp="false" />
-                <span v-else>
-                  {{ formatPercentage(successRate) }}
-                  <span class="stat-unit">%</span>
-                </span>
+                <Transition name="stat-value" mode="out-in">
+                  <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
+                  <span v-else :key="successRate">
+                    {{ formatPercentage(successRate) }}
+                    <span class="stat-unit">%</span>
+                  </span>
+                </Transition>
               </div>
               <div class="stat-progress">
                 <div
                   class="stat-progress-bar"
-                  :style="{ width: (loading ? 0 : successRate) + '%' }"
+                  :style="{ width: successRate + '%' }"
                 ></div>
               </div>
             </div>
@@ -139,238 +146,28 @@
             <div class="stat-content">
               <div class="stat-header">{{ t('dashboard.avgResponseTime') }}</div>
               <div class="stat-main-value">
-                <n-skeleton v-if="loading" text style="width: 50%; height: 42px" :sharp="false" />
-                <span v-else>
-                  {{
-                    avgResponseTime >= 1000
-                      ? (avgResponseTime / 1000).toFixed(2)
-                      : formatResponseTime(avgResponseTime)
-                  }}
-                  <span class="stat-unit">{{ avgResponseTime >= 1000 ? 's' : 'ms' }}</span>
-                </span>
-              </div>
-            </div>
-          </n-card>
-        </n-gi>
-        <n-gi class="stagger-item" style="--delay: 200ms">
-          <n-card class="stat-card">
-            <div class="stat-content">
-              <div class="stat-header">缓存 Tokens</div>
-              <div class="stat-main-value">
-                <n-skeleton v-if="loading" text style="width: 60%; height: 42px" :sharp="false" />
-                <span v-else>{{ formatTokenNumber(stats?.cachedTokens || 0) }}</span>
-              </div>
-              <div class="stat-details">
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">缓存命中:</span>
-                  <span class="stat-detail-value">
-                    <n-skeleton v-if="loading" text style="width: 40px" />
-                    <span v-else>{{ formatNumber(stats?.promptCacheHits || 0) }}</span>
+                <Transition name="stat-value" mode="out-in">
+                  <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
+                  <span v-else :key="avgResponseTime">
+                    {{
+                      avgResponseTime >= 1000
+                        ? (avgResponseTime / 1000).toFixed(2)
+                        : formatResponseTime(avgResponseTime)
+                    }}
+                    <span class="stat-unit">{{ avgResponseTime >= 1000 ? 's' : 'ms' }}</span>
                   </span>
-                </span>
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">命中率:</span>
-                  <span class="stat-detail-value">
-                    <n-skeleton v-if="loading" text style="width: 30px" />
-                    <span v-else>{{ formatPercentage(cacheHitRate) }}%</span>
-                  </span>
-                </span>
-              </div>
-            </div>
-          </n-card>
-        </n-gi>
-        <n-gi class="stagger-item" style="--delay: 250ms">
-          <n-card class="stat-card">
-            <div class="stat-content">
-              <div class="stat-header">平均效率</div>
-              <div class="stat-main-value">
-                <n-skeleton v-if="loading" text style="width: 50%; height: 42px" :sharp="false" />
-                <span v-else>
-                  {{ formatNumber(avgTokensPerRequest) }}
-                  <span class="stat-unit">Tk/Req</span>
-                </span>
-              </div>
-              <div class="stat-details">
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">输入:</span>
-                  <span class="stat-detail-value">
-                    <n-skeleton v-if="loading" text style="width: 30px" />
-                    <span v-else>{{ formatNumber(avgInputTokens) }}</span>
-                  </span>
-                </span>
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">输出:</span>
-                  <span class="stat-detail-value">
-                    <n-skeleton v-if="loading" text style="width: 30px" />
-                    <span v-else>{{ formatNumber(avgOutputTokens) }}</span>
-                  </span>
-                </span>
-              </div>
-            </div>
-          </n-card>
-        </n-gi>
-        <n-gi class="stagger-item" style="--delay: 300ms">
-          <n-card class="stat-card">
-            <div class="stat-content">
-              <div class="stat-header">{{ t('dashboard.activeAgents') }}</div>
-              <div class="stat-main-value">
-                <n-skeleton v-if="agentStatsLoading" text style="width: 40%; height: 42px" :sharp="false" />
-                <span v-else-if="agentStatsError">—</span>
-                <span v-else>{{ formatNumber(activeAgentCount) }}</span>
-              </div>
-              <div class="stat-details">
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">{{ t('dashboard.topAgent') }}:</span>
-                  <span class="stat-detail-value" :title="topAgentLabel">
-                    <n-skeleton v-if="agentStatsLoading" text style="width: 60px" />
-                    <span v-else>{{ topAgentLabel }}</span>
-                  </span>
-                </span>
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">{{ t('dashboard.unattributed') }}:</span>
-                  <span class="stat-detail-value" :title="agentStatsError || t('dashboard.unattributedHint')">
-                    <n-skeleton v-if="agentStatsLoading" text style="width: 40px" />
-                    <span v-else>{{ formatNumber(unattributedRequests) }}</span>
-                  </span>
-                </span>
-              </div>
-            </div>
-          </n-card>
-        </n-gi>
-        <n-gi class="stagger-item" style="--delay: 350ms">
-          <n-card class="stat-card">
-            <div class="stat-content">
-              <div class="stat-header">热门模型</div>
-              <div class="stat-main-value top-model-name">
-                <n-skeleton v-if="loading" text style="width: 70%; height: 24px" :sharp="false" />
-                <span v-else>{{ topModel }}</span>
-              </div>
-              <div class="stat-provider">
-                <n-skeleton v-if="loading" text style="width: 40%" />
-                <span v-else>{{ topModelProvider }}</span>
-              </div>
-              <div class="stat-details">
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">请求:</span>
-                  <span class="stat-detail-value">
-                    <n-skeleton v-if="loading" text style="width: 30px" />
-                    <span v-else>{{ formatNumber(topModelRequests) }}</span>
-                  </span>
-                </span>
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">Token:</span>
-                  <span class="stat-detail-value">
-                    <n-skeleton v-if="loading" text style="width: 40px" />
-                    <span v-else>{{ formatTokenNumber(topModelTokens) }}</span>
-                  </span>
-                </span>
-              </div>
-            </div>
-          </n-card>
-        </n-gi>
-        <n-gi class="stagger-item" style="--delay: 400ms">
-          <n-card class="stat-card">
-            <div class="stat-content">
-              <div class="stat-header">PII 保护次数</div>
-              <div class="stat-main-value">
-                <n-skeleton v-if="loading" text style="width: 40%; height: 42px" :sharp="false" />
-                <span v-else>
-                  {{ formatNumber(piiProtectionCount) }}
-                </span>
-              </div>
-              <div class="stat-details">
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">安全拦截次数:</span>
-                  <span class="stat-detail-value">
-                    <n-skeleton v-if="loading" text style="width: 40px" />
-                    <span v-else>{{ formatNumber(ipsumBlockedCount) }}</span>
-                  </span>
-                </span>
-              </div>
-            </div>
-          </n-card>
-        </n-gi>
-        <n-gi class="stagger-item" style="--delay: 450ms">
-          <n-card class="stat-card">
-            <div class="stat-content">
-              <div class="stat-header">成本分析</div>
-              <div class="stat-main-value">
-                <n-skeleton v-if="loading" text style="width: 60%; height: 42px" :sharp="false" />
-                <span v-else>
-                  {{ formatCost(costStats?.totalCost || 0) }}
-                  <span class="stat-unit">USD</span>
-                </span>
-              </div>
-              <div class="stat-details">
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">计费模型:</span>
-                  <span class="stat-detail-value">
-                    <n-skeleton v-if="loading" text style="width: 30px" />
-                    <span v-else>{{ costStats?.modelCosts?.length || 0 }} 个</span>
-                  </span>
-                </span>
-              </div>
-            </div>
-          </n-card>
-        </n-gi>
-        <n-gi class="stagger-item" style="--delay: 500ms">
-          <n-card class="stat-card">
-            <div class="stat-content">
-              <div class="stat-header">数据库状态</div>
-              <div class="stat-main-value">
-                <n-skeleton v-if="loading" text style="width: 50%; height: 42px" :sharp="false" />
-                <span v-else>
-                  {{ stats?.dbSize || 0 }}
-                  <span class="stat-unit">MB</span>
-                </span>
-              </div>
-              <div class="stat-details">
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">状态:</span>
-                  <span class="stat-detail-value" style="color: var(--color-primary)">正常</span>
-                </span>
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">运行时长:</span>
-                  <span class="stat-detail-value">
-                    <n-skeleton v-if="loading" text style="width: 60px" />
-                    <span v-else>{{ formatUptime(stats?.dbUptime || 0) }}</span>
-                  </span>
-                </span>
-              </div>
-            </div>
-          </n-card>
-        </n-gi>
-        <n-gi class="stagger-item" style="--delay: 550ms">
-          <n-card class="stat-card">
-            <div class="stat-content">
-              <div class="stat-header">熔断器触发次数</div>
-              <div
-                class="stat-main-value"
-                :class="{ 'stat-value-error': (circuitBreakerStats?.totalTriggers || 0) > 0 }"
-              >
-                <n-skeleton v-if="loading" text style="width: 40%; height: 42px" :sharp="false" />
-                <span v-else>{{ formatNumber(circuitBreakerStats?.totalTriggers || 0) }}</span>
-              </div>
-              <div class="stat-details">
-                <span class="stat-detail-item">
-                  <span class="stat-detail-label">触发最多:</span>
-                  <span
-                    class="stat-detail-value"
-                    :title="circuitBreakerStats?.maxTriggeredProvider"
-                  >
-                    <n-skeleton v-if="loading" text style="width: 60px" />
-                    <span v-else>
-                      {{ formatProviderName(circuitBreakerStats?.maxTriggeredProvider) }}
-                    </span>
-                  </span>
-                </span>
+                </Transition>
               </div>
             </div>
           </n-card>
         </n-gi>
       </n-grid>
 
-      <n-grid cols="1 l:3" responsive="screen" :x-gap="gridGap" :y-gap="gridGap">
+      </section>
+
+      <RequestHeatmap ref="heatmapRef" />
+
+      <n-grid class="dashboard-charts" cols="1 l:3" responsive="screen" :x-gap="gridGap" :y-gap="gridGap">
         <n-gi span="1 l:2">
           <n-card class="trend-card">
             <template #header>
@@ -444,7 +241,240 @@
         </n-gi>
       </n-grid>
 
-      <n-card class="overview-card" title="系统概览">
+      <n-grid class="dashboard-secondary" :cols="gridCols" :x-gap="gridGap" :y-gap="gridGap">
+        <n-gi class="stagger-item" style="--delay: 200ms">
+          <n-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-header">缓存 Tokens</div>
+              <div class="stat-main-value">
+                <Transition name="stat-value" mode="out-in">
+                  <n-skeleton v-if="loading" key="loading" text style="width: 60%; height: 42px" :sharp="false" />
+                  <span v-else :key="stats?.cachedTokens || 0">{{ formatTokenNumber(stats?.cachedTokens || 0) }}</span>
+                </Transition>
+              </div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">缓存命中:</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 40px" />
+                    <span v-else>{{ formatNumber(stats?.promptCacheHits || 0) }}</span>
+                  </span>
+                </span>
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">命中率:</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 30px" />
+                    <span v-else>{{ formatPercentage(cacheHitRate) }}%</span>
+                  </span>
+                </span>
+              </div>
+            </div>
+          </n-card>
+        </n-gi>
+        <n-gi class="stagger-item" style="--delay: 250ms">
+          <n-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-header">平均效率</div>
+              <div class="stat-main-value">
+                <Transition name="stat-value" mode="out-in">
+                  <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
+                  <span v-else :key="avgTokensPerRequest">
+                    {{ formatNumber(avgTokensPerRequest) }}
+                    <span class="stat-unit">Tk/Req</span>
+                  </span>
+                </Transition>
+              </div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">输入:</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 30px" />
+                    <span v-else>{{ formatNumber(avgInputTokens) }}</span>
+                  </span>
+                </span>
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">输出:</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 30px" />
+                    <span v-else>{{ formatNumber(avgOutputTokens) }}</span>
+                  </span>
+                </span>
+              </div>
+            </div>
+          </n-card>
+        </n-gi>
+        <n-gi class="stagger-item" style="--delay: 300ms">
+          <n-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-header">{{ t('dashboard.activeAgents') }}</div>
+              <div class="stat-main-value">
+                <Transition name="stat-value" mode="out-in">
+                  <n-skeleton v-if="agentStatsLoading" key="loading" text style="width: 40%; height: 42px" :sharp="false" />
+                  <span v-else-if="agentStatsError" key="error">—</span>
+                  <span v-else :key="activeAgentCount">{{ formatNumber(activeAgentCount) }}</span>
+                </Transition>
+              </div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">{{ t('dashboard.topAgent') }}:</span>
+                  <span class="stat-detail-value" :title="topAgentLabel">
+                    <n-skeleton v-if="agentStatsLoading" text style="width: 60px" />
+                    <span v-else>{{ topAgentLabel }}</span>
+                  </span>
+                </span>
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">{{ t('dashboard.unattributed') }}:</span>
+                  <span class="stat-detail-value" :title="agentStatsError || t('dashboard.unattributedHint')">
+                    <n-skeleton v-if="agentStatsLoading" text style="width: 40px" />
+                    <span v-else>{{ formatNumber(unattributedRequests) }}</span>
+                  </span>
+                </span>
+              </div>
+            </div>
+          </n-card>
+        </n-gi>
+        <n-gi class="stagger-item" style="--delay: 350ms">
+          <n-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-header">热门模型</div>
+              <div class="stat-main-value top-model-name">
+                <Transition name="stat-value" mode="out-in">
+                  <n-skeleton v-if="loading" key="loading" text style="width: 70%; height: 24px" :sharp="false" />
+                  <span v-else :key="topModel">{{ topModel }}</span>
+                </Transition>
+              </div>
+              <div class="stat-provider">
+                <n-skeleton v-if="loading" text style="width: 40%" />
+                <span v-else>{{ topModelProvider }}</span>
+              </div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">请求:</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 30px" />
+                    <span v-else>{{ formatNumber(topModelRequests) }}</span>
+                  </span>
+                </span>
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">Token:</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 40px" />
+                    <span v-else>{{ formatTokenNumber(topModelTokens) }}</span>
+                  </span>
+                </span>
+              </div>
+            </div>
+          </n-card>
+        </n-gi>
+        <n-gi class="stagger-item" style="--delay: 400ms">
+          <n-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-header">PII 保护次数</div>
+              <div class="stat-main-value">
+                <Transition name="stat-value" mode="out-in">
+                  <n-skeleton v-if="loading" key="loading" text style="width: 40%; height: 42px" :sharp="false" />
+                  <span v-else :key="piiProtectionCount">{{ formatNumber(piiProtectionCount) }}</span>
+                </Transition>
+              </div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">安全拦截次数:</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 40px" />
+                    <span v-else>{{ formatNumber(ipsumBlockedCount) }}</span>
+                  </span>
+                </span>
+              </div>
+            </div>
+          </n-card>
+        </n-gi>
+        <n-gi class="stagger-item" style="--delay: 450ms">
+          <n-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-header">成本分析</div>
+              <div class="stat-main-value">
+                <Transition name="stat-value" mode="out-in">
+                  <n-skeleton v-if="loading" key="loading" text style="width: 60%; height: 42px" :sharp="false" />
+                  <span v-else :key="costStats?.totalCost || 0">
+                    {{ formatCost(costStats?.totalCost || 0) }}
+                    <span class="stat-unit">USD</span>
+                  </span>
+                </Transition>
+              </div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">计费模型:</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 30px" />
+                    <span v-else>{{ costStats?.modelCosts?.length || 0 }} 个</span>
+                  </span>
+                </span>
+              </div>
+            </div>
+          </n-card>
+        </n-gi>
+        <n-gi class="stagger-item" style="--delay: 500ms">
+          <n-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-header">数据库状态</div>
+              <div class="stat-main-value">
+                <Transition name="stat-value" mode="out-in">
+                  <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
+                  <span v-else :key="stats?.dbSize || 0">
+                    {{ stats?.dbSize || 0 }}
+                    <span class="stat-unit">MB</span>
+                  </span>
+                </Transition>
+              </div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">状态:</span>
+                  <span class="stat-detail-value" style="color: var(--color-primary)">正常</span>
+                </span>
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">运行时长:</span>
+                  <span class="stat-detail-value">
+                    <n-skeleton v-if="loading" text style="width: 60px" />
+                    <span v-else>{{ formatUptime(stats?.dbUptime || 0) }}</span>
+                  </span>
+                </span>
+              </div>
+            </div>
+          </n-card>
+        </n-gi>
+        <n-gi class="stagger-item" style="--delay: 550ms">
+          <n-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-header">熔断器触发次数</div>
+              <div
+                class="stat-main-value"
+                :class="{ 'stat-value-error': (circuitBreakerStats?.totalTriggers || 0) > 0 }"
+              >
+                <Transition name="stat-value" mode="out-in">
+                  <n-skeleton v-if="loading" key="loading" text style="width: 40%; height: 42px" :sharp="false" />
+                  <span v-else :key="circuitBreakerStats?.totalTriggers || 0">{{ formatNumber(circuitBreakerStats?.totalTriggers || 0) }}</span>
+                </Transition>
+              </div>
+              <div class="stat-details">
+                <span class="stat-detail-item">
+                  <span class="stat-detail-label">触发最多:</span>
+                  <span
+                    class="stat-detail-value"
+                    :title="circuitBreakerStats?.maxTriggeredProvider"
+                  >
+                    <n-skeleton v-if="loading" text style="width: 60px" />
+                    <span v-else>
+                      {{ formatProviderName(circuitBreakerStats?.maxTriggeredProvider) }}
+                    </span>
+                  </span>
+                </span>
+              </div>
+            </div>
+          </n-card>
+        </n-gi>
+      </n-grid>
+
+      <n-card class="overview-card dashboard-overview" title="系统概览">
         <div class="overview-grid">
           <div class="overview-item">
             <span class="overview-label">提供商</span>
@@ -460,7 +490,7 @@
           </div>
         </div>
       </n-card>
-    </n-space>
+    </div>
   </div>
 </template>
 
@@ -508,6 +538,7 @@ import {
 import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize'
 import VChart from 'vue-echarts'
 import PageHeader from '@/components/PageHeader.vue'
+import RequestHeatmap from '@/components/RequestHeatmap.vue'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -535,6 +566,7 @@ const chartMetric = ref<'requests' | 'tokens'>('requests')
 const loading = ref(false)
 const loadError = ref<string | null>(null)
 const { windowWidth } = useDebouncedWindowSize()
+const heatmapRef = ref<{ load: () => Promise<void> } | null>(null)
 
 async function toggleTokenCard() {
   isTokenCardFlipped.value = !isTokenCardFlipped.value
@@ -989,7 +1021,8 @@ async function refreshDashboard() {
   await Promise.all([
     providerStore.fetchProviders(),
     virtualKeyStore.fetchVirtualKeys(),
-    loadStats()
+    loadStats(),
+    heatmapRef.value?.load()
   ])
 }
 
@@ -1052,3 +1085,27 @@ onMounted(() => {
 </script>
 
 <style scoped src="@/styles/dashboard.css"></style>
+
+<style scoped>
+.stat-value-enter-active,
+.stat-value-leave-active {
+  transition: opacity 160ms ease;
+}
+
+.stat-value-enter-from,
+.stat-value-leave-to {
+  opacity: 0;
+}
+
+.stat-progress-bar {
+  transition: width 450ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stat-value-enter-active,
+  .stat-value-leave-active,
+  .stat-progress-bar {
+    transition: none;
+  }
+}
+</style>

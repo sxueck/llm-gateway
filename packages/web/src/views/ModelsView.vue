@@ -11,7 +11,7 @@
             v-model:value="searchQuery"
             :placeholder="t('common.searchPlaceholder')"
             clearable
-            style="width: 240px"
+            class="models-search"
           >
             <template #prefix>
               <n-icon><SearchOutlined /></n-icon>
@@ -28,9 +28,9 @@
 
       <n-card class="table-card">
         <template #header>
-          <n-space justify="space-between" align="center">
-            <n-space :size="12" align="center">
-              <span style="font-size: 13px; color: #666;">{{ t('models.itemsPerPage') }}</span>
+          <n-space class="table-toolbar" justify="space-between" align="center">
+            <n-space :size="10" align="center">
+              <span class="toolbar-label">{{ t('models.itemsPerPage') }}</span>
               <n-select
                 v-model:value="pageSize"
                 :options="pageSizeOptions"
@@ -47,15 +47,20 @@
 
         <div class="models-split-layout">
           <div class="group-sidebar">
-            <div
+            <button
               v-for="group in groupedModels"
               :key="group.groupKey"
+              type="button"
               class="group-list-item"
               :class="{ active: group.groupKey === selectedGroupKey }"
+              :aria-pressed="group.groupKey === selectedGroupKey"
               @click="selectedGroupKey = group.groupKey"
             >
               <span class="group-item-name">{{ group.groupLabel }}</span>
               <span class="group-item-count">{{ group.models.length }}</span>
+            </button>
+            <div v-if="!groupedModels.length && !modelStore.loading" class="group-empty">
+              {{ t('common.noData') }}
             </div>
           </div>
           <div class="group-table-area">
@@ -676,7 +681,11 @@ onMounted(async () => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 18px;
+}
+
+.models-search {
+  width: 240px;
 }
 
 .models-stack > * {
@@ -690,9 +699,9 @@ onMounted(async () => {
   flex-direction: column;
   background: #ffffff;
   border-radius: 16px;
-  border: none;
+  border: 1px solid rgba(25, 55, 43, 0.07);
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 3px 14px rgba(25, 55, 43, 0.04);
 }
 
 .table-card :deep(.n-card__content) {
@@ -707,25 +716,25 @@ onMounted(async () => {
 }
 
 .table-card :deep(.n-data-table-th) {
-  background: #fafafa;
-  font-weight: 600;
+  background: #f6f9f7;
+  font-weight: 500;
   font-size: 12px;
-  color: #666;
+  color: #586c62;
   text-transform: uppercase;
   letter-spacing: 0.02em;
-  border-bottom: 1px solid #e8e8e8;
-  padding: 10px 12px;
+  border-bottom: 1px solid #e8eeea;
+  padding: 12px;
 }
 
 .table-card :deep(.n-data-table-td) {
-  padding: 10px 12px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 12px;
+  border-bottom: 1px solid #eef2ef;
   font-size: 13px;
-  color: #333;
+  color: #34453d;
 }
 
 .table-card :deep(.n-data-table-tr:hover .n-data-table-td) {
-  background: #fafafa;
+  background: #f7faf8;
 }
 
 .table-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
@@ -786,7 +795,12 @@ onMounted(async () => {
 
 .table-card :deep(.n-card__header) {
   padding: 16px 20px;
-  border-bottom: 1px solid #e8e8e8;
+  border-bottom: 1px solid #e8eeea;
+}
+
+.toolbar-label {
+  font-size: 13px;
+  color: #607168;
 }
 
 .models-split-layout {
@@ -802,8 +816,8 @@ onMounted(async () => {
   flex: 0 0 220px;
   min-height: 0;
   overflow-y: auto;
-  padding-right: 4px;
-  border-right: 1px solid #f0f0f0;
+  padding-right: 12px;
+  border-right: 1px solid #eef2ef;
 }
 
 .group-list-item {
@@ -811,15 +825,32 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  width: 100%;
+  min-height: 38px;
   padding: 8px 12px;
+  border: 0;
   border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   user-select: none;
-  transition: background 0.2s ease;
+  transition: background-color 0.2s ease;
 }
 
 .group-list-item:hover {
-  background: #f5f5f5;
+  background: #f3f7f4;
+}
+
+.group-list-item:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.group-empty {
+  padding: 12px;
+  color: #83928a;
+  font-size: 13px;
 }
 
 .group-list-item.active {
@@ -828,7 +859,7 @@ onMounted(async () => {
 
 .group-item-name {
   font-size: 13px;
-  color: #262626;
+  color: #42534a;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -842,10 +873,10 @@ onMounted(async () => {
 .group-item-count {
   flex-shrink: 0;
   font-size: 12px;
-  color: #8c8c8c;
-  background: #f0f0f0;
+  color: #6e8076;
+  background: #edf3ef;
   border-radius: 10px;
-  padding: 1px 8px;
+  padding: 2px 8px;
 }
 
 .group-table-area {
@@ -854,6 +885,21 @@ onMounted(async () => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+@media (max-width: 700px) {
+  .models-search {
+    width: min(240px, 100%);
+  }
+
+  .models-split-layout {
+    gap: 10px;
+  }
+
+  .group-sidebar {
+    flex-basis: 150px;
+    padding-right: 8px;
+  }
 }
 
 /* flex-height 表格需要显式 flex 填充，否则 body(flex-basis:0) 高度为 0 */

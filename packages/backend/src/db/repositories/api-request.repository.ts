@@ -491,6 +491,126 @@ export const apiRequestRepository = {
     }
   },
 
+  // 与首页统计使用相同的明细留存边界，避免汇总和明细重复计数。
+  // Token 口径与 getStats 完全一致：total/prompt/completion 只统计
+  // cache_hit = 0 的请求（cache_hit 命中的请求 token 已在上游计数，避免双算），
+  // cachedTokens 统计全部请求；历史日直接读 api_request_daily_summaries
+  // 现有对应列（cleanOldRecords 按同一口径写入）。
+  async getDailyRequestHeatmap(options: {
+    startTime: number;
+    endTime: number;
+  }): Promise<{
+    detailStart: number;
+    days: Array<{
+      timestamp: number;
+      requestCount: number;
+      totalTokens: number;
+      promptTokens: number;
+      completionTokens: number;
+      cachedTokens: number;
+    }>;
+  }> {
+    const { startTime, endTime } = options;
+    const detailStart = getDetailStartInclusive();
+
+    if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime <= startTime) {
+      return { detailStart, days: [] };
+    }
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    const shanghaiOffsetMs = 8 * 60 * 60 * 1000;
+    const needsSummary = startTime < detailStart;
+    const needsDetail = endTime > detailStart;
+
+    const pool = getDatabase();
+    const conn = await pool.getConnection();
+    type DayAggregate = {
+      requestCount: number;
+      totalTokens: number;
+      promptTokens: number;
+      completionTokens: number;
+      cachedTokens: number;
+    };
+    // mysql2 的 SUM(BIGINT/DECIMAL) 以字符串返回，统一 Number() 数值化。
+    const dayAggregates = new Map<number, DayAggregate>();
+    const addDayAggregate = (bucket: number, row: Record<string, unknown>) => {
+      const aggregate = dayAggregates.get(bucket) ?? {
+        requestCount: 0,
+        totalTokens: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        cachedTokens: 0,
+      };
+      aggregate.requestCount += Number(row.request_count) || 0;
+      aggregate.totalTokens += Number(row.total_tokens) || 0;
+      aggregate.promptTokens += Number(row.prompt_tokens) || 0;
+      aggregate.completionTokens += Number(row.completion_tokens) || 0;
+      aggregate.cachedTokens += Number(row.cached_tokens) || 0;
+      dayAggregates.set(bucket, aggregate);
+    };
+
+    try {
+      if (needsSummary) {
+        const lastSummaryDay = new Date(detailStart - 1);
+        const [summaryRows] = await conn.query(
+          `SELECT
+            UNIX_TIMESTAMP(s.summary_date - INTERVAL 8 HOUR) * 1000 as time_bucket,
+            SUM(s.request_count) as request_count,
+            SUM(s.total_tokens) as total_tokens,
+            SUM(s.prompt_tokens) as prompt_tokens,
+            SUM(s.completion_tokens) as completion_tokens,
+            SUM(s.cached_tokens) as cached_tokens
+          FROM api_request_daily_summaries s
+          WHERE s.summary_date >= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
+            AND s.summary_date <= DATE(FROM_UNIXTIME(? / 1000) + INTERVAL 8 HOUR)
+          GROUP BY s.summary_date`,
+          [startTime, lastSummaryDay.getTime()],
+        );
+
+        for (const row of summaryRows as any[]) {
+          const bucket = Number(row.time_bucket);
+          if (!bucket || Number.isNaN(bucket)) continue;
+          addDayAggregate(bucket, row);
+        }
+      }
+
+      if (needsDetail) {
+        const detailStartTime = Math.max(startTime, detailStart);
+        const [detailRows] = await conn.query(
+          `SELECT
+            FLOOR((ar.created_at + ${shanghaiOffsetMs}) / ${dayMs}) * ${dayMs} - ${shanghaiOffsetMs} as time_bucket,
+            COUNT(*) as request_count,
+            SUM(CASE WHEN ar.cache_hit = 0 THEN ar.total_tokens ELSE 0 END) as total_tokens,
+            SUM(CASE WHEN ar.cache_hit = 0 THEN ar.prompt_tokens ELSE 0 END) as prompt_tokens,
+            SUM(CASE WHEN ar.cache_hit = 0 THEN ar.completion_tokens ELSE 0 END) as completion_tokens,
+            SUM(ar.cached_tokens) as cached_tokens
+          FROM api_requests ar
+          WHERE ar.created_at >= ? AND ar.created_at < ?
+          GROUP BY time_bucket
+          HAVING time_bucket IS NOT NULL
+          ORDER BY time_bucket ASC`,
+          [detailStartTime, endTime],
+        );
+
+        for (const row of detailRows as any[]) {
+          const bucket = Number(row.time_bucket);
+          if (!bucket || Number.isNaN(bucket)) continue;
+          addDayAggregate(bucket, row);
+        }
+      }
+
+      return {
+        detailStart,
+        days: Array.from(dayAggregates.entries())
+          .filter(([timestamp]) => timestamp >= startTime && timestamp < endTime)
+          .map(([timestamp, aggregate]) => ({ timestamp, ...aggregate }))
+          .sort((a, b) => a.timestamp - b.timestamp),
+      };
+    } finally {
+      conn.release();
+    }
+  },
+
   async getAll(options?: {
     limit?: number;
     offset?: number;

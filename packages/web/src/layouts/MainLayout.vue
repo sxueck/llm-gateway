@@ -1,68 +1,49 @@
 <template>
   <n-layout has-sider class="app-layout">
-    <n-layout-sider
-      :collapsed="collapsed"
-      collapse-mode="width"
-      :collapsed-width="80"
-      :width="260"
-      :show-trigger="false"
-      class="app-sider"
-    >
-      <div class="logo" :class="{ 'logo-collapsed': collapsed }">
-        <div class="logo-icon">
-          <img src="/assets/logo.png" alt="LLM Gateway" class="logo-image" />
-        </div>
-        <span v-if="!collapsed" class="logo-text">LLM Gateway</span>
+    <aside class="app-sider" :class="{ 'app-sider-collapsed': collapsed }">
+      <div class="brand" :class="{ 'brand-collapsed': collapsed }">
+        <img src="/assets/logo.png" alt="LLM Gateway" class="logo-image" />
+        <span v-if="!collapsed" class="brand-text">LLM Gateway</span>
       </div>
 
-      <div v-if="!collapsed" class="menu-section-label">{{ t('layout.menu') }}</div>
-
-      <n-menu
-        :collapsed="collapsed"
-        :collapsed-width="64"
-        :collapsed-icon-size="22"
-        :options="menuOptions"
-        :value="activeKey"
-        :expanded-keys="mainMenuExpandedKeys"
-        @update:value="handleMenuSelect"
-        @update:expanded-keys="handleMainMenuExpandedKeysUpdate"
-        class="custom-menu"
-      />
-
-      <div v-if="!collapsed" class="menu-section-label">{{ t('layout.general') }}</div>
-
-      <n-menu
-        :collapsed="collapsed"
-        :collapsed-width="64"
-        :collapsed-icon-size="22"
-        :options="generalMenuOptions"
-        :value="activeKey"
-        :expanded-keys="generalMenuExpandedKeys"
-        @update:value="handleMenuSelect"
-        @update:expanded-keys="handleGeneralMenuExpandedKeysUpdate"
-        class="custom-menu"
-      />
-    </n-layout-sider>
+      <nav class="nav-scroll" :class="{ 'nav-scroll-collapsed': collapsed }">
+        <template v-for="group in groups" :key="group.key">
+          <div v-if="group.label && !collapsed" class="nav-section">{{ group.label }}</div>
+          <router-link
+            v-for="entry in group.entries"
+            :key="entry.key"
+            :to="entry.path"
+            class="nav-item"
+            active-class="nav-item-active"
+            :title="collapsed ? entry.label : undefined"
+          >
+            <NavIcon class="nav-item-icon" :name="entry.iconName" :size="19" :stroke-width="1.8" />
+            <span v-if="!collapsed" class="nav-item-label">{{ entry.label }}</span>
+          </router-link>
+        </template>
+      </nav>
+    </aside>
 
     <n-layout class="app-main-layout" :native-scrollbar="false">
       <n-layout-header class="app-header">
         <div class="header-left">
           <n-button circle quaternary @click="toggleSidebar">
             <template #icon>
-              <n-icon size="24"><MenuOutline /></n-icon>
+              <NavIcon name="menu" :size="20" />
             </template>
           </n-button>
         </div>
         <div class="header-right">
+          <button type="button" class="cmd-trigger" @click="openPalette">
+            <NavIcon name="search" :size="16" />
+            <span class="cmd-trigger-label">{{ t('commandPalette.open') }}</span>
+            <kbd class="cmd-trigger-kbd">{{ shortcutLabel }}</kbd>
+          </button>
           <LanguageSwitcher />
           <AlertCenter />
           <n-dropdown :options="userOptions" @select="handleUserAction">
             <div class="user-avatar">
-              <n-avatar
-                round
-                size="medium"
-                :style="{ backgroundColor: '#0f6b4a' }"
-              >
+              <n-avatar round size="medium" :style="{ backgroundColor: '#0f6b4a' }">
                 {{ authStore.user?.username?.charAt(0).toUpperCase() }}
               </n-avatar>
               <div class="user-info">
@@ -77,302 +58,65 @@
         <router-view />
       </n-layout-content>
     </n-layout>
+
+    <command-palette ref="paletteRef" />
   </n-layout>
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, ref, watch } from 'vue';
-import { useRouter, useRoute } from 'vue-router';
+import { computed, h, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import {
   NLayout,
-  NLayoutSider,
   NLayoutHeader,
   NLayoutContent,
-  NMenu,
   NButton,
   NDropdown,
-  NIcon,
   NAvatar,
 } from 'naive-ui';
-import {
-  HomeOutline,
-  ServerOutline,
-  KeyOutline,
-  LogOutOutline,
-  TerminalOutline,
-  CubeOutline,
-  GitNetworkOutline,
-  LayersOutline,
-  ConstructOutline,
-  ListOutline,
-  OptionsOutline,
-  FlaskOutline,
-  GitBranchOutline,
-  ShieldOutline,
-  CloudDownloadOutline,
-  CashOutline,
-  MenuOutline,
-  SpeedometerOutline,
-  TrendingUpOutline,
-} from '@vicons/ionicons5';
 import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
 import AlertCenter from '@/components/AlertCenter.vue';
+import CommandPalette from '@/components/CommandPalette.vue';
+import NavIcon from '@/components/NavIcon.vue';
 import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize';
+import { useNavigation } from '@/composables/useNavigation';
+
+const COLLAPSE_BREAKPOINT = 1024;
+
+const { groups } = useNavigation();
 
 const router = useRouter();
-const route = useRoute();
-const authStore = useAuthStore();
 const { t } = useI18n();
+const authStore = useAuthStore();
 
 const collapsed = ref(false);
-const mainMenuExpandedKeys = ref<string[]>([]);
-const generalMenuExpandedKeys = ref<string[]>([]);
 
-const MAIN_MENU_DEFAULT_KEYS = ['model-management', 'tools'];
-const COMPACT_SIDEBAR_HEIGHT = 960;
-const mainMenuParentByKey: Record<string, string> = {
-  providers: 'model-management',
-  models: 'model-management',
-  'virtual-models': 'model-management',
-  'expert-routing': 'experimental-features',
-  'worker-plugins': 'experimental-features',
-  'cost-analysis': 'experimental-features',
-  'worker-monitoring': 'monitoring',
-  'operations-monitoring': 'monitoring',
-  'traffic-analysis': 'monitoring',
-  playground: 'tools',
-  logs: 'tools',
-  'api-requests': 'tools',
-};
-const generalMenuParentByKey: Record<string, string> = {
-  settings: 'settings-group',
-  'security-settings': 'settings-group',
-  backup: 'settings-group',
-  'developer-settings': 'settings-group',
-  'db-maintenance': 'settings-group',
-};
-
-const toggleSidebar = () => {
-  collapsed.value = !collapsed.value;
-};
-
-const isCompactSidebar = computed(() => windowHeight.value < COMPACT_SIDEBAR_HEIGHT);
-
-function dedupeKeys(keys: string[]) {
-  return [...new Set(keys)];
-}
-
-function getDefaultMainMenuExpandedKeys() {
-  const keys = [...MAIN_MENU_DEFAULT_KEYS];
-
-  if (!isCompactSidebar.value) {
-    keys.push('experimental-features');
-  }
-
-  const activeParentKey = mainMenuParentByKey[activeKey.value];
-  if (activeParentKey) {
-    keys.push(activeParentKey);
-  }
-
-  return dedupeKeys(keys);
-}
-
-function getDefaultGeneralMenuExpandedKeys() {
-  const activeParentKey = generalMenuParentByKey[activeKey.value];
-  return activeParentKey ? [activeParentKey] : [];
-}
-
-function syncMenuExpandedKeys() {
-  mainMenuExpandedKeys.value = getDefaultMainMenuExpandedKeys();
-  generalMenuExpandedKeys.value = getDefaultGeneralMenuExpandedKeys();
-}
-
-function ensureActiveMenuExpanded() {
-  const mainParent = mainMenuParentByKey[activeKey.value];
-  if (mainParent && !mainMenuExpandedKeys.value.includes(mainParent)) {
-    mainMenuExpandedKeys.value = dedupeKeys([...mainMenuExpandedKeys.value, mainParent]);
-  }
-  const generalParent = generalMenuParentByKey[activeKey.value];
-  if (generalParent && !generalMenuExpandedKeys.value.includes(generalParent)) {
-    generalMenuExpandedKeys.value = dedupeKeys([...generalMenuExpandedKeys.value, generalParent]);
-  }
-}
-
-const { windowHeight } = useDebouncedWindowSize(200, (width) => {
-  collapsed.value = width < 1024;
+useDebouncedWindowSize(200, (width) => {
+  collapsed.value = width < COLLAPSE_BREAKPOINT;
 });
 
-const menuOptions = computed(() => [
-  {
-    label: t('menu.dashboard'),
-    key: 'dashboard',
-    icon: () => h(NIcon, null, { default: () => h(HomeOutline) }),
-  },
-  {
-    label: t('menu.modelManagement'),
-    key: 'model-management',
-    icon: () => h(NIcon, null, { default: () => h(LayersOutline) }),
-    children: [
-      {
-        label: t('menu.providers'),
-        key: 'providers',
-        icon: () => h(NIcon, null, { default: () => h(ServerOutline) }),
-      },
-      {
-        label: t('menu.models'),
-        key: 'models',
-        icon: () => h(NIcon, null, { default: () => h(CubeOutline) }),
-      },
-      {
-        label: t('menu.virtualModels'),
-        key: 'virtual-models',
-        icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) }),
-      },
-    ],
-  },
-  {
-    label: t('menu.virtualKeys'),
-    key: 'virtual-keys',
-    icon: () => h(NIcon, null, { default: () => h(KeyOutline) }),
-  },
-  {
-    label: t('menu.monitoring'),
-    key: 'monitoring',
-    icon: () => h(NIcon, null, { default: () => h(SpeedometerOutline) }),
-    children: [
-      {
-        label: t('menu.workerMonitoring'),
-        key: 'worker-monitoring',
-        icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
-      },
-      {
-        label: t('menu.operationsMonitoring'),
-        key: 'operations-monitoring',
-        icon: () => h(NIcon, null, { default: () => h(SpeedometerOutline) }),
-      },
-      {
-        label: t('menu.trafficAnalysis'),
-        key: 'traffic-analysis',
-        icon: () => h(NIcon, null, { default: () => h(TrendingUpOutline) }),
-      },
-    ],
-  },
-  {
-    label: t('menu.experimentalFeatures'),
-    key: 'experimental-features',
-    icon: () => h(NIcon, null, { default: () => h(FlaskOutline) }),
-    children: [
-      {
-        label: t('menu.expertRouting'),
-        key: 'expert-routing',
-        icon: () => h(NIcon, null, { default: () => h(GitBranchOutline) }),
-      },
-      {
-        label: t('menu.workerPlugins'),
-        key: 'worker-plugins',
-        icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
-      },
-      {
-        label: t('menu.costAnalysis'),
-        key: 'cost-analysis',
-        icon: () => h(NIcon, null, { default: () => h(CashOutline) }),
-      },
-    ],
-  },
-  {
-    label: t('menu.tools'),
-    key: 'tools',
-    icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
-    children: [
-      {
-        label: t('menu.playground'),
-        key: 'playground',
-        icon: () => h(NIcon, null, { default: () => h(TerminalOutline) }),
-      },
-      {
-        label: t('menu.logs'),
-        key: 'logs',
-        icon: () => h(NIcon, null, { default: () => h(TerminalOutline) }),
-      },
-      {
-        label: t('menu.apiRequests'),
-        key: 'api-requests',
-        icon: () => h(NIcon, null, { default: () => h(ListOutline) }),
-      },
-    ],
-  },
-]);
+function toggleSidebar() {
+  collapsed.value = !collapsed.value;
+}
 
-const generalMenuOptions = computed(() => [
-  {
-    label: t('menu.settings'),
-    key: 'settings-group',
-    icon: () => h(NIcon, null, { default: () => h(OptionsOutline) }),
-    children: [
-      {
-        label: t('settings.general'),
-        key: 'settings',
-        icon: () => h(NIcon, null, { default: () => h(OptionsOutline) }),
-      },
-      {
-        label: t('settings.security'),
-        key: 'security-settings',
-        icon: () => h(NIcon, null, { default: () => h(ShieldOutline) }),
-      },
-      {
-        label: t('settings.backup'),
-        key: 'backup',
-        icon: () => h(NIcon, null, { default: () => h(CloudDownloadOutline) }),
-      },
-      {
-        label: t('settings.developerDebug'),
-        key: 'developer-settings',
-        icon: () => h(NIcon, null, { default: () => h(FlaskOutline) }),
-      },
-      {
-        label: t('settings.dbMaintenance'),
-        key: 'db-maintenance',
-        icon: () => h(NIcon, null, { default: () => h(ConstructOutline) }),
-      },
-    ],
-  },
-]);
+const paletteRef = ref<{ open: () => void } | null>(null);
+
+// 快捷键提示跟随平台：非 macOS 显示 Ctrl K，否则用 ⌘K 会误导。
+const shortcutLabel = navigator.userAgent.includes('Mac') ? '⌘K' : 'Ctrl K';
+
+function openPalette() {
+  paletteRef.value?.open();
+}
 
 const userOptions = computed(() => [
   {
     label: t('common.logout'),
     key: 'logout',
-    icon: () => h(NIcon, null, { default: () => h(LogOutOutline) }),
+    icon: () => h(NavIcon, { name: 'logout', size: 18 }),
   },
 ]);
-
-const activeKey = computed(() => {
-  const path = route.path.split('/')[1];
-  return path || 'dashboard';
-});
-
-const GROUP_MENU_KEYS = new Set([
-  'model-management',
-  'monitoring',
-  'experimental-features',
-  'tools',
-  'settings-group',
-]);
-
-function handleMenuSelect(key: string) {
-  if (GROUP_MENU_KEYS.has(key)) return;
-  router.push(`/${key}`);
-}
-
-function handleMainMenuExpandedKeysUpdate(keys: string[]) {
-  mainMenuExpandedKeys.value = keys;
-}
-
-function handleGeneralMenuExpandedKeysUpdate(keys: string[]) {
-  generalMenuExpandedKeys.value = keys;
-}
 
 function handleUserAction(key: string) {
   if (key === 'logout') {
@@ -380,16 +124,6 @@ function handleUserAction(key: string) {
     router.push('/login');
   }
 }
-
-syncMenuExpandedKeys();
-
-watch(activeKey, () => {
-  ensureActiveMenuExpanded();
-});
-
-watch(isCompactSidebar, () => {
-  syncMenuExpandedKeys();
-});
 
 onMounted(async () => {
   if (authStore.token && !authStore.user) {
@@ -406,36 +140,161 @@ onMounted(async () => {
 }
 
 .app-sider {
-  border-right: none;
-  background-color: rgba(255, 255, 255, 0.7);
-  padding: 16px 12px;
-  margin: 16px;
-  border-radius: 20px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
-  backdrop-filter: blur(12px) saturate(140%);
-  -webkit-backdrop-filter: blur(12px) saturate(140%);
-  z-index: 100;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 240px;
   height: calc(100vh - 32px);
-  overflow-y: auto;
-  overflow-x: hidden;
+  margin: 16px;
+  padding: 16px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px;
+  /* 仓库只打包了 MiSans-Medium 一个字重，600 以上会被浏览器伪粗体合成，
+     在 11px 中文标题上糊成一团。侧栏内部禁止合成，层级只靠字号/颜色/字距。 */
+  font-synthesis: none;
+  background-color: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(25, 55, 43, 0.06);
+  box-shadow: 0 4px 18px rgba(25, 55, 43, 0.045), 0 1px 3px rgba(25, 55, 43, 0.03);
+  backdrop-filter: blur(10px) saturate(125%);
+  -webkit-backdrop-filter: blur(10px) saturate(125%);
+  overflow: hidden;
+  transition: width 0.25s ease, padding 0.25s ease;
+  z-index: 100;
 }
 
-/* 细滚动条样式 */
-.app-sider::-webkit-scrollbar {
+.app-sider-collapsed {
+  width: 80px;
+  padding: 14px 8px 10px;
+}
+
+.brand {
+  flex: 0 0 auto;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 8px;
+  margin-bottom: 18px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.brand-collapsed {
+  justify-content: center;
+  padding: 0;
+}
+
+.logo-image {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.brand-text {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--color-title);
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+}
+
+.nav-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
+
+.nav-scroll::-webkit-scrollbar {
   width: 4px;
 }
 
-.app-sider::-webkit-scrollbar-track {
+.nav-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.app-sider::-webkit-scrollbar-thumb {
+.nav-scroll::-webkit-scrollbar-thumb {
   background-color: rgba(0, 0, 0, 0.1);
   border-radius: 4px;
 }
 
-.app-sider:hover::-webkit-scrollbar-thumb {
+.nav-scroll:hover::-webkit-scrollbar-thumb {
   background-color: rgba(0, 0, 0, 0.2);
+}
+
+.nav-section {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 16px 12px 7px;
+  font-size: 12px;
+  line-height: 1.25;
+  font-weight: 500;
+  color: #66756f;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background-color: rgba(250, 252, 251, 0.96);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 9px;
+  color: #42514b;
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color 0.18s ease, color 0.18s ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.nav-scroll-collapsed .nav-item {
+  justify-content: center;
+  padding: 0;
+}
+
+.nav-item:hover {
+  background-color: rgba(15, 107, 74, 0.06);
+  color: var(--color-primary);
+}
+
+.nav-item:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.nav-item-active {
+  background-color: rgba(15, 107, 74, 0.1);
+  color: var(--color-primary);
+}
+
+.nav-item-icon {
+  flex: 0 0 auto;
+  color: #71827a;
+  transition: color 0.18s ease;
+}
+
+.nav-item-active .nav-item-icon,
+.nav-item:hover .nav-item-icon {
+  color: var(--color-primary);
+}
+
+.nav-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .app-main-layout {
@@ -453,115 +312,34 @@ onMounted(async () => {
   background-color: transparent;
 }
 
-.logo-image {
-  width: 38px;
-  height: 38px;
-  object-fit: contain;
-}
-
-.logo {
-  height: 72px;
+.cmd-trigger {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 12px;
-  margin-bottom: 24px;
-  padding: 0 8px;
-  transition: all 0.3s ease;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px 0 10px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.6);
+  color: #6b7280;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.18s ease, color 0.18s ease, background-color 0.18s ease;
 }
 
-.logo-collapsed {
-  padding: 0;
-  justify-content: center;
+.cmd-trigger:hover {
+  border-color: rgba(15, 107, 74, 0.3);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--color-primary);
 }
 
-.logo-icon {
-  width: 44px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-}
-
-.logo-text {
-  font-size: 20px;
-  font-weight: 600;
-  color: #1a1a1a;
-  letter-spacing: -0.02em;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.menu-section-label {
+.cmd-trigger-kbd {
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.05);
+  font-family: inherit;
   font-size: 11px;
-  font-weight: 600;
-  color: #8c8c8c;
-  letter-spacing: 0.05em;
-  padding: 16px 12px 8px 12px;
-  text-transform: uppercase;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.custom-menu {
-  padding: 0 8px;
-  margin-bottom: 16px;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.custom-menu :deep(.n-menu-item) {
-  margin-bottom: 4px;
-}
-
-.custom-menu :deep(.n-menu-item-content) {
-  padding-left: 12px !important;
-  border-radius: 8px;
-  transition: all 0.2s ease;
-}
-
-.custom-menu :deep(.n-submenu-children .n-menu-item-content) {
-  padding-left: 30px !important;
-  border-radius: 6px;
-}
-
-.app-layout .custom-menu :deep(.n-menu-item-content:hover) {
-  background: rgba(15, 107, 74, 0.06) !important;
-  color: var(--color-primary) !important;
-}
-
-.app-layout .custom-menu :deep(.n-menu-item-content:hover .n-menu-item-content__icon) {
-  color: var(--color-primary) !important;
-}
-
-.app-layout .custom-menu :deep(.n-menu-item-content:hover::before) {
-  display: none;
-}
-
-.app-layout .custom-menu :deep(.n-menu-item-content--selected) {
-  background: rgba(15, 107, 74, 0.08) !important;
-  color: var(--color-primary) !important;
-  box-shadow: none;
-}
-
-.app-layout .custom-menu :deep(.n-menu-item-content--selected .n-menu-item-content__icon) {
-  color: var(--color-primary) !important;
-}
-
-.app-layout .custom-menu :deep(.n-menu-item-content--selected::before) {
-  display: none;
-}
-
-.custom-menu :deep(.n-submenu-children) {
-  padding-left: 0 !important;
-}
-
-.header-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: #1a1a1a;
-  letter-spacing: -0.02em;
+  color: #6b7280;
 }
 
 .header-right {
@@ -594,12 +372,6 @@ onMounted(async () => {
   font-size: 14px;
   font-weight: 500;
   color: #1a1a1a;
-  line-height: 1.2;
-}
-
-.user-email {
-  font-size: 12px;
-  color: #8c8c8c;
   line-height: 1.2;
 }
 </style>

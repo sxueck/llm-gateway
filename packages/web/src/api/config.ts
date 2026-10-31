@@ -106,6 +106,25 @@ export interface VirtualKeyTrend {
   data: TrendDataPoint[];
 }
 
+export interface RequestHeatmapItem {
+  date: string;
+  timestamp: number;
+  requestCount: number;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  cachedTokens: number;
+}
+
+export interface RequestHeatmapResponse {
+  now: number;
+  days: number;
+  windowStart: number;
+  windowEnd: number;
+  detailStart: number;
+  items: RequestHeatmapItem[];
+}
+
 export interface RequestSourceGeoInfo {
   ip: string;
   country?: string;
@@ -538,6 +557,10 @@ export const configApi = {
 
   getStatsSummary(period?: Period): Promise<GetStatsSummaryResponse> {
     return request.get(`${ADMIN_STATS_PATH}/summary`, { params: { period } });
+  },
+
+  getRequestHeatmap(days = 365): Promise<RequestHeatmapResponse> {
+    return request.get(`${ADMIN_STATS_PATH}/request-heatmap`, { params: { days } });
   },
 
   lookupRequestSource(ip: string): Promise<LookupRequestSourceResponse> {

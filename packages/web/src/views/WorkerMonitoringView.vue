@@ -504,8 +504,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .worker-monitoring-view {
-  max-width: 1400px;
-  margin: 0 auto;
+  min-width: 0;
   padding-bottom: 32px;
 }
 .worker-monitoring-page-header {
@@ -514,8 +513,8 @@ onBeforeUnmount(() => {
 
 /* 仅本视图内抹平全局卡片的阴影与大圆角，换成 hairline 扁平风 */
 .worker-monitoring-view :deep(.n-card) {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
+  border: 1px solid #e8eeea;
+  border-radius: 12px;
   box-shadow: none;
 }
 .worker-monitoring-view :deep(.n-card:hover) {
@@ -544,8 +543,8 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
+  border: 1px solid #e8eeea;
+  border-radius: 12px;
 }
 .stat-group {
   min-width: 0;

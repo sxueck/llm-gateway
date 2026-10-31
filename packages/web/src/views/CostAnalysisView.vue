@@ -19,27 +19,40 @@
     <div class="main-content">
       <n-tabs type="line" v-model:value="activeTab">
         <n-tab-pane name="mappings" :tab="t('costAnalysis.tabs.mappings')">
-          <div class="search-bar">
-            <n-input
-              v-model:value="searchQuery"
-              :placeholder="t('costAnalysis.searchPlaceholder')"
-              clearable
+          <n-card class="content-section">
+            <div class="section-heading">
+              <div>
+                <h3>{{ t('costAnalysis.tabs.mappings') }}</h3>
+                <p>{{ t('costAnalysis.mappingDescription') }}</p>
+              </div>
+              <span class="section-count">{{ t('costAnalysis.resultCount', { count: filteredMappings.length }) }}</span>
+            </div>
+            <div class="search-bar">
+              <n-input
+                v-model:value="searchQuery"
+                :placeholder="t('costAnalysis.searchPlaceholder')"
+                clearable
+              >
+                <template #prefix>
+                  <n-icon><SearchOutline /></n-icon>
+                </template>
+              </n-input>
+            </div>
+
+            <n-data-table
+              :columns="columns"
+              :data="filteredMappings"
+              :loading="loading"
+              :pagination="pagination"
+              :scroll-x="800"
+              :bordered="false"
             >
-              <template #prefix>
-                <n-icon><SearchOutline /></n-icon>
-              </template>
-            </n-input>
-          </div>
+              <template #empty>{{ searchQuery ? t('costAnalysis.noSearchResults') : t('costAnalysis.noMappings') }}</template>
+            </n-data-table>
+          </n-card>
 
-          <n-data-table
-            :columns="columns"
-            :data="filteredMappings"
-            :loading="loading"
-            :pagination="pagination"
-            :max-height="400"
-          />
-
-          <n-card :title="t('costAnalysis.testMapping')" class="test-section">
+          <n-card :title="t('costAnalysis.testMapping')" class="content-section test-section">
+            <p class="section-description">{{ t('costAnalysis.testDescription') }}</p>
             <n-space vertical>
               <n-input-group>
                 <n-input
@@ -113,29 +126,41 @@
         </n-tab-pane>
 
         <n-tab-pane name="prices" :tab="t('costAnalysis.tabs.prices')">
-          <div class="search-bar">
-            <n-input
-              v-model:value="pricesSearchQuery"
-              :placeholder="t('modelPresets.searchPlaceholder')"
-              clearable
-            >
-              <template #prefix>
-                <n-icon><SearchOutline /></n-icon>
-              </template>
-            </n-input>
-          </div>
+          <n-card class="content-section">
+            <div class="section-heading">
+              <div>
+                <h3>{{ t('costAnalysis.tabs.prices') }}</h3>
+                <p>{{ t('costAnalysis.pricesDescription') }}</p>
+              </div>
+              <span class="section-count">{{ t('costAnalysis.resultCount', { count: filteredPrices.length }) }}</span>
+            </div>
+            <div class="search-bar">
+              <n-input
+                v-model:value="pricesSearchQuery"
+                :placeholder="t('modelPresets.searchPlaceholder')"
+                clearable
+              >
+                <template #prefix>
+                  <n-icon><SearchOutline /></n-icon>
+                </template>
+              </n-input>
+            </div>
 
-          <n-data-table
-            :columns="priceColumns"
-            :data="filteredPrices"
-            :loading="pricesLoading"
-            :pagination="pagination"
-            :max-height="800"
-          />
+            <n-data-table
+              :columns="priceColumns"
+              :data="filteredPrices"
+              :loading="pricesLoading"
+              :pagination="pagination"
+              :scroll-x="1000"
+              :bordered="false"
+            >
+              <template #empty>{{ pricesSearchQuery ? t('costAnalysis.noSearchResults') : t('common.noData') }}</template>
+            </n-data-table>
+          </n-card>
         </n-tab-pane>
 
         <n-tab-pane name="budgets" :tab="t('costAnalysis.tabs.budgets')" display-directive="show:lazy">
-          <n-card class="budget-section">
+          <n-card class="content-section budget-section">
             <model-budget-settings />
           </n-card>
         </n-tab-pane>
@@ -532,11 +557,10 @@ onMounted(() => {
 
 <style scoped>
 .cost-analysis-container {
-  max-width: 1200px;
+  width: 100%;
+  max-width: 1400px;
   margin: 0 auto;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+  min-width: 0;
 }
 
 .cost-analysis-page-header {
@@ -545,27 +569,48 @@ onMounted(() => {
 }
 
 .main-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.main-content :deep(.n-tabs) {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.main-content :deep(.n-tabs-pane-wrapper) {
-  flex: 1;
-  overflow: hidden;
+  min-width: 0;
 }
 
 .main-content :deep(.n-tab-pane) {
-  height: 100%;
+  padding-top: 20px;
+}
+
+.content-section {
+  border: 1px solid #e6ebe8;
+  border-radius: 16px;
+}
+
+.section-heading {
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.section-heading h3 {
+  margin: 0;
+  color: #17231e;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.section-heading p,
+.section-description {
+  margin: 6px 0 0;
+  color: #68756f;
+  font-size: 13px;
+}
+
+.section-count {
+  flex-shrink: 0;
+  color: #68756f;
+  font-size: 13px;
+}
+
+.section-description {
+  margin: 0 0 16px;
 }
 
 .pricing-source-detail {
@@ -585,10 +630,6 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.main-content :deep(.n-data-table) {
-  flex: 1;
-}
-
 .test-section {
   margin-top: 24px;
   flex-shrink: 0;
@@ -601,5 +642,16 @@ onMounted(() => {
 .cost-info {
   margin-top: 8px;
   color: #666;
+}
+
+@media (max-width: 639px) {
+  .section-heading {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .search-bar {
+    max-width: none;
+  }
 }
 </style>
