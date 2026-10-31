@@ -1,5 +1,5 @@
 <template>
-  <section ref="cardElement" class="heatmap-card" :aria-labelledby="'request-heatmap-title'">
+  <section ref="cardElement" class="heatmap-card" :aria-labelledby="'request-heatmap-title'" :aria-busy="loading">
     <div class="heatmap-header">
       <div>
         <h3 id="request-heatmap-title">{{ t('dashboard.heatmapTitle') }}</h3>
@@ -7,12 +7,14 @@
       </div>
       <strong v-if="data && !error" :title="total.toLocaleString()">{{ t('dashboard.heatmapTotal', { count: formatTokenNumber(total) }) }}</strong>
     </div>
-    <div v-if="loading" class="heatmap-state" role="status">{{ t('dashboard.heatmapLoading') }}</div>
-    <div v-else-if="error" class="heatmap-state" role="alert">
+    <div v-if="loading && !data" class="heatmap-skeleton" role="status" :aria-label="t('dashboard.heatmapLoading')">
+      <div class="heatmap-placeholder" aria-hidden="true"></div>
+    </div>
+    <div v-if="error" class="heatmap-state" role="alert">
       {{ t('dashboard.heatmapError') }}
       <button class="heatmap-retry" type="button" @click="load">{{ t('dashboard.heatmapRetry') }}</button>
     </div>
-    <template v-else-if="data">
+    <template v-if="data">
       <div ref="scrollElement" class="heatmap-scroll" tabindex="0" @scroll="hoveredDay = null" :aria-label="t('dashboard.heatmapScroll')">
         <div class="heatmap-content" :style="{ '--heatmap-columns': cells.length / 7 }">
           <div class="heatmap-months">
@@ -64,7 +66,7 @@ import { buildRequestHeatmap, heatmapWindow, formatHeatmapTokens as formatTokenN
 
 const { t, locale } = useI18n()
 const data = ref<RequestHeatmapResponse | null>(null)
-const loading = ref(false)
+const loading = ref(true)
 const error = ref(false)
 const selectedDay = ref<HeatmapDay | null>(null)
 const hoveredDay = ref<HeatmapDay | null>(null)
@@ -147,6 +149,8 @@ onUnmounted(() => {
 .heatmap-header p { margin: 5px 0 0; color: #68756f; font-size: 12px; }
 .heatmap-header strong { color: #385449; font-size: 13px; font-weight: 600; white-space: nowrap; }
 .heatmap-state { padding: 28px 0; color: #68756f; font-size: 13px; }
+.heatmap-skeleton { padding-top: 22px; padding-bottom: 36px; }
+.heatmap-placeholder { height: 144px; border-radius: 8px; background: #f8faf9; }
 .heatmap-retry { margin-left: 8px; padding: 0; border: 0; background: transparent; color: #006241; cursor: pointer; text-decoration: underline; }
 .heatmap-scroll { max-width: 100%; overflow-x: auto; padding-bottom: 4px; }
 .heatmap-content { width: 100%; min-width: 900px; }
