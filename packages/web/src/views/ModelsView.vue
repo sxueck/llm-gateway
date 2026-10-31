@@ -17,10 +17,11 @@
               <n-icon><SearchOutlined /></n-icon>
             </template>
           </n-input>
-          <n-button type="primary" @click="showModal = true">
+          <n-button @click="router.push('/providers')">{{ t('models.manageProviders') }}</n-button>
+          <n-button type="primary" @click="openAddModel">
             {{ t('models.addModel') }}
           </n-button>
-          <n-button @click="showBatchModal = true">
+          <n-button @click="openBatchAdd">
             {{ t('models.batchAdd') }}
           </n-button>
         </template>
@@ -47,6 +48,7 @@
 
         <div class="models-split-layout">
           <div class="group-sidebar">
+            <div class="sidebar-heading">{{ groupMode === 'provider' ? t('models.provider') : t('models.modelName') }}</div>
             <button
               v-for="group in groupedModels"
               :key="group.groupKey"
@@ -64,6 +66,17 @@
             </div>
           </div>
           <div class="group-table-area">
+            <div class="group-overview">
+              <div>
+                <div class="overview-label">{{ t('models.workspace') }}</div>
+                <h3>{{ selectedGroup?.groupLabel || t('models.title') }}</h3>
+                <p>{{ t('models.groupCount', { count: selectedGroupModels.length }) }}</p>
+              </div>
+              <n-button v-if="selectedProviderId" size="small" secondary @click="openBatchAdd">
+                {{ t('models.batchAdd') }}
+              </n-button>
+            </div>
+            <div v-if="selectedProviderDisabled" class="provider-disabled-note">{{ t('models.providerDisabled') }}</div>
             <n-data-table
               :key="selectedGroupKey ?? undefined"
               :columns="columns"
@@ -192,7 +205,7 @@
 
 <script setup lang="ts">
 import { ref, h, computed, onMounted, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NPopconfirm, NDivider, NIcon, NTooltip, NText, NRadioGroup, NRadioButton } from 'naive-ui';
 import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined, ContentCopyOutlined, SearchOutlined } from '@vicons/material';
 import { useI18n } from 'vue-i18n';
@@ -215,6 +228,7 @@ import PageHeader from '@/components/PageHeader.vue';
 const { t } = useI18n();
 const message = useMessage();
 const router = useRouter();
+const route = useRoute();
 const modelStore = useModelStore();
 const providerStore = useProviderStore();
 
@@ -240,7 +254,7 @@ const statusLoadingMap = ref<Record<string, boolean>>({});
 watch(groupMode, (mode) => {
   localStorage.setItem('modelsGroupMode', mode);
   selectedGroupKey.value = null;
-});
+}, { flush: 'sync' });
 
 const pageSizeOptions = [
   { label: t('models.pageSizeOptions.10'), value: 10 },
@@ -253,30 +267,29 @@ const paginationConfig = computed(() => ({
   pageSize: pageSize.value,
 }));
 
-// 仅展示可见模型：虚拟模型始终可见；普通模型需供应商已启用
 const visibleModels = computed(() => {
-  const enabledProviderIds = new Set(
-    providerStore.providers.filter(p => p.enabled).map(p => p.id)
-  );
   const query = searchQuery.value.toLowerCase().trim();
-  
-  return modelStore.models.filter((m) => {
-    if (query) {
-      const matchName = m.name.toLowerCase().includes(query);
-      const matchId = m.modelIdentifier.toLowerCase().includes(query);
-      if (!matchName && !matchId) return false;
-    }
-
-    // 虚拟模型不受供应商状态影响
-    if ((m as any).isVirtual) return true;
-    // 无 providerId 的模型（理论上不存在）保留显示
-    if (!m.providerId) return true;
-    return enabledProviderIds.has(m.providerId);
-  });
+  return modelStore.models.filter(m =>
+    !query || [m.name, m.modelIdentifier, m.providerName].some(value => value?.toLowerCase().includes(query))
+  );
 });
 
 const groupedModels = computed(() => {
   const groups = new Map<string, { groupKey: string; rawKey: string; groupLabel: string; models: Model[] }>();
+
+  if (groupMode.value === 'provider') {
+    const query = searchQuery.value.toLowerCase().trim();
+    providerStore.providers.forEach(provider => {
+      if (!query || provider.name.toLowerCase().includes(query) || visibleModels.value.some(model => model.providerId === provider.id)) {
+        groups.set(`provider:${provider.id}`, {
+          groupKey: `provider:${provider.id}`,
+          rawKey: provider.id,
+          groupLabel: provider.name,
+          models: [],
+        });
+      }
+    });
+  }
 
   visibleModels.value.forEach(model => {
     if (groupMode.value === 'provider') {
@@ -323,9 +336,34 @@ const groupedModels = computed(() => {
   });
 });
 
-const selectedGroupModels = computed(() =>
-  groupedModels.value.find(g => g.groupKey === selectedGroupKey.value)?.models ?? []
-);
+const selectedGroup = computed(() => groupedModels.value.find(g => g.groupKey === selectedGroupKey.value));
+const selectedGroupModels = computed(() => selectedGroup.value?.models ?? []);
+const selectedProvider = computed(() => groupMode.value === 'provider'
+  ? providerStore.providers.find(provider => provider.id === selectedGroup.value?.rawKey)
+  : undefined);
+const selectedProviderId = computed(() => selectedProvider.value?.enabled ? selectedProvider.value.id : '');
+const selectedProviderDisabled = computed(() => selectedProvider.value && !selectedProvider.value.enabled);
+
+function selectRouteProvider() {
+  const provider = route.query.provider;
+  if (typeof provider !== 'string' || !providerStore.providers.some(item => item.id === provider)) return;
+  searchQuery.value = '';
+  groupMode.value = 'provider';
+  selectedGroupKey.value = `provider:${provider}`;
+}
+
+watch(() => route.query.provider, selectRouteProvider);
+
+function openAddModel() {
+  resetForm();
+  formValue.value.providerId = selectedProviderId.value;
+  showModal.value = true;
+}
+
+function openBatchAdd() {
+  batchProviderId.value = selectedProviderId.value;
+  showBatchModal.value = true;
+}
 
 // 选中的分组被搜索过滤掉或分组模式切换后，回退到第一个分组（默认选中第一项）
 watch(groupedModels, (groups) => {
@@ -356,7 +394,7 @@ const rules = computed(() => ({
 
 const providerOptions = computed(() => {
   return providerStore.providers
-    .filter(p => p.enabled)
+    .filter(p => p.enabled || (editingId.value && p.id === formValue.value.providerId))
     .map(p => ({
       label: p.name,
       value: p.id,
@@ -660,6 +698,7 @@ onMounted(async () => {
     modelStore.fetchModels(),
     providerStore.fetchProviders(),
   ]);
+  selectRouteProvider();
 });
 </script>
 
@@ -810,6 +849,46 @@ onMounted(async () => {
   /* 卡片拿到多少高度就用多少，不预留定高：超出部分交给两列各自内部滚动 */
   flex: 1;
   min-height: 0;
+}
+
+.sidebar-heading {
+  padding: 4px 12px 10px;
+  color: #83928a;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+
+.group-overview {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 2px 12px 18px;
+}
+
+.overview-label {
+  color: #83928a;
+  font-size: 11px;
+  letter-spacing: .04em;
+}
+
+.group-overview h3 {
+  margin: 4px 0;
+  color: #34453d;
+  font-size: 18px;
+}
+
+.group-overview p {
+  margin: 0;
+  color: #83928a;
+  font-size: 12px;
+}
+
+.provider-disabled-note {
+  margin: 0 12px 12px;
+  color: #805f29;
+  font-size: 12px;
 }
 
 .group-sidebar {

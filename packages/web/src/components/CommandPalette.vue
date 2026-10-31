@@ -31,6 +31,11 @@
         </div>
 
         <div ref="listRef" class="palette-list">
+          <div
+            class="palette-active-surface"
+            aria-hidden="true"
+            :style="highlightStyle"
+          />
           <template v-for="group in groups" :key="group.key">
             <div class="palette-group">{{ group.label }}</div>
             <button
@@ -90,6 +95,11 @@ const activeIndex = ref(0);
 const pointerMoved = ref(false);
 const inputRef = ref<{ focus: () => void } | null>(null);
 const listRef = ref<HTMLElement | null>(null);
+const highlightStyle = ref({
+  opacity: 0,
+  transform: 'translateY(0px)',
+  height: '0px',
+});
 let previouslyFocusedElement: HTMLElement | null = null;
 
 const pageEntries = computed<PaletteEntry[]>(() =>
@@ -136,9 +146,11 @@ const groups = computed(() => {
     !needle || `${entry.label} ${entry.hint} ${entry.id}`.toLowerCase().includes(needle);
   const pagesHit = pageEntries.value.filter(matches);
   const actionsHit = actionEntries.value.filter(matches);
+  const defaultPages = needle ? pagesHit : pagesHit.slice(0, 8);
+  const defaultActions = needle ? actionsHit : [];
   return [
-    { key: 'pages', label: t('commandPalette.sectionPages'), entries: pagesHit },
-    { key: 'actions', label: t('commandPalette.sectionActions'), entries: actionsHit },
+    { key: 'pages', label: t('commandPalette.sectionPages'), entries: defaultPages },
+    { key: 'actions', label: t('commandPalette.sectionActions'), entries: defaultActions },
   ].filter((group) => group.entries.length > 0);
 });
 
@@ -150,11 +162,27 @@ watch(flatEntries, () => {
   activeIndex.value = 0;
 });
 
-watch(activeIndex, () => {
+watch([activeIndex, flatEntries, visible], () => {
   nextTick(() => {
     listRef.value?.querySelector('.palette-item-active')?.scrollIntoView({ block: 'nearest' });
+    updateHighlight();
   });
 });
+
+function updateHighlight() {
+  const list = listRef.value;
+  const element = list?.querySelector<HTMLElement>('.palette-item-active');
+  if (!visible.value || !list || !element) {
+    highlightStyle.value = { ...highlightStyle.value, opacity: 0 };
+    return;
+  }
+
+  highlightStyle.value = {
+    opacity: 1,
+    transform: `translateY(${element.offsetTop}px)`,
+    height: `${element.offsetHeight}px`,
+  };
+}
 
 function move(delta: number) {
   const total = flatEntries.value.length;
@@ -267,9 +295,26 @@ defineExpose({ open, close });
 }
 
 .palette-list {
+  position: relative;
   flex: 1 1 auto;
   overflow-y: auto;
   padding: 6px;
+}
+
+.palette-active-surface {
+  position: absolute;
+  top: 0;
+  left: 6px;
+  right: 6px;
+  z-index: 0;
+  border-radius: 8px;
+  background: rgba(15, 107, 74, 0.08);
+  pointer-events: none;
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 120ms ease;
+  will-change: transform, height;
 }
 
 .palette-group {
@@ -282,6 +327,8 @@ defineExpose({ open, close });
 }
 
 .palette-item {
+  position: relative;
+  z-index: 1;
   width: 100%;
   display: flex;
   align-items: center;
@@ -297,7 +344,6 @@ defineExpose({ open, close });
 }
 
 .palette-item-active {
-  background: rgba(15, 107, 74, 0.08);
   color: var(--color-primary);
 }
 
@@ -335,5 +381,11 @@ defineExpose({ open, close });
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   font-size: 11px;
   color: #9ca3af;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .palette-active-surface {
+    transition: none;
+  }
 }
 </style>

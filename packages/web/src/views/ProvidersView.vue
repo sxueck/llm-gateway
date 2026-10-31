@@ -57,7 +57,7 @@
           :data="filteredProviders"
           :loading="providerStore.loading"
           :pagination="pagination"
-          :scroll-x="900"
+          :scroll-x="1000"
           :bordered="false"
           size="small"
           :single-line="false"
@@ -70,12 +70,21 @@
       preset="card"
       :title="editingId ? t('providers.editProvider') : t('providers.addProvider')"
       class="provider-modal"
-      :style="{ width: '800px', maxWidth: '92vw', maxHeight: '90vh' }"
+      :style="{ width: '720px', maxWidth: '94vw', maxHeight: '90vh' }"
       :segmented="{
         content: 'soft',
         footer: 'soft'
       }"
     >
+      <div class="provider-steps" :aria-label="t('providers.form.progress')">
+        <div class="provider-step" :class="{ 'provider-step--active': providerStep === 1 }">
+          <span>1</span>{{ t('providers.form.basic') }}
+        </div>
+        <div class="provider-step-line"></div>
+        <div class="provider-step" :class="{ 'provider-step--active': providerStep === 2 }">
+          <span>2</span>{{ t('providers.form.selectModels') }}
+        </div>
+      </div>
       <div class="modal-content-wrapper">
         <div class="modal-content">
           <ProviderForm
@@ -83,16 +92,30 @@
             v-model="formValue"
             :editing-id="editingId"
             :existing-model-identifiers="existingModelIdentifiers"
+            :step="providerStep"
+            @selection-change="selectedModelCount = $event"
           />
         </div>
       </div>
       <template #footer>
-        <n-space justify="end" :size="8">
-          <n-button @click="showModal = false" size="small">{{ t('common.cancel') }}</n-button>
-          <n-button type="primary" size="small" :loading="submitting" @click="handleSubmit">
-            {{ editingId ? t('common.update') : t('common.create') }}
-          </n-button>
-        </n-space>
+        <div class="provider-footer">
+          <span v-if="providerStep === 2" class="provider-selection-count" aria-live="polite">
+            {{ t('providers.form.selectedCount', { count: selectedModelCount }) }}
+          </span>
+          <n-space justify="end" :size="8" class="provider-footer-actions">
+            <n-button v-if="providerStep === 1" @click="showModal = false">{{ t('common.cancel') }}</n-button>
+            <n-button v-else :disabled="submitting" @click="providerStep = 1">{{ t('providers.form.previousStep') }}</n-button>
+            <n-button v-if="providerStep === 1" type="primary" @click="nextProviderStep">
+              {{ t('providers.form.nextStep') }}
+            </n-button>
+            <template v-else>
+              <n-button :disabled="submitting" @click="handleSubmit(true)">{{ t('providers.form.skipAndSave') }}</n-button>
+              <n-button type="primary" :loading="submitting" @click="handleSubmit(false)">
+                {{ editingId ? t('common.update') : t('common.create') }}
+              </n-button>
+            </template>
+          </n-space>
+        </div>
       </template>
     </n-modal>
   </div>
@@ -100,6 +123,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, h, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
   useMessage,
@@ -124,7 +148,7 @@ import {
   FlashOutline as SpeedTestIcon,
   SearchOutline
 } from '@vicons/ionicons5'
-import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined } from '@vicons/material'
+import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined, ViewAgendaOutlined } from '@vicons/material'
 import { useProviderStore } from '@/stores/provider'
 import { useModelStore } from '@/stores/model'
 import { providerApi, extractModelAttributes } from '@/api/provider'
@@ -139,10 +163,13 @@ import { downloadProvidersConfig, parseImportFile } from '@/utils/provider-expor
 const message = useMessage()
 const { t } = useI18n()
 const dialog = useDialog()
+const router = useRouter()
 const providerStore = useProviderStore()
 const modelStore = useModelStore()
 
 const showModal = ref(false)
+const providerStep = ref<1 | 2>(1)
+const selectedModelCount = ref(0)
 const formRef = ref()
 const submitting = ref(false)
 const editingId = ref<string | null>(null)
@@ -274,6 +301,7 @@ const columns = computed(() => [
   {
     title: t('common.status'),
     key: 'enabled',
+    width: 100,
     render: (row: Provider) =>
       h(
         NTag,
@@ -284,13 +312,31 @@ const columns = computed(() => [
   {
     title: t('common.actions'),
     key: 'actions',
-    width: 150,
+    width: 220,
     render: (row: Provider) =>
       h(
         NSpace,
         { size: 6 },
         {
           default: () => [
+            h(
+              NButton,
+              {
+                'size': 'small',
+                'quaternary': true,
+                'circle': true,
+                'aria-label': `${t('menu.models')} (${modelStore.models.filter(m => m.providerId === row.id).length})`,
+                'title': `${t('menu.models')} (${modelStore.models.filter(m => m.providerId === row.id).length})`,
+                'onClick': () => handleManageModels(row)
+              },
+              {
+                icon: () => h('span', { class: 'model-list-icon' }, [
+                  h(NIcon, null, { default: () => h(ViewAgendaOutlined) }),
+                  h('span', { class: 'model-count-badge', 'aria-hidden': 'true' },
+                    String(modelStore.models.filter(m => m.providerId === row.id).length))
+                ])
+              }
+            ),
             h(
               NButton,
               {
@@ -346,6 +392,10 @@ const columns = computed(() => [
       )
   }
 ])
+
+function handleManageModels(provider: Provider) {
+  router.push({ path: '/models', query: { provider: provider.id } })
+}
 
 async function handleEdit(provider: Provider) {
   editingId.value = provider.id
@@ -442,7 +492,18 @@ async function handleDelete(id: string) {
   }
 }
 
-async function handleSubmit() {
+async function nextProviderStep() {
+  formRef.value?.syncProtocolMappings?.()
+  try {
+    await formRef.value?.validate()
+  } catch {
+    return
+  }
+  providerStep.value = 2
+  void formRef.value?.fetchModelsIfNeeded?.()
+}
+
+async function handleSubmit(skipModels = false) {
   try {
     formRef.value?.syncProtocolMappings?.()
 
@@ -488,7 +549,7 @@ async function handleSubmit() {
       }
       await providerApi.update(editingId.value, updateData)
 
-      const selectedModelsInfo = formRef.value?.getSelectedModelsInfo?.() || []
+      const selectedModelsInfo = skipModels ? [] : (formRef.value?.getSelectedModelsInfo?.() || [])
       if (selectedModelsInfo.length > 0) {
         const existing = modelStore.models.filter(m => m.providerId === formValue.value.id)
         const modelsToCreate = selectedModelsInfo
@@ -516,7 +577,7 @@ async function handleSubmit() {
         message.success(t('providers.updateSuccess'))
       }
     } else {
-      const selectedModelsInfo = formRef.value?.getSelectedModelsInfo?.() || []
+      const selectedModelsInfo = skipModels ? [] : (formRef.value?.getSelectedModelsInfo?.() || [])
 
       await providerApi.create({
         ...formValue.value,
@@ -557,6 +618,8 @@ async function handleSubmit() {
 }
 
 function resetForm() {
+  providerStep.value = 1
+  selectedModelCount.value = 0
   editingId.value = null
   originalApiKey.value = ''
   apiKeyChanged.value = false
@@ -832,8 +895,86 @@ onMounted(() => {
   flex-direction: column;
 }
 
+.providers-view :deep(.model-list-icon) {
+  position: relative;
+  display: inline-flex;
+}
+
+.providers-view :deep(.model-count-badge) {
+  position: absolute;
+  top: -7px;
+  right: -9px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #c45b0b;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+}
+
+.provider-steps {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 24px 0;
+}
+
+.provider-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #8b9690;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.provider-step span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #edf1ef;
+}
+
+.provider-step--active {
+  color: var(--color-primary);
+}
+
+.provider-step--active span {
+  color: #fff;
+  background: var(--color-primary);
+}
+
+.provider-step-line {
+  width: 44px;
+  height: 1px;
+  background: #dce5e0;
+}
+
+.provider-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.provider-selection-count {
+  color: #53645b;
+  font-size: 13px;
+}
+
+.provider-footer-actions {
+  margin-left: auto;
+}
+
 .modal-content-wrapper {
-  max-height: calc(90vh - 180px);
+  max-height: calc(90vh - 230px);
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -849,6 +990,6 @@ onMounted(() => {
 
 .modal-content {
   min-height: 200px;
-  padding: 16px 20px;
+  padding: 20px 24px;
 }
 </style>

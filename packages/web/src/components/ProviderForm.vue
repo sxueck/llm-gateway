@@ -1,6 +1,7 @@
 <template>
   <div class="provider-form-container">
     <n-form
+      v-show="step === 1"
       ref="formRef"
       :model="formValue"
       :rules="rules"
@@ -57,6 +58,8 @@
               </n-space>
             </n-form-item>
             
+            <details class="advanced-settings">
+              <summary>{{ t('providers.form.advancedSettings') }}</summary>
             <n-form-item :label="t('common.description')">
               <n-input 
                 v-model:value="formValue.description" 
@@ -70,6 +73,7 @@
             <n-form-item :label="t('providers.form.multiProtocol')">
               <n-switch v-model:value="multiProtocolEnabled" size="small" />
             </n-form-item>
+            </details>
 
             <n-form-item v-if="!multiProtocolEnabled" label="Base URL" path="baseUrl">
               <n-space vertical style="width: 100%" :size="4">
@@ -186,50 +190,10 @@
                 {{ keyValidation.message }}
               </div>
               
-              <div class="connection-actions">
-                 <n-button
-                  type="primary"
-                  secondary
-                  @click="handleFetchModels"
-                  :loading="fetchingModels"
-                  :disabled="!formValue.baseUrl || (!formValue.apiKey && !editingId)"
-                  size="small"
-                  block
-                >
-                  <template #icon>
-                    <n-icon :component="LinkOutline" />
-                  </template>
-                  {{ fetchingModels ? t('providers.form.connecting') : t('providers.form.fetchModels') }}
-                </n-button>
-              </div>
 
-              <n-collapse-transition :show="Boolean(fetchError)">
-                <div class="field-feedback field-feedback--warning">
-                  <div class="field-feedback__title">{{ fetchError }}</div>
-                  <div class="field-feedback__desc">{{ t('providers.form.fetchModelsFailedHint') }}</div>
-                </div>
-              </n-collapse-transition>
             </n-space>
           </n-form-item>
 
-          <n-collapse-transition :show="availableModels.length > 0">
-            <n-form-item :label="t('providers.form.selectModels')">
-              <n-space vertical style="width: 100%" :size="6">
-                <n-select
-                  v-model:value="selectedModels"
-                  :options="modelOptions"
-                  multiple
-                  filterable
-                  :placeholder="t('providers.form.selectModelsPlaceholder')"
-                  max-tag-count="responsive"
-                  size="small"
-                />
-                <n-text depth="3" style="font-size: 11px">
-                  {{ t('providers.form.modelSummary', { found: availableModels.length, added: addedModelCount, selected: selectedModels.length }) }}
-                </n-text>
-              </n-space>
-            </n-form-item>
-          </n-collapse-transition>
         </div>
       </div>
 
@@ -240,6 +204,52 @@
       </div>
 
     </n-form>
+    <section v-show="step === 2" class="model-step">
+      <div class="model-step-header">
+        <div>
+          <h3>{{ t('providers.form.selectModels') }}</h3>
+          <p>{{ t('providers.form.modelsDescription') }}</p>
+        </div>
+        <n-button size="small" :loading="fetchingModels" @click="handleFetchModels">
+          {{ t('providers.form.refreshModels') }}
+        </n-button>
+      </div>
+      <div v-if="fetchError" class="field-feedback field-feedback--warning" role="alert">
+        <div class="field-feedback__title">{{ fetchError }}</div>
+        <div class="field-feedback__desc">{{ t('providers.form.fetchModelsFailedHint') }}</div>
+      </div>
+      <div v-if="fetchingModels" class="model-list-empty">{{ t('providers.form.connecting') }}</div>
+      <div v-else-if="!availableModels.length && !fetchError" class="model-list-empty">{{ t('providers.form.noAvailableModels') }}</div>
+      <div v-if="availableModels.length" class="model-picker">
+                <n-input
+                  v-model:value="modelSearch"
+                  :placeholder="t('providers.form.searchModels')"
+                  :aria-label="t('providers.form.searchModels')"
+                  clearable
+                  size="small"
+                />
+                <div class="model-list">
+                  <div v-if="!filteredModels.length" class="model-list-empty">
+                    {{ t('providers.form.noMatchingModels') }}
+                  </div>
+                  <div v-for="model in filteredModels" :key="model.id" class="model-row">
+                    <div class="model-details">
+                      <span class="model-name">{{ model.name || model.id }}</span>
+                      <span v-if="model.name && model.name !== model.id" class="model-id">{{ model.id }}</span>
+                      <span v-if="existingModels.has(model.id)" class="model-existing">{{ t('providers.form.modelAlreadyAdded') }}</span>
+                    </div>
+                    <button
+                      type="button"
+                      class="model-toggle"
+                      :class="{ 'model-toggle--selected': selectedModelSet.has(model.id) }"
+                      :aria-pressed="selectedModelSet.has(model.id)"
+                      :aria-label="t(selectedModelSet.has(model.id) ? 'providers.form.deselectModel' : 'providers.form.selectModel', { model: model.name || model.id })"
+                      @click="toggleModel(model.id)"
+                    >{{ selectedModelSet.has(model.id) ? '−' : '+' }}</button>
+                  </div>
+                </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -253,17 +263,13 @@ import {
   NSwitch,
   NSpace,
   NButton,
-  NSelect,
-  NText,
   useMessage,
   NIcon,
   NInputGroup,
   NTooltip,
-  NCollapseTransition,
 } from 'naive-ui';
 import { 
   ClipboardOutline, 
-  LinkOutline,
   CheckmarkCircle,
   CloseCircle,
   InformationCircle,
@@ -288,11 +294,13 @@ interface Props {
   };
   editingId?: string | null;
   existingModelIdentifiers?: string[];
+  step: 1 | 2;
 }
 
 const props = defineProps<Props>();
 const emit = defineEmits<{
   'update:modelValue': [value: Props['modelValue']];
+  'selection-change': [count: number];
 }>();
 
 const message = useMessage();
@@ -305,7 +313,11 @@ const keyValidation = ref<ReturnType<typeof validateApiKey>>({ isValid: true });
 const fetchingModels = ref(false);
 const availableModels = ref<ModelInfo[]>([]);
 const selectedModels = ref<string[]>([]);
+const modelSearch = ref('');
 const fetchError = ref<string>('');
+let requestVersion = 0;
+let fetched = false;
+watch(selectedModels, value => emit('selection-change', value.length), { immediate: true });
 const multiProtocolEnabled = ref(false);
 const protocolUrls = ref<ProtocolMapping>({
   openai: '',
@@ -366,17 +378,33 @@ function updateProtocolMappings() {
   formValue.value.baseUrl = newBaseUrl;
 }
 
-const modelOptions = computed(() => {
-  return availableModels.value.map(model => ({
-    label: model.name,
-    value: model.id,
-  }));
+watch(
+  () => [formValue.value.baseUrl, formValue.value.apiKey, protocolUrls.value.openai, protocolUrls.value.anthropic, protocolUrls.value.google],
+  () => {
+    requestVersion++;
+    fetched = false;
+    fetchingModels.value = false;
+    availableModels.value = [];
+    selectedModels.value = [];
+    fetchError.value = '';
+  },
+  { flush: 'sync' },
+);
+
+const existingModels = computed(() => new Set(props.existingModelIdentifiers ?? []));
+const selectedModelSet = computed(() => new Set(selectedModels.value));
+const filteredModels = computed(() => {
+  const search = modelSearch.value.trim().toLowerCase();
+  return availableModels.value.filter(model =>
+    `${model.name || ''} ${model.id}`.toLowerCase().includes(search)
+  );
 });
 
-const addedModelCount = computed(() => {
-  const existingModelIdentifiers = new Set(props.existingModelIdentifiers ?? []);
-  return availableModels.value.filter(model => existingModelIdentifiers.has(model.id)).length;
-});
+function toggleModel(id: string) {
+  selectedModels.value = selectedModelSet.value.has(id)
+    ? selectedModels.value.filter(selected => selected !== id)
+    : [...selectedModels.value, id];
+}
 
 const rules = computed(() => ({
   id: [
@@ -456,6 +484,7 @@ function getFieldStatus(isValid: boolean | undefined, hasValue: string): 'succes
 }
 
 async function handleFetchModels() {
+  const version = ++requestVersion;
   const baseUrlToUse = multiProtocolEnabled.value
     ? (protocolUrls.value.openai || protocolUrls.value.anthropic || protocolUrls.value.google)
     : formValue.value.baseUrl;
@@ -469,24 +498,26 @@ async function handleFetchModels() {
     fetchingModels.value = true;
     fetchError.value = '';
     const result = await providerApi.fetchModels(baseUrlToUse, formValue.value.apiKey);
+    if (version !== requestVersion) return;
 
     if (result.success) {
+      modelSearch.value = '';
       availableModels.value = result.models;
-      const existingModelIdentifiers = new Set(props.existingModelIdentifiers ?? []);
+      const selected = fetched ? selectedModelSet.value : existingModels.value;
       selectedModels.value = result.models
-        .filter(model => existingModelIdentifiers.has(model.id))
+        .filter(model => selected.has(model.id))
         .map(model => model.id);
+      fetched = true;
       fetchError.value = '';
       message.success(result.message);
     } else {
-      availableModels.value = [];
       fetchError.value = result.message;
     }
   } catch (error: any) {
-    availableModels.value = [];
+    if (version !== requestVersion) return;
     fetchError.value = error.message || t('providers.form.fetchModelsFailed');
   } finally {
-    fetchingModels.value = false;
+    if (version === requestVersion) fetchingModels.value = false;
   }
 }
 
@@ -496,6 +527,7 @@ watch(() => formValue.value.id, () => {
 
 defineExpose({
   validate: () => formRef.value?.validate(),
+  fetchModelsIfNeeded: () => fetched ? undefined : handleFetchModels(),
   getSelectedModels: () => selectedModels.value,
   getSelectedModelsInfo: () => {
     return availableModels.value.filter(model =>
@@ -543,8 +575,126 @@ defineExpose({
   border-top: 1px solid #eee;
 }
 
-.connection-actions {
-  margin: 8px 0;
+.advanced-settings summary {
+  margin-bottom: 14px;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.model-step {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 12px;
+}
+
+.model-step-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.model-step-header h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.model-step-header p {
+  margin: 4px 0 0;
+  color: #777;
+  font-size: 12px;
+}
+
+.model-picker {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #e5e9e7;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.model-list {
+  max-height: min(42vh, 340px);
+  overflow-y: auto;
+  margin-top: 6px;
+}
+
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 4px;
+}
+
+.model-row + .model-row {
+  border-top: 1px solid #f1f3f2;
+}
+
+.model-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.model-name, .model-id {
+  overflow-wrap: anywhere;
+}
+
+.model-name {
+  color: #374151;
+  font-size: 13px;
+}
+
+.model-id, .model-existing, .model-list-empty {
+  color: #777;
+  font-size: 11px;
+}
+
+.model-existing {
+  color: var(--color-primary);
+}
+
+.model-toggle {
+  flex: 0 0 20px;
+  height: 20px;
+  border: 1px solid #d7e1dc;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--color-primary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.model-toggle--selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.model-toggle:active {
+  transform: scale(0.9);
+}
+
+.model-toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.model-list-empty {
+  padding: 8px 4px 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .model-toggle {
+    transition: none;
+  }
 }
 
 .mini-alert {
