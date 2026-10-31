@@ -47,7 +47,9 @@ export const MODEL_ATTRIBUTE_CONFIGS: AttributeConfig[] = [
   {
     key: 'input_cost_per_token',
     label: '输入成本',
+    labelKey: 'modelAttributes.inputCostPerToken.label',
     description: '每百万输入令牌的成本',
+    descriptionKey: 'modelAttributes.inputCostPerToken.description',
     type: 'number',
     category: '成本参数',
     unit: '$/Mtoken',
@@ -57,7 +59,9 @@ export const MODEL_ATTRIBUTE_CONFIGS: AttributeConfig[] = [
   {
     key: 'output_cost_per_token',
     label: '输出成本',
+    labelKey: 'modelAttributes.outputCostPerToken.label',
     description: '每百万输出令牌的成本',
+    descriptionKey: 'modelAttributes.outputCostPerToken.description',
     type: 'number',
     category: '成本参数',
     unit: '$/Mtoken',
@@ -67,7 +71,9 @@ export const MODEL_ATTRIBUTE_CONFIGS: AttributeConfig[] = [
   {
     key: 'input_cost_per_token_cache_hit',
     label: '缓存命中成本',
+    labelKey: 'modelAttributes.cacheHitCost.label',
     description: '缓存命中时每百万输入令牌的成本',
+    descriptionKey: 'modelAttributes.cacheHitCost.description',
     type: 'number',
     category: '成本参数',
     unit: '$/Mtoken',

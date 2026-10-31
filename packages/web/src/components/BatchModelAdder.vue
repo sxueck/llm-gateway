@@ -2,13 +2,13 @@
   <div class="batch-model-adder">
     <n-space vertical :size="12">
       <n-space justify="space-between" align="center">
-        <h4 class="section-title">批量添加模型</h4>
+        <h4 class="section-title">{{ t('models.batchAddTitle') }}</h4>
         <n-space :size="8">
           <n-button size="small" @click="addModel">
             <template #icon>
               <n-icon><AddOutline /></n-icon>
             </template>
-            添加模型
+            {{ t('models.addModel') }}
           </n-button>
           <n-button
             size="small"
@@ -18,13 +18,13 @@
             <template #icon>
               <n-icon><DocumentTextOutline /></n-icon>
             </template>
-            批量输入
+            {{ t('models.batchInput') }}
           </n-button>
         </n-space>
       </n-space>
 
       <div v-if="models.length === 0" class="empty-state">
-        <n-empty description="暂无模型，点击上方按钮添加模型" size="small" />
+        <n-empty :description="t('models.batchEmpty')" size="small" />
       </div>
 
       <div v-else class="models-list">
@@ -36,7 +36,7 @@
         >
           <template #header>
             <n-space justify="space-between" align="center">
-              <span class="model-title">模型 {{ index + 1 }}</span>
+              <span class="model-title">{{ t('models.modelIndex', { index: index + 1 }) }}</span>
               <n-button size="small" type="error" text @click="removeModel(index)">
                 <template #icon>
                   <n-icon><CloseOutline /></n-icon>
@@ -46,20 +46,20 @@
           </template>
 
           <n-form :model="model" label-placement="left" label-width="80" size="small">
-            <n-form-item label="模型名称" :rule="{ required: true, message: '请输入模型名称' }">
-              <n-input v-model:value="model.name" placeholder="如: GPT-4 Turbo" size="small" />
+            <n-form-item :label="t('models.modelName')" :rule="{ required: true, message: t('validation.modelNameRequired') }">
+              <n-input v-model:value="model.name" :placeholder="t('models.batchNamePlaceholder')" size="small" />
             </n-form-item>
-            <n-form-item label="模型标识符" :rule="{ required: true, message: '请输入模型标识符' }">
+            <n-form-item :label="t('models.modelId')" :rule="{ required: true, message: t('validation.modelIdRequired') }">
               <n-input
                 v-model:value="model.modelIdentifier"
-                placeholder="如: gpt-4-turbo-preview"
+                :placeholder="t('models.batchIdPlaceholder')"
                 size="small"
               />
             </n-form-item>
-            <n-form-item label="描述">
-              <n-input v-model:value="model.description" placeholder="可选" size="small" />
+            <n-form-item :label="t('common.description')">
+              <n-input v-model:value="model.description" :placeholder="t('common.optional')" size="small" />
             </n-form-item>
-            <n-form-item label="启用">
+            <n-form-item :label="t('common.enabled')">
               <n-switch v-model:value="model.enabled" size="small" />
             </n-form-item>
           </n-form>
@@ -67,9 +67,9 @@
       </div>
 
       <n-space v-if="models.length > 0" justify="end" style="margin-top: 16px">
-        <n-button @click="clearAll" size="small">清空所有</n-button>
+        <n-button @click="clearAll" size="small">{{ t('models.clearAll') }}</n-button>
         <n-button type="primary" @click="handleBatchCreate" :loading="creating" size="small">
-          创建 {{ models.length }} 个模型
+          {{ t('models.createCount', { count: models.length }) }}
         </n-button>
       </n-space>
     </n-space>
@@ -77,22 +77,22 @@
     <n-modal
       v-model:show="showBatchInput"
       preset="card"
-      title="批量输入模型"
+      :title="t('models.batchInputTitle')"
       :style="{ width: '600px', maxWidth: '92vw' }"
     >
       <n-space vertical :size="12">
         <n-alert type="info" size="small">
           <div style="font-size: 13px">
-            每行一个模型，格式：模型名称|模型标识符|描述（可选）
+            {{ t('models.batchFormat') }}
             <br />
-            示例：GPT-4 Turbo|gpt-4-turbo-preview|最新的GPT-4模型
+            {{ t('models.batchExample') }}
           </div>
         </n-alert>
 
         <n-input
           v-model:value="batchInputText"
           type="textarea"
-          placeholder="GPT-4 Turbo|gpt-4-turbo-preview|最新的GPT-4模型&#10;Claude 3 Opus|claude-3-opus-20240229|Anthropic最强模型"
+          :placeholder="t('models.batchPlaceholder')"
           :rows="8"
           size="small"
         />
@@ -100,8 +100,8 @@
 
       <template #footer>
         <n-space justify="end" :size="8">
-          <n-button @click="showBatchInput = false" size="small">取消</n-button>
-          <n-button type="primary" @click="handleBatchInputParse" size="small">解析并添加</n-button>
+          <n-button @click="showBatchInput = false" size="small">{{ t('common.cancel') }}</n-button>
+          <n-button type="primary" @click="handleBatchInputParse" size="small">{{ t('models.parseAndAdd') }}</n-button>
         </n-space>
       </template>
     </n-modal>
@@ -110,6 +110,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   NSpace,
   NButton,
@@ -142,6 +143,7 @@ const emit = defineEmits<{
   create: [models: ModelInput[]]
 }>()
 
+const { t } = useI18n()
 const message = useMessage()
 const models = ref<ModelInput[]>([])
 const creating = ref(false)
@@ -171,12 +173,12 @@ async function handleBatchCreate() {
   )
 
   if (validModels.length === 0) {
-    message.warning('请至少添加一个有效的模型')
+    message.warning(t('models.needValidModel'))
     return
   }
 
   if (validModels.length !== models.value.length) {
-    message.warning('存在未填写完整的模型，将只创建已填写完整的模型')
+    message.warning(t('models.incompleteModels'))
   }
 
   creating.value = true
@@ -189,7 +191,7 @@ async function handleBatchCreate() {
 
 function handleBatchInputParse() {
   if (!batchInputText.value.trim()) {
-    message.warning('请输入模型信息')
+    message.warning(t('models.enterModelInfo'))
     return
   }
 
@@ -209,14 +211,14 @@ function handleBatchInputParse() {
   }
 
   if (newModels.length === 0) {
-    message.warning('未解析到有效的模型信息')
+    message.warning(t('models.parseNone'))
     return
   }
 
   models.value.push(...newModels)
   showBatchInput.value = false
   batchInputText.value = ''
-  message.success(`已添加 ${newModels.length} 个模型`)
+  message.success(t('models.addedCount', { count: newModels.length }))
 }
 
 defineExpose({

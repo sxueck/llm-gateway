@@ -1,9 +1,9 @@
 <template>
   <div class="routing-config-wizard">
     <n-steps :current="currentStep" :status="stepStatus" size="small">
-      <n-step title="选择类型" />
-      <n-step title="基本信息" />
-      <n-step title="目标配置" />
+      <n-step :title="t('wizard.selectTypeStep')" />
+      <n-step :title="t('wizard.basicInfoStep')" />
+      <n-step :title="t('wizard.targetConfigStep')" />
     </n-steps>
 
     <div class="step-content">
@@ -12,14 +12,14 @@
           <n-space vertical :size="12">
             <n-radio value="loadbalance">
               <div class="config-type-option">
-                <div class="option-title">负载均衡</div>
-                <div class="option-description">将请求按权重分配到多个目标</div>
+                <div class="option-title">{{ t('wizard.loadBalanceOption') }}</div>
+                <div class="option-description">{{ t('wizard.loadBalanceOptionDesc') }}</div>
               </div>
             </n-radio>
             <n-radio value="fallback">
               <div class="config-type-option">
-                <div class="option-title">故障转移</div>
-                <div class="option-description">主要目标失败时自动切换到备用目标</div>
+                <div class="option-title">{{ t('wizard.fallbackOption') }}</div>
+                <div class="option-description">{{ t('wizard.fallbackOptionDesc') }}</div>
               </div>
             </n-radio>
           </n-space>
@@ -28,17 +28,17 @@
 
       <div v-if="currentStep === 2" class="step-panel">
         <n-form ref="basicFormRef" :model="localFormValue" label-placement="top" :show-feedback="false">
-          <n-form-item label="配置名称" path="name" :rule="{ required: true, message: '请输入配置名称' }">
+          <n-form-item :label="t('wizard.configName')" path="name" :rule="{ required: true, message: t('wizard.configNameRequired') }">
             <n-input
               v-model:value="localFormValue.name"
-              :placeholder="localConfigType === 'loadbalance' ? '生产环境负载均衡' : '生产环境故障转移'"
+              :placeholder="localConfigType === 'loadbalance' ? t('wizard.placeholderLoadBalance') : t('wizard.placeholderFallback')"
             />
           </n-form-item>
-          <n-form-item label="描述">
+          <n-form-item :label="t('wizard.descriptionLabel')">
             <n-input
               v-model:value="localFormValue.description"
               type="textarea"
-              placeholder="可选"
+              :placeholder="t('common.optional')"
               :rows="2"
             />
           </n-form-item>
@@ -48,17 +48,17 @@
           <n-form-item>
             <template #label>
               <n-space align="center" :size="8">
-                <span>创建智能路由</span>
+                <span>{{ t('wizard.createSmartRoute') }}</span>
                 <n-switch v-model:value="localFormValue.createVirtualModel" size="small" />
               </n-space>
             </template>
             <n-text depth="3" style="font-size: 12px">
-              创建后可通过统一的模型名称访问此路由配置
+              {{ t('wizard.createSmartRouteHint') }}
             </n-text>
           </n-form-item>
 
           <template v-if="localFormValue.createVirtualModel">
-            <n-form-item label="智能路由名称" path="virtualModelName" :rule="{ required: true, message: '请输入智能路由名称' }">
+            <n-form-item :label="t('wizard.virtualModelNameLabel')" path="virtualModelName" :rule="{ required: true, message: t('wizard.virtualModelNameRequired') }">
               <n-input
                 v-model:value="localFormValue.virtualModelName"
                 :placeholder="localConfigType === 'loadbalance' ? 'GPT-4-LB' : 'GPT-4-Fallback'"
@@ -70,7 +70,7 @@
 
       <div v-if="currentStep === 3" class="step-panel">
         <n-alert v-if="localConfigType === 'fallback'" type="info" style="margin-bottom: 16px;">
-          <div style="font-size: 13px;">按优先级从高到低排列，失败时自动切换到下一个</div>
+          <div style="font-size: 13px;">{{ t('wizard.fallbackPriorityTip') }}</div>
         </n-alert>
 
         <n-space vertical :size="12">
@@ -78,7 +78,7 @@
             <template #header>
               <n-space justify="space-between" align="center">
                 <span class="target-title">
-                  {{ localConfigType === 'loadbalance' ? `目标 ${index + 1}` : `优先级 ${index + 1}` }}
+                  {{ localConfigType === 'loadbalance' ? t('wizard.targetIndex', { index: index + 1 }) : t('wizard.priorityIndex', { index: index + 1 }) }}
                 </span>
                 <n-space :size="4">
                   <n-button
@@ -114,27 +114,27 @@
 
             <n-space vertical :size="12">
               <div class="form-row">
-                <label class="form-label">提供商</label>
+                <label class="form-label">{{ t('dashboard.providers') }}</label>
                 <n-select
                   v-model:value="target.providerId"
                   :options="providerOptions"
-                  placeholder="选择提供商"
+                  :placeholder="t('models.selectProvider')"
                   size="small"
                   @update:value="() => target.modelName = ''"
                 />
               </div>
               <div class="form-row">
-                <label class="form-label">模型</label>
+                <label class="form-label">{{ t('apiRequests.model') }}</label>
                 <n-select
                   v-model:value="target.modelName"
                   :options="getModelOptionsByProvider(target.providerId)"
-                  placeholder="选择模型"
+                  :placeholder="t('modelPresets.selectModel')"
                   size="small"
                   :disabled="!target.providerId"
                 />
               </div>
               <div v-if="localConfigType === 'loadbalance'" class="form-row">
-                <label class="form-label">权重</label>
+                <label class="form-label">{{ t('wizard.weight') }}</label>
                 <n-input-number
                   v-model:value="target.weight"
                   :min="0"
@@ -146,12 +146,12 @@
                 />
               </div>
               <div v-if="localConfigType === 'fallback'" class="form-row">
-                <label class="form-label">触发状态码</label>
+                <label class="form-label">{{ t('wizard.triggerStatusCodes') }}</label>
                 <n-select
                   v-model:value="target.onStatusCodes"
                   multiple
                   :options="statusCodeOptions"
-                  placeholder="选择状态码"
+                  :placeholder="t('wizard.selectStatusCodes')"
                   size="small"
                 />
               </div>
@@ -162,7 +162,7 @@
             <template #icon>
               <n-icon><AddOutline /></n-icon>
             </template>
-            添加目标
+            {{ t('wizard.addTarget') }}
           </n-button>
         </n-space>
       </div>
@@ -170,12 +170,12 @@
 
     <div class="wizard-footer">
       <n-space justify="space-between">
-        <n-button v-if="currentStep > 1" @click="prevStep" size="small">上一步</n-button>
+        <n-button v-if="currentStep > 1" @click="prevStep" size="small">{{ t('common.previous') }}</n-button>
         <div v-else></div>
         <n-space :size="8">
-          <n-button @click="handleCancel" size="small">取消</n-button>
-          <n-button v-if="currentStep < 3" type="primary" @click="nextStep" size="small">下一步</n-button>
-          <n-button v-else type="primary" @click="handleSave" :loading="saving" size="small">保存配置</n-button>
+          <n-button @click="handleCancel" size="small">{{ t('common.cancel') }}</n-button>
+          <n-button v-if="currentStep < 3" type="primary" @click="nextStep" size="small">{{ t('common.next') }}</n-button>
+          <n-button v-else type="primary" @click="handleSave" :loading="saving" size="small">{{ t('wizard.saveConfig') }}</n-button>
         </n-space>
       </n-space>
     </div>
@@ -184,6 +184,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import {
   NSteps,
   NStep,
@@ -245,6 +246,7 @@ const emit = defineEmits<{
   cancel: [];
 }>();
 
+const { t } = useI18n();
 const message = useMessage();
 const currentStep = ref(1);
 const basicFormRef = ref();
@@ -281,13 +283,13 @@ const stepStatus = computed(() => {
 function nextStep() {
   if (currentStep.value === 1) {
     if (!localConfigType.value) {
-      message.error('请选择配置类型');
+      message.error(t('wizard.selectConfigType'));
       return;
     }
   } else if (currentStep.value === 2) {
     basicFormRef.value?.validate((errors: any) => {
       if (errors) {
-        message.error('请完善基本信息');
+        message.error(t('wizard.completeBasicInfo'));
         return;
       }
       currentStep.value++;
@@ -310,14 +312,14 @@ function handleSave() {
 
   if (localFormValue.value.createVirtualModel) {
     if (!localFormValue.value.virtualModelName) {
-      message.error('请输入虚拟模型名称');
+      message.error(t('wizard.enterVirtualModelName'));
       return;
     }
   }
 
   const totalWeight = getTotalWeight();
   if (localConfigType.value === 'loadbalance' && Math.abs(totalWeight - 1) > 0.01) {
-    message.warning(`权重总和应为 1.0，当前为 ${totalWeight.toFixed(2)}`);
+    message.warning(t('wizard.weightSumWarning', { value: totalWeight.toFixed(2) }));
   }
 
   emit('save');

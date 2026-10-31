@@ -15,10 +15,10 @@
           </template>
         </n-input>
         <n-button type="primary" size="small" @click="handleSearch" :loading="searching">
-          搜索
+          {{ t('common.search') }}
         </n-button>
         <n-button size="small" @click="handleUpdate" :loading="updating">
-          更新预设库
+          {{ t('modelPresets.updatePresets') }}
         </n-button>
       </n-space>
 
@@ -53,31 +53,31 @@
                 <template #description>
                   <n-space :size="12" style="margin-top: 4px">
                     <span v-if="result.maxInputTokens" class="info-item">
-                      输入: {{ formatNumber(result.maxInputTokens) }} tokens
+                      {{ t('modelPresets.inputTokens', { count: formatNumber(result.maxInputTokens) }) }}
                     </span>
                     <span v-if="result.maxOutputTokens" class="info-item">
-                      输出: {{ formatNumber(result.maxOutputTokens) }} tokens
+                      {{ t('modelPresets.outputTokens', { count: formatNumber(result.maxOutputTokens) }) }}
                     </span>
                     <span v-if="result.inputCost" class="info-item">
-                      输入成本: ${{ result.inputCost.toExponential(2) }}/token
+                      {{ t('modelPresets.inputCost', { cost: result.inputCost.toExponential(2) }) }}
                     </span>
                     <span v-if="result.outputCost" class="info-item">
-                      输出成本: ${{ result.outputCost.toExponential(2) }}/token
+                      {{ t('modelPresets.outputCost', { cost: result.outputCost.toExponential(2) }) }}
                     </span>
                   </n-space>
                   <n-space :size="8" style="margin-top: 4px">
                     <n-tag v-if="result.supportsFunctionCalling" size="tiny" type="success">
-                      函数调用
+                      {{ t('modelPresets.functionCalling') }}
                     </n-tag>
                     <n-tag v-if="result.supportsVision" size="tiny" type="success">
-                      视觉
+                      {{ t('modelPresets.vision') }}
                     </n-tag>
                   </n-space>
                 </template>
               </n-thing>
               <template #suffix>
                 <n-button size="small" type="primary" @click.stop="handleSelect(result)">
-                  选择
+                  {{ t('modelPresets.select') }}
                 </n-button>
               </template>
             </n-list-item>
@@ -87,7 +87,7 @@
 
       <n-empty
         v-else-if="searched && searchResults.length === 0"
-        description="未找到匹配的模型"
+        :description="t('modelPresets.noResults')"
         size="small"
       />
     </n-space>
@@ -118,7 +118,7 @@ const emit = defineEmits<{
   select: [result: ModelPresetSearchResult];
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const message = useMessage();
 const searchQuery = ref('');
 const searchResults = ref<ModelPresetSearchResult[]>([]);
@@ -138,7 +138,7 @@ async function loadStats() {
 
 async function handleSearch() {
   if (!searchQuery.value.trim()) {
-    message.warning('请输入搜索关键词');
+    message.warning(t('modelPresets.searchPrompt'));
     return;
   }
 
@@ -149,10 +149,10 @@ async function handleSearch() {
     searchResults.value = response.results;
     
     if (response.results.length === 0) {
-      message.info('未找到匹配的模型');
+      message.info(t('modelPresets.noResults'));
     }
   } catch (error: any) {
-    message.error(error.message || '搜索失败');
+    message.error(error.message || t('modelPresets.searchFailed'));
     searchResults.value = [];
   } finally {
     searching.value = false;
@@ -170,7 +170,7 @@ async function handleUpdate() {
       message.error(result.message);
     }
   } catch (error: any) {
-    message.error(error.message || '更新失败');
+    message.error(error.message || t('modelPresets.updateFailed'));
   } finally {
     updating.value = false;
   }
@@ -181,9 +181,9 @@ function handleSelect(result: ModelPresetSearchResult) {
 }
 
 function formatTime(timestamp: number): string {
-  if (!timestamp) return '未知';
+  if (!timestamp) return t('modelPresets.unknownTime');
   const date = new Date(timestamp);
-  return date.toLocaleString('zh-CN');
+  return date.toLocaleString(locale.value);
 }
 
 function formatNumber(num: number): string {

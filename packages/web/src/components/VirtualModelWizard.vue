@@ -24,14 +24,14 @@
             </n-radio>
             <n-radio value="hash">
               <div class="config-type-option">
-                <div class="option-title">一致性哈希</div>
-                <div class="option-description">基于虚拟密钥或请求特征哈希，相同来源总是路由到相同provider，最大化缓存命中率</div>
+                <div class="option-title">{{ t('virtualModels.typeHash') }}</div>
+                <div class="option-description">{{ t('wizard.hashOptionDesc') }}</div>
               </div>
             </n-radio>
             <n-radio value="affinity">
               <div class="config-type-option">
-                <div class="option-title">时间窗口亲和</div>
-                <div class="option-description">基于显式session标识，在TTL时间内同一session路由到同一provider</div>
+                <div class="option-title">{{ t('virtualModels.typeAffinity') }}</div>
+                <div class="option-description">{{ t('wizard.affinityOptionDesc') }}</div>
               </div>
             </n-radio>
           </n-space>
@@ -55,26 +55,26 @@
             />
           </n-form-item>
 
-          <n-form-item v-if="localConfigType === 'hash'" label="哈希源">
+          <n-form-item v-if="localConfigType === 'hash'" :label="t('wizard.hashSource')">
             <n-radio-group v-model:value="localFormValue.hashSource">
               <n-space vertical :size="8">
                 <n-radio value="virtualKey">
                   <div class="config-type-option">
-                    <div class="option-title" style="font-size: 13px;">虚拟密钥</div>
-                    <div class="option-description" style="font-size: 11px;">相同API Key的请求总是路由到同一provider</div>
+                    <div class="option-title" style="font-size: 13px;">{{ t('wizard.virtualKeyOption') }}</div>
+                    <div class="option-description" style="font-size: 11px;">{{ t('wizard.virtualKeyOptionDesc') }}</div>
                   </div>
                 </n-radio>
                 <n-radio value="request">
                   <div class="config-type-option">
-                    <div class="option-title" style="font-size: 13px;">请求内容</div>
-                    <div class="option-description" style="font-size: 11px;">相同请求内容路由到同一provider（更细粒度）</div>
+                    <div class="option-title" style="font-size: 13px;">{{ t('wizard.requestOption') }}</div>
+                    <div class="option-description" style="font-size: 11px;">{{ t('wizard.requestOptionDesc') }}</div>
                   </div>
                 </n-radio>
               </n-space>
             </n-radio-group>
           </n-form-item>
 
-          <n-form-item v-if="localConfigType === 'affinity'" label="亲和性持续时间（秒）">
+          <n-form-item v-if="localConfigType === 'affinity'" :label="t('wizard.affinityDuration')">
             <n-input-number
               v-model:value="localFormValue.affinityTTLSeconds"
               :min="10"
@@ -84,11 +84,11 @@
               style="width: 100%"
             >
               <template #suffix>
-                秒
+                {{ t('wizard.seconds') }}
               </template>
             </n-input-number>
             <div style="font-size: 11px; color: #8c8c8c; margin-top: 4px;">
-              携带相同session标识的请求在TTL时间内将使用同一provider（默认300秒/5分钟）
+              {{ t('wizard.affinityDurationHint') }}
             </div>
           </n-form-item>
         </n-form>
@@ -99,10 +99,10 @@
           <div style="font-size: 13px;">{{ t('wizard.fallbackPriorityTip') }}</div>
         </n-alert>
         <n-alert v-if="localConfigType === 'hash'" type="info" style="margin-bottom: 16px;">
-          <div style="font-size: 13px;">Hash模式：权重决定了哈希空间的分配，权重越高，被分配到的概率越大</div>
+          <div style="font-size: 13px;">{{ t('wizard.hashWeightTip') }}</div>
         </n-alert>
         <n-alert v-if="localConfigType === 'affinity'" type="info" style="margin-bottom: 16px;">
-          <div style="font-size: 13px;">Affinity模式：基于显式session标识，相同session在TTL内路由到同一provider；无session则无粘性</div>
+          <div style="font-size: 13px;">{{ t('wizard.affinitySessionTip') }}</div>
         </n-alert>
 
         <n-space vertical :size="12">
@@ -110,7 +110,7 @@
             <template #header>
               <n-space justify="space-between" align="center">
                 <span class="target-title">
-                  {{ localConfigType === 'loadbalance' ? `目标 ${index + 1}` : `优先级 ${index + 1}` }}
+                  {{ localConfigType === 'loadbalance' ? t('wizard.targetIndex', { index: index + 1 }) : t('wizard.priorityIndex', { index: index + 1 }) }}
                 </span>
                 <n-space :size="4">
                   <n-button
@@ -146,27 +146,27 @@
 
             <n-space vertical :size="12">
               <div class="form-row">
-                <label class="form-label">提供商</label>
+                <label class="form-label">{{ t('dashboard.providers') }}</label>
                 <n-select
                   v-model:value="target.providerId"
                   :options="providerOptions"
-                  placeholder="选择提供商"
+                  :placeholder="t('models.selectProvider')"
                   size="small"
                   @update:value="() => target.modelName = ''"
                 />
               </div>
               <div class="form-row">
-                <label class="form-label">模型</label>
+                <label class="form-label">{{ t('apiRequests.model') }}</label>
                 <n-select
                   v-model:value="target.modelName"
                   :options="getModelOptionsByProvider(target.providerId)"
-                  placeholder="选择模型"
+                  :placeholder="t('modelPresets.selectModel')"
                   size="small"
                   :disabled="!target.providerId"
                 />
               </div>
               <div v-if="['loadbalance', 'hash', 'affinity'].includes(localConfigType)" class="form-row">
-                <label class="form-label">权重</label>
+                <label class="form-label">{{ t('wizard.weight') }}</label>
                 <n-input-number
                   v-model:value="target.weight"
                   :min="0"
@@ -178,12 +178,12 @@
                 />
               </div>
               <div v-if="localConfigType === 'fallback'" class="form-row">
-                <label class="form-label">触发状态码</label>
+                <label class="form-label">{{ t('wizard.triggerStatusCodes') }}</label>
                 <n-select
                   v-model:value="target.onStatusCodes"
                   multiple
                   :options="statusCodeOptions"
-                  placeholder="选择状态码"
+                  :placeholder="t('wizard.selectStatusCodes')"
                   size="small"
                 />
               </div>
@@ -194,7 +194,7 @@
             <template #icon>
               <n-icon><AddOutline /></n-icon>
             </template>
-            添加目标
+            {{ t('wizard.addTarget') }}
           </n-button>
         </n-space>
       </div>
@@ -304,13 +304,13 @@ const stepStatus = computed(() => {
 function nextStep() {
   if (currentStep.value === 1) {
     if (!localConfigType.value) {
-      message.error('请选择配置类型');
+      message.error(t('wizard.selectConfigType'));
       return;
     }
   } else if (currentStep.value === 2) {
     basicFormRef.value?.validate((errors: any) => {
       if (errors) {
-        message.error('请完善基本信息');
+        message.error(t('wizard.completeBasicInfo'));
         return;
       }
       localFormValue.value.name = localFormValue.value.virtualModelName;

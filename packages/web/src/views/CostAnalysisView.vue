@@ -187,7 +187,7 @@
         <n-form-item :label="t('costAnalysis.targetModel')" path="target_model">
           <model-preset-selector @select="handleModelSelect" />
           <template #feedback v-if="formModel.target_model">
-            已选择: {{ formModel.target_model }}
+            {{ t('costAnalysis.selected', { model: formModel.target_model }) }}
           </template>
         </n-form-item>
 

@@ -66,7 +66,7 @@
     >
       {{ t("operationsMonitoring.coverage.gapWarning") }}
       <template v-if="coverage.gaps.length > 0">
-        （{{ coverage.gaps.length }} 段）
+        {{ t("operationsMonitoring.coverage.gapCount", { count: coverage.gaps.length }) }}
       </template>
       <div class="coverage-detail">
         {{ t("operationsMonitoring.coverage.detailSince") }}
@@ -1141,7 +1141,7 @@ function dimensionPaginationFor(dim: OpsDimension): PaginationProps {
     itemCount: state.total,
     pageSizes: [10, 20, 50, 100],
     showSizePicker: true,
-    prefix: (info) => `共 ${info.itemCount ?? 0} 条`,
+    prefix: (info) => t("common.totalCount", { count: info.itemCount ?? 0 }),
     onChange: (page: number) => {
       state.page = page;
       state.loadedSig = null;

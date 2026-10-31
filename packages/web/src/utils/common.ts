@@ -1,4 +1,5 @@
 import { useMessage } from 'naive-ui';
+import i18n from '@/i18n';
 
 export function formatJson(data: any): string {
   try {
@@ -14,12 +15,13 @@ export function formatJson(data: any): string {
 export function copyToClipboard(text: string): Promise<void> {
   const message = useMessage();
   
+  const t = i18n.global.t;
   return navigator.clipboard.writeText(text)
     .then(() => {
-      message.success('已复制到剪贴板');
+      message.success(t('messages.copied'));
     })
     .catch(() => {
-      message.error('复制失败');
+      message.error(t('messages.copyFailed'));
     });
 }
 

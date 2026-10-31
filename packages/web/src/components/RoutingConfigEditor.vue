@@ -3,18 +3,18 @@
     <div class="editor-layout">
       <div class="editor-sidebar">
         <div class="sidebar-section">
-          <div class="section-title">基础配置</div>
-          <n-form-item label="路由名称" :show-feedback="false" class="mb-4">
+          <div class="section-title">{{ t('wizard.basicConfig') }}</div>
+          <n-form-item :label="t('wizard.routeName')" :show-feedback="false" class="mb-4">
             <n-input 
               v-model:value="localFormValue.virtualModelName" 
-              placeholder="例如: GPT-4-Failover" 
+              :placeholder="t('wizard.routeNamePlaceholder')" 
             />
           </n-form-item>
-          <n-form-item label="描述 (可选)" :show-feedback="false">
+          <n-form-item :label="t('wizard.descriptionOptional')" :show-feedback="false">
             <n-input 
               v-model:value="localFormValue.description" 
               type="textarea" 
-              placeholder="简要描述路由策略..." 
+              :placeholder="t('wizard.strategyPlaceholder')" 
               :rows="2"
             />
           </n-form-item>
@@ -23,7 +23,7 @@
         <n-divider class="my-4" />
 
         <div class="sidebar-section">
-          <div class="section-title">路由策略</div>
+          <div class="section-title">{{ t('wizard.routingStrategy') }}</div>
           <n-radio-group v-model:value="localConfigType" class="strategy-selector">
             <n-grid :cols="1" :y-gap="8">
               <n-grid-item v-for="type in strategyTypes" :key="type.value">
@@ -45,14 +45,14 @@
         </div>
 
         <div v-if="localConfigType === 'hash' || localConfigType === 'affinity'" class="sidebar-section advanced-params">
-          <div class="section-title">高级参数</div>
-          <n-form-item v-if="localConfigType === 'hash'" label="哈希源">
+          <div class="section-title">{{ t('wizard.advancedParams') }}</div>
+          <n-form-item v-if="localConfigType === 'hash'" :label="t('wizard.hashSource')">
             <n-select 
               v-model:value="localFormValue.hashSource" 
-              :options="[{ label: '虚拟密钥 (Virtual Key)', value: 'virtualKey' }, { label: '请求内容 (Request)', value: 'request' }]"
+              :options="hashSourceOptions"
             />
           </n-form-item>
-          <n-form-item v-if="localConfigType === 'affinity'" label="亲和保持时间 (秒)">
+          <n-form-item v-if="localConfigType === 'affinity'" :label="t('wizard.affinityHoldSeconds')">
             <n-input-number v-model:value="localFormValue.affinityTTLSeconds" :min="1" />
           </n-form-item>
         </div>
@@ -62,11 +62,11 @@
         <div class="main-header">
           <div class="header-left">
             <n-tag :type="currentStrategyInfo.tagType" size="small" round :bordered="false">
-              {{ currentStrategyInfo.label }}模式
+              {{ t('wizard.strategyMode', { label: currentStrategyInfo.label }) }}
             </n-tag>
             
             <div class="header-tip-group" v-if="localConfigType === 'loadbalance'">
-              <span class="header-tip">总权重:</span>
+              <span class="header-tip">{{ t('wizard.totalWeight') }}:</span>
               <div class="weight-progress-bar">
                 <div 
                   class="weight-progress-fill" 
@@ -81,29 +81,29 @@
 
             <span class="header-tip flex-center" v-if="localConfigType === 'fallback'">
               <n-icon :component="InformationCircleOutline" class="mr-1 icon-small" />
-              请求将按列表顺序尝试，直到成功
+              {{ t('wizard.fallbackTryOrder') }}
             </span>
 
             <span class="header-tip flex-center" v-if="localConfigType === 'hash'">
               <n-icon :component="InformationCircleOutline" class="mr-1 icon-small" />
-              根据 {{ localFormValue.hashSource === 'request' ? '请求内容' : '虚拟密钥' }} 映射到固定目标
+              {{ t('wizard.hashMappedTo', { source: localFormValue.hashSource === 'request' ? t('wizard.requestOption') : t('wizard.virtualKeyOption') }) }}
             </span>
 
             <span class="header-tip flex-center" v-if="localConfigType === 'affinity'">
               <n-icon :component="InformationCircleOutline" class="mr-1 icon-small" />
-              携带相同 session 标识的请求将在 {{ localFormValue.affinityTTLSeconds || 300 }}秒 内保持在同一目标
+              {{ t('wizard.affinitySessionHold', { seconds: localFormValue.affinityTTLSeconds || 300 }) }}
             </span>
           </div>
           <n-button size="small" type="primary" dashed @click="addTarget">
             <template #icon><n-icon :component="Add" /></template>
-            添加目标
+            {{ t('wizard.addTarget') }}
           </n-button>
         </div>
 
         <div class="targets-container">
-          <n-empty v-if="localFormValue.targets.length === 0" description="暂无路由目标" class="mt-8">
+          <n-empty v-if="localFormValue.targets.length === 0" :description="t('wizard.noRouteTargets')" class="mt-8">
             <template #extra>
-              <n-button size="small" type="primary" @click="addTarget">添加第一个目标</n-button>
+              <n-button size="small" type="primary" @click="addTarget">{{ t('wizard.addFirstTarget') }}</n-button>
             </template>
           </n-empty>
 
@@ -132,7 +132,7 @@
                     <n-select 
                       v-model:value="target.providerId" 
                       :options="providerOptions" 
-                      placeholder="选择提供商" 
+                      :placeholder="t('models.selectProvider')" 
                       size="small"
                       class="provider-select"
                       @update:value="() => target.modelName = ''"
@@ -140,7 +140,7 @@
                     <n-select 
                       v-model:value="target.modelName" 
                       :options="getModelOptionsByProvider(target.providerId)" 
-                      placeholder="选择模型" 
+                      :placeholder="t('modelPresets.selectModel')" 
                       size="small"
                       class="model-select"
                       :disabled="!target.providerId"
@@ -148,7 +148,7 @@
                   </div>
                   
                   <div v-if="['loadbalance', 'hash', 'affinity'].includes(localConfigType)" class="weight-control">
-                    <span class="label">权重</span>
+                    <span class="label">{{ t('wizard.weight') }}</span>
                     <n-input-number 
                       v-model:value="target.weight" 
                       :min="0" :max="1" :step="0.1" 
@@ -164,12 +164,12 @@
                 </div>
 
                 <div v-if="localConfigType === 'fallback'" class="extra-row">
-                  <span class="label">触发条件:</span>
+                  <span class="label">{{ t('virtualModels.trigger') }}</span>
                   <n-select 
                     v-model:value="target.onStatusCodes" 
                     multiple 
                     :options="statusCodeOptions" 
-                    placeholder="默认: 429, 503 (空则不触发)" 
+                    :placeholder="t('wizard.triggerPlaceholder')" 
                     size="tiny"
                     class="status-select"
                   />
@@ -191,9 +191,9 @@
     </div>
 
     <div class="editor-footer">
-      <n-button @click="$emit('cancel')">取消</n-button>
+      <n-button @click="$emit('cancel')">{{ t('common.cancel') }}</n-button>
       <n-button type="primary" @click="handleSave" :loading="saving" :disabled="!isValid">
-        {{ isEditing ? '保存修改' : '创建路由' }}
+        {{ isEditing ? t('wizard.saveChanges') : t('wizard.createRoute') }}
       </n-button>
     </div>
   </div>
@@ -201,6 +201,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import {
   GitNetworkOutline,
   GitMergeOutline,
@@ -228,6 +229,8 @@ interface StrategyType {
   tagType: 'info' | 'success' | 'warning' | 'error' | 'default' | 'primary';
 }
 
+const { t } = useI18n();
+
 const props = defineProps<{
   configType: RoutingConfigType;
   formValue: VirtualModelFormValue;
@@ -240,36 +243,41 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:configType', 'update:formValue', 'save', 'cancel']);
 
-const strategyTypes: StrategyType[] = [
-  { 
-    label: '负载均衡', 
-    value: 'loadbalance', 
-    desc: '按权重分发流量', 
+const strategyTypes = computed<StrategyType[]>(() => [
+  {
+    label: t('wizard.loadBalanceOption'),
+    value: 'loadbalance',
+    desc: t('wizard.loadBalanceByWeight'),
     icon: GitNetworkOutline,
     tagType: 'info'
   },
-  { 
-    label: '故障转移', 
-    value: 'fallback', 
-    desc: '主备自动切换', 
+  {
+    label: t('wizard.fallbackOption'),
+    value: 'fallback',
+    desc: t('wizard.fallbackSwitch'),
     icon: GitMergeOutline,
     tagType: 'warning'
   },
-  { 
-    label: '一致性哈希', 
-    value: 'hash', 
-    desc: '固定源路由', 
+  {
+    label: t('virtualModels.typeHash'),
+    value: 'hash',
+    desc: t('wizard.hashFixed'),
     icon: KeyOutline,
     tagType: 'success'
   },
-  { 
-    label: '亲和性', 
-    value: 'affinity', 
-    desc: '时间窗口保持', 
+  {
+    label: t('wizard.affinityLabel'),
+    value: 'affinity',
+    desc: t('wizard.affinityWindow'),
     icon: TimeOutline,
     tagType: 'error'
   }
-];
+]);
+
+const hashSourceOptions = computed(() => [
+  { label: t('wizard.hashSourceVirtualKey'), value: 'virtualKey' },
+  { label: t('wizard.hashSourceRequest'), value: 'request' },
+]);
 
 const localConfigType = computed({
   get: () => props.configType,
@@ -295,7 +303,7 @@ const { addTarget, removeTarget, moveTargetUp, moveTargetDown, getTotalWeight } 
 });
 
 const currentStrategyInfo = computed(() =>
-  strategyTypes.find(s => s.value === localConfigType.value) || strategyTypes[0]
+  strategyTypes.value.find(s => s.value === localConfigType.value) || strategyTypes.value[0]
 );
 
 const totalWeight = computed(() => getTotalWeight());

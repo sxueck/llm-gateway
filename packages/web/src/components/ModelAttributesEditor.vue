@@ -36,7 +36,7 @@
                 v-model:value="localAttributes[attr.key] as number | null"
                 :min="attr.min"
                 :step="attr.step"
-                :placeholder="`请输入${attr.label}`"
+                :placeholder="t('modelAttributes.enterValue', { label: attr.labelKey ? t(attr.labelKey) : attr.label })"
                 size="small"
                 clearable
                 style="width: 100%"
@@ -50,9 +50,9 @@
         </n-space>
       </n-collapse-item>
 
-      <n-collapse-item name="advanced" title="高级属性">
+      <n-collapse-item name="advanced" :title="t('modelAttributes.advanced')">
         <n-space vertical :size="8">
-          <n-text depth="3" style="font-size: 12px;">自定义请求头 (Headers)</n-text>
+          <n-text depth="3" style="font-size: 12px;">{{ t('modelAttributes.customHeaders') }}</n-text>
           <n-input
             v-model:value="headersText"
             type="textarea"
@@ -61,7 +61,7 @@
             size="small"
           />
           <n-text depth="3" style="font-size: 11px; color: #999;">
-            每行一个请求头，格式: Key: Value
+            {{ t('modelAttributes.headersFormat') }}
           </n-text>
         </n-space>
       </n-collapse-item>

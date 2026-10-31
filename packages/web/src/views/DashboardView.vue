@@ -27,7 +27,7 @@
       </PageHeader>
 
       <n-alert v-if="stats?.legacyTokenSemantics || (isTokenCardFlipped && statsAllTime?.legacyTokenSemantics)" type="warning" :show-icon="true">
-        历史汇总中存在旧版缓存命中 Token 口径；相关统计可能偏高，已清理的明细无法精确回算。
+        {{ t('dashboard.legacyTokenWarning') }}
       </n-alert>
 
       <n-grid class="dashboard-primary" :cols="gridCols" :x-gap="gridGap" :y-gap="gridGap">
@@ -47,14 +47,14 @@
                 </div>
                 <div class="stat-details">
                   <span class="stat-detail-item">
-                    <span class="stat-detail-label">输入:</span>
+                    <span class="stat-detail-label">{{ t('dashboard.input') }}:</span>
                     <span class="stat-detail-value">
                       <n-skeleton v-if="loading" text style="width: 40px" />
                       <span v-else>{{ formatTokenNumber(promptTokens) }}</span>
                     </span>
                   </span>
                   <span class="stat-detail-item">
-                    <span class="stat-detail-label">输出:</span>
+                    <span class="stat-detail-label">{{ t('dashboard.output') }}:</span>
                     <span class="stat-detail-value">
                       <n-skeleton v-if="loading" text style="width: 40px" />
                       <span v-else>{{ formatTokenNumber(completionTokens) }}</span>
@@ -66,7 +66,7 @@
             <n-card v-else class="stat-card stat-card-primary">
               <div class="stat-content">
                 <div class="stat-header">
-                  历史总消耗
+                  {{ t('dashboard.allTimeConsumption') }}
                   <n-icon size="14" class="flip-icon"><RefreshOutline /></n-icon>
                 </div>
                 <div class="stat-main-value">
@@ -74,13 +74,13 @@
                 </div>
                 <div class="stat-details">
                   <span class="stat-detail-item">
-                    <span class="stat-detail-label">输入:</span>
+                    <span class="stat-detail-label">{{ t('dashboard.input') }}:</span>
                     <span class="stat-detail-value">
                       {{ formatTokenNumber(statsAllTime?.promptTokens || 0) }}
                     </span>
                   </span>
                   <span class="stat-detail-item">
-                    <span class="stat-detail-label">输出:</span>
+                    <span class="stat-detail-label">{{ t('dashboard.output') }}:</span>
                     <span class="stat-detail-value">
                       {{ formatTokenNumber(statsAllTime?.completionTokens || 0) }}
                     </span>
@@ -102,14 +102,14 @@
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item stat-detail-success">
-                  <span class="stat-detail-label">成功:</span>
+                  <span class="stat-detail-label">{{ t('common.success') }}:</span>
                   <span class="stat-detail-value">
                     <n-skeleton v-if="loading" text style="width: 30px" />
                     <span v-else>{{ formatNumber(stats?.successfulRequests || 0) }}</span>
                   </span>
                 </span>
                 <span class="stat-detail-item stat-detail-error">
-                  <span class="stat-detail-label">失败:</span>
+                  <span class="stat-detail-label">{{ t('common.failed') }}:</span>
                   <span class="stat-detail-value">
                     <n-skeleton v-if="loading" text style="width: 30px" />
                     <span v-else>{{ formatNumber(stats?.failedRequests || 0) }}</span>
@@ -172,21 +172,21 @@
           <n-card class="trend-card">
             <template #header>
               <n-space justify="space-between" align="center" class="trend-header">
-                <span>请求趋势</span>
+                <span>{{ t('dashboard.requestTrend') }}</span>
                 <n-space :size="8" class="trend-buttons">
                   <n-button
                     :type="chartMetric === 'requests' ? 'primary' : 'default'"
                     size="small"
                     @click="chartMetric = 'requests'"
                   >
-                    请求数
+                    {{ t('dashboard.requestCount') }}
                   </n-button>
                   <n-button
                     :type="chartMetric === 'tokens' ? 'primary' : 'default'"
                     size="small"
                     @click="chartMetric = 'tokens'"
                   >
-                    Token 消耗
+                    {{ t('dashboard.tokenConsumption') }}
                   </n-button>
                 </n-space>
               </n-space>
@@ -195,37 +195,37 @@
               <n-spin size="large" />
             </div>
             <div v-else-if="loadError" class="trend-error">
-              <n-result status="error" :title="loadError" description="请稍后重试">
+              <n-result status="error" :title="loadError" :description="t('dashboard.retryLater')">
                 <template #footer>
-                  <n-button @click="() => loadStats()">重新加载</n-button>
+                  <n-button @click="() => loadStats()">{{ t('dashboard.reload') }}</n-button>
                 </template>
               </n-result>
             </div>
             <div v-else-if="trendData.length > 0" class="trend-chart-container">
               <v-chart :option="chartOption" :autoresize="true" class="trend-chart" />
             </div>
-            <n-empty v-else description="暂无数据" :show-icon="false" />
+            <n-empty v-else :description="t('common.noData')" :show-icon="false" />
           </n-card>
         </n-gi>
         <n-gi>
           <n-card class="trend-card">
             <template #header>
               <n-space justify="space-between" align="center" class="trend-header">
-                <span>模型 Token 占比</span>
+                <span>{{ t('dashboard.modelShare') }}</span>
                 <n-space :size="8" class="trend-buttons">
                   <n-button
                     :type="chartMetric === 'requests' ? 'primary' : 'default'"
                     size="small"
                     @click="chartMetric = 'requests'"
                   >
-                    请求数
+                    {{ t('dashboard.requestCount') }}
                   </n-button>
                   <n-button
                     :type="chartMetric === 'tokens' ? 'primary' : 'default'"
                     size="small"
                     @click="chartMetric = 'tokens'"
                   >
-                    Token
+                    {{ t('dashboard.tokenMetric') }}
                   </n-button>
                 </n-space>
               </n-space>
@@ -236,7 +236,7 @@
             <div v-else-if="modelStats.length > 0" class="trend-chart-container">
               <v-chart :option="modelDistributionOption" :autoresize="true" class="trend-chart" />
             </div>
-            <n-empty v-else description="暂无数据" :show-icon="false" />
+            <n-empty v-else :description="t('common.noData')" :show-icon="false" />
           </n-card>
         </n-gi>
       </n-grid>
@@ -245,7 +245,7 @@
         <n-gi class="stagger-item" style="--delay: 200ms">
           <n-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-header">缓存 Tokens</div>
+              <div class="stat-header">{{ t('dashboard.cachedTokens') }}</div>
               <div class="stat-main-value">
                 <Transition name="stat-value" mode="out-in">
                   <n-skeleton v-if="loading" key="loading" text style="width: 60%; height: 42px" :sharp="false" />
@@ -254,14 +254,14 @@
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">缓存命中:</span>
+                  <span class="stat-detail-label">{{ t('dashboard.cacheHits') }}:</span>
                   <span class="stat-detail-value">
                     <n-skeleton v-if="loading" text style="width: 40px" />
                     <span v-else>{{ formatNumber(stats?.promptCacheHits || 0) }}</span>
                   </span>
                 </span>
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">命中率:</span>
+                  <span class="stat-detail-label">{{ t('dashboard.hitRate') }}:</span>
                   <span class="stat-detail-value">
                     <n-skeleton v-if="loading" text style="width: 30px" />
                     <span v-else>{{ formatPercentage(cacheHitRate) }}%</span>
@@ -274,7 +274,7 @@
         <n-gi class="stagger-item" style="--delay: 250ms">
           <n-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-header">平均效率</div>
+              <div class="stat-header">{{ t('dashboard.avgEfficiency') }}</div>
               <div class="stat-main-value">
                 <Transition name="stat-value" mode="out-in">
                   <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
@@ -286,14 +286,14 @@
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">输入:</span>
+                  <span class="stat-detail-label">{{ t('dashboard.input') }}:</span>
                   <span class="stat-detail-value">
                     <n-skeleton v-if="loading" text style="width: 30px" />
                     <span v-else>{{ formatNumber(avgInputTokens) }}</span>
                   </span>
                 </span>
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">输出:</span>
+                  <span class="stat-detail-label">{{ t('dashboard.output') }}:</span>
                   <span class="stat-detail-value">
                     <n-skeleton v-if="loading" text style="width: 30px" />
                     <span v-else>{{ formatNumber(avgOutputTokens) }}</span>
@@ -336,7 +336,7 @@
         <n-gi class="stagger-item" style="--delay: 350ms">
           <n-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-header">热门模型</div>
+              <div class="stat-header">{{ t('dashboard.popularModel') }}</div>
               <div class="stat-main-value top-model-name">
                 <Transition name="stat-value" mode="out-in">
                   <n-skeleton v-if="loading" key="loading" text style="width: 70%; height: 24px" :sharp="false" />
@@ -349,14 +349,14 @@
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">请求:</span>
+                  <span class="stat-detail-label">{{ t('dashboard.requests') }}:</span>
                   <span class="stat-detail-value">
                     <n-skeleton v-if="loading" text style="width: 30px" />
                     <span v-else>{{ formatNumber(topModelRequests) }}</span>
                   </span>
                 </span>
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">Token:</span>
+                  <span class="stat-detail-label">{{ t('dashboard.tokenMetric') }}:</span>
                   <span class="stat-detail-value">
                     <n-skeleton v-if="loading" text style="width: 40px" />
                     <span v-else>{{ formatTokenNumber(topModelTokens) }}</span>
@@ -369,7 +369,7 @@
         <n-gi class="stagger-item" style="--delay: 400ms">
           <n-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-header">PII 保护次数</div>
+              <div class="stat-header">{{ t('dashboard.piiProtections') }}</div>
               <div class="stat-main-value">
                 <Transition name="stat-value" mode="out-in">
                   <n-skeleton v-if="loading" key="loading" text style="width: 40%; height: 42px" :sharp="false" />
@@ -378,7 +378,7 @@
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">安全拦截次数:</span>
+                  <span class="stat-detail-label">{{ t('dashboard.securityBlocks') }}:</span>
                   <span class="stat-detail-value">
                     <n-skeleton v-if="loading" text style="width: 40px" />
                     <span v-else>{{ formatNumber(ipsumBlockedCount) }}</span>
@@ -391,7 +391,7 @@
         <n-gi class="stagger-item" style="--delay: 450ms">
           <n-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-header">成本分析</div>
+              <div class="stat-header">{{ t('dashboard.costAnalysis') }}</div>
               <div class="stat-main-value">
                 <Transition name="stat-value" mode="out-in">
                   <n-skeleton v-if="loading" key="loading" text style="width: 60%; height: 42px" :sharp="false" />
@@ -403,10 +403,10 @@
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">计费模型:</span>
+                  <span class="stat-detail-label">{{ t('dashboard.billedModels') }}:</span>
                   <span class="stat-detail-value">
                     <n-skeleton v-if="loading" text style="width: 30px" />
-                    <span v-else>{{ costStats?.modelCosts?.length || 0 }} 个</span>
+                    <span v-else>{{ t('dashboard.itemCount', { count: costStats?.modelCosts?.length || 0 }) }}</span>
                   </span>
                 </span>
               </div>
@@ -416,7 +416,7 @@
         <n-gi class="stagger-item" style="--delay: 500ms">
           <n-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-header">数据库状态</div>
+              <div class="stat-header">{{ t('dashboard.dbStatus') }}</div>
               <div class="stat-main-value">
                 <Transition name="stat-value" mode="out-in">
                   <n-skeleton v-if="loading" key="loading" text style="width: 50%; height: 42px" :sharp="false" />
@@ -428,11 +428,11 @@
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">状态:</span>
-                  <span class="stat-detail-value" style="color: var(--color-primary)">正常</span>
+                  <span class="stat-detail-label">{{ t('common.status') }}:</span>
+                  <span class="stat-detail-value" style="color: var(--color-primary)">{{ t('dashboard.healthy') }}</span>
                 </span>
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">运行时长:</span>
+                  <span class="stat-detail-label">{{ t('dashboard.uptime') }}:</span>
                   <span class="stat-detail-value">
                     <n-skeleton v-if="loading" text style="width: 60px" />
                     <span v-else>{{ formatUptime(stats?.dbUptime || 0) }}</span>
@@ -445,7 +445,7 @@
         <n-gi class="stagger-item" style="--delay: 550ms">
           <n-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-header">熔断器触发次数</div>
+              <div class="stat-header">{{ t('dashboard.circuitBreakerTriggers') }}</div>
               <div
                 class="stat-main-value"
                 :class="{ 'stat-value-error': (circuitBreakerStats?.totalTriggers || 0) > 0 }"
@@ -457,7 +457,7 @@
               </div>
               <div class="stat-details">
                 <span class="stat-detail-item">
-                  <span class="stat-detail-label">触发最多:</span>
+                  <span class="stat-detail-label">{{ t('dashboard.mostTriggered') }}:</span>
                   <span
                     class="stat-detail-value"
                     :title="circuitBreakerStats?.maxTriggeredProvider"
@@ -474,19 +474,19 @@
         </n-gi>
       </n-grid>
 
-      <n-card class="overview-card dashboard-overview" title="系统概览">
+      <n-card class="overview-card dashboard-overview" :title="t('dashboard.systemOverview')">
         <div class="overview-grid">
           <div class="overview-item">
-            <span class="overview-label">提供商</span>
-            <span class="overview-value">{{ providerStore.providers.length }} 个</span>
+            <span class="overview-label">{{ t('dashboard.providers') }}</span>
+            <span class="overview-value">{{ t('dashboard.itemCount', { count: providerStore.providers.length }) }}</span>
           </div>
           <div class="overview-item">
-            <span class="overview-label">虚拟密钥</span>
-            <span class="overview-value">{{ virtualKeyStore.virtualKeys.length }} 个</span>
+            <span class="overview-label">{{ t('dashboard.virtualKeys') }}</span>
+            <span class="overview-value">{{ t('dashboard.itemCount', { count: virtualKeyStore.virtualKeys.length }) }}</span>
           </div>
           <div class="overview-item">
-            <span class="overview-label">启用的密钥</span>
-            <span class="overview-value">{{ enabledKeysCount }} 个</span>
+            <span class="overview-label">{{ t('common.enabledKeys') }}</span>
+            <span class="overview-value">{{ t('dashboard.itemCount', { count: enabledKeysCount }) }}</span>
           </div>
         </div>
       </n-card>
@@ -578,7 +578,7 @@ async function toggleTokenCard() {
       }
     } catch (e) {
       console.error('Failed to load all-time stats', e)
-      message.error('加载历史总消耗失败')
+      message.error(t('dashboard.allTimeLoadFailed'))
     }
   }
 }
@@ -825,8 +825,8 @@ const chartOption = computed(() => {
         params.forEach((param: any) => {
           const value =
             chartMetric.value === 'requests'
-              ? `${formatNumber(param.value)} 次`
-              : `${formatTokenNumber(param.value)} tokens`
+              ? t('dashboard.timesValue', { value: formatNumber(param.value) })
+              : t('dashboard.tokensValue', { value: formatTokenNumber(param.value) })
           result += `<div style="display: flex; align-items: center; margin: ${itemMargin}px 0;">
             <span style="display: inline-block; width: ${isMobile ? 10 : 12}px; height: ${isMobile ? 10 : 12}px; border-radius: 3px; background-color: ${param.color}; margin-right: ${isMobile ? 8 : 10}px;"></span>
             <span style="flex: 1; color: #4b5563; font-size: ${itemFontSize}px;">${param.seriesName}</span>
@@ -974,7 +974,7 @@ const modelDistributionOption = computed(() => {
     },
     series: [
       {
-        name: chartMetric.value === 'requests' ? '请求数' : 'Token 消耗',
+        name: chartMetric.value === 'requests' ? t('dashboard.requestCount') : t('dashboard.tokenConsumption'),
         type: 'pie',
         radius: ['40%', '60%'],
         center: ['50%', '40%'],
@@ -1036,7 +1036,7 @@ async function loadStats(opts: { silent?: boolean } = {}) {
     const result = await configApi.getStats(selectedPeriod.value, chartMetric.value)
 
     if (!result || !result.stats) {
-      throw new Error('获取统计数据失败')
+      throw new Error(t('dashboard.statsFetchFailed'))
     }
 
     stats.value = result.stats
@@ -1051,7 +1051,7 @@ async function loadStats(opts: { silent?: boolean } = {}) {
     threatIpStats.value = result.threatIpStats || null
     piiProtectionCount.value = result.piiProtectionCount || 0
   } catch (error: any) {
-    const errorMsg = error.message || '加载数据失败'
+    const errorMsg = error.message || t('dashboard.dataLoadFailed')
     loadError.value = errorMsg
     if (!opts.silent) {
       message.error(errorMsg)

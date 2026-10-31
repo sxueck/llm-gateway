@@ -1,3 +1,4 @@
+import i18n from '@/i18n';
 import type { Provider } from '@/types';
 
 export interface ProviderExportData {
@@ -50,44 +51,45 @@ export function validateImportData(data: any): {
 } {
   const errors: string[] = [];
   const warnings: string[] = [];
+  const t = i18n.global.t;
 
   if (!data || typeof data !== 'object') {
-    errors.push('无效的配置文件格式');
+    errors.push(t('providers.importInvalidFormat'));
     return { isValid: false, errors, warnings };
   }
 
   if (!data.version) {
-    warnings.push('配置文件缺少版本信息');
+    warnings.push(t('providers.importMissingVersion'));
   }
 
   if (!Array.isArray(data.providers)) {
-    errors.push('配置文件中缺少有效的提供商列表');
+    errors.push(t('providers.importMissingProviders'));
     return { isValid: false, errors, warnings };
   }
 
   data.providers.forEach((provider: any, index: number) => {
-    const prefix = `提供商 ${index + 1}`;
+    const prefix = t('providers.importProviderPrefix', { index: index + 1 });
 
     if (!provider.id || typeof provider.id !== 'string') {
-      errors.push(`${prefix}: 缺少有效的 ID`);
+      errors.push(t('providers.importMissingId', { prefix }));
     }
 
     if (!provider.name || typeof provider.name !== 'string') {
-      errors.push(`${prefix}: 缺少有效的名称`);
+      errors.push(t('providers.importMissingName', { prefix }));
     }
 
     if (!provider.baseUrl || typeof provider.baseUrl !== 'string') {
-      errors.push(`${prefix}: 缺少有效的 Base URL`);
+      errors.push(t('providers.importMissingBaseUrl', { prefix }));
     } else {
       try {
         new URL(provider.baseUrl);
       } catch {
-        errors.push(`${prefix}: Base URL 格式无效`);
+        errors.push(t('providers.importInvalidBaseUrl', { prefix }));
       }
     }
 
     if (typeof provider.enabled !== 'boolean') {
-      warnings.push(`${prefix}: 启用状态不是布尔值，将使用默认值`);
+      warnings.push(t('providers.importEnabledFallback', { prefix }));
     }
   });
 
@@ -120,7 +122,7 @@ export function parseImportFile(file: File): Promise<{
           data: null,
           validation: {
             isValid: false,
-            errors: ['配置文件格式错误，请确保是有效的 JSON 文件'],
+            errors: [i18n.global.t('providers.importInvalidJson')],
             warnings: [],
           },
         });
@@ -132,7 +134,7 @@ export function parseImportFile(file: File): Promise<{
         data: null,
         validation: {
           isValid: false,
-          errors: ['文件读取失败'],
+          errors: [i18n.global.t('providers.importReadFailed')],
           warnings: [],
         },
       });

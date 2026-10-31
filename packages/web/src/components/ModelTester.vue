@@ -43,19 +43,19 @@
                     size="small"
                     round
                   >
-                    {{ testResult.chat.success ? '成功' : '失败' }}
+                    {{ testResult.chat.success ? t('common.success') : t('common.failed') }}
                   </n-tag>
                 </n-space>
               </n-divider>
 
               <n-space vertical :size="12">
                 <n-descriptions :column="2" size="small" bordered>
-                  <n-descriptions-item label="响应时间">
+                  <n-descriptions-item :label="t('common.responseTime')">
                     <n-text :type="getResponseTimeType(testResult.chat.responseTime)">
                       {{ testResult.chat.responseTime }}ms
                     </n-text>
                   </n-descriptions-item>
-                  <n-descriptions-item label="状态码" v-if="testResult.chat.status">
+                  <n-descriptions-item :label="t('apiRequests.statusCode')" v-if="testResult.chat.status">
                     <n-tag :type="testResult.chat.status < 400 ? 'success' : 'error'" size="small">
                       {{ testResult.chat.status }}
                     </n-tag>
@@ -69,13 +69,13 @@
                   
                   <div v-if="testResult.chat.response.usage" class="usage-info">
                     <n-descriptions :column="3" size="small" style="margin-top: 8px;">
-                      <n-descriptions-item label="输入 Tokens">
+                      <n-descriptions-item :label="t('apiRequests.inputTokens')">
                         {{ getInputTokens(testResult.chat.response.usage) }}
                       </n-descriptions-item>
-                      <n-descriptions-item label="输出 Tokens">
+                      <n-descriptions-item :label="t('apiRequests.outputTokens')">
                         {{ getOutputTokens(testResult.chat.response.usage) }}
                       </n-descriptions-item>
-                      <n-descriptions-item label="总计 Tokens">
+                      <n-descriptions-item :label="t('models.totalTokens')">
                         {{ getTotalTokens(testResult.chat.response.usage) }}
                       </n-descriptions-item>
                     </n-descriptions>
@@ -99,19 +99,19 @@
                     size="small"
                     round
                   >
-                    {{ testResult.responses.success ? '成功' : '失败' }}
+                    {{ testResult.responses.success ? t('common.success') : t('common.failed') }}
                   </n-tag>
                 </n-space>
               </n-divider>
 
               <n-space vertical :size="12">
                 <n-descriptions :column="2" size="small" bordered>
-                  <n-descriptions-item label="响应时间">
+                  <n-descriptions-item :label="t('common.responseTime')">
                     <n-text :type="getResponseTimeType(testResult.responses.responseTime)">
                       {{ testResult.responses.responseTime }}ms
                     </n-text>
                   </n-descriptions-item>
-                  <n-descriptions-item label="状态码" v-if="testResult.responses.status">
+                  <n-descriptions-item :label="t('apiRequests.statusCode')" v-if="testResult.responses.status">
                     <n-tag :type="testResult.responses.status < 400 ? 'success' : 'error'" size="small">
                       {{ testResult.responses.status }}
                     </n-tag>
@@ -125,13 +125,13 @@
                   
                   <div v-if="testResult.responses.response.usage" class="usage-info">
                     <n-descriptions :column="3" size="small" style="margin-top: 8px;">
-                      <n-descriptions-item label="输入 Tokens">
+                      <n-descriptions-item :label="t('apiRequests.inputTokens')">
                         {{ getInputTokens(testResult.responses.response.usage) }}
                       </n-descriptions-item>
-                      <n-descriptions-item label="输出 Tokens">
+                      <n-descriptions-item :label="t('apiRequests.outputTokens')">
                         {{ getOutputTokens(testResult.responses.response.usage) }}
                       </n-descriptions-item>
-                      <n-descriptions-item label="总计 Tokens">
+                      <n-descriptions-item :label="t('models.totalTokens')">
                         {{ getTotalTokens(testResult.responses.response.usage) }}
                       </n-descriptions-item>
                     </n-descriptions>
@@ -246,30 +246,30 @@ async function handleTest() {
 
     if (isAnthropicProtocol()) {
       if (chatSuccess) {
-        message.success('测试成功');
+        message.success(t('models.endpointTestPassed'));
       } else {
-        message.error('测试失败');
+        message.error(t('models.endpointTestFailed'));
       }
     } else {
       if (chatSuccess && responsesSuccess) {
-        message.success('两个接口测试均成功');
+        message.success(t('models.bothPassed'));
       } else if (chatSuccess || responsesSuccess) {
-        message.warning('部分接口测试成功');
+        message.warning(t('models.partialPassed'));
       } else {
-        message.error('两个接口测试均失败');
+        message.error(t('models.bothFailed'));
       }
     }
   } catch (error: any) {
     const testData: TestResult = {
       chat: {
         success: false,
-        message: '请求失败',
+        message: t('messages.requestFailed'),
         responseTime: 0,
         error: error.message,
       },
       responses: {
         success: false,
-        message: '请求失败',
+        message: t('messages.requestFailed'),
         responseTime: 0,
         error: error.message,
       },
@@ -304,7 +304,7 @@ function getChatEndpointName(): string {
   if (protocol === 'anthropic') {
     return 'Messages API (Anthropic)';
   } else if (protocol === 'google') {
-    return 'Gemini 原生 API';
+    return t('models.geminiNative');
   }
   return 'Chat Completions API (OpenAI)';
 }

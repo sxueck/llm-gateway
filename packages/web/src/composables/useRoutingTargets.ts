@@ -1,4 +1,5 @@
 import { ref, readonly, watch, type Ref } from 'vue';
+import i18n from '@/i18n';
 import type { VirtualModelTarget, RoutingConfigType } from '@/types/virtual-model';
 
 export interface UseRoutingTargetsOptions {
@@ -71,16 +72,17 @@ export function useRoutingTargets(options: UseRoutingTargetsOptions) {
   }
 
   function validateTargets(): { valid: boolean; message?: string } {
+    const t = i18n.global.t;
     if (_targets.value.length === 0) {
-      return { valid: false, message: '请至少添加一个目标' };
+      return { valid: false, message: t('wizard.needTarget') };
     }
     const hasEmptyProvider = _targets.value.some(t => !t.providerId);
     if (hasEmptyProvider) {
-      return { valid: false, message: '请为所有目标选择提供商' };
+      return { valid: false, message: t('wizard.needProvider') };
     }
     const hasEmptyModel = _targets.value.some(t => !t.modelName);
     if (hasEmptyModel) {
-      return { valid: false, message: '请为所有目标选择模型' };
+      return { valid: false, message: t('wizard.needModel') };
     }
     return { valid: true };
   }
