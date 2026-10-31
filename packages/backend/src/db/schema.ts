@@ -534,6 +534,37 @@ export async function createTables(connection?: Connection) {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
+    // 封锁桶 = (IP, 用户名)：共享出口 IP（NAT/反代）里一个用户名的失败不能封锁其它账号。
+    // 到期只比较 locked_until 这个绝对时间戳，重启与多副本都不需要后台解锁任务。
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS login_attempt_lockouts (
+        ip VARCHAR(45) NOT NULL COMMENT '客户端 IP（可信代理网段内取 XFF 首项，否则取直连对端）',
+        username VARCHAR(64) NOT NULL COMMENT '登录名规范化（小写、截断 64）；与 ip 组成封锁桶',
+        failed_attempts INT NOT NULL DEFAULT 0 COMMENT '本轮连续失败次数；成功登录或封锁到期后重新计数',
+        first_failed_at BIGINT NOT NULL DEFAULT 0 COMMENT '本轮首次失败时间戳(ms)',
+        last_failed_at BIGINT NOT NULL DEFAULT 0 COMMENT '最近一次失败时间戳(ms)',
+        locked_until BIGINT NOT NULL DEFAULT 0 COMMENT '封锁截止绝对时间戳(ms)，0=未封锁',
+        updated_at BIGINT NOT NULL,
+        PRIMARY KEY (ip, username),
+        INDEX idx_login_attempt_lockouts_last_failed (last_failed_at),
+        INDEX idx_login_attempt_lockouts_locked_until (locked_until)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // 与快照类告警不同：封锁事件是持久化事实，保留期内一直可见，直到该用户已读或被清理。
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS login_lockout_events (
+        id VARCHAR(64) PRIMARY KEY,
+        code VARCHAR(64) NOT NULL UNIQUE COMMENT '每次封锁唯一，alert_reads 按用户记录已读',
+        ip VARCHAR(45) NOT NULL COMMENT '触发封锁的客户端 IP',
+        username VARCHAR(64) NOT NULL DEFAULT '' COMMENT '被封锁的登录名（规范化后）',
+        failed_attempts INT NOT NULL,
+        locked_until BIGINT NOT NULL COMMENT '封锁截止绝对时间戳(ms)',
+        created_at BIGINT NOT NULL,
+        INDEX idx_login_lockout_events_created_at (created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
     // API 请求按天汇总表（支持 7 天外的统计查询，天边界为 Asia/Shanghai 时区）
     // Nullable 维度使用空字符串作为 sentinel 值以满足唯一键约束
     await conn.query(`

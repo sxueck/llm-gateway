@@ -107,7 +107,12 @@
 
 .auth-form :deep(.n-input:focus-within) {
   background: #ffffff;
-  box-shadow: 0 0 0 3px rgba(15, 107, 74, 0.1);
+}
+
+/* focus 光环画在 Naive 子元素上，父级 :focus-within 抑制不到；只限定 auth 页关掉，
+   走全局 themeOverrides 会顺带摸掉后台所有表单的光环。 */
+.auth-form :deep(.n-input.n-input--focus .n-input__state-border) {
+  box-shadow: none;
 }
 
 .input-icon {

@@ -161,3 +161,25 @@ export interface AlertReadRow {
   code: string;
   read_at: number;
 }
+
+export interface LoginAttemptLockoutRow {
+  ip: string;
+  /** 已规范化；与 ip 组成封锁桶 */
+  username: string;
+  failed_attempts: number;
+  first_failed_at: number;
+  last_failed_at: number;
+  /** 绝对时间戳(ms)，0 = 未封锁 */
+  locked_until: number;
+  updated_at: number;
+}
+
+export interface LoginLockoutEventRow {
+  id: string;
+  code: string;
+  ip: string;
+  username: string;
+  failed_attempts: number;
+  locked_until: number;
+  created_at: number;
+}

@@ -1,12 +1,15 @@
 <template>
-  <div class="auth-page">
-    <div class="auth-container">
-      <div class="auth-brand">
-        <h1 class="brand-name">LLM Gateway</h1>
-        <p class="brand-tagline">{{ t('auth.tagline') }}</p>
+  <div class="login-page" :class="{ 'is-login-success': loginSucceeded }">
+    <aside class="login-brand">
+      <div class="login-brand-content">
+        <h1>LLM Gateway</h1>
+        <p>{{ t('auth.tagline') }}</p>
       </div>
+      <div class="login-brand-lines" aria-hidden="true"></div>
+    </aside>
 
-      <n-card class="auth-card" :bordered="false">
+    <main class="login-panel">
+      <div class="login-form-container">
         <div class="auth-header">
           <h2 class="auth-title">{{ t('auth.welcome') }}</h2>
           <p class="auth-subtitle">{{ t('auth.loginSubtitle') }}</p>
@@ -52,13 +55,15 @@
               block
               size="large"
               :loading="loading"
+              :disabled="loginSucceeded"
               class="login-button"
+              :class="{ 'login-success': loginSucceeded }"
               @click="handleLogin"
             >
               <template #icon>
-                <n-icon><LogInOutline /></n-icon>
+                <n-icon><CheckmarkOutline v-if="loginSucceeded" /><LogInOutline v-else /></n-icon>
               </template>
-              {{ t('auth.login') }}
+              {{ loginSucceeded ? t('auth.loginSuccess') : t('auth.login') }}
             </n-button>
 
             <n-button
@@ -72,12 +77,9 @@
             </n-button>
           </n-space>
         </n-form>
-      </n-card>
 
-      <p class="auth-footer">
-        {{ t('auth.footer') }}
-      </p>
-    </div>
+      </div>
+    </main>
   </div>
 </template>
 
@@ -87,7 +89,6 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import {
   useMessage,
-  NCard,
   NForm,
   NFormItem,
   NInput,
@@ -98,7 +99,8 @@ import {
 import {
   PersonOutline,
   LockClosedOutline,
-  LogInOutline
+  LogInOutline,
+  CheckmarkOutline
 } from '@vicons/ionicons5'
 import { useAuthStore } from '@/stores/auth'
 import { useSystemConfig } from '@/composables/useSystemConfig'
@@ -112,23 +114,29 @@ const { allowRegistration } = useSystemConfig()
 
 const formRef = ref()
 const loading = ref(false)
+const loginSucceeded = ref(false)
 const formValue = ref({
   username: '',
   password: ''
 })
 
 const rules = computed(() => ({
-  username: [{ required: true, message: t('auth.usernamePlaceholder'), trigger: 'blur' }],
-  password: [{ required: true, message: t('auth.passwordPlaceholder'), trigger: 'blur' }]
+  username: [{ required: true, message: t('auth.usernamePlaceholder'), trigger: 'input' }],
+  password: [{ required: true, message: t('auth.passwordPlaceholder'), trigger: 'input' }]
 }))
 
 async function handleLogin() {
+  if (loading.value || loginSucceeded.value) return
+  loading.value = true
   try {
     await formRef.value?.validate()
-    loading.value = true
     await authStore.login(formValue.value)
+    loading.value = false
+    loginSucceeded.value = true
     message.success(t('auth.loginSuccess'))
-    router.push('/dashboard')
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (!reducedMotion) await new Promise(resolve => window.setTimeout(resolve, 360))
+    await router.push('/dashboard')
   } catch (error: any) {
     if (error.message) {
       message.error(error.message)
@@ -141,4 +149,5 @@ async function handleLogin() {
 
 <style scoped>
 @import '@/styles/auth.css';
+@import '@/styles/login.css';
 </style>

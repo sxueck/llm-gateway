@@ -38,6 +38,9 @@ const envSchema = z.object({
   MYSQL_DATABASE: z.string().default("llm_gateway"),
   MYSQL_CONNECTION_LIMIT: z.string().default("30"),
   GEO_IP_ENABLED: z.string().optional(),
+  // 逗号分隔的 CIDR 或裸 IP，解析规则见 services/login-lockout.ts。
+  LOGIN_LOCKOUT_TRUSTED_PROXIES: z.string().default(""),
+  LOGIN_LOCKOUT_EXEMPT_NETWORKS: z.string().default(""),
 });
 
 const env = envSchema.parse(process.env);
@@ -48,6 +51,13 @@ const defaultPublicUrl = env.PUBLIC_URL || `http://localhost:${port}`;
 function parsePositiveInt(value: string, defaultValue: number): number {
   const parsed = parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultValue;
+}
+
+function parseIpCidrList(value: string): string[] {
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
 
 const connectionLimit = parsePositiveInt(env.MYSQL_CONNECTION_LIMIT, 30);
@@ -61,6 +71,10 @@ export const appConfig = {
   publicUrl: defaultPublicUrl,
   defaultPublicUrl,
   geoIpEnabled: env.GEO_IP_ENABLED !== "false",
+  loginLockout: {
+    trustedProxies: parseIpCidrList(env.LOGIN_LOCKOUT_TRUSTED_PROXIES),
+    exemptNetworks: parseIpCidrList(env.LOGIN_LOCKOUT_EXEMPT_NETWORKS),
+  },
   mysql: {
     host: env.MYSQL_HOST,
     port: parseInt(env.MYSQL_PORT, 10),

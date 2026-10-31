@@ -46,6 +46,8 @@ export const CLEARED_TABLES = [
   "agent_search_run_events",
   "agent_search_usage",
   "alert_reads",
+  "login_attempt_lockouts",
+  "login_lockout_events",
 ] as const;
 
 export const SCHEMA_TABLES = ["schema_migrations", "schema_baseline"] as const;
