@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { virtualKeyDb, providerDb, modelDb, contextNormalizationDb, withTransaction } from '../db/index.js';
 import { hotConfigCache } from '../services/hot-config-cache.js';
+import { memoryLogger } from '../services/logger.js';
+import { virtualKeyQuota } from '../services/virtual-key-quota.js';
 import { hashKey, maskKey } from '../utils/crypto.js';
 import { validateCustomKey } from '../utils/validation.js';
 import { contextBudgetTokensSchema, virtualKeyRoutingStrategySchema } from '@llm-gateway/shared';
@@ -59,6 +61,22 @@ const updateVirtualKeySchema = z.object({
 const rotateVirtualKeySchema = z.object({
   keyType: z.enum(['auto', 'custom']),
   customKey: z.string().optional(),
+});
+
+// 每日 token 软配额（issue 39）：单位 M（百万 tokens），按网关时区自然日计量；
+// null 是显式删除信号，未列出的模型不受影响。
+const quotaEntrySchema = z.object({
+  model: z.string().trim().min(1, '额度配置缺少模型名'),
+  limitMillions: z
+    .number({ invalid_type_error: '额度必须是数字（单位 M）或 null' })
+    .finite()
+    .min(0.001, '额度必须是不小于 0.001 的数字（单位 M）')
+    .nullable(),
+});
+
+const quotaBulkSchema = z.object({
+  virtualKeyIds: z.array(z.string().min(1)).min(1, 'virtualKeyIds 不能为空'),
+  quotas: z.array(quotaEntrySchema),
 });
 
 // The getByKeyValue pre-check only covers the common case; UNIQUE(key_value) is the
@@ -442,6 +460,64 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       keyValue: updated.key_value,
       updatedAt: updated.updated_at,
     };
+  });
+
+  // 静态段必须先于 /:id 注册，否则会被参数路由吞掉；实际路径带管理前缀：
+  // GET /api/admin/virtual-keys/quotas?virtualKeyId=<id>。
+  fastify.get('/quotas', async (request, reply) => {
+    const { virtualKeyId } = request.query as { virtualKeyId?: string };
+    if (!virtualKeyId) {
+      return reply.code(400).send({ error: '缺少 virtualKeyId 查询参数' });
+    }
+
+    const vk = await virtualKeyDb.getById(virtualKeyId);
+    if (!vk) {
+      return reply.code(404).send({ error: '虚拟密钥不存在' });
+    }
+
+    const quotas = await virtualKeyQuota.snapshot(virtualKeyId);
+    return { quotas };
+  });
+
+  // 实际路径 PUT /api/admin/virtual-keys/quotas/bulk。
+  fastify.put('/quotas/bulk', async (request, reply) => {
+    const body = quotaBulkSchema.parse(request.body);
+
+    const seenModels = new Set<string>();
+    for (const entry of body.quotas) {
+      if (seenModels.has(entry.model)) {
+        return reply.code(400).send({ error: `模型 ${entry.model} 在请求中重复出现` });
+      }
+      seenModels.add(entry.model);
+    }
+
+    const missing: string[] = [];
+    for (const id of body.virtualKeyIds) {
+      if (!(await virtualKeyDb.getById(id))) missing.push(id);
+    }
+    if (missing.length > 0) {
+      return reply.code(400).send({ error: `虚拟密钥不存在: ${missing.join(', ')}` });
+    }
+
+    // 与旧全局额度一致，最多保留 3 位小数，避免浮点尾数入库。
+    const quotas = body.quotas.map((entry) => ({
+      model: entry.model,
+      limitMillions:
+        entry.limitMillions === null
+          ? null
+          : Math.round(entry.limitMillions * 1000) / 1000,
+    }));
+
+    await virtualKeyQuota.applyBulkQuotas(body.virtualKeyIds, quotas);
+
+    memoryLogger.info(
+      `虚拟密钥模型额度已更新 | keys: ${body.virtualKeyIds.length} 个 | ${
+        quotas.map((q) => `${q.model}=${q.limitMillions === null ? '删除' : `${q.limitMillions}M`}`).join(', ') || '(空)'
+      }`,
+      'Quota',
+    );
+
+    return { success: true };
   });
 
   fastify.delete('/:id', async (request, reply) => {

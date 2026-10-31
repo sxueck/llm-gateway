@@ -44,9 +44,9 @@ import { agentMonitoringRoutes } from "./routes/agent/monitoring.js";
 import { searchRunScheduler } from "./agent/run/scheduler.js";
 import { memoryLogger } from "./services/logger.js";
 import {
-  modelDailyQuota,
   runWithQuotaContext,
-} from "./services/model-daily-quota.js";
+  virtualKeyQuota,
+} from "./services/virtual-key-quota.js";
 import { modelPresetsService } from "./services/model-presets.js";
 import { getBackupScheduler } from "./services/backup-scheduler.js";
 import {
@@ -59,6 +59,7 @@ import { upstreamSslConfigService } from "./services/upstream-ssl-config.js";
 import { requestCache } from "./services/request-cache.js";
 import { runtimeSystemConfigCache } from "./services/runtime-system-config-cache.js";
 import { reasoningEffortSuffixesCache } from "./services/reasoning-effort-suffixes.js";
+import { gatewayTimezone } from "./services/gateway-timezone.js";
 import {
   getProxyConfigFromEnv,
   isProxyConfigured,
@@ -170,6 +171,7 @@ if (expertConfigs.some((config) => config.enabled === 1)) {
 
 await runtimeSystemConfigCache.initialize();
 await reasoningEffortSuffixesCache.initialize();
+await gatewayTimezone.initialize();
 
 // Periodic cleanup of expired durable session bindings (NFR-4).
 startSessionBindingCleanup();
@@ -541,13 +543,20 @@ const gracefulShutdown = async (signal: string) => {
     await fastify.close();
     memoryLogger.info("Fastify 服务已关闭", "System");
 
-    // Persist the day's un-flushed usage before the pool goes away.
-    await modelDailyQuota.flush();
+    // Persist the day's un-flushed usage before the pool goes away. A failed
+    // quota flush must not skip closing the database pool.
+    let quotaFlushFailed = false;
+    try {
+      await virtualKeyQuota.flush();
+    } catch (err: any) {
+      quotaFlushFailed = true;
+      memoryLogger.error(`虚拟密钥额度刷新失败: ${err}`, "Quota");
+    }
 
     await shutdownDatabase();
     memoryLogger.info("数据库已安全关闭", "System");
 
-    process.exit(0);
+    process.exit(quotaFlushFailed ? 1 : 0);
   } catch (err: any) {
     memoryLogger.error(`优雅关闭失败: ${err}`, "System");
     process.exit(1);

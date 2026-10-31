@@ -1,4 +1,5 @@
 import { getDatabase } from "../connection.js";
+import type { BucketBoundary } from "../utils/time-buckets.js";
 
 /**
  * Unified ops-monitoring aggregation reads.
@@ -140,6 +141,17 @@ const HOURLY_TOTALS = `SUM(h.request_count) AS request_count,
           SUM(h.speed_count) AS speed_count,
           MAX(h.last_used_at) AS last_used_at`;
 
+function bucketDerivedTable(
+  buckets: BucketBoundary[],
+): { sql: string; params: unknown[] } {
+  return {
+    sql: buckets
+      .map(() => `SELECT ? AS bucket_start, ? AS bucket_end`)
+      .join(" UNION ALL "),
+    params: buckets.flatMap((b) => [b.start, b.end]),
+  };
+}
+
 export const opsMetricsRepository = {
   /** Totals over the detail segment [from, to). */
   async getDetailTotals(
@@ -209,21 +221,18 @@ export const opsMetricsRepository = {
   },
 
   /**
-   * Totals per bucket, grouped in ONE query per table. Only the ranges listed
-   * in `ranges` are read, so the caller can exclude hourly-covered spans from
-   * the detail side (and vice versa) without double-counting. `floorMs`/
-   * `offsetMs` define the bucket key: hour buckets use floorMs=3600000,
-   * offset=0; Shanghai day buckets use floorMs=86400000, offset=+8h.
+   * Only the ranges listed in `ranges` are read, so the caller can exclude
+   * hourly-covered spans from the detail side (and vice versa) without
+   * double-counting.
    */
   async getDetailTotalsGroupedByBucket(
     ranges: SegmentRange[],
-    floorMs: number,
-    offsetMs: number,
+    buckets: BucketBoundary[],
     filters: OpsFilters,
   ): Promise<Map<number, SegmentTotalsRow>> {
     const result = new Map<number, SegmentTotalsRow>();
     const usable = ranges.filter((r) => r.to > r.from);
-    if (usable.length === 0) return result;
+    if (usable.length === 0 || buckets.length === 0) return result;
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
@@ -235,13 +244,15 @@ export const opsMetricsRepository = {
         rangeParams.push(r.from, r.to);
       }
       const filter = filterConditions("ar", filters);
-      const bucketExpr = `FLOOR((ar.created_at + ${offsetMs}) / ${floorMs}) * ${floorMs} - ${offsetMs}`;
+      const bucketTable = bucketDerivedTable(buckets);
       const [rows] = await conn.query(
-        `SELECT ${bucketExpr} AS bucket_start, ${DETAIL_TOTALS}
+        `SELECT b.bucket_start AS bucket_start, ${DETAIL_TOTALS}
          FROM api_requests ar
+         JOIN (${bucketTable.sql}) b
+           ON ar.created_at >= b.bucket_start AND ar.created_at < b.bucket_end
          WHERE (${rangeSql})${filter.sql}
-         GROUP BY ${bucketExpr}`,
-        [...rangeParams, ...filter.params],
+         GROUP BY b.bucket_start`,
+        [...bucketTable.params, ...rangeParams, ...filter.params],
       );
       for (const row of rows as any[]) {
         if (Number(row.request_count) > 0) {
@@ -254,26 +265,43 @@ export const opsMetricsRepository = {
     return result;
   },
 
-  /** Same grouping over the sealed-hourly segment [from, to). */
+  /**
+   * Same grouping over the sealed-hourly segment [from, to). A sealed row is
+   * keyed by its UTC hour start, so a bucket boundary inside that hour cannot
+   * be split here: the caller passes such hours in `excludedHours` and either
+   * re-reads their raw detail or flags the adjacent buckets as gaps.
+   */
   async getHourlyTotalsGroupedByBucket(
     range: SegmentRange,
-    floorMs: number,
-    offsetMs: number,
+    buckets: BucketBoundary[],
+    excludedHours: number[],
     filters: OpsFilters,
   ): Promise<Map<number, SegmentTotalsRow>> {
     const result = new Map<number, SegmentTotalsRow>();
-    if (range.to <= range.from) return result;
+    if (range.to <= range.from || buckets.length === 0) return result;
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
       const filter = filterConditions("h", filters);
-      const bucketExpr = `FLOOR((h.bucket_hour + ${offsetMs}) / ${floorMs}) * ${floorMs} - ${offsetMs}`;
+      const bucketTable = bucketDerivedTable(buckets);
+      const excludeSql =
+        excludedHours.length > 0
+          ? ` AND h.bucket_hour NOT IN (${excludedHours.map(() => "?").join(", ")})`
+          : "";
       const [rows] = await conn.query(
-        `SELECT ${bucketExpr} AS bucket_start, ${HOURLY_TOTALS}
+        `SELECT b.bucket_start AS bucket_start, ${HOURLY_TOTALS}
          FROM api_request_hourly_summaries h
-         WHERE h.bucket_hour >= ? AND h.bucket_hour < ?${filter.sql}
-         GROUP BY ${bucketExpr}`,
-        [range.from, range.to, ...filter.params],
+         JOIN (${bucketTable.sql}) b
+           ON h.bucket_hour >= b.bucket_start AND h.bucket_hour < b.bucket_end
+         WHERE h.bucket_hour >= ? AND h.bucket_hour < ?${excludeSql}${filter.sql}
+         GROUP BY b.bucket_start`,
+        [
+          ...bucketTable.params,
+          range.from,
+          range.to,
+          ...excludedHours,
+          ...filter.params,
+        ],
       );
       for (const row of rows as any[]) {
         if (Number(row.request_count) > 0) {

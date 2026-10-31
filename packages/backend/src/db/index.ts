@@ -47,6 +47,10 @@ import { alertReadRepository } from "./repositories/alert-read.repository.js";
 import { loginLockoutRepository } from "./repositories/login-lockout.repository.js";
 import { modelDailyUsageRepository } from "./repositories/model-daily-usage.repository.js";
 import { expertRoutingTrainingRecordRepository } from "./repositories/expert-routing-training-record.repository.js";
+import {
+  virtualKeyModelQuotaRepository,
+  virtualKeyModelUsageRepository,
+} from "./repositories/virtual-key-quota.repository.js";
 
 // Export repositories with backward-compatible names
 export const userDb = userRepository;
@@ -74,6 +78,8 @@ export const alertReadDb = alertReadRepository;
 export const loginLockoutDb = loginLockoutRepository;
 export const modelDailyUsageDb = modelDailyUsageRepository;
 export const expertRoutingTrainingRecordDb = expertRoutingTrainingRecordRepository;
+export const virtualKeyModelQuotaDb = virtualKeyModelQuotaRepository;
+export const virtualKeyModelUsageDb = virtualKeyModelUsageRepository;
 
 export async function initDatabase() {
   const pool = await connectionModule.initDatabase();

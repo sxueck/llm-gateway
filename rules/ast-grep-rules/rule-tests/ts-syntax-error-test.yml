@@ -1,0 +1,40 @@
+id: ts-syntax-error
+valid:
+  - |
+    export const ok: string = "fine";
+  - |
+    // whitelisted grammar gap: import() in type position
+    interface I {
+      experts: import("./expert-routing.js").ExpertTarget[];
+    }
+  - |
+    type Actual = typeof import("../../services/circuit-breaker.js");
+  - |
+    type K = keyof import("@/types").ModelAttributes;
+  - |
+    // the `>()` artifact left by a generic call around a type import
+    const actual = await importOriginal<
+      typeof import("../../services/circuit-breaker.js")
+    >();
+  - |
+    // documented recovery blind spot: tree-sitter repairs these silently
+    const t = { a: 1, b: 2 ;
+  - |
+    function m(a, b { return a; }
+invalid:
+  - |
+    const a = ;
+  - |
+    function f( {
+  - |
+    export const s = "unterminated;
+  - |
+    class A { foo( { return 1; } }
+  - |
+    async function h() { await ; }
+  - |
+    const arr = [1 2 3];
+  - |
+    // the whitelist is statement-scoped: the next line is still reported
+    const x: keyof import("./a.js").T;
+    const b = ;

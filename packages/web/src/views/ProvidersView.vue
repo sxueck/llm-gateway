@@ -29,7 +29,7 @@
               {{ t('providers.import') }}
             </n-button>
           </n-upload>
-          <n-button type="primary" @click="showModal = true">{{ t('providers.addProvider') }}</n-button>
+          <n-button type="primary" @click="openCreateDialog">{{ t('providers.addProvider') }}</n-button>
         </template>
       </PageHeader>
 
@@ -65,59 +65,7 @@
       </n-card>
     </div>
 
-    <n-modal
-      v-model:show="showModal"
-      preset="card"
-      :title="editingId ? t('providers.editProvider') : t('providers.addProvider')"
-      class="provider-modal"
-      :style="{ width: '720px', maxWidth: '94vw', maxHeight: '90vh' }"
-      :segmented="{
-        content: 'soft',
-        footer: 'soft'
-      }"
-    >
-      <div class="provider-steps" :aria-label="t('providers.form.progress')">
-        <div class="provider-step" :class="{ 'provider-step--active': providerStep === 1 }">
-          <span>1</span>{{ t('providers.form.basic') }}
-        </div>
-        <div class="provider-step-line"></div>
-        <div class="provider-step" :class="{ 'provider-step--active': providerStep === 2 }">
-          <span>2</span>{{ t('providers.form.selectModels') }}
-        </div>
-      </div>
-      <div class="modal-content-wrapper">
-        <div class="modal-content">
-          <ProviderForm
-            ref="formRef"
-            v-model="formValue"
-            :editing-id="editingId"
-            :existing-model-identifiers="existingModelIdentifiers"
-            :step="providerStep"
-            @selection-change="selectedModelCount = $event"
-          />
-        </div>
-      </div>
-      <template #footer>
-        <div class="provider-footer">
-          <span v-if="providerStep === 2" class="provider-selection-count" aria-live="polite">
-            {{ t('providers.form.selectedCount', { count: selectedModelCount }) }}
-          </span>
-          <n-space justify="end" :size="8" class="provider-footer-actions">
-            <n-button v-if="providerStep === 1" @click="showModal = false">{{ t('common.cancel') }}</n-button>
-            <n-button v-else :disabled="submitting" @click="providerStep = 1">{{ t('providers.form.previousStep') }}</n-button>
-            <n-button v-if="providerStep === 1" type="primary" @click="nextProviderStep">
-              {{ t('providers.form.nextStep') }}
-            </n-button>
-            <template v-else>
-              <n-button :disabled="submitting" @click="handleSubmit(true)">{{ t('providers.form.skipAndSave') }}</n-button>
-              <n-button type="primary" :loading="submitting" @click="handleSubmit(false)">
-                {{ editingId ? t('common.update') : t('common.create') }}
-              </n-button>
-            </template>
-          </n-space>
-        </div>
-      </template>
-    </n-modal>
+    <ProviderDialog v-model:show="showModal" :provider="editingProvider" @saved="handleDialogSaved" />
   </div>
 </template>
 
@@ -132,7 +80,6 @@ import {
   NButton,
   NDataTable,
   NCard,
-  NModal,
   NTag,
   NPopconfirm,
   NDropdown,
@@ -151,12 +98,9 @@ import {
 import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined, ViewAgendaOutlined } from '@vicons/material'
 import { useProviderStore } from '@/stores/provider'
 import { useModelStore } from '@/stores/model'
-import { providerApi, extractModelAttributes } from '@/api/provider'
-import { modelApi } from '@/api/model'
+import { providerApi } from '@/api/provider'
 import type { Provider } from '@/types'
-import type { ProviderFormValue } from '@/types/provider'
-import { createDefaultProviderForm } from '@/types/provider'
-import ProviderForm from '@/components/ProviderForm.vue'
+import ProviderDialog from '@/components/ProviderDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { downloadProvidersConfig, parseImportFile } from '@/utils/provider-export'
 
@@ -168,11 +112,7 @@ const providerStore = useProviderStore()
 const modelStore = useModelStore()
 
 const showModal = ref(false)
-const providerStep = ref<1 | 2>(1)
-const selectedModelCount = ref(0)
-const formRef = ref()
-const submitting = ref(false)
-const editingId = ref<string | null>(null)
+const editingProvider = ref<Provider | null>(null)
 const searchQuery = ref('')
 
 const pagination = reactive<PaginationProps>({
@@ -222,17 +162,6 @@ const exportOptions = computed(() => [
     key: 'enabled'
   }
 ])
-
-const formValue = ref<ProviderFormValue>(createDefaultProviderForm())
-
-const existingModelIdentifiers = computed(() =>
-  modelStore.models
-    .filter(model => model.providerId === editingId.value)
-    .map(model => model.modelIdentifier)
-)
-
-const originalApiKey = ref('')
-const apiKeyChanged = ref(false)
 
 const latencies = ref<Record<string, number | null>>({})
 const testingStates = ref<Record<string, boolean>>({})
@@ -358,7 +287,7 @@ const columns = computed(() => [
                 'quaternary': true,
                 'circle': true,
                 'aria-label': t('common.edit'),
-                'onClick': () => handleEdit(row)
+                'onClick': () => openEditDialog(row)
               },
               {
                 icon: () => h(NIcon, null, { default: () => h(EditOutlined) })
@@ -397,32 +326,18 @@ function handleManageModels(provider: Provider) {
   router.push({ path: '/models', query: { provider: provider.id } })
 }
 
-async function handleEdit(provider: Provider) {
-  editingId.value = provider.id
-  apiKeyChanged.value = false
-
-  try {
-    const [fullProvider] = await Promise.all([
-      providerApi.getById(provider.id, true),
-      modelStore.fetchModels(),
-    ])
-    originalApiKey.value = fullProvider.apiKey || ''
-
-    formValue.value = {
-      id: fullProvider.id,
-      name: fullProvider.name,
-      description: fullProvider.description || '',
-      baseUrl: fullProvider.baseUrl,
-      protocolMappings: fullProvider.protocolMappings || null,
-      apiKey: fullProvider.apiKey || '',
-      enabled: fullProvider.enabled
-    }
-  } catch (error: any) {
-    message.error(t('providers.loadFailed', { message: error.message }))
-    return
-  }
-
+function openCreateDialog() {
+  editingProvider.value = null
   showModal.value = true
+}
+
+function openEditDialog(provider: Provider) {
+  editingProvider.value = provider
+  showModal.value = true
+}
+
+async function handleDialogSaved() {
+  await providerStore.fetchProviders()
 }
 
 async function handleTest(id: string, showToast = true) {
@@ -492,139 +407,6 @@ async function handleDelete(id: string) {
   }
 }
 
-async function nextProviderStep() {
-  formRef.value?.syncProtocolMappings?.()
-  try {
-    await formRef.value?.validate()
-  } catch {
-    return
-  }
-  providerStep.value = 2
-  void formRef.value?.fetchModelsIfNeeded?.()
-}
-
-async function handleSubmit(skipModels = false) {
-  try {
-    formRef.value?.syncProtocolMappings?.()
-
-    await formRef.value?.validate()
-
-    if (editingId.value && formValue.value.apiKey !== originalApiKey.value) {
-      apiKeyChanged.value = true
-      const confirmed = await new Promise<boolean>(resolve => {
-        dialog.warning({
-          title: t('providers.apiKeyChangedTitle'),
-          content: t('providers.apiKeyChangedContent'),
-          positiveText: t('providers.confirmSave'),
-          negativeText: t('common.cancel'),
-          onPositiveClick: () => {
-            resolve(true)
-          },
-          onNegativeClick: () => {
-            resolve(false)
-          },
-          onClose: () => {
-            resolve(false)
-          }
-        })
-      })
-
-      if (!confirmed) {
-        return
-      }
-    }
-
-    submitting.value = true
-
-    if (editingId.value) {
-      const updateData: any = {
-        name: formValue.value.name,
-        description: formValue.value.description,
-        baseUrl: formValue.value.baseUrl,
-        protocolMappings: formValue.value.protocolMappings,
-        enabled: formValue.value.enabled
-      }
-      if (formValue.value.apiKey !== originalApiKey.value) {
-        updateData.apiKey = formValue.value.apiKey
-      }
-      await providerApi.update(editingId.value, updateData)
-
-      const selectedModelsInfo = skipModels ? [] : (formRef.value?.getSelectedModelsInfo?.() || [])
-      if (selectedModelsInfo.length > 0) {
-        const existing = modelStore.models.filter(m => m.providerId === formValue.value.id)
-        const modelsToCreate = selectedModelsInfo
-          .filter((model: any) => !existing.some(e => e.modelIdentifier === model.id))
-          .map((model: any) => ({
-            name: model.name || model.id,
-            providerId: formValue.value.id,
-            modelIdentifier: model.id,
-            enabled: true,
-            modelAttributes: extractModelAttributes(model),
-          }))
-
-        if (modelsToCreate.length > 0) {
-          try {
-            await modelApi.batchCreate(modelsToCreate)
-            await modelStore.fetchModels()
-            message.success(t('providers.updatedWithModels', { count: modelsToCreate.length }))
-          } catch (error: any) {
-            message.warning(t('providers.updatedModelsPartial', { message: error.message }))
-          }
-        } else {
-          message.success(t('providers.updateSuccess'))
-        }
-      } else {
-        message.success(t('providers.updateSuccess'))
-      }
-    } else {
-      const selectedModelsInfo = skipModels ? [] : (formRef.value?.getSelectedModelsInfo?.() || [])
-
-      await providerApi.create({
-        ...formValue.value,
-        protocolMappings: formValue.value.protocolMappings || undefined
-      })
-
-      if (selectedModelsInfo.length > 0) {
-        const modelsToCreate = selectedModelsInfo.map((model: any) => ({
-          name: model.name || model.id,
-          providerId: formValue.value.id,
-          modelIdentifier: model.id,
-          enabled: true,
-          modelAttributes: extractModelAttributes(model),
-        }))
-
-        try {
-          await modelApi.batchCreate(modelsToCreate)
-          await modelStore.fetchModels()
-          message.success(t('providers.createdWithModels', { count: selectedModelsInfo.length }))
-        } catch (error: any) {
-          message.warning(t('providers.createdModelsPartial', { message: error.message }))
-        }
-      } else {
-        message.success(t('providers.createdManualHint'))
-      }
-    }
-
-    showModal.value = false
-    resetForm()
-    await providerStore.fetchProviders()
-  } catch (error: any) {
-    if (error.message) {
-      message.error(error.message)
-    }
-  } finally {
-    submitting.value = false
-  }
-}
-
-function resetForm() {
-  providerStep.value = 1
-  selectedModelCount.value = 0
-  editingId.value = null
-  originalApiKey.value = ''
-  apiKeyChanged.value = false
-  formValue.value = createDefaultProviderForm()
-}
 
 function handleExportSelect(key: string) {
   const providers =
@@ -729,12 +511,6 @@ async function executeImport(
     message.error(t('providers.importFailed', { message: error.message }))
   }
 }
-
-watch(showModal, visible => {
-  if (!visible) {
-    resetForm()
-  }
-})
 
 onMounted(() => {
   providerStore.fetchProviders()
@@ -871,30 +647,6 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
-.provider-modal :deep(.n-card) {
-  background: #ffffff;
-  border-radius: 8px;
-  border: 1px solid #e8e8e8;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.provider-modal :deep(.n-card__header) {
-  padding: 16px 20px;
-  border-bottom: 1px solid #e8e8e8;
-  flex-shrink: 0;
-}
-
-.provider-modal :deep(.n-card__content) {
-  padding: 0;
-  overflow: hidden;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
 .providers-view :deep(.model-list-icon) {
   position: relative;
   display: inline-flex;
@@ -914,82 +666,5 @@ onMounted(() => {
   font-weight: 600;
   line-height: 15px;
   text-align: center;
-}
-
-.provider-steps {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 18px 24px 0;
-}
-
-.provider-step {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #8b9690;
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.provider-step span {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #edf1ef;
-}
-
-.provider-step--active {
-  color: var(--color-primary);
-}
-
-.provider-step--active span {
-  color: #fff;
-  background: var(--color-primary);
-}
-
-.provider-step-line {
-  width: 44px;
-  height: 1px;
-  background: #dce5e0;
-}
-
-.provider-footer {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.provider-selection-count {
-  color: #53645b;
-  font-size: 13px;
-}
-
-.provider-footer-actions {
-  margin-left: auto;
-}
-
-.modal-content-wrapper {
-  max-height: calc(90vh - 230px);
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-.provider-modal :deep(.n-card__footer) {
-  padding: 12px 20px;
-  border-top: 1px solid #e8e8e8;
-  background: #ffffff;
-  flex-shrink: 0;
-}
-
-.modal-content {
-  min-height: 200px;
-  padding: 20px 24px;
 }
 </style>

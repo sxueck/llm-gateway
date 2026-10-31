@@ -140,7 +140,7 @@ export interface CreateProviderRequest {
   name: string;
   description?: string | null;
   baseUrl: string;
-  protocolMappings?: ProtocolMapping;
+  protocolMappings?: ProtocolMapping | null;
   apiKey: string;
   modelMapping?: Record<string, string>;
   enabled?: boolean;
@@ -150,7 +150,7 @@ export interface UpdateProviderRequest {
   name?: string;
   description?: string | null;
   baseUrl?: string;
-  protocolMappings?: ProtocolMapping;
+  protocolMappings?: ProtocolMapping | null;
   apiKey?: string;
   modelMapping?: Record<string, string>;
   enabled?: boolean;

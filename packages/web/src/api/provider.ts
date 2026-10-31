@@ -50,10 +50,8 @@ export const providerApi = {
     return request.get("/admin/providers");
   },
 
-  getById(id: string, includeApiKey = false): Promise<Provider> {
-    return request.get(`/admin/providers/${id}`, {
-      params: { includeApiKey: includeApiKey.toString() },
-    });
+  getWithApiKey(id: string): Promise<Provider & { apiKey: string }> {
+    return request.get(`/admin/providers/${encodeURIComponent(id)}?includeApiKey=true`);
   },
 
   create(data: CreateProviderRequest): Promise<Provider> {

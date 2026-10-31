@@ -1,0 +1,19 @@
+id: no-catch-swallow
+valid:
+  - |
+    function f() {
+        try { x(); } catch (e) { throw new Error("boom", { cause: e }); }
+    }
+  - |
+    // documented v1 blind spot: log-then-return is not matched here
+    function g() { try { x(); } catch (e) { log(e); return null; } }
+  - |
+    // empty catch belongs to pi-lens error-swallowing (blocking)
+    function h() { try { x(); } catch { } }
+invalid:
+  - |
+    function f() { try { x(); } catch (e) { return null; } }
+  - |
+    function f() { try { x(); } catch { return {}; } }
+  - |
+    function f() { try { x(); } catch (e) { return; } }

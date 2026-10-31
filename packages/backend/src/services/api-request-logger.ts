@@ -7,8 +7,8 @@ import type { TokenCalculationResult } from "../routes/proxy/token-calculator.js
 import { memoryLogger } from "./logger.js";
 import {
   currentQuotaModel,
-  modelDailyQuota,
-} from "./model-daily-quota.js";
+  virtualKeyQuota,
+} from "./virtual-key-quota.js";
 
 export interface ApiLogParams {
   virtualKey: VirtualKey;
@@ -159,9 +159,11 @@ function normalizeErrorMessage(errorMessage: unknown): string | undefined {
 }
 
 export async function logApiRequestToDb(params: ApiLogParams): Promise<void> {
-  // Single accounting choke point for the daily model budget: prompt+completion
-  // in full, with no deduction for prompt-cache or gateway-cache hits.
-  modelDailyQuota.record(
+  // Single accounting choke point for the per-key daily budget: the only place
+  // the authenticated key is always at hand. Full prompt+completion, no
+  // cache-hit deduction; disable_logging hides metadata, not accounting.
+  virtualKeyQuota.record(
+    params.virtualKey.id,
     params.quotaModel ?? currentQuotaModel(),
     params.tokenCount.totalTokens,
   );

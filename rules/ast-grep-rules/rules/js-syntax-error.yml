@@ -1,0 +1,11 @@
+id: js-syntax-error
+language: JavaScript
+severity: error
+message: "JavaScript source does not parse (tree-sitter ERROR node)"
+note: |
+  Twin of `ts-syntax-error` for the plain `.js` sources (`scripts/dev-all.js`,
+  `scripts/*.js`). No type-position whitelist: dynamic `import()` in
+  expression position parses fine in the JavaScript grammar.
+  Same recovery blind spot as the TypeScript rule - see `ts-syntax-error`.
+rule:
+  kind: ERROR

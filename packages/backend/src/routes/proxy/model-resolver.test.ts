@@ -299,6 +299,108 @@ test('skips forced effort when the matched model has disable_thinking', async ()
   expect((result as any).forcedReasoningEffort).toBeUndefined();
 });
 
+// ─── quota identity (addressedModelName) ──────────────────────────────
+
+test('an allowlist match by model_identifier reports the configured name as the quota identity', async () => {
+  const model = {
+    id: 'model-1',
+    name: 'gpt-x',
+    model_identifier: 'gpt-x-real',
+    provider_id: 'provider-1',
+  };
+  const provider = { id: 'provider-1', name: 'provider-1' };
+  vi.mocked(hotConfigCache.getModelById).mockResolvedValue(model as any);
+  vi.mocked(hotConfigCache.getProviderById).mockResolvedValue(provider as any);
+  vi.mocked(resolveProviderFromModel).mockResolvedValue({ provider, providerId: 'provider-1' } as any);
+
+  const result = await resolveModelAndProvider(
+    { id: 'vk-1', model_ids: JSON.stringify(['model-1']) },
+    { body: { model: 'gpt-x-real' }, headers: {}, protocol: 'openai', url: '/v1/chat/completions' } as any,
+    'vk-value',
+  );
+
+  expect(result).toMatchObject({ modelId: 'model-1', addressedModelName: 'gpt-x' });
+});
+
+test('a suffix request whose base model is addressed by identifier reports the base model name', async () => {
+  const model = {
+    id: 'model-1',
+    name: 'gpt-x',
+    model_identifier: 'gpt-x-real',
+    provider_id: 'provider-1',
+  };
+  const provider = { id: 'provider-1', name: 'provider-1' };
+  vi.mocked(reasoningEffortSuffixesCache.getSuffixes).mockReturnValue(['high']);
+  vi.mocked(hotConfigCache.getModelById).mockResolvedValue(model as any);
+  vi.mocked(hotConfigCache.getProviderById).mockResolvedValue(provider as any);
+  vi.mocked(resolveProviderFromModel).mockResolvedValue({ provider, providerId: 'provider-1' } as any);
+
+  const result = await resolveModelAndProvider(
+    { id: 'vk-1', model_ids: JSON.stringify(['model-1']) },
+    { body: { model: 'gpt-x-real-high' }, headers: {}, protocol: 'openai', url: '/v1/chat/completions' } as any,
+    'vk-value',
+  );
+
+  expect(result).toMatchObject({ addressedModelName: 'gpt-x', forcedReasoningEffort: 'high' });
+});
+
+test('a pinned key reports the pinned model name whatever the body asks for', async () => {
+  const model = { id: 'model-1', name: 'gpt-x', model_identifier: 'gpt-x-real', provider_id: 'provider-1' };
+  const provider = { id: 'provider-1', name: 'provider-1' };
+  vi.mocked(hotConfigCache.getModelById).mockResolvedValue(model as any);
+  vi.mocked(resolveProviderFromModel).mockResolvedValue({ provider, providerId: 'provider-1' } as any);
+
+  const result = await resolveModelAndProvider(
+    { id: 'vk-1', model_id: 'model-1' },
+    { body: { model: 'not-the-pinned-name' }, headers: {}, protocol: 'openai', url: '/v1/chat/completions' } as any,
+    'vk-value',
+  );
+
+  expect(result).toMatchObject({ modelId: 'model-1', addressedModelName: 'gpt-x' });
+});
+
+test('a virtual model keeps its own quota identity, not the routed real model', async () => {
+  const virtualModel = {
+    id: 'model-v',
+    name: 'gpt-virtual',
+    model_identifier: 'gpt-virtual',
+    is_virtual: 1,
+    routing_config_id: 'rc-1',
+  };
+  const realModel = { id: 'model-real', name: 'gpt-x', model_identifier: 'gpt-x-real', provider_id: 'provider-1' };
+  const provider = { id: 'provider-1', name: 'provider-1' };
+  vi.mocked(hotConfigCache.getModelById).mockResolvedValue(virtualModel as any);
+  vi.mocked(resolveProviderFromModel).mockResolvedValue({
+    provider,
+    providerId: 'provider-1',
+    resolvedModel: realModel,
+  } as any);
+
+  const result = await resolveModelAndProvider(
+    { id: 'vk-1', model_ids: JSON.stringify(['model-v']) },
+    { body: { model: 'gpt-virtual' }, headers: {}, protocol: 'openai', url: '/v1/chat/completions' } as any,
+    'vk-value',
+  );
+
+  expect(result).toMatchObject({
+    addressedModelName: 'gpt-virtual',
+    currentModel: { name: 'gpt-x' },
+  });
+});
+
+test('provider-scoped keys carry no addressed model name', async () => {
+  const provider = { id: 'provider-1', name: 'provider-1' };
+  vi.mocked(hotConfigCache.getProviderById).mockResolvedValue(provider as any);
+
+  const result = await resolveModelAndProvider(
+    { id: 'vk-1', provider_id: 'provider-1' },
+    { body: { model: 'anything' }, headers: {}, protocol: 'openai', url: '/v1/chat/completions' } as any,
+    'vk-value',
+  );
+
+  expect(result).not.toHaveProperty('addressedModelName');
+});
+
 // ─── agent loopback 旁路 ────────────────────────────────────────────────────
 
 test('agent loopback header resolves a model outside the virtual key allowlist', async () => {

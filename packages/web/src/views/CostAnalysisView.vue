@@ -158,12 +158,6 @@
             </n-data-table>
           </n-card>
         </n-tab-pane>
-
-        <n-tab-pane name="budgets" :tab="t('costAnalysis.tabs.budgets')" display-directive="show:lazy">
-          <n-card class="content-section budget-section">
-            <model-budget-settings />
-          </n-card>
-        </n-tab-pane>
       </n-tabs>
     </div>
 
@@ -240,7 +234,6 @@ import {
 } from 'naive-ui'
 import { costMappingApi, CostMapping, CostResolution, ModelPrice } from '@/api/cost-mapping'
 import ModelPresetSelector from '@/components/ModelPresetSelector.vue'
-import ModelBudgetSettings from '@/components/ModelBudgetSettings.vue'
 import PageHeader from '@/components/PageHeader.vue'
 
 const { t } = useI18n()
@@ -623,10 +616,6 @@ onMounted(() => {
 .search-bar {
   margin-bottom: 16px;
   max-width: 400px;
-  flex-shrink: 0;
-}
-
-.budget-section {
   flex-shrink: 0;
 }
 

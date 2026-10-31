@@ -1,0 +1,49 @@
+id: esm-relative-specifier-ext
+language: TypeScript
+severity: warning
+message: "relative specifier must end in .js (AGENTS.md ESM rule)"
+note: |
+  AGENTS.md, "Code rules": ESM only - relative import specifiers must end in
+  `.js`, also for `.ts` sources. 1012 of the repo's 1037 relative specifiers
+  already comply. The convention is what keeps the tree portable:
+  `packages/e2e` compiles under `moduleResolution: NodeNext`, where an
+  extensionless specifier does not resolve at all, and `tsc`/`tsx`/esbuild/
+  Vite all happily accept `./foo` today, so `npm run typecheck` will never
+  report the violation.
+
+  Scoped at invocation, not inside the rule: ast-grep rules cannot see the
+  scanned file's path, and `packages/web` is Vite-resolved, where
+  extensionless specifiers and `index.ts` barrels are the house style. Run it
+  on the Node packages (`npm run check:esm`); a repo-wide run reports 16
+  intentional hits, all under `packages/web/src`, plus one real backlog item:
+  `packages/shared/src/utils/index.ts:1` re-exports `./protocol-types`
+  without an extension.
+
+  Static and dynamic imports are both covered. Asset suffixes (.vue, .css, …)
+  are allowed so the repo-wide run does not double-report the web convention;
+  importing one from a Node package is nonsense anyway.
+rule:
+  any:
+    - all:
+        - any:
+            - kind: import_statement
+            - kind: export_statement
+        - has:
+            field: source
+            kind: string
+            regex: '^["'']\.{1,2}/'
+            not:
+              regex: '\.(?:js|json|vue|css|scss|svg|png)["'']$'
+    - all:
+        - kind: call_expression
+        - has:
+            field: function
+            kind: import
+        - has:
+            field: arguments
+            kind: arguments
+            has:
+              kind: string
+              regex: '^["'']\.{1,2}/'
+              not:
+                regex: '\.(?:js|json|vue|css|scss|svg|png)["'']$'

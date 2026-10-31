@@ -8,9 +8,9 @@ import {
 } from "../utils/buffer.js";
 import {
   generateTimeBuckets,
-  generateShanghaiDayBuckets,
+  generateDayBuckets,
   initializeTimeBuckets,
-  getShanghaiDayStart,
+  getDayStart,
 } from "../utils/time-buckets.js";
 import { debugModeService } from "../../services/debug-mode.js";
 import { appConfig } from "../../config/index.js";
@@ -37,7 +37,7 @@ function getDisableLoggingConditionForSummary(
 }
 
 function getDetailStartInclusive(): number {
-  return getShanghaiDayStart(-appConfig.apiRequestLogRetentionDays);
+  return getDayStart(-appConfig.apiRequestLogRetentionDays);
 }
 
 export const apiRequestRepository = {
@@ -366,7 +366,7 @@ export const apiRequestRepository = {
       const virtualKeyMap = new Map<string, { id: string; name: string }>();
       const dataByKey = new Map<string, Map<number, any>>();
       const timePoints = isDayInterval
-        ? generateShanghaiDayBuckets(startTime, endTime)
+        ? generateDayBuckets(startTime, endTime)
         : generateTimeBuckets(startTime, endTime, intervalMs);
 
       if (needsSummary) {

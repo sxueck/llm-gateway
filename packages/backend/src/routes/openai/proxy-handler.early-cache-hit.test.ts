@@ -15,12 +15,14 @@ import { computeLogicalCacheKey } from '../proxy/cache.js';
 import { resolveModelAndProvider } from '../proxy/model-resolver.js';
 import { createOpenAIProxyHandler } from './proxy-handler.js';
 import {
-  modelDailyQuota,
   runWithQuotaContext,
-} from '../../services/model-daily-quota.js';
+  virtualKeyQuota,
+} from '../../services/virtual-key-quota.js';
 
 const quotaMocks = vi.hoisted(() => ({
   get: vi.fn(),
+  getAll: vi.fn(),
+  getByVirtualKeyId: vi.fn(),
   addUsage: vi.fn(),
   getDayUsage: vi.fn(),
   getDayTotals: vi.fn(),
@@ -31,7 +33,11 @@ const quotaMocks = vi.hoisted(() => ({
 vi.mock('../../db/index.js', () => ({
   apiRequestDb: { create: vi.fn(async () => {}) },
   systemConfigDb: { get: quotaMocks.get, set: vi.fn() },
-  modelDailyUsageDb: {
+  virtualKeyModelQuotaDb: {
+    getAll: quotaMocks.getAll,
+    getByVirtualKeyId: quotaMocks.getByVirtualKeyId,
+  },
+  virtualKeyModelUsageDb: {
     addUsage: quotaMocks.addUsage,
     getDayUsage: quotaMocks.getDayUsage,
     getDayTotals: quotaMocks.getDayTotals,
@@ -85,13 +91,19 @@ const cachedResponse = {
 beforeEach(() => {
   vi.clearAllMocks();
   requestCache.clear();
-  modelDailyQuota.resetForTesting();
-  quotaMocks.get.mockResolvedValue({
-    value: JSON.stringify({ [requestBody.model]: 1, 'gpt-x': 1 }),
-  });
+  virtualKeyQuota.resetForTesting();
+  // 该密钥对涉及的模型都配了 1M 上限：check() 对未配置组合只回 0 用量，
+  // 断言"已计量 23 tokens"需要真实受限的 (密钥, 模型) 组合。
+  quotaMocks.getAll.mockResolvedValue([
+    { virtualKeyId: virtualKey.id, model: requestBody.model, limitMillions: 1 },
+    { virtualKeyId: virtualKey.id, model: 'gpt-x', limitMillions: 1 },
+  ]);
+  quotaMocks.getByVirtualKeyId.mockResolvedValue([]);
   quotaMocks.getDayUsage.mockResolvedValue({ consumedTokens: 0, requestCount: 0 });
   quotaMocks.getDayTotals.mockResolvedValue([]);
   quotaMocks.addUsage.mockResolvedValue(undefined);
+  quotaMocks.renameDayUsage.mockResolvedValue(undefined);
+  quotaMocks.deleteBefore.mockResolvedValue(undefined);
   vi.mocked(hotConfigCache.getVirtualKeyByKeyValue).mockResolvedValue(virtualKey as any);
 });
 
@@ -141,10 +153,10 @@ test('no early hit without a cached entry: model resolution runs as usual', asyn
   expect(res.statusCode).toBe(500);
 });
 
-test('early cache hit is rejected after the cached model exhausts its quota', async () => {
+test('early cache hit is rejected after the key exhausts its quota for the cached model', async () => {
   const logicalKey = computeLogicalCacheKey(virtualKey, requestBody, false, false)!;
   requestCache.set(logicalKey, cachedResponse, { 'content-type': 'application/json' }, 60_000);
-  modelDailyQuota.record(requestBody.model, 1_000_000);
+  virtualKeyQuota.record(virtualKey.id, requestBody.model, 1_000_000);
 
   const app = Fastify();
   app.post('/v1/chat/completions', createOpenAIProxyHandler());
@@ -165,9 +177,10 @@ test.each(['gpt-x-high', 'gpt-x-auto-high'])(
   'early cache hit charges the normalized quota identity stored with %s',
   async (model) => {
     const suffixedBody = { ...requestBody, model };
-    quotaMocks.get.mockResolvedValue({
-      value: JSON.stringify({ 'gpt-x': 1, [model]: 1 }),
-    });
+    quotaMocks.getAll.mockResolvedValue([
+      { virtualKeyId: virtualKey.id, model: 'gpt-x', limitMillions: 1 },
+      { virtualKeyId: virtualKey.id, model, limitMillions: 1 },
+    ]);
     const logicalKey = computeLogicalCacheKey(virtualKey, suffixedBody, false, false)!;
     requestCache.set(
       logicalKey,
@@ -191,8 +204,9 @@ test.each(['gpt-x-high', 'gpt-x-auto-high'])(
     await app.close();
 
     expect(res.statusCode).toBe(200);
-    expect((await modelDailyQuota.check('gpt-x')).usedTokens).toBe(23);
-    expect((await modelDailyQuota.check(model)).usedTokens).toBe(0);
+    // 带后缀的名字不另开桶：计量落在归一化后的 gpt-x 上。
+    expect((await virtualKeyQuota.check(virtualKey.id, 'gpt-x')).usedTokens).toBe(23);
+    expect((await virtualKeyQuota.check(virtualKey.id, model)).usedTokens).toBe(0);
   },
 );
 

@@ -260,7 +260,8 @@ export async function providerRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     const body = updateProviderSchema.parse(request.body);
 
-    fastify.log.info({ providerId: id, body }, "[Providers] Updating provider");
+    const { apiKey: _apiKey, ...loggedBody } = body;
+    fastify.log.info({ providerId: id, body: loggedBody }, "[Providers] Updating provider");
 
     const provider = await providerDb.getById(id);
     if (!provider) {
@@ -291,7 +292,8 @@ export async function providerRoutes(fastify: FastifyInstance) {
     }
     if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
 
-    fastify.log.info({ updates }, "[Providers] Final updates to apply");
+    const { api_key: _encryptedKey, ...loggedUpdates } = updates;
+    fastify.log.info({ updates: loggedUpdates }, "[Providers] Final updates to apply");
 
     await providerDb.update(id, updates);
     hotConfigCache.invalidateProvider(id);

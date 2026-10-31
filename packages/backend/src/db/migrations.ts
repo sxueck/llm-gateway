@@ -199,8 +199,57 @@ export const migrations: Migration[] = [
     },
   },
   {
-    // 与 schema.ts 同步建表；只用 CREATE TABLE IF NOT EXISTS，不用 ALTER/DROP，重入才安全。
+    // 旧全局额度（system_config.model_daily_token_limits + model_daily_usage*）
+    // 停止生效但数据保留，故这里不 DROP 旧表。
     version: 5,
+    name: "virtual_key_model_quotas",
+    up: async (conn) => {
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS virtual_key_model_quotas (
+          virtual_key_id VARCHAR(255) NOT NULL,
+          model VARCHAR(255) NOT NULL COMMENT '客户端请求的模型名 models.name（额度计量单位）',
+          limit_millions DECIMAL(12,3) NOT NULL COMMENT '上海自然日 token 上限（单位 M）',
+          created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+          updated_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+          PRIMARY KEY (virtual_key_id, model),
+          INDEX idx_vk_model_quotas_model (model),
+          FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS virtual_key_model_daily_usage (
+          usage_date DATE NOT NULL COMMENT '网关时区自然日（默认 Asia/Shanghai）',
+          virtual_key_id VARCHAR(255) NOT NULL,
+          model VARCHAR(255) NOT NULL COMMENT '客户端请求的模型名 models.name（额度计量单位）',
+          consumed_tokens BIGINT NOT NULL DEFAULT 0 COMMENT 'prompt+completion 累计；命中缓存不打折，同样计入',
+          request_count INT NOT NULL DEFAULT 0,
+          created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+          updated_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+          PRIMARY KEY (usage_date, virtual_key_id, model),
+          INDEX idx_vk_model_daily_usage_model (model, usage_date),
+          FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS virtual_key_model_daily_usage_batches (
+          batch_id VARCHAR(64) PRIMARY KEY COMMENT '单次用量 flush 的幂等标识',
+          created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+    },
+    down: async (conn) => {
+      await conn.query(
+        "DROP TABLE IF EXISTS virtual_key_model_daily_usage_batches",
+      );
+      await conn.query(
+        "DROP TABLE IF EXISTS virtual_key_model_daily_usage",
+      );
+      await conn.query("DROP TABLE IF EXISTS virtual_key_model_quotas");
+    },
+  },
+  {
+    // 与 schema.ts 同步建表；只用 CREATE TABLE IF NOT EXISTS，不用 ALTER/DROP，重入才安全。
+    version: 6,
     name: "login_ip_lockout",
     up: async (conn) => {
       await conn.query(`

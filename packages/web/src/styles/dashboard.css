@@ -246,9 +246,19 @@
   margin-bottom: 10px;
   display: flex;
   align-items: baseline;
+  height: 1.12em;
+  flex-shrink: 0;
   white-space: nowrap;
   overflow: hidden;
   min-width: 0;
+}
+
+.stat-main-value :deep(.n-skeleton) {
+  height: 0.32em !important;
+  max-width: 110px;
+  margin: 0;
+  align-self: center;
+  border-radius: 4px;
 }
 
 /* flex item 默认 min-width:auto 阻止收缩,裁剪时无省略号;让内层值 span 可收缩并显示省略号 */
@@ -273,6 +283,7 @@
 .top-model-name {
   font-size: 16px !important;
   line-height: 1.35;
+  height: 1.35em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -347,7 +358,15 @@
   font-weight: 500;
 }
 
+.stat-detail-value :deep(.n-skeleton) {
+  display: inline-block;
+  height: 1em;
+  margin: 0;
+  vertical-align: middle;
+}
+
 .stat-detail-value {
+  min-height: 1.45em;
   color: #1a1a1a;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -487,10 +506,28 @@
 }
 
 .trend-loading {
+  padding: 24px 16px 16px;
+}
+
+.chart-placeholder {
+  height: 420px;
+  border-radius: 8px;
+  background: #f8faf9;
+}
+
+.trend-card :deep(.n-empty),
+.trend-error {
   display: flex;
-  justify-content: center;
   align-items: center;
-  min-height: 400px;
+  justify-content: center;
+  min-height: 460px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 639px) {
+  .trend-loading { padding: 16px 8px 12px; }
+  .chart-placeholder { height: 320px; }
+  .trend-card :deep(.n-empty), .trend-error { min-height: 348px; }
 }
 
 .trend-error {
@@ -586,22 +623,6 @@
   }
 }
 
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.stagger-item {
-  animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
-  animation-delay: min(var(--delay, 0ms), 200ms);
-}
-
 .dashboard-secondary .stat-content {
   padding: 20px 24px;
 }
@@ -616,6 +637,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .stagger-item { animation: none; }
+  .dashboard-view :deep(.n-skeleton) { animation: none; }
   .stat-card, .trend-card, .flip-icon, .stat-progress-bar, .signal-meter span { transition: none; }
 }

@@ -1,6 +1,6 @@
 import { getDatabase } from "../connection.js";
 import type { ResultSetHeader } from "mysql2";
-import { getShanghaiDayStart } from "../utils/time-buckets.js";
+import { getDayStart } from "../utils/time-buckets.js";
 import { appConfig } from "../../config/index.js";
 
 /**
@@ -27,7 +27,7 @@ const HOUR_MS = 60 * 60 * 1000;
 export const HOURLY_SEAL_DELAY_MS = 2 * HOUR_MS;
 
 function getDetailStartInclusive(): number {
-  return getShanghaiDayStart(-appConfig.apiRequestLogRetentionDays);
+  return getDayStart(-appConfig.apiRequestLogRetentionDays);
 }
 
 function floorToHour(ts: number): number {
