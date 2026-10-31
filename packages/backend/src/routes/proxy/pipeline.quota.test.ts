@@ -1,19 +1,26 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
+// config/index.ts 在模块加载期校验 env，而 vitest 不加载 .env——注入最小
+// 占位值（db 入口已 mock，不产生真实连接）。
+vi.hoisted(() => {
+  process.env.MYSQL_PASSWORD ??= 'vitest-placeholder';
+  process.env.JWT_SECRET ??= 'vitest-placeholder-secret-32-chars!!';
+});
+
 import { hotConfigCache } from '../../services/hot-config-cache.js';
 import { virtualKeyRateLimiter } from '../../services/virtual-key-rate-limiter.js';
 import {
   currentQuotaModel,
-  modelDailyQuota,
   runWithQuotaContext,
-} from '../../services/model-daily-quota.js';
+  virtualKeyQuota,
+} from '../../services/virtual-key-quota.js';
 import { formatRetryDuration, runProxyPipeline } from './pipeline.js';
 import { resolveModelAndProvider } from './model-resolver.js';
 import { buildProviderConfig } from './provider-config-builder.js';
 
 const mocks = vi.hoisted(() => ({
-  get: vi.fn(),
-  set: vi.fn(),
+  getAll: vi.fn(),
+  getByVirtualKeyId: vi.fn(),
   addUsage: vi.fn(),
   getDayUsage: vi.fn(),
   getDayTotals: vi.fn(),
@@ -22,8 +29,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../db/index.js', () => ({
-  systemConfigDb: { get: mocks.get, set: mocks.set },
-  modelDailyUsageDb: {
+  virtualKeyModelQuotaDb: {
+    getAll: mocks.getAll,
+    getByVirtualKeyId: mocks.getByVirtualKeyId,
+  },
+  virtualKeyModelUsageDb: {
     addUsage: mocks.addUsage,
     getDayUsage: mocks.getDayUsage,
     getDayTotals: mocks.getDayTotals,
@@ -54,7 +64,13 @@ vi.mock('./provider-config-builder.js', () => ({
 }));
 
 const KEY = 'vk-quota-test';
+const KEY_ID = 'vk-quota';
+const OTHER_KEY_ID = 'vk-other';
 const NOW = new Date('2026-03-02T12:00:00+08:00').getTime();
+
+function virtualKeyOf(id: string) {
+  return { id, key_value: KEY, enabled: 1, rate_limit: null };
+}
 
 function makeRequestReply(model = 'gpt-x') {
   const request: any = {
@@ -79,7 +95,7 @@ function makeHandlers() {
     onQuotaExceeded: vi.fn(({ reply, modelName, retryAfterSeconds }: any) => {
       reply.code(429).send({
         error: {
-          message: `Model "${modelName}" has reached its daily token quota. Retry after ${formatRetryDuration(retryAfterSeconds)}.`,
+          message: `Model "${modelName}" has reached this virtual key's daily token quota. Retry after ${formatRetryDuration(retryAfterSeconds)}.`,
           type: 'rate_limit_error',
           param: 'model',
           code: 'model_daily_token_quota_exceeded',
@@ -106,18 +122,21 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   vi.clearAllMocks();
   virtualKeyRateLimiter.reset();
-  modelDailyQuota.resetForTesting();
-  mocks.get.mockResolvedValue({ value: JSON.stringify({ 'gpt-x': 1 }) } as any);
+  virtualKeyQuota.resetForTesting();
+  // 两把密钥都给 gpt-x 配 1M：同一模型、各自的预算（per-key 契约的核心）。
+  mocks.getAll.mockResolvedValue([
+    { virtualKeyId: KEY_ID, model: 'gpt-x', limitMillions: 1 },
+    { virtualKeyId: OTHER_KEY_ID, model: 'gpt-x', limitMillions: 1 },
+  ]);
+  mocks.getByVirtualKeyId.mockResolvedValue([]);
   mocks.getDayUsage.mockResolvedValue({ consumedTokens: 0, requestCount: 0 });
   mocks.getDayTotals.mockResolvedValue([]);
   mocks.addUsage.mockResolvedValue(undefined);
   mocks.renameDayUsage.mockResolvedValue(undefined);
-  vi.mocked(hotConfigCache.getVirtualKeyByKeyValue).mockResolvedValue({
-    id: 'vk-quota',
-    key_value: KEY,
-    enabled: 1,
-    rate_limit: null,
-  } as any);
+  mocks.deleteBefore.mockResolvedValue(undefined);
+  vi.mocked(hotConfigCache.getVirtualKeyByKeyValue).mockResolvedValue(
+    virtualKeyOf(KEY_ID) as any,
+  );
   vi.mocked(resolveModelAndProvider).mockResolvedValue({
     provider: { id: 'p1', name: 'p1' },
     providerId: 'p1',
@@ -146,7 +165,7 @@ test('a model under its daily ceiling continues to provider config build', async
 });
 
 test('an exhausted model gets 429 + Retry-After before any upstream work', async () => {
-  modelDailyQuota.record('gpt-x', 1_200_000, NOW);
+  virtualKeyQuota.record(KEY_ID, 'gpt-x', 1_200_000, NOW);
 
   const { reply, handlers, result } = await run('gpt-x');
 
@@ -154,6 +173,14 @@ test('an exhausted model gets 429 + Retry-After before any upstream work', async
   expect(buildProviderConfig).not.toHaveBeenCalled();
   expect(reply.header).toHaveBeenCalledWith('Retry-After', expect.any(String));
   expect(handlers.onQuotaExceeded).toHaveBeenCalledTimes(1);
+  expect(handlers.onQuotaExceeded).toHaveBeenCalledWith(
+    expect.objectContaining({
+      virtualKeyId: KEY_ID,
+      modelName: 'gpt-x',
+      limitTokens: 1_000_000,
+      usedTokens: 1_200_000,
+    }),
+  );
   expect(reply.code).toHaveBeenCalledWith(429);
   expect(reply.send).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -165,13 +192,32 @@ test('an exhausted model gets 429 + Retry-After before any upstream work', async
   );
 });
 
+test('the daily budget belongs to the authenticated virtual key', async () => {
+  virtualKeyQuota.record(KEY_ID, 'gpt-x', 1_000_000, NOW);
+
+  const blocked = await run('gpt-x');
+  expect(blocked.result.ok).toBe(false);
+  expect(blocked.handlers.onQuotaExceeded).toHaveBeenCalledWith(
+    expect.objectContaining({ virtualKeyId: KEY_ID }),
+  );
+
+  vi.mocked(hotConfigCache.getVirtualKeyByKeyValue).mockResolvedValue(
+    virtualKeyOf(OTHER_KEY_ID) as any,
+  );
+  const fresh = await run('gpt-x');
+
+  expect(fresh.result.ok).toBe(true);
+  expect(fresh.handlers.onQuotaExceeded).not.toHaveBeenCalled();
+  expect(buildProviderConfig).toHaveBeenCalled();
+});
+
 test('the quota follows the addressed model name, not the routed real model', async () => {
   // gpt-x 是虚拟模型名，它路由到的 gpt-x-real 自己另算。
-  modelDailyQuota.record('gpt-x-real', 5_000_000, NOW);
+  virtualKeyQuota.record(KEY_ID, 'gpt-x-real', 5_000_000, NOW);
 
   await expect(run('gpt-x').then((r) => r.result.ok)).resolves.toBe(true);
 
-  modelDailyQuota.record('gpt-x', 1_000_000, NOW);
+  virtualKeyQuota.record(KEY_ID, 'gpt-x', 1_000_000, NOW);
   const { result } = await run('gpt-x');
   expect(result.ok).toBe(false);
 });
@@ -184,7 +230,7 @@ test('models without a configured ceiling are untouched by the quota', async () 
 });
 
 test('an early success hook can enforce an exhausted quota before model resolution', async () => {
-  modelDailyQuota.record('gpt-x', 1_000_000, NOW);
+  virtualKeyQuota.record(KEY_ID, 'gpt-x', 1_000_000, NOW);
   const { request, reply } = makeRequestReply('gpt-x');
   const handlers = makeHandlers();
 

@@ -208,11 +208,16 @@ const LATENCY_COLORS = [
   '#6CA68D', '#4A4A4A', '#D4E9E2', '#8B5E3C', '#5B8C5A',
 ];
 
+// 图表坐标轴跟随网关时区（后端随响应返回）；未加载时回退默认值。
+function displayTimeZone(): string {
+  return data.value?.timezone || 'Asia/Shanghai';
+}
+
 function formatHour(ts: number): string {
   return new Date(ts).toLocaleTimeString(locale.value, {
     hour: '2-digit',
     minute: '2-digit',
-    timeZone: 'Asia/Shanghai',
+    timeZone: displayTimeZone(),
   });
 }
 
@@ -222,7 +227,7 @@ function formatTimestampLocal(ts: number): string {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    timeZone: 'Asia/Shanghai',
+    timeZone: displayTimeZone(),
   });
 }
 

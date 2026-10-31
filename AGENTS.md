@@ -21,13 +21,18 @@ npm run lint            # all packages — this IS the typecheck (tsc / vue-tsc)
 npm test --workspaces --if-present          # backend + worker vitest suites
 node_modules/.bin/vitest run --root packages/web              # web suites (no test script)
 node_modules/.bin/vitest run --root packages/backend <file>   # single test file
+npm run ast:syntax      # parse gate over packages/ + scripts/ (exits 1 on broken file)
+npm run ast             # all ast-grep rules; npm run ast:esm for the .js-specifier rule
+npm run ast:test        # behaviour fixtures for the rules themselves
 ```
 
 Per-package script names match these (`cd packages/backend && npm run test`). `cd packages/web && npm run check:i18n` verifies every `t()` key resolves in both locales. A `pre-commit` hook runs `scripts/pre-commit-secret-scan.sh`.
 
+The `ast*` scripts need the `ast-grep` CLI on PATH (not an npm dependency) and read `rules/ast-grep-rules/.sgconfig.yml` — see `rules/ast-grep-rules/README.md` for the rule list, scoping and suppression syntax. Run the focused form on files you changed: `ast-grep scan -c rules/ast-grep-rules/.sgconfig.yml <changed-file>`. It never replaces `npm run typecheck`: ast-grep cannot parse `.vue` and tree-sitter silently repairs some malformed code.
+
 ## Code rules
 
-- TypeScript `strict: true`; ESM only — **relative import specifiers must end in `.js`**, also for `.ts` sources.
+- TypeScript `strict: true`; ESM only — **relative import specifiers must end in `.js`**, also for `.ts` sources (checked by `npm run ast:esm`, except in `packages/web`, which Vite resolves).
 - Shared domain types and request validation (Zod) live in `packages/shared/src/types/`.
 - **No formatter or linter is configured** (backend uses double quotes, web single — deliberately). Match the file's local style; never run a global `--write` format pass or reformat untouched lines.
 - API errors use the OpenAI envelope `{ "error": { "message", "type", "param", "code" } }` via `reply.code(...).send({ error })`; log with `memoryLogger.info(message, category)` from `services/logger.js` (HTTP request logging is Pino).

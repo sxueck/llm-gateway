@@ -701,9 +701,18 @@ const shanghaiLocale = computed(() =>
   locale.value === "zh-CN" ? "zh-CN" : "en-US",
 );
 
+// 时间轴展示跟随网关时区（后端随响应窗口返回）；未加载时回退默认值。
+function displayTimeZone(): string {
+  return (
+    overview.value?.window.timezone ||
+    trend.value?.window.timezone ||
+    "Asia/Shanghai"
+  );
+}
+
 function formatShanghaiTime(ts: number): string {
   return new Intl.DateTimeFormat(shanghaiLocale.value, {
-    timeZone: "Asia/Shanghai",
+    timeZone: displayTimeZone(),
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -714,7 +723,7 @@ function formatShanghaiTime(ts: number): string {
 
 function formatShanghaiDateTime(ts: number): string {
   return new Intl.DateTimeFormat(shanghaiLocale.value, {
-    timeZone: "Asia/Shanghai",
+    timeZone: displayTimeZone(),
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -1298,7 +1307,7 @@ function bucketLabel(
   granularity: "hour" | "day",
 ): string {
   return new Intl.DateTimeFormat(shanghaiLocale.value, {
-    timeZone: "Asia/Shanghai",
+    timeZone: displayTimeZone(),
     month: "2-digit",
     day: "2-digit",
     ...(granularity === "hour" ? { hour: "2-digit", minute: "2-digit" } : {}),

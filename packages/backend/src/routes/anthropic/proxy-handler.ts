@@ -322,7 +322,7 @@ export function createAnthropicProxyHandler() {
           },
           onQuotaExceeded: ({ reply, modelName, retryAfterSeconds }) => {
             const anthropicError = createAnthropicError(
-              `Model "${modelName}" has reached its daily token quota. Retry after ${formatRetryDuration(retryAfterSeconds)}.`,
+              `Model "${modelName}" has reached this virtual key's daily token quota. Retry after ${formatRetryDuration(retryAfterSeconds)}.`,
               "rate_limit_error",
             );
             reply.code(429).send(anthropicError);

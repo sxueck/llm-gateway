@@ -15,7 +15,7 @@ export type CostCoverage = 'full' | 'partial' | 'none';
 export interface AgentMetricsWindowInfo {
   startTime: number;
   endTime: number;
-  timezone: 'Asia/Shanghai';
+  timezone: string;
 }
 
 export interface CodingAgentSummary {

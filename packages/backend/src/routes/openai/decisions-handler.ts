@@ -66,7 +66,7 @@ export function createDecisionsProxyHandler() {
         onQuotaExceeded: ({ reply, modelName, retryAfterSeconds }) => {
           reply.code(429).send({
             error: {
-              message: `Model "${modelName}" has reached its daily token quota. Retry after ${formatRetryDuration(retryAfterSeconds)}.`,
+              message: `Model "${modelName}" has reached this virtual key's daily token quota. Retry after ${formatRetryDuration(retryAfterSeconds)}.`,
               type: "rate_limit_error",
               param: "model",
               code: "model_daily_token_quota_exceeded",

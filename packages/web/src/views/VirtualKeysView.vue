@@ -33,6 +33,16 @@
           </n-radio-group>
           <n-button
             size="small"
+            :disabled="virtualKeyStore.virtualKeys.length === 0"
+            @click="openBatchQuotaModal"
+          >
+            <template #icon>
+              <n-icon :component="SpeedometerOutline" />
+            </template>
+            {{ t('virtualKeys.quotaSettings') }}
+          </n-button>
+          <n-button
+            size="small"
             :loading="virtualKeyStore.loading"
             @click="refreshAll"
           >
@@ -61,9 +71,12 @@
           :data="filteredKeys"
           :loading="virtualKeyStore.loading"
           :pagination="pagination"
-          :scroll-x="1040"
+          :row-key="rowKeyOf"
+          :checked-row-keys="checkedRowKeys"
+          :scroll-x="1140"
           :bordered="false"
           size="small"
+          @update:checked-row-keys="handleCheckedRowKeysUpdate"
         />
       </n-card>
     </n-space>
@@ -274,6 +287,13 @@
       </template>
     </n-modal>
 
+    <VirtualKeyQuotaModal
+      v-model:show="showQuotaModal"
+      :virtual-keys="virtualKeyStore.virtualKeys"
+      :selected-ids="checkedRowKeys"
+      :single-key-id="quotaSingleKeyId"
+    />
+
     <n-drawer v-model:show="showDrawer" :width="480" placement="right">
       <n-drawer-content :title="t('virtualKeys.drawerTitle')" closable>
         <div v-if="drawerKey" class="drawer-body">
@@ -439,6 +459,7 @@ import {
   RefreshOutlined,
   OpenInNewOutlined
 } from '@vicons/material'
+import { SpeedometerOutline } from '@vicons/ionicons5'
 import { useVirtualKeyStore } from '@/stores/virtual-key'
 import { useModelStore } from '@/stores/model'
 import { useModelOptions } from '@/composables/useModelOptions'
@@ -464,6 +485,7 @@ import {
 import { createDefaultVirtualKeyForm } from '@/types/virtual-key'
 import { CONTEXT_BUDGET_TIERS } from '@llm-gateway/shared'
 import PageHeader from '@/components/PageHeader.vue'
+import VirtualKeyQuotaModal from '@/components/VirtualKeyQuotaModal.vue'
 
 const message = useMessage()
 const router = useRouter()
@@ -474,6 +496,26 @@ const modelStore = useModelStore()
 const searchText = ref('')
 const enabledFilter = ref<VirtualKeyEnabledFilter>('all')
 const metricsPeriod = ref<OpsPeriod>('24h')
+
+// Checked rows are the quota dialog's "selected keys" batch scope.
+const checkedRowKeys = ref<string[]>([])
+const showQuotaModal = ref(false)
+// null = batch scope (selected/all); a key id = single-key quota view with usage.
+const quotaSingleKeyId = ref<string | null>(null)
+
+function handleCheckedRowKeysUpdate(keys: Array<string | number>) {
+  checkedRowKeys.value = keys.map(String)
+}
+
+function openSingleQuotaModal(row: VirtualKey) {
+  quotaSingleKeyId.value = row.id
+  showQuotaModal.value = true
+}
+
+function openBatchQuotaModal() {
+  quotaSingleKeyId.value = null
+  showQuotaModal.value = true
+}
 
 const enabledOptions = computed(() => [
   { label: t('virtualKeys.filterAll'), value: 'all' },
@@ -687,6 +729,9 @@ function sortNumber(read: (row: VirtualKey) => number | null | undefined) {
 
 const columns = computed<DataTableColumns<VirtualKey>>(() => [
   {
+    type: 'selection'
+  },
+  {
     title: t('virtualKeys.colName'),
     key: 'name',
     minWidth: 160,
@@ -757,7 +802,7 @@ const columns = computed<DataTableColumns<VirtualKey>>(() => [
   {
     title: t('virtualKeys.colActions'),
     key: 'actions',
-    width: 150,
+    width: 190,
     fixed: 'right',
     render: (row) =>
       h(
@@ -765,6 +810,7 @@ const columns = computed<DataTableColumns<VirtualKey>>(() => [
         { size: 4, wrap: false },
         {
           default: () => [
+            actionButton(SpeedometerOutline, t('virtualKeys.quota'), () => openSingleQuotaModal(row)),
             actionButton(AutorenewOutlined, t('virtualKeys.rotate'), () => handleRotateClick(row)),
             actionButton(EditOutlined, t('virtualKeys.edit'), () => handleEdit(row)),
             h(
@@ -801,6 +847,10 @@ function actionButton(icon: typeof EditOutlined, tooltip: string, onClick: () =>
       default: () => tooltip
     }
   )
+}
+
+function rowKeyOf(row: VirtualKey) {
+  return row.id
 }
 
 const showDrawer = ref(false)
@@ -982,6 +1032,14 @@ async function handleDelete(id: string) {
     await virtualKeyApi.delete(id)
     message.success(t('virtualKeys.deleteSuccess'))
     await virtualKeyStore.fetchVirtualKeys()
+    // Selection must not keep deleted keys: the batch quota scope counts them.
+    checkedRowKeys.value = checkedRowKeys.value.filter((keyId) =>
+      virtualKeyStore.virtualKeys.some((key) => key.id === keyId)
+    )
+    if (quotaSingleKeyId.value === id) {
+      quotaSingleKeyId.value = null
+      showQuotaModal.value = false
+    }
     // A shrinking result set can leave the current page past the last page.
     const pageSize = pagination.pageSize ?? 10
     const lastPage = Math.max(1, Math.ceil(filteredKeys.value.length / pageSize))

@@ -1,0 +1,53 @@
+id: ts-syntax-error
+language: TypeScript
+severity: error
+message: "TypeScript source does not parse (tree-sitter ERROR node)"
+note: |
+  An ERROR node means tree-sitter could not read the file, so every other AST
+  rule is unreliable on it - this is the guard under the guard. Cheap, per
+  file, no deps or env needed; `npm run typecheck` (tsc + vue-tsc) stays the
+  authoritative syntax and type check, and it is the only thing that reads
+  `.vue`, which ast-grep 0.51 cannot parse.
+
+  Grammar gap, whitelisted: tree-sitter-typescript as shipped by ast-grep 0.51
+  does not parse `import(...)` in *type* position, which is valid TypeScript
+  and is used in `packages/backend/src/types/index.ts`,
+  `packages/web/src/constants/modelAttributes.ts`, and every
+  `vi.mock(.., async (importOriginal) => ...)` factory. Unfiltered, the repo
+  reports 10 false errors on clean files; the first arm drops the ERROR whose
+  own text is the type import, and the four statement-scoped arms drop the
+  `>()` artifact left behind when a generic call closes a type argument that
+  contains one.
+
+  Cost of the whitelist: a genuine error can also be hidden when it sits in
+  the same declaration/statement/parameter as a type-position `import(...)`.
+  The arms are deliberately statement-scoped (never `program`, which would
+  silence whole files) - `const x: keyof import("./a.js").T; const b = ;`
+  still reports the second line. See rule-tests.
+
+  Recovery blind spot (16-case breakage battery: 10 caught, 6 missed, 0 false
+  positives): tree-sitter silently repairs some malformed code by inserting
+  missing tokens, and inserted nodes are not ERROR nodes a rule can match -
+  e.g. `const t = { a: 1, b: 2 ;`, `function m(a, b { return a; }`, `if (a {`,
+  a trailing `let`. A clean run is not proof of valid syntax; the typecheck is.
+rule:
+  kind: ERROR
+  not:
+    any:
+      - regex: '\bimport\s*\('
+      - inside:
+          stopBy: end
+          kind: lexical_declaration
+          regex: '\bimport\s*\('
+      - inside:
+          stopBy: end
+          kind: expression_statement
+          regex: '\bimport\s*\('
+      - inside:
+          stopBy: end
+          kind: interface_body
+          regex: '\bimport\s*\('
+      - inside:
+          stopBy: end
+          kind: type_alias_declaration
+          regex: '\bimport\s*\('

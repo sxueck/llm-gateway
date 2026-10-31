@@ -8,6 +8,32 @@ type VirtualKeyRotateResponse = { keyValue: string };
 
 const ADMIN_VIRTUAL_KEYS_PATH = '/admin/virtual-keys';
 
+const VIRTUAL_KEYS_QUOTAS_PATH = `${ADMIN_VIRTUAL_KEYS_PATH}/quotas`;
+
+/** Daily token quota of one (virtual key × model) pair. */
+export interface VirtualKeyModelQuota {
+  model: string;
+  /** Daily ceiling in millions of tokens; null = no quota stored. */
+  limitMillions: number | null;
+  /** Tokens consumed so far this gateway-timezone calendar day. */
+  usedTokens: number;
+  requestCount: number;
+}
+
+/** One model entry of a bulk upsert: a number writes the limit, null deletes it. */
+export interface VirtualKeyQuotaUpsert {
+  model: string;
+  limitMillions: number | null;
+}
+
+export interface VirtualKeyQuotaBulkRequest {
+  virtualKeyIds: string[];
+  /** Only the listed models are touched; models absent here keep their quota. */
+  quotas: VirtualKeyQuotaUpsert[];
+}
+
+type VirtualKeyQuotasResponse = { quotas: VirtualKeyModelQuota[] };
+
 const virtualKeyPath = (id: string) => `${ADMIN_VIRTUAL_KEYS_PATH}/${id}`;
 
 export const virtualKeyApi = {
@@ -32,5 +58,14 @@ export const virtualKeyApi = {
 
   delete(id: string): Promise<VirtualKeyDeleteResponse> {
     return request.delete(virtualKeyPath(id));
+  },
+
+  getQuotas(virtualKeyId: string): Promise<VirtualKeyQuotasResponse> {
+    return request.get(VIRTUAL_KEYS_QUOTAS_PATH, { params: { virtualKeyId } });
+  },
+
+  /** Bulk upsert; the response is not consumed — re-read usage via getQuotas. */
+  updateQuotasBulk(data: VirtualKeyQuotaBulkRequest): Promise<unknown> {
+    return request.put(`${VIRTUAL_KEYS_QUOTAS_PATH}/bulk`, data);
   },
 };

@@ -7,9 +7,9 @@ import { virtualKeyRateLimiter } from '../../services/virtual-key-rate-limiter.j
 import { resolveModelAndProvider } from './model-resolver.js';
 import {
   currentQuotaModel,
-  modelDailyQuota,
   stampQuotaModel,
-} from '../../services/model-daily-quota.js';
+  virtualKeyQuota,
+} from '../../services/virtual-key-quota.js';
 import { buildProviderConfig } from './provider-config-builder.js';
 
 export type ProxyProtocol = 'openai' | 'anthropic' | 'gemini';
@@ -75,11 +75,12 @@ export interface ProxyPreflightHandlers {
 }
 
 export interface ProxyPipelineHandlers extends ProxyPreflightHandlers {
-  /** Model daily token budget exhausted (system_config model_daily_token_limits). */
+  /** Per-key daily token budget exhausted (virtual_key_model_quotas). */
   onQuotaExceeded: (args: {
     reply: FastifyReply;
     requestIp: string;
     requestUserAgent: string;
+    virtualKeyId: string;
     modelName: string;
     limitTokens: number;
     usedTokens: number;
@@ -205,9 +206,8 @@ export async function runProxyPreflight(
     return { ok: false };
   }
 
-  // Charge gateway-cache hits too: they return from `afterAuth` before model
-  // resolution, so the addressed name is only readable from the client body.
-  // runProxyPipeline re-stamps with the post-resolution (suffix-stripped) name.
+  // Cache hits return from `afterAuth` before model resolution, so the client
+  // body is all there is here; runProxyPipeline re-stamps the canonical name.
   const clientModel =
     typeof (request.body as any)?.model === 'string'
       ? (request.body as any).model
@@ -226,7 +226,7 @@ export async function runProxyPreflight(
  * 3) Auth (virtual key)
  * 4) Per-key rate limit (RPM)
  * 5) Protocol-specific hook (optional)
- * 6) Model/provider resolution + model daily token budget
+ * 6) Model/provider resolution + per-key model daily token budget
  * 7) Provider config build
  */
 export async function runProxyPipeline(
@@ -250,11 +250,11 @@ export async function runProxyPipeline(
   const checkQuota = async (modelName?: string): Promise<boolean> => {
     const quotaModel = modelName ?? currentQuotaModel();
     stampQuotaModel(quotaModel);
-    const quota = await modelDailyQuota.check(quotaModel);
+    const quota = await virtualKeyQuota.check(virtualKey.id, quotaModel);
     if (quota.allowed) return true;
 
     memoryLogger.warn(
-      `模型每日 token 额度耗尽 | model: ${quota.model} | used: ${quota.usedTokens}/${quota.limitTokens} | retryAfter: ${quota.retryAfterSeconds}s | keyId: ${virtualKey.id} | IP: ${requestIp}`,
+      `虚拟密钥模型每日 token 额度耗尽 | keyId: ${virtualKey.id} | model: ${quota.model} | used: ${quota.usedTokens}/${quota.limitTokens} | retryAfter: ${quota.retryAfterSeconds}s | IP: ${requestIp}`,
       'Quota',
     );
     reply.header('Retry-After', String(quota.retryAfterSeconds));
@@ -262,6 +262,7 @@ export async function runProxyPipeline(
       reply,
       requestIp,
       requestUserAgent,
+      virtualKeyId: virtualKey.id,
       modelName: quota.model,
       limitTokens: quota.limitTokens,
       usedTokens: quota.usedTokens,
@@ -312,13 +313,13 @@ export async function runProxyPipeline(
 
   const { provider, providerId, currentModel } = modelResult;
 
-  // Daily token budget of the addressed model: the name the client sent (after
-  // suffix / tier resolution that is the base model name), so a virtual model
-  // keeps its own budget and every virtual key draws from the same pool.
+  // Provider-scoped keys resolve no model entity, so the client string is the
+  // fallback there — and such keys can have no name-based ceiling either.
   const requestedModel =
-    typeof (request.body as any)?.model === 'string'
+    modelResult.addressedModelName ??
+    (typeof (request.body as any)?.model === 'string'
       ? (request.body as any).model
-      : undefined;
+      : undefined);
   if (!(await checkQuota(requestedModel))) {
     return { ok: false };
   }

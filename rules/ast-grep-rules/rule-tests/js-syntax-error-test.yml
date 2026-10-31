@@ -1,0 +1,17 @@
+id: js-syntax-error
+valid:
+  - |
+    async function load() {
+      return await import("node:fs/promises");
+    }
+    export function ok(a) { return a; }
+  - |
+    // documented recovery blind spot: tree-sitter inserts the missing ")"
+    if (a { console.log(a); }
+invalid:
+  - |
+    const a = ;
+  - |
+    function f( {
+  - |
+    const y = [1 2 3];

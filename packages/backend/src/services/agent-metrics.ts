@@ -11,7 +11,9 @@ import {
 } from "../db/repositories/agent-metrics.repository.js";
 import { costMappingService } from "./cost-mapping.js";
 import { classifyAgent, type AgentCategory } from "./agent-classifier.js";
-import { generateShanghaiDayBuckets } from "../db/utils/time-buckets.js";
+import { generateDayBucketBoundariesInTz } from "../db/utils/time-buckets.js";
+import type { BucketBoundary } from "../db/utils/time-buckets.js";
+import { gatewayTimezone } from "./gateway-timezone.js";
 
 /**
  * 「Agent 使用统计」服务层：UA 归并、成本估算（复用 cost-mapping 的单一
@@ -94,7 +96,7 @@ export interface CodingAgentTotals {
 }
 
 export interface CodingAgentOverview {
-  window: { startTime: number; endTime: number; timezone: "Asia/Shanghai" };
+  window: { startTime: number; endTime: number; timezone: string };
   updatedAt: number;
   costCoverage: CostCoverage;
   agents: CodingAgentSummary[];
@@ -117,14 +119,14 @@ export interface AgentSessionSummary {
 }
 
 export interface AgentSessionsResult {
-  window: { startTime: number; endTime: number; timezone: "Asia/Shanghai" };
+  window: { startTime: number; endTime: number; timezone: string };
   updatedAt: number;
   key: string;
   sessions: AgentSessionSummary[];
 }
 
 export interface WorkerRunOverview {
-  window: { startTime: number; endTime: number; timezone: "Asia/Shanghai" };
+  window: { startTime: number; endTime: number; timezone: string };
   updatedAt: number;
   granularity: "hour" | "day";
   totals: RunTotals;
@@ -373,7 +375,7 @@ export async function getCodingAgentOverview(
     window: {
       startTime: window.startTime,
       endTime: window.endTime,
-      timezone: "Asia/Shanghai",
+      timezone: gatewayTimezone.get(),
     },
     updatedAt: Date.now(),
     costCoverage: overallCoverage,
@@ -512,7 +514,7 @@ export async function getAgentSessions(
     window: {
       startTime: window.startTime,
       endTime: window.endTime,
-      timezone: "Asia/Shanghai",
+      timezone: gatewayTimezone.get(),
     },
     updatedAt: Date.now(),
     key: agentKey,
@@ -525,6 +527,27 @@ export async function getWorkerRunOverview(
 ): Promise<WorkerRunOverview> {
   const granularity: "hour" | "day" = window.period === "24h" ? "hour" : "day";
   const timeWindow = { startTime: window.startTime, endTime: window.endTime };
+
+  // 分桶口径与 ops-metrics.getOpsTrend 一致：传给仓库的就是图表的 x 轴。
+  const bucketBoundaries: BucketBoundary[] = [];
+  if (granularity === "hour") {
+    for (
+      let b = Math.floor(window.startTime / HOUR_MS) * HOUR_MS;
+      b < window.endTime;
+      b += HOUR_MS
+    ) {
+      bucketBoundaries.push({ start: b, end: b + HOUR_MS });
+    }
+  } else {
+    bucketBoundaries.push(
+      ...generateDayBucketBoundariesInTz(
+        window.startTime,
+        window.endTime - 1,
+        gatewayTimezone.get(),
+      ),
+    );
+  }
+
   const [totals, byStatus, byPlugin, byModelProfile, errorCodes, trendRows] =
     await Promise.all([
       agentMetricsRepository.getRunTotals(timeWindow),
@@ -532,33 +555,14 @@ export async function getWorkerRunOverview(
       agentMetricsRepository.getRunBreakdownByPlugin(timeWindow),
       agentMetricsRepository.getModelProfiles(timeWindow),
       agentMetricsRepository.getRunErrorCodes(timeWindow),
-      agentMetricsRepository.getRunTrend(timeWindow, granularity),
+      agentMetricsRepository.getRunTrend(timeWindow, bucketBoundaries),
     ]);
 
-  // 补零桶，分桶口径与 ops-metrics.getOpsTrend 一致：小时桶对齐 UTC 整点，
-  // 日桶对齐上海 0 点，保证图表 x 轴连续。
-  const buckets: number[] = [];
-  if (granularity === "hour") {
-    for (
-      let b = Math.floor(window.startTime / HOUR_MS) * HOUR_MS;
-      b < window.endTime;
-      b += HOUR_MS
-    ) {
-      buckets.push(b);
-    }
-  } else {
-    for (const dayStart of generateShanghaiDayBuckets(
-      window.startTime,
-      window.endTime - 1,
-    )) {
-      if (dayStart < window.endTime) buckets.push(dayStart);
-    }
-  }
   const byBucket = new Map(trendRows.map((row) => [row.bucketStart, row]));
-  const trend: RunTrendRow[] = buckets.map(
-    (bucketStart) =>
-      byBucket.get(bucketStart) ?? {
-        bucketStart,
+  const trend: RunTrendRow[] = bucketBoundaries.map(
+    ({ start }) =>
+      byBucket.get(start) ?? {
+        bucketStart: start,
         runs: 0,
         completed: 0,
         failed: 0,
@@ -572,7 +576,7 @@ export async function getWorkerRunOverview(
     window: {
       startTime: window.startTime,
       endTime: window.endTime,
-      timezone: "Asia/Shanghai",
+      timezone: gatewayTimezone.get(),
     },
     updatedAt: Date.now(),
     granularity,

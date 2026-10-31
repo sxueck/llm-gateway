@@ -534,12 +534,12 @@ export async function createTables(connection?: Connection) {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-    // API 请求按天汇总表（支持 7 天外的统计查询，天边界为 Asia/Shanghai 时区）
+    // API 请求按天汇总表（支持 7 天外的统计查询，天边界为网关时区，默认 Asia/Shanghai）
     // Nullable 维度使用空字符串作为 sentinel 值以满足唯一键约束
     await conn.query(`
       CREATE TABLE IF NOT EXISTS api_request_daily_summaries (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
-        summary_date DATE NOT NULL COMMENT 'Asia/Shanghai 时区的汇总日期',
+        summary_date DATE NOT NULL COMMENT '网关时区的汇总日期',
         virtual_key_id VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
         provider_id VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
         model VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'NULL 时存储空字符串',
@@ -610,7 +610,7 @@ export async function createTables(connection?: Connection) {
     // 因此额度计量必须单独落表。
     await conn.query(`
       CREATE TABLE IF NOT EXISTS model_daily_usage (
-        usage_date DATE NOT NULL COMMENT 'Asia/Shanghai 自然日',
+        usage_date DATE NOT NULL COMMENT '网关时区自然日',
         model VARCHAR(255) NOT NULL COMMENT '客户端请求的模型名 models.name（额度计量单位）',
         consumed_tokens BIGINT NOT NULL DEFAULT 0 COMMENT 'prompt+completion 累计；命中缓存不打折，同样计入',
         request_count INT NOT NULL DEFAULT 0,
@@ -624,6 +624,44 @@ export async function createTables(connection?: Connection) {
     // 每个用量批次只应用一次；未知结果的写入可用同一 batch_id 安全重试。
     await conn.query(`
       CREATE TABLE IF NOT EXISTS model_daily_usage_batches (
+        batch_id VARCHAR(64) PRIMARY KEY COMMENT '单次用量 flush 的幂等标识',
+        created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // 取代 system_config 里的全局模型每日额度；旧表
+    // model_daily_usage/model_daily_usage_batches 仅为保留历史数据。
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS virtual_key_model_quotas (
+        virtual_key_id VARCHAR(255) NOT NULL,
+        model VARCHAR(255) NOT NULL COMMENT '客户端请求的模型名 models.name（额度计量单位）',
+        limit_millions DECIMAL(12,3) NOT NULL COMMENT '上海自然日 token 上限（单位 M）',
+        created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+        updated_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+        PRIMARY KEY (virtual_key_id, model),
+        INDEX idx_vk_model_quotas_model (model),
+        FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // 与 model_daily_usage 同口径，但按虚拟密钥拆分各自的预算。
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS virtual_key_model_daily_usage (
+        usage_date DATE NOT NULL COMMENT '网关时区自然日',
+        virtual_key_id VARCHAR(255) NOT NULL,
+        model VARCHAR(255) NOT NULL COMMENT '客户端请求的模型名 models.name（额度计量单位）',
+        consumed_tokens BIGINT NOT NULL DEFAULT 0 COMMENT 'prompt+completion 累计；命中缓存不打折，同样计入',
+        request_count INT NOT NULL DEFAULT 0,
+        created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+        updated_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
+        PRIMARY KEY (usage_date, virtual_key_id, model),
+        INDEX idx_vk_model_daily_usage_model (model, usage_date),
+        FOREIGN KEY (virtual_key_id) REFERENCES virtual_keys(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS virtual_key_model_daily_usage_batches (
         batch_id VARCHAR(64) PRIMARY KEY COMMENT '单次用量 flush 的幂等标识',
         created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci

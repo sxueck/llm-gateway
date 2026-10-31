@@ -19,6 +19,10 @@
     "test:e2e": "vitest run --root packages/e2e",
     "clean": "npm run clean --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
+    "ast": "ast-grep scan -c rules/ast-grep-rules/.sgconfig.yml packages scripts",
+    "ast:syntax": "ast-grep scan -c rules/ast-grep-rules/.sgconfig.yml --filter syntax-error packages scripts",
+    "ast:esm": "ast-grep scan -c rules/ast-grep-rules/.sgconfig.yml --filter esm-relative-specifier-ext packages/backend/src packages/shared/src packages/worker/src packages/e2e",
+    "ast:test": "ast-grep test -c rules/ast-grep-rules/.sgconfig.yml --skip-snapshot-tests",
     "start": "npm run start -w @llm-gateway/backend",
     "prepare": "bash scripts/install-hooks.sh"
   },

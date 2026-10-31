@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const tzState = vi.hoisted(() => ({ timezone: 'Asia/Shanghai' }));
+
 const mocks = vi.hoisted(() => ({
   getCodingAgentRows: vi.fn(),
   getAgentSessionsDetail: vi.fn(),
@@ -26,6 +28,9 @@ vi.mock('../db/repositories/agent-metrics.repository.js', () => ({
 }));
 vi.mock('./cost-mapping.js', () => ({
   costMappingService: { estimateUsageCost: mocks.estimateUsageCost },
+}));
+vi.mock('./gateway-timezone.js', () => ({
+  gatewayTimezone: { get: () => tzState.timezone },
 }));
 
 import {
@@ -451,8 +456,34 @@ describe('getAgentSessions', () => {
 });
 
 describe('getWorkerRunOverview', () => {
+  const emptyTotals = {
+    runs: 0,
+    completed: 0,
+    failed: 0,
+    cancelled: 0,
+    running: 0,
+    queued: 0,
+    other: 0,
+    turns: 0,
+    toolCalls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cost: 0,
+    avgDurationMs: null,
+  };
+
+  function primeEmptyBreakdowns() {
+    mocks.getRunTotals.mockResolvedValue(emptyTotals);
+    mocks.getRunBreakdownByStatus.mockResolvedValue([]);
+    mocks.getRunBreakdownByPlugin.mockResolvedValue([]);
+    mocks.getModelProfiles.mockResolvedValue([]);
+    mocks.getRunErrorCodes.mockResolvedValue([]);
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
+    tzState.timezone = 'Asia/Shanghai';
+    primeEmptyBreakdowns();
   });
 
   it('aggregates repository results as-is and maps 24h to hour buckets', async () => {
@@ -523,7 +554,10 @@ describe('getWorkerRunOverview', () => {
 
     expect(mocks.getRunTrend).toHaveBeenCalledWith(
       { startTime: start, endTime: start + 24 * HOUR_MS },
-      'hour',
+      Array.from({ length: 24 }, (_, i) => ({
+        start: start + i * HOUR_MS,
+        end: start + (i + 1) * HOUR_MS,
+      })),
     );
     // 补零桶：24 个小时桶，无数据桶为全零
     expect(overview.trend).toHaveLength(24);
@@ -577,7 +611,10 @@ describe('getWorkerRunOverview', () => {
     expect(overview.granularity).toBe('day');
     expect(mocks.getRunTrend).toHaveBeenCalledWith(
       { startTime: start, endTime: start + 7 * DAY_MS },
-      'day',
+      Array.from({ length: 7 }, (_, i) => ({
+        start: start + i * DAY_MS,
+        end: start + (i + 1) * DAY_MS,
+      })),
     );
     // 7 个上海日桶（end 恰好是桶边界，不包含）
     expect(overview.trend).toHaveLength(7);
@@ -599,6 +636,79 @@ describe('getWorkerRunOverview', () => {
       tokens: 0,
       cost: 0,
     });
+  });
+
+  it('aligns 7d day buckets to gateway-timezone midnights across a DST fall back', async () => {
+    tzState.timezone = 'America/New_York';
+    const endTime = Date.parse('2026-11-02T12:00:00Z'); // DST ended Nov 1 02:00 local
+    const window: AgentMetricsWindow = {
+      period: '7d',
+      startTime: endTime - 7 * DAY_MS,
+      endTime,
+    };
+    mocks.getRunTrend.mockResolvedValue([]);
+
+    const overview = await getWorkerRunOverview(window);
+
+    const expectedStarts = [
+      '2026-10-26T04:00:00Z',
+      '2026-10-27T04:00:00Z',
+      '2026-10-28T04:00:00Z',
+      '2026-10-29T04:00:00Z',
+      '2026-10-30T04:00:00Z',
+      '2026-10-31T04:00:00Z',
+      '2026-11-01T04:00:00Z',
+      '2026-11-02T05:00:00Z',
+    ].map(Date.parse);
+    const boundaries = mocks.getRunTrend.mock.calls[0][1] as Array<{
+      start: number;
+      end: number;
+    }>;
+    // SQL 分组边界与补零桶 x 轴完全同源，且都是真实的本地 0 点：
+    // Nov 1 是 25 小时的 fall-back 日（不再是 start + 24h 的固定网格）。
+    expect(boundaries.map((b) => b.start)).toEqual(expectedStarts);
+    expect(boundaries.map((b) => b.end)).toEqual(
+      [...expectedStarts.slice(1), Date.parse('2026-11-03T05:00:00Z')],
+    );
+    expect(boundaries[6].end - boundaries[6].start).toBe(25 * HOUR_MS);
+    expect(boundaries[5].end - boundaries[5].start).toBe(24 * HOUR_MS);
+    expect(overview.trend.map((row) => row.bucketStart)).toEqual(expectedStarts);
+    expect(overview.window.timezone).toBe('America/New_York');
+  });
+
+  it('aligns 7d day buckets to a half-hour-offset timezone midnight (Asia/Kolkata)', async () => {
+    tzState.timezone = 'Asia/Kolkata'; // UTC+5:30，本地 0 点 = 前一日 18:30Z
+    const endTime = Date.parse('2026-02-10T12:00:00Z');
+    const window: AgentMetricsWindow = {
+      period: '7d',
+      startTime: endTime - 7 * DAY_MS,
+      endTime,
+    };
+    mocks.getRunTrend.mockResolvedValue([]);
+
+    const overview = await getWorkerRunOverview(window);
+
+    const boundaries = mocks.getRunTrend.mock.calls[0][1] as Array<{
+      start: number;
+      end: number;
+    }>;
+    const expectedStarts = [
+      '2026-02-02T18:30:00Z',
+      '2026-02-03T18:30:00Z',
+      '2026-02-04T18:30:00Z',
+      '2026-02-05T18:30:00Z',
+      '2026-02-06T18:30:00Z',
+      '2026-02-07T18:30:00Z',
+      '2026-02-08T18:30:00Z',
+      '2026-02-09T18:30:00Z',
+    ].map(Date.parse);
+    expect(boundaries.map((b) => b.start)).toEqual(expectedStarts);
+    // 固定 +5:30 偏移：每桶仍是完整 24h，但午夜落在 UTC 的 :30。
+    for (const b of boundaries) {
+      expect(b.start % HOUR_MS).toBe(30 * 60_000);
+      expect(b.end - b.start).toBe(24 * HOUR_MS);
+    }
+    expect(overview.trend.map((row) => row.bucketStart)).toEqual(expectedStarts);
   });
 });
 

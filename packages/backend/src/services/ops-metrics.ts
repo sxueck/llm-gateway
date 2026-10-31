@@ -8,9 +8,11 @@ import {
 import { apiRequestHourlyDb, apiRequestDb } from "../db/index.js";
 import { appConfig } from "../config/index.js";
 import {
-  getShanghaiDayStart,
-  generateShanghaiDayBuckets,
+  getDayStart,
+  generateDayBucketBoundariesInTz,
+  type BucketBoundary,
 } from "../db/utils/time-buckets.js";
+import { gatewayTimezone } from "./gateway-timezone.js";
 import { threatIpBlocker } from "../services/threat-ip-blocker.js";
 import { getGeoInfo } from "../utils/ip.js";
 
@@ -29,7 +31,6 @@ import { getGeoInfo } from "../utils/ip.js";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
-const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 export type OpsPeriod = "24h" | "7d" | "30d";
 
@@ -86,7 +87,7 @@ async function planSegments(
     lastBucketEnd: number | null;
   },
 ): Promise<SegmentPlan> {
-  const detailStart = getShanghaiDayStart(
+  const detailStart = getDayStart(
     -appConfig.apiRequestLogRetentionDays,
   );
   const bounds =
@@ -223,7 +224,7 @@ export async function getOpsOverview(window: OpsWindow, filters: OpsFilters) {
     window: {
       startTime: window.startTime,
       endTime: window.endTime,
-      timezone: "Asia/Shanghai",
+      timezone: gatewayTimezone.get(),
     },
     updatedAt: Date.now(),
     dataCoverage: plan.coverage,
@@ -254,6 +255,7 @@ export interface OpsTrendPoint {
 export async function getOpsTrend(window: OpsWindow, filters: OpsFilters) {
   const plan = await planSegments(window);
   const byHour = window.period === "24h";
+  const timezone = gatewayTimezone.get();
 
   interface TrendBucket {
     bucketStart: number;
@@ -261,6 +263,7 @@ export async function getOpsTrend(window: OpsWindow, filters: OpsFilters) {
     partial: boolean;
   }
   const points: TrendBucket[] = [];
+  let bucketBoundaries: BucketBoundary[];
   if (byHour) {
     for (
       let b = floorHour(window.startTime);
@@ -273,41 +276,69 @@ export async function getOpsTrend(window: OpsWindow, filters: OpsFilters) {
         partial: b < window.startTime || b + HOUR_MS > window.endTime,
       });
     }
+    bucketBoundaries = points.map((p) => ({
+      start: p.bucketStart,
+      end: p.bucketEnd,
+    }));
   } else {
-    for (const dayStart of generateShanghaiDayBuckets(
+    bucketBoundaries = generateDayBucketBoundariesInTz(
       window.startTime,
       window.endTime - 1,
-    )) {
+      timezone,
+    );
+    for (const boundary of bucketBoundaries) {
       points.push({
-        bucketStart: dayStart,
-        bucketEnd: dayStart + DAY_MS,
+        bucketStart: boundary.start,
+        bucketEnd: boundary.end,
         partial:
-          dayStart < window.startTime || dayStart + DAY_MS > window.endTime,
+          boundary.start < window.startTime ||
+          boundary.end > window.endTime,
       });
     }
   }
 
-  // Same segment split as the overview: the hourly region and the detail
-  // ranges are disjoint by construction, so grouped per-bucket reads from the
-  // two sides can be merged per bucket without ever double-counting.
+  // A sealed hour containing a non-hour-aligned local midnight spans two days
+  // and cannot be split from the summary: exclude it, then re-read its raw
+  // detail (exact) or flag the adjacent buckets as gaps — never approximate.
   const detailStart = plan.coverage.detailStart;
-  const floorMs = byHour ? HOUR_MS : DAY_MS;
-  const offsetMs = byHour ? 0 : SHANGHAI_OFFSET_MS;
+  const detailRanges = [...plan.detailRanges];
+  const excludedHours: number[] = [];
+  const impreciseBuckets = new Set<number>();
+  if (!byHour) {
+    for (let i = 0; i < points.length; i++) {
+      const point = points[i];
+      if (point.bucketStart % HOUR_MS === 0) continue;
+      const hour = floorHour(point.bucketStart);
+      const hourly = plan.hourlyRange;
+      if (!hourly || hour < hourly.from || hour >= hourly.to) continue;
+      excludedHours.push(hour);
+      if (hour >= detailStart) {
+        detailRanges.push({ from: hour, to: hour + HOUR_MS });
+      } else {
+        impreciseBuckets.add(point.bucketStart);
+        if (i > 0 && points[i - 1].bucketEnd === point.bucketStart) {
+          impreciseBuckets.add(points[i - 1].bucketStart);
+        }
+      }
+    }
+  }
 
+  // Same segment split as the overview: the hourly region and the detail
+  // ranges are disjoint by construction (straddling hours are excluded from
+  // the hourly side), so per-bucket reads from the two sides merge cleanly.
   const detailGrouped =
-    plan.detailRanges.length > 0
+    detailRanges.length > 0
       ? await opsMetricsRepository.getDetailTotalsGroupedByBucket(
-          plan.detailRanges,
-          floorMs,
-          offsetMs,
+          detailRanges,
+          bucketBoundaries,
           filters,
         )
       : new Map<number, SegmentTotalsRow>();
   const hourlyGrouped = plan.hourlyRange
     ? await opsMetricsRepository.getHourlyTotalsGroupedByBucket(
         plan.hourlyRange,
-        floorMs,
-        offsetMs,
+        bucketBoundaries,
+        excludedHours,
         filters,
       )
     : new Map<number, SegmentTotalsRow>();
@@ -321,7 +352,7 @@ export async function getOpsTrend(window: OpsWindow, filters: OpsFilters) {
     window: {
       startTime: window.startTime,
       endTime: window.endTime,
-      timezone: "Asia/Shanghai",
+      timezone,
     },
     updatedAt: Date.now(),
     granularity: byHour ? "hour" : "day",
@@ -348,7 +379,7 @@ export async function getOpsTrend(window: OpsWindow, filters: OpsFilters) {
         bucketStart: point.bucketStart,
         bucketEnd: point.bucketEnd,
         partial: point.partial,
-        gap: inGap,
+        gap: inGap || impreciseBuckets.has(point.bucketStart),
         ...metrics,
       };
     }),
@@ -497,7 +528,7 @@ export async function getOpsDimensionList(
     window: {
       startTime: window.startTime,
       endTime: window.endTime,
-      timezone: "Asia/Shanghai",
+      timezone: gatewayTimezone.get(),
     },
     updatedAt: Date.now(),
     dimension: query.dimension,

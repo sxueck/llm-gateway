@@ -1,4 +1,5 @@
 import { getDatabase } from "../connection.js";
+import type { BucketBoundary } from "../utils/time-buckets.js";
 
 /**
  * 「Agent 使用统计」聚合读。
@@ -104,14 +105,6 @@ export interface RunModelProfileRow {
 }
 
 const EMPTY_UA_GROUP = "__empty__";
-
-/**
- * 时区分桶表达式照抄 ops-metrics.repository：小时桶 floorMs=3600000,
- * offset=0；上海日桶 floorMs=86400000, offset=+8h（Asia/Shanghai）。
- */
-const HOUR_MS = 3_600_000;
-const DAY_MS = 86_400_000;
-const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 /** 命名状态之外的终态（timed_out/budget_exceeded/expired）合并为 other。 */
 const NAMED_RUN_STATUSES = [
@@ -411,23 +404,25 @@ export const agentMetricsRepository = {
     }
   },
 
-  /**
-   * run 趋势分桶。分桶表达式与 ops-metrics.repository 相同
-   * （FLOOR((ts + offset) / floorMs) * floorMs - offset）。
-   */
+  /** 桶边界由调用方传入，与图表补零桶同源（见 BucketBoundary）。 */
   async getRunTrend(
     window: AgentMetricsTimeWindow,
-    granularity: "hour" | "day",
+    buckets: BucketBoundary[],
   ): Promise<RunTrendRow[]> {
+    if (buckets.length === 0) return [];
     const pool = getDatabase();
     const conn = await pool.getConnection();
     try {
-      const floorMs = granularity === "hour" ? HOUR_MS : DAY_MS;
-      const offsetMs = granularity === "hour" ? 0 : SHANGHAI_OFFSET_MS;
-      const bucketExpr = `FLOOR((r.created_at + ${offsetMs}) / ${floorMs}) * ${floorMs} - ${offsetMs}`;
+      const bucketSql = buckets
+        .map(() => `SELECT ? AS bucket_start, ? AS bucket_end`)
+        .join(" UNION ALL ");
+      const bucketParams: unknown[] = buckets.flatMap((b) => [
+        b.start,
+        b.end,
+      ]);
       const [rows] = await conn.query(
         `SELECT
-           ${bucketExpr} AS bucket_start,
+           b.bucket_start AS bucket_start,
            COUNT(*) AS runs,
            ${RUN_STATUS_COUNT} AS completed,
            ${RUN_STATUS_COUNT} AS failed,
@@ -435,10 +430,18 @@ export const agentMetricsRepository = {
            SUM(COALESCE(u.cost, 0)) AS cost
          FROM agent_search_runs r
          LEFT JOIN agent_search_usage u ON u.run_id = r.id
+         JOIN (${bucketSql}) b
+           ON r.created_at >= b.bucket_start AND r.created_at < b.bucket_end
          WHERE r.created_at >= ? AND r.created_at < ?
-         GROUP BY ${bucketExpr}
-         ORDER BY bucket_start`,
-        ["completed", "failed", window.startTime, window.endTime],
+         GROUP BY b.bucket_start
+         ORDER BY b.bucket_start`,
+        [
+          "completed",
+          "failed",
+          ...bucketParams,
+          window.startTime,
+          window.endTime,
+        ],
       );
       return (rows as any[]).map((row) => ({
         bucketStart: num(row.bucket_start),

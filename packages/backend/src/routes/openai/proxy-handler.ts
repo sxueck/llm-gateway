@@ -44,7 +44,7 @@ import {
   getModelForLogging,
 } from "../proxy/handlers/shared.js";
 import { logApiRequestAsync } from "../../services/api-request-logger.js";
-import { currentQuotaModel } from "../../services/model-daily-quota.js";
+import { currentQuotaModel } from "../../services/virtual-key-quota.js";
 import { normalizeUsageCounts } from "../../utils/usage-normalizer.js";
 import {
   isChatCompletionsPath,
@@ -524,7 +524,7 @@ export function createOpenAIProxyHandler() {
           onQuotaExceeded: ({ reply, modelName, retryAfterSeconds }) => {
             reply.code(429).send({
               error: {
-                message: `Model "${modelName}" has reached its daily token quota. Retry after ${formatRetryDuration(retryAfterSeconds)}.`,
+                message: `Model "${modelName}" has reached this virtual key's daily token quota. Retry after ${formatRetryDuration(retryAfterSeconds)}.`,
                 type: "rate_limit_error",
                 param: "model",
                 code: "model_daily_token_quota_exceeded",
@@ -591,6 +591,8 @@ export function createOpenAIProxyHandler() {
               logicalCacheKeyForRequest,
             );
             if (early.cached) {
+              // Only legacy entries lack a stamp; the client body string is
+              // their fallback.
               const earlyQuotaModel =
                 early.cached.quotaModel ??
                 (typeof (request.body as any)?.model === 'string'

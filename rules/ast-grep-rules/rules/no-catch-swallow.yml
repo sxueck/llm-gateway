@@ -1,0 +1,45 @@
+id: no-catch-swallow
+language: TypeScript
+severity: warning
+message: "catch clause hides the failure (returns a fallback value)"
+note: |
+  Matches a catch clause whose entire body is a single `return` (with or
+  without a value). pi-lens fact-rules deliberately treat this as intentional
+  (`catchReturnsDefault` is a skip valve in `missing-error-propagation`), so
+  the shape is otherwise invisible: the caller gets null/undefined/{}/a
+  default and cannot observe that the try block failed.
+
+  Division of labour (do not duplicate): `error-swallowing` (blocking) covers
+  empty catch; `error-obscuring` covers an unreferenced catch param;
+  `missing-error-propagation` covers log-without-rethrow in async functions.
+  All three are `.tsx?` only - see `no-except-swallow` for Python.
+
+  Legitimate fallback: annotate the handler with
+  `// pi-lens-ignore: no-catch-swallow` and name the requirement covering the
+  boundary and the miss case, or move the default to the call site.
+
+  Known false positives: `return new ParseError(e)`-style explicit error
+  values still match; suppress rather than reshape the code to dodge the
+  rule.
+  Known v1 blind spot (single-statement body only): `log(e); return null` is
+  not matched here - `missing-error-propagation` is the closer tool.
+  Four arms: `{ return $FALLBACK; }` does not match `{ return; }` in the TS
+  grammar, and `catch (e)` / bare `catch` are separate shapes (verified
+  against the live ast-grep binary).
+  JavaScript (.js) needs a `language: JavaScript` twin; add one when a real
+  .js codebase needs it.
+rule:
+  kind: catch_clause
+  any:
+    - pattern:
+        context: "try { work(); } catch ($E) { return $FALLBACK; }"
+        selector: catch_clause
+    - pattern:
+        context: "try { work(); } catch { return $FALLBACK; }"
+        selector: catch_clause
+    - pattern:
+        context: "try { work(); } catch ($E) { return; }"
+        selector: catch_clause
+    - pattern:
+        context: "try { work(); } catch { return; }"
+        selector: catch_clause
