@@ -1,0 +1,29 @@
+id: esm-relative-specifier-ext
+valid:
+  - |
+    import { sleep } from "./utils/index.js";
+  - |
+    import type { Model } from "@llm-gateway/shared";
+  - |
+    export * from "./orchestrator.js";
+  - |
+    const mod = await import("./connection.js");
+  - |
+    // allowed suffixes: assets and JSON resolve under both bundler and web
+    import Card from "../components/TierModelCard.vue";
+    import "../styles/base.css";
+    import data from "./fixtures.json";
+  - |
+    // bare/aliased specifiers are out of scope
+    export { something } from "vitest";
+invalid:
+  - |
+    import { format } from "./format";
+  - |
+    import I from '../types/index';
+  - |
+    export * from './protocol-types';
+  - |
+    export { a } from "../utils";
+  - |
+    const m = await import("./dyn-bad");

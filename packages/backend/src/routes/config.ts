@@ -17,11 +17,6 @@ import {
 import { debugModeService } from "../services/debug-mode.js";
 import { computeUsageCost, costMappingService, hasTokenPricing } from "../services/cost-mapping.js";
 import { runtimeSystemConfigCache } from "../services/runtime-system-config-cache.js";
-import {
-  MODEL_DAILY_TOKEN_LIMITS_CONFIG_KEY,
-  MODEL_DAILY_TOKEN_LIMITS_DESCRIPTION,
-  modelDailyQuota,
-} from "../services/model-daily-quota.js";
 import { threatIpBlocker } from "../services/threat-ip-blocker.js";
 import { requestHeaderForwardingService } from "../services/request-header-forwarding.js";
 import { upstreamSslConfigService } from "../services/upstream-ssl-config.js";
@@ -33,7 +28,8 @@ import {
 } from "../services/reasoning-effort-suffixes.js";
 import { getGeoInfo, normalizeIp } from "../utils/ip.js";
 import { getRequestSourceStats } from "../services/ops-metrics.js";
-import { getShanghaiDayStart, getShanghaiDateKey } from "../db/utils/time-buckets.js";
+import { getDayStart, getDateKey } from "../db/utils/time-buckets.js";
+import { gatewayTimezone } from "../services/gateway-timezone.js";
 import { circuitBreaker } from "../services/circuit-breaker.js";
 import {
   getTargetKey,
@@ -112,8 +108,6 @@ export async function configRoutes(fastify: FastifyInstance) {
       ? normalizeSuffixes(reasoningSuffixesCfg.value)
       : [...DEFAULT_REASONING_EFFORT_MODEL_SUFFIXES];
 
-    const modelDailyTokenLimits = await modelDailyQuota.snapshot();
-
     const now = Date.now();
     const rawExpiresAt = debugExpiresCfg ? Number(debugExpiresCfg.value) : 0;
     const activeDebug = debugEnabledCfg?.value === "true" && rawExpiresAt > now;
@@ -140,9 +134,10 @@ export async function configRoutes(fastify: FastifyInstance) {
         ? skipUpstreamSslVerifyCfg.value === "true"
         : false,
       trafficAnalysisRegion: trafficAnalysisRegionCfg?.value || null,
+      // 运行时有效值：DB 脏值（空/非法时区）在缓存层已回退为默认时区。
+      gatewayTimezone: gatewayTimezone.get(),
       antiBot,
       reasoningEffortModelSuffixes,
-      modelDailyTokenLimits,
     };
   });
 
@@ -209,9 +204,9 @@ export async function configRoutes(fastify: FastifyInstance) {
       forwardClientUserAgent,
       skipUpstreamSslVerify,
       trafficAnalysisRegion,
+      gatewayTimezone: gatewayTimezoneInput,
       antiBot,
       reasoningEffortModelSuffixes,
-      modelDailyTokenLimits,
     } = request.body as {
       allowRegistration?: boolean;
       corsEnabled?: boolean;
@@ -223,6 +218,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       forwardClientUserAgent?: boolean;
       skipUpstreamSslVerify?: boolean;
       trafficAnalysisRegion?: string | null;
+      gatewayTimezone?: string;
       antiBot?: {
         enabled?: boolean;
         blockBots?: boolean;
@@ -234,8 +230,16 @@ export async function configRoutes(fastify: FastifyInstance) {
         blockedUserAgents?: string[];
       };
       reasoningEffortModelSuffixes?: string[];
-      modelDailyTokenLimits?: Array<{ model: string; limitMillions: number | null }>;
     };
+
+    // 全局模型每日 token 额度已由虚拟密钥 × 模型额度取代（issue 39）：不再
+    // 读取也不再写入，避免旧管理入口误导；旧 system_config 行保留不动。
+    if ((request.body as any).modelDailyTokenLimits !== undefined) {
+      memoryLogger.warn(
+        "全局模型每日 token 额度已下线（改为按虚拟密钥 × 模型配置），请求中的 modelDailyTokenLimits 已忽略",
+        "Config",
+      );
+    }
 
     try {
       if (allowRegistration !== undefined) {
@@ -389,6 +393,14 @@ export async function configRoutes(fastify: FastifyInstance) {
         );
       }
 
+      if (gatewayTimezoneInput !== undefined) {
+        await gatewayTimezone.set(gatewayTimezoneInput);
+        memoryLogger.info(
+          `网关时区已更新: ${gatewayTimezone.get()}`,
+          "Config",
+        );
+      }
+
       if (publicUrl !== undefined) {
         const validation = validatePublicUrl(publicUrl);
         if (!validation.valid) {
@@ -517,34 +529,6 @@ export async function configRoutes(fastify: FastifyInstance) {
         );
       }
 
-      if (modelDailyTokenLimits !== undefined) {
-        const byModel: Record<string, number> = {};
-        for (const entry of modelDailyTokenLimits) {
-          const model =
-            typeof entry?.model === "string" ? entry.model.trim() : "";
-          if (!model) throw new Error("模型额度配置缺少模型名");
-          const millions = Number(entry?.limitMillions);
-          // 非法或 <=0 的条目表示不限制，不写入配置。
-          if (Number.isFinite(millions) && millions > 0) {
-            byModel[model] = Math.round(millions * 1000) / 1000;
-          }
-        }
-        await systemConfigDb.set(
-          MODEL_DAILY_TOKEN_LIMITS_CONFIG_KEY,
-          JSON.stringify(byModel),
-          MODEL_DAILY_TOKEN_LIMITS_DESCRIPTION,
-        );
-        modelDailyQuota.invalidateLimits();
-        memoryLogger.info(
-          `模型每日 token 额度已更新: ${
-            Object.entries(byModel)
-              .map(([m, v]) => `${m}=${v}M`)
-              .join(", ") || "(全部不限)"
-          }`,
-          "Config",
-        );
-      }
-
       return { success: true };
     } catch (error: any) {
       memoryLogger.error(`系统配置更新失败: ${error.message}`, "Config");
@@ -579,7 +563,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     );
     const conn = await pool.getConnection();
     try {
-      const detailStart = getShanghaiDayStart(
+      const detailStart = getDayStart(
         -appConfig.apiRequestLogRetentionDays,
       );
       const needsSummary = startTime < detailStart;
@@ -795,7 +779,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         : 365;
 
       const dayMs = 24 * 60 * 60 * 1000;
-      const windowEnd = getShanghaiDayStart(0) + dayMs;
+      const windowEnd = getDayStart(0) + dayMs;
       const windowStart = windowEnd - days * dayMs;
 
       const heatmap = await apiRequestDb.getDailyRequestHeatmap({
@@ -812,7 +796,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         windowEnd,
         detailStart: heatmap.detailStart,
         items: heatmap.days.map((day) => ({
-          date: getShanghaiDateKey(day.timestamp),
+          date: getDateKey(day.timestamp),
           timestamp: day.timestamp,
           requestCount: day.requestCount,
           totalTokens: day.totalTokens,
@@ -1403,6 +1387,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         modelInfo,
         accuracy,
         generatedAt: now,
+        timezone: gatewayTimezone.get(),
       };
     } catch (error: any) {
       memoryLogger.error(`流量分析失败: ${error?.message}`, "TrafficAnalysis");

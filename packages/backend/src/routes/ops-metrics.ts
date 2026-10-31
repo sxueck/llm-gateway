@@ -12,6 +12,7 @@ import type {
   OpsDimension,
   OpsFilters,
 } from "../db/repositories/ops-metrics.repository.js";
+import { gatewayTimezone } from "../services/gateway-timezone.js";
 
 const DIMENSIONS = new Set<OpsDimension>(["virtualKey", "model", "provider"]);
 
@@ -92,7 +93,7 @@ export async function opsMetricsRoutes(fastify: FastifyInstance) {
       window: {
         startTime: window.startTime,
         endTime: window.endTime,
-        timezone: "Asia/Shanghai",
+        timezone: gatewayTimezone.get(),
       },
       updatedAt: Date.now(),
       requestSourceStats: await getRequestSourceStats(window, parsed.filters),

@@ -18,6 +18,13 @@ export interface ModelResolutionResult {
   providerId: string;
   circuitBreakerKey?: string;
   currentModel?: any;
+  /**
+   * Quota identity: `models.name` of the addressed entry — allowlist match (by
+   * name OR model_identifier), pinned model, or agent-loopback model — never
+   * the raw client string, and not the routed real model, so a virtual model
+   * keeps its own budget. Undefined for provider-scoped keys.
+   */
+  addressedModelName?: string;
   excludeTargetKeys?: Set<string>;
   canRetry?: boolean; // 是否支持重试（仅智能路由模式）
   modelId?: string; // 用于重试时重新解析
@@ -160,6 +167,7 @@ export async function resolveModelAndProvider(
         excludeTargetKeys: result.excludeTargetKeys,
         canRetry,
         modelId: model.id,
+        addressedModelName: model.name,
         routeInfo: result.routeInfo
       };
     } catch (e: any) {
@@ -215,6 +223,7 @@ export async function resolveModelAndProvider(
         excludeTargetKeys: result.excludeTargetKeys,
         canRetry,
         modelId: virtualKey.model_id,
+        addressedModelName: model.name,
         routeInfo: result.routeInfo
       };
     } catch (routingError: any) {
@@ -481,6 +490,7 @@ export async function resolveModelAndProvider(
           excludeTargetKeys: result.excludeTargetKeys,
           canRetry,
           modelId: targetModelId,
+          addressedModelName: model.name,
           forcedReasoningEffort,
           routeInfo: result.routeInfo
         };
@@ -617,7 +627,8 @@ export async function retrySmartRouting(
       currentModel,
       excludeTargetKeys: retryResult.excludeTargetKeys,
       canRetry,
-      modelId
+      modelId,
+      addressedModelName: model.name
     };
   } catch (error: any) {
     memoryLogger.error(`Smart routing retry failed: ${error.message}`, 'Proxy');

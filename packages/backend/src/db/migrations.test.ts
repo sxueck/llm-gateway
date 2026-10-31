@@ -89,7 +89,7 @@ describe("migration 1: api_requests.session_id", () => {
   });
 
   test("does not re-apply recorded migrations once all versions are applied", async () => {
-    const conn = provisionedConn(4);
+    const conn = provisionedConn(5);
     await applyMigrations(conn as unknown as Connection);
     expect(conn.beginTransaction).not.toHaveBeenCalled();
     expect(conn.query.mock.calls.some(([sql]) => String(sql).includes("ALTER TABLE"))).toBe(false);
@@ -105,6 +105,59 @@ describe("migration 4: model_daily_usage_batches", () => {
     const issued = conn.query.mock.calls.map(([sql]) => String(sql));
     expect(issued).toHaveLength(2);
     expect(issued.every((sql) => sql.includes("CREATE TABLE IF NOT EXISTS model_daily_usage_batches"))).toBe(true);
+  });
+});
+
+describe("migration 5: virtual_key_model_quotas", () => {
+  test("creates the quota, usage and batch idempotency tables idempotently", async () => {
+    const conn = connection();
+    await migrations[4].up!(conn as unknown as Connection);
+    await migrations[4].up!(conn as unknown as Connection);
+
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(issued).toHaveLength(6);
+    expect(
+      issued.filter((sql) =>
+        /CREATE TABLE IF NOT EXISTS virtual_key_model_quotas\b/.test(sql),
+      ),
+    ).toHaveLength(2);
+    expect(
+      issued.filter((sql) =>
+        /CREATE TABLE IF NOT EXISTS virtual_key_model_daily_usage\b/.test(sql),
+      ),
+    ).toHaveLength(2);
+    expect(
+      issued.filter((sql) =>
+        sql.includes(
+          "CREATE TABLE IF NOT EXISTS virtual_key_model_daily_usage_batches",
+        ),
+      ),
+    ).toHaveLength(2);
+  });
+
+  test("keeps the retired global quota tables' data (no DROP/TRUNCATE)", async () => {
+    const conn = connection();
+    await migrations[4].up!(conn as unknown as Connection);
+
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    // 旧全局额度停用但数据保留：迁移绝不能删 model_daily_usage*。
+    expect(issued.some((sql) => /DROP |TRUNCATE /.test(sql))).toBe(false);
+  });
+
+  test("down drops only the three new tables", async () => {
+    const conn = connection();
+    await migrations[4].down!(conn as unknown as Connection);
+
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(issued).toEqual([
+      expect.stringContaining(
+        "DROP TABLE IF EXISTS virtual_key_model_daily_usage_batches",
+      ),
+      expect.stringContaining(
+        "DROP TABLE IF EXISTS virtual_key_model_daily_usage",
+      ),
+      expect.stringContaining("DROP TABLE IF EXISTS virtual_key_model_quotas"),
+    ]);
   });
 });
 

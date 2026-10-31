@@ -17,6 +17,12 @@ const mocks = vi.hoisted(() => ({
   hashKey: vi.fn(() => 'hashed'),
   maskKey: vi.fn((key: string) => (key.length <= 8 ? '***' : `***${key.slice(-4)}`)),
   txConnection: { __testTransactionConnection: true },
+  // 配额两表（virtual_key_model_quotas / virtual_key_model_daily_usage）：路由模块
+  // 的导入链（services/virtual-key-quota.js）会解构它们，mock 里必须有这个键。
+  quotaGetAll: vi.fn(),
+  quotaGetByVirtualKeyId: vi.fn(),
+  quotaApplyBulk: vi.fn(),
+  usageGetDayUsage: vi.fn(),
 }));
 
 vi.mock('../db/index.js', () => ({
@@ -32,6 +38,12 @@ vi.mock('../db/index.js', () => ({
   modelDb: { getById: mocks.modelGetById },
   providerDb: { getById: mocks.providerGetById },
   contextNormalizationDb: { deleteBindingsByScope: mocks.deleteBindingsByScope },
+  virtualKeyModelQuotaDb: {
+    getAll: mocks.quotaGetAll,
+    getByVirtualKeyId: mocks.quotaGetByVirtualKeyId,
+    applyBulk: mocks.quotaApplyBulk,
+  },
+  virtualKeyModelUsageDb: { getDayUsage: mocks.usageGetDayUsage },
   withTransaction: mocks.withTransaction,
 }));
 
@@ -449,6 +461,10 @@ describe('virtual key deletion transactionality', () => {
     expect(mocks.withTransaction).toHaveBeenCalledTimes(1);
     expect(mocks.delete).toHaveBeenCalledWith('vk_1', mocks.txConnection);
     expect(mocks.deleteBindingsByScope).toHaveBeenCalledWith('vk_1', mocks.txConnection);
+    // 配额行不在这里手工清理：virtual_key_model_quotas / …_daily_usage 对
+    // virtual_keys 的 FK ON DELETE CASCADE 负责回收，事务只保证两表同生共死。
+    expect(mocks.quotaApplyBulk).not.toHaveBeenCalled();
+    expect(mocks.quotaGetByVirtualKeyId).not.toHaveBeenCalled();
     // Cache invalidation happens after the commit, not inside the transaction.
     expect(mocks.invalidateVirtualKey).toHaveBeenCalledWith('sk-vk-1');
   });

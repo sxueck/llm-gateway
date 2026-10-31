@@ -10,7 +10,7 @@ import { resolveModelAndProvider } from "../proxy/model-resolver.js";
 import { buildProviderConfig } from "../proxy/provider-config-builder.js";
 import { memoryLogger } from "../../services/logger.js";
 import { virtualKeyRateLimiter } from "../../services/virtual-key-rate-limiter.js";
-import { modelDailyQuota } from "../../services/model-daily-quota.js";
+import { virtualKeyQuota } from "../../services/virtual-key-quota.js";
 import { debugModeService } from "../../services/debug-mode.js";
 import { logApiRequestAsync } from "../../services/api-request-logger.js";
 import { nanoid } from "nanoid";
@@ -426,22 +426,21 @@ export async function resolveWebSocketTurnConfig(
     );
   }
 
-  const { provider, providerId, currentModel } = modelResult;
+  const { provider, providerId, currentModel, addressedModelName } = modelResult;
 
-  // Same budget as the HTTP pipeline: the model name the client addressed, and
-  // a WS turn is charged to it like any other request.
-  const quotaModel =
+  const clientModel =
     typeof (normalizedRequest.body as any)?.model === "string"
       ? (normalizedRequest.body as any).model
       : undefined;
-  const quota = await modelDailyQuota.check(quotaModel);
+  const quotaModel = addressedModelName ?? clientModel;
+  const quota = await virtualKeyQuota.check(virtualKey.id, quotaModel);
   if (!quota.allowed) {
     memoryLogger.warn(
-      `模型每日 token 额度耗尽(WebSocket) | keyId: ${virtualKey.id} | model: ${quotaModel} | used: ${quota.usedTokens}/${quota.limitTokens}`,
+      `虚拟密钥模型每日 token 额度耗尽(WebSocket) | keyId: ${virtualKey.id} | model: ${quotaModel} | used: ${quota.usedTokens}/${quota.limitTokens}`,
       "Quota",
     );
     throw errorFromGatewayPayload(
-      `Model has reached its daily token quota. Retry after ${formatRetryDuration(quota.retryAfterSeconds)}.`,
+      `Model has reached this virtual key's daily token quota. Retry after ${formatRetryDuration(quota.retryAfterSeconds)}.`,
       ERROR_CODES.MODEL_QUOTA_EXCEEDED,
     );
   }

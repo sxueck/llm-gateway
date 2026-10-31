@@ -143,6 +143,40 @@
                 @update:value="onUpdateTrafficAnalysisRegion"
               />
             </n-space>
+            <n-space vertical :size="8" style="width: 100%;">
+              <div>
+                <div class="setting-label">{{ $t('settings.gatewayTimezone') }}</div>
+                <n-text depth="3" class="setting-description">{{ $t('settings.gatewayTimezoneDesc') }}</n-text>
+              </div>
+              <n-space :size="8" style="width: 100%;">
+                <n-select
+                  v-model:value="gatewayTimezoneInput"
+                  :options="gatewayTimezoneOptions"
+                  :placeholder="$t('settings.gatewayTimezonePlaceholder')"
+                  style="flex: 1;"
+                  size="small"
+                  filterable
+                  tag
+                  :loading="savingGatewayTimezone"
+                />
+                <n-button
+                  type="primary"
+                  size="small"
+                  :loading="savingGatewayTimezone"
+                  :disabled="!isGatewayTimezoneChanged"
+                  @click="onSaveGatewayTimezone"
+                >
+                  {{ $t('common.save') }}
+                </n-button>
+                <n-button
+                  size="small"
+                  :disabled="!isGatewayTimezoneChanged"
+                  @click="onResetGatewayTimezone"
+                >
+                  {{ $t('common.reset') }}
+                </n-button>
+              </n-space>
+            </n-space>
             <n-space class="setting-row" align="center" justify="space-between" :wrap="false">
               <div>
                 <div class="setting-label">{{ $t('settings.dashboardHideRequestSourceCard') }}</div>
@@ -216,6 +250,25 @@ const trafficAnalysisRegion = ref<string | null>(null);
 const trafficAnalysisRegionOptions = ref<Array<{ label: string; value: string }>>([]);
 const savingPublicUrl = ref(false);
 const allUsers = ref<User[]>([]);
+
+// 常用 IANA 时区；不在列表内的时区可用下拉框直接输入（tag），后端校验。
+const GATEWAY_TIMEZONE_OPTIONS = [
+  'Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Taipei', 'Asia/Singapore',
+  'Asia/Tokyo', 'Asia/Seoul', 'Asia/Bangkok', 'Asia/Jakarta',
+  'Asia/Kolkata', 'Asia/Dubai', 'Asia/Riyadh', 'Europe/London',
+  'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow', 'Europe/Amsterdam',
+  'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+  'America/Phoenix', 'America/Sao_Paulo', 'America/Toronto', 'America/Vancouver',
+  'Australia/Sydney', 'Australia/Melbourne', 'Australia/Perth', 'Pacific/Auckland',
+  'UTC',
+].map(tz => ({ label: tz, value: tz }));
+const gatewayTimezoneOptions = GATEWAY_TIMEZONE_OPTIONS;
+const gatewayTimezone = ref('Asia/Shanghai');
+const gatewayTimezoneInput = ref('Asia/Shanghai');
+const savingGatewayTimezone = ref(false);
+const isGatewayTimezoneChanged = computed(() => {
+  return gatewayTimezoneInput.value.trim() !== '' && gatewayTimezoneInput.value.trim() !== gatewayTimezone.value;
+});
 
 const reasoningEffortSuffixesInput = ref('');
 const reasoningEffortSuffixesOriginal = ref('');
@@ -323,6 +376,25 @@ async function onUpdateTrafficAnalysisRegion(value: string | null) {
   }
 }
 
+async function onSaveGatewayTimezone() {
+  const tz = gatewayTimezoneInput.value.trim();
+  try {
+    savingGatewayTimezone.value = true;
+    await configApi.updateSystemSettings({ gatewayTimezone: tz });
+    gatewayTimezone.value = tz;
+    gatewayTimezoneInput.value = tz;
+    message.success(t('messages.operationSuccess'));
+  } catch (e: any) {
+    message.error(e.message || t('messages.operationFailed'));
+  } finally {
+    savingGatewayTimezone.value = false;
+  }
+}
+
+function onResetGatewayTimezone() {
+  gatewayTimezoneInput.value = gatewayTimezone.value;
+}
+
 async function loadTrafficAnalysisRegions() {
   try {
     const regions = await configApi.getTrafficAnalysisRegions();
@@ -370,6 +442,8 @@ onMounted(async () => {
     publicUrl.value = s.publicUrl;
     publicUrlInput.value = s.publicUrl;
     trafficAnalysisRegion.value = s.trafficAnalysisRegion ?? null;
+    gatewayTimezone.value = s.gatewayTimezone || 'Asia/Shanghai';
+    gatewayTimezoneInput.value = gatewayTimezone.value;
     dashboardHideRequestSourceCard.value = s.dashboardHideRequestSourceCard || false;
 
     const suffixesText = (s.reasoningEffortModelSuffixes || []).join('\n');

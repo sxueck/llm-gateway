@@ -406,6 +406,7 @@ type SystemSettingsResponse = {
   forwardClientUserAgent: boolean;
   skipUpstreamSslVerify: boolean;
   trafficAnalysisRegion: string | null;
+  gatewayTimezone: string;
   antiBot: AntiBotSettings;
   reasoningEffortModelSuffixes: string[];
   modelDailyTokenLimits: ModelDailyTokenLimit[];
@@ -438,6 +439,7 @@ type UpdateSystemSettingsRequest = {
   forwardClientUserAgent?: boolean;
   skipUpstreamSslVerify?: boolean;
   trafficAnalysisRegion?: string | null;
+  gatewayTimezone?: string;
   antiBot?: {
     enabled?: boolean;
     blockBots?: boolean;
@@ -490,6 +492,7 @@ export interface TrafficAnalysisResponse {
   };
   accuracy: { r2: number; wape: number } | null;
   generatedAt: number;
+  timezone: string;
 }
 
 export type TrafficAnalysisRegion = { code: string; name: string };
