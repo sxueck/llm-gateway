@@ -32,6 +32,7 @@ const files = [
   'src/views/BackupView.vue',
   'src/views/LogsView.vue',
   'src/views/ProvidersView.vue',
+  'src/components/ProviderDialog.vue',
   'src/views/VirtualModelsView.vue',
   'src/views/WorkerPluginsView.vue',
   'src/views/auth/LoginView.vue',
@@ -40,10 +41,16 @@ const files = [
 
 const used = new Map();
 const dyn = new Map();
+const localeNamespaces = new Set(Object.keys(locales['zh-CN']));
 for (const f of files) {
   const s = fs.readFileSync(path.join(root, f), 'utf8');
   for (const m of s.matchAll(/(?:\$t|\bt|\bte)\(\s*['"]([a-zA-Z0-9_.]+)['"]/g)) {
     if (!used.has(m[1])) used.set(m[1], f);
+  }
+  // Also collect keys used as branches in expressions such as
+  // t(condition ? 'providers.form.a' : 'providers.form.b').
+  for (const m of s.matchAll(/[?:]\s*['"]([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+)['"]/g)) {
+    if (localeNamespaces.has(m[1].split('.')[0]) && !used.has(m[1])) used.set(m[1], f);
   }
   for (const m of s.matchAll(/(?:\bt|\bte)\(\s*`([a-zA-Z0-9_.]+)\$\{/g)) {
     if (!dyn.has(m[1])) dyn.set(m[1], f);
@@ -113,3 +120,4 @@ for (const [prefix, f] of dyn) {
 
 console.log('static keys checked:', used.size, ' dynamic prefixes:', dyn.size);
 console.log(problems.length ? 'MISSING:\n' + problems.join('\n') : 'ALL I18N KEYS RESOLVE');
+process.exitCode = problems.length ? 1 : 0;
