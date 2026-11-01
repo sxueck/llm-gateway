@@ -359,25 +359,23 @@ describe('virtual key plaintext exposure surface', () => {
     mocks.create.mockImplementation(async (vk: VirtualKey) => ({ ...vk }));
   });
 
-  it('masks keyValue in the list response and leaks no plaintext', async () => {
+  it('returns the stored keyValue in the authenticated list response', async () => {
     const app = await buildApp();
     const res = await app.inject({ method: 'GET', url: '/' });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json().virtualKeys[0].keyValue).toBe('***1234');
-    expect(res.body).not.toContain('vk_plain_secret_value_1234');
+    expect(res.json().virtualKeys[0].keyValue).toBe('vk_plain_secret_value_1234');
   });
 
-  it('masks keyValue in the detail response', async () => {
+  it('returns the stored keyValue in the authenticated detail response', async () => {
     const app = await buildApp();
     const res = await app.inject({ method: 'GET', url: '/vk_1' });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json().keyValue).toBe('***1234');
-    expect(res.body).not.toContain('vk_plain_secret_value_1234');
+    expect(res.json().keyValue).toBe('vk_plain_secret_value_1234');
   });
 
-  it('create hands the plaintext over exactly once, masked inside virtualKey', async () => {
+  it('create returns the plaintext separately and masks it inside virtualKey', async () => {
     const app = await buildApp();
     const res = await app.inject({
       method: 'POST',

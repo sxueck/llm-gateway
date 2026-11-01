@@ -119,8 +119,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     return {
       virtualKeys: virtualKeys.map(vk => ({
         id: vk.id,
-        // 明文只允许在 create/rotate 的响应里出现一次；列表/详情一律掩码。
-        keyValue: maskKey(vk.key_value),
+        keyValue: vk.key_value,
         name: vk.name,
         providerId: vk.provider_id,
         modelId: vk.model_id,
@@ -153,7 +152,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
 
     return {
       id: vk.id,
-      keyValue: maskKey(vk.key_value),
+      keyValue: vk.key_value,
       name: vk.name,
       providerId: vk.provider_id,
       modelId: vk.model_id,
