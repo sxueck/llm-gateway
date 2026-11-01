@@ -122,6 +122,7 @@ function makeNonStreamArgs() {
   const reply: any = {
     sent: false,
     header: vi.fn(),
+    removeHeader: vi.fn(),
     code: vi.fn(function (this: any) {
       return this;
     }),
@@ -129,7 +130,7 @@ function makeNonStreamArgs() {
       this.sent = true;
       return this;
     }),
-    raw: { on: vi.fn(), setHeader: vi.fn() },
+    raw: { on: vi.fn(), setHeader: vi.fn(), removeHeader: vi.fn() },
   };
   return { request, reply };
 }
@@ -195,6 +196,51 @@ test("dispatch clamps max_tokens to the target serving cap before calling the up
   expect(reply.header).toHaveBeenCalledWith("X-Max-Completion-Tokens", "1024");
   expect(circuitBreaker.recordSuccess).toHaveBeenCalledWith(CIRCUIT_KEY);
   expect(reply.code).toHaveBeenCalledWith(200);
+});
+
+test("catalog max_tokens / max_output_tokens alone do not clamp anthropic max_tokens", async () => {
+  vi.mocked(makeAnthropicRequest).mockResolvedValue({
+    statusCode: 200,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      type: "message",
+      content: [{ type: "text", text: "hi" }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    }),
+  } as any);
+
+  const { request, reply } = makeNonStreamArgs();
+  await dispatchAnthropicRequest({
+    request,
+    reply,
+    virtualKey: makeVirtualKey(),
+    virtualKeyValue: "sk-ant-vitest-000001",
+    providerId: "provider-1",
+    currentModel: {
+      name: "claude-target-a",
+      model_identifier: "claude-real-a",
+      model_attributes: JSON.stringify({
+        max_tokens: 1_000_000,
+        max_output_tokens: 384_000,
+        context_length: 200_000,
+      }),
+    },
+    modelResult: MODEL_RESULT,
+    startTime: Date.now() - 5,
+    protocolConfig: {
+      protocol: "anthropic",
+      model: "claude-real-a",
+      baseUrl: "https://upstream.test",
+    },
+    vkDisplay: "vk-disp",
+    retryBodySnapshot: undefined,
+  });
+
+  expect(request.body.max_tokens).toBe(5000);
+  expect(reply.header).not.toHaveBeenCalledWith(
+    "X-Max-Completion-Tokens",
+    expect.anything(),
+  );
 });
 
 test("forwards client anthropic-beta header without forwarding virtual-key auth", async () => {

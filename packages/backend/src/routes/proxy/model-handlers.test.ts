@@ -81,4 +81,21 @@ describe("applyServingLimits", () => {
     expect(entry.max_completion_tokens).toBeUndefined();
     expect(entry.context_window).toBe(1000000);
   });
+
+  it("prefers max_completion_tokens over catalog output fields when both exist", () => {
+    const entry = applyServingLimits(
+      { id: "mixed" },
+      {
+        max_completion_tokens: 8192,
+        max_output_tokens: 384000,
+        max_tokens: 1000000,
+        context_window: 200000,
+      },
+    );
+
+    expect(entry).toMatchObject({
+      max_completion_tokens: 8192,
+      context_window: 200000,
+    });
+  });
 });
