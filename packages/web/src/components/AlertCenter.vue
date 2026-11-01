@@ -130,6 +130,16 @@ async function markAllRead() {
  * 写成字面模板是为了让 scripts/check-i18n-keys.cjs 能推导出 alerts.codes.* 这组动态键。
  */
 function alertText(alert: SystemAlert): string {
+  if (alert.code.startsWith('login_ip_lockout_')) {
+    const params = alert.params ?? {};
+    const lockedUntil = Number(params.lockedUntil);
+    // 只展示本地化的截止时间，不把后端封锁时长写死；参数异常时回落后端摘要。
+    if (!Number.isFinite(lockedUntil) || lockedUntil <= 0) return alert.message;
+    return t('alerts.loginIpLockout', {
+      ...params,
+      lockedUntilText: new Date(lockedUntil).toLocaleString(),
+    });
+  }
   if (!te(`alerts.codes.${alert.code}`)) return alert.message;
   return t(`alerts.codes.${alert.code}`, alert.params ?? {});
 }

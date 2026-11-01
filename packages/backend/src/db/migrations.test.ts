@@ -89,7 +89,7 @@ describe("migration 1: api_requests.session_id", () => {
   });
 
   test("does not re-apply recorded migrations once all versions are applied", async () => {
-    const conn = provisionedConn(5);
+    const conn = provisionedConn(6);
     await applyMigrations(conn as unknown as Connection);
     expect(conn.beginTransaction).not.toHaveBeenCalled();
     expect(conn.query.mock.calls.some(([sql]) => String(sql).includes("ALTER TABLE"))).toBe(false);
@@ -158,6 +158,69 @@ describe("migration 5: virtual_key_model_quotas", () => {
       ),
       expect.stringContaining("DROP TABLE IF EXISTS virtual_key_model_quotas"),
     ]);
+  });
+});
+
+describe("migration 6: login_ip_lockout", () => {
+  test("is version 6 and rolls back reversibly", () => {
+    expect(migrations[5].version).toBe(6);
+    expect(migrations[5].name).toBe("login_ip_lockout");
+    expect(typeof migrations[5].down).toBe("function");
+  });
+
+  test("creates both lockout tables idempotently (re-run issues the same DDL)", async () => {
+    const conn = connection();
+    await migrations[5].up!(conn as unknown as Connection);
+    await migrations[5].up!(conn as unknown as Connection);
+
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(issued).toHaveLength(4);
+    expect(issued.filter((sql) => sql.includes("CREATE TABLE IF NOT EXISTS login_attempt_lockouts"))).toHaveLength(2);
+    expect(issued.filter((sql) => sql.includes("CREATE TABLE IF NOT EXISTS login_lockout_events"))).toHaveLength(2);
+    // 不含任何非幂等 DDL
+    expect(issued.some((sql) => /ALTER TABLE|DROP /.test(sql))).toBe(false);
+  });
+
+  test("ships the bucket key and the indexes required by access and cleanup paths", async () => {
+    const conn = connection();
+    await migrations[5].up!(conn as unknown as Connection);
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql)).join("\n");
+    // 封锁桶 = (ip, username)：共享出口 IP 下一个用户名不能封锁其它账号
+    expect(issued).toContain("username VARCHAR(64) NOT NULL");
+    expect(issued).toContain("PRIMARY KEY (ip, username)");
+    expect(issued).toContain("INDEX idx_login_attempt_lockouts_last_failed (last_failed_at)");
+    expect(issued).toContain("INDEX idx_login_attempt_lockouts_locked_until (locked_until)");
+    expect(issued).toContain("code VARCHAR(64) NOT NULL UNIQUE");
+    expect(issued).toContain("INDEX idx_login_lockout_events_created_at (created_at)");
+  });
+
+  test("down drops both tables idempotently", async () => {
+    const conn = connection();
+    await migrations[5].down!(conn as unknown as Connection);
+    await migrations[5].down!(conn as unknown as Connection);
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(issued).toHaveLength(4);
+    expect(issued.every((sql) => sql.startsWith("DROP TABLE IF EXISTS login_"))).toBe(true);
+  });
+
+  test("is applied when the recorded version is 5 and recorded afterwards", async () => {
+    const recorded: Array<{ version: number; name: string }> = [];
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      if (sql.includes("INFORMATION_SCHEMA.TABLES")) {
+        return [[{ name: "users" }, { name: "schema_baseline" }, { name: "schema_migrations" }]];
+      }
+      if (sql.includes("SELECT generation")) return [[{ generation: 2 }]];
+      if (sql.includes("MAX(version)")) return [[{ version: 5 }]];
+      if (sql.includes("INSERT INTO schema_migrations")) {
+        recorded.push({ version: params![0] as number, name: params![1] as string });
+      }
+      return [[]];
+    });
+    const conn = { query, beginTransaction: vi.fn(), commit: vi.fn(), rollback: vi.fn() };
+    await applyMigrations(conn as unknown as Connection);
+    const issued = query.mock.calls.map(([sql]) => String(sql));
+    expect(issued.some((sql) => sql.includes("CREATE TABLE IF NOT EXISTS login_attempt_lockouts"))).toBe(true);
+    expect(recorded).toEqual([{ version: 6, name: "login_ip_lockout" }]);
   });
 });
 

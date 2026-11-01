@@ -14,6 +14,7 @@ import {
   shutdownDatabase,
 } from "./db/index.js";
 import { startSessionBindingCleanup } from "./services/expert-router.js";
+import { startLoginLockoutCleanup } from "./services/login-lockout.js";
 import { getJevConfiguration } from "./services/expert-router/jev-client.js";
 import { startContextNormalizationCleanup } from "./services/context-normalization/index.js";
 import { authRoutes } from "./routes/auth.js";
@@ -175,6 +176,7 @@ await gatewayTimezone.initialize();
 // Periodic cleanup of expired durable session bindings (NFR-4).
 startSessionBindingCleanup();
 startContextNormalizationCleanup();
+startLoginLockoutCleanup();
 
 // Agent Search：固定执行器并恢复重启前遗留的 run（确定性失败，不挂起）。
 if (process.env.AGENT_WORKER_IMAGE) {

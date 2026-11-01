@@ -1420,6 +1420,7 @@ export default {
     empty: '暂无告警',
     loadFailed: '告警检查失败，稍后自动重试',
     checkedAt: '检查于 {time}',
+    loginIpLockout: 'IP {ip} 对账号 {username} 连续 {attempts} 次登录失败，已被临时封锁至 {lockedUntilText}',
     level: {
       error: '严重',
       warning: '警告',
@@ -1430,6 +1431,7 @@ export default {
       cost: '成本',
       provider: '供应商',
       storage: '存储',
+      security: '安全',
     },
     codes: {
       worker_executor_missing: '已启用 Worker 但未配置执行器，近 24 小时 {runs} 个 run 无法执行（需设 AGENT_WORKER_IMAGE 或 AGENT_WORKER_LOCAL=1）',

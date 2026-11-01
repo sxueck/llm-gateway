@@ -1418,6 +1418,7 @@ export default {
     empty: 'No alerts',
     loadFailed: 'Alert check failed; retrying automatically',
     checkedAt: 'Checked at {time}',
+    loginIpLockout: 'IP {ip} had {attempts} consecutive failed logins for account {username}; temporarily blocked until {lockedUntilText}',
     level: {
       error: 'Critical',
       warning: 'Warning',
@@ -1428,6 +1429,7 @@ export default {
       cost: 'Cost',
       provider: 'Provider',
       storage: 'Storage',
+      security: 'Security',
     },
     codes: {
       worker_executor_missing: 'Worker is enabled but no executor is configured; {runs} run(s) in the last 24h could not run (set AGENT_WORKER_IMAGE or AGENT_WORKER_LOCAL=1)',

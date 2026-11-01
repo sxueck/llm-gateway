@@ -19,11 +19,14 @@ import { searchRunScheduler } from '../agent/run/scheduler.js';
 
 export type AlertLevel = 'error' | 'warning' | 'info';
 
+/** 采集端与读取端共用一份，避免两处排序漂移。 */
+export const ALERT_LEVEL_ORDER: Record<AlertLevel, number> = { error: 0, warning: 1, info: 2 };
+
 export interface SystemAlert {
   /** 稳定标识，前端据此取 i18n 文案；同一条件重复采集得到同一个 code */
   code: string;
   level: AlertLevel;
-  category: 'worker' | 'cost' | 'provider' | 'storage';
+  category: 'worker' | 'cost' | 'provider' | 'storage' | 'security';
   /** 中文摘要；前端优先用 code 渲染本地化文案 */
   message: string;
   /** 文案参数（镜像名、模型名、阈值……） */
@@ -367,8 +370,7 @@ async function runChecks(): Promise<SystemAlert[]> {
     }
   });
 
-  const order: Record<AlertLevel, number> = { error: 0, warning: 1, info: 2 };
-  return alerts.sort((a, b) => order[a.level] - order[b.level]);
+  return alerts.sort((a, b) => ALERT_LEVEL_ORDER[a.level] - ALERT_LEVEL_ORDER[b.level]);
 }
 
 /**
