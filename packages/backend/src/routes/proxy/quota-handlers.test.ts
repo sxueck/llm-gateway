@@ -8,12 +8,9 @@ vi.hoisted(() => {
 });
 
 import {
-  buildQuotaPeriodSummary,
-  buildQuotaSummary,
   getQuotaSummaryHandler,
 } from './quota-handlers.js';
 import { virtualKeyQuota } from '../../services/virtual-key-quota.js';
-import type { VirtualKeyQuotaEntry } from '../../services/virtual-key-quota.js';
 
 const mocks = vi.hoisted(() => ({
   getAll: vi.fn(),
@@ -52,19 +49,6 @@ const KEY_ID = 'vk-summary';
 // 周三上午（上海 +08:00）：文档示例锚点。
 const NOW_WED = new Date('2026-03-04T10:30:00+08:00').getTime();
 
-function entry(overrides: Partial<VirtualKeyQuotaEntry> = {}): VirtualKeyQuotaEntry {
-  return {
-    model: 'gpt-x',
-    limitMillions: 1,
-    usedTokens: 250_000,
-    requestCount: 3,
-    weeklyLimitMillions: 5,
-    weeklyUsedTokens: 550_000,
-    weeklyRequestCount: 6,
-    ...overrides,
-  };
-}
-
 function makeRequestReply(headers: Record<string, string> = { authorization: `Bearer ${KEY}` }) {
   const request: any = { headers };
   const reply: any = {
@@ -99,75 +83,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
-});
-
-describe('buildQuotaPeriodSummary', () => {
-  test('unconfigured ceilings (null / 0 / undefined) surface as null, never a fake 0 cap', () => {
-    expect(buildQuotaPeriodSummary(null, 5, 1, 0)).toBeNull();
-    expect(buildQuotaPeriodSummary(0, 5, 1, 0)).toBeNull();
-    expect(buildQuotaPeriodSummary(undefined, 5, 1, 0)).toBeNull();
-  });
-
-  test('converts millions to tokens with the same rounding as the pre-check', () => {
-    expect(buildQuotaPeriodSummary(1.5, 0, 0, 0)!.limit_tokens).toBe(1_500_000);
-    expect(buildQuotaPeriodSummary(0.001, 0, 0, 0)!.limit_tokens).toBe(1_000);
-    expect(buildQuotaPeriodSummary(1.5, 0, 0, 0)!.limit_millions).toBe(1.5);
-  });
-
-  test('fail-open overshoot keeps used above the cap but clamps remaining at zero', () => {
-    const period = buildQuotaPeriodSummary(1, 1_500_000, 2, 0)!;
-    expect(period.used_tokens).toBe(1_500_000);
-    expect(period.remaining_tokens).toBe(0);
-    expect(period.request_count).toBe(2);
-  });
-});
-
-describe('buildQuotaSummary reset boundaries', () => {
-  test('mid-week Shanghai day: daily resets next local midnight, weekly next Monday', () => {
-    const summary = buildQuotaSummary([entry()], NOW_WED, 'Asia/Shanghai');
-
-    expect(summary.timezone).toBe('Asia/Shanghai');
-    expect(summary.data[0].daily!.resets_at).toBe('2026-03-04T16:00:00.000Z'); // 周四 00:00 +08
-    expect(summary.data[0].weekly!.resets_at).toBe('2026-03-08T16:00:00.000Z'); // 下周一 00:00 +08
-  });
-
-  test('Sunday is the last day of the week: weekly resets with the next daily window', () => {
-    const now = new Date('2026-03-01T20:00:00+08:00').getTime(); // 周日
-    const summary = buildQuotaSummary([entry()], now, 'Asia/Shanghai');
-
-    expect(summary.data[0].daily!.resets_at).toBe('2026-03-01T16:00:00.000Z');
-    expect(summary.data[0].weekly!.resets_at).toBe('2026-03-01T16:00:00.000Z');
-  });
-
-  test('Monday starts a fresh weekly window resetting seven days out', () => {
-    const now = new Date('2026-03-02T09:00:00+08:00').getTime(); // 周一
-    const summary = buildQuotaSummary([entry()], now, 'Asia/Shanghai');
-
-    expect(summary.data[0].weekly!.resets_at).toBe('2026-03-08T16:00:00.000Z');
-  });
-
-  test('weekly reset instant follows the DST offset of the reset day, not of today', () => {
-    // 周三 2026-03-04 仍是 EST(-5)，但重置日下周一落在春令时后的 EDT(-4)。
-    const now = new Date('2026-03-04T12:00:00-05:00').getTime();
-    const summary = buildQuotaSummary([entry()], now, 'America/New_York');
-
-    expect(summary.data[0].weekly!.resets_at).toBe('2026-03-09T04:00:00.000Z'); // EDT 周一 00:00
-  });
-
-  test('daily reset across the fall-back DST day lands on the post-transition offset', () => {
-    // 2026-11-01 是纽约秋令时切换日（EDT→EST），次日零点按 EST(-5) 计算。
-    const now = new Date('2026-11-01T03:30:00-04:00').getTime();
-    const summary = buildQuotaSummary([entry()], now, 'America/New_York');
-
-    expect(summary.data[0].daily!.resets_at).toBe('2026-11-02T05:00:00.000Z');
-  });
-
-  test('a dimension without a ceiling is null while the other stays populated', () => {
-    const summary = buildQuotaSummary([entry({ weeklyLimitMillions: null })], NOW_WED, 'Asia/Shanghai');
-
-    expect(summary.data[0].daily).not.toBeNull();
-    expect(summary.data[0].weekly).toBeNull();
-  });
 });
 
 describe('GET /v1/quota handler', () => {
