@@ -185,4 +185,58 @@ describe("AnthropicStreamNormalizer", () => {
       { type: "content_block_stop", index: 0 },
     ]);
   });
+
+  it("keeps tool_use blocks intact when they follow a split thinking/text sequence", () => {
+    const events: AnthropicStreamEvent[] = [
+      {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "text", text: "" },
+      },
+      {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "thinking_delta", thinking: "plan" },
+      },
+      {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "text_delta", text: "calling tool" },
+      },
+      { type: "content_block_stop", index: 0 },
+      {
+        type: "content_block_start",
+        index: 1,
+        content_block: { type: "tool_use", id: "toolu_1", name: "bash", input: {} },
+      },
+      {
+        type: "content_block_delta",
+        index: 1,
+        delta: { type: "input_json_delta", partial_json: "{\"cmd\":\"ls\"}" },
+      },
+      { type: "content_block_stop", index: 1 },
+    ];
+
+    const out = normalize(events);
+    expect(out.filter((e) => e.type === "content_block_start").map((e) => e.content_block?.type))
+      .toEqual(["thinking", "text", "tool_use"]);
+    expect(out).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "content_block_start",
+          index: 2,
+          content_block: expect.objectContaining({
+            type: "tool_use",
+            id: "toolu_1",
+            name: "bash",
+          }),
+        }),
+        expect.objectContaining({
+          type: "content_block_delta",
+          index: 2,
+          delta: { type: "input_json_delta", partial_json: "{\"cmd\":\"ls\"}" },
+        }),
+      ]),
+    );
+  });
 });
