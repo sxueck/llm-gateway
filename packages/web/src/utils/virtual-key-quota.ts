@@ -1,4 +1,4 @@
-import type { VirtualKeyModelQuota, VirtualKeyQuotaUpsert } from '@/api/virtual-key';
+import type { VirtualKeyModelQuota, VirtualKeyQuotaPeriod, VirtualKeyQuotaUpsert } from '@/api/virtual-key';
 
 /** Smallest expressible quota: 0.001 M = 1K tokens (matches the editor input's step).
  * Applies to every counting period — daily and weekly share the editor and the
@@ -69,4 +69,93 @@ export function quotaRowsFromServer(
       limitMillions: quota.limitMillions,
       usage: { usedTokens: quota.usedTokens ?? 0, requestCount: quota.requestCount ?? 0 },
     }));
+}
+
+export type VirtualKeyQuotaHealthState = 'unconfigured' | 'active' | 'exhausted';
+
+export interface VirtualKeyQuotaHealthDetail {
+  model: string;
+  period: VirtualKeyQuotaPeriod;
+  usedTokens: number;
+  limitTokens: number;
+}
+
+export interface VirtualKeyQuotaHealth {
+  state: VirtualKeyQuotaHealthState;
+  ratio: number;
+  detail: VirtualKeyQuotaHealthDetail | null;
+}
+
+function healthRatio(detail: VirtualKeyQuotaHealthDetail): number {
+  return detail.usedTokens / detail.limitTokens;
+}
+
+/**
+ * Daily + weekly server quotas -> one aggregate health value. Entries without
+ * a positive ceiling are ignored (weekly rows may carry a null limit); a key
+ * with no configured quota in either window is `unconfigured`, any window at
+ * or past its limit makes the whole key `exhausted`.
+ */
+export function deriveQuotaHealth(
+  daily: VirtualKeyModelQuota[],
+  weekly: VirtualKeyModelQuota[],
+): VirtualKeyQuotaHealth {
+  const candidates: VirtualKeyQuotaHealthDetail[] = [];
+  const windows: Array<[VirtualKeyQuotaPeriod, VirtualKeyModelQuota[]]> = [
+    ['daily', daily],
+    ['weekly', weekly],
+  ];
+  for (const [period, quotas] of windows) {
+    for (const quota of quotas) {
+      const limitMillions = quota.limitMillions;
+      if (typeof limitMillions !== 'number' || limitMillions <= 0) continue;
+      candidates.push({
+        model: quota.model,
+        period,
+        usedTokens: quota.usedTokens ?? 0,
+        limitTokens: limitMillions * 1_000_000,
+      });
+    }
+  }
+  if (candidates.length === 0) return { state: 'unconfigured', ratio: 0, detail: null };
+
+  let worst = candidates[0];
+  let worstRatio = healthRatio(worst);
+  let exhausted = worstRatio >= 1;
+  for (const candidate of candidates.slice(1)) {
+    const ratio = healthRatio(candidate);
+    if (ratio > worstRatio) {
+      worst = candidate;
+      worstRatio = ratio;
+    }
+    exhausted = exhausted || ratio >= 1;
+  }
+  return { state: exhausted ? 'exhausted' : 'active', ratio: worstRatio, detail: worst };
+}
+
+const QUOTA_HEALTH_STOPS: Array<{ at: number; rgb: readonly [number, number, number] }> = [
+  { at: 0, rgb: [24, 160, 88] },
+  { at: 0.5, rgb: [240, 160, 32] },
+  { at: 1, rgb: [208, 48, 80] },
+];
+
+/**
+ * usage ratio -> hex color on the green-to-red ramp, clamped to [0, 1] so an
+ * over-limit ratio stays at the terminal red instead of wrapping around.
+ */
+export function quotaHealthColor(ratio: number): string {
+  const safe = Number.isFinite(ratio) ? Math.min(Math.max(ratio, 0), 1) : 0;
+  let lower = QUOTA_HEALTH_STOPS[0];
+  let upper = QUOTA_HEALTH_STOPS[QUOTA_HEALTH_STOPS.length - 1];
+  for (let i = 1; i < QUOTA_HEALTH_STOPS.length; i++) {
+    if (safe <= QUOTA_HEALTH_STOPS[i].at) {
+      lower = QUOTA_HEALTH_STOPS[i - 1];
+      upper = QUOTA_HEALTH_STOPS[i];
+      break;
+    }
+  }
+  const t = upper.at === lower.at ? 0 : (safe - lower.at) / (upper.at - lower.at);
+  const mix = (a: number, b: number) => Math.round(a + (b - a) * t);
+  const hex = (value: number) => value.toString(16).padStart(2, '0');
+  return `#${hex(mix(lower.rgb[0], upper.rgb[0]))}${hex(mix(lower.rgb[1], upper.rgb[1]))}${hex(mix(lower.rgb[2], upper.rgb[2]))}`;
 }

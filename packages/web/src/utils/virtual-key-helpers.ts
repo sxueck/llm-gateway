@@ -49,6 +49,41 @@ export function filterVirtualKeys(
   });
 }
 
+export type VirtualKeySortOrder = 'ascend' | 'descend';
+
+export interface VirtualKeyPageQuery {
+  page: number;
+  pageSize: number;
+  sortKey?: string | null;
+  sortOrder?: VirtualKeySortOrder | null;
+}
+
+/**
+ * Mirrors naive-ui's non-remote data pipeline: sort a copy of the filtered
+ * list with the active column sorter (stable Array#sort keeps tied rows in
+ * list order, exactly like the table), clamp the page to the last page, then
+ * slice. The result is precisely the rows the table renders, so per-row side
+ * data (e.g. quota statuses) only needs fetching for these ids.
+ */
+export function pageVirtualKeys(
+  keys: VirtualKey[],
+  query: VirtualKeyPageQuery,
+  sorterOf: (key: string) => ((a: VirtualKey, b: VirtualKey) => number) | null,
+): VirtualKey[] {
+  const sortKey = query.sortKey ?? null;
+  const order = query.sortOrder ?? null;
+  const sorter = sortKey && order ? sorterOf(sortKey) : null;
+  let ordered = keys;
+  if (sorter) {
+    const flag = order === 'ascend' ? 1 : -1;
+    ordered = keys.slice().sort((a, b) => sorter(a, b) * flag);
+  }
+  const pageSize = Math.max(1, query.pageSize || 1);
+  const lastPage = Math.max(1, Math.ceil(keys.length / pageSize));
+  const page = Math.min(Math.max(1, query.page || 1), lastPage);
+  return ordered.slice((page - 1) * pageSize, page * pageSize);
+}
+
 /**
  * Limit: backend services/ops-metrics.ts keeps at most DIMENSION_LIMIT = 2000
  * dimension keys per window segment, and single-page pageSize is clamped to

@@ -649,6 +649,15 @@ export default {
     copyCurl: 'Copy command',
     quota: 'Model quotas',
     quotaSettings: 'Quota settings',
+    quotaStatus: {
+      loading: 'Loading quota status…',
+      loadError: 'Failed to load quota status',
+      unconfigured: 'No model quotas configured',
+      periodDaily: 'daily',
+      periodWeekly: 'weekly',
+      exhausted: 'Quota exhausted: {model} {period} usage {used} / {limit}',
+      usage: 'Quota usage {percent}%: {model} {period} {used} / {limit}'
+    },
     quotas: {
       title: 'Model Token Quotas',
       submit: 'Submit quota changes',
@@ -682,6 +691,7 @@ export default {
       loadError: 'Failed to load quota usage: {message}',
       retry: 'Retry',
       hintTitle: 'Counting & reset window',
+      infoAria: 'Show quota counting explanation',
       hintDaily: 'Daily quotas are counted per gateway-timezone calendar day (configurable in Settings, defaults to Asia/Shanghai UTC+8) and reset at midnight; once a key exhausts a model’s quota, new requests to that model return 429 until the next day. Daily and weekly quotas are independent and enforced at the same time — exhausting either one rejects new requests. M means millions of tokens, counting input + output (cached included). Only the models listed above are submitted: “Set” writes or updates the limit, “Delete” removes that model’s quota after submitting; unlisted models keep theirs.',
       hintWeekly: 'Weekly quotas are counted per gateway-timezone natural week (configurable in Settings, defaults to Asia/Shanghai UTC+8), Monday 00:00 through Sunday, and reset at midnight on Monday; once a key exhausts a model’s weekly quota, new requests to that model return 429 until the next Monday. Daily and weekly quotas are independent and enforced at the same time — exhausting either one rejects new requests. M means millions of tokens, counting input + output (cached included). Only the models listed above are submitted: “Set” writes or updates the weekly limit, “Delete” removes that model’s weekly quota after submitting; unlisted models keep theirs.',
     },

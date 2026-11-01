@@ -34,6 +34,7 @@
           <n-button
             size="small"
             :disabled="virtualKeyStore.virtualKeys.length === 0"
+            :type="checkedRowKeys.length > 0 ? 'warning' : 'default'"
             @click="openBatchQuotaModal"
           >
             <template #icon>
@@ -73,10 +74,11 @@
           :pagination="pagination"
           :row-key="rowKeyOf"
           :checked-row-keys="checkedRowKeys"
-          :scroll-x="1140"
+          :scroll-x="1150"
           :bordered="false"
           size="small"
           @update:checked-row-keys="handleCheckedRowKeysUpdate"
+          @update:sorter="handleSorterUpdate"
         />
       </n-card>
     </n-space>
@@ -424,11 +426,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, reactive, ref, watch } from 'vue'
+import { computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
-import type { DataTableColumns, PaginationProps } from 'naive-ui'
+import type { DataTableBaseColumn, DataTableColumns, DataTableSortState, PaginationProps } from 'naive-ui'
 import {
   NSpace,
   NButton,
@@ -482,6 +484,7 @@ import {
   collectBoundModelIds,
   createVirtualKeyMetricsLoader,
   filterVirtualKeys,
+  pageVirtualKeys,
   resolveFirstModelIdentifier,
   type VirtualKeyEnabledFilter,
   type VirtualKeyMetricsData
@@ -490,6 +493,8 @@ import { createDefaultVirtualKeyForm } from '@/types/virtual-key'
 import { CONTEXT_BUDGET_TIERS } from '@llm-gateway/shared'
 import PageHeader from '@/components/PageHeader.vue'
 import VirtualKeyQuotaModal from '@/components/VirtualKeyQuotaModal.vue'
+import VirtualKeyQuotaButton from '@/components/VirtualKeyQuotaButton.vue'
+import { useVirtualKeyQuotaStatus } from '@/composables/useVirtualKeyQuotaStatus'
 
 const message = useMessage()
 const router = useRouter()
@@ -506,6 +511,9 @@ const checkedRowKeys = ref<string[]>([])
 const showQuotaModal = ref(false)
 // null = batch scope (selected/all); a key id = single-key quota view with usage.
 const quotaSingleKeyId = ref<string | null>(null)
+
+const { statusById: quotaStatusById, ensure: ensureQuotaStatus, reset: resetQuotaStatus } =
+  useVirtualKeyQuotaStatus()
 
 function handleCheckedRowKeysUpdate(keys: Array<string | number>) {
   checkedRowKeys.value = keys.map(String)
@@ -605,6 +613,16 @@ const filteredKeys = computed(() =>
     (modelId) => modelById.value.get(modelId)?.name
   )
 )
+
+const sortState = ref<{ key: string; order: 'ascend' | 'descend' } | null>(null)
+
+function handleSorterUpdate(sorter: DataTableSortState | DataTableSortState[] | null) {
+  // No multi-priority sorters exist in this table, so the payload is a single
+  // state object (order is false once the header cycle returns to unsorted)
+  // or null when sorting is cleared.
+  const state = Array.isArray(sorter) ? sorter[0] : sorter
+  sortState.value = state?.order ? { key: String(state.columnKey), order: state.order } : null
+}
 
 const pagination = reactive<PaginationProps>({
   page: 1,
@@ -738,7 +756,7 @@ const columns = computed<DataTableColumns<VirtualKey>>(() => [
   {
     title: t('virtualKeys.colName'),
     key: 'name',
-    minWidth: 160,
+    width: 140,
     ellipsis: { tooltip: true },
     sorter: (a, b) => a.name.localeCompare(b.name),
     render: (row) =>
@@ -821,7 +839,10 @@ const columns = computed<DataTableColumns<VirtualKey>>(() => [
         { size: 4, wrap: false },
         {
           default: () => [
-            actionButton(SpeedometerOutline, t('virtualKeys.quota'), () => openSingleQuotaModal(row)),
+            h(VirtualKeyQuotaButton, {
+              status: quotaStatusById.value[row.id] ?? null,
+              onSelect: () => openSingleQuotaModal(row)
+            }),
             actionButton(ContentCopyOutlined, t('virtualKeys.copyKey'), () => copyText(row.keyValue, 'virtualKeys.copyKey')),
             actionButton(AutorenewOutlined, t('virtualKeys.rotate'), () => handleRotateClick(row)),
             actionButton(EditOutlined, t('virtualKeys.edit'), () => handleEdit(row)),
@@ -838,6 +859,41 @@ const columns = computed<DataTableColumns<VirtualKey>>(() => [
       )
   }
 ])
+
+// Reading a key's quota usage costs two GETs (daily + weekly), so statuses are
+// only fetched for rows the table actually renders. pagedKeys mirrors naive-ui's
+// non-remote pipeline (filtered -> sorted -> clamped page); the table itself
+// still sorts/paginates the full filtered list, so its behavior is unchanged.
+const pagedKeys = computed<VirtualKey[]>(() =>
+  pageVirtualKeys(
+    filteredKeys.value,
+    {
+      page: pagination.page ?? 1,
+      pageSize: pagination.pageSize ?? 10,
+      sortKey: sortState.value?.key ?? null,
+      sortOrder: sortState.value?.order ?? null
+    },
+    quotaSorterOf
+  )
+)
+
+function quotaSorterOf(key: string): ((a: VirtualKey, b: VirtualKey) => number) | null {
+  const column = columns.value.find(
+    (col): col is DataTableBaseColumn<VirtualKey> => 'key' in col && col.key === key
+  )
+  return column && typeof column.sorter === 'function' ? column.sorter : null
+}
+
+watch(pagedKeys, (keys) => {
+  void ensureQuotaStatus(keys.map((key) => key.id))
+}, { immediate: true })
+
+watch(showQuotaModal, (open) => {
+  if (!open) {
+    resetQuotaStatus()
+    void ensureQuotaStatus(pagedKeys.value.map((key) => key.id))
+  }
+})
 
 function actionButton(icon: typeof EditOutlined, tooltip: string, onClick: () => void) {
   return h(
@@ -1183,8 +1239,18 @@ async function ensureCurlBaseUrl() {
   }
 }
 
+let quotaRefreshTimer: ReturnType<typeof setInterval> | undefined
+
 onMounted(() => {
   refreshAll()
+  quotaRefreshTimer = setInterval(() => {
+    resetQuotaStatus()
+    void ensureQuotaStatus(pagedKeys.value.map((key) => key.id))
+  }, 60_000)
+})
+
+onUnmounted(() => {
+  if (quotaRefreshTimer) clearInterval(quotaRefreshTimer)
 })
 </script>
 

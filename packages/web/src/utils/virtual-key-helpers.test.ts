@@ -6,6 +6,7 @@ import {
   createVirtualKeyMetricsLoader,
   fetchAllVirtualKeyMetrics,
   filterVirtualKeys,
+  pageVirtualKeys,
   resolveFirstModelIdentifier,
 } from './virtual-key-helpers';
 
@@ -138,6 +139,48 @@ function makeApi(pages: OpsDimensionListResponse[]) {
   });
   return { api, calls };
 }
+
+describe('pageVirtualKeys', () => {
+  const byName = (a: VirtualKey, b: VirtualKey) => a.name.localeCompare(b.name);
+  const sorterOf = (key: string) => (key === 'name' ? byName : null);
+  // Deliberately non-alphabetical ids so both slicing and sorting are observable.
+  const keys = [3, 1, 2, 5, 4].map((n) => vk({ id: `k${n}`, name: `key-${n}` }));
+
+  it('slices just the requested page in list order when unsorted', () => {
+    expect(pageVirtualKeys(keys, { page: 2, pageSize: 2 }, sorterOf).map((k) => k.id)).toEqual([
+      'k2',
+      'k5',
+    ]);
+  });
+
+  it('sorts the whole list before slicing (descend first, like the table header cycle)', () => {
+    expect(
+      pageVirtualKeys(keys, { page: 1, pageSize: 2, sortKey: 'name', sortOrder: 'descend' }, sorterOf).map(
+        (k) => k.name,
+      ),
+    ).toEqual(['key-5', 'key-4']);
+  });
+
+  it('flips the comparator for ascending order', () => {
+    expect(
+      pageVirtualKeys(keys, { page: 3, pageSize: 2, sortKey: 'name', sortOrder: 'ascend' }, sorterOf).map(
+        (k) => k.name,
+      ),
+    ).toEqual(['key-5']);
+  });
+
+  it('clamps an out-of-range page to the last page and returns nothing for an empty list', () => {
+    expect(pageVirtualKeys(keys, { page: 99, pageSize: 2 }, sorterOf).map((k) => k.id)).toEqual(['k4']);
+    expect(pageVirtualKeys([], { page: 1, pageSize: 10 }, sorterOf)).toEqual([]);
+  });
+
+  it('keeps list order for a column without a usable sorter and never mutates the input', () => {
+    const snapshot = keys.map((k) => k.id);
+    const page = pageVirtualKeys(keys, { page: 1, pageSize: 5, sortKey: 'unknown', sortOrder: 'ascend' }, sorterOf);
+    expect(page.map((k) => k.id)).toEqual(snapshot);
+    expect(keys.map((k) => k.id)).toEqual(snapshot);
+  });
+});
 
 describe('fetchAllVirtualKeyMetrics', () => {
   it('pages at the requested size until pagination.total is covered, pinning one endTime', async () => {

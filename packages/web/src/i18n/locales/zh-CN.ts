@@ -649,6 +649,15 @@ export default {
     copyCurl: '复制命令',
     quota: '模型配额',
     quotaSettings: '配额设置',
+    quotaStatus: {
+      loading: '配额状态加载中…',
+      loadError: '配额状态加载失败',
+      unconfigured: '未配置模型配额',
+      periodDaily: '每日',
+      periodWeekly: '每周',
+      exhausted: '配额已用尽：{model} {period} 已用 {used} / {limit}',
+      usage: '配额用量 {percent}%：{model} {period} {used} / {limit}'
+    },
     quotas: {
       title: '模型 Token 配额',
       submit: '提交配额变更',
@@ -682,6 +691,7 @@ export default {
       loadError: '配额用量加载失败：{message}',
       retry: '重试',
       hintTitle: '统计口径与重置时间',
+      infoAria: '查看配额统计说明',
       hintDaily: '配额按网关时区（“设置”中可配置，默认上海时间 Asia/Shanghai）自然日统计，每日零点重置；额度用尽后，该密钥对该模型的新请求返回 429，次日零点自动恢复。日配额与周配额相互独立、同时生效：任一额度用尽即拒绝新请求。额度单位 M = 百万 Token，按输入 + 输出（含缓存）合并计数。仅提交上方列出的模型：选择“设置”写入或更新额度，选择“删除”提交后清除该模型额度；未列出的模型保持不变。',
       hintWeekly: '周配额按网关时区（“设置”中可配置，默认上海时间 Asia/Shanghai）自然周统计：周一零点至周日结束，每周一零点重置；额度用尽后，该密钥对该模型的新请求返回 429，下周一零点自动恢复。周配额与日配额相互独立、同时生效：任一额度用尽即拒绝新请求。额度单位 M = 百万 Token，按输入 + 输出（含缓存）合并计数。仅提交上方列出的模型：选择“设置”写入或更新周额度，选择“删除”提交后清除该模型周额度；未列出的模型保持不变。',
     },

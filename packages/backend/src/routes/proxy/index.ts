@@ -1,6 +1,7 @@
 import { FastifyInstance, RouteHandlerMethod } from 'fastify';
 import { memoryLogger } from '../../services/logger.js';
 import { getModelsHandler, getModelInfoHandler } from './model-handlers.js';
+import { getQuotaSummaryHandler } from './quota-handlers.js';
 import { getCloudModelAttributesHandler } from './cloud-handlers.js';
 import { startCacheStatsLogger } from './cache.js';
 
@@ -20,6 +21,12 @@ const API_GROUPS: Record<string, ApiGroup> = {
     routes: [
       { path: '/models', method: 'GET', handler: 'getModels' },
       { path: '/model/info', method: 'GET', handler: 'getModelInfo' },
+    ],
+    withV1Prefix: true,
+  },
+  quota: {
+    routes: [
+      { path: '/quota', method: 'GET', handler: 'getQuotaSummary' },
     ],
     withV1Prefix: true,
   },
@@ -52,9 +59,11 @@ export async function proxyRoutes(fastify: FastifyInstance) {
   const handlers: Record<string, RouteHandlerMethod> = {
     getModels: getModelsHandler,
     getModelInfo: getModelInfoHandler,
+    getQuotaSummary: getQuotaSummaryHandler,
   };
 
   registerApiGroup(fastify, API_GROUPS.models, handlers);
+  registerApiGroup(fastify, API_GROUPS.quota, handlers);
   fastify.get('/v1/cloud/model-attributes', getCloudModelAttributesHandler);
 
   startCacheStatsLogger();

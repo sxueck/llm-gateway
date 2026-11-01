@@ -2,39 +2,47 @@
   <n-modal
     :show="show"
     preset="card"
-    :title="t('virtualKeys.quotas.title')"
     class="quota-modal"
     :style="{ width: '760px', maxWidth: '92vw' }"
     :segmented="{ content: 'soft', footer: 'soft' }"
     @update:show="(value: boolean) => emit('update:show', value)"
   >
+    <template #header>
+      <VirtualKeyQuotaInfo
+        v-model:open="infoOpen"
+        :title="t('virtualKeys.quotas.title')"
+        :period="period"
+      />
+    </template>
     <div class="quota-body">
-      <div class="quota-period-line">
-        <span class="quota-period-label">{{ t('virtualKeys.quotas.periodLabel') }}</span>
-        <n-radio-group v-model:value="period" size="small">
-          <n-radio-button value="daily">{{ t('virtualKeys.quotas.periodDaily') }}</n-radio-button>
-          <n-radio-button value="weekly">{{ t('virtualKeys.quotas.periodWeekly') }}</n-radio-button>
-        </n-radio-group>
+      <div class="quota-config">
+        <div class="quota-config-line">
+          <span class="quota-config-label">{{ t('virtualKeys.quotas.periodLabel') }}</span>
+          <n-radio-group v-model:value="period" size="small">
+            <n-radio-button value="daily">{{ t('virtualKeys.quotas.periodDaily') }}</n-radio-button>
+            <n-radio-button value="weekly">{{ t('virtualKeys.quotas.periodWeekly') }}</n-radio-button>
+          </n-radio-group>
+          <template v-if="singleKeyId">
+            <span class="quota-config-label">{{ t('virtualKeys.quotas.singleKeyLabel') }}</span>
+            <n-tag size="small" class="quota-config-target">{{ singleKeyName }}</n-tag>
+          </template>
+        </div>
+        <div v-if="!singleKeyId" class="quota-config-line">
+          <n-radio-group v-model:value="scope" size="small">
+            <n-space :size="16">
+              <n-radio value="selected" :disabled="liveSelectedIds.length === 0">
+                {{ t('virtualKeys.quotas.scopeSelected', { n: liveSelectedIds.length }) }}
+              </n-radio>
+              <n-radio value="all">
+                {{ t('virtualKeys.quotas.scopeAll', { n: virtualKeys.length }) }}
+              </n-radio>
+            </n-space>
+          </n-radio-group>
+          <span class="quota-apply-to" :class="{ 'quota-apply-to-danger': effectiveIds.length === 0 }">
+            {{ t('virtualKeys.quotas.applyTo', { n: effectiveIds.length }) }}
+          </span>
+        </div>
       </div>
-      <div v-if="singleKeyId" class="quota-target-line">
-        <span class="quota-target-label">{{ t('virtualKeys.quotas.singleKeyLabel') }}</span>
-        <n-tag size="small">{{ singleKeyName }}</n-tag>
-      </div>
-      <template v-else>
-        <n-radio-group v-model:value="scope" size="small">
-          <n-space :size="16">
-            <n-radio value="selected" :disabled="liveSelectedIds.length === 0">
-              {{ t('virtualKeys.quotas.scopeSelected', { n: liveSelectedIds.length }) }}
-            </n-radio>
-            <n-radio value="all">
-              {{ t('virtualKeys.quotas.scopeAll', { n: virtualKeys.length }) }}
-            </n-radio>
-          </n-space>
-        </n-radio-group>
-      </template>
-      <span class="quota-apply-to" :class="{ 'quota-apply-to-danger': effectiveIds.length === 0 }">
-        {{ t('virtualKeys.quotas.applyTo', { n: effectiveIds.length }) }}
-      </span>
 
       <n-alert v-if="usageError" type="warning" style="margin-bottom: 8px">
         <div class="quota-usage-error">
@@ -121,11 +129,6 @@
       <n-button size="small" dashed style="margin-top: 8px" @click="addRow">
         {{ t('virtualKeys.quotas.addRow') }}
       </n-button>
-
-      <n-alert type="info" class="quota-hint">
-        <template #header>{{ t('virtualKeys.quotas.hintTitle') }}</template>
-        {{ t(period === 'daily' ? 'virtualKeys.quotas.hintDaily' : 'virtualKeys.quotas.hintWeekly') }}
-      </n-alert>
     </div>
     <template #footer>
       <n-space justify="end" :size="8">
@@ -169,6 +172,7 @@ import {
 } from '@/utils/virtual-key-quota'
 import { formatTokenNumber } from '@/utils/format'
 import type { VirtualKey } from '@/types'
+import VirtualKeyQuotaInfo from '@/components/VirtualKeyQuotaInfo.vue'
 
 /**
  * `singleKeyId` set = one key's view, prefilled with its quotas and usage;
@@ -193,6 +197,7 @@ const scope = ref<'selected' | 'all'>('selected')
 // enforced independently server-side, so the whole editor (rows + usage +
 // submit payload) is scoped to exactly one period at a time.
 const period = ref<VirtualKeyQuotaPeriod>('daily')
+const infoOpen = ref(false)
 const rows = ref<VirtualKeyQuotaRow[]>([])
 const submitting = ref(false)
 
@@ -257,6 +262,7 @@ async function refreshUsage() {
 function reset() {
   scope.value = liveSelectedIds.value.length > 0 ? 'selected' : 'all'
   period.value = 'daily'
+  infoOpen.value = false
   rows.value = []
   submitting.value = false
   usageError.value = ''
@@ -377,26 +383,26 @@ async function handleSubmit() {
   overflow-y: auto;
 }
 
-.quota-period-line {
+.quota-config {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.quota-period-label {
+.quota-config-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.quota-config-label {
   color: #999;
   font-size: 13px;
 }
 
-.quota-target-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.quota-target-label {
-  color: #999;
-  font-size: 13px;
+.quota-config-target {
+  max-width: 220px;
 }
 
 .quota-apply-to {
@@ -461,9 +467,5 @@ async function handleSubmit() {
   font-size: 12px;
   color: #999;
   padding: 12px 0;
-}
-
-.quota-hint {
-  margin-top: 8px;
 }
 </style>
