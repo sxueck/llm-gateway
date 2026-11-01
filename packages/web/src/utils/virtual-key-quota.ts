@@ -1,11 +1,14 @@
 import type { VirtualKeyModelQuota, VirtualKeyQuotaUpsert } from '@/api/virtual-key';
 
-/** Smallest expressible quota: 0.001 M = 1K tokens (matches the editor input's step). */
+/** Smallest expressible quota: 0.001 M = 1K tokens (matches the editor input's step).
+ * Applies to every counting period — daily and weekly share the editor and the
+ * server-side validation floor. */
 export const VK_QUOTA_MIN_MILLIONS = 0.001;
 
 export type VirtualKeyQuotaRowOp = 'set' | 'remove';
 
 export interface VirtualKeyQuotaRowUsage {
+  /** Tokens consumed in the row's counting period (day or natural week). */
   usedTokens: number;
   requestCount: number;
 }

@@ -77,6 +77,7 @@ const quotaEntrySchema = z.object({
 const quotaBulkSchema = z.object({
   virtualKeyIds: z.array(z.string().min(1)).min(1, 'virtualKeyIds 不能为空'),
   quotas: z.array(quotaEntrySchema),
+  period: z.enum(['daily', 'weekly']).default('daily'),
 });
 
 // The getByKeyValue pre-check only covers the common case; UNIQUE(key_value) is the
@@ -464,7 +465,7 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
   // 静态段必须先于 /:id 注册，否则会被参数路由吞掉；实际路径带管理前缀：
   // GET /api/admin/virtual-keys/quotas?virtualKeyId=<id>。
   fastify.get('/quotas', async (request, reply) => {
-    const { virtualKeyId } = request.query as { virtualKeyId?: string };
+    const { virtualKeyId, period } = z.object({ virtualKeyId: z.string().optional(), period: z.enum(['daily', 'weekly']).default('daily') }).parse(request.query);
     if (!virtualKeyId) {
       return reply.code(400).send({ error: '缺少 virtualKeyId 查询参数' });
     }
@@ -474,7 +475,11 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: '虚拟密钥不存在' });
     }
 
-    const quotas = await virtualKeyQuota.snapshot(virtualKeyId);
+    const entries = await virtualKeyQuota.snapshot(virtualKeyId);
+    const quotas = entries.filter((entry) => period === 'weekly' ? entry.weeklyLimitMillions != null : entry.limitMillions > 0)
+      .map((entry) => period === 'weekly'
+        ? { model: entry.model, limitMillions: entry.weeklyLimitMillions, usedTokens: entry.weeklyUsedTokens, requestCount: entry.weeklyRequestCount }
+        : { model: entry.model, limitMillions: entry.limitMillions, usedTokens: entry.usedTokens, requestCount: entry.requestCount });
     return { quotas };
   });
 
@@ -499,19 +504,18 @@ export async function virtualKeyRoutes(fastify: FastifyInstance) {
     }
 
     // 与旧全局额度一致，最多保留 3 位小数，避免浮点尾数入库。
-    const quotas = body.quotas.map((entry) => ({
-      model: entry.model,
-      limitMillions:
-        entry.limitMillions === null
-          ? null
-          : Math.round(entry.limitMillions * 1000) / 1000,
-    }));
+    const quotas = body.quotas.map((entry) => {
+      const limit = entry.limitMillions === null ? null : Math.round(entry.limitMillions * 1000) / 1000;
+      return body.period === 'weekly'
+        ? { model: entry.model, weeklyLimitMillions: limit }
+        : { model: entry.model, limitMillions: limit };
+    });
 
     await virtualKeyQuota.applyBulkQuotas(body.virtualKeyIds, quotas);
 
     memoryLogger.info(
-      `虚拟密钥模型额度已更新 | keys: ${body.virtualKeyIds.length} 个 | ${
-        quotas.map((q) => `${q.model}=${q.limitMillions === null ? '删除' : `${q.limitMillions}M`}`).join(', ') || '(空)'
+      `虚拟密钥模型额度已更新 | period: ${body.period} | keys: ${body.virtualKeyIds.length} 个 | ${
+        body.quotas.map((q) => `${q.model}=${q.limitMillions === null ? '删除' : `${q.limitMillions}M`}`).join(', ') || '(空)'
       }`,
       'Quota',
     );

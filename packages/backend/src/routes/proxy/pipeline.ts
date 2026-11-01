@@ -75,13 +75,15 @@ export interface ProxyPreflightHandlers {
 }
 
 export interface ProxyPipelineHandlers extends ProxyPreflightHandlers {
-  /** Per-key daily token budget exhausted (virtual_key_model_quotas). */
+  /** Per-key token budget exhausted (virtual_key_model_quotas). */
   onQuotaExceeded: (args: {
     reply: FastifyReply;
     requestIp: string;
     requestUserAgent: string;
     virtualKeyId: string;
     modelName: string;
+    /** Which ceiling tripped; a missing value keeps the historical daily wording/code. */
+    period?: 'daily' | 'weekly';
     limitTokens: number;
     usedTokens: number;
     retryAfterSeconds: number;
@@ -226,7 +228,7 @@ export async function runProxyPreflight(
  * 3) Auth (virtual key)
  * 4) Per-key rate limit (RPM)
  * 5) Protocol-specific hook (optional)
- * 6) Model/provider resolution + per-key model daily token budget
+ * 6) Model/provider resolution + per-key model daily/weekly token budget
  * 7) Provider config build
  */
 export async function runProxyPipeline(
@@ -254,7 +256,7 @@ export async function runProxyPipeline(
     if (quota.allowed) return true;
 
     memoryLogger.warn(
-      `虚拟密钥模型每日 token 额度耗尽 | keyId: ${virtualKey.id} | model: ${quota.model} | used: ${quota.usedTokens}/${quota.limitTokens} | retryAfter: ${quota.retryAfterSeconds}s | IP: ${requestIp}`,
+      `虚拟密钥模型${quota.period === 'weekly' ? '每周' : '每日'} token 额度耗尽 | keyId: ${virtualKey.id} | model: ${quota.model} | used: ${quota.usedTokens}/${quota.limitTokens} | retryAfter: ${quota.retryAfterSeconds}s | IP: ${requestIp}`,
       'Quota',
     );
     reply.header('Retry-After', String(quota.retryAfterSeconds));
@@ -264,6 +266,7 @@ export async function runProxyPipeline(
       requestUserAgent,
       virtualKeyId: virtualKey.id,
       modelName: quota.model,
+      period: quota.period,
       limitTokens: quota.limitTokens,
       usedTokens: quota.usedTokens,
       retryAfterSeconds: quota.retryAfterSeconds,

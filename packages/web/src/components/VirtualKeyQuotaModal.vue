@@ -9,6 +9,13 @@
     @update:show="(value: boolean) => emit('update:show', value)"
   >
     <div class="quota-body">
+      <div class="quota-period-line">
+        <span class="quota-period-label">{{ t('virtualKeys.quotas.periodLabel') }}</span>
+        <n-radio-group v-model:value="period" size="small">
+          <n-radio-button value="daily">{{ t('virtualKeys.quotas.periodDaily') }}</n-radio-button>
+          <n-radio-button value="weekly">{{ t('virtualKeys.quotas.periodWeekly') }}</n-radio-button>
+        </n-radio-group>
+      </div>
       <div v-if="singleKeyId" class="quota-target-line">
         <span class="quota-target-label">{{ t('virtualKeys.quotas.singleKeyLabel') }}</span>
         <n-tag size="small">{{ singleKeyName }}</n-tag>
@@ -42,7 +49,9 @@
         <span>{{ t('virtualKeys.quotas.colModel') }}</span>
         <span>{{ t('virtualKeys.quotas.colOp') }}</span>
         <span>{{ t('virtualKeys.quotas.colLimit') }}</span>
-        <span v-if="usageKeyId">{{ t('virtualKeys.quotas.colUsage') }}</span>
+        <span v-if="usageKeyId">{{
+          t(period === 'daily' ? 'virtualKeys.quotas.colUsageDaily' : 'virtualKeys.quotas.colUsageWeekly')
+        }}</span>
         <span></span>
       </div>
 
@@ -81,7 +90,7 @@
             <span v-if="usageKeyId" class="quota-usage" :class="{ 'is-over': isOverLimit(row) }">
               {{
                 usageOf(row)
-                  ? t('virtualKeys.quotas.usage', {
+                  ? t(period === 'daily' ? 'virtualKeys.quotas.usageDaily' : 'virtualKeys.quotas.usageWeekly', {
                       used: formatTokenNumber(usageOf(row)!.usedTokens),
                       limit: formatTokenNumber((row.limitMillions ?? 0) * 1_000_000),
                       n: usageOf(row)!.requestCount
@@ -115,7 +124,7 @@
 
       <n-alert type="info" class="quota-hint">
         <template #header>{{ t('virtualKeys.quotas.hintTitle') }}</template>
-        {{ t('virtualKeys.quotas.hint') }}
+        {{ t(period === 'daily' ? 'virtualKeys.quotas.hintDaily' : 'virtualKeys.quotas.hintWeekly') }}
       </n-alert>
     </div>
     <template #footer>
@@ -149,7 +158,7 @@ import {
   NTag
 } from 'naive-ui'
 import { useModelStore } from '@/stores/model'
-import { virtualKeyApi } from '@/api/virtual-key'
+import { virtualKeyApi, type VirtualKeyQuotaBulkRequest, type VirtualKeyQuotaPeriod } from '@/api/virtual-key'
 import {
   VK_QUOTA_MIN_MILLIONS,
   buildQuotaUpserts,
@@ -180,6 +189,10 @@ const message = useMessage()
 const modelStore = useModelStore()
 
 const scope = ref<'selected' | 'all'>('selected')
+// Counting window of the edited quotas; daily and weekly limits are stored and
+// enforced independently server-side, so the whole editor (rows + usage +
+// submit payload) is scoped to exactly one period at a time.
+const period = ref<VirtualKeyQuotaPeriod>('daily')
 const rows = ref<VirtualKeyQuotaRow[]>([])
 const submitting = ref(false)
 
@@ -223,7 +236,7 @@ async function refreshUsage() {
   usageLoading.value = true
   usageError.value = ''
   try {
-    const response = await virtualKeyApi.getQuotas(id)
+    const response = await virtualKeyApi.getQuotas(id, period.value)
     if (mine !== usageToken) return
     const map: Record<string, VirtualKeyQuotaRowUsage> = {}
     for (const quota of response.quotas ?? []) {
@@ -243,6 +256,7 @@ async function refreshUsage() {
 
 function reset() {
   scope.value = liveSelectedIds.value.length > 0 ? 'selected' : 'all'
+  period.value = 'daily'
   rows.value = []
   submitting.value = false
   usageError.value = ''
@@ -261,7 +275,7 @@ watch(
 )
 
 watch(
-  [() => props.show, usageKeyId],
+  [() => props.show, usageKeyId, period],
   ([open]) => {
     if (!open || !usageKeyId.value) {
       usageToken++
@@ -275,9 +289,15 @@ watch(
 )
 
 // Switching between two different single keys invalidates the prefilled rows:
-// they mirror one key's stored quotas, not an arbitrary upsert template.
+// they mirror one key's stored quotas, not an arbitrary upsert template. The
+// same holds for the counting window — rows prefilled (or typed) against one
+// period must never be silently resubmitted against the other limit.
 watch(usageKeyId, (id, previous) => {
   if (id && previous && id !== previous) rows.value = []
+})
+
+watch(period, (next, previous) => {
+  if (next !== previous) rows.value = []
 })
 
 const modelOptions = computed(() => {
@@ -330,10 +350,13 @@ async function handleSubmit() {
 
   submitting.value = true
   try {
-    await virtualKeyApi.updateQuotasBulk({
+    const body: VirtualKeyQuotaBulkRequest = {
       virtualKeyIds: effectiveIds.value,
       quotas: result.upserts
-    })
+    }
+    // 'daily' is the server default; only weekly needs the explicit field.
+    if (period.value === 'weekly') body.period = 'weekly'
+    await virtualKeyApi.updateQuotasBulk(body)
     message.success(t('virtualKeys.quotas.saveSuccess', { n: effectiveIds.value.length }))
     emit('update:show', false)
   } catch (error: any) {
@@ -352,6 +375,17 @@ async function handleSubmit() {
   padding: 16px 20px;
   max-height: calc(85vh - 160px);
   overflow-y: auto;
+}
+
+.quota-period-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quota-period-label {
+  color: #999;
+  font-size: 13px;
 }
 
 .quota-target-line {

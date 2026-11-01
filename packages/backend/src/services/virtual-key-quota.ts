@@ -20,8 +20,17 @@ const SYNC_INTERVAL_MS = 10_000;
 const MAX_FLUSH_PASSES = 8;
 const LIMITS_CACHE_TTL_MS = 5_000;
 
+function weekDates(date: string): string[] {
+  const day = new Date(`${date}T00:00:00Z`);
+  const monday = day.getTime() - ((day.getUTCDay() + 6) % 7) * DAY_MS;
+  return Array.from({ length: (day.getUTCDay() + 6) % 7 + 1 }, (_, i) =>
+    new Date(monday + i * DAY_MS).toISOString().slice(0, 10),
+  );
+}
+
 export interface VirtualKeyQuotaVerdict {
   allowed: boolean;
+  period?: "daily" | "weekly";
   virtualKeyId: string;
   model: string;
   /** 0 = 未配置额度（不限制）。 */
@@ -37,6 +46,9 @@ export interface VirtualKeyQuotaEntry {
   limitMillions: number;
   usedTokens: number;
   requestCount: number;
+  weeklyLimitMillions: number | null;
+  weeklyUsedTokens: number;
+  weeklyRequestCount: number;
 }
 
 interface DayCell {
@@ -64,7 +76,7 @@ interface UsageBatch {
 
 interface CachedLimits {
   /** virtual key id -> (model name -> million ceiling). */
-  byKey: Map<string, Map<string, number>>;
+  byKey: Map<string, Map<string, { daily: number; weekly: number }>>;
   loadedAt: number;
 }
 
@@ -171,7 +183,7 @@ class VirtualKeyQuotaService {
     this.day = today;
     let owesOldDay = this.retryBatch !== null;
     for (const [key, cell] of [...this.cells.entries()]) {
-      if (key.startsWith(`${today}|`)) continue;
+      if (key.slice(0, 10) >= weekDates(today)[0]) continue;
       if (this.owesWrite(cell)) {
         owesOldDay = true;
         continue;
@@ -183,10 +195,10 @@ class VirtualKeyQuotaService {
       // Defer the prune until the outstanding old-day deltas have landed: a
       // DELETE racing that write could re-create a stale row, and deleting the
       // batch markers could make a pending retry apply twice.
-      this.pruneDue = today;
+      this.pruneDue = weekDates(today)[0];
     } else {
       this.pruneDue = null;
-      void this.pruneBefore(today);
+      void this.pruneBefore(weekDates(today)[0]);
     }
     return today;
   }
@@ -201,9 +213,9 @@ class VirtualKeyQuotaService {
   }
 
   private retireSettledCells(): void {
-    const prefix = `${this.day}|`;
+    const firstDay = weekDates(this.day)[0];
     for (const [key, cell] of [...this.cells.entries()]) {
-      if (key.startsWith(prefix)) continue;
+      if (key.slice(0, 10) >= firstDay) continue;
       if (this.owesWrite(cell)) continue;
       this.cells.delete(key);
     }
@@ -225,8 +237,7 @@ class VirtualKeyQuotaService {
     const date = this.pruneDue;
     if (!date) return;
     if (this.retryBatch) return;
-    const prefix = `${date}|`;
-    if ([...this.cells.keys()].some((key) => !key.startsWith(prefix))) return;
+    if ([...this.cells.keys()].some((key) => key.slice(0, 10) < date)) return;
     this.pruneDue = null;
     await this.pruneBefore(date);
   }
@@ -279,19 +290,20 @@ class VirtualKeyQuotaService {
    * Every configured ceiling, cached briefly so the pre-check stays cheap.
    * Fail-open: on read failure the snapshot is empty and everything is allowed.
    */
-  async getConfiguredLimits(): Promise<Map<string, Map<string, number>>> {
+  async getConfiguredLimits(): Promise<Map<string, Map<string, { daily: number; weekly: number }>>> {
     const now = Date.now();
     if (this.limits && now - this.limits.loadedAt < LIMITS_CACHE_TTL_MS) {
       return this.limits.byKey;
     }
-    const byKey = new Map<string, Map<string, number>>();
+    const byKey = new Map<string, Map<string, { daily: number; weekly: number }>>();
     try {
       const rows = await virtualKeyModelQuotaDb.getAll();
       for (const row of rows) {
-        const millions = row.limitMillions;
-        if (!row.model || !Number.isFinite(millions) || millions <= 0) continue;
-        const models = byKey.get(row.virtualKeyId) ?? new Map<string, number>();
-        models.set(row.model, millions);
+        const daily = Number(row.limitMillions) || 0;
+        const weekly = Number(row.weeklyLimitMillions) || 0;
+        if (!row.model || (daily <= 0 && weekly <= 0)) continue;
+        const models = byKey.get(row.virtualKeyId) ?? new Map<string, { daily: number; weekly: number }>();
+        models.set(row.model, { daily, weekly });
         byKey.set(row.virtualKeyId, models);
       }
     } catch (e: any) {
@@ -307,16 +319,6 @@ class VirtualKeyQuotaService {
   /** Called after the admin bulk save so it applies at once on this instance. */
   invalidateLimits(): void {
     this.limits = null;
-  }
-
-  limitTokensFor(
-    virtualKeyId: string | undefined,
-    model: string | undefined,
-    limits: Map<string, Map<string, number>>,
-  ): number {
-    if (!virtualKeyId || !model) return 0;
-    const millions = limits.get(virtualKeyId)?.get(model);
-    return millions ? Math.round(millions * TOKENS_PER_M) : 0;
   }
 
   async check(
@@ -335,34 +337,32 @@ class VirtualKeyQuotaService {
     if (!virtualKeyId || !model) return unlimited;
 
     const limits = await this.getConfiguredLimits();
-    const limitTokens = this.limitTokensFor(virtualKeyId, model, limits);
-    if (limitTokens <= 0) return unlimited;
+    const configured = limits.get(virtualKeyId)?.get(model);
+    if (!configured) return unlimited;
 
     this.startSyncTimer();
     const date = this.rollDay(now);
-    const cell = await this.ensureLoaded(date, virtualKeyId, model);
-    const usedTokens = this.totalTokensOf(cell);
-    if (usedTokens < limitTokens) {
-      return {
-        allowed: true,
-        virtualKeyId,
-        model,
-        limitTokens,
-        usedTokens,
-        retryAfterSeconds: 0,
-      };
+    const dates = configured.weekly > 0 ? weekDates(date) : [date];
+    const cells = await Promise.all(dates.map((day) => this.ensureLoaded(day, virtualKeyId, model)));
+    const dailyUsed = this.totalTokensOf(cells[cells.length - 1]);
+    const weeklyUsed = cells.reduce((sum, cell) => sum + this.totalTokensOf(cell), 0);
+    const dailyLimit = Math.round(configured.daily * TOKENS_PER_M);
+    const weeklyLimit = Math.round(configured.weekly * TOKENS_PER_M);
+    const dailyBlocked = dailyLimit > 0 && dailyUsed >= dailyLimit;
+    const weeklyBlocked = weeklyLimit > 0 && weeklyUsed >= weeklyLimit;
+    if (!dailyBlocked && !weeklyBlocked) {
+      return { allowed: true, virtualKeyId, model, limitTokens: dailyLimit || weeklyLimit, usedTokens: dailyLimit ? dailyUsed : weeklyUsed, retryAfterSeconds: 0 };
     }
-
-    const nextDate = new Date(Date.parse(`${date}T00:00:00Z`) + DAY_MS)
-      .toISOString().slice(0, 10);
-    const dayEnd = getDayStartOfDateKeyInTz(nextDate, gatewayTimezone.get());
+    const nextDay = new Date(Date.parse(`${date}T00:00:00Z`) + DAY_MS).toISOString().slice(0, 10);
+    const nextWeek = new Date(Date.parse(`${dates[0]}T00:00:00Z`) + 7 * DAY_MS).toISOString().slice(0, 10);
+    const resetDate = weeklyBlocked ? nextWeek : nextDay;
+    const reset = getDayStartOfDateKeyInTz(resetDate, gatewayTimezone.get());
     return {
-      allowed: false,
-      virtualKeyId,
-      model,
-      limitTokens,
-      usedTokens,
-      retryAfterSeconds: Math.max(1, Math.ceil((dayEnd - now) / 1000)),
+      allowed: false, virtualKeyId, model,
+      period: weeklyBlocked ? "weekly" : "daily",
+      limitTokens: weeklyBlocked ? weeklyLimit : dailyLimit,
+      usedTokens: weeklyBlocked ? weeklyUsed : dailyUsed,
+      retryAfterSeconds: Math.max(1, Math.ceil((reset - now) / 1000)),
     };
   }
 
@@ -398,7 +398,9 @@ class VirtualKeyQuotaService {
         if (!(await this.flushPass())) break;
       }
       this.retireSettledCells();
-      if (this.cells.size > 0) await this.refreshDay(this.day);
+      if (this.cells.size > 0) {
+        await Promise.all(weekDates(this.day).map((date) => this.refreshDay(date)));
+      }
       await this.pruneDueDay();
     })();
     this.syncing = pass;
@@ -525,15 +527,16 @@ class VirtualKeyQuotaService {
     const date = this.rollDay(now);
     const entries: VirtualKeyQuotaEntry[] = [];
     for (const row of rows) {
-      if (!Number.isFinite(row.limitMillions) || row.limitMillions <= 0) {
-        continue;
-      }
-      const cell = await this.ensureLoaded(date, virtualKeyId, row.model);
+      const cells = await Promise.all(weekDates(date).map((day) => this.ensureLoaded(day, virtualKeyId, row.model)));
+      const cell = cells[cells.length - 1];
       entries.push({
         model: row.model,
-        limitMillions: row.limitMillions,
+        limitMillions: row.limitMillions ?? 0,
         usedTokens: this.totalTokensOf(cell),
         requestCount: this.totalRequestsOf(cell),
+        weeklyLimitMillions: row.weeklyLimitMillions ?? null,
+        weeklyUsedTokens: cells.reduce((sum, item) => sum + this.totalTokensOf(item), 0),
+        weeklyRequestCount: cells.reduce((sum, item) => sum + this.totalRequestsOf(item), 0),
       });
     }
     return entries.sort((a, b) => b.usedTokens - a.usedTokens);
@@ -541,13 +544,14 @@ class VirtualKeyQuotaService {
 
   async applyBulkQuotas(
     virtualKeyIds: string[],
-    quotas: Array<{ model: string; limitMillions: number | null }>,
+    quotas: Array<{ model: string; limitMillions?: number | null; weeklyLimitMillions?: number | null }>,
   ): Promise<void> {
     await virtualKeyModelQuotaDb.applyBulk(
       virtualKeyIds,
       quotas.map((entry) => ({
         model: entry.model,
         limitMillions: entry.limitMillions,
+        weeklyLimitMillions: entry.weeklyLimitMillions,
       })),
     );
     this.invalidateLimits();
@@ -566,15 +570,15 @@ class VirtualKeyQuotaService {
     if (!from || !to || from === to) return () => {};
     const date = this.rollDay(Date.now());
     await virtualKeyModelQuotaDb.renameModel(from, to, connection);
-    await virtualKeyModelUsageDb.renameDayUsage(date, from, to, connection);
+    await virtualKeyModelUsageDb.renameDayUsage(weekDates(date)[0], from, to, connection);
 
     const commit = () => {
       this.invalidateLimits();
       for (const key of [...this.cells.keys()]) {
         const { date: cellDate, virtualKeyId, model } = this.splitKey(key);
-        if (cellDate !== date || model !== from) continue;
+        if (cellDate < weekDates(date)[0] || model !== from) continue;
         const fromKey = key;
-        const toKey = this.cellKey(date, virtualKeyId, to);
+        const toKey = this.cellKey(cellDate, virtualKeyId, to);
         const source = this.cells.get(fromKey);
         if (!source) continue;
         const target = this.cells.get(toKey);
@@ -601,8 +605,8 @@ class VirtualKeyQuotaService {
         for (const delta of this.retryBatch.sent) {
           const { date: cellDate, virtualKeyId, model } =
             this.splitKey(delta.key);
-          if (cellDate === date && model === from) {
-            delta.key = this.cellKey(date, virtualKeyId, to);
+          if (cellDate >= weekDates(date)[0] && model === from) {
+            delta.key = this.cellKey(cellDate, virtualKeyId, to);
           }
         }
       }

@@ -662,11 +662,14 @@ export async function createTables(connection?: Connection) {
 
     // 取代 system_config 里的全局模型每日额度；旧表
     // model_daily_usage/model_daily_usage_batches 仅为保留历史数据。
+    // 两个额度维度独立可空：NULL=该维度未设置；双 NULL 的行不应存在（仓库层
+    // applyBulk 在双 NULL 时删除整行）。
     await conn.query(`
       CREATE TABLE IF NOT EXISTS virtual_key_model_quotas (
         virtual_key_id VARCHAR(255) NOT NULL,
         model VARCHAR(255) NOT NULL COMMENT '客户端请求的模型名 models.name（额度计量单位）',
-        limit_millions DECIMAL(12,3) NOT NULL COMMENT '上海自然日 token 上限（单位 M）',
+        limit_millions DECIMAL(12,3) NULL DEFAULT NULL COMMENT '网关时区自然日 token 上限（单位 M）；NULL=未设日额度',
+        weekly_limit_millions DECIMAL(12,3) NULL DEFAULT NULL COMMENT '网关时区自然周（周一起算）token 上限（单位 M）；NULL=未设周额度',
         created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
         updated_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
         PRIMARY KEY (virtual_key_id, model),
@@ -675,7 +678,8 @@ export async function createTables(connection?: Connection) {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-    // 与 model_daily_usage 同口径，但按虚拟密钥拆分各自的预算。
+    // 与 model_daily_usage 同口径，但按虚拟密钥拆分各自的预算。保留滚动窗口
+    // （当前为一周）的逐日行，供周额度求和；过期窗口由服务层调用 deleteBefore 清理。
     await conn.query(`
       CREATE TABLE IF NOT EXISTS virtual_key_model_daily_usage (
         usage_date DATE NOT NULL COMMENT '网关时区自然日',

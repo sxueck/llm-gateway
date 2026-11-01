@@ -284,6 +284,73 @@ export const migrations: Migration[] = [
       await conn.query("DROP TABLE IF EXISTS login_attempt_lockouts");
     },
   },
+  {
+    // 周额度：新增 weekly_limit_millions，并把 limit_millions 改为可空，
+    // 让两个额度维度可以独立设置/清除（NULL=未设，双 NULL 行由仓库层删除）。
+    version: 7,
+    name: "virtual_key_model_quotas_weekly_limit",
+    up: async (conn) => {
+      const [tables] = await conn.query(
+        `SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'virtual_key_model_quotas'`,
+      );
+      if ((tables as Array<{ name: string }>).length === 0) {
+        // 空库（scratch 干跑 / rebuild 先跑 migrations 后建表）：表由 schema.ts
+        // 连同新列一起创建，这里只登记版本号，绝不先跑 DDL。
+        return;
+      }
+      const [columns] = await conn.query(
+        `SELECT COLUMN_NAME AS name, IS_NULLABLE AS nullable FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'virtual_key_model_quotas'
+           AND COLUMN_NAME IN ('limit_millions', 'weekly_limit_millions')`,
+      );
+      const info = new Map(
+        (columns as Array<{ name: string; nullable: string }>).map((row) => [
+          row.name,
+          row.nullable,
+        ]),
+      );
+      if (!info.has("weekly_limit_millions")) {
+        await conn.query(
+          "ALTER TABLE virtual_key_model_quotas ADD COLUMN weekly_limit_millions DECIMAL(12,3) NULL DEFAULT NULL COMMENT '网关时区自然周（周一起算）token 上限（单位 M）；NULL=未设周额度' AFTER limit_millions",
+        );
+      }
+      if (info.get("limit_millions") === "NO") {
+        await conn.query(
+          "ALTER TABLE virtual_key_model_quotas MODIFY COLUMN limit_millions DECIMAL(12,3) NULL DEFAULT NULL COMMENT '网关时区自然日 token 上限（单位 M）；NULL=未设日额度'",
+        );
+      }
+    },
+    down: async (conn) => {
+      const [tables] = await conn.query(
+        `SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'virtual_key_model_quotas'`,
+      );
+      if ((tables as Array<{ name: string }>).length === 0) return;
+      const [columns] = await conn.query(
+        `SELECT COLUMN_NAME AS name FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'virtual_key_model_quotas'
+           AND COLUMN_NAME IN ('limit_millions', 'weekly_limit_millions')`,
+      );
+      const names = new Set(
+        (columns as Array<{ name: string }>).map((row) => row.name),
+      );
+      if (names.has("weekly_limit_millions")) {
+        await conn.query(
+          "ALTER TABLE virtual_key_model_quotas DROP COLUMN weekly_limit_millions",
+        );
+      }
+      if (names.has("limit_millions")) {
+        // 回滚前先把日额度 NULL 归零，恢复 NOT NULL 才不会失败。
+        await conn.query(
+          "UPDATE virtual_key_model_quotas SET limit_millions = 0 WHERE limit_millions IS NULL",
+        );
+        await conn.query(
+          "ALTER TABLE virtual_key_model_quotas MODIFY COLUMN limit_millions DECIMAL(12,3) NOT NULL COMMENT '上海自然日 token 上限（单位 M）'",
+        );
+      }
+    },
+  },
 ];
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {

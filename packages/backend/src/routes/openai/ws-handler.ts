@@ -435,13 +435,17 @@ export async function resolveWebSocketTurnConfig(
   const quotaModel = addressedModelName ?? clientModel;
   const quota = await virtualKeyQuota.check(virtualKey.id, quotaModel);
   if (!quota.allowed) {
+    const weekly = quota.period === "weekly";
     memoryLogger.warn(
-      `虚拟密钥模型每日 token 额度耗尽(WebSocket) | keyId: ${virtualKey.id} | model: ${quotaModel} | used: ${quota.usedTokens}/${quota.limitTokens}`,
+      `虚拟密钥模型${weekly ? "每周" : "每日"} token 额度耗尽(WebSocket) | keyId: ${virtualKey.id} | model: ${quotaModel} | used: ${quota.usedTokens}/${quota.limitTokens}`,
       "Quota",
     );
     throw errorFromGatewayPayload(
-      `Model has reached this virtual key's daily token quota. Retry after ${formatRetryDuration(quota.retryAfterSeconds)}.`,
-      ERROR_CODES.MODEL_QUOTA_EXCEEDED,
+      `Model has reached this virtual key's ${weekly ? "weekly" : "daily"} token quota. Retry after ${formatRetryDuration(quota.retryAfterSeconds)}.`,
+      // Weekly verdicts carry their own code; daily keeps the historical one.
+      weekly
+        ? "model_weekly_token_quota_exceeded"
+        : ERROR_CODES.MODEL_QUOTA_EXCEEDED,
     );
   }
   const configResult = await buildProviderConfig(

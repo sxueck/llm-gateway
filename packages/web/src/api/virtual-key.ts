@@ -10,12 +10,16 @@ const ADMIN_VIRTUAL_KEYS_PATH = '/admin/virtual-keys';
 
 const VIRTUAL_KEYS_QUOTAS_PATH = `${ADMIN_VIRTUAL_KEYS_PATH}/quotas`;
 
-/** Daily token quota of one (virtual key × model) pair. */
+/** Counting window of a per-(virtual key × model) token quota. */
+export type VirtualKeyQuotaPeriod = 'daily' | 'weekly';
+
+/** Token quota of one (virtual key × model) pair for one counting period. */
 export interface VirtualKeyModelQuota {
   model: string;
-  /** Daily ceiling in millions of tokens; null = no quota stored. */
+  /** Ceiling in millions of tokens for the period; null = no quota stored. */
   limitMillions: number | null;
-  /** Tokens consumed so far this gateway-timezone calendar day. */
+  /** Tokens consumed so far in the current window: gateway-timezone calendar day,
+   * or Monday-start natural week when period === 'weekly'. */
   usedTokens: number;
   requestCount: number;
 }
@@ -30,6 +34,8 @@ export interface VirtualKeyQuotaBulkRequest {
   virtualKeyIds: string[];
   /** Only the listed models are touched; models absent here keep their quota. */
   quotas: VirtualKeyQuotaUpsert[];
+  /** Omitted (or 'daily') targets the daily window; 'weekly' the natural-week one. */
+  period?: VirtualKeyQuotaPeriod;
 }
 
 type VirtualKeyQuotasResponse = { quotas: VirtualKeyModelQuota[] };
@@ -60,8 +66,12 @@ export const virtualKeyApi = {
     return request.delete(virtualKeyPath(id));
   },
 
-  getQuotas(virtualKeyId: string): Promise<VirtualKeyQuotasResponse> {
-    return request.get(VIRTUAL_KEYS_QUOTAS_PATH, { params: { virtualKeyId } });
+  /** `period` is omitted from the query for the default 'daily' window, so the
+   * daily request stays byte-identical to the pre-weekly wire format. */
+  getQuotas(virtualKeyId: string, period: VirtualKeyQuotaPeriod = 'daily'): Promise<VirtualKeyQuotasResponse> {
+    const params: { virtualKeyId: string; period?: VirtualKeyQuotaPeriod } = { virtualKeyId };
+    if (period !== 'daily') params.period = period;
+    return request.get(VIRTUAL_KEYS_QUOTAS_PATH, { params });
   },
 
   /** Bulk upsert; the response is not consumed — re-read usage via getQuotas. */

@@ -170,6 +170,37 @@ test('early cache hit is rejected after the key exhausts its quota for the cache
 
   expect(res.statusCode).toBe(429);
   expect(res.json().error.code).toBe('model_daily_token_quota_exceeded');
+  expect(res.json().error.message).toContain('daily token quota');
+  expect(resolverCalls()).toBe(0);
+});
+
+test('early cache hit is rejected with the weekly code when the weekly ceiling trips', async () => {
+  // 只配周额度：今天记满 1M，剩下的就是 weekly 而非 daily 判决。
+  quotaMocks.getAll.mockResolvedValue([
+    {
+      virtualKeyId: virtualKey.id,
+      model: requestBody.model,
+      limitMillions: 0,
+      weeklyLimitMillions: 1,
+    },
+  ]);
+  const logicalKey = computeLogicalCacheKey(virtualKey, requestBody, false, false)!;
+  requestCache.set(logicalKey, cachedResponse, { 'content-type': 'application/json' }, 60_000);
+  virtualKeyQuota.record(virtualKey.id, requestBody.model, 1_000_000);
+
+  const app = Fastify();
+  app.post('/v1/chat/completions', createOpenAIProxyHandler());
+  const res = await app.inject({
+    method: 'POST',
+    url: '/v1/chat/completions',
+    headers: { authorization: `Bearer ${KEY_VALUE}` },
+    payload: requestBody,
+  });
+  await app.close();
+
+  expect(res.statusCode).toBe(429);
+  expect(res.json().error.code).toBe('model_weekly_token_quota_exceeded');
+  expect(res.json().error.message).toContain('weekly token quota');
   expect(resolverCalls()).toBe(0);
 });
 

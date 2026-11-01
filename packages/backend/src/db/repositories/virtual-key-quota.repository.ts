@@ -4,8 +4,10 @@ import { getDatabase, withTransaction } from "../connection.js";
 export interface VirtualKeyModelQuotaRow {
   virtualKeyId: string;
   model: string;
-  /** 每日 token 上限（单位 M）。 */
-  limitMillions: number;
+  /** 每日 token 上限（单位 M）；NULL=未设日额度（仅周额度生效）。 */
+  limitMillions: number | null;
+  /** 每周 token 上限（单位 M）；NULL=未设周额度（仅日额度生效）。 */
+  weeklyLimitMillions: number | null;
 }
 
 export interface VirtualKeyModelUsageDelta {
@@ -16,14 +18,35 @@ export interface VirtualKeyModelUsageDelta {
   requestCount: number;
 }
 
-/** limitMillions = null 表示删除该模型的额度配置。 */
+/**
+ * 每个维度三态：undefined=保持原值不动（部分更新时不碰），null=清除该维度，
+ * 数字=写入新值。合并后两个维度都为 null 的条目删除整行（即 null 不再单独
+ * 表示删除，删除 = 两个维度同时置 null）。
+ */
 export interface VirtualKeyQuotaUpsert {
   model: string;
-  limitMillions: number | null;
+  limitMillions?: number | null;
+  weeklyLimitMillions?: number | null;
+}
+
+function mapQuotaRow(row: Record<string, unknown>): VirtualKeyModelQuotaRow {
+  return {
+    virtualKeyId: String(row.virtual_key_id),
+    model: String(row.model),
+    limitMillions:
+      row.limit_millions === null || row.limit_millions === undefined
+        ? null
+        : Number(row.limit_millions),
+    weeklyLimitMillions:
+      row.weekly_limit_millions === null ||
+      row.weekly_limit_millions === undefined
+        ? null
+        : Number(row.weekly_limit_millions),
+  };
 }
 
 /**
- * 虚拟密钥 × 模型每日 token 软配额（issue 39）：主键 (virtual_key_id, model)。
+ * 虚拟密钥 × 模型每日/每周 token 软配额（issue 39）：主键 (virtual_key_id, model)。
  * 计量单位是客户端请求的模型名（models.name）：虚拟模型和它路由到的真实
  * 模型各自独立，而 api_requests.model 存的是解析后的真实模型，无法区分，
  * 所以必须单独落表。
@@ -34,13 +57,9 @@ export const virtualKeyModelQuotaRepository = {
     const conn = await pool.getConnection();
     try {
       const [rows] = await conn.query(
-        "SELECT virtual_key_id, model, limit_millions FROM virtual_key_model_quotas",
+        "SELECT virtual_key_id, model, limit_millions, weekly_limit_millions FROM virtual_key_model_quotas",
       );
-      return (rows as Array<Record<string, unknown>>).map((row) => ({
-        virtualKeyId: String(row.virtual_key_id),
-        model: String(row.model),
-        limitMillions: Number(row.limit_millions),
-      }));
+      return (rows as Array<Record<string, unknown>>).map(mapQuotaRow);
     } finally {
       conn.release();
     }
@@ -53,21 +72,18 @@ export const virtualKeyModelQuotaRepository = {
     const conn = await pool.getConnection();
     try {
       const [rows] = await conn.query(
-        "SELECT virtual_key_id, model, limit_millions FROM virtual_key_model_quotas WHERE virtual_key_id = ?",
+        "SELECT virtual_key_id, model, limit_millions, weekly_limit_millions FROM virtual_key_model_quotas WHERE virtual_key_id = ?",
         [virtualKeyId],
       );
-      return (rows as Array<Record<string, unknown>>).map((row) => ({
-        virtualKeyId: String(row.virtual_key_id),
-        model: String(row.model),
-        limitMillions: Number(row.limit_millions),
-      }));
+      return (rows as Array<Record<string, unknown>>).map(mapQuotaRow);
     } finally {
       conn.release();
     }
   },
 
   /**
-   * 批量应用额度：只动 entries 里出现的模型（null 删除，数字 upsert），整体一个事务。
+   * 批量应用额度：只动 entries 里出现的模型，整体一个事务。每个维度三态
+   * （undefined 保持 / null 清除 / 数字写入），合并后双 null 的行删除。
    */
   async applyBulk(
     virtualKeyIds: string[],
@@ -77,37 +93,29 @@ export const virtualKeyModelQuotaRepository = {
     if (virtualKeyIds.length === 0 || entries.length === 0) return;
     const run = async (conn: PoolConnection) => {
       const now = Date.now();
-      const removals = entries
-        .filter((entry) => entry.limitMillions === null)
-        .map((entry) => entry.model);
-      if (removals.length > 0) {
-        await conn.query(
-          `DELETE FROM virtual_key_model_quotas
-           WHERE virtual_key_id IN (${virtualKeyIds.map(() => "?").join(", ")})
-             AND model IN (${removals.map(() => "?").join(", ")})`,
-          [...virtualKeyIds, ...removals],
-        );
-      }
-      const upserts = entries.filter(
-        (entry): entry is { model: string; limitMillions: number } =>
-          typeof entry.limitMillions === "number",
-      );
-      if (upserts.length > 0) {
-        const values: Array<[string, string, number, number, number]> = [];
-        for (const virtualKeyId of virtualKeyIds) {
-          for (const entry of upserts) {
-            values.push([virtualKeyId, entry.model, entry.limitMillions, now, now]);
-          }
-        }
+      // 数据库的排序规则决定哪些名称相等，不能在 JS 中用字符串合并现值。
+      for (const entry of entries) {
+        if (entry.limitMillions === undefined && entry.weeklyLimitMillions === undefined) continue;
+        const updates = [
+          entry.limitMillions !== undefined ? "limit_millions = VALUES(limit_millions)" : null,
+          entry.weeklyLimitMillions !== undefined ? "weekly_limit_millions = VALUES(weekly_limit_millions)" : null,
+          "updated_at = VALUES(updated_at)",
+        ].filter(Boolean);
         await conn.query(
           `INSERT INTO virtual_key_model_quotas
-             (virtual_key_id, model, limit_millions, created_at, updated_at)
-           VALUES ${values.map(() => "(?, ?, ?, ?, ?)").join(", ")}
-           ON DUPLICATE KEY UPDATE
-             limit_millions = VALUES(limit_millions),
-             updated_at = VALUES(updated_at)`,
-          values.flat(),
+             (virtual_key_id, model, limit_millions, weekly_limit_millions, created_at, updated_at)
+           VALUES ${virtualKeyIds.map(() => "(?, ?, ?, ?, ?, ?)").join(", ")}
+           ON DUPLICATE KEY UPDATE ${updates.join(", ")}`,
+          virtualKeyIds.flatMap((id) => [id, entry.model, entry.limitMillions ?? null, entry.weeklyLimitMillions ?? null, now, now]),
         );
+        if (entry.limitMillions === null || entry.weeklyLimitMillions === null) {
+          await conn.query(
+            `DELETE FROM virtual_key_model_quotas
+             WHERE virtual_key_id IN (${virtualKeyIds.map(() => "?").join(", ")})
+               AND model = ? AND limit_millions IS NULL AND weekly_limit_millions IS NULL`,
+            [...virtualKeyIds, entry.model],
+          );
+        }
       }
     };
     if (connection) await run(connection);
@@ -115,8 +123,9 @@ export const virtualKeyModelQuotaRepository = {
   },
 
   /**
-   * 模型重命名：把所有虚拟密钥上 `from` 的额度配置改挂到 `to`。
-   * 同一密钥两个名字都有配置时 `from`（被改名的一方）胜出，避免额度静默丢失。
+   * 模型重命名：把所有虚拟密钥上 `from` 的额度配置（日/周两个维度）改挂到
+   * `to`。同一密钥两个名字都有配置时 `from`（被改名的一方）胜出，避免额度
+   * 静默丢失。
    */
   async renameModel(
     from: string,
@@ -126,27 +135,37 @@ export const virtualKeyModelQuotaRepository = {
     const run = async (conn: PoolConnection) => {
       const now = Date.now();
       const [rows] = await conn.query(
-        `SELECT virtual_key_id, model, limit_millions
+        `SELECT virtual_key_id, model, limit_millions, weekly_limit_millions
          FROM virtual_key_model_quotas
          WHERE model IN (?, ?)
          ORDER BY virtual_key_id, model
          FOR UPDATE`,
         [from, to],
       );
-      const byKey = new Map<string, Map<string, number>>();
+      const byKey = new Map<
+        string,
+        Map<string, { daily: number | null; weekly: number | null }>
+      >();
       for (const row of rows as Array<Record<string, unknown>>) {
         const key = String(row.virtual_key_id);
-        const limits = byKey.get(key) ?? new Map<string, number>();
-        limits.set(String(row.model), Number(row.limit_millions));
+        const limits = byKey.get(key) ?? new Map<string, { daily: number | null; weekly: number | null }>();
+        limits.set(String(row.model), {
+          daily: row.limit_millions === null ? null : Number(row.limit_millions),
+          weekly:
+            row.weekly_limit_millions === null ||
+            row.weekly_limit_millions === undefined
+              ? null
+              : Number(row.weekly_limit_millions),
+        });
         byKey.set(key, limits);
       }
       for (const [virtualKeyId, limits] of byKey) {
-        const fromLimit = limits.get(from);
-        if (fromLimit === undefined) continue;
+        const fromLimits = limits.get(from);
+        if (fromLimits === undefined) continue;
         if (limits.has(to)) {
           await conn.query(
-            "UPDATE virtual_key_model_quotas SET limit_millions = ?, updated_at = ? WHERE virtual_key_id = ? AND model = ?",
-            [fromLimit, now, virtualKeyId, to],
+            "UPDATE virtual_key_model_quotas SET limit_millions = ?, weekly_limit_millions = ?, updated_at = ? WHERE virtual_key_id = ? AND model = ?",
+            [fromLimits.daily, fromLimits.weekly, now, virtualKeyId, to],
           );
           await conn.query(
             "DELETE FROM virtual_key_model_quotas WHERE virtual_key_id = ? AND model = ?",
@@ -166,7 +185,8 @@ export const virtualKeyModelQuotaRepository = {
 };
 
 /**
- * 虚拟密钥 × 模型 × 网关时区自然日用量表。滚动的当日计数器，只保留当天。
+ * 虚拟密钥 × 模型 × 网关时区自然日用量表。逐日计数器保留一个滚动窗口
+ * （当前为一周，供周额度求和），窗口起点由服务层调用 deleteBefore 清理；
  * 每次 flush 携带稳定 batch id（virtual_key_model_daily_usage_batches 幂等
  * 标记），未知结果的提交可用同一 id 重试而不会重复累计。
  */
@@ -279,7 +299,10 @@ export const virtualKeyModelUsageRepository = {
   },
 
   /**
-   * 模型重命名：把当天所有密钥的 `from` 用量合并到 `to`，不让重命名静默清零预算。
+   * 模型重命名：把 usageDate（含）起至当前的全部自然日行里 `from` 的用量
+   * 合并到 `to`，不让重命名静默清零预算。调用方传周窗口起点，即可把整周
+   * （周额度的求和范围）一并改名；更早的日期已出窗口，无需处理。
+   * 签名不变：usageDate 语义从“当天”放宽为“起始日”。
    */
   async renameDayUsage(
     usageDate: string,
@@ -299,25 +322,25 @@ export const virtualKeyModelUsageRepository = {
          SET t.consumed_tokens = t.consumed_tokens + f.consumed_tokens,
              t.request_count = t.request_count + f.request_count,
              t.updated_at = ?
-         WHERE t.usage_date = ? AND t.model = ?`,
+         WHERE t.usage_date >= ? AND t.model = ?`,
         [from, now, usageDate, to],
       );
       // 只有 from 行的密钥：整行改名（派生表绕开 MySQL 对同表子查询的限制）。
       await conn.query(
         `UPDATE virtual_key_model_daily_usage
          SET model = ?, updated_at = ?
-         WHERE usage_date = ? AND model = ?
-           AND virtual_key_id NOT IN (
-             SELECT virtual_key_id FROM (
-               SELECT virtual_key_id FROM virtual_key_model_daily_usage
-               WHERE usage_date = ? AND model = ?
+         WHERE usage_date >= ? AND model = ?
+           AND (usage_date, virtual_key_id) NOT IN (
+             SELECT usage_date, virtual_key_id FROM (
+               SELECT usage_date, virtual_key_id FROM virtual_key_model_daily_usage
+               WHERE usage_date >= ? AND model = ?
              ) AS keys_with_target
            )`,
         [to, now, usageDate, from, usageDate, to],
       );
       // 前两步之后只剩已合并密钥的 from 行，删除收尾。
       await conn.query(
-        "DELETE FROM virtual_key_model_daily_usage WHERE usage_date = ? AND model = ?",
+        "DELETE FROM virtual_key_model_daily_usage WHERE usage_date >= ? AND model = ?",
         [usageDate, from],
       );
     };

@@ -92,16 +92,22 @@ function makeHandlers() {
     onAntiBotBlock: vi.fn(),
     onAuthError: vi.fn(),
     onRateLimited: vi.fn(),
-    onQuotaExceeded: vi.fn(({ reply, modelName, retryAfterSeconds }: any) => {
-      reply.code(429).send({
-        error: {
-          message: `Model "${modelName}" has reached this virtual key's daily token quota. Retry after ${formatRetryDuration(retryAfterSeconds)}.`,
-          type: 'rate_limit_error',
-          param: 'model',
-          code: 'model_daily_token_quota_exceeded',
-        },
-      });
-    }),
+    // Mirrors the OpenAI protocol handler: the payload must key off `period`.
+    onQuotaExceeded: vi.fn(
+      ({ reply, modelName, retryAfterSeconds, period }: any) => {
+        const weekly = period === 'weekly';
+        reply.code(429).send({
+          error: {
+            message: `Model "${modelName}" has reached this virtual key's ${weekly ? 'weekly' : 'daily'} token quota. Retry after ${formatRetryDuration(retryAfterSeconds)}.`,
+            type: 'rate_limit_error',
+            param: 'model',
+            code: weekly
+              ? 'model_weekly_token_quota_exceeded'
+              : 'model_daily_token_quota_exceeded',
+          },
+        });
+      },
+    ),
     onModelError: vi.fn(),
     onProviderConfigError: vi.fn(),
   };
@@ -177,6 +183,7 @@ test('an exhausted model gets 429 + Retry-After before any upstream work', async
     expect.objectContaining({
       virtualKeyId: KEY_ID,
       modelName: 'gpt-x',
+      period: 'daily',
       limitTokens: 1_000_000,
       usedTokens: 1_200_000,
     }),
@@ -187,7 +194,58 @@ test('an exhausted model gets 429 + Retry-After before any upstream work', async
       error: expect.objectContaining({
         type: 'rate_limit_error',
         code: 'model_daily_token_quota_exceeded',
+        message: expect.stringContaining("daily token quota"),
       }),
+    }),
+  );
+});
+
+test('an exhausted weekly ceiling reports period weekly through the callback', async () => {
+  // 周一到周五的中午：本周只剩今天一格，记 1M 就把 1M 的周额度顶满。
+  mocks.getAll.mockResolvedValue([
+    { virtualKeyId: KEY_ID, model: 'gpt-x', limitMillions: 0, weeklyLimitMillions: 1 },
+  ]);
+  virtualKeyQuota.record(KEY_ID, 'gpt-x', 1_000_000, NOW);
+
+  const { reply, handlers, result } = await run('gpt-x');
+
+  expect(result.ok).toBe(false);
+  expect(buildProviderConfig).not.toHaveBeenCalled();
+  expect(handlers.onQuotaExceeded).toHaveBeenCalledTimes(1);
+  expect(handlers.onQuotaExceeded).toHaveBeenCalledWith(
+    expect.objectContaining({
+      virtualKeyId: KEY_ID,
+      modelName: 'gpt-x',
+      period: 'weekly',
+      limitTokens: 1_000_000,
+      usedTokens: 1_000_000,
+    }),
+  );
+  expect(reply.header).toHaveBeenCalledWith('Retry-After', expect.any(String));
+  expect(reply.code).toHaveBeenCalledWith(429);
+  expect(reply.send).toHaveBeenCalledWith(
+    expect.objectContaining({
+      error: expect.objectContaining({
+        code: 'model_weekly_token_quota_exceeded',
+        message: expect.stringContaining('weekly token quota'),
+      }),
+    }),
+  );
+});
+
+test('a daily ceiling trips before the weekly one when both are configured', async () => {
+  mocks.getAll.mockResolvedValue([
+    { virtualKeyId: KEY_ID, model: 'gpt-x', limitMillions: 1, weeklyLimitMillions: 5 },
+  ]);
+  virtualKeyQuota.record(KEY_ID, 'gpt-x', 1_000_000, NOW);
+
+  const { reply, result } = await run('gpt-x');
+
+  // 日额度先满：即使周额度还剩很多，也应按 daily 报错（与既有行为一致）。
+  expect(result.ok).toBe(false);
+  expect(reply.send).toHaveBeenCalledWith(
+    expect.objectContaining({
+      error: expect.objectContaining({ code: 'model_daily_token_quota_exceeded' }),
     }),
   );
 });

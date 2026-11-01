@@ -478,3 +478,32 @@ describe('virtual key deletion transactionality', () => {
     expect(mocks.deleteBindingsByScope).not.toHaveBeenCalled();
   });
 });
+
+describe('virtual key quota periods', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getById.mockResolvedValue(makeVirtualKey());
+    mocks.quotaApplyBulk.mockResolvedValue(undefined);
+    mocks.quotaGetByVirtualKeyId.mockResolvedValue([{ model: 'm', limitMillions: 1, weeklyLimitMillions: 5 }]);
+    mocks.usageGetDayUsage.mockResolvedValue({ consumedTokens: 10, requestCount: 1 });
+  });
+
+  it('writes weekly quota without replacing the daily quota', async () => {
+    const app = await buildApp();
+    const response = await app.inject({ method: 'PUT', url: '/quotas/bulk', payload: { virtualKeyIds: ['vk_1'], period: 'weekly', quotas: [{ model: 'm', limitMillions: 2 }] } });
+    expect(response.statusCode).toBe(200);
+    expect(mocks.quotaApplyBulk).toHaveBeenCalledWith(['vk_1'], [{ model: 'm', limitMillions: undefined, weeklyLimitMillions: 2 }]);
+    await app.close();
+  });
+
+  it('returns the selected weekly quota and summed usage', async () => {
+    const app = await buildApp();
+    const response = await app.inject({ method: 'GET', url: '/quotas?virtualKeyId=vk_1&period=weekly' });
+    expect(response.statusCode).toBe(200);
+    const entry = response.json().quotas[0];
+    expect(entry).toMatchObject({ model: 'm', limitMillions: 5 });
+    expect(entry.usedTokens).toBe(entry.requestCount * 10);
+    expect(entry.requestCount).toBeGreaterThanOrEqual(1);
+    await app.close();
+  });
+});

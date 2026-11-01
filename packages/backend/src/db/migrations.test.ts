@@ -89,7 +89,7 @@ describe("migration 1: api_requests.session_id", () => {
   });
 
   test("does not re-apply recorded migrations once all versions are applied", async () => {
-    const conn = provisionedConn(6);
+    const conn = provisionedConn(7);
     await applyMigrations(conn as unknown as Connection);
     expect(conn.beginTransaction).not.toHaveBeenCalled();
     expect(conn.query.mock.calls.some(([sql]) => String(sql).includes("ALTER TABLE"))).toBe(false);
@@ -220,7 +220,135 @@ describe("migration 6: login_ip_lockout", () => {
     await applyMigrations(conn as unknown as Connection);
     const issued = query.mock.calls.map(([sql]) => String(sql));
     expect(issued.some((sql) => sql.includes("CREATE TABLE IF NOT EXISTS login_attempt_lockouts"))).toBe(true);
-    expect(recorded).toEqual([{ version: 6, name: "login_ip_lockout" }]);
+    expect(recorded).toEqual([
+      { version: 6, name: "login_ip_lockout" },
+      { version: 7, name: "virtual_key_model_quotas_weekly_limit" },
+    ]);
+  });
+});
+
+describe("migration 7: virtual_key_model_quotas_weekly_limit", () => {
+  function v7Conn(table: boolean, columns: Array<{ name: string; nullable: string }>) {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("INFORMATION_SCHEMA.TABLES")) {
+        return [table ? [{ name: "virtual_key_model_quotas" }] : []];
+      }
+      if (sql.includes("INFORMATION_SCHEMA.COLUMNS")) return [columns];
+      return [[]];
+    });
+    return { query, beginTransaction: vi.fn(), commit: vi.fn(), rollback: vi.fn() };
+  }
+
+  test("is version 7 and reversible", () => {
+    expect(migrations[6].version).toBe(7);
+    expect(migrations[6].name).toBe("virtual_key_model_quotas_weekly_limit");
+    expect(typeof migrations[6].down).toBe("function");
+  });
+
+  test("empty schema records the version without DDL (scratch dry-run / rebuild order)", async () => {
+    const conn = v7Conn(false, []);
+    await migrations[6].up!(conn as unknown as Connection);
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(issued.some((sql) => /ALTER|DROP |UPDATE /.test(sql))).toBe(false);
+  });
+
+  test("adds the weekly column and relaxes limit_millions on legacy tables", async () => {
+    const conn = v7Conn(true, [{ name: "limit_millions", nullable: "NO" }]);
+    await migrations[6].up!(conn as unknown as Connection);
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(
+      issued.some((sql) =>
+        sql.includes(
+          "ADD COLUMN weekly_limit_millions DECIMAL(12,3) NULL DEFAULT NULL",
+        )),
+    ).toBe(true);
+    expect(
+      issued.some((sql) =>
+        sql.includes("MODIFY COLUMN limit_millions DECIMAL(12,3) NULL DEFAULT NULL")),
+    ).toBe(true);
+  });
+
+  test("skips DDL when schema.ts already created the nullable columns", async () => {
+    const conn = v7Conn(true, [
+      { name: "limit_millions", nullable: "YES" },
+      { name: "weekly_limit_millions", nullable: "YES" },
+    ]);
+    await migrations[6].up!(conn as unknown as Connection);
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(issued.some((sql) => sql.includes("ALTER TABLE"))).toBe(false);
+  });
+
+  test("backfills only the missing piece (weekly exists, daily still NOT NULL)", async () => {
+    const conn = v7Conn(true, [
+      { name: "limit_millions", nullable: "NO" },
+      { name: "weekly_limit_millions", nullable: "YES" },
+    ]);
+    await migrations[6].up!(conn as unknown as Connection);
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(
+      issued.some((sql) => sql.includes("ADD COLUMN weekly_limit_millions")),
+    ).toBe(false);
+    expect(
+      issued.some((sql) => sql.includes("MODIFY COLUMN limit_millions")),
+    ).toBe(true);
+  });
+
+  test("down drops the weekly column and restores NOT NULL after zeroing NULLs", async () => {
+    const conn = v7Conn(true, [
+      { name: "limit_millions", nullable: "YES" },
+      { name: "weekly_limit_millions", nullable: "YES" },
+    ]);
+    await migrations[6].down!(conn as unknown as Connection);
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(
+      issued.some((sql) => sql.includes("DROP COLUMN weekly_limit_millions")),
+    ).toBe(true);
+    expect(
+      issued.some((sql) =>
+        sql.includes("SET limit_millions = 0 WHERE limit_millions IS NULL")),
+    ).toBe(true);
+    expect(
+      issued.some((sql) =>
+        sql.includes("MODIFY COLUMN limit_millions DECIMAL(12,3) NOT NULL")),
+    ).toBe(true);
+  });
+
+  test("down on an empty schema is a no-op beyond the metadata read", async () => {
+    const conn = v7Conn(false, []);
+    await migrations[6].down!(conn as unknown as Connection);
+    expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(String(conn.query.mock.calls[0][0])).toContain("INFORMATION_SCHEMA.TABLES");
+  });
+
+  test("is applied when the recorded version is 6 and recorded afterwards", async () => {
+    const recorded: Array<{ version: number; name: string }> = [];
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      if (sql.includes("INFORMATION_SCHEMA.TABLES")) {
+        return [[
+          { name: "virtual_key_model_quotas" },
+          { name: "schema_baseline" },
+          { name: "schema_migrations" },
+        ]];
+      }
+      if (sql.includes("SELECT generation")) return [[{ generation: 2 }]];
+      if (sql.includes("MAX(version)")) return [[{ version: 6 }]];
+      if (sql.includes("INFORMATION_SCHEMA.COLUMNS")) {
+        return [[{ name: "limit_millions", nullable: "NO" }]];
+      }
+      if (sql.includes("INSERT INTO schema_migrations")) {
+        recorded.push({ version: params![0] as number, name: params![1] as string });
+      }
+      return [[]];
+    });
+    const conn = { query, beginTransaction: vi.fn(), commit: vi.fn(), rollback: vi.fn() };
+    await applyMigrations(conn as unknown as Connection);
+    const issued = query.mock.calls.map(([sql]) => String(sql));
+    expect(
+      issued.some((sql) => sql.includes("ADD COLUMN weekly_limit_millions")),
+    ).toBe(true);
+    expect(recorded).toEqual([
+      { version: 7, name: "virtual_key_model_quotas_weekly_limit" },
+    ]);
   });
 });
 
