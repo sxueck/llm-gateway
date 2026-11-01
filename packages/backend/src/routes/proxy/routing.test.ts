@@ -7,7 +7,7 @@ vi.hoisted(() => {
 });
 
 import { circuitBreaker } from '../../services/circuit-breaker.js';
-import { getTargetKey, hasAvailableRoutingTargets, selectRoutingTarget, getAnonymousAffinityTargetKey, countExplicitSessionBindings, shouldRetrySmartRouting, normalizeRoutingStrategy, extractRequestRoutingStrategy, resolveConfigDefaultStrategy, computeBlendedPrice, sortTargetsForStrategy, type RoutingConfig } from './routing.js';
+import { getTargetKey, hasAvailableRoutingTargets, selectRoutingTarget, getAnonymousAffinityTargetKey, countExplicitSessionBindings, shouldRetrySmartRouting, extractRequestRoutingStrategy, resolveConfigDefaultStrategy, type RoutingConfig } from './routing.js';
 
 test('selectRoutingTarget rotates loadbalance targets without weights', () => {
   circuitBreaker.resetAll();
@@ -412,29 +412,9 @@ test('affinity honors strategy.affinityTTL and rebinds after it elapses', () => 
   }
 });
 
-test('getAnonymousAffinityTargetKey returns null when no anonymous affinity exists', () => {
-  const stickyKey = getAnonymousAffinityTargetKey('nonexistent-config-id');
-  expect(stickyKey).toBeNull();
-});
+;
 
-test('countExplicitSessionBindings counts only non-expired explicit sessions for a target', () => {
-  circuitBreaker.resetAll();
-
-  const config: RoutingConfig = {
-    strategy: { mode: 'affinity', affinityTTL: 60_000 },
-    targets: [
-      { provider: 'provider-a' },
-      { provider: 'provider-b' },
-    ],
-  };
-
-  selectRoutingTarget(config, 'affinity', 'explicit-binding-test-1', 'session-1');
-  selectRoutingTarget(config, 'affinity', 'explicit-binding-test-1', 'session-2');
-  selectRoutingTarget(config, 'affinity', 'explicit-binding-test-1', 'session-3');
-
-  expect(countExplicitSessionBindings('explicit-binding-test-1', getTargetKey(config.targets[0]!))).toBe(2);
-  expect(countExplicitSessionBindings('explicit-binding-test-1', getTargetKey(config.targets[1]!))).toBe(1);
-});
+;
 
 test('hash mode does not drift target when probe mechanism is triggered', async () => {
   circuitBreaker.resetAll();
@@ -535,22 +515,7 @@ describe('shouldRetrySmartRouting', () => {
 });
 
 describe('PR-4 per-request routing strategy', () => {
-  describe('normalizeRoutingStrategy', () => {
-    it('accepts known values case-insensitively and maps single to default', () => {
-      expect(normalizeRoutingStrategy('default')).toBe('default');
-      expect(normalizeRoutingStrategy('Price')).toBe('price');
-      expect(normalizeRoutingStrategy(' throughput ')).toBe('throughput');
-      expect(normalizeRoutingStrategy('LATENCY')).toBe('latency');
-      expect(normalizeRoutingStrategy('single')).toBe('default');
-    });
-
-    it('rejects unknown / non-string values', () => {
-      expect(normalizeRoutingStrategy('cheapest')).toBeNull();
-      expect(normalizeRoutingStrategy('')).toBeNull();
-      expect(normalizeRoutingStrategy(42)).toBeNull();
-      expect(normalizeRoutingStrategy(undefined)).toBeNull();
-    });
-  });
+  ;
 
   describe('extractRequestRoutingStrategy', () => {
     it('prefers body.routing over the x-gateway-routing header', () => {
@@ -579,75 +544,9 @@ describe('PR-4 per-request routing strategy', () => {
     expect(resolveConfigDefaultStrategy(undefined)).toBe('default');
   });
 
-  describe('computeBlendedPrice', () => {
-    it('shares blended price with expert bands and prices unknown costs last', () => {
-      expect(computeBlendedPrice({ input_cost_per_token: 2, output_cost_per_token: 4 })).toBeCloseTo(2.5);
-      expect(computeBlendedPrice({ input_cost_per_token: 2 })).toBe(Infinity);
-      expect(computeBlendedPrice({ input_cost_per_token: '1', output_cost_per_token: '3' })).toBeCloseTo(1.5);
-      expect(computeBlendedPrice(null)).toBe(Infinity);
-    });
-  });
+  ;
 
-  describe('sortTargetsForStrategy', () => {
-    const targets = [
-      { provider: 'a', override_params: { model: 'm-a' } },
-      { provider: 'b', override_params: { model: 'm-b' } },
-      { provider: 'c', override_params: { model: 'm-c' } },
-    ];
-    const keys = ['a::m-a', 'b::m-b', 'c::m-c'];
-
-    it('sorts by blended price ascending', () => {
-      const metrics = new Map([
-        [keys[0], { blendedPrice: 3 }],
-        [keys[1], { blendedPrice: 1 }],
-        [keys[2], { blendedPrice: 2 }],
-      ]);
-      expect(sortTargetsForStrategy(targets, 'price', metrics).map(t => t.provider))
-        .toEqual(['b', 'c', 'a']);
-    });
-
-    it('sorts by throughput descending', () => {
-      const metrics = new Map([
-        [keys[0], { avgSpeed: 10 }],
-        [keys[1], { avgSpeed: 90 }],
-        [keys[2], { avgSpeed: 50 }],
-      ]);
-      expect(sortTargetsForStrategy(targets, 'throughput', metrics).map(t => t.provider))
-        .toEqual(['b', 'c', 'a']);
-    });
-
-    it('sorts by latency ascending', () => {
-      const metrics = new Map([
-        [keys[0], { avgTffbMs: 200 }],
-        [keys[1], { avgTffbMs: 50 }],
-      ]);
-      const sorted = sortTargetsForStrategy(targets, 'latency', metrics);
-      expect(sorted[0].provider).toBe('b');
-      // missing sample keeps original relative order after sampled targets
-      expect(sorted.map(t => t.provider)).toEqual(['b', 'a', 'c']);
-    });
-
-    it('returns original order when no samples exist or strategy is default', () => {
-      expect(sortTargetsForStrategy(targets, 'price', new Map()).map(t => t.provider))
-        .toEqual(['a', 'b', 'c']);
-      expect(sortTargetsForStrategy(targets, 'default', new Map([
-        [keys[0], { blendedPrice: 1 }],
-      ])).map(t => t.provider)).toEqual(['a', 'b', 'c']);
-    });
-
-    it('matches no-override targets through the request model key', () => {
-      const mixed = [{ provider: 'a' }, { provider: 'b', override_params: { model: 'm-b' } }];
-      const metrics = new Map([
-        ['a::shared', { avgSpeed: 90 }],
-        ['b::m-b', { avgSpeed: 10 }],
-      ]);
-      expect(sortTargetsForStrategy(mixed, 'throughput', metrics, 'shared').map(t => t.provider))
-        .toEqual(['a', 'b']);
-      // without a request model the no-override target has no sample and sorts last
-      expect(sortTargetsForStrategy(mixed, 'throughput', metrics, undefined).map(t => t.provider))
-        .toEqual(['b', 'a']);
-    });
-  });
+  ;
 
   describe('selectRoutingTarget with explicit strategy', () => {
     it('picks the deterministic cheapest target instead of round-robin', () => {

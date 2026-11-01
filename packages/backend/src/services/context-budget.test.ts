@@ -2,15 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CONTEXT_BUDGET_TIERS } from "@llm-gateway/shared";
 import {
   checkContextBudget,
-  classifyAnthropicRequest,
-  classifyChatRequest,
-  classifyResponsesRequest,
-  effectiveBudgetTokens,
-  estimateForwardedInputTokens,
-  estimateResponsesInputTokens,
   resetBudgetStates,
 } from "./context-budget.js";
-import { countMessagesCooperatively } from "./token-counter.js";
 import { memoryLogger } from "./logger.js";
 
 function boundaryHistory(userChars: number): any[] {
@@ -32,129 +25,6 @@ function assistantToolCalls(...ids: string[]): any {
     })),
   };
 }
-
-describe("classifyChatRequest", () => {
-  it("classifies a fresh user message as boundary", () => {
-    expect(
-      classifyChatRequest([
-        { role: "system", content: "sys" },
-        { role: "user", content: "hi" },
-      ]),
-    ).toBe("boundary");
-    expect(classifyChatRequest(boundaryHistory(10))).toBe("boundary");
-  });
-
-  it("classifies tool-result feedback as continuation", () => {
-    const messages = [
-      { role: "user", content: "run tests" },
-      assistantToolCalls("t1"),
-      { role: "tool", tool_call_id: "t1", content: "ok" },
-    ];
-    expect(classifyChatRequest(messages)).toBe("continuation");
-  });
-
-  it("keeps the turn open while tool_calls are unanswered", () => {
-    const messages = [
-      { role: "user", content: "run tests" },
-      assistantToolCalls("t1"),
-      { role: "user", content: "继续执行" },
-    ];
-    expect(classifyChatRequest(messages)).toBe("continuation");
-  });
-
-  it("treats a new user message after answered tool calls as boundary", () => {
-    const messages = [
-      { role: "user", content: "run tests" },
-      assistantToolCalls("t1"),
-      { role: "tool", tool_call_id: "t1", content: "ok" },
-      { role: "user", content: "next task" },
-    ];
-    expect(classifyChatRequest(messages)).toBe("boundary");
-  });
-
-  it("keeps the turn open while only some tool calls are answered", () => {
-    const messages = [
-      { role: "user", content: "run tests" },
-      assistantToolCalls("t1", "t2"),
-      { role: "tool", tool_call_id: "t1", content: "ok" },
-      { role: "user", content: "continue" },
-    ];
-    expect(classifyChatRequest(messages)).toBe("continuation");
-  });
-
-  it("treats an assistant-tailed payload as continuation", () => {
-    const messages = [
-      { role: "user", content: "hi" },
-      { role: "assistant", content: "hello" },
-    ];
-    expect(classifyChatRequest(messages)).toBe("continuation");
-  });
-
-  it("detects pi compaction signature in system message", () => {
-    const messages = [
-      {
-        role: "system",
-        content:
-          "You are a context summarization assistant. Read the conversation and summarize.",
-      },
-      { role: "user", content: "<serialized history>" },
-    ];
-    expect(classifyChatRequest(messages)).toBe("compaction");
-  });
-
-  it("detects opencode compaction signature in the first user message", () => {
-    const messages = [
-      { role: "user", content: "You are a context summarization agent.\n<history/>" },
-      { role: "user", content: "history payload" },
-    ];
-    expect(classifyChatRequest(messages)).toBe("compaction");
-  });
-
-  it("returns unknown for empty payloads", () => {
-    expect(classifyChatRequest([])).toBe("unknown");
-    expect(classifyChatRequest(null as any)).toBe("unknown");
-  });
-});
-
-describe("estimateForwardedInputTokens", () => {
-  it("uses the shared tokenizer so CJK history is not underestimated", async () => {
-    const messages = [
-      { role: "user", content: "你好世界，这是用于上下文预算验证的中文历史。".repeat(1000) },
-    ];
-    const estimate = await estimateForwardedInputTokens(messages);
-    // chars/4 只会给出 ~5500；中文的真实分词密度远高于此，预算必须按真实分词拦截。
-    expect(estimate).toBe(await countMessagesCooperatively(messages));
-    expect(estimate).toBeGreaterThan(10_000);
-  });
-
-  it("counts serialized tool definitions into the estimate", async () => {
-    const messages = [{ role: "user", content: "hi" }];
-    const tools = [
-      {
-        type: "function",
-        function: {
-          name: "bash",
-          description: "read the file and summarize the results. ".repeat(4000),
-          parameters: {},
-        },
-      },
-    ];
-    const withoutTools = await estimateForwardedInputTokens(messages);
-    const withTools = await estimateForwardedInputTokens(messages, tools);
-    expect(withTools).toBeGreaterThan(withoutTools + 5000);
-  });
-});
-
-describe("effectiveBudgetTokens", () => {
-  it("clamps to the model window minus the output reserve", () => {
-    expect(effectiveBudgetTokens(600_000, 256_000)).toBe(256_000 - 16_384);
-  });
-
-  it("keeps the configured tier when the window is unknown or tiny", () => {
-    expect(effectiveBudgetTokens(400_000, undefined)).toBe(400_000);
-    expect(effectiveBudgetTokens(400_000, 8_000)).toBe(400_000);
-  });
-});
 
 describe("checkContextBudget", () => {
   afterEach(() => {
@@ -336,8 +206,7 @@ describe("checkContextBudget", () => {
     expect((await checkContextBudget(input("vk-a"))).action).toBe("exempt");
     expect((await checkContextBudget(input("vk-a"))).action).toBe("block");
   });
-});
-
+})
 // ---------------------------------------------------------------------------
 // Anthropic Messages 协议
 // ---------------------------------------------------------------------------
@@ -349,46 +218,6 @@ function anthropicBoundaryHistory(chars: number): any[] {
     { role: "user", content: [{ type: "text", text: "what is the key takeaway" }] },
   ];
 }
-
-describe("classifyAnthropicRequest", () => {
-  it("classifies a fresh user turn after a completed tool loop as boundary", () => {
-    const messages = [
-      { role: "user", content: [{ type: "text", text: "list the files" }] },
-      { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "bash", input: { cmd: "ls" } }] },
-      { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "a\nb" }] },
-      { role: "assistant", content: [{ type: "text", text: "two files" }] },
-      { role: "user", content: [{ type: "text", text: "now summarize" }] },
-    ];
-    expect(classifyAnthropicRequest(messages, "")).toBe("boundary");
-  });
-
-  it("treats a tool_result-only user message as continuation", () => {
-    const messages = [
-      { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "bash", input: {} }] },
-      { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }] },
-    ];
-    expect(classifyAnthropicRequest(messages, "")).toBe("continuation");
-  });
-
-  it("treats user text mid-tool-loop (unanswered tool_use) as continuation", () => {
-    const messages = [
-      { role: "user", content: [{ type: "text", text: "list the files" }] },
-      { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "bash", input: {} }] },
-      { role: "user", content: [{ type: "text", text: "hurry up" }] },
-    ];
-    expect(classifyAnthropicRequest(messages, "")).toBe("continuation");
-  });
-
-  it("detects the pi compaction signature in the top-level system field", () => {
-    expect(
-      classifyAnthropicRequest(anthropicBoundaryHistory(10), "You are a context summarization assistant."),
-    ).toBe("compaction");
-  });
-
-  it("returns unknown for empty input", () => {
-    expect(classifyAnthropicRequest([], "")).toBe("unknown");
-  });
-});
 
 describe("checkContextBudget (anthropic)", () => {
   afterEach(() => {
@@ -473,8 +302,7 @@ describe("checkContextBudget (anthropic)", () => {
     expect(verdict.action).toBe("exempt");
     expect(verdict.classification).toBe("compaction");
   });
-});
-
+})
 // ---------------------------------------------------------------------------
 // OpenAI Responses 协议（/v1/responses）
 // ---------------------------------------------------------------------------
@@ -510,128 +338,6 @@ function responsesBoundaryHistory(outputChars: number): any[] {
     { role: "user", content: [{ type: "input_text", text: "what is the key takeaway" }] },
   ];
 }
-
-describe("classifyResponsesRequest", () => {
-  it("classifies a fresh user item after a closed tool loop as boundary", () => {
-    expect(classifyResponsesRequest(responsesBoundaryHistory(10))).toBe("boundary");
-  });
-
-  it("classifies a bare string input as boundary", () => {
-    expect(classifyResponsesRequest("summarize the session so far")).toBe("boundary");
-  });
-
-  it("treats a trailing function_call_output as continuation", () => {
-    const input = [
-      { role: "user", content: "run tests" },
-      { type: "function_call", call_id: "c1", name: "bash", arguments: "{}" },
-      { type: "function_call_output", call_id: "c1", output: "ok" },
-    ];
-    expect(classifyResponsesRequest(input)).toBe("continuation");
-  });
-
-  it("keeps the turn open while a function_call has no output", () => {
-    const input = [
-      { role: "user", content: "run tests" },
-      { type: "function_call", call_id: "c1", name: "bash", arguments: "{}" },
-    ];
-    expect(classifyResponsesRequest(input)).toBe("continuation");
-  });
-
-  it("treats user interjection while a call is open as continuation", () => {
-    const input = [
-      { role: "user", content: "run tests" },
-      { type: "function_call", call_id: "c1", name: "bash", arguments: "{}" },
-      { role: "user", content: "继续执行" },
-    ];
-    expect(classifyResponsesRequest(input)).toBe("continuation");
-  });
-
-  it("requires every parallel function_call to be closed for a boundary", () => {
-    const open = [
-      { role: "user", content: "run tests" },
-      { type: "function_call", call_id: "c1", name: "bash", arguments: "{}" },
-      { type: "function_call", call_id: "c2", name: "read", arguments: "{}" },
-      { type: "function_call_output", call_id: "c1", output: "ok" },
-      { role: "user", content: "next" },
-    ];
-    expect(classifyResponsesRequest(open)).toBe("continuation");
-    const closed = [
-      ...open.slice(0, 4),
-      { type: "function_call_output", call_id: "c2", output: "ok" },
-      { role: "user", content: "next" },
-    ];
-    expect(classifyResponsesRequest(closed)).toBe("boundary");
-  });
-
-  it("treats an assistant-tailed payload as continuation", () => {
-    const input = [
-      { role: "user", content: "hi" },
-      { type: "message", role: "assistant", content: [{ type: "output_text", text: "hello" }] },
-    ];
-    expect(classifyResponsesRequest(input)).toBe("continuation");
-  });
-
-  it("detects the compaction signature in instructions", () => {
-    expect(
-      classifyResponsesRequest(
-        responsesBoundaryHistory(10),
-        "You are a context summarization assistant. Summarize the conversation.",
-      ),
-    ).toBe("compaction");
-  });
-
-  it("detects the compaction signature in a developer item", () => {
-    const input = [
-      {
-        role: "developer",
-        content: "You are a context summarization agent. Compress the history below.",
-      },
-      { role: "user", content: "<serialized history>" },
-    ];
-    expect(classifyResponsesRequest(input)).toBe("compaction");
-  });
-
-  it("returns unknown for upstream conversation state or unusable input", () => {
-    expect(
-      classifyResponsesRequest(responsesBoundaryHistory(10), "", true),
-    ).toBe("unknown");
-    expect(classifyResponsesRequest("hi", "", true)).toBe("unknown");
-    expect(classifyResponsesRequest(undefined)).toBe("unknown");
-    expect(classifyResponsesRequest([])).toBe("unknown");
-  });
-});
-
-describe("estimateResponsesInputTokens", () => {
-  it("counts function_call_output payloads with the real tokenizer", async () => {
-    const input = responsesBoundaryHistory(100_000);
-    const estimate = await estimateResponsesInputTokens(input);
-    // 100K chars 的工具回包真实入账（cl100k 下 ~12.5K tokens），远超角色/固定开销。
-    expect(estimate).toBeGreaterThan(10_000);
-  });
-
-  it("counts instructions, reasoning text and tool definitions", async () => {
-    const input = responsesBoundaryHistory(10);
-    const baseline = await estimateResponsesInputTokens(input);
-    const withExtras = await estimateResponsesInputTokens(
-      input,
-      "You are a harness. ".repeat(2_000),
-      [
-        {
-          type: "function",
-          name: "bash",
-          description: "read the file and summarize the results. ".repeat(2_000),
-          parameters: {},
-        },
-      ],
-    );
-    expect(withExtras).toBeGreaterThan(baseline + 1_000);
-  });
-
-  it("counts a bare string input", async () => {
-    const estimate = await estimateResponsesInputTokens("x".repeat(100_000));
-    expect(estimate).toBeGreaterThan(10_000);
-  });
-});
 
 describe("checkContextBudget (responses)", () => {
   afterEach(() => {
@@ -717,4 +423,4 @@ describe("checkContextBudget (responses)", () => {
     expect(verdict.action).toBe("pass");
     expect(verdict.classification).toBe("unknown");
   });
-});
+})

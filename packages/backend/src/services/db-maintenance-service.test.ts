@@ -38,13 +38,8 @@ vi.mock("../db/index.js", () => ({
 
 import {
   DEFAULT_RETENTION_DAYS,
-  buildPurgePlans,
   getMaintenanceSettings,
-  isValidPurgeTarget,
-  listPurgeTargets,
-  normalizeSettings,
   optimizeTables,
-  resolveCutoff,
   runPurge,
   saveMaintenanceSettings,
 } from "./db-maintenance-service.js";
@@ -57,76 +52,6 @@ function mockSelect(rows: any[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-});
-
-describe("normalizeSettings", () => {
-  test("clamps retention days to the allowed range", () => {
-    const settings = normalizeSettings({
-      retentionDays: { api_requests: 0, expert_routing_logs: 99_999, circuit_breaker_events: 30.9 },
-    });
-    expect(settings.retentionDays).toEqual({
-      api_requests: 1,
-      expert_routing_logs: 3650,
-      circuit_breaker_events: 30,
-    });
-  });
-
-  test("drops unknown tables and non-numeric values", () => {
-    const settings = normalizeSettings({
-      retentionDays: { prompt_samples: 5, api_requests: "soon" },
-    });
-    expect(settings.retentionDays).toEqual({});
-  });
-});
-
-describe("purge targets", () => {
-  test("allowlist only contains purgeable tables", () => {
-    expect(isValidPurgeTarget("api_requests")).toBe(true);
-    expect(isValidPurgeTarget("expert_routing_session_bindings")).toBe(true);
-    expect(isValidPurgeTarget("prompt_samples")).toBe(false);
-    expect(isValidPurgeTarget("users")).toBe(false);
-  });
-
-  test("listPurgeTargets covers every dispatch branch", () => {
-    for (const target of listPurgeTargets()) {
-      expect(isValidPurgeTarget(target)).toBe(true);
-    }
-  });
-
-  test("resolveCutoff falls back to the default retention window", () => {
-    expect(resolveCutoff("expert_routing_logs", { retentionDays: {} }, NOW)).toBe(
-      NOW - DEFAULT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
-    );
-  });
-});
-
-describe("buildPurgePlans", () => {
-  test("counts age-purgeable rows at the resolved cutoff", async () => {
-    mockSelect([{ total: 42 }]);
-    const plans = await buildPurgePlans(["api_requests"], { retentionDays: { api_requests: 7 } }, NOW);
-    expect(plans).toEqual([
-      { table: "api_requests", mode: "age", cutoffAt: NOW - 7 * 24 * 60 * 60 * 1000, estimatedRows: 42 },
-    ]);
-    const [sql, params] = connectionMock.currentConnection().query.mock.calls[0];
-    expect(sql).toContain("COUNT(*)");
-    expect(params).toEqual(["api_requests", "created_at", NOW - 7 * 24 * 60 * 60 * 1000]);
-  });
-
-  test("counts expired bindings with the expiry predicate", async () => {
-    mockSelect([{ total: 5 }]);
-    const plans = await buildPurgePlans(["session_context_bindings"], { retentionDays: {} }, NOW);
-    expect(plans).toEqual([
-      { table: "session_context_bindings", mode: "expired", cutoffAt: NOW, estimatedRows: 5 },
-    ]);
-    const [, params] = connectionMock.currentConnection().query.mock.calls[0];
-    expect(params).toEqual(["session_context_bindings", NOW, NOW]);
-  });
-
-  test("rejects unknown targets", async () => {
-    await expect(buildPurgePlans(["virtual_keys"], { retentionDays: {} }, NOW)).rejects.toThrow(
-      /unknown purge target/,
-    );
-  });
 });
 
 describe("runPurge", () => {

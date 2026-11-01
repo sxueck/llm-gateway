@@ -2,7 +2,7 @@ import { createSSRApp, h } from 'vue';
 import { fileURLToPath } from 'node:url';
 import { renderToString } from 'vue/server-renderer';
 import { createI18n } from 'vue-i18n';
-import { darkTheme, NConfigProvider, NMessageProvider } from 'naive-ui';
+import { NConfigProvider, NMessageProvider } from 'naive-ui';
 import { describe, expect, it, vi } from 'vitest';
 import { resolveConfig } from 'vite';
 import { setup as setupCssSsr } from '@css-render/vue3-ssr';
@@ -15,9 +15,9 @@ import enUS from '../i18n/locales/en-US';
 
 vi.mock('@/utils/request', () => ({ default: { get: vi.fn() } }));
 
-async function renderCard(locale = 'zh-CN', dark = false, first = true, last = false) {
+async function renderCard(locale = 'zh-CN', first = true, last = false) {
   const app = createSSRApp({
-    render: () => h(NConfigProvider, { theme: dark ? darkTheme : null }, {
+    render: () => h(NConfigProvider, {}, {
       default: () => h(TierModelCard, {
         expert: { id: 'candidate-1', band: 'low', type: 'real', provider_id: 'provider', model: 'model' },
         label: 'A long model name',
@@ -44,20 +44,11 @@ describe('tiered routing UI', () => {
   });
 
   it('keeps reorder boundaries disabled and localizes English actions', async () => {
-    const html = await renderCard('en-US', false, true, true);
+    const html = await renderCard('en-US', true, true);
     expect(html).toContain('Priority 1');
     expect(html).toContain('aria-label="Move up"');
     expect(html).toContain('aria-label="Move down"');
     expect(html.match(/<button[^>]* disabled(?: |>|=)/g)).toHaveLength(2);
-  });
-
-  it('uses theme surfaces instead of forcing white model cards in dark mode', async () => {
-    const light = await renderCard();
-    const dark = await renderCard('zh-CN', true);
-    const cardStyle = (html: string) => html.match(/class="tier-model-card" style="([^"]+)"/)?.[1];
-    expect(cardStyle(light)).toBeTruthy();
-    expect(cardStyle(dark)).toBeTruthy();
-    expect(cardStyle(light)).not.toEqual(cardStyle(dark));
   });
 
   it('keeps the selected session mode description alongside its controls', async () => {

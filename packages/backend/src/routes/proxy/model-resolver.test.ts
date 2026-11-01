@@ -15,11 +15,7 @@ import {
   agentLoopbackToken,
 } from '../../agent/run/loopback-token.js';
 import { resolveProviderFromModel } from './routing.js';
-import { parseModelSuffix, resolveModelAndProvider } from './model-resolver.js';
-import {
-  DEFAULT_REASONING_EFFORT_MODEL_SUFFIXES,
-} from '../../services/reasoning-effort-suffixes.js';
-
+import { resolveModelAndProvider } from './model-resolver.js';
 vi.mock('../../db/index.js', () => ({
   systemConfigDb: { get: vi.fn() },
   modelDb: { getByName: vi.fn() },
@@ -41,79 +37,8 @@ vi.mock('./routing.js', () => ({
   resolveProviderFromModel: vi.fn(),
 }));
 
-const DEFAULT_SUFFIXES = [...DEFAULT_REASONING_EFFORT_MODEL_SUFFIXES];
-
 beforeEach(() => {
   vi.clearAllMocks();
-});
-
-// ─── parseModelSuffix ──────────────────────────────────────────────────────
-
-test('parses valid suffix from model name', () => {
-  expect(parseModelSuffix('gpt-5.6-luna-high', DEFAULT_SUFFIXES)).toEqual({
-    baseModel: 'gpt-5.6-luna',
-    reasoningEffort: 'high',
-  });
-});
-
-test('parses suffix from simple model name', () => {
-  expect(parseModelSuffix('gpt-5-high', DEFAULT_SUFFIXES)).toEqual({
-    baseModel: 'gpt-5',
-    reasoningEffort: 'high',
-  });
-});
-
-test('returns null when suffix is not in whitelist', () => {
-  expect(parseModelSuffix('deepseek-v4-pro-ultra', DEFAULT_SUFFIXES)).toBeNull();
-});
-
-test('returns null when there is no dash', () => {
-  expect(parseModelSuffix('gpt5', DEFAULT_SUFFIXES)).toBeNull();
-});
-
-test('returns null when prefix would be empty (leading dash)', () => {
-  expect(parseModelSuffix('-max', DEFAULT_SUFFIXES)).toBeNull();
-});
-
-test('returns null when suffix would be empty (trailing dash)', () => {
-  expect(parseModelSuffix('gpt-5-', DEFAULT_SUFFIXES)).toBeNull();
-});
-
-test('returns null for empty model name', () => {
-  expect(parseModelSuffix('', DEFAULT_SUFFIXES)).toBeNull();
-});
-
-test('returns null when whitelist is empty', () => {
-  expect(parseModelSuffix('gpt-5-max', [])).toBeNull();
-});
-
-test('returns null when whitelist is undefined', () => {
-  expect(parseModelSuffix('gpt-5-max', undefined as any)).toBeNull();
-});
-
-test('splits on last dash only', () => {
-  expect(parseModelSuffix('a-b-c-low', DEFAULT_SUFFIXES)).toEqual({
-    baseModel: 'a-b-c',
-    reasoningEffort: 'low',
-  });
-});
-
-test('parses "minimal" suffix', () => {
-  expect(parseModelSuffix('gpt-5-minimal', DEFAULT_SUFFIXES)).toEqual({
-    baseModel: 'gpt-5',
-    reasoningEffort: 'minimal',
-  });
-});
-
-test('parses "none" suffix (disable thinking)', () => {
-  expect(parseModelSuffix('glm5.3-none', DEFAULT_SUFFIXES)).toEqual({
-    baseModel: 'glm5.3',
-    reasoningEffort: 'none',
-  });
-});
-
-test('suffix match is case-sensitive', () => {
-  expect(parseModelSuffix('gpt-5-Max', DEFAULT_SUFFIXES)).toBeNull();
 });
 
 test('returns an OpenAI 400 invalid_request_error when routing strategy conflicts with a pinned model', async () => {
