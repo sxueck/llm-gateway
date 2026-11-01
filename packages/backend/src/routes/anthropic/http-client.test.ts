@@ -184,6 +184,55 @@ describe('makeAnthropicRequest', () => {
 });
 
 describe('makeAnthropicStreamRequest', () => {
+  test('rewrites mixed thinking/text deltas into separate client-facing content blocks', async () => {
+    // Upstream put thinking + text in one source block; the gateway must split
+    // them before clients see the SSE (AnthropicStreamNormalizer contract).
+    fetchMock.mockResolvedValue(
+      sseResponse([
+        'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":2}}}\n\n',
+        'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Thought."}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Answer."}}\n\n',
+        'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ])
+    );
+    const reply = createReply();
+
+    await makeAnthropicStreamRequest(CONFIG, REQUEST_BODY, reply);
+
+    const written = reply.raw.write.mock.calls.map((c: any[]) => c[0]).join('');
+    expect(written).toContain('"type":"thinking"');
+    expect(written).toContain('"thinking":"Thought."');
+    expect(written).toContain('"type":"text"');
+    expect(written).toContain('"text":"Answer."');
+    // Client-facing indexes are renumbered into contiguous blocks.
+    expect(written).toMatch(/"index":0.*"thinking_delta"/s);
+    expect(written).toMatch(/"index":1.*"text_delta"/s);
+  });
+
+  test('synthesizes a content block when upstream emits orphan deltas without a start', async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse([
+        'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":1}}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\n\n',
+        'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ])
+    );
+    const reply = createReply();
+
+    await makeAnthropicStreamRequest(CONFIG, REQUEST_BODY, reply);
+
+    const written = reply.raw.write.mock.calls.map((c: any[]) => c[0]).join('');
+    expect(written).toContain('event: content_block_start');
+    expect(written).toContain('"text":"ok"');
+    expect(written).toContain('event: content_block_stop');
+    expect(written).toContain('event: message_stop');
+  });
+
   test('parses SSE frames (incl. CRLF and comments), emits events, and reports usage', async () => {
     fetchMock.mockResolvedValue(
       sseResponse([
