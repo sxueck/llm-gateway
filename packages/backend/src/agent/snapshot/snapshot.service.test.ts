@@ -153,7 +153,7 @@ describe('snapshot lifecycle', () => {
     const objectsDir = path.join(storageDir, row.id, 'objects');
     const [name] = await readdir(objectsDir);
     const buf = await readFile(path.join(objectsDir, name));
-    buf[buf.length - 1] = 0xff;
+    buf[buf.length - 1] ^= 0xff;
     const { writeFile } = await import('fs/promises');
     await writeFile(path.join(objectsDir, name), buf);
 
