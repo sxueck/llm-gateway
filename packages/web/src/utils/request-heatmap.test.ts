@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { buildRequestHeatmap, heatmapWindow } from './request-heatmap'
+import { buildRequestHeatmap, formatHeatmapTokens, heatmapWindow } from './request-heatmap'
 
 const DAY = 86400000
 const start = Date.UTC(2026, 0, 3, 16)
+
+describe('formatHeatmapTokens', () => {
+  it('formats zero, small values and large totals in millions', () => {
+    expect(formatHeatmapTokens(0)).toBe('0.00M')
+    expect(formatHeatmapTokens(1)).toBe('0.00M')
+    expect(formatHeatmapTokens(629_110)).toBe('0.63M')
+    expect(formatHeatmapTokens(4_459_400)).toBe('4.46M')
+    expect(formatHeatmapTokens(7_659_566_854)).toBe('7,659.57M')
+  })
+})
 
 describe('heatmapWindow', () => {
   it('extends into earlier dates when wider and keeps the latest year on narrow screens', () => {

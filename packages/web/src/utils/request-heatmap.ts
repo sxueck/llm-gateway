@@ -4,7 +4,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000
 
 export function formatHeatmapTokens(value: number): string {
-  return `${(value / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}M`
+  return `${(value / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}M`
 }
 
 export interface HeatmapDay {
