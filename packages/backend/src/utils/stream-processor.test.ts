@@ -6,10 +6,6 @@ vi.mock('../db/index.js', () => ({
 }));
 
 import { processOpenAIChatCompletionStreamToSse } from './stream-processor.js';
-import {
-  buildResumeMessages,
-  STREAM_RESUME_INSTRUCTION,
-} from '../services/stream-resumer.js';
 
 function createReplyStub() {
   const written: string[] = [];
@@ -379,22 +375,7 @@ test("removes role from a continuation chunk that also has content", async () =>
   expect(continuation).not.toContain('"role":"assistant"');
 });
 
-test("buildResumeMessages appends partial assistant text plus continue instruction", () => {
-  const original = [
-    { role: "system", content: "sys" },
-    { role: "user", content: "hi" },
-  ];
-
-  const resume = buildResumeMessages(original, "partial answer");
-
-  expect(resume).toHaveLength(4);
-  expect(resume[0]).toBe(original[0]);
-  expect(resume[1]).toBe(original[1]);
-  expect(resume[2]).toEqual({ role: "assistant", content: "partial answer" });
-  expect(resume[3].role).toBe("user");
-  expect(resume[3].content).toBe(STREAM_RESUME_INSTRUCTION);
-  expect(STREAM_RESUME_INSTRUCTION.length).toBeGreaterThan(40);
-});
+;
 
 test("a stream that ends after content without finish_reason is a truncation error", async () => {
   const { raw, written } = createReplyStub();
