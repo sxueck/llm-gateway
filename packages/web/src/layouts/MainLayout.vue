@@ -246,7 +246,8 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 40px;
+  min-height: 36px;
+  margin-block: 2px;
   padding: 0 12px;
   border-radius: 9px;
   color: #42514b;

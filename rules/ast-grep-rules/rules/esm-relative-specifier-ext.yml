@@ -11,13 +11,9 @@ note: |
   Vite all happily accept `./foo` today, so `npm run typecheck` will never
   report the violation.
 
-  Scoped at invocation, not inside the rule: ast-grep rules cannot see the
-  scanned file's path, and `packages/web` is Vite-resolved, where
-  extensionless specifiers and `index.ts` barrels are the house style. Run it
-  on the Node packages (`npm run check:esm`); a repo-wide run reports 16
-  intentional hits, all under `packages/web/src`, plus one real backlog item:
-  `packages/shared/src/utils/index.ts:1` re-exports `./protocol-types`
-  without an extension.
+  Scoped at invocation, not inside the rule: `packages/web` is Vite-resolved,
+  where extensionless specifiers and `index.ts` barrels are the house style.
+  Run `npm run ast:esm` to gate the Node packages.
 
   Static and dynamic imports are both covered. Asset suffixes (.vue, .css, …)
   are allowed so the repo-wide run does not double-report the web convention;

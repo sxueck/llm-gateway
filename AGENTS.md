@@ -6,7 +6,7 @@ Guidance for coding agents working in this repository.
 
 LLM Gateway: a multi-provider LLM gateway with a Web UI — virtual API keys, routing strategies (load balancing, fallback, hash, affinity), prompt management, expert routing, message compression, a model Playground, worker (craft-agent) runs, and cost/traffic monitoring.
 
-**Stack:** Fastify + TypeScript backend · Vue 3 + Naive UI + Pinia + Vite frontend · MySQL (pooled) · workspaces `packages/backend`, `packages/web`, `packages/shared`, `packages/worker` (`@llm-gateway/craft-worker`).
+**Stack:** Fastify + TypeScript backend · Vue 3 + Naive UI + Pinia + Vite frontend · MySQL (pooled) · workspaces `packages/backend`, `packages/web`, `packages/shared`, `packages/worker` (`@llm-gateway/craft-worker`), `packages/e2e` (vitest e2e suite); shared tsconfig bases in `packages/tsconfig`.
 
 ## Commands
 
@@ -18,17 +18,20 @@ npm run dev:backend     # tsx watch, port 3000        npm run dev:web -> vite, p
 npm run build           # all packages (backend bundles with esbuild)
 npm run typecheck       # all packages (bun --cwd under the hood)
 npm run lint            # all packages — this IS the typecheck (tsc / vue-tsc), no linter configured
-npm test --workspaces --if-present          # backend + worker vitest suites
-node_modules/.bin/vitest run --root packages/web              # web suites (no test script)
+npm test                                   # vitest suites: backend + web + worker
+npm run test:e2e                           # e2e suite (packages/e2e)
 node_modules/.bin/vitest run --root packages/backend <file>   # single test file
 npm run ast:syntax      # parse gate over packages/ + scripts/ (exits 1 on broken file)
 npm run ast             # all ast-grep rules; npm run ast:esm for the .js-specifier rule
 npm run ast:test        # behaviour fixtures for the rules themselves
+npm run check:duplicates # advisory duplicates involving changed files; pass paths after -- to select files
 ```
 
 Per-package script names match these (`cd packages/backend && npm run test`). `cd packages/web && npm run check:i18n` verifies every `t()` key resolves in both locales. A `pre-commit` hook runs `scripts/pre-commit-secret-scan.sh`.
 
-The `ast*` scripts need the `ast-grep` CLI on PATH (not an npm dependency) and read `rules/ast-grep-rules/.sgconfig.yml` — see `rules/ast-grep-rules/README.md` for the rule list, scoping and suppression syntax. Run the focused form on files you changed: `ast-grep scan -c rules/ast-grep-rules/.sgconfig.yml <changed-file>`. It never replaces `npm run typecheck`: ast-grep cannot parse `.vue` and tree-sitter silently repairs some malformed code.
+The `ast*` scripts use the pinned local `ast-grep` dependency and read `rules/ast-grep-rules/.sgconfig.yml` — see `rules/ast-grep-rules/README.md` for the rule list, scoping and suppression syntax. Run the focused form on files you changed: `node_modules/.bin/ast-grep scan -c rules/ast-grep-rules/.sgconfig.yml <changed-file>`. It never replaces `npm run typecheck`: ast-grep cannot parse `.vue` and tree-sitter silently repairs some malformed code.
+
+After code changes, run `npm run check:duplicates -- <changed-file>...` for the files you edited and review reported matches before finishing. With no paths it uses all staged, unstaged and untracked files, including other people's changes. This is advisory, not a CI or commit gate: consider whether a match is intentional before extracting shared code. It scans supported TypeScript and JavaScript files under `packages/` and `scripts/`, not `.vue` or `.mjs` files; it reports matching file ranges, not semantic duplicates. Use `node --test scripts/check-duplicates.test.mjs` to test the helper.
 
 ## Code rules
 

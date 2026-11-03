@@ -3,7 +3,7 @@
     <n-space vertical :size="24">
       <PageHeader eyebrow="TOOLS" :title="t('logs.title')" :subtitle="t('logs.subtitle')" />
       <n-card>
-        <template #header-extra>
+        <n-space vertical :size="12">
           <n-space>
             <n-select
               v-model:value="selectedLevel"
@@ -30,9 +30,6 @@
               {{ t('common.refresh') }}
             </n-button>
           </n-space>
-        </template>
-
-        <n-space vertical :size="12">
           <n-input
             v-model:value="searchText"
             :placeholder="t('logs.searchPlaceholder')"

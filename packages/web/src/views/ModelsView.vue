@@ -83,7 +83,7 @@
               :data="selectedGroupModels"
               :loading="modelStore.loading"
               :pagination="paginationConfig"
-              :scroll-x="1200"
+              :scroll-x="1320"
               :bordered="false"
               size="small"
               flex-height
@@ -468,7 +468,7 @@ const columns: DataTableColumns<Model> = [
   {
     title: () => t('models.availability'),
     key: 'availability',
-    width: 200,
+    width: 260,
     render: (row: Model) =>
       h(ModelAvailabilityCell, { availability: row.availability ?? null }),
   },

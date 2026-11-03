@@ -1,0 +1,20 @@
+id: parse-int-missing-radix
+language: TypeScript
+severity: warning
+message: "parseInt/Number.parseInt called without an explicit radix"
+note: |
+  Without a radix, a `0x` prefix selects hexadecimal: `parseInt("0x10")`
+  is 16. Pass the intended radix explicitly, especially for user input.
+  This is advisory: an explicit radix does not validate the entire input,
+  and omitting it may be intentional.
+rule:
+  any:
+    - pattern: parseInt($$$ARGS)
+    - pattern: Number.parseInt($$$ARGS)
+  not:
+    any:
+      - has:
+          field: arguments
+          kind: arguments
+          has:
+            nthChild: 2

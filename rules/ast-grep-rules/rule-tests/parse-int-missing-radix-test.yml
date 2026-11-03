@@ -1,0 +1,11 @@
+id: parse-int-missing-radix
+valid:
+  - "const n = parseInt(s, 10);"
+  - "const n = Number.parseInt(s, 10);"
+  - "const n = parseInt(s, 16);"
+  - "const n = Number.parseInt(env.PORT || '3306', 10) || 3306;"
+invalid:
+  - "const n = parseInt(s);"
+  - "const n = Number.parseInt(s);"
+  - "const n = parseInt(process.env.PORT);"
+  - "const n = Number.parseInt(timeRange) ;"

@@ -91,7 +91,7 @@ function makeModel(overrides: Record<string, unknown> = {}) {
 async function buildApp() {
   const app = Fastify();
   app.setErrorHandler((error, _request, reply) => {
-    if ((error as any).validation || error.name === "ZodError") {
+    if (error instanceof Error && (("validation" in error && error.validation) || error.name === "ZodError")) {
       return reply.code(400).send({ error: error.message });
     }
     throw error;

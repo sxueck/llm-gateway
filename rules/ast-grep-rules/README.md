@@ -1,7 +1,7 @@
 # ast-grep rules (`rules/ast-grep-rules/`)
 
 AST-level checks for this repo, run with [ast-grep](https://ast-grep.github.io)
-(`ast-grep 0.51` or newer, installed on PATH — it is *not* an npm dependency).
+(pinned as the `@ast-grep/cli` dev dependency; install with `bun install --frozen-lockfile`).
 
 Two consumers:
 
@@ -26,8 +26,9 @@ rule-tests/*-test.yml    behaviour fixtures, run by `ast-grep test`
 | --- | --- | --- | --- | --- |
 | `ts-syntax-error` | TypeScript | error | file does not parse (tree-sitter `ERROR` node) | yes — exit 1 |
 | `js-syntax-error` | JavaScript | error | same, for the plain `.js` sources | yes — exit 1 |
-| `esm-relative-specifier-ext` | TypeScript | warning | relative `import`/`export`/dynamic-`import` specifier without a `.js`/`.json` suffix | no (advisory) |
+| `esm-relative-specifier-ext` | TypeScript | warning | relative `import`/`export`/dynamic-`import` specifier without an allowed suffix | yes, in `ast:esm` (Node packages only) |
 | `no-catch-swallow` | TypeScript | warning | `catch { return <fallback> }` / `catch { return; }` | no (advisory) |
+| `parse-int-missing-radix` | TypeScript | warning | `parseInt` or `Number.parseInt` without an explicit radix | no (advisory) |
 
 `no-catch-swallow` is a verbatim vendored copy of the canonical rule in
 `~/.pi/agent/rules/ast-grep-rules/` (that tree is the upstream; re-sync by
@@ -39,11 +40,11 @@ deliberately does not, so nothing here duplicates them.
 ## Commands
 
 ```bash
-npm run ast            # whole tree, all rules (only syntax errors fail)
-npm run ast:syntax     # the syntax gate on packages/ + scripts/
-npm run ast:esm        # Node-run packages only (see scoping note)
+npm run ast            # packages/ + scripts/, all rules (only syntax errors fail)
+npm run ast:syntax     # syntax gate on packages/ + scripts/
+npm run ast:esm        # Node packages, ESM warnings promoted to errors
 npm run ast:test       # rule fixtures: ast-grep test --skip-snapshot-tests
-ast-grep scan -c rules/ast-grep-rules/.sgconfig.yml <changed-file>   # exit check
+./node_modules/.bin/ast-grep scan -c rules/ast-grep-rules/.sgconfig.yml <changed-file>
 ```
 
 Suppress one hit inline — on the same line as the violation or on the line
@@ -56,16 +57,12 @@ import { format } from "./format"; // ast-grep-ignore: esm-relative-specifier-ex
 Use suppression only with a named requirement in the commit/PR — do not
 reshape code to dodge a rule.
 
-## Known state of the tree (2025-11-01)
+## Scope and CI
 
-- `ast:syntax` — clean, 0 hits over `packages/` + `scripts/` (445 `.ts`).
-- `ast:esm` — 1 hit: `packages/shared/src/utils/index.ts:1`
-  (`export * from './protocol-types'`). Advisory until it is fixed.
-- `no-catch-swallow` — 67 hits, mostly optional-config loaders. Backlog, not a
-  gate; a new file should start at 0.
-- `ast:esm` excludes `packages/web` on purpose: ast-grep rules cannot see the
-  scanned file's path, and Vite-resolved extensionless specifiers are the web
-  convention (16 further hits there, all correct).
+The build workflow runs `ast:test`, `ast:syntax` and `ast:esm` as gates.
+Other warnings remain advisory and are visible through `npm run ast`.
+`ast:esm` excludes `packages/web` on purpose: Vite-resolved extensionless
+specifiers are the web convention. Scope is set by the command, not the rule.
 
 ## Limits
 
