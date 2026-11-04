@@ -18,6 +18,7 @@ export const IMPORT_ORDER = [
   "worker_plugins",
   "models",
   "virtual_keys",
+  "user_virtual_keys",
   "user_plugin_enrollments",
 ] as const;
 
@@ -68,7 +69,7 @@ const ALL_GATEWAY_TABLE_SET = new Set<string>(ALL_GATEWAY_TABLES);
 const PRESERVED_TABLE_SET = new Set<string>(IMPORT_ORDER);
 
 export const TABLE_COLUMNS: Record<PreservedTable, string[]> = {
-  users: ["id", "username", "password_hash", "created_at", "updated_at"],
+  users: ["id", "username", "password_hash", "role", "created_at", "updated_at"],
   providers: [
     "id",
     "name",
@@ -164,6 +165,7 @@ export const TABLE_COLUMNS: Record<PreservedTable, string[]> = {
     "created_at",
     "updated_at",
   ],
+  user_virtual_keys: ["user_id", "virtual_key_id", "created_at"],
   user_plugin_enrollments: [
     "user_id",
     "plugin_id",
@@ -184,6 +186,7 @@ const TABLE_UNIQUE_KEYS: Record<PreservedTable, string[][]> = {
   worker_plugins: [["id", "version"]],
   models: [["id"]],
   virtual_keys: [["id"], ["key_value"], ["key_hash"]],
+  user_virtual_keys: [["user_id", "virtual_key_id"]],
   user_plugin_enrollments: [["user_id", "plugin_id"]],
 };
 
@@ -197,6 +200,7 @@ const TABLE_PRIMARY_KEYS: Record<PreservedTable, string[]> = {
   worker_plugins: ["id", "version"],
   models: ["id"],
   virtual_keys: ["id"],
+  user_virtual_keys: ["user_id", "virtual_key_id"],
   user_plugin_enrollments: ["user_id", "plugin_id"],
 };
 
@@ -205,6 +209,16 @@ export const RETIRED_COLUMNS: Partial<Record<PreservedTable, string[]>> = {
   models: ["supported_protocols", "protocol", "health_check_protocol"],
   virtual_keys: ["prompt_capture_enabled"],
 };
+
+// 旧备份/旧库兼容：这些列在旧格式中不存在，导入前按确定性规则回填（见 backfillUserRoles）
+const OPTIONAL_COLUMNS: Partial<Record<PreservedTable, string[]>> = {
+  users: ["role"],
+};
+
+// 旧备份可能不含该表，视为空
+const OPTIONAL_TABLES = new Set<string>(["user_virtual_keys"]);
+
+const USER_ROLES = new Set(["admin", "user"]);
 
 const MAPPABLE_LEGACY_PROTOCOLS = new Set(["openai", "anthropic", "google"]);
 
@@ -420,8 +434,18 @@ async function snapshotBusinessTables(
   const tables: BusinessTables = {};
   try {
     for (const table of IMPORT_ORDER) {
-      const [rows] = await conn.query(`SELECT * FROM \`${table}\``);
-      tables[table] = rows as BusinessRow[];
+      try {
+        const [rows] = await conn.query(`SELECT * FROM \`${table}\``);
+        tables[table] = rows as BusinessRow[];
+      } catch (error) {
+        // 旧库可能还没有可选保留表（如 user_virtual_keys），视为空
+        const code = (error as { code?: unknown } | null)?.code;
+        if (OPTIONAL_TABLES.has(table) && code === "ER_NO_SUCH_TABLE") {
+          tables[table] = [];
+        } else {
+          throw error;
+        }
+      }
       log(`[v2升级] 读取 ${table}: ${tables[table].length} 行`);
     }
   } finally {
@@ -464,6 +488,41 @@ function collectDeclaredProtocols(model: BusinessRow): Set<string> {
     }
   }
   return declared;
+}
+
+function validateUserRoles(users: BusinessRow[]): void {
+  for (const row of users) {
+    const role = row["role"];
+    if (role === undefined || role === null) continue;
+    if (!USER_ROLES.has(String(role))) {
+      throw new UpgradeError(
+        "BACKUP_FILE_INVALID",
+        "users.role 取值不合法（仅允许 admin/user）",
+      );
+    }
+  }
+}
+
+/**
+ * 旧格式兼容：users 行缺 role（或为 null）时按确定性规则回填 ——
+ * 缺失行默认 user；若回填后没有任何 admin，则把按 (created_at, id) 升序的
+ * 首个回填行提升为 admin（与迁移 v8 的首用户提升规则一致）。
+ * 已有 role 永不改写。
+ */
+export function backfillUserRoles(tables: BusinessTables): void {
+  const users = tables["users"] ?? [];
+  validateUserRoles(users);
+  const missing = users.filter((row) => row["role"] === undefined || row["role"] === null);
+  if (missing.length === 0) return;
+  for (const row of missing) {
+    row["role"] = "user";
+  }
+  if (!users.some((row) => row["role"] === "admin")) {
+    const first = [...missing].sort((a, b) =>
+      Number(a["created_at"]) - Number(b["created_at"]) || String(a["id"]).localeCompare(String(b["id"])),
+    )[0];
+    if (first) first["role"] = "admin";
+  }
 }
 
 function applyProtocolSupplierMapping(tables: BusinessTables): void {
@@ -532,7 +591,10 @@ export function normalizeBusinessTables(raw: BusinessTables): BusinessTables {
           `表 ${table} 存在无法识别的列: ${unknown.join(", ")}；为避免静默丢数据已中止（仅允许裁剪已知退役列）`,
         );
       }
-      const missing = TABLE_COLUMNS[table].filter((column) => !(column in row));
+      const missing = TABLE_COLUMNS[table].filter(
+        (column) =>
+          !(column in row) && !(OPTIONAL_COLUMNS[table] ?? []).includes(column),
+      );
       if (missing.length > 0) {
         throw new UpgradeError(
           "SCHEMA_TOO_OLD",
@@ -543,6 +605,7 @@ export function normalizeBusinessTables(raw: BusinessTables): BusinessTables {
   }
 
   applyProtocolSupplierMapping(raw);
+  backfillUserRoles(raw);
 
   const tables: BusinessTables = {};
   for (const table of IMPORT_ORDER) {
@@ -751,10 +814,19 @@ function checkReferences(tables: BusinessTables, expertConfigs: ParsedExpertConf
     return row["plugin_id"] !== null && row["plugin_id"] !== undefined && !pluginVersions.has(key);
   }).length;
   if (danglingPlugins > 0) broken.push(`user_plugin_enrollments.plugin_id/version=${danglingPlugins}`);
-  const userIds = new Set((tables.users ?? []).map((row) => row.id));
-  if ((tables.user_plugin_enrollments ?? []).some((row) => !userIds.has(row.user_id))) {
+  const userIds = new Set((tables.users ?? []).map((row) => String(row.id)));
+  if ((tables.user_plugin_enrollments ?? []).some((row) => !userIds.has(String(row.user_id)))) {
     broken.push("user_plugin_enrollments.user_id");
   }
+  const virtualKeyIds = new Set(
+    (tables["virtual_keys"] ?? []).map((row) => String(row["id"])).filter((id) => id !== ""),
+  );
+  const danglingBindings = (tables["user_virtual_keys"] ?? []).filter((row) => {
+    const userId = String(row["user_id"] ?? "");
+    const keyId = String(row["virtual_key_id"] ?? "");
+    return !userIds.has(userId) || !virtualKeyIds.has(keyId);
+  }).length;
+  if (danglingBindings > 0) broken.push(`user_virtual_keys.user_id/virtual_key_id=${danglingBindings}`);
   for (const row of tables.virtual_keys ?? []) {
     if (row.model_ids === null || row.model_ids === undefined || row.model_ids === "") continue;
     let ids: unknown;
@@ -796,9 +868,14 @@ function checkReferences(tables: BusinessTables, expertConfigs: ParsedExpertConf
 export function validateBusinessConfig(tables: BusinessTables): void {
   for (const table of IMPORT_ORDER) {
     if (!Array.isArray(tables[table])) {
-      throw new UpgradeError("BACKUP_FILE_INVALID", `备份缺少表 ${table}`);
+      if (!OPTIONAL_TABLES.has(table)) {
+        throw new UpgradeError("BACKUP_FILE_INVALID", `备份缺少表 ${table}`);
+      }
+      tables[table] = [];
     }
   }
+  validateUserRoles(tables["users"] ?? []);
+  backfillUserRoles(tables);
   for (const row of tables["expert_routing_configs"] ?? []) {
     const id = typeof row["id"] === "string" ? row["id"] : "<unknown>";
     validateExpertRoutingConfigV2(row["config"], id);
@@ -904,12 +981,22 @@ export async function loadBackupFile(filePath: string): Promise<UpgradeBackupFil
       }
     }
   }
-  const recomputed = computeTablesDigest(tables as BusinessTables);
-  if (recomputed !== digest) {
+  // 旧格式兼容：老工具导出的备份可能没有 users.role / user_virtual_keys。
+  // 先按原始表验 digest；不匹配时再按确定性回填后的规范表验一次，
+  // 两次都不匹配才判定损坏/篡改。
+  const rawTables = tables as BusinessTables;
+  const rawDigestOk = computeTablesDigest(rawTables) === digest;
+  const canonicalTables = structuredClone(rawTables);
+  for (const table of OPTIONAL_TABLES) {
+    if (!(table in canonicalTables)) canonicalTables[table] = [];
+  }
+  backfillUserRoles(canonicalTables);
+  const canonicalDigest = computeTablesDigest(canonicalTables);
+  if (!rawDigestOk && canonicalDigest !== digest) {
     throw new UpgradeError("BACKUP_DIGEST_MISMATCH", "备份文件 digest 校验失败（文件损坏或被篡改）");
   }
   for (const [table, count] of Object.entries(meta.counts ?? {})) {
-    const actual = Array.isArray(tables[table]) ? (tables[table] as unknown[]).length : 0;
+    const actual = Array.isArray(canonicalTables[table]) ? (canonicalTables[table] as unknown[]).length : 0;
     if (actual !== count) {
       throw new UpgradeError(
         "BACKUP_COUNT_MISMATCH",
@@ -917,12 +1004,13 @@ export async function loadBackupFile(filePath: string): Promise<UpgradeBackupFil
       );
     }
   }
-  validateBusinessConfig(tables as BusinessTables);
+  validateBusinessConfig(canonicalTables);
   return {
     format: UPGRADE_BACKUP_FORMAT,
     meta,
-    digest,
-    tables: tables as BusinessTables,
+    // 返回规范表的摘要，保证 preflight 与活库快照在同一规范化口径下比较
+    digest: canonicalDigest,
+    tables: canonicalTables,
   };
 }
 

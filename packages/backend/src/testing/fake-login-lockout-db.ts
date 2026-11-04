@@ -8,6 +8,7 @@ import type { LoginAttemptLockoutRow, LoginLockoutEventRow } from "../db/types.j
 export interface FakeLoginDbUserRow {
   id: string;
   username: string;
+  role?: 'admin' | 'user';
   password_hash: string;
 }
 

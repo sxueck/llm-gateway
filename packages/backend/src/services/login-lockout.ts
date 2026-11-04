@@ -123,7 +123,7 @@ export type LoginAttemptStatus = "ok" | "bad_credentials" | "locked" | "busy";
 
 export interface LoginAttemptResult {
   status: LoginAttemptStatus;
-  user?: { id: string; username: string };
+  user?: { id: string; username: string; role: 'admin' | 'user' };
   /** 仅 status === locked 时有值 */
   retryAfterMs?: number;
   /** 本次失败是否刚好跨过封锁阈值 */
@@ -136,14 +136,14 @@ function isDeadlock(error: unknown): boolean {
 }
 
 interface VerifiedAttempt {
-  user?: { id: string; username: string };
+  user?: { id: string; username: string; role: 'admin' | 'user' };
   verified: boolean;
 }
 
 async function verifyCredentials(username: string, password: string): Promise<VerifiedAttempt> {
   const user = await userDb.findByUsername(username);
   const verified = verifyPassword(password, user?.password_hash ?? TIMING_EQUALIZER_HASH);
-  return { user: user ? { id: user.id, username: user.username } : undefined, verified };
+  return { user: user ? { id: user.id, username: user.username, role: user.role } : undefined, verified };
 }
 
 async function attemptLoginOnce(

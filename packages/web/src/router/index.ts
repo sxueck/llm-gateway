@@ -36,34 +36,56 @@ const router = createRouter({
           redirect: '/dashboard',
         },
         {
+          // 管理员/普通用户共用同一个书签地址，按角色分发到对应仪表盘
           path: 'dashboard',
           name: 'Dashboard',
-          component: () => import('@/views/DashboardView.vue'),
+          component: () => import('@/views/DashboardRoute.vue'),
+        },
+        {
+          // 普通用户自助区：数据来自 /api/me/*，与管理端接口隔离
+          path: 'me',
+          children: [
+            {
+              path: 'virtual-keys',
+              name: 'MyVirtualKeys',
+              component: () => import('@/views/MyVirtualKeysView.vue'),
+            },
+            {
+              path: 'api-requests',
+              name: 'MyApiRequests',
+              component: () => import('@/views/MyApiRequestsView.vue'),
+            },
+          ],
         },
         {
           path: 'providers',
           name: 'Providers',
           component: () => import('@/views/ProvidersView.vue'),
+          meta: { requiresAdmin: true },
         },
         {
           path: 'models',
           name: 'Models',
           component: () => import('@/views/ModelsView.vue'),
+          meta: { requiresAdmin: true },
         },
         {
           path: 'virtual-keys',
           name: 'VirtualKeys',
           component: () => import('@/views/VirtualKeysView.vue'),
+          meta: { requiresAdmin: true },
         },
         {
           path: 'virtual-models',
           name: 'VirtualModels',
           component: () => import('@/views/VirtualModelsView.vue'),
+          meta: { requiresAdmin: true },
         },
         {
           // 监控中心：三个监控页是同一件事的分支，由 SectionShell 的 tab 切换。
           path: 'monitoring',
           component: () => import('@/components/SectionShell.vue'),
+          meta: { requiresAdmin: true },
           children: [
             {
               path: '',
@@ -95,6 +117,7 @@ const router = createRouter({
         {
           path: 'experimental',
           component: () => import('@/components/SectionShell.vue'),
+          meta: { requiresAdmin: true },
           children: [
             {
               path: '',
@@ -126,6 +149,7 @@ const router = createRouter({
         {
           path: 'tools',
           component: () => import('@/components/SectionShell.vue'),
+          meta: { requiresAdmin: true },
           children: [
             {
               path: '',
@@ -151,6 +175,7 @@ const router = createRouter({
         {
           path: 'settings',
           component: () => import('@/components/SectionShell.vue'),
+          meta: { requiresAdmin: true },
           children: [
             {
               path: '',
@@ -165,6 +190,11 @@ const router = createRouter({
               path: 'security-settings',
               name: 'SecuritySettings',
               component: () => import('@/views/SecuritySettingsView.vue'),
+            },
+            {
+              path: 'user-access',
+              name: 'UserAccess',
+              component: () => import('@/views/UserAccessView.vue'),
             },
             {
               path: 'backup',
@@ -226,7 +256,7 @@ const router = createRouter({
   ],
 });
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   const loadingStore = useLoadingStore();
   loadingStore.startRouteLoading();
 
@@ -235,11 +265,30 @@ router.beforeEach((to, _from, next) => {
 
   if (requiresAuth && !authStore.token) {
     next('/login');
-  } else if (!requiresAuth && authStore.token && (to.path === '/login' || to.path === '/register')) {
-    next('/dashboard');
-  } else {
-    next();
+    return;
   }
+
+  if (!requiresAuth && authStore.token && (to.path === '/login' || to.path === '/register')) {
+    next('/dashboard');
+    return;
+  }
+
+  if (requiresAuth) {
+    await authStore.ensureProfileLoaded();
+    if (!authStore.token) {
+      next('/login');
+      return;
+    }
+  }
+
+  const requiresAdmin = to.matched.some(record => record.meta.requiresAdmin === true);
+  if (requiresAdmin && !authStore.isAdmin) {
+    // 静默收敛到仪表盘：普通用户的导航里本就没有管理页入口
+    next('/dashboard');
+    return;
+  }
+
+  next();
 });
 
 router.afterEach(() => {

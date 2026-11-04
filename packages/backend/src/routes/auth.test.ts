@@ -102,6 +102,7 @@ beforeEach(() => {
   harness.state.users.set(USER.username, {
     id: USER.id,
     username: USER.username,
+    role: 'admin',
     password_hash: hashPassword(USER.password),
   });
 });
@@ -113,7 +114,7 @@ describe("POST /api/auth/login 基本行为", () => {
     const response = await login(app, { username: USER.username, password: USER.password });
     expect(response.code).toBe(200);
     expect(response.body.token).toBe(`token:${USER.username}`);
-    expect(response.body.user).toEqual({ id: USER.id, username: USER.username });
+    expect(response.body.user).toEqual({ id: USER.id, username: USER.username, role: 'admin' });
     expect(harness.state.attempts.get(ADMIN_BUCKET)?.failed_attempts).toBe(0);
   });
 

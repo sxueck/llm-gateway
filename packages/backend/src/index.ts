@@ -9,6 +9,7 @@ import { appConfig, setPublicUrl } from "./config/index.js";
 import {
   initDatabase,
   apiRequestDb,
+  userDb,
   systemConfigDb,
   expertRoutingConfigDb,
   shutdownDatabase,
@@ -18,6 +19,10 @@ import { startLoginLockoutCleanup } from "./services/login-lockout.js";
 import { getJevConfiguration } from "./services/expert-router/jev-client.js";
 import { startContextNormalizationCleanup } from "./services/context-normalization/index.js";
 import { authRoutes } from "./routes/auth.js";
+import { dashboardRoutes } from "./routes/dashboard.js";
+import { userRoleRoutes } from "./routes/user-roles.js";
+import { userAccessRoutes, userAccessAdminRoutes } from "./routes/user-access.js";
+import { isAdminPath, requireAdmin } from "./services/admin-authorization.js";
 import { providerRoutes } from "./routes/providers.js";
 import { modelRoutes } from "./routes/models.js";
 import { virtualKeyRoutes } from "./routes/virtual-keys.js";
@@ -132,6 +137,13 @@ fastify.decorate("authenticate", async function (request: any, reply: any) {
     });
     throw err;
   }
+  if (!await userDb.findById(request.user.userId)) {
+    return reply.code(401).send({ error: { message: "未授权", type: "invalid_request_error", param: null, code: "unauthorized" } });
+  }
+});
+
+fastify.addHook("onRequest", async (request, reply) => {
+  if (isAdminPath(request.url) || isAdminPath(request.routeOptions.url ?? "")) await requireAdmin(request, reply);
 });
 
 // Developer debug HTTP stream endpoint (SSE)
@@ -283,6 +295,10 @@ await fastify.register(anthropicRoutes);
 await fastify.register(openaiRoutes);
 await fastify.register(geminiRoutes);
 await fastify.register(authRoutes, { prefix: "/api/auth" });
+await fastify.register(dashboardRoutes, { prefix: "/api/dashboard" });
+await fastify.register(userRoleRoutes, { prefix: "/api/admin/users" });
+await fastify.register(userAccessRoutes, { prefix: "/api/me" });
+await fastify.register(userAccessAdminRoutes, { prefix: "/api/admin/user-access" });
 await fastify.register(publicConfigRoutes, { prefix: "/api/public" });
 await fastify.register(providerRoutes, { prefix: "/api/admin/providers" });
 await fastify.register(modelRoutes, { prefix: "/api/admin/models" });

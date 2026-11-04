@@ -56,15 +56,13 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: '用户名已存在' });
     }
 
-    const isFirstUser = (await userDb.getAll()).length === 0;
-
     const user = await userDb.create({
       id: nanoid(),
       username: body.username,
       password_hash: hashPassword(body.password),
     });
 
-    if (isFirstUser) {
+    if (user.role === 'admin') {
       await systemConfigDb.set('allow_registration', 'false', '是否允许新用户注册');
     }
 
@@ -75,6 +73,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       user: {
         id: user.id,
         username: user.username,
+        role: user.role,
       },
     };
   });
@@ -129,6 +128,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       user: {
         id: result.user.id,
         username: result.user.username,
+        role: result.user.role,
       },
     };
   });
@@ -144,13 +144,15 @@ export async function authRoutes(fastify: FastifyInstance) {
     return {
       id: user.id,
       username: user.username,
+      role: user.role,
     };
   });
 
   fastify.get('/users', {
     onRequest: [fastify.authenticate],
   }, async () => {
-    return await userDb.getAll();
+    const users = await userDb.getAll();
+    return users.map(({ id, username, role, created_at, updated_at }) => ({ id, username, role, created_at, updated_at }));
   });
 
   // 否则误锁共享出口 IP 后，被锁在外的管理员只能手工清库。

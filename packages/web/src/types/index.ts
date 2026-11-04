@@ -1,8 +1,12 @@
 import type { VirtualKeyRoutingStrategy } from "@llm-gateway/shared";
 
+/** 后端 auth 模块下发的角色；未下发时前端按 admin 兜底（见 utils/role.ts） */
+export type UserRole = 'admin' | 'user';
+
 export interface User {
   id: string;
   username: string;
+  role?: UserRole;
 }
 
 export interface ProtocolMapping {

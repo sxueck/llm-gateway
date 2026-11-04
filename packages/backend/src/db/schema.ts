@@ -1,4 +1,5 @@
 import type { Connection, PoolConnection } from "mysql2/promise";
+import { ensureUserVirtualKeysTable } from "./user-access-migration.js";
 
 export async function createTables(connection?: Connection) {
   const conn = connection ?? await (await import("./connection.js")).getDatabase().getConnection();
@@ -10,9 +11,11 @@ export async function createTables(connection?: Connection) {
         id VARCHAR(255) PRIMARY KEY,
         username VARCHAR(255) NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
+        role ENUM('admin','user') NOT NULL DEFAULT 'user' COMMENT '角色：admin=管理员，user=普通用户；首个用户由迁移/仓库层提升为 admin',
         created_at BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000),
         updated_at BIGINT NOT NULL,
-        INDEX idx_username (username)
+        INDEX idx_username (username),
+        INDEX idx_users_role (role)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
@@ -90,6 +93,8 @@ export async function createTables(connection?: Connection) {
 	        INDEX idx_virtual_keys_model (model_id)
 	      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 	    `);
+
+    await ensureUserVirtualKeysTable(conn);
 
     // 系统配置表
     await conn.query(

@@ -7,6 +7,7 @@ import {
   ALL_GATEWAY_TABLES,
   IMPORT_ORDER,
   UPGRADE_BACKUP_FORMAT,
+  backfillUserRoles,
   computeTablesDigest,
   exportBusinessConfig,
   isSecureFileMode,
@@ -33,7 +34,7 @@ function validBusinessTables(): BusinessTables {
     tables[table] = [];
   }
   tables["users"] = [
-    { id: "u1", username: "admin", password_hash: "hash", created_at: 1, updated_at: 1 },
+    { id: "u1", username: "admin", password_hash: "hash", role: "admin", created_at: 1, updated_at: 1 },
   ];
   tables["providers"] = [
     {
@@ -109,6 +110,9 @@ function validBusinessTables(): BusinessTables {
       created_at: 1,
     },
   ];
+  tables["user_virtual_keys"] = [
+    { user_id: "u1", virtual_key_id: "vk1", created_at: 1 },
+  ];
   tables["user_plugin_enrollments"] = [
     { user_id: "u1", plugin_id: "w1", version: "1.0.0", enabled: 1, is_default: 0, updated_at: 1 },
   ];
@@ -139,7 +143,7 @@ function validBusinessTables(): BusinessTables {
 function makeBackup(tables: BusinessTables, metaOverrides: Record<string, unknown> = {}): UpgradeBackupFile {
   const counts: Record<string, number> = {};
   for (const table of IMPORT_ORDER) {
-    counts[table] = tables[table].length;
+    counts[table] = (tables[table] ?? []).length;
   }
   return {
     format: UPGRADE_BACKUP_FORMAT,
@@ -336,6 +340,13 @@ describe("备份文件校验（fail-before-drop）", () => {
     await expect(loadBackupFile(filePath)).rejects.toThrowError(/digest 校验失败/);
   });
 
+  test("缺少必需表的备份即使摘要有效也必须拒绝", async () => {
+    const tables = validBusinessTables();
+    delete tables.providers;
+    const filePath = await writeBackup(makeBackup(tables));
+    await expect(loadBackupFile(filePath)).rejects.toThrowError(/缺少表 providers/);
+  });
+
   test("v1 专家路由配置在删库前被拒绝", async () => {
     const tables = validBusinessTables();
     tables["expert_routing_configs"]![0]!["config"] = JSON.stringify({
@@ -397,6 +408,134 @@ describe("备份文件校验（fail-before-drop）", () => {
     unknownTable.tables["mystery"] = [];
     const filePathUnknown = await writeBackup(unknownTable);
     await expect(loadBackupFile(filePathUnknown)).rejects.toThrowError(/未知表 mystery/);
+  });
+});
+
+describe("users.role 与 user_virtual_keys 兼容", () => {
+  let workDir: string;
+
+  beforeEach(async () => {
+    workDir = await fs.mkdtemp(join(tmpdir(), "gateway-upgrade-role-test-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(workDir, { recursive: true, force: true });
+  });
+
+  async function writeBackup(backup: UpgradeBackupFile): Promise<string> {
+    const filePath = join(workDir, `b-${Math.random().toString(36).slice(2)}.json`);
+    const handle = await fs.open(filePath, "w", 0o600);
+    await handle.writeFile(JSON.stringify(backup), "utf8");
+    await handle.close();
+    return filePath;
+  }
+
+  function legacyTables(): BusinessTables {
+    // 旧格式：users 无 role，且无 user_virtual_keys 表
+    const tables = validBusinessTables();
+    const old = { ...tables } as BusinessTables;
+    delete old["user_virtual_keys"];
+    old["users"] = [
+      { id: "u2", username: "second", password_hash: "h", created_at: 2, updated_at: 2 },
+      { id: "u1", username: "first", password_hash: "h", created_at: 1, updated_at: 1 },
+    ];
+    return old;
+  }
+
+  test("新格式往返不丢角色与绑定", async () => {
+    const tables = validBusinessTables();
+    const backup = makeBackup(tables);
+    const filePath = await writeBackup(backup);
+    const loaded = await loadBackupFile(filePath);
+    expect(loaded.tables["users"]![0]!["role"]).toBe("admin");
+    expect(loaded.tables["user_virtual_keys"]).toEqual([
+      { user_id: "u1", virtual_key_id: "vk1", created_at: 1 },
+    ]);
+    expect(loaded.digest).toBe(backup.digest);
+  });
+
+  test("旧格式备份：确定性首用户 admin、其余 user；缺绑定表视为空", async () => {
+    const old = legacyTables();
+    const backup = makeBackup(old);
+    const filePath = await writeBackup(backup);
+    const loaded = await loadBackupFile(filePath);
+    const roles = Object.fromEntries(
+      loaded.tables["users"]!.map((row) => [row["id"], row["role"]]),
+    );
+    // created_at 最早者为 u1
+    expect(roles).toEqual({ u1: "admin", u2: "user" });
+    expect(loaded.tables["user_virtual_keys"]).toEqual([]);
+    expect(loaded.digest).toBe(computeTablesDigest(loaded.tables));
+  });
+
+  test("已有 role 永不改写；首用户提升只针对缺失行", () => {
+    const tables = legacyTables();
+    tables["users"] = [
+      { id: "u9", username: "later-admin", password_hash: "h", role: "admin", created_at: 9, updated_at: 9 },
+      { id: "u1", username: "first", password_hash: "h", created_at: 1, updated_at: 1 },
+      { id: "u2", username: "second", password_hash: "h", role: "user", created_at: 2, updated_at: 2 },
+    ];
+    backfillUserRoles(tables);
+    const roles = Object.fromEntries(tables["users"]!.map((row) => [row["id"], row["role"]]));
+    expect(roles).toEqual({ u9: "admin", u1: "user", u2: "user" });
+  });
+
+  test("role 取值不合法在删库前被拒绝", async () => {
+    const tables = validBusinessTables();
+    tables["users"]![0]!["role"] = "superadmin";
+    const filePath = await writeBackup(makeBackup(tables));
+    await expect(loadBackupFile(filePath)).rejects.toThrowError(/users.role 取值不合法/);
+  });
+
+  test("绑定悬空引用被拒绝", async () => {
+    const tables = validBusinessTables();
+    tables["user_virtual_keys"] = [
+      { user_id: "missing-user", virtual_key_id: "vk1", created_at: 1 },
+    ];
+    const filePath = await writeBackup(makeBackup(tables));
+    await expect(loadBackupFile(filePath)).rejects.toThrowError(/user_virtual_keys/);
+  });
+
+  test("旧备份的旧 digest 被接受，但被篡改的仍拒绝", async () => {
+    const backup = makeBackup(legacyTables());
+    const filePath = await writeBackup(backup);
+    await expect(loadBackupFile(filePath)).resolves.toBeTruthy();
+
+    const tampered = makeBackup(legacyTables());
+    tampered.tables["users"]![0]!["username"] = "hijacked";
+    const filePathTampered = await writeBackup(tampered);
+    await expect(loadBackupFile(filePathTampered)).rejects.toThrowError(/digest 校验失败/);
+  });
+
+  test("活库缺 user_virtual_keys 表时导出视为空，preflight 与旧备份 digest 一致", async () => {
+    const old = legacyTables();
+    const backup = makeBackup(old);
+    const handler = (sql: string) => {
+      if (sql === "SELECT * FROM `user_virtual_keys`") {
+        throw Object.assign(new Error("no such table"), { code: "ER_NO_SUCH_TABLE" });
+      }
+      return snapshotHandler(structuredClone(old))(sql);
+    };
+    const { conn } = mockConnection(handler);
+    await expect(
+      preflightRebuild(conn, {
+        backup,
+        expected: { host: "localhost", port: "3306", database: "llm_gateway" },
+        confirmDatabase: "llm_gateway",
+      }),
+    ).rejects.toThrowError(/digest 不一致/); // makeBackup 的 digest 是原始口径，preflight 前需先用 loadBackupFile 规范化
+
+    // 通过 loadBackupFile 规范化后 digest 口径一致，preflight 通过
+    const filePath = await writeBackup(backup);
+    const loaded = await loadBackupFile(filePath);
+    const { conn: conn2 } = mockConnection(handler);
+    await expect(
+      preflightRebuild(conn2, {
+        backup: loaded,
+        expected: { host: "localhost", port: "3306", database: "llm_gateway" },
+        confirmDatabase: "llm_gateway",
+      }),
+    ).resolves.toBeUndefined();
   });
 });
 

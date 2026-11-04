@@ -89,7 +89,7 @@ describe("migration 1: api_requests.session_id", () => {
   });
 
   test("does not re-apply recorded migrations once all versions are applied", async () => {
-    const conn = provisionedConn(7);
+    const conn = provisionedConn(9);
     await applyMigrations(conn as unknown as Connection);
     expect(conn.beginTransaction).not.toHaveBeenCalled();
     expect(conn.query.mock.calls.some(([sql]) => String(sql).includes("ALTER TABLE"))).toBe(false);
@@ -223,6 +223,8 @@ describe("migration 6: login_ip_lockout", () => {
     expect(recorded).toEqual([
       { version: 6, name: "login_ip_lockout" },
       { version: 7, name: "virtual_key_model_quotas_weekly_limit" },
+      { version: 8, name: "users_role" },
+      { version: 9, name: "user_virtual_keys_binding" },
     ]);
   });
 });
@@ -348,7 +350,127 @@ describe("migration 7: virtual_key_model_quotas_weekly_limit", () => {
     ).toBe(true);
     expect(recorded).toEqual([
       { version: 7, name: "virtual_key_model_quotas_weekly_limit" },
+      { version: 8, name: "users_role" },
+      { version: 9, name: "user_virtual_keys_binding" },
     ]);
+  });
+});
+
+describe("migration 8: users_role", () => {
+  function v8Conn(options: {
+    table?: boolean;
+    roleColumn?: boolean;
+    roleIndex?: boolean;
+    admins?: Array<{ id: string }>;
+  }) {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("INFORMATION_SCHEMA.TABLES")) {
+        return [options.table ? [{ name: "users" }] : []];
+      }
+      if (sql.includes("INFORMATION_SCHEMA.COLUMNS")) {
+        return [options.roleColumn ? [{ name: "role" }] : []];
+      }
+      if (sql.includes("INFORMATION_SCHEMA.STATISTICS")) {
+        return [options.roleIndex ? [{ name: "idx_users_role" }] : []];
+      }
+      if (sql.includes("SELECT id FROM users WHERE role = 'admin'")) {
+        return [options.admins ?? []];
+      }
+      return [[]];
+    });
+    return { query, beginTransaction: vi.fn(), commit: vi.fn(), rollback: vi.fn() };
+  }
+
+  test("is version 8 and reversible", () => {
+    expect(migrations[7].version).toBe(8);
+    expect(migrations[7].name).toBe("users_role");
+    expect(typeof migrations[7].down).toBe("function");
+  });
+
+  test("empty schema records the version without DDL (scratch dry-run / rebuild order)", async () => {
+    const conn = v8Conn({});
+    await migrations[7].up!(conn as unknown as Connection);
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(issued.some((sql) => /ALTER |UPDATE /.test(sql))).toBe(false);
+  });
+
+  test("adds the role column and index, then promotes the stable first user", async () => {
+    const conn = v8Conn({ table: true });
+    await migrations[7].up!(conn as unknown as Connection);
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(
+      issued.some((sql) =>
+        sql.includes(
+          "ADD COLUMN role ENUM('admin','user') NOT NULL DEFAULT 'user'",
+        )),
+    ).toBe(true);
+    expect(issued.some((sql) => sql.includes("ADD INDEX idx_users_role (role)"))).toBe(true);
+    // 旧数据回填：created_at 可能并列，再按 id 排序保证稳定，只提升首行
+    expect(
+      issued.some((sql) =>
+        sql === "UPDATE users SET role = 'admin' ORDER BY created_at ASC, id ASC LIMIT 1"),
+    ).toBe(true);
+  });
+
+  test("keeps an existing admin: idempotent re-run issues no DDL/DML", async () => {
+    const conn = v8Conn({ table: true, roleColumn: true, roleIndex: true, admins: [{ id: "u1" }] });
+    await migrations[7].up!(conn as unknown as Connection);
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(issued.some((sql) => /ALTER |UPDATE /.test(sql))).toBe(false);
+  });
+
+  test("recovers the backfill when the column exists but no admin does (crash after ALTER)", async () => {
+    const conn = v8Conn({ table: true, roleColumn: true, roleIndex: true });
+    await migrations[7].up!(conn as unknown as Connection);
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    expect(issued.some((sql) => sql.includes("ALTER TABLE"))).toBe(false);
+    expect(
+      issued.some((sql) =>
+        sql === "UPDATE users SET role = 'admin' ORDER BY created_at ASC, id ASC LIMIT 1"),
+    ).toBe(true);
+  });
+
+  test("down drops the index before the column", async () => {
+    const conn = v8Conn({ table: true, roleColumn: true, roleIndex: true });
+    await migrations[7].down!(conn as unknown as Connection);
+    const issued = conn.query.mock.calls.map(([sql]) => String(sql));
+    const indexDrop = issued.findIndex((sql) => sql.includes("DROP INDEX idx_users_role"));
+    const columnDrop = issued.findIndex((sql) => sql.includes("DROP COLUMN role"));
+    expect(indexDrop).toBeGreaterThanOrEqual(0);
+    expect(columnDrop).toBeGreaterThan(indexDrop);
+  });
+
+  test("down on an empty schema is a no-op beyond the metadata read", async () => {
+    const conn = v8Conn({});
+    await migrations[7].down!(conn as unknown as Connection);
+    expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(String(conn.query.mock.calls[0][0])).toContain("INFORMATION_SCHEMA.TABLES");
+  });
+
+  test("is applied when the recorded version is 7 and recorded afterwards", async () => {
+    const recorded: Array<{ version: number; name: string }> = [];
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      if (sql.includes("INFORMATION_SCHEMA.TABLES")) {
+        return [[{ name: "users" }, { name: "schema_baseline" }, { name: "schema_migrations" }]];
+      }
+      if (sql.includes("SELECT generation")) return [[{ generation: 2 }]];
+      if (sql.includes("MAX(version)")) return [[{ version: 7 }]];
+      if (sql.includes("INSERT INTO schema_migrations")) {
+        recorded.push({ version: params![0] as number, name: params![1] as string });
+      }
+      return [[]];
+    });
+    const conn = { query, beginTransaction: vi.fn(), commit: vi.fn(), rollback: vi.fn() };
+    await applyMigrations(conn as unknown as Connection);
+    const issued = query.mock.calls.map(([sql]) => String(sql));
+    expect(
+      issued.some((sql) => sql.includes("ADD COLUMN role ENUM('admin','user')")),
+    ).toBe(true);
+    expect(
+      issued.some((sql) =>
+        sql === "UPDATE users SET role = 'admin' ORDER BY created_at ASC, id ASC LIMIT 1"),
+    ).toBe(true);
+    expect(recorded).toEqual([{ version: 8, name: "users_role" }, { version: 9, name: "user_virtual_keys_binding" }]);
   });
 });
 

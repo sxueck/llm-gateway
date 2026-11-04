@@ -147,6 +147,12 @@ Please refer to the [Docker Deployment Guide](./docs/docker-deployment.md)
 4. **(Optional) Configure Prompt management rules** - To enable dynamic modification and enhancement of prompts
 5. **Use the Virtual Key to access the API** - Call LLM Gateway in your application
 
+### User roles and key bindings
+
+The first registered user is an administrator; subsequent users default to the user role. On upgrade, the earliest existing user, ordered by creation time and user ID, becomes the administrator; other users become ordinary users. Back up the database and confirm the intended account before upgrading. Administrators can change roles and manage key bindings under Settings → User Access; the last administrator cannot be removed.
+
+All signed-in users can view global dashboard totals. Ordinary users can see the plaintext of bound keys and their retained API request logs, including request and response bodies, but cannot access system logs or management settings. Multiple users can share a key, and each can see all retained history for that key. Unbinding only removes self-service visibility; a saved plaintext key can still call the API. Rotate or disable the key to revoke API access, affecting all users and clients sharing it. Logging and retention settings still apply. Bind keys only to trusted users.
+
 ---
 
 ## Contributing

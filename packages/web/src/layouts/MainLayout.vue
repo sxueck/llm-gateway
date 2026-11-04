@@ -40,7 +40,8 @@
             <kbd class="cmd-trigger-kbd">{{ shortcutLabel }}</kbd>
           </button>
           <LanguageSwitcher />
-          <AlertCenter />
+          <!-- 告警中心轮询 /admin/alerts，普通用户不可见也不发起请求 -->
+          <AlertCenter v-if="authStore.isAdmin" />
           <n-dropdown :options="userOptions" @select="handleUserAction">
             <div class="user-avatar">
               <n-avatar round size="medium" :style="{ backgroundColor: '#0f6b4a' }">
@@ -48,6 +49,7 @@
               </n-avatar>
               <div class="user-info">
                 <div class="user-name">{{ authStore.user?.username }}</div>
+                <div class="user-role">{{ t(authStore.isAdmin ? 'auth.role.admin' : 'auth.role.user') }}</div>
               </div>
             </div>
           </n-dropdown>
@@ -64,7 +66,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, ref } from 'vue';
+import { computed, h, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import {
@@ -125,11 +127,6 @@ function handleUserAction(key: string) {
   }
 }
 
-onMounted(async () => {
-  if (authStore.token && !authStore.user) {
-    await authStore.fetchProfile();
-  }
-});
 </script>
 
 <style scoped>
@@ -373,6 +370,12 @@ onMounted(async () => {
   font-size: 14px;
   font-weight: 500;
   color: #1a1a1a;
+  line-height: 1.2;
+}
+
+.user-role {
+  font-size: 11px;
+  color: #71827a;
   line-height: 1.2;
 }
 </style>

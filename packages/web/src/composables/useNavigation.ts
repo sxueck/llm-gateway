@@ -1,5 +1,6 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useAuthStore } from '@/stores/auth';
 import type { NavIconName } from '@/components/nav-icons';
 
 export interface NavLeaf {
@@ -21,8 +22,43 @@ export interface NavGroup {
 
 export function useNavigation() {
   const { t } = useI18n();
+  const authStore = useAuthStore();
 
-  const groups = computed<NavGroup[]>(() => [
+  // 普通用户只保留自助三页；与管理菜单分开维护，避免在 admin 分支里到处 if。
+  const userGroups = computed<NavGroup[]>(() => [
+    {
+      key: 'overview',
+      label: null,
+      entries: [
+        {
+          key: 'dashboard',
+          path: '/dashboard',
+          label: t('menu.dashboard'),
+          iconName: 'dashboard',
+        },
+      ],
+    },
+    {
+      key: 'workspace',
+      label: t('layout.sectionWorkspace'),
+      entries: [
+        {
+          key: 'my-virtual-keys',
+          path: '/me/virtual-keys',
+          label: t('menu.myVirtualKeys'),
+          iconName: 'keys',
+        },
+        {
+          key: 'my-api-requests',
+          path: '/me/api-requests',
+          label: t('menu.myApiRequests'),
+          iconName: 'tools',
+        },
+      ],
+    },
+  ]);
+
+  const adminGroups = computed<NavGroup[]>(() => [
     {
       key: 'overview',
       label: null,
@@ -158,6 +194,12 @@ export function useNavigation() {
               iconName: 'settings',
             },
             {
+              key: 'user-access',
+              path: '/settings/user-access',
+              label: t('menu.userAccess'),
+              iconName: 'settings',
+            },
+            {
               key: 'backup',
               path: '/settings/backup',
               label: t('settings.backup'),
@@ -180,6 +222,8 @@ export function useNavigation() {
       ],
     },
   ]);
+
+  const groups = computed(() => (authStore.isAdmin ? adminGroups.value : userGroups.value));
 
   /** 侧栏行：枢纽入口只占一行，普通页面各占一行。 */
   const rows = computed<NavEntry[]>(() => groups.value.flatMap((group) => group.entries));

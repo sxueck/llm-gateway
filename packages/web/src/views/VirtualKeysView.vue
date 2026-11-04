@@ -320,6 +320,15 @@
             </span>
           </div>
           <div class="detail-row">
+            <span class="detail-label">{{ t('virtualKeys.fieldOwner') }}</span>
+            <span class="detail-value">
+              <template v-if="bindingsLoading">{{ t('common.loading') }}</template>
+              <template v-else-if="bindingsError">{{ t('userAccess.loadFailed') }}</template>
+              <template v-else-if="boundUsers.length">{{ boundUsers.map(user => user.username).join(', ') }}</template>
+              <template v-else>{{ t('common.noData') }}</template>
+            </span>
+          </div>
+          <div class="detail-row">
             <span class="detail-label">{{ t('virtualKeys.fieldRateLimit') }}</span>
             <span class="detail-value">
               {{ drawerKey.rateLimit ? t('virtualKeys.rateLimitPerMin', { n: drawerKey.rateLimit }) : '-' }}
@@ -470,6 +479,7 @@ import { useVirtualKeyStore } from '@/stores/virtual-key'
 import { useModelStore } from '@/stores/model'
 import { useModelOptions } from '@/composables/useModelOptions'
 import { virtualKeyApi } from '@/api/virtual-key'
+import { userAccessApi } from '@/api/user-access'
 import { configApi } from '@/api/config'
 import type { OpsPeriod } from '@/api/ops-metrics'
 import type { VirtualKey } from '@/types'
@@ -930,9 +940,26 @@ const drawerKey = computed(
   () => virtualKeyStore.virtualKeys.find((key) => key.id === drawerKeyId.value) ?? null
 )
 
-function openDrawer(row: VirtualKey) {
+const boundUsers = ref<Array<{ userId: string; username: string; boundAt: number }>>([])
+const bindingsLoading = ref(false)
+const bindingsError = ref(false)
+let bindingsRequest = 0
+
+async function openDrawer(row: VirtualKey) {
   drawerKeyId.value = row.id
   showDrawer.value = true
+  const requestId = ++bindingsRequest
+  boundUsers.value = []
+  bindingsLoading.value = true
+  bindingsError.value = false
+  try {
+    const response = await userAccessApi.getVirtualKeyBindings(row.id)
+    if (requestId === bindingsRequest) boundUsers.value = response.users
+  } catch {
+    if (requestId === bindingsRequest) bindingsError.value = true
+  } finally {
+    if (requestId === bindingsRequest) bindingsLoading.value = false
+  }
 }
 
 watch(drawerKey, (key) => {

@@ -142,12 +142,12 @@
               </n-descriptions-item>
               <n-descriptions-item :label="t('apiRequests.inputTokens')">
                 <n-tag type="default" size="small">
-                  {{ getTokens(selectedRequest!, 'input') }}
+                  {{ getRequestTokens(selectedRequest!, 'input') }}
                 </n-tag>
               </n-descriptions-item>
               <n-descriptions-item :label="t('apiRequests.outputTokens')">
                 <n-tag type="default" size="small">
-                  {{ getTokens(selectedRequest!, 'output') }}
+                  {{ getRequestTokens(selectedRequest!, 'output') }}
                 </n-tag>
               </n-descriptions-item>
               <n-descriptions-item
@@ -368,8 +368,8 @@ import { providerApi } from '@/api/provider'
 import { modelApi } from '@/api/model'
 import type { DataTableColumns, PaginationProps } from 'naive-ui'
 import { formatJson, formatTimestamp } from '@/utils/common'
+import { getRequestParams, getRequestPreview, getRequestTokens } from '@/utils/api-request-display'
 import { isSessionStartBody } from '@/utils/session-start'
-import { extractRequestPreview } from '@/utils/content-truncator'
 import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize'
 import PageHeader from '@/components/PageHeader.vue'
 
@@ -455,53 +455,6 @@ const showCleanDialog = ref(false)
 const cleanDays = ref(30)
 const cleanLoading = ref(false)
 
-type JsonLike = Record<string, any> | string | null | undefined
-
-const parseJsonLike = (value: JsonLike): Record<string, any> | null => {
-  if (!value) return null
-  if (typeof value === 'object') return value
-  try {
-    const parsed = JSON.parse(value)
-    return parsed && typeof parsed === 'object' ? parsed : null
-  } catch {
-    return null
-  }
-}
-
-const getRequestParams = (row: ApiRequest): Record<string, any> | null => {
-  return parseJsonLike(row.request_params_json)
-}
-
-const previewFromJson = (value: JsonLike): string => {
-  const parsed = parseJsonLike(value)
-  if (!parsed) return '-'
-
-  const text = JSON.stringify(parsed)
-  if (!text) return '-'
-  return text.length > 80 ? `${text.slice(0, 80)}...` : text
-}
-
-const getTokens = (row: ApiRequest, type: 'input' | 'output') => {
-  const isInput = type === 'input'
-  const direct = isInput ? row.prompt_tokens : row.completion_tokens
-  if (direct) return direct
-  try {
-    const usage = JSON.parse(row.response_body || '{}')?.usage
-    if (!usage) return 0
-    const base = isInput
-      ? (usage.input_tokens ?? usage.prompt_tokens ?? 0)
-      : (usage.output_tokens ?? usage.completion_tokens ?? 0)
-    return isInput && base === 0
-      ? base +
-          (usage.input_tokens_details?.cached_tokens ??
-            usage.prompt_tokens_details?.cached_tokens ??
-            0)
-      : base
-  } catch {
-    return 0
-  }
-}
-
 const toDisplayDepth = (raw: unknown): string | null => {
   if (typeof raw !== 'string') return null
   const trimmed = raw.trim()
@@ -533,13 +486,6 @@ const extractThinkingDepthFromRow = (row: ApiRequest): string | null => {
   const depthFromSummary = toDisplayDepth(getRequestParams(row)?.reasoning_effort)
   if (depthFromSummary) return depthFromSummary
   return extractThinkingDepth(row.request_body)
-}
-
-const getRequestPreview = (row: ApiRequest): string => {
-  if (row.request_body) {
-    return extractRequestPreview(row.request_body)
-  }
-  return previewFromJson(row.request_params_json)
 }
 
 const getModelDisplay = (row: ApiRequest): string => {
@@ -696,8 +642,8 @@ const columns = computed<DataTableColumns<ApiRequest>>(() => [
     width: 180,
     render: row => {
       const items = [
-        h('div', { class: 'token-line' }, `${t('apiRequests.input')}: ${getTokens(row, 'input')}`),
-        h('div', { class: 'token-line' }, `${t('apiRequests.output')}: ${getTokens(row, 'output')}`)
+        h('div', { class: 'token-line' }, `${t('apiRequests.input')}: ${getRequestTokens(row, 'input')}`),
+        h('div', { class: 'token-line' }, `${t('apiRequests.output')}: ${getRequestTokens(row, 'output')}`)
       ]
 
       if (row.compression_saved_tokens && row.compression_saved_tokens > 0) {

@@ -1,4 +1,5 @@
 import type { Connection } from "mysql2/promise";
+import { userVirtualKeysMigration } from "./user-access-migration.js";
 
 export interface Migration {
   version: number;
@@ -351,6 +352,71 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    // 用户角色：users.role ENUM('admin','user')，默认 user。旧库回填按
+    // created_at 再 id 稳定排序，首个用户提升为 admin；已有 admin 时跳过回填，
+    // 幂等重跑不会制造第二个 admin。
+    version: 8,
+    name: "users_role",
+    up: async (conn) => {
+      const [tables] = await conn.query(
+        `SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users'`,
+      );
+      if ((tables as Array<{ name: string }>).length === 0) {
+        // 空库（scratch 干跑 / rebuild 先跑 migrations 后建表）：表由 schema.ts
+        // 连同 role 列一起创建，这里只登记版本号，绝不先跑 DDL。
+        return;
+      }
+      const [columns] = await conn.query(
+        `SELECT COLUMN_NAME AS name FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'role'`,
+      );
+      if ((columns as Array<{ name: string }>).length === 0) {
+        await conn.query(
+          "ALTER TABLE users ADD COLUMN role ENUM('admin','user') NOT NULL DEFAULT 'user' COMMENT '角色：admin=管理员，user=普通用户' AFTER password_hash",
+        );
+      }
+      const [indexes] = await conn.query(
+        `SELECT INDEX_NAME AS name FROM INFORMATION_SCHEMA.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND INDEX_NAME = 'idx_users_role'`,
+      );
+      if ((indexes as Array<{ name: string }>).length === 0) {
+        await conn.query("ALTER TABLE users ADD INDEX idx_users_role (role)");
+      }
+      // created_at 可能并列：再按 id 排序保证稳定，重跑提升的总是同一行。
+      const [admins] = await conn.query(
+        "SELECT id FROM users WHERE role = 'admin' LIMIT 1",
+      );
+      if ((admins as Array<{ id: string }>).length === 0) {
+        await conn.query(
+          "UPDATE users SET role = 'admin' ORDER BY created_at ASC, id ASC LIMIT 1",
+        );
+      }
+    },
+    down: async (conn) => {
+      const [tables] = await conn.query(
+        `SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users'`,
+      );
+      if ((tables as Array<{ name: string }>).length === 0) return;
+      const [indexes] = await conn.query(
+        `SELECT INDEX_NAME AS name FROM INFORMATION_SCHEMA.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND INDEX_NAME = 'idx_users_role'`,
+      );
+      if ((indexes as Array<{ name: string }>).length > 0) {
+        await conn.query("ALTER TABLE users DROP INDEX idx_users_role");
+      }
+      const [columns] = await conn.query(
+        `SELECT COLUMN_NAME AS name FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'role'`,
+      );
+      if ((columns as Array<{ name: string }>).length > 0) {
+        await conn.query("ALTER TABLE users DROP COLUMN role");
+      }
+    },
+  },
+  userVirtualKeysMigration,
 ];
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {
