@@ -36,6 +36,8 @@ import {
   getAnonymousAffinityTargetKey,
   countExplicitSessionBindings,
 } from "./proxy/routing.js";
+import { validateRoutingConfigPayload } from "../utils/routing-config-validation.js";
+import { TIME_PRIORITY_ROUTING_MODE } from "@llm-gateway/shared";
 
 export async function configRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
@@ -950,7 +952,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.post("/routing-configs", async (request) => {
+  fastify.post("/routing-configs", async (request, reply) => {
     try {
       const body = request.body as {
         name: string;
@@ -961,6 +963,22 @@ export async function configRoutes(fastify: FastifyInstance) {
         virtualModelName?: string;
         providerId?: string;
       };
+
+      const routingConfigIssue = validateRoutingConfigPayload(body.type, body.config);
+      if (routingConfigIssue) {
+        memoryLogger.warn(
+          `创建路由配置被拒绝: ${routingConfigIssue.message} | param=${routingConfigIssue.param}`,
+          "Config",
+        );
+        return reply.code(400).send({
+          error: {
+            message: routingConfigIssue.message,
+            type: "invalid_request_error",
+            param: routingConfigIssue.param,
+            code: "invalid_routing_config",
+          },
+        });
+      }
 
       const configId = nanoid();
       const config = await routingConfigDb.create({
@@ -1017,7 +1035,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.put("/routing-configs/:id", async (request) => {
+  fastify.put("/routing-configs/:id", async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
       const body = request.body as {
@@ -1031,6 +1049,31 @@ export async function configRoutes(fastify: FastifyInstance) {
       const existingConfig = await routingConfigDb.getById(id);
       if (!existingConfig) {
         throw new Error("路由配置不存在");
+      }
+
+      const effectiveType = body.type ?? existingConfig.type;
+      let configForValidation = body.config;
+      if (configForValidation === undefined && effectiveType === TIME_PRIORITY_ROUTING_MODE) {
+        try {
+          configForValidation = JSON.parse(existingConfig.config);
+        } catch {
+          configForValidation = undefined;
+        }
+      }
+      const routingConfigIssue = validateRoutingConfigPayload(effectiveType, configForValidation);
+      if (routingConfigIssue) {
+        memoryLogger.warn(
+          `更新路由配置 ${id} 被拒绝: ${routingConfigIssue.message} | param=${routingConfigIssue.param}`,
+          "Config",
+        );
+        return reply.code(400).send({
+          error: {
+            message: routingConfigIssue.message,
+            type: "invalid_request_error",
+            param: routingConfigIssue.param,
+            code: "invalid_routing_config",
+          },
+        });
       }
 
       await routingConfigDb.update(id, {

@@ -1,3 +1,5 @@
+import { resolveDefaultTimezone, type TimePriorityTimeRule } from '@/utils/time-priority';
+
 export interface VirtualModelTarget {
   providerId: string;
   modelName?: string;
@@ -14,9 +16,15 @@ export interface VirtualModelFormValue {
   modelAttributes?: any;
   hashSource?: 'virtualKey' | 'request';
   affinityTTLSeconds?: number;
+  /** time_priority 模式：IANA 时区 */
+  timezone?: string;
+  /** time_priority 模式：时段规则 */
+  timeRules?: TimePriorityTimeRule[];
 }
 
-export type RoutingConfigType = 'loadbalance' | 'fallback' | 'hash' | 'affinity';
+export type RoutingConfigType = 'loadbalance' | 'fallback' | 'hash' | 'affinity' | 'time_priority';
+
+export type { TimePriorityTimeRule };
 
 export function createDefaultVirtualModelForm(): VirtualModelFormValue {
   return {
@@ -28,5 +36,7 @@ export function createDefaultVirtualModelForm(): VirtualModelFormValue {
     modelAttributes: undefined,
     hashSource: 'virtualKey',
     affinityTTLSeconds: 300,
+    timezone: resolveDefaultTimezone(),
+    timeRules: [],
   };
 }

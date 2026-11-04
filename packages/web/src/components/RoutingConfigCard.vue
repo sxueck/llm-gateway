@@ -187,6 +187,7 @@
               {{ t('virtualModels.boundSessions', { count: getBoundSessionCount(target) }) }}
             </div>
           </div>
+          <div class="priority-badge" v-if="config.type === 'time_priority'">P{{ index + 1 }}</div>
         </div>
         <div class="strategy-meta" v-if="config.type === 'affinity'">
           <n-icon><TimeOutline /></n-icon>
@@ -195,6 +196,37 @@
         <div class="strategy-meta" v-if="config.type === 'hash'">
           <n-icon><KeyOutline /></n-icon>
           <span>{{ t('virtualModels.hashSource', { source: config.config.strategy.hashSource }) }}</span>
+        </div>
+        <div class="strategy-meta" v-if="config.type === 'time_priority'">
+          <n-icon><TimeOutline /></n-icon>
+          <span>
+            {{ t('virtualModels.timePriorityTimezone', { tz: config.config.strategy?.timezone || 'UTC' }) }}
+            · {{ t('virtualModels.timePriorityRulesCount', { count: timeRules.length }) }}
+          </span>
+        </div>
+        <div
+          v-for="(rule, ruleIndex) in timeRules"
+          :key="`time-rule-${ruleIndex}`"
+          class="time-rule-summary"
+        >
+          <div class="rule-line">
+            <span class="rule-days">{{ formatRuleDays(rule.days) }}</span>
+            <span class="rule-range">
+              {{ rule.start }}–{{ rule.end }}
+              <template v-if="ruleCrossesMidnight(rule)">({{ t('wizard.crossMidnightTag') }})</template>
+            </span>
+          </div>
+          <div class="rule-order">
+            <n-tag
+              v-for="(pos, position) in rule.target_order"
+              :key="`${ruleIndex}-${pos}`"
+              size="tiny"
+              :bordered="false"
+              class="order-chip"
+            >
+              {{ position + 1 }}. {{ ruleTargetLabel(pos) }}
+            </n-tag>
+          </div>
         </div>
       </div>
     </div>
@@ -215,6 +247,7 @@ import {
 } from '@vicons/ionicons5';
 
 import type { RoutingTargetStatus } from '@/api/config';
+import { ruleCrossesMidnight, type TimePriorityTimeRule } from '@/utils/time-priority';
 
 const props = defineProps<{
   config: any;
@@ -235,7 +268,8 @@ const typeConfig = computed(() => {
     'loadbalance': { label: t('virtualModels.typeLoadBalance'), tagType: 'info' },
     'fallback': { label: t('virtualModels.typeFallback'), tagType: 'warning' },
     'hash': { label: t('virtualModels.typeHash'), tagType: 'success' },
-    'affinity': { label: t('virtualModels.typeAffinity'), tagType: 'error' }
+    'affinity': { label: t('virtualModels.typeAffinity'), tagType: 'error' },
+    'time_priority': { label: t('virtualModels.typeTimePriority'), tagType: 'info' }
   };
   return map[props.config.type] || { label: props.config.type, tagType: 'default' };
 });
@@ -297,6 +331,35 @@ const enrichedTargets = computed(() => {
     };
   });
 });
+
+const timeRules = computed<TimePriorityTimeRule[]>(() => {
+  if (props.config.type !== 'time_priority') return [];
+  const raw = props.config.config?.strategy?.time_rules;
+  return Array.isArray(raw) ? (raw as TimePriorityTimeRule[]) : [];
+});
+
+const weekdayShortLabels = computed(() => [
+  t('wizard.weekdayShort0'),
+  t('wizard.weekdayShort1'),
+  t('wizard.weekdayShort2'),
+  t('wizard.weekdayShort3'),
+  t('wizard.weekdayShort4'),
+  t('wizard.weekdayShort5'),
+  t('wizard.weekdayShort6'),
+]);
+
+function formatRuleDays(days: number[]) {
+  return [...days]
+    .sort((a, b) => a - b)
+    .map(day => weekdayShortLabels.value[day] ?? String(day))
+    .join(' ');
+}
+
+function ruleTargetLabel(pos: number) {
+  const target = enrichedTargets.value[pos];
+  if (!target) return `#${pos + 1}`;
+  return `${target.providerName}/${target.modelName}`;
+}
 
 function getWeightColor(weight: number) {
   if (weight >= 0.8) return '#0f6b4a';
@@ -541,5 +604,50 @@ function getWeightColor(weight: number) {
   color: #666;
   margin-top: 4px;
   padding-left: 2px;
+}
+
+.time-rule-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #f9f9fa;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-top: 6px;
+}
+
+.rule-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.rule-days {
+  color: #333;
+  font-weight: 500;
+}
+
+.rule-range {
+  color: #666;
+  font-family: monospace;
+  white-space: nowrap;
+}
+
+.rule-order {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.rule-order .order-chip {
+  font-size: 10px;
+  height: 18px;
+  padding: 0 6px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

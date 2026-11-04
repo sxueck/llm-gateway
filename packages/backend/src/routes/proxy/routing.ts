@@ -8,6 +8,13 @@ import { BREAKER_ELIGIBLE_STATUS_CODES, CircuitState, circuitBreaker } from '../
 import { parsePositiveInt } from '../../utils/parse-positive-int.js';
 import { blendedPriceOf } from '../../services/expert-router/bands.js';
 import { normalizeRoutingStrategy, type PerRequestRoutingStrategy } from './routing-strategy.js';
+import {
+  TIME_PRIORITY_ROUTING_MODE,
+  findMatchingTimePriorityRule,
+  isTimePriorityTargetOrder,
+  isValidIANATimezone,
+  type TimePriorityRule,
+} from '@llm-gateway/shared';
 
 export interface RoutingTarget {
   provider: string;
@@ -21,11 +28,14 @@ export interface RoutingTarget {
 
 export interface RoutingConfig {
   strategy: {
-    mode: 'loadbalance' | 'fallback' | 'hash' | 'affinity';
+    mode: 'loadbalance' | 'fallback' | 'hash' | 'affinity' | 'time_priority';
     // hash模式：使用哪个字段作为哈希key
     hashSource?: 'virtualKey' | 'request';
     // affinity模式：显式 session 的空闲粘滞时长（毫秒）；缺省回退 EXPLICIT_AFFINITY_IDLE_TTL_MS
     affinityTTL?: number;
+    // time_priority模式：targets 为默认有序目标，未命中任何规则时按此顺序回退
+    timezone?: string;
+    time_rules?: TimePriorityRule[];
   };
   targets: RoutingTarget[];
 }
@@ -100,6 +110,8 @@ function parseModelAttributesSafe(raw: unknown): any {
   if (typeof raw !== 'string' || !raw) return undefined;
   try {
     return JSON.parse(raw);
+    // 价格指标是可选输入：model_attributes 存了坏 JSON 时按无指标处理，选路不能因此失败。
+    // ast-grep-ignore: no-catch-swallow
   } catch {
     return undefined;
   }
@@ -399,6 +411,85 @@ function selectFailoverTarget(availableTargets: RoutingTarget[]): RoutingTarget 
   return availableTargets[0]!;
 }
 
+/**
+ * 解析 time_priority 模式在 nowMs 时刻的目标优先级（targets 的零基索引序列）。
+ *
+ * 命中时段规则时返回规则的 target_order（软优先顺序）；未命中任何规则时返回
+ * targets 默认顺序（等价 fallback 语义）。timezone 无效或 target_order 非全排列
+ * （写入侧已拦截，这里防御直接改库的场景）时同样回退默认顺序并告警。
+ */
+export function resolveTimePriorityTargetOrder(config: RoutingConfig, nowMs: number): number[] {
+  const defaultOrder = config.targets.map((_target, index) => index);
+  const strategy = config.strategy;
+  if (!Array.isArray(strategy?.time_rules)) {
+    return defaultOrder;
+  }
+
+  const timezone = strategy.timezone;
+  if (typeof timezone !== 'string' || !isValidIANATimezone(timezone)) {
+    memoryLogger.warn(
+      `TimePriority路由: timezone 无效 (${String(timezone)})，回退默认目标顺序`,
+      'Routing'
+    );
+    return defaultOrder;
+  }
+
+  const matched = findMatchingTimePriorityRule(strategy.time_rules, nowMs, timezone);
+  if (!matched) {
+    memoryLogger.debug(
+      `TimePriority路由: 当前时刻无命中时段规则，使用默认目标顺序`,
+      'Routing'
+    );
+    return defaultOrder;
+  }
+
+  if (!isTimePriorityTargetOrder(matched.rule.target_order, config.targets.length)) {
+    memoryLogger.warn(
+      `TimePriority路由: 规则 #${matched.index} 的 target_order 不是 targets 索引的全排列，回退默认目标顺序`,
+      'Routing'
+    );
+    return defaultOrder;
+  }
+
+  return [...matched.rule.target_order];
+}
+
+export interface TimePriorityRoutingAnchor {
+  routingConfigId: string;
+  /** 首次解析时钉住的规则求值时刻（epoch ms），同请求重试期间复用。 */
+  routingAt: number;
+}
+
+// 与智能路由重试窗口（SMART_ROUTING_RETRY_WINDOW_MS）对齐：超过窗口的重试链已终止，
+// 锚点视为过期，避免长时间驻留的请求永远路由到旧时段。
+const TIME_PRIORITY_ROUTING_ANCHOR_MAX_AGE_MS = 10_000;
+const TIME_PRIORITY_ROUTING_ANCHOR_KEY = '__timePriorityRoutingAnchor';
+
+/**
+ * 解析 time_priority 模式的规则求值时刻，尽力保证单请求跨界重试固定规则：
+ *
+ * 同一请求（Fastify request 对象贯穿重试链）在同一 routing config 下首次解析时
+ * 把当前时刻钉在请求上；此后窗口内的重试复用该时刻求值，即使物理时钟已跨过
+ * 时段边界，重试链仍按首试时的规则顺序继续排除已失败目标。新请求或窗口外
+ * 重新求值并重设锚点。仅 time_priority 模式参与，其余模式返回 undefined。
+ */
+export function resolveTimePriorityRoutingAt(request: any, routingConfigId: string): number {
+  const now = Date.now();
+  const existing: TimePriorityRoutingAnchor | undefined = request?.[TIME_PRIORITY_ROUTING_ANCHOR_KEY];
+  if (
+    existing &&
+    existing.routingConfigId === routingConfigId &&
+    now - existing.routingAt <= TIME_PRIORITY_ROUTING_ANCHOR_MAX_AGE_MS
+  ) {
+    return existing.routingAt;
+  }
+
+  if (request && typeof request === 'object') {
+    request[TIME_PRIORITY_ROUTING_ANCHOR_KEY] = { routingConfigId, routingAt: now };
+  }
+  return now;
+}
+
 export function hasAvailableRoutingTargets(
   config: RoutingConfig,
   excludeTargetKeys?: Set<string>
@@ -620,7 +711,9 @@ export function selectRoutingTarget(
   excludeTargetKeys?: Set<string>,
   perRequestStrategy?: PerRequestRoutingStrategy,
   strategyMetrics?: TargetMetricMap,
-  requestModel?: string
+  requestModel?: string,
+  /** time_priority 模式的规则求值时刻（单请求重试期间钉住的锚点时刻）；缺省取当前时钟。 */
+  routingNowMs?: number
 ): RoutingTarget | null {
   if (!config.targets || config.targets.length === 0) {
     return null;
@@ -663,7 +756,41 @@ export function selectRoutingTarget(
 
     let selectedTarget: RoutingTarget | null = null;
 
-    if (type === 'loadbalance' || config.strategy?.mode === 'loadbalance') {
+    // time_priority 分支前置：strategy.mode 优先于路由配置行上可能残留的旧 type 值。
+    if (type === TIME_PRIORITY_ROUTING_MODE || config.strategy?.mode === TIME_PRIORITY_ROUTING_MODE) {
+      const shouldProbe = shouldProbeHalfOpenTarget(
+        config,
+        configId,
+        localExcludeTargetKeys,
+        healthyTargets,
+        probeTargets
+      );
+      const targetPool = shouldProbe
+        ? probeTargets
+        : (healthyTargets.length > 0 ? healthyTargets : availableTargets);
+      if (shouldProbe) {
+        // 复用既有的 half-open 探测调度：健康目标耗尽后周期性试探冷却中的目标。
+        selectedTarget = selectHalfOpenProbeTarget(targetPool, config, configId);
+      } else {
+        // 软优先：权重不参与排序；未命中规则的默认顺序回退见 resolveTimePriorityTargetOrder。
+        const priorityOrder = resolveTimePriorityTargetOrder(config, routingNowMs ?? Date.now());
+        const poolTargetKeys = new Set(targetPool.map(getTargetKey));
+        for (const targetIndex of priorityOrder) {
+          const candidate = config.targets[targetIndex];
+          if (candidate && poolTargetKeys.has(getTargetKey(candidate))) {
+            selectedTarget = candidate;
+            break;
+          }
+        }
+        selectedTarget = selectedTarget || targetPool[0] || null;
+        if (selectedTarget) {
+          memoryLogger.info(
+            `TimePriority路由: 选中 target key=${getTargetKey(selectedTarget)} | 优先顺序=[${priorityOrder.join(',')}]`,
+            'Routing'
+          );
+        }
+      }
+    } else if (type === 'loadbalance' || config.strategy?.mode === 'loadbalance') {
       const shouldProbe = shouldProbeHalfOpenTarget(
         config,
         configId,
@@ -869,6 +996,11 @@ export async function resolveSmartRouting(
       ? await collectTargetRoutingMetrics(config.targets, effectiveStrategy, requestModel)
       : undefined;
 
+  // time_priority：把规则求值时刻钉在请求上，单请求重试链跨界时仍用首试规则（尽力而为）。
+  const routingNowMs = mode === TIME_PRIORITY_ROUTING_MODE
+    ? resolveTimePriorityRoutingAt(request as any, model.routing_config_id)
+    : undefined;
+
   const selectedTarget = selectRoutingTarget(
     config,
     routingConfig.type,
@@ -877,7 +1009,8 @@ export async function resolveSmartRouting(
     excludeTargetKeys,
     effectiveStrategy,
     strategyMetrics,
-    requestModel
+    requestModel,
+    routingNowMs
   );
 
   if (!selectedTarget) {

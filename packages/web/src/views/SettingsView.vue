@@ -231,6 +231,7 @@ import PageHeader from '@/components/PageHeader.vue';
  
 import { configApi } from '@/api/config';
 import { authApi } from '@/api/auth';
+import { COMMON_IANA_TIMEZONE_OPTIONS } from '@/constants/timezones';
  
 const { t } = useI18n();
 const authStore = useAuthStore();
@@ -251,17 +252,8 @@ const trafficAnalysisRegionOptions = ref<Array<{ label: string; value: string }>
 const savingPublicUrl = ref(false);
 const allUsers = ref<User[]>([]);
 
-// 常用 IANA 时区；不在列表内的时区可用下拉框直接输入（tag），后端校验。
-const GATEWAY_TIMEZONE_OPTIONS = [
-  'Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Taipei', 'Asia/Singapore',
-  'Asia/Tokyo', 'Asia/Seoul', 'Asia/Bangkok', 'Asia/Jakarta',
-  'Asia/Kolkata', 'Asia/Dubai', 'Asia/Riyadh', 'Europe/London',
-  'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow', 'Europe/Amsterdam',
-  'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
-  'America/Phoenix', 'America/Sao_Paulo', 'America/Toronto', 'America/Vancouver',
-  'Australia/Sydney', 'Australia/Melbourne', 'Australia/Perth', 'Pacific/Auckland',
-  'UTC',
-].map(tz => ({ label: tz, value: tz }));
+// 常用 IANA 时区列表由 constants/timezones.ts 统一维护；不在列表内的时区可在下拉框直接输入（tag），后端校验。
+const GATEWAY_TIMEZONE_OPTIONS = COMMON_IANA_TIMEZONE_OPTIONS;
 const gatewayTimezoneOptions = GATEWAY_TIMEZONE_OPTIONS;
 const gatewayTimezone = ref('Asia/Shanghai');
 const gatewayTimezoneInput = ref('Asia/Shanghai');

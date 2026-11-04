@@ -44,7 +44,10 @@
           </n-radio-group>
         </div>
 
-        <div v-if="localConfigType === 'hash' || localConfigType === 'affinity'" class="sidebar-section advanced-params">
+        <div
+          v-if="localConfigType === 'hash' || localConfigType === 'affinity' || localConfigType === 'time_priority'"
+          class="sidebar-section advanced-params"
+        >
           <div class="section-title">{{ t('wizard.advancedParams') }}</div>
           <n-form-item v-if="localConfigType === 'hash'" :label="t('wizard.hashSource')">
             <n-select 
@@ -54,6 +57,15 @@
           </n-form-item>
           <n-form-item v-if="localConfigType === 'affinity'" :label="t('wizard.affinityHoldSeconds')">
             <n-input-number v-model:value="localFormValue.affinityTTLSeconds" :min="1" />
+          </n-form-item>
+          <n-form-item v-if="localConfigType === 'time_priority'" :label="t('wizard.timezoneLabel')">
+            <n-select
+              v-model:value="localFormValue.timezone"
+              filterable
+              tag
+              :options="timezoneOptions"
+              :placeholder="t('wizard.timezonePlaceholder')"
+            />
           </n-form-item>
         </div>
       </div>
@@ -93,6 +105,11 @@
               <n-icon :component="InformationCircleOutline" class="mr-1 icon-small" />
               {{ t('wizard.affinitySessionHold', { seconds: localFormValue.affinityTTLSeconds || 300 }) }}
             </span>
+
+            <span class="header-tip flex-center" v-if="localConfigType === 'time_priority'">
+              <n-icon :component="InformationCircleOutline" class="mr-1 icon-small" />
+              {{ t('wizard.timePriorityHeaderTip') }}
+            </span>
           </div>
           <n-button size="small" type="primary" dashed @click="addTarget">
             <template #icon><n-icon :component="Add" /></template>
@@ -101,6 +118,11 @@
         </div>
 
         <div class="targets-container">
+          <div v-if="localConfigType === 'time_priority'" class="default-order-hint flex-center">
+            <n-icon :component="InformationCircleOutline" class="mr-1 icon-small" />
+            {{ t('wizard.defaultTargetOrderHint') }}
+          </div>
+
           <n-empty v-if="localFormValue.targets.length === 0" :description="t('wizard.noRouteTargets')" class="mt-8">
             <template #extra>
               <n-button size="small" type="primary" @click="addTarget">{{ t('wizard.addFirstTarget') }}</n-button>
@@ -120,7 +142,10 @@
               :class="localConfigType"
             >
               <div class="item-handle">
-                <div class="index-badge" :class="{ 'bg-primary': index === 0 && localConfigType === 'fallback' }">
+                <div
+                  class="index-badge"
+                  :class="{ 'bg-primary': index === 0 && (localConfigType === 'fallback' || localConfigType === 'time_priority') }"
+                >
                   {{ index + 1 }}
                 </div>
                 <div class="connector-line" v-if="index < localFormValue.targets.length - 1 && localConfigType === 'fallback'"></div>
@@ -175,7 +200,7 @@
                   />
                 </div>
 
-                <div v-if="localConfigType === 'fallback'" class="sort-actions">
+                <div v-if="localConfigType === 'fallback' || localConfigType === 'time_priority'" class="sort-actions">
                   <n-button text size="tiny" :disabled="index === 0" @click="moveTargetUp(index)">
                     <n-icon :component="ArrowUp" />
                   </n-button>
@@ -186,6 +211,18 @@
               </div>
             </div>
           </TransitionGroup>
+
+          <div v-if="localConfigType === 'time_priority'" class="time-priority-section">
+            <n-alert v-if="timePriorityIssues.length" type="warning" :bordered="false" class="time-issues">
+              <div v-for="(issue, index) in timePriorityIssues" :key="index">{{ issue }}</div>
+            </n-alert>
+            <TimePriorityRulesEditor
+              v-model:rules="timeRules"
+              :target-count="localFormValue.targets.length"
+              :target-labels="targetLabels"
+              :timezone="localFormValue.timezone || 'UTC'"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -206,6 +243,7 @@ import {
   GitNetworkOutline,
   GitMergeOutline,
   TimeOutline,
+  TimerOutline,
   KeyOutline,
   CheckmarkCircle,
   Add,
@@ -216,10 +254,19 @@ import {
 } from '@vicons/ionicons5';
 import {
   NFormItem, NInput, NInputNumber, NSelect, NRadioGroup,
-  NGrid, NGridItem, NIcon, NDivider, NButton, NTag, NEmpty
+  NGrid, NGridItem, NIcon, NDivider, NButton, NTag, NEmpty, NAlert
 } from 'naive-ui';
 import type { VirtualModelFormValue, RoutingConfigType } from '@/types/virtual-model';
+import type { TimePriorityTimeRule } from '@/utils/time-priority';
+import {
+  isIanaTimezone,
+  removeTargetFromRules,
+  swapTargetsInRules,
+  validateTimeRules,
+} from '@/utils/time-priority';
+import { COMMON_IANA_TIMEZONE_OPTIONS } from '@/constants/timezones';
 import { useRoutingTargets } from '@/composables/useRoutingTargets';
+import TimePriorityRulesEditor from '@/components/TimePriorityRulesEditor.vue';
 
 interface StrategyType {
   label: string;
@@ -271,6 +318,13 @@ const strategyTypes = computed<StrategyType[]>(() => [
     desc: t('wizard.affinityWindow'),
     icon: TimeOutline,
     tagType: 'error'
+  },
+  {
+    label: t('wizard.timePriorityOption'),
+    value: 'time_priority',
+    desc: t('wizard.timePriorityByWindow'),
+    icon: TimerOutline,
+    tagType: 'info'
   }
 ]);
 
@@ -278,6 +332,8 @@ const hashSourceOptions = computed(() => [
   { label: t('wizard.hashSourceVirtualKey'), value: 'virtualKey' },
   { label: t('wizard.hashSourceRequest'), value: 'request' },
 ]);
+
+const timezoneOptions = COMMON_IANA_TIMEZONE_OPTIONS;
 
 const localConfigType = computed({
   get: () => props.configType,
@@ -296,11 +352,53 @@ const targetsProxy = computed<typeof localFormValue.value.targets>({
   },
 });
 
-const { addTarget, removeTarget, moveTargetUp, moveTargetDown, getTotalWeight } = useRoutingTargets({
+const {
+  addTarget,
+  removeTarget: removeTargetAt,
+  moveTarget: moveTargetAt,
+  getTotalWeight,
+} = useRoutingTargets({
   configType: localConfigType as any,
   targets: targetsProxy as any,
   clearOnTypeChange: false,
 });
+
+// time_priority：默认目标列表与规则 target_order 共享零基索引。
+// 删除默认目标时去掉规则内对应索引并把更大索引减一；上下移动默认目标时交换两个索引——
+// 保持规则引用的目标身份及其在规则内的顺序不变，并与 targets 变更合并为一次上报。
+// timeRules 被跨模式保留（clearOnTypeChange: false），因此无论当前策略是否 time_priority 都须重映射。
+function removeTarget(index: number) {
+  const rules = localFormValue.value.timeRules;
+  if (rules && rules.length > 0) {
+    localFormValue.value = { ...localFormValue.value, timeRules: removeTargetFromRules(rules, index) };
+  }
+  removeTargetAt(index);
+}
+
+function moveTarget(index: number, direction: -1 | 1) {
+  const target = index + direction;
+  if (target < 0 || target >= localFormValue.value.targets.length) return;
+  const rules = localFormValue.value.timeRules;
+  if (rules && rules.length > 0) {
+    const targets = [...localFormValue.value.targets];
+    [targets[index], targets[target]] = [targets[target], targets[index]];
+    localFormValue.value = {
+      ...localFormValue.value,
+      targets,
+      timeRules: swapTargetsInRules(rules, index, target),
+    };
+    return;
+  }
+  moveTargetAt(index, direction);
+}
+
+function moveTargetUp(index: number) {
+  moveTarget(index, -1);
+}
+
+function moveTargetDown(index: number) {
+  moveTarget(index, 1);
+}
 
 const currentStrategyInfo = computed(() =>
   strategyTypes.value.find(s => s.value === localConfigType.value) || strategyTypes.value[0]
@@ -308,10 +406,64 @@ const currentStrategyInfo = computed(() =>
 
 const totalWeight = computed(() => getTotalWeight());
 
+const timeRules = computed<TimePriorityTimeRule[]>({
+  get: () => localFormValue.value.timeRules ?? [],
+  set: (rules) => {
+    localFormValue.value = { ...localFormValue.value, timeRules: rules };
+  },
+});
+
+const targetLabels = computed(() =>
+  localFormValue.value.targets.map(target => {
+    const providerLabel = props.providerOptions.find(p => p.value === target.providerId)?.label || target.providerId || '-';
+    return `${providerLabel} · ${target.modelName || '-'}`;
+  })
+);
+
+const timePriorityIssues = computed<string[]>(() => {
+  if (localConfigType.value !== 'time_priority') return [];
+  const issues: string[] = [];
+  if (!isIanaTimezone(localFormValue.value.timezone)) {
+    issues.push(t('wizard.tpInvalidTimezone'));
+  }
+  const ruleIssues = validateTimeRules(
+    localFormValue.value.timeRules ?? [],
+    localFormValue.value.targets.length,
+  );
+  for (const issue of ruleIssues) {
+    const index = (issue.ruleIndex ?? 0) + 1;
+    switch (issue.type) {
+      case 'no-rules':
+        issues.push(t('wizard.tpRuleRequired'));
+        break;
+      case 'days-empty':
+        issues.push(t('wizard.tpRuleDaysRequired', { index }));
+        break;
+      case 'time-invalid':
+        issues.push(t('wizard.tpRuleTimeInvalid', { index }));
+        break;
+      case 'empty-range':
+        issues.push(t('wizard.tpRuleEmptyRange', { index }));
+        break;
+      case 'order-invalid':
+        issues.push(t('wizard.tpRuleOrderInvalid', { index }));
+        break;
+      case 'overlap':
+        issues.push(t('wizard.tpRuleOverlap', { a: index, b: (issue.otherRuleIndex ?? 0) + 1 }));
+        break;
+    }
+  }
+  return issues;
+});
+
+const isTimePriorityValid = computed(() => timePriorityIssues.value.length === 0);
+
 const isValid = computed(() => {
   if (!localFormValue.value.virtualModelName) return false;
   if (localFormValue.value.targets.length === 0) return false;
-  return localFormValue.value.targets.every(t => t.providerId && t.modelName);
+  if (!localFormValue.value.targets.every(target => target.providerId && target.modelName)) return false;
+  if (localConfigType.value === 'time_priority') return isTimePriorityValid.value;
+  return true;
 });
 
 function handleSave() {
@@ -385,6 +537,27 @@ function handleSave() {
 .mr-1 { margin-right: 4px; }
 .icon-small { font-size: 14px; vertical-align: sub; }
 .flex-center { display: flex; align-items: center; }
+
+.default-order-hint {
+  font-size: 12px;
+  color: #666;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-bottom: 14px;
+}
+
+.time-priority-section {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.time-issues {
+  font-size: 12px;
+}
 
 .strategy-option {
   display: flex;

@@ -158,6 +158,11 @@ import RoutingConfigEditor from '@/components/RoutingConfigEditor.vue';
 import RoutingConfigCard from '@/components/RoutingConfigCard.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import { copyToClipboard } from '@/utils/common';
+import {
+  normalizeTimeRules,
+  resolveTimezone,
+  serializeTimeRules,
+} from '@/utils/time-priority';
 import { createDefaultVirtualModelForm, type VirtualModelFormValue, type RoutingConfigType } from '@/types/virtual-model';
 
 const message = useMessage();
@@ -245,6 +250,13 @@ function generateRoutingConfig() {
     strategy.affinityTTL = (formValue.value.affinityTTLSeconds || 300) * 1000;
   }
 
+  // time_priority（时段优先）模式的特殊配置：targets 为默认有序目标，
+  // 时段命中时按 target_order（targets 零基索引全排列）软优先
+  if (configType.value === 'time_priority') {
+    strategy.timezone = resolveTimezone(formValue.value.timezone);
+    strategy.time_rules = serializeTimeRules(formValue.value.timeRules ?? []);
+  }
+
   const config: any = {
     strategy,
     targets: formValue.value.targets.map(target => {
@@ -321,20 +333,23 @@ function handleEdit(row: any) {
   configType.value = row.type;
 
   const virtualModel = modelStore.models.find(m => m.routingConfigId === row.id && m.isVirtual);
+  const targets = row.config.targets.map((target: any) => ({
+    providerId: target.provider,
+    modelName: target.override_params?.model || '',
+    weight: target.weight,
+    onStatusCodes: target.on_status_codes || [],
+  }));
 
   formValue.value = {
     name: row.name,
     description: row.description || '',
-    targets: row.config.targets.map((target: any) => ({
-      providerId: target.provider,
-      modelName: target.override_params?.model || '',
-      weight: target.weight,
-      onStatusCodes: target.on_status_codes || [],
-    })),
+    targets,
     createVirtualModel: true,
     virtualModelName: virtualModel?.name || '',
     hashSource: row.config.strategy?.hashSource || 'virtualKey',
     affinityTTLSeconds: row.config.strategy?.affinityTTL ? row.config.strategy.affinityTTL / 1000 : 300,
+    timezone: resolveTimezone(row.config.strategy?.timezone),
+    timeRules: normalizeTimeRules(row.config.strategy?.time_rules, targets.length),
   };
 
   showCreateModal.value = true;
@@ -375,7 +390,7 @@ async function loadConfigs() {
     loading.value = true;
     const result = await configApi.getRoutingConfigs();
     configs.value = result.configs
-      .filter(c => ['loadbalance', 'fallback', 'hash', 'affinity'].includes(c.type))
+      .filter(c => ['loadbalance', 'fallback', 'hash', 'affinity', 'time_priority'].includes(c.type))
       .map(c => ({
         ...c,
         targetCount: c.config.targets?.length || 0,
