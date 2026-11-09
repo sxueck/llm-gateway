@@ -34,7 +34,7 @@
           </n-button>
         </div>
         <div class="header-right">
-          <button type="button" class="cmd-trigger" @click="openPalette">
+          <button type="button" class="cmd-trigger" :aria-label="t('commandPalette.open')" @click="openPalette">
             <NavIcon name="search" :size="16" />
             <span class="cmd-trigger-label">{{ t('commandPalette.open') }}</span>
             <kbd class="cmd-trigger-kbd">{{ shortcutLabel }}</kbd>
@@ -291,6 +291,7 @@ function handleUserAction(key: string) {
 .app-main-layout {
   background-color: transparent;
   height: 100vh;
+  min-width: 0;
 }
 
 .app-header {
@@ -370,5 +371,30 @@ function handleUserAction(key: string) {
   font-size: 11px;
   color: #71827a;
   line-height: 1.2;
+}
+
+@media (max-width: 800px) {
+  .app-header {
+    padding: 0 16px;
+  }
+
+  .header-right {
+    gap: 4px;
+  }
+
+  .user-info {
+    display: none;
+  }
+
+  .user-avatar {
+    padding: 4px;
+  }
+}
+
+@media (max-width: 520px) {
+  .cmd-trigger-label,
+  .cmd-trigger-kbd {
+    display: none;
+  }
 }
 </style>
