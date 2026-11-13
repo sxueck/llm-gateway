@@ -89,6 +89,8 @@ export interface AgentSearchRun {
   resolved_commit: string | null;
   query_encrypted: string;
   model_profile: string;
+  /** 创建时通过插件声明校验的 run 参数（枚举值域，明文 JSON）。 */
+  options_json: string | null;
   status:
     | "queued"
     | "running"

@@ -17,7 +17,7 @@ vi.mock('../../db/index.js', () => ({
   workerPluginDb: {},
 }));
 
-import { persistNewRun, validateRunInputs } from './run.service.js';
+import { persistNewRun, validateRunInputs, validateRunParams } from './run.service.js';
 
 const PLUGIN = {
   manifest: {
@@ -33,7 +33,7 @@ const BODY = {
   plugin: { id: 'com.llm-gateway.code-search', version: 'latest' },
   source: { type: 'snapshot', snapshot_id: 'snap_1' },
   query: 'find the retry path',
-  options: {},
+  options: { params: {} },
 } as const;
 
 describe('persistNewRun resolved_commit', () => {
@@ -91,5 +91,46 @@ describe('validateRunInputs resolvedCommit', () => {
   it('returns the owned snapshot head_commit as resolvedCommit', async () => {
     const { resolvedCommit } = await validateRunInputs({ virtualKeyId: 'vk-1' }, BODY);
     expect(resolvedCommit).toBe('cafebabe');
+  });
+});
+
+describe('validateRunParams', () => {
+  const manifest = {
+    id: 'com.llm-gateway.code-search',
+    role: {
+      params: [
+        { key: 'breadth', values: ['quick', 'medium', 'thorough'], optional: true },
+        { key: 'mode', values: ['fast', 'deep'], optional: false },
+      ],
+    },
+  } as const;
+
+  it('accepts declared values and normalizes to declared keys only', () => {
+    const result = validateRunParams(manifest, { breadth: 'thorough', mode: 'deep' });
+    expect(result).toEqual({ ok: true, params: { breadth: 'thorough', mode: 'deep' } });
+  });
+
+  it('rejects undeclared keys', () => {
+    expect(validateRunParams(manifest, { nope: 'x' }).ok).toBe(false);
+  });
+
+  it('rejects values outside the declared enum', () => {
+    const result = validateRunParams(manifest, { breadth: 'everything' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain('breadth');
+  });
+
+  it('rejects missing required params', () => {
+    const result = validateRunParams(manifest, {});
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain('mode');
+  });
+
+  it('allows empty params when all declared params are optional', () => {
+    const optionalOnly = {
+      id: 'com.llm-gateway.plan-mode',
+      role: { params: [{ key: 'perspective', values: ['balanced'], optional: true }] },
+    } as const;
+    expect(validateRunParams(optionalOnly, {})).toEqual({ ok: true, params: {} });
   });
 });

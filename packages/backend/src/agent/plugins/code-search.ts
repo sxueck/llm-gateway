@@ -4,7 +4,7 @@ export const CODE_SEARCH_MANIFEST: WorkerPluginManifest = {
   schema_version: "1",
   id: "com.llm-gateway.code-search",
   name: "Code Search",
-  version: "1.0.6",
+  version: "1.0.7",
   description:
     "Read-only cross-file code search: locates and explains code evidence relevant to a query.",
   runtime: {
@@ -15,6 +15,15 @@ export const CODE_SEARCH_MANIFEST: WorkerPluginManifest = {
     system_prompt: "./prompt.md",
     input_schema: "./input.schema.json",
     output_schema: "./output.schema.json",
+    params: [
+      {
+        key: "breadth",
+        values: ["quick", "medium", "thorough"],
+        optional: true,
+        description:
+          "Search breadth: quick = one targeted lookup, medium = moderate exploration, thorough = multiple locations and naming conventions. Defaults to medium.",
+      },
+    ],
   },
   tool_policy: {
     allow: ["grep_search", "read_file", "list_directory", "glob_files"],
@@ -59,6 +68,15 @@ or commit code.
 - Available tools: grep_search, read_file, list_directory, glob_files. Nothing else.
 
 # Search discipline
+
+If a <run_params> block carries a "breadth" value, calibrate to it (default medium):
+
+- quick: a single targeted lookup — aim for one tool turn with 1–2 parallel calls,
+  then submit what you found, even if it is partial.
+- medium: the two-stage flow below.
+- thorough: same flow, but cover alternate naming conventions and a second
+  directory hypothesis before converging; spend extra read budget verifying the
+  strongest candidates.
 
 Use a two-stage search. Tool calls issued in the same assistant message run in parallel.
 

@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { compileOutputSchema } from "./output-schema.js";
 import {
   workerPluginManifestSchema,
   isSafeBundleFileRef,
@@ -84,6 +85,11 @@ export function validatePluginBundle(bundle: PluginBundle): string[] {
     }
   }
 
+  try {
+    compileOutputSchema(bundle.files["output.schema.json"]);
+  } catch {
+    errors.push("output schema is invalid or unsupported");
+  }
   const outputSchema = parseJsonMember(bundle.files["output.schema.json"]);
   const required = outputSchema?.required;
   for (const field of ["status", "summary", "files"]) {
@@ -91,11 +97,22 @@ export function validatePluginBundle(bundle: PluginBundle): string[] {
       errors.push(`output schema must require "${field}"`);
     }
   }
+  // 平台基线：证据文件必须能定位（path）并说明相关性（reason）；行号是检索型
+  // 角色的强约束，由各插件自己的 output schema 决定是否必填（code-search 必填，
+  // plan-mode 只在能给出精确区域时提供）
   const fileItemRequired = outputSchema?.properties?.files?.items?.required;
-  for (const field of ["path", "start_line", "end_line", "reason"]) {
+  for (const field of ["path", "reason"]) {
     if (!Array.isArray(fileItemRequired) || !fileItemRequired.includes(field)) {
       errors.push(`output schema file items must require "${field}"`);
     }
+  }
+
+  const paramKeys = new Set<string>();
+  for (const param of manifest.role.params ?? []) {
+    if (paramKeys.has(param.key)) {
+      errors.push(`role.params has duplicate key "${param.key}"`);
+    }
+    paramKeys.add(param.key);
   }
 
   return errors;

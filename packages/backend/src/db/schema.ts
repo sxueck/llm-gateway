@@ -442,6 +442,7 @@ export async function createTables(connection?: Connection) {
         resolved_commit VARCHAR(64),
         query_encrypted MEDIUMTEXT NOT NULL,
         model_profile VARCHAR(128) NOT NULL,
+        options_json TEXT COMMENT '通过插件声明校验的 run 参数（枚举值域，明文 JSON）',
         status VARCHAR(32) NOT NULL DEFAULT 'queued',
         result_encrypted MEDIUMTEXT,
         error_code VARCHAR(128),

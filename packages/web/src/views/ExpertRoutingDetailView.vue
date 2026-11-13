@@ -353,7 +353,7 @@ import {
   NTag,
   NText,
 } from 'naive-ui';
-import { ArrowBackOutline, RefreshOutline, SaveOutline } from '@vicons/ionicons5';
+import { ArrowLeft as ArrowBackOutline, RefreshCw as RefreshOutline, Save as SaveOutline } from 'lucide-vue-next';
 import {
   expertRoutingApi,
   type ClassifierConfig,

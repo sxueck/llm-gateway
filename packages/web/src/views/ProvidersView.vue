@@ -91,11 +91,11 @@ import {
 } from 'naive-ui'
 import {
   Download as DownloadIcon,
-  CloudUpload as UploadIcon,
-  FlashOutline as SpeedTestIcon,
-  SearchOutline
-} from '@vicons/ionicons5'
-import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined, ViewAgendaOutlined } from '@vicons/material'
+  Upload as UploadIcon,
+  Zap as SpeedTestIcon,
+  Search as SearchOutline
+} from 'lucide-vue-next'
+import { Pencil as EditOutlined, Trash2 as DeleteOutlined, Command as KeyboardCommandKeyOutlined, LayoutList as ViewAgendaOutlined } from 'lucide-vue-next'
 import { useProviderStore } from '@/stores/provider'
 import { useModelStore } from '@/stores/model'
 import { providerApi } from '@/api/provider'

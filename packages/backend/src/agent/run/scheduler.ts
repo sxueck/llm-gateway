@@ -8,7 +8,7 @@ import {
 import { agentSearchRunDb, agentSearchUsageDb } from "../../db/index.js";
 import { memoryLogger } from "../../services/logger.js";
 import { runEventHub } from "./run-events.js";
-import { prepareWorkspace, readRunQuery } from "./run.service.js";
+import { prepareWorkspace, readRunQuery, validateRunParams } from "./run.service.js";
 import type {
   RunExecutor,
   ExecutorHandle,
@@ -17,6 +17,7 @@ import type {
 export type { RunExecutor, ExecutorHandle };
 import type { AgentSearchRun, AgentSearchUsage } from "../../db/types.js";
 import { getMasterKey, encryptText } from "../snapshot/encryption.js";
+import { compileOutputSchema } from "../plugins/output-schema.js";
 
 export interface UsageReport {
   turns: number;
@@ -198,6 +199,26 @@ export class SearchRunScheduler {
         );
       }
       const query = await readRunQuery(run);
+      let runParams: Record<string, string> = {};
+      if (run.options_json !== null && run.options_json !== undefined) {
+        let options: unknown;
+        try {
+          options = JSON.parse(run.options_json);
+        } catch {
+          throw new RunErrorLike("invalid_state", "stored run options are invalid JSON");
+        }
+        if (!options || typeof options !== "object" || Array.isArray(options) ||
+            !('params' in options) || !options.params || typeof options.params !== "object" ||
+            Array.isArray(options.params) || Object.values(options.params).some((value) => typeof value !== "string")) {
+          throw new RunErrorLike("invalid_state", "stored run parameters are invalid");
+        }
+        runParams = options.params as Record<string, string>;
+      }
+      const paramsValidation = validateRunParams(plugin.manifest, runParams);
+      if (!paramsValidation.ok) {
+        throw new RunErrorLike("invalid_state", "stored run parameters do not match plugin declaration");
+      }
+      runParams = paramsValidation.params;
       await writeFile(
         path.join(runDir, "plugin.json"),
         JSON.stringify(
@@ -205,6 +226,7 @@ export class SearchRunScheduler {
             run_id: runId,
             query,
             model_profile: run.model_profile,
+            params: runParams,
             plugin: {
               id: plugin.manifest.id,
               version: plugin.manifest.version,
@@ -263,6 +285,19 @@ export class SearchRunScheduler {
         case "terminal": {
           const { report } = result;
           if (report.kind === "completed") {
+            const raw = report.result;
+            if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+              await this.finalize(run, "failed", { errorCode: "output_validation_failed", usage: report.usage });
+              await handle.kill().catch(() => {});
+              break;
+            }
+            const { run_id: _workerRunId, ...pluginResult } = raw as Record<string, unknown>;
+            const validate = compileOutputSchema(plugin.files["output.schema.json"]);
+            if (!validate(pluginResult)) {
+              await this.finalize(run, "failed", { errorCode: "output_validation_failed", errorMessage: "result does not match plugin output schema", usage: report.usage });
+              await handle.kill().catch(() => {});
+              break;
+            }
             const usageRow = await agentSearchUsageDb.getByRunId(runId);
             const enriched = {
               ...(report.result as Record<string, unknown>),

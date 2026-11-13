@@ -292,14 +292,14 @@ import {
   useMessage,
 } from 'naive-ui'
 import {
-  AlertCircleOutline,
-  CheckmarkCircle,
-  ClipboardOutline,
-  CloseOutline,
-  CloudDownloadOutline,
-  CubeOutline,
-  SearchOutline,
-} from '@vicons/ionicons5'
+  CircleAlert as AlertCircleOutline,
+  CircleCheck as CheckmarkCircle,
+  Clipboard as ClipboardOutline,
+  X as CloseOutline,
+  CloudDownload as CloudDownloadOutline,
+  Box as CubeOutline,
+  Search as SearchOutline,
+} from 'lucide-vue-next'
 import { modelApi } from '@/api/model'
 import { extractModelAttributes, providerApi, type ModelInfo } from '@/api/provider'
 import { useModelStore } from '@/stores/model'

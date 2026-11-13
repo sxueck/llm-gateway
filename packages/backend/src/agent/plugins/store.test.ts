@@ -135,14 +135,31 @@ beforeEach(() => {
 describe("plugin store: seed", () => {
   it("seeds the built-in fixture once and is idempotent on restart", async () => {
     await seedBuiltinPlugins();
-    expect(mocks.rows.size).toBe(1);
+    expect(mocks.rows.size).toBe(BUILTIN_PLUGIN_BUNDLES.length);
     const first = mocks.rows.get(FIXTURE_KEY);
     expect(first.status).toBe("published");
-    expect(first.digest).toBe(computeBundleDigest(BUILTIN_PLUGIN_BUNDLES[0]));
+    const codeSearchBundle = BUILTIN_PLUGIN_BUNDLES.find(
+      (b) => b.manifest.id === PLUGIN_ID,
+    )!;
+    expect(first.digest).toBe(computeBundleDigest(codeSearchBundle));
 
     await seedBuiltinPlugins();
-    expect(mocks.rows.size).toBe(1);
-    expect(mocks.workerPluginRepository.create).toHaveBeenCalledTimes(1);
+    expect(mocks.rows.size).toBe(BUILTIN_PLUGIN_BUNDLES.length);
+    expect(mocks.workerPluginRepository.create).toHaveBeenCalledTimes(
+      BUILTIN_PLUGIN_BUNDLES.length,
+    );
+  });
+
+  it("seeds the plan-mode fixture with params and a validating bundle", async () => {
+    await seedBuiltinPlugins();
+    const planMode = mocks.rows.get("com.llm-gateway.plan-mode@0.1.0");
+    expect(planMode).toBeDefined();
+    expect(planMode.status).toBe("published");
+    const bundle = BUILTIN_PLUGIN_BUNDLES.find(
+      (b) => b.manifest.id === "com.llm-gateway.plan-mode",
+    )!;
+    expect(bundle.manifest.role.params?.[0]?.key).toBe("perspective");
+    expect(validatePluginBundle(bundle)).toEqual([]);
   });
 
   it("refuses to overwrite a stored version whose digest differs (immutability)", async () => {
@@ -153,7 +170,9 @@ describe("plugin store: seed", () => {
     mocks.configs.clear();
     await seedBuiltinPlugins();
     expect(mocks.rows.get(FIXTURE_KEY).digest).toBe("sha256:deadbeef");
-    expect(mocks.workerPluginRepository.create).toHaveBeenCalledTimes(1);
+    expect(mocks.workerPluginRepository.create).toHaveBeenCalledTimes(
+      BUILTIN_PLUGIN_BUNDLES.length,
+    );
   });
 });
 

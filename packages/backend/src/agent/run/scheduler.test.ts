@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat } from "fs/promises";
+import { mkdtemp, readFile, rm, stat } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -164,7 +164,6 @@ function validResult(runId: string) {
   return {
     run_id: runId,
     status: "completed",
-    repository: { source_type: "snapshot", snapshot_id: "snap_1" },
     summary: "Found the refresh flow.",
     files: [
       {
@@ -176,15 +175,6 @@ function validResult(runId: string) {
     ],
     uncertainties: [],
     next_questions: [],
-    usage: {
-      plugin: `com.llm-gateway.code-search@${CODE_SEARCH_MANIFEST.version}`,
-      model_profile: "search-fast",
-      turns: 1,
-      tool_calls: 1,
-      input_tokens: 10,
-      output_tokens: 20,
-      cost: 0.001,
-    },
   };
 }
 
@@ -203,6 +193,7 @@ async function seedRun(id: string) {
     resolved_commit: null,
     query_encrypted: "ENC:find refresh flow",
     model_profile: "search-fast",
+    options_json: null,
     status: "queued",
     error_code: null,
     error_message: null,
@@ -292,6 +283,52 @@ describe("SearchRunScheduler", () => {
     );
   });
 
+  it("passes declared run params from options_json into the worker plugin file", async () => {
+    const scheduler = new SearchRunScheduler();
+    const executor = new FakeExecutor();
+    scheduler.setExecutor(executor);
+    await seedRun("asr_params");
+    mocks.runs.get("asr_params").options_json = JSON.stringify({
+      params: { breadth: "thorough" },
+    });
+    scheduler.registerServiceToken("asr_params", "tok123");
+    scheduler.enqueue("asr_params");
+
+    await waitFor(() => executor.lastEnv !== null);
+    const pluginFile = JSON.parse(
+      await readFile(
+        path.join(workspaceBase, "asr_params", "run", "plugin.json"),
+        "utf8",
+      ),
+    ) as { params?: Record<string, string>; query?: string };
+    expect(pluginFile.params).toEqual({ breadth: "thorough" });
+    // readRunQuery 解密链路已有测试覆盖，这里只验证参数透传
+
+    scheduler.reportTerminal("asr_params", {
+      kind: "failed",
+      error_code: "cancelled",
+      error_message: "stop",
+      usage: { turns: 0, tool_calls: 0, input_tokens: 0, output_tokens: 0, cost: 0 },
+    });
+    await waitFor(() => mocks.runs.get("asr_params").status === "failed");
+  });
+
+  it.each(["{", JSON.stringify({ params: { breadth: 3 } }), JSON.stringify({ params: { breadth: "invalid" } })])(
+    "fails before starting a worker when stored options are corrupt: %s",
+    async (options) => {
+      const scheduler = new SearchRunScheduler();
+      const executor = new FakeExecutor();
+      scheduler.setExecutor(executor);
+      await seedRun("asr_corrupt");
+      mocks.runs.get("asr_corrupt").options_json = options;
+      scheduler.registerServiceToken("asr_corrupt", "tok");
+      scheduler.enqueue("asr_corrupt");
+      await waitFor(() => mocks.runs.get("asr_corrupt").status === "failed");
+      expect(mocks.runs.get("asr_corrupt").error_code).toBe("invalid_state");
+      expect(executor.lastEnv).toBeNull();
+    },
+  );
+
   it("enriches a model-shaped result with gateway-side repository/usage before storing", async () => {
     const scheduler = new SearchRunScheduler();
     scheduler.setExecutor(new FakeExecutor());
@@ -353,6 +390,65 @@ describe("SearchRunScheduler", () => {
       output_tokens: 222,
       cost: 0.5,
     });
+  });
+
+  it("stores a plan-mode-shaped result with plugin-specific fields preserved", async () => {
+    const scheduler = new SearchRunScheduler();
+    scheduler.setExecutor(new FakeExecutor());
+    await seedRun("asr_plan");
+    mocks.runs.get("asr_plan").plugin_id = "com.llm-gateway.plan-mode";
+    mocks.runs.get("asr_plan").plugin_version = "0.1.0";
+    scheduler.registerServiceToken("asr_plan", "tok");
+    scheduler.enqueue("asr_plan");
+    await waitFor(() => mocks.runs.get("asr_plan").status === "running");
+
+    scheduler.reportTerminal("asr_plan", {
+      kind: "completed",
+      result: {
+        status: "completed",
+        summary: "perspective: balanced — plan the change.",
+        steps: [
+          { action: "Add refresh guard", detail: "reuse withRetry", files: ["src/auth/refresh.ts"] },
+        ],
+        files: [{ path: "src/auth/refresh.ts", reason: "critical file" }],
+        risks: ["Session cache may go stale"],
+        verification: "npm test -- auth",
+        uncertainties: [],
+        next_questions: [],
+      },
+      usage: { turns: 1, tool_calls: 1, input_tokens: 0, output_tokens: 0, cost: 0 },
+    });
+
+    await waitFor(() => mocks.runs.get("asr_plan").status === "completed");
+    const stored = JSON.parse(
+      (mocks.runs.get("asr_plan").result_encrypted as string).slice(4),
+    );
+    // passthrough：插件专有字段不被基线 Zod 剥离
+    expect(stored.steps[0].action).toBe("Add refresh guard");
+    expect(stored.verification).toBe("npm test -- auth");
+    expect(stored.files[0]).toEqual({
+      path: "src/auth/refresh.ts",
+      reason: "critical file",
+    });
+  });
+
+  it.each([
+    { status: "completed", summary: "missing line evidence", files: [{ path: "src/a.ts", reason: "entry" }] },
+    { status: "completed", summary: "missing plan fields", files: [] },
+  ])("rejects results that violate the selected plugin schema", async (result) => {
+    const scheduler = new SearchRunScheduler();
+    scheduler.setExecutor(new FakeExecutor());
+    await seedRun("asr_schema");
+    if (result.summary === "missing plan fields") {
+      mocks.runs.get("asr_schema").plugin_id = "com.llm-gateway.plan-mode";
+      mocks.runs.get("asr_schema").plugin_version = "0.1.0";
+    }
+    scheduler.registerServiceToken("asr_schema", "tok");
+    scheduler.enqueue("asr_schema");
+    await waitFor(() => mocks.runs.get("asr_schema").status === "running");
+    await waitFor(() => scheduler.reportTerminal("asr_schema", { kind: "completed", result, usage: { turns: 1, tool_calls: 0, input_tokens: 0, output_tokens: 0, cost: 0 } }));
+    await waitFor(() => mocks.runs.get("asr_schema").status === "failed");
+    expect(mocks.runs.get("asr_schema").error_code).toBe("output_validation_failed");
   });
 
   it("caps concurrent starts and drains the queue as slots free", async () => {
@@ -433,7 +529,7 @@ describe("SearchRunScheduler", () => {
     scheduler.setExecutor(executor);
     await seedRun("asr_crash");
     scheduler.enqueue("asr_crash");
-    await waitFor(() => mocks.runs.get("asr_crash").status === "running");
+    await waitFor(() => executor.exitedResolvers.length > 0);
     executor.exitedResolvers.forEach((r) => r({ code: 1, signal: null }));
     await waitFor(() => mocks.runs.get("asr_crash").status === "failed");
     expect(mocks.runs.get("asr_crash").error_code).toBe(
@@ -447,7 +543,8 @@ describe("SearchRunScheduler", () => {
     scheduler.setExecutor(executor);
     await seedRun("asr_cancel");
     scheduler.enqueue("asr_cancel");
-    await waitFor(() => mocks.runs.get("asr_cancel").status === "running");
+    // running is set before worker startup; this case must exercise cancellation of a live worker.
+    await waitFor(() => executor.exitedResolvers.length > 0);
 
     const first =
       await mocks.agentSearchRunRepository.requestCancellation("asr_cancel");

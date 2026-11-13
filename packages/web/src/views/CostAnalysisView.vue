@@ -212,7 +212,7 @@
 import { ref, computed, onMounted, h, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
-import { AddOutline, SearchOutline, CreateOutline, TrashOutline } from '@vicons/ionicons5'
+import { Plus as AddOutline, Search as SearchOutline, Pencil as CreateOutline, Trash2 as TrashOutline } from 'lucide-vue-next'
 import {
   NButton,
   NIcon,

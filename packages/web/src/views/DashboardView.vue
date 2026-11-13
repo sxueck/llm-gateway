@@ -499,7 +499,7 @@ import {
   NAlert,
   NSkeleton
 } from 'naive-ui'
-import { RefreshOutline } from '@vicons/ionicons5'
+import { RefreshCw as RefreshOutline } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useProviderStore } from '@/stores/provider'
 import { useVirtualKeyStore } from '@/stores/virtual-key'

@@ -12,6 +12,12 @@ import {
   CODE_SEARCH_PROMPT_MD,
 } from "./code-search.js";
 import {
+  PLAN_MODE_INPUT_SCHEMA,
+  PLAN_MODE_MANIFEST,
+  PLAN_MODE_OUTPUT_SCHEMA,
+  PLAN_MODE_PROMPT_MD,
+} from "./plan-mode.js";
+import {
   agentSearchRunDb,
   systemConfigDb,
   userPluginEnrollmentDb,
@@ -112,6 +118,12 @@ export const BUILTIN_PLUGIN_BUNDLES: PluginBundle[] = [
     CODE_SEARCH_PROMPT_MD,
     CODE_SEARCH_INPUT_SCHEMA,
     CODE_SEARCH_OUTPUT_SCHEMA,
+  ),
+  bundle(
+    PLAN_MODE_MANIFEST,
+    PLAN_MODE_PROMPT_MD,
+    PLAN_MODE_INPUT_SCHEMA,
+    PLAN_MODE_OUTPUT_SCHEMA,
   ),
 ];
 

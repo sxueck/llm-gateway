@@ -54,7 +54,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useMessage, NSpace, NCard, NButton, NSelect, NInput, NIcon, NEmpty } from 'naive-ui';
-import { SearchOutline, PlayOutline, PauseOutline } from '@vicons/ionicons5';
+import { Search as SearchOutline, Play as PlayOutline, Pause as PauseOutline } from 'lucide-vue-next';
 import { configApi, type LogEntry } from '@/api/config';
 import { formatTimestamp } from '@/utils/common';
 import PageHeader from '@/components/PageHeader.vue';

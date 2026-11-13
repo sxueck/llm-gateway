@@ -177,7 +177,7 @@ import {
   NTag,
   NText,
 } from 'naive-ui';
-import { PlayOutline } from '@vicons/ionicons5';
+import { Play as PlayOutline } from 'lucide-vue-next';
 import {
   expertRoutingApi,
   type Band,

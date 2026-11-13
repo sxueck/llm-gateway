@@ -25,6 +25,7 @@
     "@fastify/static": "^8.0.2",
     "@google/generative-ai": "^0.24.1",
     "@llm-gateway/shared": "workspace:*",
+    "ajv": "^8.17.1",
     "chinese-workday": "^2.0.0",
     "date-holidays": "^3.30.2",
     "dockerode": "^4.0.4",

@@ -1,0 +1,79 @@
+/*
+ * shadcn-vue Tailwind 试点样式。
+ * 仅引入 theme + utilities 两层，刻意跳过 preflight（base 层的全局 reset），
+ * 以免破坏 Naive UI 的默认样式。
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  /*
+   * shadcn-vue trace 组件（registry/ui/trace，官方依赖 tw-animate-css）所需的
+   * 折叠动画 token。项目未引入 tw-animate-css，此处按其同名实现内联定义，
+   * 高度变量来自 reka-ui 的 CollapsibleContent。
+   */
+  --animate-collapsible-down: collapsible-down 0.2s ease-out;
+  --animate-collapsible-up: collapsible-up 0.2s ease-out;
+
+  @keyframes collapsible-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--reka-collapsible-content-height);
+    }
+  }
+
+  @keyframes collapsible-up {
+    from {
+      height: var(--reka-collapsible-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+}
+
+/* 与全局 style.css 的品牌绿/语义色保持一致的 light 主题 token */
+:root {
+  --radius: 0.5rem;
+  --background: #ffffff;
+  --foreground: #1f1f1f;
+  --card: #ffffff;
+  --card-foreground: #1f1f1f;
+  --primary: #0f6b4a;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f1f3;
+  --secondary-foreground: #1f1f1f;
+  --muted: #f7f8fa;
+  --muted-foreground: #8c8c8c;
+  --accent: #f0f1f3;
+  --accent-foreground: #1f1f1f;
+  --destructive: #d03050;
+  --destructive-foreground: #ffffff;
+  --border: #e5e7eb;
+  --input: #e5e7eb;
+  --ring: #0f6b4a;
+}

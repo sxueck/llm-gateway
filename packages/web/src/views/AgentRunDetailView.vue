@@ -170,41 +170,7 @@
           :description="t('agentRunDetail.eventsEmpty')"
           class="events-empty"
         />
-        <div v-else class="event-list">
-          <div
-            v-for="event in detail?.events ?? []"
-            :key="event.seq"
-            class="event-row"
-          >
-            <span class="event-dot" :class="eventDotClass(event.type)" />
-            <div class="event-body">
-              <div class="event-head">
-                <code class="event-seq">#{{ event.seq }}</code>
-                <n-tag
-                  size="small"
-                  :bordered="false"
-                  :type="eventTagType(event.type)"
-                >
-                  {{ event.type }}
-                </n-tag>
-                <span class="event-summary">{{ eventSummary(event) }}</span>
-                <span class="event-time">
-                  {{ formatEventTime(event.created_at) }}
-                </span>
-              </div>
-              <n-collapse class="event-payload">
-                <n-collapse-item
-                  :title="t('agentRunDetail.payload')"
-                  :name="event.seq"
-                >
-                  <pre class="payload-json">{{
-                    JSON.stringify(event.payload, null, 2)
-                  }}</pre>
-                </n-collapse-item>
-              </n-collapse>
-            </div>
-          </div>
-        </div>
+        <AgentRunEventTrace v-else :events="detail?.events ?? []" />
       </n-card>
     </div>
 
@@ -241,8 +207,6 @@ import {
   NAlert,
   NButton,
   NCard,
-  NCollapse,
-  NCollapseItem,
   NDataTable,
   NDescriptions,
   NDescriptionsItem,
@@ -253,7 +217,8 @@ import {
   NTimelineItem,
   useMessage,
 } from "naive-ui";
-import { ArrowBackOutline, RefreshOutline } from "@vicons/ionicons5";
+import AgentRunEventTrace from "./AgentRunEventTrace.vue";
+import { ArrowLeft as ArrowBackOutline, RefreshCw as RefreshOutline } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
 import { streamSSE } from "@/utils/sse";
@@ -420,55 +385,6 @@ const lifecycleSteps = computed<LifecycleStep[]>(() => {
   return steps;
 });
 
-function eventTagType(
-  type: string,
-): "default" | "info" | "success" | "warning" | "error" {
-  if (type.startsWith("tool.")) return "warning";
-  if (type === "model.completed") return "success";
-  if (type === "run.failed") return "error";
-  if (type === "run.cancelled") return "warning";
-  if (type === "run.completed") return "success";
-  if (type === "run.queued") return "default";
-  return "info";
-}
-
-function eventDotClass(type: string): string {
-  const tag = eventTagType(type);
-  return `dot-${tag}`;
-}
-
-function eventSummary(event: AgentRunEvent): string {
-  const p = event.payload ?? {};
-  switch (event.type) {
-    case "run.queued":
-    case "run.started":
-      return typeof p.plugin === "string" ? p.plugin : "";
-    case "source.resolved":
-      return [p.source_type, p.snapshot_id]
-        .filter((v) => v !== null && v !== undefined && v !== "")
-        .map(String)
-        .join(" · ");
-    case "worker.started":
-      return typeof p.executor === "string" ? p.executor : "";
-    case "model.completed":
-      return `turn ${String(p.turn ?? "?")} · ↑${formatNumber(
-        Number(p.prompt_tokens ?? 0),
-      )} ↓${formatNumber(Number(p.completion_tokens ?? 0))}`;
-    default: {
-      const entries = Object.entries(p)
-        .filter(
-          ([, v]) =>
-            typeof v === "string" ||
-            typeof v === "number" ||
-            typeof v === "boolean",
-        )
-        .slice(0, 3)
-        .map(([k, v]) => `${k}: ${String(v)}`);
-      return entries.join(" · ");
-    }
-  }
-}
-
 function formatNumber(value: number): string {
   return new Intl.NumberFormat().format(value);
 }
@@ -486,12 +402,6 @@ function formatDuration(value: number | null): string {
 
 function formatTime(value: number): string {
   return new Date(value).toLocaleString();
-}
-
-function formatEventTime(value: number): string {
-  const d = new Date(value);
-  const pad = (n: number, w = 2) => String(n).padStart(w, "0");
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
 }
 
 function stopPolling() {
@@ -759,79 +669,12 @@ onBeforeUnmount(stopLive);
 .events-empty {
   padding: 48px 0;
 }
-.event-list {
-  display: flex;
-  flex-direction: column;
+.related-card {
+  margin-top: 16px;
 }
-.event-row {
-  display: flex;
-  gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px dashed #ececec;
+.related-card .events-empty {
+  padding: 24px 0;
 }
-.event-row:last-child {
-  border-bottom: none;
-}
-.event-dot {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-top: 6px;
-  background: #d9d9d9;
-}
-.event-dot.dot-info {
-  background: var(--color-info);
-}
-.event-dot.dot-success {
-  background: var(--color-success);
-}
-.event-dot.dot-warning {
-  background: var(--color-warning);
-}
-.event-dot.dot-error {
-  background: var(--color-error);
-}
-.event-body {
-  min-width: 0;
-  flex: 1;
-}
-.event-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.event-seq {
-  font-size: 11px;
-  color: #8c8c8c;
-}
-.event-summary {
-  font-size: 12px;
-  color: #595959;
-  word-break: break-all;
-}
-.event-time {
-  margin-left: auto;
-  font-size: 12px;
-  color: #8c8c8c;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.event-payload :deep(.n-collapse-item__header) {
-  font-size: 12px;
-  color: #8c8c8c;
-}
-.payload-json {
-  margin: 0;
-  padding: 10px;
-  background: #f7f8fa;
-  border-radius: 6px;
-  font-size: 12px;
-  line-height: 1.6;
-  overflow-x: auto;
-}
-
 @media (max-width: 1100px) {
   .body-grid {
     grid-template-columns: 1fr;

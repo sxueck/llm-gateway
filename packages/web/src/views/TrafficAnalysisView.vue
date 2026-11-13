@@ -163,7 +163,7 @@ import {
   NSpace, NCard, NButton, NIcon, NTag, NAlert, NSkeleton, NResult, NEmpty,
   NGrid, NGi, NStatistic, NSelect, NSpin, NTooltip, NCheckbox,
 } from 'naive-ui';
-import { RefreshOutline } from '@vicons/ionicons5';
+import { RefreshCw as RefreshOutline } from 'lucide-vue-next';
 import VChart from 'vue-echarts';
 import { configApi, type TrafficAnalysisResponse, type TrafficAnalysisHistoryDayResponse, type ModelResponseTimeStat } from '@/api/config';
 import { formatResponseTime } from '@/utils/format';

@@ -125,7 +125,7 @@ import {
   NModal,
   useMessage
 } from 'naive-ui'
-import { AddOutline, CloseOutline, DocumentTextOutline } from '@vicons/ionicons5'
+import { Plus as AddOutline, X as CloseOutline, FileText as DocumentTextOutline } from 'lucide-vue-next'
 
 interface ModelInput {
   name: string

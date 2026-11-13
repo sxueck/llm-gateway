@@ -25,7 +25,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NIcon, NTooltip } from 'naive-ui'
-import { SpeedometerOutline } from '@vicons/ionicons5'
+import { Gauge as SpeedometerOutline } from 'lucide-vue-next'
 import { quotaHealthColor } from '@/utils/virtual-key-quota'
 import { formatTokenNumber } from '@/utils/format'
 import type { VirtualKeyQuotaStatus } from '@/composables/useVirtualKeyQuotaStatus'

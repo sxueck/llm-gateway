@@ -30,7 +30,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { NButton, NIcon } from 'naive-ui'
-import { InfoOutlined } from '@vicons/material'
+import { Info as InfoOutlined } from 'lucide-vue-next'
 import type { VirtualKeyQuotaPeriod } from '@/api/virtual-key'
 
 defineProps<{

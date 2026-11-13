@@ -7,6 +7,12 @@ import {
   CODE_SEARCH_PROMPT_MD,
 } from "./code-search.js";
 import {
+  PLAN_MODE_INPUT_SCHEMA,
+  PLAN_MODE_MANIFEST,
+  PLAN_MODE_OUTPUT_SCHEMA,
+  PLAN_MODE_PROMPT_MD,
+} from "./plan-mode.js";
+import {
   globToRegExp,
   isForbiddenSnapshotPath,
   isSafeSnapshotPath,
@@ -97,6 +103,30 @@ describe("plugin registry", () => {
     b.files["index.ts"] = "export {}";
     expect(validatePluginBundle(b).join(" ")).toContain(
       "outside the allowed set",
+    );
+  });
+
+  it("accepts the plan-mode bundle (path+reason baseline, optional line ranges)", () => {
+    expect(
+      validatePluginBundle({
+        manifest: JSON.parse(JSON.stringify(PLAN_MODE_MANIFEST)),
+        files: {
+          "prompt.md": PLAN_MODE_PROMPT_MD,
+          "input.schema.json": JSON.stringify(PLAN_MODE_INPUT_SCHEMA, null, 2),
+          "output.schema.json": JSON.stringify(PLAN_MODE_OUTPUT_SCHEMA, null, 2),
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it("rejects duplicate role.params keys", () => {
+    const b = validBundle();
+    (b.manifest.role as any).params = [
+      { key: "breadth", values: ["quick"], optional: true },
+      { key: "breadth", values: ["thorough"], optional: true },
+    ];
+    expect(validatePluginBundle(b).join(" ")).toContain(
+      'role.params has duplicate key "breadth"',
     );
   });
 });

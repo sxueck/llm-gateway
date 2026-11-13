@@ -3,7 +3,7 @@ import { renderToString } from 'vue/server-renderer';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
-vi.mock('@vicons/ionicons5', () => ({ SpeedometerOutline: 'icon-speedometer' }));
+vi.mock('lucide-vue-next', () => ({ Gauge: 'icon-speedometer' }));
 vi.mock('naive-ui', () => {
   const stub = defineComponent({
     inheritAttrs: false,

@@ -133,7 +133,8 @@ import {
   NSpace,
   NTag,
 } from 'naive-ui'
-import { OpenInNewOutlined, RefreshOutlined, SearchOutlined } from '@vicons/material'
+import { ExternalLink as OpenInNewOutlined } from 'lucide-vue-next'
+import { RefreshCw as RefreshOutlined, Search as SearchOutlined } from 'lucide-vue-next'
 import { meApi } from '@/api/me'
 import type { VirtualKey } from '@/types'
 import { formatDateTime } from '@/utils/date'

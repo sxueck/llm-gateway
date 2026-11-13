@@ -34,6 +34,18 @@ export const pluginModelPolicySchema = z.object({
   allow_client_override: z.boolean().default(false),
 });
 
+/**
+ * 插件声明的可调 run 参数（qoder 的 search breadth / plan perspective 模式）：
+ * 客户端在创建 run 时只能从枚举值中选取，worker 以 <run_params> 注入首条用户消息。
+ */
+export const pluginRunParamSchema = z.object({
+  key: z.string().regex(/^[a-z][a-z0-9_]{0,31}$/),
+  values: z.array(z.string().min(1).max(64)).min(1).max(8),
+  optional: z.boolean().default(false),
+  description: z.string().max(200).optional(),
+});
+export type PluginRunParam = z.infer<typeof pluginRunParamSchema>;
+
 export const workerPluginManifestSchema = z.object({
   schema_version: z.literal("1"),
   id: z
@@ -53,6 +65,7 @@ export const workerPluginManifestSchema = z.object({
     system_prompt: z.string(),
     input_schema: z.string(),
     output_schema: z.string(),
+    params: z.array(pluginRunParamSchema).max(4).optional(),
   }),
   tool_policy: pluginToolPolicySchema,
   workspace_policy: pluginWorkspacePolicySchema,
@@ -268,6 +281,16 @@ export const createSearchRunRequestSchema = z.object({
   options: z
     .object({
       model_profile: z.string().min(1).max(128).optional(),
+      // 仅允许插件 role.params 声明过的键与枚举值；服务端在 validateRunInputs 中逐项校验
+      params: z
+        .record(
+          z.string().regex(/^[a-z][a-z0-9_]{0,31}$/),
+          z.string().min(1).max(64),
+        )
+        .refine((v) => Object.keys(v).length <= 4, {
+          message: "options.params supports at most 4 keys",
+        })
+        .default({}),
     })
     .default({}),
 });
@@ -307,12 +330,20 @@ export interface SearchRunEvent {
 export const structuredResultFileSchema = z
   .object({
     path: z.string().min(1).max(1024),
-    start_line: z.number().int().min(1),
-    end_line: z.number().int().min(1),
+    // 行号是 code-search 型证据的强约束；plan 型角色允许只给 path+reason（qoder
+    // Plan agent 的 Critical Files 即此形态），两值只要出现就必须成对且有序
+    start_line: z.number().int().min(1).optional(),
+    end_line: z.number().int().min(1).optional(),
     reason: z.string().min(1).max(2000),
     evidence: z.string().max(4000).optional(),
   })
-  .refine((v) => v.end_line >= v.start_line, {
+  .refine(
+    (v) =>
+      (v.start_line === undefined && v.end_line === undefined) ||
+      (v.start_line !== undefined && v.end_line !== undefined),
+    { message: "start_line and end_line must be provided together", path: ["start_line"] },
+  )
+  .refine((v) => v.end_line === undefined || v.start_line === undefined || v.end_line >= v.start_line, {
     message: "end_line must be >= start_line",
     path: ["end_line"],
   });
@@ -340,7 +371,10 @@ export const structuredResultSchema = z.object({
   uncertainties: z.array(z.string().max(1000)).max(20).default([]),
   next_questions: z.array(z.string().max(1000)).max(20).default([]),
   usage: structuredResultUsageSchema,
-});
+})
+  // 基线契约（status/summary/files/usage）之外的插件专有字段（如 plan-mode 的
+  // steps/risks/verification）原样保留；插件自身 output schema 在发布时已约束其形状
+  .passthrough();
 
 export type StructuredResultFile = z.infer<typeof structuredResultFileSchema>;
 export type StructuredSearchResult = z.infer<typeof structuredResultSchema>;

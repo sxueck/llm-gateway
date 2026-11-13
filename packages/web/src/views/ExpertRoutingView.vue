@@ -56,7 +56,7 @@ import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useMessage, useThemeVars, NButton, NCard, NDataTable, NEmpty, NIcon, NPopconfirm, NSpace, NSwitch, NTag, NText } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
-import { AddOutline, RefreshOutline } from '@vicons/ionicons5';
+import { Plus as AddOutline, RefreshCw as RefreshOutline } from 'lucide-vue-next';
 import { expertRoutingApi, type Band, type ExpertRouting } from '@/api/expert-routing';
 import PageHeader from '@/components/PageHeader.vue';
 import { createDefaultExpertRoutingConfig } from '@/utils/expert-routing';

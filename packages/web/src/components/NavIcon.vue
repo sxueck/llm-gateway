@@ -1,19 +1,12 @@
 <template>
-  <svg
+  <component
+    :is="icon"
     class="nav-glyph"
-    :width="size"
-    :height="size"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
+    :size="size"
     :stroke-width="strokeWidth"
-    stroke-linecap="round"
-    stroke-linejoin="round"
     aria-hidden="true"
     focusable="false"
-  >
-    <path v-for="(d, index) in paths" :key="index" :d="d" />
-  </svg>
+  />
 </template>
 
 <script setup lang="ts">
@@ -24,16 +17,16 @@ import type { NavIconName } from '@/components/nav-icons';
 const props = withDefaults(
   defineProps<{
     name: NavIconName;
-    size?: number | string;
+    size?: number;
     strokeWidth?: number;
   }>(),
   {
-    size: 18,
-    strokeWidth: 1.7,
+    size: 16,
+    strokeWidth: 1.75,
   }
 );
 
-const paths = computed(() => NAV_GLYPHS[props.name]);
+const icon = computed(() => NAV_GLYPHS[props.name]);
 </script>
 
 <style scoped>

@@ -97,11 +97,11 @@ import {
   NIcon
 } from 'naive-ui'
 import {
-  PersonOutline,
-  LockClosedOutline,
-  LogInOutline,
-  CheckmarkOutline
-} from '@vicons/ionicons5'
+  User as PersonOutline,
+  Lock as LockClosedOutline,
+  LogIn as LogInOutline,
+  Check as CheckmarkOutline,
+} from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { useSystemConfig } from '@/composables/useSystemConfig'
 

@@ -136,8 +136,8 @@ export const agentSearchRunRepository = {
         `INSERT INTO agent_search_runs
          (id, user_id, virtual_key_id, plugin_id, plugin_version, plugin_digest, source_type,
           snapshot_id, public_git_url_encrypted, requested_ref, resolved_commit, query_encrypted,
-          model_profile, status, error_code, error_message, service_token_hash, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, ?)`,
+          model_profile, options_json, status, error_code, error_message, service_token_hash, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, ?)`,
         [
           run.id,
           run.user_id,
@@ -152,6 +152,7 @@ export const agentSearchRunRepository = {
           run.resolved_commit,
           run.query_encrypted,
           run.model_profile,
+          run.options_json,
           run.service_token_hash,
           run.created_at,
           run.expires_at,

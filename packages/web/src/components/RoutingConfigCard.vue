@@ -240,11 +240,11 @@ import {
   NCard, NTag, NText, NIcon, NButton, NTooltip, NPopconfirm, 
   NProgress 
 } from 'naive-ui';
-import { 
-  CodeOutline, CreateOutline, TrashOutline, 
-  CheckmarkCircle, AlertCircleOutline,
-  TimeOutline, KeyOutline
-} from '@vicons/ionicons5';
+import {
+  Code as CodeOutline, Pencil as CreateOutline, Trash2 as TrashOutline,
+  CircleCheck as CheckmarkCircle, CircleAlert as AlertCircleOutline,
+  Clock as TimeOutline, Key as KeyOutline
+} from 'lucide-vue-next';
 
 import type { RoutingTargetStatus } from '@/api/config';
 import { ruleCrossesMidnight, type TimePriorityTimeRule } from '@/utils/time-priority';

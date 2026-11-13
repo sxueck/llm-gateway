@@ -20,6 +20,7 @@ import './style.css'
 import './styles/common.css'
 import './styles/table.css'
 import './styles/modal.css'
+import './styles/shadcn.css'
 
 use([
   CanvasRenderer,

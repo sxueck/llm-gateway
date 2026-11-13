@@ -44,6 +44,11 @@ defineProps<{
   padding-top: 2px;
 }
 
+.page-heading__text {
+  flex: 1;
+  min-width: 0;
+}
+
 .page-heading__eyebrow {
   color: #8c8c8c;
   font-size: 11px;

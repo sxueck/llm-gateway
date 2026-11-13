@@ -207,7 +207,8 @@
 import { ref, h, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NPopconfirm, NDivider, NIcon, NTooltip, NText, NRadioGroup, NRadioButton } from 'naive-ui';
-import { EditOutlined, DeleteOutlined, KeyboardCommandKeyOutlined, ContentCopyOutlined, SearchOutlined } from '@vicons/material';
+import { Pencil as EditOutlined, Trash2 as DeleteOutlined, Command as KeyboardCommandKeyOutlined, Copy as ContentCopyOutlined } from 'lucide-vue-next';
+import { Search as SearchOutlined } from 'lucide-vue-next';
 import { useI18n } from 'vue-i18n';
 import { useModelStore } from '@/stores/model';
 import { useProviderStore } from '@/stores/provider';

@@ -20,6 +20,7 @@ export type RunOperationError = {
   code:
     | 'unknown_plugin'
     | 'plugin_revoked'
+    | 'invalid_run_param'
     | 'snapshot_not_ready'
     | 'snapshot_expired'
     | 'model_profile_not_configured'
@@ -35,9 +36,58 @@ export class RunError extends Error {
   }
 }
 
+/**
+ * run 参数按插件声明逐项校验：键必须声明、值必须命中枚举；未声明 optional 的
+ * 参数缺省时报错。返回可直接下发给 worker 的规范化参数表。
+ */
+export function validateRunParams(
+  manifest: {
+    id: string;
+    role?: { params?: readonly {
+      key: string;
+      values: readonly string[];
+      optional: boolean;
+    }[] };
+  },
+  params: Record<string, string>,
+): { ok: true; params: Record<string, string> } | { ok: false; message: string } {
+  const defs = manifest.role?.params ?? [];
+  const defByKey = new Map(defs.map((d) => [d.key, d]));
+  for (const key of Object.keys(params)) {
+    const def = defByKey.get(key);
+    if (!def) {
+      return {
+        ok: false,
+        message: `plugin ${manifest.id} does not declare run param "${key}"`,
+      };
+    }
+    if (!def.values.includes(params[key])) {
+      return {
+        ok: false,
+        message: `run param "${key}" must be one of: ${def.values.join(', ')}`,
+      };
+    }
+  }
+  for (const def of defs) {
+    if (!def.optional && !(def.key in params)) {
+      return {
+        ok: false,
+        message: `run param "${def.key}" is required by plugin ${manifest.id}`,
+      };
+    }
+  }
+  const picked: Record<string, string> = {};
+  for (const def of defs) {
+    if (params[def.key] !== undefined) picked[def.key] = params[def.key];
+  }
+  return { ok: true, params: picked };
+}
+
 export async function validateRunInputs(principal: { virtualKeyId: string }, body: CreateSearchRunRequest): Promise<{
   plugin: ResolvedPlugin;
   profile: string;
+  /** 通过插件声明校验的规范化 run 参数（未知键/非法值已拒绡）。 */
+  params: Record<string, string>;
   /** 快照源解析出的 head_commit（快照未携带时为 null），随 run 落库为 resolved_commit。 */
   resolvedCommit: string | null;
 }> {
@@ -77,6 +127,14 @@ export async function validateRunInputs(principal: { virtualKeyId: string }, bod
     });
   }
 
+  const paramsResult = validateRunParams(
+    plugin.manifest,
+    body.options?.params ?? {},
+  );
+  if (!paramsResult.ok) {
+    throw new RunError({ code: 'invalid_run_param', message: paramsResult.message });
+  }
+
   let resolvedCommit: string | null = null;
   if (body.source.type === 'snapshot') {
     // 属主校验在 service 内（不泄露存在性）
@@ -94,7 +152,7 @@ export async function validateRunInputs(principal: { virtualKeyId: string }, bod
     resolvedCommit = snapshot.head_commit;
   }
 
-  return { plugin, profile, resolvedCommit };
+  return { plugin, profile, params: paramsResult.params, resolvedCommit };
 }
 
 export async function persistNewRun(params: {
@@ -102,6 +160,8 @@ export async function persistNewRun(params: {
   body: CreateSearchRunRequest;
   plugin: { manifest: { id: string; version: string }; digest: string };
   profile: string;
+  /** 通过插件声明校验的规范化 run 参数；值域为插件枚举，非自由文本，明文落库。 */
+  params?: Record<string, string>;
   resolvedCommit: string | null;
 }): Promise<{ run: AgentSearchRun; serviceToken: string; query: string }> {
   const { principal, body, plugin, profile } = params;
@@ -124,6 +184,7 @@ export async function persistNewRun(params: {
     resolved_commit: params.resolvedCommit,
     query_encrypted: encryptText(masterKey, body.query),
     model_profile: profile,
+    options_json: JSON.stringify({ params: params.params ?? {} }),
     status: 'queued',
     error_code: null,
     error_message: null,

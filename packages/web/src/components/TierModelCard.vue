@@ -64,10 +64,10 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NButton, NIcon, NTag, NText, useThemeVars } from 'naive-ui';
 import {
-  ArrowDownOutline,
-  ArrowUpOutline,
-  CloseOutline,
-} from '@vicons/ionicons5';
+  ArrowDown as ArrowDownOutline,
+  ArrowUp as ArrowUpOutline,
+  X as CloseOutline,
+} from 'lucide-vue-next';
 import type { ExpertTarget } from '@/api/expert-routing';
 
 interface Props {

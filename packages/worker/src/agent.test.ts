@@ -91,11 +91,12 @@ afterEach(async () => {
   await rm(workspace, { recursive: true, force: true });
 });
 
-async function run(impl: typeof fetch, overrides?: { manifest?: WorkerPluginManifest; now?: () => number }) {
+async function run(impl: typeof fetch, overrides?: { manifest?: WorkerPluginManifest; now?: () => number; params?: Record<string, string> }) {
   const config: WorkerRunConfig = {
     runId: 'asr_test',
     query: 'find the 401',
     modelProfile: 'search-fast',
+    params: overrides?.params,
     manifest: overrides?.manifest ?? manifest,
     promptMd: 'prompt',
     outputSchemaJson: '{}',
@@ -336,6 +337,40 @@ describe('runSearchAgent', () => {
     expect(user.content).toContain('<repo_structure>');
     expect(user.content).toContain('src/');
     expect(user.content).toContain('src/a.ts');
-    expect(user.content).toContain('<search_string>\nfind the 401\n</search_string>');
+    expect(user.content).toContain('<task_string>\nfind the 401\n</task_string>');
+  });
+
+  it('injects declared run params as <run_params> before the task string', async () => {
+    const { impl, calls } = fakeFetch([
+      () => jsonRes(assistantToolCall([{ id: 't1', name: 'submit_result', args: { result: validResult } }])),
+    ]);
+    await run(impl, { params: { breadth: 'thorough' } });
+
+    const first = calls.filter((c) => c.url.endsWith('/completions'))[0];
+    const user = first.body.messages.find(
+      (m: any) => m.role === 'user' && !m.content.includes('Convergence phase'),
+    );
+    expect(user.content).toContain('<run_params>');
+    expect(user.content).toContain('"breadth":"thorough"');
+    // 顺序：地图 → 参数 → 任务
+    const mapIdx = user.content.indexOf('<repo_structure>');
+    const paramsIdx = user.content.indexOf('<run_params>');
+    const taskIdx = user.content.indexOf('<task_string>');
+    expect(mapIdx).toBeGreaterThan(-1);
+    expect(mapIdx).toBeLessThan(paramsIdx);
+    expect(paramsIdx).toBeLessThan(taskIdx);
+  });
+
+  it('omits <run_params> when no params are provided', async () => {
+    const { impl, calls } = fakeFetch([
+      () => jsonRes(assistantToolCall([{ id: 't1', name: 'submit_result', args: { result: validResult } }])),
+    ]);
+    await run(impl);
+
+    const first = calls.filter((c) => c.url.endsWith('/completions'))[0];
+    const user = first.body.messages.find(
+      (m: any) => m.role === 'user' && !m.content.includes('Convergence phase'),
+    );
+    expect(user.content).not.toContain('<run_params>');
   });
 });

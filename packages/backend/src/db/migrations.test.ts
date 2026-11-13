@@ -89,7 +89,7 @@ describe("migration 1: api_requests.session_id", () => {
   });
 
   test("does not re-apply recorded migrations once all versions are applied", async () => {
-    const conn = provisionedConn(9);
+    const conn = provisionedConn(10);
     await applyMigrations(conn as unknown as Connection);
     expect(conn.beginTransaction).not.toHaveBeenCalled();
     expect(conn.query.mock.calls.some(([sql]) => String(sql).includes("ALTER TABLE"))).toBe(false);
@@ -225,6 +225,7 @@ describe("migration 6: login_ip_lockout", () => {
       { version: 7, name: "virtual_key_model_quotas_weekly_limit" },
       { version: 8, name: "users_role" },
       { version: 9, name: "user_virtual_keys_binding" },
+      { version: 10, name: "agent_search_runs_options_json" },
     ]);
   });
 });
@@ -352,6 +353,7 @@ describe("migration 7: virtual_key_model_quotas_weekly_limit", () => {
       { version: 7, name: "virtual_key_model_quotas_weekly_limit" },
       { version: 8, name: "users_role" },
       { version: 9, name: "user_virtual_keys_binding" },
+      { version: 10, name: "agent_search_runs_options_json" },
     ]);
   });
 });
@@ -470,7 +472,7 @@ describe("migration 8: users_role", () => {
       issued.some((sql) =>
         sql === "UPDATE users SET role = 'admin' ORDER BY created_at ASC, id ASC LIMIT 1"),
     ).toBe(true);
-    expect(recorded).toEqual([{ version: 8, name: "users_role" }, { version: 9, name: "user_virtual_keys_binding" }]);
+    expect(recorded).toEqual([{ version: 8, name: "users_role" }, { version: 9, name: "user_virtual_keys_binding" }, { version: 10, name: "agent_search_runs_options_json" }]);
   });
 });
 
@@ -509,5 +511,57 @@ describe("migration 2: virtual_keys.context_budget_tokens", () => {
     const issued = conn.query.mock.calls.map(([sql]) => String(sql));
     expect(issued.some((sql) => sql.includes("DROP COLUMN context_budget_tokens"))).toBe(true);
     expect(issued.some((sql) => sql.includes("ADD COLUMN dynamic_compression_enabled"))).toBe(true);
+  });
+});
+
+describe("migration 10: agent_search_runs.options_json", () => {
+  function conn(opts: { table: boolean; column?: boolean }) {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("INFORMATION_SCHEMA.TABLES")) {
+        return [[...(opts.table ? [{ name: "agent_search_runs" }] : [])]];
+      }
+      if (sql.includes("INFORMATION_SCHEMA.COLUMNS")) {
+        return [[...(opts.column ? [{ name: "options_json" }] : [])]];
+      }
+      return [[]];
+    });
+    return { query, beginTransaction: vi.fn(), commit: vi.fn(), rollback: vi.fn() };
+  }
+
+  test("adds options_json after model_profile on existing tables", async () => {
+    const c = conn({ table: true });
+    await migrations[9].up!(c as unknown as Connection);
+    const issued = c.query.mock.calls.map(([sql]) => String(sql));
+    expect(
+      issued.some(
+        (sql) =>
+          sql.includes("ALTER TABLE agent_search_runs ADD COLUMN options_json TEXT") &&
+          sql.includes("AFTER model_profile"),
+      ),
+    ).toBe(true);
+  });
+
+  test("is idempotent when the column already exists", async () => {
+    const c = conn({ table: true, column: true });
+    await migrations[9].up!(c as unknown as Connection);
+    expect(
+      c.query.mock.calls.some(([sql]) => String(sql).includes("ALTER TABLE")),
+    ).toBe(false);
+  });
+
+  test("empty schema records nothing but the version (rebuild creates the column via schema.ts)", async () => {
+    const c = conn({ table: false });
+    await migrations[9].up!(c as unknown as Connection);
+    expect(
+      c.query.mock.calls.some(([sql]) => String(sql).includes("ALTER TABLE")),
+    ).toBe(false);
+  });
+
+  test("down drops the column when present", async () => {
+    const c = conn({ table: true, column: true });
+    await migrations[9].down!(c as unknown as Connection);
+    expect(
+      c.query.mock.calls.some(([sql]) => String(sql).includes("DROP COLUMN options_json")),
+    ).toBe(true);
   });
 });

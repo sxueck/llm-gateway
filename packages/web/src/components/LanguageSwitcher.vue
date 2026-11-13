@@ -13,7 +13,7 @@
 <script setup lang="ts">
 import { h, computed } from 'vue';
 import { NButton, NDropdown, NIcon } from 'naive-ui';
-import { LanguageOutline, CheckmarkOutline } from '@vicons/ionicons5';
+import { Languages as LanguageOutline, Check as CheckmarkOutline } from 'lucide-vue-next';
 import { useLocaleStore, type Locale } from '@/stores/locale';
 
 const localeStore = useLocaleStore();

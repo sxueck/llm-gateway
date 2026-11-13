@@ -417,6 +417,46 @@ export const migrations: Migration[] = [
     },
   },
   userVirtualKeysMigration,
+  {
+    // agent_search_runs.options_json：run 创建时通过插件 role.params 声明校验的
+    // 枚举参数（如 code-search 的 breadth、plan-mode 的 perspective）。值域固定，
+    // 非自由文本，明文落库；历史 run 为 NULL，读取端容缺省为空参数。
+    version: 10,
+    name: "agent_search_runs_options_json",
+    up: async (conn) => {
+      const [tables] = await conn.query(
+        `SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'agent_search_runs'`,
+      );
+      if ((tables as Array<{ name: string }>).length === 0) {
+        // 空库：表由 schema.ts 连同 options_json 列一起创建，只登记版本号。
+        return;
+      }
+      const [columns] = await conn.query(
+        `SELECT COLUMN_NAME AS name FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'agent_search_runs' AND COLUMN_NAME = 'options_json'`,
+      );
+      if ((columns as Array<{ name: string }>).length === 0) {
+        await conn.query(
+          "ALTER TABLE agent_search_runs ADD COLUMN options_json TEXT NULL COMMENT '通过插件声明校验的 run 参数（枚举值域，明文 JSON）' AFTER model_profile",
+        );
+      }
+    },
+    down: async (conn) => {
+      const [tables] = await conn.query(
+        `SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'agent_search_runs'`,
+      );
+      if ((tables as Array<{ name: string }>).length === 0) return;
+      const [columns] = await conn.query(
+        `SELECT COLUMN_NAME AS name FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'agent_search_runs' AND COLUMN_NAME = 'options_json'`,
+      );
+      if ((columns as Array<{ name: string }>).length > 0) {
+        await conn.query("ALTER TABLE agent_search_runs DROP COLUMN options_json");
+      }
+    },
+  },
 ];
 
 export async function getCurrentVersion(conn: Connection): Promise<number> {

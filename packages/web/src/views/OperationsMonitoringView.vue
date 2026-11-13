@@ -551,14 +551,14 @@ interface TableSorter {
 }
 import VChart from "vue-echarts";
 import {
-  RefreshOutline,
-  CloseOutline,
-  SearchOutline,
-  InformationCircleOutline,
-  CopyOutline,
-  DocumentTextOutline,
-  TrendingUpOutline,
-} from "@vicons/ionicons5";
+  RefreshCw as RefreshOutline,
+  X as CloseOutline,
+  Search as SearchOutline,
+  Info as InformationCircleOutline,
+  Copy as CopyOutline,
+  FileText as DocumentTextOutline,
+  TrendingUp as TrendingUpOutline,
+} from 'lucide-vue-next';
 import {
   opsMetricsApi,
   type OpsPeriod,

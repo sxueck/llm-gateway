@@ -168,9 +168,7 @@ import {
   NDivider,
   useMessage,
 } from 'naive-ui';
-import {
-  FlashOutline,
-} from '@vicons/ionicons5';
+import { Zap as FlashOutline } from 'lucide-vue-next';
 import { modelApi } from '@/api/model';
 import { PROTOCOL_OPTIONS } from '@/utils/protocol-utils';
 import type { Model } from '@/types';

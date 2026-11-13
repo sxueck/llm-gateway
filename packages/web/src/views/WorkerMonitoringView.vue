@@ -91,7 +91,7 @@ import {
   NTag,
   useMessage,
 } from "naive-ui";
-import { RefreshOutline, DownloadOutline } from "@vicons/ionicons5";
+import { RefreshCw as RefreshOutline, Download as DownloadOutline } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
 import {
   configApi,

@@ -86,7 +86,7 @@ import { useI18n } from 'vue-i18n';
 import { useMessage } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
 import { NAlert, NButton, NCard, NDataTable, NDivider, NIcon, NModal, NSelect, NSpace, NSpin, NTag } from 'naive-ui';
-import { RefreshOutlined } from '@vicons/material';
+import { RefreshCw as RefreshOutlined } from 'lucide-vue-next';
 import PageHeader from '@/components/PageHeader.vue';
 import { userAccessApi } from '@/api/user-access';
 import { virtualKeyApi } from '@/api/virtual-key';

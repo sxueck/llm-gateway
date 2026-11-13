@@ -147,10 +147,10 @@ import {
   NSelect,
 } from 'naive-ui';
 import {
-  AddOutline,
-  RefreshOutline,
-  CopyOutline,
-} from '@vicons/ionicons5';
+  Plus as AddOutline,
+  RefreshCw as RefreshOutline,
+  Copy as CopyOutline,
+} from 'lucide-vue-next';
 import { useProviderStore } from '@/stores/provider';
 import { useModelStore } from '@/stores/model';
 import { configApi, type RoutingStatusResponse } from '@/api/config';

@@ -87,6 +87,12 @@ body {
   font-family: inherit;
 }
 
+/* Lucide icons inherit Naive UI's icon size; a slightly smaller optical box keeps dense controls crisp. */
+#app .n-icon > svg {
+  width: 0.9em;
+  height: 0.9em;
+}
+
 #app .n-data-table {
   background: transparent;
 }

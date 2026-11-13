@@ -124,7 +124,7 @@ import {
   NTag,
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
-import { RefreshOutline } from '@vicons/ionicons5'
+import { RefreshCw as RefreshOutline } from 'lucide-vue-next'
 import { meApi } from '@/api/me'
 import request from '@/utils/request'
 import type { ApiStats } from '@/api/config'

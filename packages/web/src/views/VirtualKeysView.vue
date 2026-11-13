@@ -466,15 +466,13 @@ import {
   NTooltip
 } from 'naive-ui'
 import {
-  EditOutlined,
-  DeleteOutlined,
-  ContentCopyOutlined,
-  AutorenewOutlined,
-  SearchOutlined,
-  RefreshOutlined,
-  OpenInNewOutlined
-} from '@vicons/material'
-import { SpeedometerOutline } from '@vicons/ionicons5'
+  Pencil as EditOutlined,
+  Trash2 as DeleteOutlined,
+  Copy as ContentCopyOutlined,
+  RotateCw as AutorenewOutlined,
+  ExternalLink as OpenInNewOutlined,
+} from 'lucide-vue-next'
+import { Gauge as SpeedometerOutline, Search as SearchOutlined, RefreshCw as RefreshOutlined } from 'lucide-vue-next'
 import { useVirtualKeyStore } from '@/stores/virtual-key'
 import { useModelStore } from '@/stores/model'
 import { useModelOptions } from '@/composables/useModelOptions'

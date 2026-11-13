@@ -206,11 +206,11 @@ import {
   useMessage,
 } from 'naive-ui';
 import {
-  AddOutline,
-  CloseOutline,
-  ArrowUpOutline,
-  ArrowDownOutline,
-} from '@vicons/ionicons5';
+  Plus as AddOutline,
+  X as CloseOutline,
+  ArrowUp as ArrowUpOutline,
+  ArrowDown as ArrowDownOutline,
+} from 'lucide-vue-next';
 import { useRoutingTargets } from '@/composables/useRoutingTargets';
 
 interface Target {

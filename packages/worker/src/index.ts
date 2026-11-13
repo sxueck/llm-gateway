@@ -7,6 +7,8 @@ interface PluginFile {
   run_id: string;
   query: string;
   model_profile: string;
+  /** 创建时通过插件 role.params 声明校验的枚举参数；历史 run 可能缺省。 */
+  params?: Record<string, string>;
   plugin: {
     id: string;
     version: string;
@@ -41,6 +43,7 @@ async function main(): Promise<void> {
       runId,
       query: config.query,
       modelProfile: config.model_profile,
+      params: config.params,
       manifest: config.plugin.manifest,
       promptMd: config.plugin.files['prompt.md'] ?? '',
       outputSchemaJson: config.plugin.files['output.schema.json'] ?? '{}',

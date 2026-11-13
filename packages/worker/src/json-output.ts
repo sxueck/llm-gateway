@@ -53,7 +53,8 @@ function firstBalancedObject(text: string): string | null {
   return null;
 }
 
-// 这里只做可修复的结构预检，网关侧 Zod 仍是最终校验闸门。
+// 这里只做可修复的结构预检，网关侧 Zod 仍是最终校验闸门。基线契约：
+// status/summary/files；文件项必项 path+reason，行号可选但出现即成对且有序。
 export function lightValidateResult(value: unknown): string[] {
   const errors: string[] = [];
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -77,11 +78,18 @@ export function lightValidateResult(value: unknown): string[] {
       if (typeof f.path !== 'string' || f.path.length === 0 || f.path.startsWith('/') || f.path.split('/').includes('..')) {
         errors.push(`files[${i}].path must be a workspace-relative path`);
       }
-      const start = Number(f.start_line);
-      const end = Number(f.end_line);
-      if (!Number.isInteger(start) || start < 1) errors.push(`files[${i}].start_line must be an integer >= 1`);
-      if (!Number.isInteger(end) || end < 1) errors.push(`files[${i}].end_line must be an integer >= 1`);
-      if (Number.isInteger(start) && Number.isInteger(end) && end < start) {
+      const start = f.start_line === undefined ? undefined : Number(f.start_line);
+      const end = f.end_line === undefined ? undefined : Number(f.end_line);
+      if ((start !== undefined) !== (end !== undefined)) {
+        errors.push(`files[${i}].start_line and end_line must be provided together`);
+      }
+      if (start !== undefined && (!Number.isInteger(start) || start < 1)) {
+        errors.push(`files[${i}].start_line must be an integer >= 1`);
+      }
+      if (end !== undefined && (!Number.isInteger(end) || end < 1)) {
+        errors.push(`files[${i}].end_line must be an integer >= 1`);
+      }
+      if (start !== undefined && end !== undefined && end < start) {
         errors.push(`files[${i}].end_line must be >= start_line`);
       }
       if (typeof f.reason !== 'string' || f.reason.trim().length === 0) {

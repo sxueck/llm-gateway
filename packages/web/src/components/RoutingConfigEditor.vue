@@ -240,18 +240,18 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
-  GitNetworkOutline,
-  GitMergeOutline,
-  TimeOutline,
-  TimerOutline,
-  KeyOutline,
-  CheckmarkCircle,
-  Add,
-  TrashOutline,
+  Network as GitNetworkOutline,
+  GitMerge as GitMergeOutline,
+  Clock as TimeOutline,
+  Timer as TimerOutline,
+  Key as KeyOutline,
+  CircleCheck as CheckmarkCircle,
+  Plus as Add,
+  Trash2 as TrashOutline,
   ArrowUp,
   ArrowDown,
-  InformationCircleOutline
-} from '@vicons/ionicons5';
+  Info as InformationCircleOutline
+} from 'lucide-vue-next';
 import {
   NFormItem, NInput, NInputNumber, NSelect, NRadioGroup,
   NGrid, NGridItem, NIcon, NDivider, NButton, NTag, NEmpty, NAlert

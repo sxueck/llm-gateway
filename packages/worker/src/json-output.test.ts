@@ -59,4 +59,23 @@ describe('lightValidateResult', () => {
     });
     expect(errors.join(' ')).toContain('end_line');
   });
+
+  it('accepts plan-style files without line ranges and keeps extras', () => {
+    const result = {
+      status: 'completed',
+      summary: 'plan',
+      steps: [{ action: 'do it', files: ['a.ts'] }],
+      verification: 'npm test',
+      files: [{ path: 'a.ts', reason: 'critical file' }],
+    };
+    expect(lightValidateResult(result)).toEqual([]);
+  });
+
+  it('rejects half-present line ranges', () => {
+    const errors = lightValidateResult({
+      ...base,
+      files: [{ path: 'a.ts', start_line: 3, reason: 'r' }],
+    });
+    expect(errors.join(' ')).toContain('together');
+  });
 });

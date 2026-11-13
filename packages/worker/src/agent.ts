@@ -14,6 +14,8 @@ export interface WorkerRunConfig {
   runId: string;
   query: string;
   modelProfile: string;
+  /** 插件声明、创建时枚举校验过的 run 参数；以 <run_params> 注入首条用户消息。 */
+  params?: Record<string, string>;
   manifest: WorkerPluginManifest;
   promptMd: string;
   outputSchemaJson: string;
@@ -74,8 +76,16 @@ export async function runSearchAgent(config: WorkerRunConfig): Promise<void> {
     .filter((t): t is (typeof TOOL_DEFINITIONS)[number] => t !== undefined);
 
   // 首条用户消息携带深度 2 的 <repo_structure> 全局地图（WarpGrep 协议设计），
-  // 让 turn 1 的检索直接瞄准目标，省掉对根目录的盲探索。
+  // 让 turn 1 的检索直接瞄准目标，省掉对根目录的盲探索；run 参数紧随其后，
+  // 任务本体放最后，保持“地图→参数→任务”的注意力顺序。
   const repoStructure = await listRepoStructure(toolCtx, 2, 1000);
+  const firstUserParts = [`<repo_structure>\n${repoStructure}\n</repo_structure>`];
+  if (config.params && Object.keys(config.params).length > 0) {
+    firstUserParts.push(
+      `<run_params>\n${JSON.stringify(config.params)}\n</run_params>`,
+    );
+  }
+  firstUserParts.push(`<task_string>\n${config.query}\n</task_string>`);
   const messages: ChatMessage[] = [
     {
       role: 'system',
@@ -83,7 +93,7 @@ export async function runSearchAgent(config: WorkerRunConfig): Promise<void> {
     },
     {
       role: 'user',
-      content: `<repo_structure>\n${repoStructure}\n</repo_structure>\n\n<search_string>\n${config.query}\n</search_string>`,
+      content: firstUserParts.join('\n\n'),
     },
   ];
 

@@ -274,7 +274,7 @@
                 >
                   <n-text>{{ t("expertRouting.originalRequest") }}</n-text>
                   <n-icon :class="{ 'rotate-icon': !showOriginalRequest }">
-                    <SvgIcon :path="CHEVRON_DOWN_PATH" :size="20" />
+                    <ChevronDown aria-hidden="true" />
                   </n-icon>
                 </div>
               </template>
@@ -305,7 +305,7 @@
                 >
                   <n-text>{{ t("expertRouting.classifierRequest") }}</n-text>
                   <n-icon :class="{ 'rotate-icon': !showClassifierRequest }">
-                    <SvgIcon :path="CHEVRON_DOWN_PATH" :size="20" />
+                    <ChevronDown aria-hidden="true" />
                   </n-icon>
                 </div>
               </template>
@@ -344,7 +344,7 @@
                 >
                   <n-text>{{ t("expertRouting.classifierResponse") }}</n-text>
                   <n-icon :class="{ 'rotate-icon': !showClassifierResponse }">
-                    <SvgIcon :path="CHEVRON_DOWN_PATH" :size="20" />
+                    <ChevronDown aria-hidden="true" />
                   </n-icon>
                 </div>
               </template>
@@ -404,10 +404,7 @@ import {
   type ExpertRoutingLog,
   type ExpertRoutingLogDetail,
 } from "@/api/expert-routing";
-import SvgIcon from "@/components/SvgIcon.vue";
-
-const CHEVRON_DOWN_PATH =
-  "M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z";
+import { ChevronDown } from "lucide-vue-next";
 
 const { t } = useI18n();
 const message = useMessage();

@@ -129,7 +129,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NButton, NIcon, NTag, NTimePicker } from 'naive-ui';
-import { Add, TrashOutline, ArrowUp, ArrowDown } from '@vicons/ionicons5';
+import { Plus as Add, Trash2 as TrashOutline, ArrowUp, ArrowDown } from 'lucide-vue-next';
 import {
   defaultTargetOrder,
   END_OF_DAY_HHMM,

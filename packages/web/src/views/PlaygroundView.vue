@@ -336,12 +336,12 @@ import {
   NTag,
 } from 'naive-ui';
 import {
-  CopyOutline,
-  PaperPlaneOutline,
-  RefreshOutline,
-  StopOutline,
-  TrashOutline,
-} from '@vicons/ionicons5';
+  Copy as CopyOutline,
+  Send as PaperPlaneOutline,
+  RefreshCw as RefreshOutline,
+  Square as StopOutline,
+  Trash2 as TrashOutline,
+} from 'lucide-vue-next';
 import PageHeader from '@/components/PageHeader.vue';
 import { configApi } from '@/api/config';
 import { shellSingleQuote } from '@/utils/curl-snippet';

@@ -138,7 +138,7 @@ import {
   NText,
   useThemeVars,
 } from 'naive-ui';
-import { AddOutline, SwapHorizontalOutline } from '@vicons/ionicons5';
+import { Plus as AddOutline, ArrowLeftRight as SwapHorizontalOutline } from 'lucide-vue-next';
 import {
   expertRoutingApi,
   type Band,

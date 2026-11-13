@@ -72,7 +72,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { NBadge, NButton, NIcon, NPopover, useMessage } from 'naive-ui';
-import { MailOutline } from '@vicons/ionicons5';
+import { Mail as MailOutline } from 'lucide-vue-next';
 import { useI18n } from 'vue-i18n';
 import { alertsApi, type SystemAlert } from '@/api/alerts';
 
