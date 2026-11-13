@@ -979,6 +979,8 @@ onMounted(async () => {
 
 .page-actions {
   display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: 8px;
   align-items: center;
 }

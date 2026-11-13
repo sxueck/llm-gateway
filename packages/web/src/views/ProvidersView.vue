@@ -21,7 +21,7 @@
               {{ t('providers.export') }}
             </n-button>
           </n-dropdown>
-          <n-upload :show-file-list="false" accept=".json" @change="handleImportFile">
+          <n-upload class="import-upload" :show-file-list="false" accept=".json" @change="handleImportFile">
             <n-button>
               <template #icon>
                 <n-icon><UploadIcon /></n-icon>
@@ -519,6 +519,10 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.import-upload {
+  width: auto;
+}
+
 .providers-view {
   max-width: 1400px;
   margin: 0 auto;

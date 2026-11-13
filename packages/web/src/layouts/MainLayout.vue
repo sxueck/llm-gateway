@@ -34,7 +34,7 @@
           </n-button>
         </div>
         <div class="header-right">
-          <button type="button" class="cmd-trigger" @click="openPalette">
+          <button type="button" class="cmd-trigger" :aria-label="t('commandPalette.open')" @click="openPalette">
             <NavIcon name="search" :size="16" />
             <span class="cmd-trigger-label">{{ t('commandPalette.open') }}</span>
             <kbd class="cmd-trigger-kbd">{{ shortcutLabel }}</kbd>
@@ -140,20 +140,15 @@ function handleUserAction(key: string) {
   flex: 0 0 auto;
   box-sizing: border-box;
   width: 240px;
-  height: calc(100vh - 32px);
-  margin: 16px;
+  height: 100vh;
   padding: 16px 12px 12px;
   display: flex;
   flex-direction: column;
-  border-radius: 20px;
   /* 仓库只打包了 MiSans-Medium 一个字重，600 以上会被浏览器伪粗体合成，
      在 11px 中文标题上糊成一团。侧栏内部禁止合成，层级只靠字号/颜色/字距。 */
   font-synthesis: none;
-  background-color: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(25, 55, 43, 0.06);
-  box-shadow: 0 4px 18px rgba(25, 55, 43, 0.045), 0 1px 3px rgba(25, 55, 43, 0.03);
-  backdrop-filter: blur(10px) saturate(125%);
-  -webkit-backdrop-filter: blur(10px) saturate(125%);
+  background-color: #fff;
+  border-right: 1px solid #e5e9e6;
   overflow: hidden;
   transition: width 0.25s ease, padding 0.25s ease;
   z-index: 100;
@@ -232,9 +227,7 @@ function handleUserAction(key: string) {
   color: #66756f;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  background-color: rgba(250, 252, 251, 0.96);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background-color: #fff;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -298,6 +291,7 @@ function handleUserAction(key: string) {
 .app-main-layout {
   background-color: transparent;
   height: 100vh;
+  min-width: 0;
 }
 
 .app-header {
@@ -306,8 +300,8 @@ function handleUserAction(key: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: none;
-  background-color: transparent;
+  border-bottom: 1px solid #e5e9e6;
+  background-color: #fff;
 }
 
 .cmd-trigger {
@@ -377,5 +371,30 @@ function handleUserAction(key: string) {
   font-size: 11px;
   color: #71827a;
   line-height: 1.2;
+}
+
+@media (max-width: 800px) {
+  .app-header {
+    padding: 0 16px;
+  }
+
+  .header-right {
+    gap: 4px;
+  }
+
+  .user-info {
+    display: none;
+  }
+
+  .user-avatar {
+    padding: 4px;
+  }
+}
+
+@media (max-width: 520px) {
+  .cmd-trigger-label,
+  .cmd-trigger-kbd {
+    display: none;
+  }
 }
 </style>

@@ -32,9 +32,10 @@ defineProps<{
 /* 刻意避开全局 .page-header 工具类（style.css），组件本身不带外边距，间距由父级布局决定。 */
 .page-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-xl);
+  gap: var(--space-md) var(--space-xl);
 }
 
 .page-heading__prefix {
@@ -45,8 +46,9 @@ defineProps<{
 }
 
 .page-heading__text {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 220px;
+  min-width: min(220px, 100%);
+  overflow-wrap: anywhere;
 }
 
 .page-heading__eyebrow {
@@ -78,7 +80,10 @@ defineProps<{
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  flex: none;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  min-width: min(100%, 360px);
+  max-width: 100%;
   padding-top: 2px;
 }
 
@@ -88,8 +93,13 @@ defineProps<{
     gap: var(--space-md);
   }
 
+  .page-heading__text {
+    flex-basis: auto;
+    min-width: 0;
+  }
+
   .page-heading__actions {
-    flex-wrap: wrap;
+    align-self: stretch;
     padding-top: 0;
   }
 

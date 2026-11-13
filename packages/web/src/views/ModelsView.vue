@@ -726,6 +726,7 @@ onMounted(async () => {
 
 .models-search {
   width: 240px;
+  max-width: 100%;
 }
 
 .models-stack > * {

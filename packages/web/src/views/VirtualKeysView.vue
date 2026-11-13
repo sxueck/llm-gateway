@@ -1384,11 +1384,7 @@ onUnmounted(() => {
 }
 
 .table-card {
-  background: #ffffff;
-  border-radius: 16px;
-  border: none;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .table-card :deep(.n-data-table) {

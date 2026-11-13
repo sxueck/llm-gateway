@@ -2010,6 +2010,8 @@ onBeforeUnmount(() => {
 
 .page-actions {
   display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: 12px;
   align-items: center;
 }
