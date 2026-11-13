@@ -300,8 +300,8 @@ function handleUserAction(key: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #e5e9e6;
-  background-color: #fff;
+  border-bottom: none;
+  background-color: transparent;
 }
 
 .cmd-trigger {

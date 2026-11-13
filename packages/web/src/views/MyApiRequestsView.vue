@@ -167,7 +167,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, reactive, ref, watch } from 'vue'
+import { computed, h, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
@@ -331,6 +331,7 @@ async function loadRequests() {
   try {
     const response = await meApi.getApiRequests(buildQueryParams())
     requests.value = response.data
+    accumulateModelOptions(response.data)
     pagination.itemCount = response.total
     pagination.pageCount = response.totalPages
   } catch (error: any) {
@@ -341,7 +342,7 @@ async function loadRequests() {
 }
 
 // 就地累积模型选项：翻页/过滤后新出现的模型补进下拉，不必预拉全量模型表
-watch(requests, (rows) => {
+function accumulateModelOptions(rows: ApiRequest[]) {
   const known = new Set(modelOptions.value.map((option) => option.value))
   for (const model of rows.map((row) => row.model)) {
     if (model && !known.has(model)) {
@@ -349,7 +350,7 @@ watch(requests, (rows) => {
       modelOptions.value.push({ label: model, value: model })
     }
   }
-})
+}
 
 async function loadVirtualKeyOptions() {
   try {
