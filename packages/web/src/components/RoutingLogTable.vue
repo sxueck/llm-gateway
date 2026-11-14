@@ -41,7 +41,7 @@
         size="small"
       >
         <template #empty>
-          <n-empty :description="t('expertRouting.ui.noLogs')" class="log-empty" />
+          <Empty :description="t('expertRouting.ui.noLogs')" class="log-empty" />
         </template>
       </n-data-table>
     </n-space>
@@ -128,7 +128,7 @@
                   </span>
                 </div>
               </n-space>
-              <n-empty v-else :description="t('common.noData')" :show-icon="false" />
+              <Empty v-else :description="t('common.noData')" :show-icon="false" />
             </n-card>
 
             <n-card size="small" :title="t('expertRouting.metaInfo')">
@@ -194,7 +194,6 @@ import {
   NDataTable,
   NDrawer,
   NDrawerContent,
-  NEmpty,
   NInput,
   NProgress,
   NSelect,
@@ -205,6 +204,7 @@ import {
   useMessage,
   type DataTableColumns,
 } from 'naive-ui';
+import { Empty } from '@/components/ui/empty'
 import {
   expertRoutingApi,
   type ExpertRoutingLog,

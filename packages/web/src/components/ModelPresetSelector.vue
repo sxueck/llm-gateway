@@ -85,7 +85,7 @@
         </n-scrollbar>
       </div>
 
-      <n-empty
+      <Empty
         v-else-if="searched && searchResults.length === 0"
         :description="t('modelPresets.noResults')"
         size="small"
@@ -105,11 +105,11 @@ import {
   NListItem,
   NThing,
   NTag,
-  NEmpty,
   NIcon,
   NScrollbar,
   useMessage,
 } from 'naive-ui';
+import { Empty } from '@/components/ui/empty'
 import { Search as SearchIcon, Info as InfoIcon, Box as ModelIcon } from 'lucide-vue-next';
 import { modelPresetsApi, type ModelPresetSearchResult, type ModelPresetStats } from '@/api/model-presets';
 import { useI18n } from 'vue-i18n';

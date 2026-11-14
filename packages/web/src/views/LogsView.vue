@@ -42,7 +42,7 @@
 
           <div class="terminal-container">
             <pre v-if="filteredLogText" class="terminal-output">{{ filteredLogText }}</pre>
-            <n-empty v-else :description="t('logs.empty')" :show-icon="false" />
+            <Empty v-else :description="t('logs.empty')" :show-icon="false" />
           </div>
         </n-space>
       </n-card>
@@ -53,7 +53,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useMessage, NSpace, NCard, NButton, NSelect, NInput, NIcon, NEmpty } from 'naive-ui';
+import { useMessage, NSpace, NCard, NButton, NSelect, NInput, NIcon } from 'naive-ui';
+import { Empty } from '@/components/ui/empty'
 import { Search as SearchOutline, Play as PlayOutline, Pause as PauseOutline } from 'lucide-vue-next';
 import { configApi, type LogEntry } from '@/api/config';
 import { formatTimestamp } from '@/utils/common';

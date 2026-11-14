@@ -515,7 +515,7 @@
   background: #f8faf9;
 }
 
-.trend-card :deep(.n-empty),
+.trend-card :deep([data-slot="empty"]),
 .trend-error {
   display: flex;
   align-items: center;
@@ -527,7 +527,7 @@
 @media (max-width: 639px) {
   .trend-loading { padding: 16px 8px 12px; }
   .chart-placeholder { height: 320px; }
-  .trend-card :deep(.n-empty), .trend-error { min-height: 348px; }
+  .trend-card :deep([data-slot="empty"]), .trend-error { min-height: 348px; }
 }
 
 .trend-error {

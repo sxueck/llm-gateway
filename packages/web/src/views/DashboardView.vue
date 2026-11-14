@@ -203,7 +203,7 @@
             <div v-else-if="trendData.length > 0" class="trend-chart-container">
               <v-chart :option="chartOption" :autoresize="true" class="trend-chart" />
             </div>
-            <n-empty v-else :description="t('common.noData')" :show-icon="false" />
+            <Empty v-else :description="t('common.noData')" :show-icon="false" />
           </n-card>
         </n-gi>
         <n-gi>
@@ -238,7 +238,7 @@
             <div v-else-if="modelStats.length > 0" class="trend-chart-container">
               <v-chart :option="modelDistributionOption" :autoresize="true" class="trend-chart" />
             </div>
-            <n-empty v-else :description="t('common.noData')" :show-icon="false" />
+            <Empty v-else :description="t('common.noData')" :show-icon="false" />
           </n-card>
         </n-gi>
       </n-grid>
@@ -492,13 +492,13 @@ import {
   NGi,
   NCard,
   NSelect,
-  NEmpty,
   NButton,
   NIcon,
   NResult,
   NAlert,
   NSkeleton
 } from 'naive-ui'
+import { Empty } from '@/components/ui/empty'
 import { RefreshCw as RefreshOutline } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useProviderStore } from '@/stores/provider'
@@ -1134,7 +1134,7 @@ onMounted(() => {
     padding: 12px 8px 8px;
   }
 
-  .dashboard-view .trend-card :deep(.n-empty),
+  .dashboard-view .trend-card :deep([data-slot="empty"]),
   .dashboard-view .trend-error {
     min-height: 340px;
   }

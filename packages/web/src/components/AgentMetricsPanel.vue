@@ -77,7 +77,7 @@
           </n-gi>
         </n-grid>
 
-        <n-empty
+        <Empty
           v-else-if="codingAgents.length === 0"
           :description="t('agentMetrics.agents.empty')"
           class="block-empty"
@@ -164,7 +164,7 @@
         </template>
 
         <template v-else-if="workerOverview">
-          <n-empty
+          <Empty
             v-if="workerOverview.totals.runs === 0"
             :description="t('agentMetrics.worker.empty')"
             class="block-empty"
@@ -191,7 +191,7 @@
               :option="trendChartOption"
               autoresize
             />
-            <n-empty
+            <Empty
               v-else
               size="small"
               :description="t('agentMetrics.trend.empty')"
@@ -212,7 +212,7 @@
               :scroll-x="1060"
             >
               <template #empty>
-                <n-empty
+                <Empty
                   size="small"
                   :description="t('agentMetrics.worker.empty')"
                 />
@@ -267,7 +267,7 @@
                   :bordered="false"
                 >
                   <template #empty>
-                    <n-empty
+                    <Empty
                       size="small"
                       :description="t('agentMetrics.worker.empty')"
                     />
@@ -330,7 +330,7 @@
             :scroll-x="1120"
           >
             <template #empty>
-              <n-empty
+              <Empty
                 size="small"
                 :description="t('agentMetrics.sessions.empty')"
               />
@@ -351,7 +351,6 @@ import {
   NDataTable,
   NDrawer,
   NDrawerContent,
-  NEmpty,
   NGi,
   NGrid,
   NSkeleton,
@@ -361,6 +360,7 @@ import {
   NText,
   type DataTableColumns,
 } from "naive-ui";
+import { Empty } from "@/components/ui/empty"
 // echarts 组件已在 main.ts 全局 use([...]) 注册（含 BarChart/LineChart 等），
 // 此处仅需引入 VChart，与 OperationsMonitoringView 的用法一致。
 import VChart from "vue-echarts";

@@ -165,7 +165,7 @@
             }}
           </n-tag>
         </template>
-        <n-empty
+        <Empty
           v-if="detail && detail.events.length === 0"
           :description="t('agentRunDetail.eventsEmpty')"
           class="events-empty"
@@ -181,7 +181,7 @@
       <template #header-extra>
         <span class="related-count">{{ relatedTotal }}</span>
       </template>
-      <n-empty
+      <Empty
         v-if="relatedRequests.length === 0 && !relatedLoading"
         :description="t('agentRunDetail.relatedRequestsEmpty')"
         class="events-empty"
@@ -202,6 +202,7 @@
 <script setup lang="ts">
 import { computed, h, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { DataTableColumns } from "naive-ui";
+import { Empty } from "@/components/ui/empty"
 import { useRoute, useRouter } from "vue-router";
 import {
   NAlert,
@@ -210,7 +211,6 @@ import {
   NDataTable,
   NDescriptions,
   NDescriptionsItem,
-  NEmpty,
   NIcon,
   NTag,
   NTimeline,

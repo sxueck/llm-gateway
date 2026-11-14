@@ -57,7 +57,7 @@
         <div class="events-container">
           <n-scrollbar style="max-height: 540px;">
             <div v-if="events.length === 0" class="empty-state">
-              <n-empty :description="t('settings.developerDebugEmpty')" :show-icon="false" />
+              <Empty :description="t('settings.developerDebugEmpty')" :show-icon="false" />
             </div>
             <div v-else>
               <div
@@ -188,9 +188,9 @@ import {
   NCode,
   NBadge,
   NScrollbar,
-  NEmpty,
   useMessage,
 } from 'naive-ui';
+import { Empty } from '@/components/ui/empty'
 import { useI18n } from 'vue-i18n';
 import PageHeader from '@/components/PageHeader.vue';
 import { configApi } from '@/api/config';

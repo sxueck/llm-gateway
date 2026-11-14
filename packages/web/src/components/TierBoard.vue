@@ -34,7 +34,7 @@
       {{ warning }}
     </n-alert>
 
-    <n-empty
+    <Empty
       v-if="experts.length === 0"
       :description="t('expertRouting.noExperts')"
       :show-icon="false"
@@ -123,10 +123,10 @@
 import { computed, ref, watch, onBeforeUnmount, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useMessage } from 'naive-ui';
+import { Empty } from '@/components/ui/empty'
 import {
   NAlert,
   NButton,
-  NEmpty,
   NForm,
   NFormItem,
   NIcon,

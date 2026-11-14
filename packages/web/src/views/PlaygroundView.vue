@@ -121,7 +121,7 @@
       <n-gi>
         <n-card size="small" :title="t('playground.chat.title')" class="full-height-card chat-card">
           <div ref="messageListEl" class="message-list">
-            <n-empty v-if="messages.length === 0" :description="t('playground.chat.empty')" class="chat-empty" />
+            <Empty v-if="messages.length === 0" :description="t('playground.chat.empty')" class="chat-empty" />
             <div
               v-for="m in messages"
               :key="m.id"
@@ -281,7 +281,7 @@
           <n-scrollbar v-if="rawResponseText" class="code-scrollbar">
             <n-code :code="rawResponseText" :language="rawIsJson ? 'json' : undefined" word-wrap />
           </n-scrollbar>
-          <n-empty v-else :description="t('playground.details.empty')" class="chat-empty" />
+          <Empty v-else :description="t('playground.details.empty')" class="chat-empty" />
         </n-tab-pane>
         <n-tab-pane name="payload" :tab="t('playground.details.payload')">
           <n-scrollbar class="code-scrollbar">
@@ -312,13 +312,13 @@ import type { VNode } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useMessage } from 'naive-ui';
+import { Empty } from '@/components/ui/empty'
 import type { SelectOption } from 'naive-ui';
 import {
   NAlert,
   NButton,
   NCard,
   NCode,
-  NEmpty,
   NGi,
   NGrid,
   NIcon,

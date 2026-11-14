@@ -231,7 +231,7 @@
                 autoresize
                 @click="handleTrendClick"
               />
-              <n-empty
+              <Empty
                 v-else
                 :description="t('operationsMonitoring.trend.empty')"
                 style="padding: 48px 0"
@@ -483,14 +483,14 @@
                 :scroll-x="1100"
                 :row-key="(row: OpsRequestSourceEntry) => row.ip"
               />
-              <n-empty
+              <Empty
                 v-else
                 :description="t('operationsMonitoring.requestSource.empty')"
                 :show-icon="false"
               />
             </div>
           </n-space>
-          <n-empty
+          <Empty
             v-else
             :description="t('operationsMonitoring.requestSource.empty')"
             :show-icon="false"
@@ -525,7 +525,6 @@ import {
   NButton,
   NCard,
   NDataTable,
-  NEmpty,
   NGi,
   NGrid,
   NIcon,
@@ -542,6 +541,7 @@ import {
   NText,
   NTooltip,
 } from "naive-ui";
+import { Empty } from "@/components/ui/empty"
 import type { DataTableColumns, PaginationProps } from "naive-ui";
 
 // naive-ui does not export SorterInfo in this version

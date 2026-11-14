@@ -24,7 +24,7 @@
       </n-space>
 
       <div v-if="models.length === 0" class="empty-state">
-        <n-empty :description="t('models.batchEmpty')" size="small" />
+        <Empty :description="t('models.batchEmpty')" size="small" />
       </div>
 
       <div v-else class="models-list">
@@ -120,11 +120,11 @@ import {
   NInput,
   NSwitch,
   NAlert,
-  NEmpty,
   NIcon,
   NModal,
   useMessage
 } from 'naive-ui'
+import { Empty } from '@/components/ui/empty'
 import { Plus as AddOutline, X as CloseOutline, FileText as DocumentTextOutline } from 'lucide-vue-next'
 
 interface ModelInput {

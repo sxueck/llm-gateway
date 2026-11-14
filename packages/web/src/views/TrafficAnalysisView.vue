@@ -149,7 +149,7 @@
         <div v-else-if="filteredLatencyData.length > 0" class="trend-chart-container">
           <v-chart :option="latencyDistributionOption" :autoresize="true" class="trend-chart" />
         </div>
-        <n-empty v-else :description="t('trafficAnalysis.noLatencyData')" :show-icon="false" />
+        <Empty v-else :description="t('trafficAnalysis.noLatencyData')" :show-icon="false" />
       </n-card>
     </n-space>
   </div>
@@ -160,9 +160,9 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import PageHeader from '@/components/PageHeader.vue';
 import {
-  NSpace, NCard, NButton, NIcon, NTag, NAlert, NSkeleton, NResult, NEmpty,
-  NGrid, NGi, NStatistic, NSelect, NSpin, NTooltip, NCheckbox,
+  NSpace, NCard, NButton, NIcon, NTag, NAlert, NSkeleton, NResult, NGrid, NGi, NStatistic, NSelect, NSpin, NTooltip, NCheckbox,
 } from 'naive-ui';
+import { Empty } from '@/components/ui/empty'
 import { RefreshCw as RefreshOutline } from 'lucide-vue-next';
 import VChart from 'vue-echarts';
 import { configApi, type TrafficAnalysisResponse, type TrafficAnalysisHistoryDayResponse, type ModelResponseTimeStat } from '@/api/config';

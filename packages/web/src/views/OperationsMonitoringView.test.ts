@@ -37,7 +37,7 @@ vi.mock("naive-ui", () => {
     useMessage: () => ({
       error: vi.fn(), info: vi.fn(), warning: vi.fn(), success: vi.fn(),
     }),
-    NAlert: stub, NButton: stub, NCard: stub, NDataTable: stub, NEmpty: stub,
+    NAlert: stub, NButton: stub, NCard: stub, NDataTable: stub,
     NGi: stub, NGrid: stub, NIcon: stub, NInput: stub, NRadioButton: stub,
     NRadioGroup: stub, NSelect: stub, NSkeleton: stub, NSpace: stub,
     NTabPane: stub, NTabs: stub, NTag: stub, NText: stub, NTooltip: stub,

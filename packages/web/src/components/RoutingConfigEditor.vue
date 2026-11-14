@@ -123,11 +123,11 @@
             {{ t('wizard.defaultTargetOrderHint') }}
           </div>
 
-          <n-empty v-if="localFormValue.targets.length === 0" :description="t('wizard.noRouteTargets')" class="mt-8">
+          <Empty v-if="localFormValue.targets.length === 0" :description="t('wizard.noRouteTargets')" class="mt-8">
             <template #extra>
               <n-button size="small" type="primary" @click="addTarget">{{ t('wizard.addFirstTarget') }}</n-button>
             </template>
-          </n-empty>
+          </Empty>
 
           <TransitionGroup
             v-else
@@ -254,8 +254,9 @@ import {
 } from 'lucide-vue-next';
 import {
   NFormItem, NInput, NInputNumber, NSelect, NRadioGroup,
-  NGrid, NGridItem, NIcon, NButton, NTag, NEmpty, NAlert
+  NGrid, NGridItem, NIcon, NButton, NTag, NAlert
 } from 'naive-ui';
+import { Empty } from '@/components/ui/empty';
 import type { VirtualModelFormValue, RoutingConfigType } from '@/types/virtual-model';
 import type { TimePriorityTimeRule } from '@/utils/time-priority';
 import {

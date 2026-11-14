@@ -101,7 +101,7 @@
                   <n-text>{{ count }}</n-text>
                 </div>
               </div>
-              <n-empty
+              <Empty
                 v-if="!hasDistributionData(statistics.difficultyDistribution)"
                 :description="t('expertRouting.ui.noDifficultyObservations')"
                 :show-icon="false"
@@ -128,7 +128,7 @@
                   <n-text>{{ count }}</n-text>
                 </div>
               </div>
-              <n-empty
+              <Empty
                 v-if="!hasDistributionData(statistics.bandDistribution)"
                 :description="t('expertRouting.ui.noBandObservations')"
                 :show-icon="false"
@@ -149,7 +149,7 @@
           size="small"
         >
           <template #empty>
-            <n-empty :description="t('expertRouting.ui.noLogs')" />
+            <Empty :description="t('expertRouting.ui.noLogs')" />
           </template>
         </n-data-table>
       </n-card>
@@ -288,7 +288,7 @@
                   class="log-detail-code"
                   word-wrap
                 />
-                <n-empty v-else :description="t('common.noData')" />
+                <Empty v-else :description="t('common.noData')" />
               </div>
             </n-card>
 
@@ -323,7 +323,7 @@
                   class="log-detail-code"
                   word-wrap
                 />
-                <n-empty
+                <Empty
                   v-else
                   :description="t('common.noData')"
                   :show-icon="false"
@@ -362,7 +362,7 @@
                   class="log-detail-code"
                   word-wrap
                 />
-                <n-empty
+                <Empty
                   v-else
                   :description="t('common.noData')"
                   :show-icon="false"
@@ -385,7 +385,6 @@ import {
   NStatistic,
   NProgress,
   NText,
-  NEmpty,
   NDataTable,
   NTag,
   NModal,
@@ -398,6 +397,7 @@ import {
   useMessage,
   type DataTableColumns,
 } from "naive-ui";
+import { Empty } from "@/components/ui/empty"
 import {
   expertRoutingApi,
   type ExpertRoutingStatistics,

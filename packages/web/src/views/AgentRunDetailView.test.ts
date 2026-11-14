@@ -44,7 +44,7 @@ vi.mock("naive-ui", () => {
   return {
     useMessage: () => ({ error: vi.fn(), info: vi.fn(), warning: vi.fn(), success: vi.fn() }),
     NAlert: stub, NButton: stub, NCard: stub, NDataTable: stub,
-    NDescriptions: stub, NDescriptionsItem: stub, NEmpty: stub, NIcon: stub,
+    NDescriptions: stub, NDescriptionsItem: stub, NIcon: stub,
     NTag: stub, NTimeline: stub, NTimelineItem: stub,
   };
 });

@@ -27,13 +27,13 @@
       </div>
 
       <div v-else-if="configs.length === 0" class="empty-state">
-        <n-empty :description="t('virtualModels.empty')">
+        <Empty :description="t('virtualModels.empty')">
           <template #extra>
             <n-button size="small" @click="handleCreateModalOpen">
               {{ t('virtualModels.createFirst') }}
             </n-button>
           </template>
-        </n-empty>
+        </Empty>
       </div>
 
       <template v-else>
@@ -142,10 +142,10 @@ import {
   NGrid,
   NGridItem,
   NSpin,
-  NEmpty,
   NPagination,
   NSelect,
 } from 'naive-ui';
+import { Empty } from '@/components/ui/empty'
 import {
   Plus as AddOutline,
   RefreshCw as RefreshOutline,

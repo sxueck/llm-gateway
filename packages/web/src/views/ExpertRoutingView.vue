@@ -33,7 +33,7 @@
           :pagination="false"
           size="small"
         />
-        <n-empty
+        <Empty
           v-if="configs.length === 0 && !loading"
           :description="t('expertRouting.noConfigs')"
           :show-icon="false"
@@ -44,7 +44,7 @@
               {{ t('expertRouting.createFirstConfig') }}
             </n-button>
           </template>
-        </n-empty>
+        </Empty>
       </n-card>
     </n-space>
   </div>
@@ -54,7 +54,8 @@
 import { h, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { useMessage, useThemeVars, NButton, NCard, NDataTable, NEmpty, NIcon, NPopconfirm, NSpace, NSwitch, NTag, NText } from 'naive-ui';
+import { useMessage, useThemeVars, NButton, NCard, NDataTable, NIcon, NPopconfirm, NSpace, NSwitch, NTag, NText } from 'naive-ui';
+import { Empty } from '@/components/ui/empty'
 import type { DataTableColumns } from 'naive-ui';
 import { Plus as AddOutline, RefreshCw as RefreshOutline } from 'lucide-vue-next';
 import { expertRoutingApi, type Band, type ExpertRouting } from '@/api/expert-routing';
