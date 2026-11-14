@@ -43,7 +43,7 @@
             />
           </n-form-item>
 
-          <n-divider style="margin: 20px 0;" />
+          <Divider style="margin: 20px 0;" />
 
           <n-form-item>
             <template #label>
@@ -197,7 +197,6 @@ import {
   NInputNumber,
   NSelect,
   NSwitch,
-  NDivider,
   NAlert,
   NCard,
   NButton,
@@ -211,6 +210,7 @@ import {
   ArrowUp as ArrowUpOutline,
   ArrowDown as ArrowDownOutline,
 } from 'lucide-vue-next';
+import { Divider } from '@/components/ui/divider';
 import { useRoutingTargets } from '@/composables/useRoutingTargets';
 
 interface Target {

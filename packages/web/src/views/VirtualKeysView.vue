@@ -103,7 +103,7 @@
           label-width="110"
           size="small"
         >
-          <n-divider title-placement="left" class="form-section">{{ t('virtualKeys.formBasic') }}</n-divider>
+          <Divider title-placement="left" class="form-section">{{ t('virtualKeys.formBasic') }}</Divider>
           <n-form-item :label="t('virtualKeys.keyName')" path="name">
             <n-input v-model:value="formValue.name" :placeholder="t('virtualKeys.keyNamePlaceholder')" size="small" />
           </n-form-item>
@@ -123,7 +123,7 @@
           </n-form-item>
 
           <template v-if="!editingId">
-            <n-divider title-placement="left" class="form-section">{{ t('virtualKeys.formAccess') }}</n-divider>
+            <Divider title-placement="left" class="form-section">{{ t('virtualKeys.formAccess') }}</Divider>
             <n-form-item :label="t('virtualKeys.generateMode')" path="keyType">
               <n-radio-group v-model:value="formValue.keyType" size="small">
                 <n-space :size="12">
@@ -145,7 +145,7 @@
             </n-form-item>
           </template>
 
-          <n-divider title-placement="left" class="form-section">{{ t('virtualKeys.formAdvanced') }}</n-divider>
+          <Divider title-placement="left" class="form-section">{{ t('virtualKeys.formAdvanced') }}</Divider>
           <n-form-item :label="t('virtualKeys.rateLimit')" path="rateLimit">
             <n-input-number
               v-model:value="formValue.rateLimit"
@@ -229,7 +229,7 @@
         </n-input-group>
 
         <template v-if="curlSnippets">
-          <n-divider style="margin: 4px 0">{{ t('virtualKeys.curlTitle') }}</n-divider>
+          <Divider style="margin: 4px 0">{{ t('virtualKeys.curlTitle') }}</Divider>
           <span class="curl-base">{{ t('virtualKeys.curlBase', { base: curlBaseUrl }) }}</span>
           <span v-if="curlOriginAssumed" class="curl-base curl-origin-note">{{ t('virtualKeys.curlOriginAssumed') }}</span>
           <div v-for="entry in curlEntries" :key="entry.label" class="curl-block">
@@ -299,7 +299,7 @@
     <n-drawer v-model:show="showDrawer" :width="480" placement="right">
       <n-drawer-content :title="t('virtualKeys.drawerTitle')" closable>
         <div v-if="drawerKey" class="drawer-body">
-          <n-divider title-placement="left" class="form-section">{{ t('virtualKeys.sectionBasic') }}</n-divider>
+          <Divider title-placement="left" class="form-section">{{ t('virtualKeys.sectionBasic') }}</Divider>
           <div class="detail-row">
             <span class="detail-label">{{ t('virtualKeys.keyName') }}</span>
             <span class="detail-value">{{ drawerKey.name }}</span>
@@ -351,7 +351,7 @@
             <span class="detail-value key-mono">{{ JSON.stringify(drawerKey.routingConfig) }}</span>
           </div>
 
-          <n-divider title-placement="left" class="form-section">{{ t('virtualKeys.sectionModels') }}</n-divider>
+          <Divider title-placement="left" class="form-section">{{ t('virtualKeys.sectionModels') }}</Divider>
           <n-space :size="4" wrap>
             <n-tag
               v-for="entry in drawerModelEntries"
@@ -365,7 +365,7 @@
             <span v-if="drawerModelEntries.length === 0">-</span>
           </n-space>
 
-          <n-divider title-placement="left" class="form-section">{{ t('virtualKeys.sectionPolicy') }}</n-divider>
+          <Divider title-placement="left" class="form-section">{{ t('virtualKeys.sectionPolicy') }}</Divider>
           <div class="detail-row">
             <span class="detail-label">{{ t('virtualKeys.policyCache') }}</span>
             <span class="detail-value">{{ onOff(drawerKey.cacheEnabled) }}</span>
@@ -413,7 +413,7 @@
             </span>
           </div>
 
-          <n-divider title-placement="left" class="form-section">{{ t('virtualKeys.sectionMeta') }}</n-divider>
+          <Divider title-placement="left" class="form-section">{{ t('virtualKeys.sectionMeta') }}</Divider>
           <div class="detail-row">
             <span class="detail-label">{{ t('virtualKeys.fieldCreatedAt') }}</span>
             <span class="detail-value">{{ formatDateTime(drawerKey.createdAt) }}</span>
@@ -462,7 +462,6 @@ import {
   NIcon,
   NDrawer,
   NDrawerContent,
-  NDivider,
   NTooltip
 } from 'naive-ui'
 import {
@@ -501,6 +500,7 @@ import { createDefaultVirtualKeyForm } from '@/types/virtual-key'
 import { CONTEXT_BUDGET_TIERS } from '@llm-gateway/shared'
 import PageHeader from '@/components/PageHeader.vue'
 import VirtualKeyQuotaModal from '@/components/VirtualKeyQuotaModal.vue'
+import { Divider } from '@/components/ui/divider'
 import VirtualKeyQuotaButton from '@/components/VirtualKeyQuotaButton.vue'
 import { useVirtualKeyQuotaStatus } from '@/composables/useVirtualKeyQuotaStatus'
 

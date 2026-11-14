@@ -231,7 +231,7 @@
         </n-descriptions-item>
       </n-descriptions>
 
-      <n-divider />
+      <Divider />
 
       <n-form :model="restoreForm" label-placement="left" label-width="140">
         <n-form-item :label="t('backup.restoreType')">
@@ -308,7 +308,6 @@ import {
   NRadioGroup,
   NRadio,
   NInputNumber,
-  NDivider,
   NCheckboxGroup,
   NCheckbox,
   NText
@@ -316,6 +315,7 @@ import {
 import { CircleHelp, CloudDownload, RefreshCw } from 'lucide-vue-next'
 import request from '@/utils/request'
 import PageHeader from '@/components/PageHeader.vue'
+import { Divider } from '@/components/ui/divider'
 
 const message = useMessage()
 const { t, locale } = useI18n()

@@ -52,9 +52,9 @@
     <n-drawer v-model:show="showDrawer" :width="480" placement="right">
       <n-drawer-content :title="t('virtualKeys.drawerTitle')" closable>
         <div v-if="drawerKey" class="drawer-body">
-          <n-divider title-placement="left" class="form-section">
+          <Divider title-placement="left" class="form-section">
             {{ t('virtualKeys.sectionBasic') }}
-          </n-divider>
+          </Divider>
           <div class="detail-row">
             <span class="detail-label">{{ t('virtualKeys.keyName') }}</span>
             <span class="detail-value">{{ drawerKey.name }}</span>
@@ -80,9 +80,9 @@
             </span>
           </div>
 
-          <n-divider title-placement="left" class="form-section">
+          <Divider title-placement="left" class="form-section">
             {{ t('virtualKeys.sectionModels') }}
-          </n-divider>
+          </Divider>
           <n-space :size="4" wrap>
             <n-tag v-for="modelId in collectBoundModelIds(drawerKey)" :key="modelId" size="small">
               {{ modelId }}
@@ -90,9 +90,9 @@
             <span v-if="collectBoundModelIds(drawerKey).length === 0">-</span>
           </n-space>
 
-          <n-divider title-placement="left" class="form-section">
+          <Divider title-placement="left" class="form-section">
             {{ t('virtualKeys.sectionMeta') }}
-          </n-divider>
+          </Divider>
           <div class="detail-row">
             <span class="detail-label">{{ t('virtualKeys.fieldCreatedAt') }}</span>
             <span class="detail-value">{{ formatDateTime(drawerKey.createdAt) }}</span>
@@ -126,7 +126,6 @@ import {
   NDataTable,
   NDrawer,
   NDrawerContent,
-  NDivider,
   NIcon,
   NInput,
   NSelect,
@@ -141,6 +140,7 @@ import { formatDateTime } from '@/utils/date'
 import { collectBoundModelIds, filterVirtualKeys } from '@/utils/virtual-key-helpers'
 import type { VirtualKeyEnabledFilter } from '@/utils/virtual-key-helpers'
 import PageHeader from '@/components/PageHeader.vue'
+import { Divider } from '@/components/ui/divider'
 
 const message = useMessage()
 const router = useRouter()

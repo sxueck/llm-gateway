@@ -137,7 +137,7 @@
                   <n-alert v-if="jevStatus && !jevStatus.configured" type="warning" :show-icon="true">
                     {{ t('expertRouting.ui.classifierUnavailable') }}
                   </n-alert>
-                  <n-divider style="margin: 4px 0" />
+                  <Divider style="margin: 4px 0" />
                   <n-form label-placement="top" size="small">
                     <n-form-item :label="t('expertRouting.timeoutMs')">
                       <n-input-number
@@ -337,7 +337,6 @@ import {
   NAlert,
   NButton,
   NCard,
-  NDivider,
   NForm,
   NFormItem,
   NIcon,
@@ -368,6 +367,7 @@ import {
   type UpdateExpertRoutingRequest,
 } from '@/api/expert-routing';
 import PageHeader from '@/components/PageHeader.vue';
+import { Divider } from '@/components/ui/divider';
 import TierBoard from '@/components/TierBoard.vue';
 import SessionPolicyForm from '@/components/SessionPolicyForm.vue';
 import ExposureSettings from '@/components/ExposureSettings.vue';

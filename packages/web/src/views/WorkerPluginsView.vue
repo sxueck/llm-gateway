@@ -9,7 +9,6 @@ import {
   NDataTable,
   NDescriptions,
   NDescriptionsItem,
-  NDivider,
   NDrawer,
   NDrawerContent,
   NInput,
@@ -28,6 +27,7 @@ import {
 } from "@/api/worker-plugin";
 import { formatTimestamp } from "@/utils/common";
 import PageHeader from "@/components/PageHeader.vue";
+import { Divider } from "@/components/ui/divider";
 
 const message = useMessage();
 const { t } = useI18n();
@@ -431,7 +431,7 @@ onMounted(load);
             {{ t('workerPlugins.setDefaultVersion') }}
           </NButton>
 
-          <NDivider />
+          <Divider />
 
           <section class="detail-section">
             <span class="section-label danger-label">{{ t('workerPlugins.versionStatus') }}</span>

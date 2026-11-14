@@ -20,7 +20,7 @@
           </n-form-item>
         </div>
 
-        <n-divider class="my-4" />
+        <Divider class="my-4" />
 
         <div class="sidebar-section">
           <div class="section-title">{{ t('wizard.routingStrategy') }}</div>
@@ -254,7 +254,7 @@ import {
 } from 'lucide-vue-next';
 import {
   NFormItem, NInput, NInputNumber, NSelect, NRadioGroup,
-  NGrid, NGridItem, NIcon, NDivider, NButton, NTag, NEmpty, NAlert
+  NGrid, NGridItem, NIcon, NButton, NTag, NEmpty, NAlert
 } from 'naive-ui';
 import type { VirtualModelFormValue, RoutingConfigType } from '@/types/virtual-model';
 import type { TimePriorityTimeRule } from '@/utils/time-priority';
@@ -266,6 +266,7 @@ import {
 } from '@/utils/time-priority';
 import { COMMON_IANA_TIMEZONE_OPTIONS } from '@/constants/timezones';
 import { useRoutingTargets } from '@/composables/useRoutingTargets';
+import { Divider } from '@/components/ui/divider';
 import TimePriorityRulesEditor from '@/components/TimePriorityRulesEditor.vue';
 
 interface StrategyType {

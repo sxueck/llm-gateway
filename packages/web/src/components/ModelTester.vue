@@ -35,7 +35,7 @@
         <n-card size="small" class="result-card">
           <n-space vertical :size="16">
             <div class="endpoint-result">
-              <n-divider style="margin: 8px 0;">
+              <Divider style="margin: 8px 0;">
                 <n-space :size="8" align="center">
                   <span style="font-weight: bold;">{{ getChatEndpointName() }}</span>
                   <n-tag
@@ -46,7 +46,7 @@
                     {{ testResult.chat.success ? t('common.success') : t('common.failed') }}
                   </n-tag>
                 </n-space>
-              </n-divider>
+              </Divider>
 
               <n-space vertical :size="12">
                 <n-descriptions :column="2" size="small" bordered>
@@ -91,7 +91,7 @@
             </div>
 
             <div class="endpoint-result" v-if="!isAnthropicProtocol() && !isGoogleProtocol()">
-              <n-divider style="margin: 8px 0;">
+              <Divider style="margin: 8px 0;">
                 <n-space :size="8" align="center">
                   <span style="font-weight: bold;">Responses API</span>
                   <n-tag
@@ -102,7 +102,7 @@
                     {{ testResult.responses.success ? t('common.success') : t('common.failed') }}
                   </n-tag>
                 </n-space>
-              </n-divider>
+              </Divider>
 
               <n-space vertical :size="12">
                 <n-descriptions :column="2" size="small" bordered>
@@ -165,10 +165,10 @@ import {
   NTag,
   NDescriptions,
   NDescriptionsItem,
-  NDivider,
   useMessage,
 } from 'naive-ui';
 import { Zap as FlashOutline } from 'lucide-vue-next';
+import { Divider } from '@/components/ui/divider';
 import { modelApi } from '@/api/model';
 import { PROTOCOL_OPTIONS } from '@/utils/protocol-utils';
 import type { Model } from '@/types';

@@ -124,7 +124,7 @@
             <n-switch v-model:value="formValue.enabled" size="small" />
           </n-form-item>
 
-          <n-divider style="margin: 12px 0 8px 0;">
+          <Divider style="margin: 12px 0 8px 0;">
             <n-space :size="8" align="center">
               <span>{{ t('models.modelAttributes') }}</span>
               <n-button
@@ -134,7 +134,7 @@
                 {{ t('models.searchFromModelPresets') }}
               </n-button>
             </n-space>
-          </n-divider>
+          </Divider>
 
           <ModelAttributesEditor ref="modelAttributesEditorRef" v-model="formValue.modelAttributes" />
         </n-form>
@@ -206,7 +206,7 @@
 <script setup lang="ts">
 import { ref, h, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NPopconfirm, NDivider, NIcon, NTooltip, NText, NRadioGroup, NRadioButton } from 'naive-ui';
+import { useMessage, NSpace, NButton, NDataTable, NCard, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NPopconfirm, NIcon, NTooltip, NText, NRadioGroup, NRadioButton } from 'naive-ui';
 import { Pencil as EditOutlined, Trash2 as DeleteOutlined, Command as KeyboardCommandKeyOutlined, Copy as ContentCopyOutlined } from 'lucide-vue-next';
 import { Search as SearchOutlined } from 'lucide-vue-next';
 import { useI18n } from 'vue-i18n';
@@ -219,6 +219,7 @@ import ModelAttributesEditor from '@/components/ModelAttributesEditor.vue';
 import ModelPresetSelector from '@/components/ModelPresetSelector.vue';
 import BatchModelAdder from '@/components/BatchModelAdder.vue';
 import ModelTester from '@/components/ModelTester.vue';
+import { Divider } from '@/components/ui/divider';
 import type { Model, ModelAttributes } from '@/types';
 import type { ModelPresetSearchResult } from '@/api/model-presets';
 import { getProtocolInfo } from '@/utils/protocol-utils';

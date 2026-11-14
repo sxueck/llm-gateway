@@ -54,7 +54,7 @@
             </div>
           </div>
 
-          <n-divider style="margin: 4px 0">{{ t('userAccess.bindNewSection') }}</n-divider>
+          <Divider style="margin: 4px 0">{{ t('userAccess.bindNewSection') }}</Divider>
 
           <n-select
             v-model:value="selectedNewKeyIds"
@@ -83,11 +83,10 @@
 <script setup lang="ts">
 import { computed, h, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useMessage } from 'naive-ui';
-import type { DataTableColumns } from 'naive-ui';
-import { NAlert, NButton, NCard, NDataTable, NDivider, NIcon, NModal, NSelect, NSpace, NSpin, NTag } from 'naive-ui';
+import { useMessage, NAlert, NButton, NCard, NDataTable, NIcon, NModal, NSelect, NSpace, NSpin, NTag, type DataTableColumns } from 'naive-ui';
 import { RefreshCw as RefreshOutlined } from 'lucide-vue-next';
 import PageHeader from '@/components/PageHeader.vue';
+import { Divider } from '@/components/ui/divider';
 import { userAccessApi } from '@/api/user-access';
 import { virtualKeyApi } from '@/api/virtual-key';
 import { useAuthStore } from '@/stores/auth';
