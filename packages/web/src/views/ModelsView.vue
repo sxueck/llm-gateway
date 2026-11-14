@@ -457,7 +457,7 @@ const columns: DataTableColumns<Model> = [
     render: (row: Model) => {
       const protocols = row.supportedProtocols || [];
       if (protocols.length === 0) {
-        return h('span', { style: 'color: #bfbfbf' }, '—');
+        return h('span', { style: 'color: var(--color-neutral-700)' }, '—');
       }
       return h(NSpace, { size: 4 }, {
         default: () => protocols.map((p) => {
@@ -739,7 +739,7 @@ onMounted(async () => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #ffffff;
+  background: var(--color-neutral-0);
   border-radius: 16px;
   border: 1px solid rgba(25, 55, 43, 0.07);
   overflow: hidden;
@@ -758,25 +758,25 @@ onMounted(async () => {
 }
 
 .table-card :deep(.n-data-table-th) {
-  background: #f6f9f7;
+  background: var(--color-neutral-50);
   font-weight: 500;
   font-size: 12px;
-  color: #586c62;
+  color: var(--color-neutral-700);
   text-transform: uppercase;
   letter-spacing: 0.02em;
-  border-bottom: 1px solid #e8eeea;
+  border-bottom: 1px solid var(--color-neutral-200);
   padding: 12px;
 }
 
 .table-card :deep(.n-data-table-td) {
   padding: 12px;
-  border-bottom: 1px solid #eef2ef;
+  border-bottom: 1px solid var(--color-neutral-100);
   font-size: 13px;
-  color: #34453d;
+  color: var(--color-neutral-800);
 }
 
 .table-card :deep(.n-data-table-tr:hover .n-data-table-td) {
-  background: #f7faf8;
+  background: var(--color-neutral-50);
 }
 
 .table-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
@@ -799,7 +799,7 @@ onMounted(async () => {
 }
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape .n-icon) {
-  color: #666;
+  color: var(--color-neutral-600);
   font-size: 16px;
 }
 
@@ -809,14 +809,14 @@ onMounted(async () => {
 }
 
 .model-modal :deep(.n-card) {
-  background: #ffffff;
+  background: var(--color-neutral-0);
   border-radius: 8px;
-  border: 1px solid #e8e8e8;
+  border: 1px solid var(--color-neutral-200);
 }
 
 .model-modal :deep(.n-card__header) {
   padding: 16px 20px;
-  border-bottom: 1px solid #e8e8e8;
+  border-bottom: 1px solid var(--color-neutral-200);
 }
 
 .model-modal :deep(.n-card__content) {
@@ -831,18 +831,18 @@ onMounted(async () => {
 
 .model-modal :deep(.n-card__footer) {
   padding: 12px 20px;
-  border-top: 1px solid #e8e8e8;
-  background: #ffffff;
+  border-top: 1px solid var(--color-neutral-200);
+  background: var(--color-neutral-0);
 }
 
 .table-card :deep(.n-card__header) {
   padding: 16px 20px;
-  border-bottom: 1px solid #e8eeea;
+  border-bottom: 1px solid var(--color-neutral-200);
 }
 
 .toolbar-label {
   font-size: 13px;
-  color: #607168;
+  color: var(--color-neutral-700);
 }
 
 .models-split-layout {
@@ -856,7 +856,7 @@ onMounted(async () => {
 
 .sidebar-heading {
   padding: 4px 12px 10px;
-  color: #83928a;
+  color: var(--color-neutral-700);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: .04em;
@@ -871,26 +871,26 @@ onMounted(async () => {
 }
 
 .overview-label {
-  color: #83928a;
+  color: var(--color-neutral-700);
   font-size: 11px;
   letter-spacing: .04em;
 }
 
 .group-overview h3 {
   margin: 4px 0;
-  color: #34453d;
+  color: var(--color-neutral-800);
   font-size: 18px;
 }
 
 .group-overview p {
   margin: 0;
-  color: #83928a;
+  color: var(--color-neutral-700);
   font-size: 12px;
 }
 
 .provider-disabled-note {
   margin: 0 12px 12px;
-  color: #805f29;
+  color: var(--color-warning-pressed);
   font-size: 12px;
 }
 
@@ -899,7 +899,7 @@ onMounted(async () => {
   min-height: 0;
   overflow-y: auto;
   padding-right: 12px;
-  border-right: 1px solid #eef2ef;
+  border-right: 1px solid var(--color-neutral-100);
 }
 
 .group-list-item {
@@ -921,7 +921,7 @@ onMounted(async () => {
 }
 
 .group-list-item:hover {
-  background: #f3f7f4;
+  background: var(--color-neutral-50);
 }
 
 .group-list-item:focus-visible {
@@ -931,7 +931,7 @@ onMounted(async () => {
 
 .group-empty {
   padding: 12px;
-  color: #83928a;
+  color: var(--color-neutral-700);
   font-size: 13px;
 }
 
@@ -941,7 +941,7 @@ onMounted(async () => {
 
 .group-item-name {
   font-size: 13px;
-  color: #42534a;
+  color: var(--color-neutral-700);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -955,8 +955,8 @@ onMounted(async () => {
 .group-item-count {
   flex-shrink: 0;
   font-size: 12px;
-  color: #6e8076;
-  background: #edf3ef;
+  color: var(--color-neutral-700);
+  background: var(--color-neutral-100);
   border-radius: 10px;
   padding: 2px 8px;
 }

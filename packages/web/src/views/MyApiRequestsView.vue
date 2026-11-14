@@ -462,7 +462,7 @@ onMounted(() => {
 }
 
 .detail-meta-card {
-  background: #fafafa;
+  background: var(--color-neutral-50);
   border-radius: 12px;
 }
 
@@ -490,36 +490,36 @@ onMounted(() => {
 }
 
 .table-time {
-  color: #374151;
+  color: var(--color-neutral-700);
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
 
 .table-model {
-  color: #111827;
+  color: var(--color-neutral-900);
   font-weight: 500;
   line-height: 1.45;
 }
 
 .table-latency {
-  color: #1f2937;
+  color: var(--color-neutral-800);
   font-weight: 600;
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
 
 .table-placeholder {
-  color: #9ca3af;
+  color: var(--color-neutral-700);
 }
 
 .table-preview {
-  color: #475569;
+  color: var(--color-neutral-700);
   font-size: 12.5px;
   line-height: 1.5;
 }
 
 .table-key {
-  color: #1f2937;
+  color: var(--color-neutral-800);
   font-size: 12.5px;
   font-weight: 500;
 }
@@ -532,7 +532,7 @@ onMounted(() => {
 
 .token-line {
   font-size: 12px;
-  color: #4b5563;
+  color: var(--color-neutral-700);
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
 }

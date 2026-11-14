@@ -59,8 +59,8 @@
             class="target-item fallback-item"
           >
             <div class="target-icon">
-              <n-icon v-if="index === 0" color="#0f6b4a"><CheckmarkCircle /></n-icon>
-              <n-icon v-else color="#f0a020"><AlertCircleOutline /></n-icon>
+              <n-icon v-if="index === 0" :color="primaryColor.base"><CheckmarkCircle /></n-icon>
+              <n-icon v-else :color="warningColor.base"><AlertCircleOutline /></n-icon>
             </div>
             <div class="target-content">
               <div class="target-main target-main-split">
@@ -247,6 +247,7 @@ import {
 } from 'lucide-vue-next';
 
 import type { RoutingTargetStatus } from '@/api/config';
+import { primaryColor, infoColor, warningColor } from '@/styles/color-tokens';
 import { ruleCrossesMidnight, type TimePriorityTimeRule } from '@/utils/time-priority';
 
 const props = defineProps<{
@@ -362,9 +363,9 @@ function ruleTargetLabel(pos: number) {
 }
 
 function getWeightColor(weight: number) {
-  if (weight >= 0.8) return '#0f6b4a';
-  if (weight >= 0.4) return '#2080f0';
-  return '#f0a020';
+  if (weight >= 0.8) return primaryColor.base;
+  if (weight >= 0.4) return infoColor.base;
+  return warningColor.base;
 }
 </script>
 
@@ -384,8 +385,8 @@ function getWeightColor(weight: number) {
   border-color: var(--n-color-target);
 }
 
-.type-fallback:hover { border-color: rgba(240, 160, 32, 0.3); }
-.type-loadbalance:hover { border-color: rgba(32, 128, 240, 0.3); }
+.type-fallback:hover { border-color: color-mix(in srgb, var(--color-warning) 30%, transparent); }
+.type-loadbalance:hover { border-color: color-mix(in srgb, var(--color-info) 30%, transparent); }
 
 .card-header {
   display: flex;
@@ -437,7 +438,7 @@ function getWeightColor(weight: number) {
   top: 10px;
   bottom: 10px;
   width: 2px;
-  background: #f0f0f0;
+  background: var(--color-neutral-200);
   z-index: 0;
 }
 
@@ -447,13 +448,13 @@ function getWeightColor(weight: number) {
   gap: 8px;
   position: relative;
   z-index: 1;
-  background: #fff;
+  background: var(--color-neutral-0);
   padding: 4px 0;
 }
 
 .target-icon {
   font-size: 18px;
-  background: #fff;
+  background: var(--color-neutral-0);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -504,7 +505,7 @@ function getWeightColor(weight: number) {
 
 .target-meta {
   font-size: 11px;
-  color: #999;
+  color: var(--color-neutral-700);
   margin-top: 6px;
 }
 
@@ -520,19 +521,19 @@ function getWeightColor(weight: number) {
 
 .target-subline {
   font-size: 11px;
-  color: #666;
+  color: var(--color-neutral-700);
   margin-top: 6px;
 }
 
 .priority-badge {
   font-size: 10px;
-  color: #ccc;
+  color: var(--color-neutral-700);
   font-family: monospace;
 }
 
 .provider-tag {
-  background: #f5f5f7;
-  color: #666;
+  background: var(--color-neutral-50);
+  color: var(--color-neutral-700);
   font-size: 11px;
   height: 18px;
   padding: 0 4px;
@@ -543,7 +544,7 @@ function getWeightColor(weight: number) {
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 500;
-  color: #333;
+  color: var(--color-text);
 }
 
 .lb-view {
@@ -564,7 +565,7 @@ function getWeightColor(weight: number) {
 
 .weight-label {
   font-size: 12px;
-  color: #666;
+  color: var(--color-neutral-700);
   font-weight: 600;
   font-family: monospace;
 }
@@ -579,7 +580,7 @@ function getWeightColor(weight: number) {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  background: #f9f9fa;
+  background: var(--color-neutral-50);
   padding: 6px 10px;
   border-radius: 6px;
 }
@@ -601,7 +602,7 @@ function getWeightColor(weight: number) {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #666;
+  color: var(--color-neutral-700);
   margin-top: 4px;
   padding-left: 2px;
 }
@@ -610,7 +611,7 @@ function getWeightColor(weight: number) {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  background: #f9f9fa;
+  background: var(--color-neutral-50);
   border-radius: 6px;
   padding: 6px 10px;
   margin-top: 6px;
@@ -625,12 +626,12 @@ function getWeightColor(weight: number) {
 }
 
 .rule-days {
-  color: #333;
+  color: var(--color-text);
   font-weight: 500;
 }
 
 .rule-range {
-  color: #666;
+  color: var(--color-neutral-700);
   font-family: monospace;
   white-space: nowrap;
 }

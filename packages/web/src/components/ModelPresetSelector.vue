@@ -220,7 +220,7 @@ onMounted(() => {
 
 .info-item {
   font-size: 12px;
-  color: #666;
+  color: var(--color-neutral-700);
 }
 </style>
 

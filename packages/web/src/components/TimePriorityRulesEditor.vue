@@ -275,26 +275,26 @@ function moveOrder(ruleIndex: number, position: number, direction: -1 | 1) {
 .rules-title {
   font-size: 12px;
   font-weight: 600;
-  color: #999;
+  color: var(--color-neutral-700);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .rules-hint {
   font-size: 12px;
-  color: #999;
+  color: var(--color-neutral-700);
   line-height: 1.6;
-  background: #fafafa;
-  border: 1px solid #f0f0f0;
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-200);
   border-radius: 6px;
   padding: 8px 10px;
 }
 
 .rules-empty {
   font-size: 13px;
-  color: #d03050;
-  background: rgba(208, 48, 80, 0.04);
-  border: 1px dashed rgba(208, 48, 80, 0.3);
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 4%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--color-error) 30%, transparent);
   border-radius: 6px;
   padding: 10px 12px;
 }
@@ -304,20 +304,20 @@ function moveOrder(ruleIndex: number, position: number, direction: -1 | 1) {
   flex-direction: column;
   gap: 10px;
   padding: 12px 14px;
-  border: 1px solid #eee;
+  border: 1px solid var(--color-neutral-200);
   border-radius: 8px;
-  background: #fff;
+  background: var(--color-neutral-0);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .rule-item:hover {
-  border-color: #d9d9d9;
+  border-color: var(--color-neutral-300);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
 }
 
 .rule-item.is-active {
-  border-color: rgba(24, 160, 88, 0.45);
-  box-shadow: 0 0 0 1px rgba(24, 160, 88, 0.15);
+  border-color: color-mix(in srgb, var(--color-success) 45%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-success) 15%, transparent);
 }
 
 .rule-top {
@@ -331,8 +331,8 @@ function moveOrder(ruleIndex: number, position: number, direction: -1 | 1) {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #f0f0f0;
-  color: #999;
+  background: var(--color-neutral-200);
+  color: var(--color-neutral-700);
   font-size: 11px;
   font-weight: 600;
   display: inline-flex;
@@ -359,7 +359,7 @@ function moveOrder(ruleIndex: number, position: number, direction: -1 | 1) {
 
 .rule-remove {
   margin-left: auto;
-  color: #999;
+  color: var(--color-neutral-700);
   opacity: 0.6;
 }
 
@@ -368,7 +368,7 @@ function moveOrder(ruleIndex: number, position: number, direction: -1 | 1) {
 }
 
 .rule-remove:hover {
-  color: #d03050;
+  color: var(--color-error);
 }
 
 .rule-times {
@@ -404,12 +404,12 @@ function moveOrder(ruleIndex: number, position: number, direction: -1 | 1) {
 
 .time-sep {
   padding-bottom: 6px;
-  color: #999;
+  color: var(--color-neutral-700);
 }
 
 .field-label {
   font-size: 11px;
-  color: #666;
+  color: var(--color-neutral-700);
 }
 
 .rule-order {
@@ -428,8 +428,8 @@ function moveOrder(ruleIndex: number, position: number, direction: -1 | 1) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #f9f9fa;
-  border: 1px solid #eee;
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-200);
   border-radius: 6px;
   padding: 3px 8px;
   font-size: 12px;
@@ -439,8 +439,8 @@ function moveOrder(ruleIndex: number, position: number, direction: -1 | 1) {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: var(--n-color-primary, #18a058);
-  color: #fff;
+  background: var(--n-color-primary, var(--color-success));
+  color: var(--color-neutral-0);
   font-size: 10px;
   font-weight: 600;
   display: inline-flex;
@@ -453,7 +453,7 @@ function moveOrder(ruleIndex: number, position: number, direction: -1 | 1) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #333;
+  color: var(--color-text);
 }
 
 .order-actions {

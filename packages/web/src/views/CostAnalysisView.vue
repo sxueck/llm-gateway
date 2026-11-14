@@ -570,7 +570,7 @@ onMounted(() => {
 }
 
 .content-section {
-  border: 1px solid #e6ebe8;
+  border: 1px solid var(--color-neutral-200);
   border-radius: 16px;
 }
 
@@ -584,7 +584,7 @@ onMounted(() => {
 
 .section-heading h3 {
   margin: 0;
-  color: #17231e;
+  color: var(--color-neutral-900);
   font-size: 16px;
   font-weight: 600;
 }
@@ -592,13 +592,13 @@ onMounted(() => {
 .section-heading p,
 .section-description {
   margin: 6px 0 0;
-  color: #68756f;
+  color: var(--color-neutral-700);
   font-size: 13px;
 }
 
 .section-count {
   flex-shrink: 0;
-  color: #68756f;
+  color: var(--color-neutral-700);
   font-size: 13px;
 }
 
@@ -609,7 +609,7 @@ onMounted(() => {
 .pricing-source-detail {
   margin-top: 2px;
   font-size: 11px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
 }
 
@@ -630,7 +630,7 @@ onMounted(() => {
 
 .cost-info {
   margin-top: 8px;
-  color: #666;
+  color: var(--color-neutral-700);
 }
 
 @media (max-width: 639px) {

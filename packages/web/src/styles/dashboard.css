@@ -2,7 +2,7 @@
   max-width: 1400px;
   margin: 0 auto;
   padding: 0;
-  color: #1f2937;
+  color: var(--color-text);
   line-height: 1.5;
   text-rendering: optimizeLegibility;
 }
@@ -18,21 +18,21 @@
   flex-direction: column;
   gap: 24px;
   padding: clamp(22px, 3vw, 36px);
-  border: 1px solid #e6ebe8;
+  border: 1px solid var(--color-border);
   border-radius: 24px;
-  background: #ffffff;
+  background: var(--color-neutral-0);
   box-shadow: 0 12px 36px -28px rgba(15, 63, 43, 0.22);
 }
 
 #app .dashboard-command-center .dashboard-primary .n-card.stat-card {
-  border: 1px solid #e6eeea;
-  background: #f8faf9;
+  border: 1px solid var(--color-border);
+  background: var(--color-neutral-50);
   box-shadow: none;
 }
 
 #app .dashboard-command-center .dashboard-primary .n-card.stat-card-primary {
-  border-color: #cce4d8;
-  background: #edf7f1;
+  border-color: var(--color-brand-700);
+  background: var(--color-brand-700);
 }
 
 .dashboard-view :deep(.page-heading__title) {
@@ -43,7 +43,17 @@
 
 .dashboard-view :deep(.page-heading__subtitle) {
   font-size: 14px;
-  color: #68756f;
+  color: var(--color-neutral-700);
+}
+
+.dashboard-view :deep(.page-heading__actions) {
+  justify-content: flex-end;
+}
+
+@media (max-width: 700px) {
+  .dashboard-view :deep(.page-heading__actions) {
+    justify-content: flex-start;
+  }
 }
 
 .dashboard-signal-strip {
@@ -55,9 +65,9 @@
 .dashboard-signal {
   min-width: 0;
   padding: 14px 16px 13px;
-  border: 1px solid #e9eeeb;
+  border: 1px solid var(--color-border);
   border-radius: 14px;
-  background: #f8faf9;
+  background: var(--color-neutral-50);
 }
 
 .signal-heading {
@@ -65,13 +75,13 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-  color: #68756f;
+  color: var(--color-neutral-700);
   font-size: 11px;
   letter-spacing: 0.02em;
 }
 
 .signal-heading strong {
-  color: #263d32;
+  color: var(--color-title);
   font-size: 16px;
   font-weight: 650;
   letter-spacing: -0.025em;
@@ -83,19 +93,19 @@
   margin-top: 12px;
   overflow: hidden;
   border-radius: 999px;
-  background: #e2eae5;
+  background: var(--color-neutral-200);
 }
 
 .signal-meter span {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: #dc7355;
+  background: var(--color-warning);
   transition: width 500ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .signal-meter-muted span {
-  background: #50a879;
+  background: var(--color-success);
 }
 
 @media (max-width: 900px) {
@@ -138,9 +148,9 @@
 
 .stat-card,
 .trend-card {
-  background: #ffffff;
+  background: var(--color-neutral-0);
   border-radius: 12px;
-  border: 1px solid #f3f4f6;
+  border: 1px solid var(--color-neutral-100);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
 }
 
@@ -181,34 +191,28 @@
 
 .stat-card:hover {
   box-shadow: 0 8px 22px -12px rgba(15, 107, 74, 0.18);
-  border-color: #d1d5db;
+  border-color: var(--color-neutral-300);
 }
 
 #app .n-card.stat-card-primary {
-  background: #edf7f1;
-  color: #173b2b;
-  border: 1px solid #cce4d8;
+  background: var(--color-brand-700);
+  color: var(--color-neutral-0);
+  border: 1px solid var(--color-brand-700);
 }
 
 #app .n-card.stat-card-primary::after {
-  background: radial-gradient(circle, rgba(0, 98, 65, 0.06) 0%, rgba(0, 98, 65, 0) 70%);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 70%);
 }
 
 #app .n-card.stat-card-primary:hover {
   box-shadow: 0 10px 24px -12px rgba(15, 107, 74, 0.35);
 }
 
-#app .n-card.stat-card-primary .stat-header {
-  color: #4e6d5d;
-}
-
-#app .n-card.stat-card-primary .stat-main-value {
-  color: #173b2b;
-}
-
+#app .n-card.stat-card-primary .stat-header,
+#app .n-card.stat-card-primary .stat-main-value,
 #app .n-card.stat-card-primary .stat-detail-label,
 #app .n-card.stat-card-primary .stat-detail-value {
-  color: #4e6d5d;
+  color: var(--color-neutral-0);
 }
 
 .stat-content {
@@ -227,7 +231,7 @@
 .stat-header {
   font-size: 12px;
   font-weight: 500;
-  color: #68756f;
+  color: var(--color-neutral-700);
   letter-spacing: 0.01em;
   line-height: 1.4;
   margin-bottom: 14px;
@@ -239,7 +243,7 @@
 .stat-main-value {
   font-size: 42px;
   font-weight: 650;
-  color: #17231e;
+  color: var(--color-title);
   line-height: 1.12;
   font-variant-numeric: tabular-nums lining-nums;
   letter-spacing: -0.035em;
@@ -316,7 +320,7 @@
 }
 
 .stat-value-error {
-  color: #d03050;
+  color: var(--color-error);
 }
 
 .stat-unit {
@@ -354,7 +358,7 @@
 }
 
 .stat-detail-label {
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   font-weight: 500;
 }
 
@@ -367,7 +371,7 @@
 
 .stat-detail-value {
   min-height: 1.45em;
-  color: #1a1a1a;
+  color: var(--color-text);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   overflow: hidden;
@@ -381,12 +385,12 @@
 
 .stat-detail-error .stat-detail-label,
 .stat-detail-error .stat-detail-value {
-  color: #d03050;
+  color: var(--color-error);
 }
 
 .stat-progress {
   height: 4px;
-  background-color: #f3f4f6;
+  background-color: var(--color-neutral-100);
   border-radius: 2px;
   margin-top: 12px;
   overflow: hidden;
@@ -406,7 +410,7 @@
 
 .trend-card:hover {
   box-shadow: 0 8px 22px -12px rgba(15, 107, 74, 0.12);
-  border-color: #e5e7eb;
+  border-color: var(--color-neutral-200);
 }
 
 .trend-card :deep(.n-card__header) {
@@ -423,7 +427,7 @@
 .trend-card :deep(.n-card-header__main) {
   font-size: 18px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--color-title);
   letter-spacing: -0.02em;
   line-height: 1.35;
 }
@@ -438,14 +442,14 @@
   font-size: 18px;
   font-weight: 600;
   line-height: 1.3;
-  color: #1a1a1a;
+  color: var(--color-title);
 }
 
 .chart-header-note {
   margin-left: 8px;
   font-size: 12px;
   font-weight: 400;
-  color: #6b7280;
+  color: var(--color-neutral-700);
   line-height: 1.5;
 }
 
@@ -512,7 +516,7 @@
 .chart-placeholder {
   height: 420px;
   border-radius: 8px;
-  background: #f8faf9;
+  background: var(--color-neutral-50);
 }
 
 .trend-card :deep([data-slot="empty"]),
@@ -535,7 +539,7 @@
 }
 
 .overview-card {
-  background: #ffffff;
+  background: var(--color-neutral-0);
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
@@ -560,7 +564,7 @@
 .overview-card :deep(.n-card-header__main) {
   font-size: 18px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--color-title);
   letter-spacing: -0.02em;
 }
 
@@ -598,7 +602,7 @@
 
 .overview-label {
   font-size: 13px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   font-weight: 500;
   line-height: 1.45;
   letter-spacing: 0.01em;
@@ -607,7 +611,7 @@
 .overview-value {
   font-size: 18px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--color-title);
   line-height: 1.35;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;

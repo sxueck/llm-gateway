@@ -106,22 +106,22 @@ const tooltipText = computed(() =>
 }
 
 .dot-green {
-  background: #10b981;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+  background: var(--color-success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-success) 15%, transparent);
 }
 
 .dot-amber {
-  background: #f59e0b;
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+  background: var(--color-warning);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-warning) 15%, transparent);
 }
 
 .dot-red {
-  background: #ef4444;
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+  background: var(--color-error);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-error) 15%, transparent);
 }
 
 .dot-gray {
-  background: #d9d9d9;
+  background: var(--color-neutral-300);
 }
 
 .rate {
@@ -132,10 +132,10 @@ const tooltipText = computed(() =>
   font-variant-numeric: tabular-nums;
 }
 
-.rate-green { color: #059669; }
-.rate-amber { color: #d97706; }
-.rate-red { color: #dc2626; }
-.rate-gray { color: #8c8c8c; }
+.rate-green { color: var(--color-success); }
+.rate-amber { color: var(--color-warning); }
+.rate-red { color: var(--color-error); }
+.rate-gray { color: var(--color-neutral-700); }
 
 .bars {
   display: inline-flex;
@@ -148,16 +148,16 @@ const tooltipText = computed(() =>
   width: 5px;
   height: 100%;
   border-radius: 1.5px;
-  background: #ececec;
+  background: var(--color-neutral-200);
 }
 
-.bar-ok { background: #34d399; }
-.bar-partial { background: #fbbf24; }
-.bar-fail { background: #f87171; }
-.bar-empty { background: #ececec; }
+.bar-ok { background: var(--color-success); }
+.bar-partial { background: var(--color-warning); }
+.bar-fail { background: var(--color-error); }
+.bar-empty { background: var(--color-neutral-200); }
 
 .no-traffic {
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   font-size: 12px;
 }
 </style>

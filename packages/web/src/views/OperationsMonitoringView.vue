@@ -574,6 +574,7 @@ import {
   type OpsRequestSourcesResponse,
 } from "@/api/ops-metrics";
 import { configApi } from "@/api/config";
+import { infoColor, successColor, withAlpha } from "@/styles/color-tokens";
 import { useSystemConfig } from "@/composables/useSystemConfig";
 import { copyToClipboard } from "@/utils/common";
 import { formatTokenNumber, formatTimestamp } from "@/utils/format";
@@ -1023,7 +1024,7 @@ const requestSourceColumns = computed<
                 "span",
                 {
                   style:
-                    "font-weight: 600; color: #111827; cursor: pointer; text-decoration: underline; text-underline-offset: 4px; text-decoration-color: #d1d5db;",
+                    "font-weight: 600; color: var(--color-neutral-900); cursor: pointer; text-decoration: underline; text-underline-offset: 4px; text-decoration-color: var(--color-neutral-300);",
                   onClick: () => handleLookupIp(row.ip),
                   title: t("operationsMonitoring.requestSource.lookupHint"),
                   class: "ip-clickable",
@@ -1038,7 +1039,7 @@ const requestSourceColumns = computed<
               lookupLoadingIp.value === row.ip ? h(NSpin, { size: 14 }) : null,
             ],
           ),
-          h("div", { style: "font-size: 12px; color: #6b7280;" }, subText),
+          h("div", { style: "font-size: 12px; color: var(--color-neutral-700);" }, subText),
         ],
       );
     },
@@ -1087,7 +1088,7 @@ const requestSourceColumns = computed<
             "div",
             {
               style:
-                "font-size: 12px; color: #374151; line-height: 1.5; word-break: break-all;",
+                "font-size: 12px; color: var(--color-neutral-800); line-height: 1.5; word-break: break-all;",
             },
             text,
           ),
@@ -1393,7 +1394,7 @@ const trendChartOption = computed(() => {
         name: t("operationsMonitoring.trend.requests"),
         type: "bar",
         data: barData,
-        itemStyle: { color: "#2080f0", borderRadius: [3, 3, 0, 0] },
+        itemStyle: { color: infoColor.base, borderRadius: [3, 3, 0, 0] },
       },
       {
         name: t("operationsMonitoring.trend.successRate"),
@@ -1401,8 +1402,8 @@ const trendChartOption = computed(() => {
         yAxisIndex: 1,
         data: rates,
         connectNulls: false,
-        itemStyle: { color: "#18a058" },
-        lineStyle: { color: "#18a058", width: 2 },
+        itemStyle: { color: successColor.base },
+        lineStyle: { color: successColor.base, width: 2 },
       },
     ],
   };
@@ -1419,7 +1420,7 @@ function trendBarDataWithStyle(points: OpsTrendPoint[]) {
     if (p.partial)
       return {
         value: p.requestCount,
-        itemStyle: { color: "rgba(32, 128, 240, 0.4)" },
+        itemStyle: { color: withAlpha(infoColor.base, 0.4) },
       };
     return p.requestCount;
   });
@@ -2023,7 +2024,7 @@ onBeforeUnmount(() => {
   gap: 16px;
   margin-bottom: 12px;
   font-size: 13px;
-  color: var(--color-text, #374151);
+  color: var(--color-text, var(--color-neutral-800));
 }
 
 .window-info-item {
@@ -2044,8 +2045,8 @@ onBeforeUnmount(() => {
 
 .filter-card {
   margin-bottom: 20px;
-  background-color: #fff;
-  border: 1px solid #e8eeea;
+  background-color: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
   border-radius: 12px;
 }
 
@@ -2057,7 +2058,7 @@ onBeforeUnmount(() => {
 
 .filter-label {
   font-size: 12px;
-  color: #666;
+  color: var(--color-neutral-700);
   font-weight: 500;
 }
 
@@ -2074,8 +2075,8 @@ onBeforeUnmount(() => {
 }
 
 .summary-card {
-  background: linear-gradient(135deg, #ffffff 0%, #f8f8f8 100%);
-  border: 1px solid #f0f0f0;
+  background: linear-gradient(135deg, var(--color-neutral-0) 0%, var(--color-neutral-50) 100%);
+  border: 1px solid var(--color-neutral-100);
   border-radius: 10px;
   padding: 14px 16px;
   height: 100%;
@@ -2094,14 +2095,14 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #666;
+  color: var(--color-neutral-700);
   margin-bottom: 8px;
 }
 
 .summary-value {
   font-size: 24px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--color-neutral-900);
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
@@ -2109,14 +2110,14 @@ onBeforeUnmount(() => {
 .summary-unit {
   font-size: 13px;
   font-weight: 400;
-  color: #999;
+  color: var(--color-neutral-700);
   margin-left: 4px;
 }
 
 .summary-sub {
   margin-top: 6px;
   font-size: 12px;
-  color: #999;
+  color: var(--color-neutral-700);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2132,7 +2133,7 @@ onBeforeUnmount(() => {
 
 .trend-legend-hint {
   font-size: 12px;
-  color: #666;
+  color: var(--color-neutral-700);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2143,7 +2144,7 @@ onBeforeUnmount(() => {
   width: 10px;
   height: 10px;
   border-radius: 2px;
-  background: rgba(32, 128, 240, 0.4);
+  background: color-mix(in srgb, var(--color-info) 40%, transparent);
 }
 
 .gap-dot {
@@ -2151,7 +2152,7 @@ onBeforeUnmount(() => {
   width: 10px;
   height: 10px;
   border-radius: 2px;
-  border: 1px dashed #bbb;
+  border: 1px dashed var(--color-neutral-400);
   background: transparent;
 }
 
@@ -2160,7 +2161,7 @@ onBeforeUnmount(() => {
 }
 
 .ranking-card {
-  background-color: #fafafa;
+  background-color: var(--color-neutral-50);
 }
 
 .ranking-row {
@@ -2168,7 +2169,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   align-items: center;
   padding: 8px 4px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--color-neutral-100);
   cursor: pointer;
   transition: background-color 0.15s;
 }
@@ -2183,7 +2184,7 @@ onBeforeUnmount(() => {
 
 .ranking-name {
   font-size: 13px;
-  color: #1f2937;
+  color: var(--color-neutral-800);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2200,25 +2201,25 @@ onBeforeUnmount(() => {
 
 .ranking-count {
   font-size: 13px;
-  color: #1f2937;
+  color: var(--color-neutral-800);
   font-weight: 600;
 }
 
 .ranking-rate {
   font-size: 12.5px;
-  color: #18a058;
+  color: var(--color-success);
   min-width: 52px;
   text-align: right;
 }
 
 .ranking-rate-bad {
-  color: #d03050;
+  color: var(--color-error);
 }
 
 .ranking-empty {
   padding: 24px 0;
   text-align: center;
-  color: #999;
+  color: var(--color-neutral-700);
 }
 
 .dimension-toolbar {
@@ -2237,12 +2238,12 @@ onBeforeUnmount(() => {
 .metric-value {
   font-variant-numeric: tabular-nums;
   font-weight: 500;
-  color: #1f2937;
+  color: var(--color-neutral-800);
 }
 
 .metric-samples {
   font-size: 11.5px;
-  color: #9ca3af;
+  color: var(--color-neutral-700);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2252,20 +2253,20 @@ onBeforeUnmount(() => {
 
 .metric-name-code {
   font-size: 12.5px;
-  color: #111827;
+  color: var(--color-neutral-900);
 }
 
 .metric-masked {
   font-size: 11.5px;
-  color: #6b7280;
-  background: #f3f4f6;
+  color: var(--color-neutral-700);
+  background: var(--color-neutral-100);
   border-radius: 4px;
   padding: 1px 6px;
 }
 
 .metric-id-code {
   font-size: 11.5px;
-  color: #6b7280;
+  color: var(--color-neutral-700);
   word-break: break-all;
 }
 
@@ -2278,7 +2279,7 @@ onBeforeUnmount(() => {
 .source-label {
   font-size: 13px;
   font-weight: 500;
-  color: #6b7280;
+  color: var(--color-neutral-700);
   margin-bottom: 6px;
   line-height: 1.45;
   letter-spacing: 0.01em;
@@ -2287,20 +2288,20 @@ onBeforeUnmount(() => {
 .source-value {
   font-size: 20px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-neutral-800);
   line-height: 1.3;
   letter-spacing: -0.01em;
   word-break: break-word;
 }
 
 .source-value-danger {
-  color: #dc2626;
+  color: var(--color-error);
 }
 
 .source-sub {
   margin-top: 2px;
   font-size: 13px;
-  color: #4b5563;
+  color: var(--color-neutral-700);
   line-height: 1.5;
   word-break: break-all;
 }
@@ -2308,14 +2309,14 @@ onBeforeUnmount(() => {
 .source-time {
   margin-top: 4px;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--color-neutral-700);
   line-height: 1.5;
 }
 
 .source-client {
   margin-top: 8px;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--color-neutral-700);
   line-height: 1.5;
   word-break: break-all;
 }
@@ -2332,14 +2333,14 @@ onBeforeUnmount(() => {
 .source-table-title {
   font-size: 15px;
   font-weight: 600;
-  color: #111827;
+  color: var(--color-neutral-900);
   line-height: 1.35;
   letter-spacing: -0.01em;
 }
 
 .source-table-desc {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--color-neutral-700);
   line-height: 1.5;
 }
 

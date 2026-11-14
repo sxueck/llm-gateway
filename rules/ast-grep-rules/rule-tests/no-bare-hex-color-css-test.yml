@@ -1,0 +1,11 @@
+id: no-bare-hex-color-css
+valid:
+  - "a { color: red; }"
+  - ".c { color: var(--color-primary); }"
+  - "#app { display: none; }"
+  - "a { color: rgb(15 107 74); }"
+invalid:
+  - "a { color: #fff; }"
+  - "a { color: #1f1f1f; }"
+  - ".g { background: linear-gradient(135deg, #f7faf8 0%, #edf2ef 100%); }"
+  - ":root { --brand: #C4996C; }"

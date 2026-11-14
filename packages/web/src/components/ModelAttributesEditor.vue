@@ -15,7 +15,7 @@
                   <span>{{ attr.labelKey ? t(attr.labelKey) : attr.label }}</span>
                   <n-tooltip>
                     <template #trigger>
-                      <n-icon :size="14" style="cursor: help; color: #999;">
+                      <n-icon :size="14" style="cursor: help; color: var(--color-neutral-700);">
                         <Info aria-hidden="true" />
                       </n-icon>
                     </template>
@@ -40,7 +40,7 @@
                 style="width: 100%"
               >
                 <template #suffix v-if="attr.unit">
-                  <span style="color: #999; font-size: 12px;">{{ attr.unit }}</span>
+                  <span style="color: var(--color-neutral-700); font-size: 12px;">{{ attr.unit }}</span>
                 </template>
               </n-input-number>
             </n-form-item>
@@ -58,7 +58,7 @@
             :rows="4"
             size="small"
           />
-          <n-text depth="3" style="font-size: 11px; color: #999;">
+          <n-text depth="3" style="font-size: 11px; color: var(--color-neutral-700);">
             {{ t('modelAttributes.headersFormat') }}
           </n-text>
         </n-space>

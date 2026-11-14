@@ -169,8 +169,8 @@ onUnmounted(() => {
 
 <style scoped>
 .terminal-container {
-  background-color: #ffffff;
-  border: 1px solid #e8e8e8;
+  background-color: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
   border-radius: 4px;
   padding: 16px;
 }
@@ -179,14 +179,14 @@ onUnmounted(() => {
   font-family: 'MiSans', 'Consolas', 'Monaco', 'Courier New', 'Menlo', monospace;
   font-size: 13px;
   line-height: 1.6;
-  color: #000000;
+  color: var(--color-neutral-950);
   margin: 0;
   white-space: pre-wrap;
   word-wrap: break-word;
 }
 
 .terminal-output::selection {
-  background-color: #b3d4fc;
+  background-color: color-mix(in srgb, var(--color-info) 25%, var(--color-neutral-0));
 }
 
 :deep(.n-card-header__main) {

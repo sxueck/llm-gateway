@@ -72,9 +72,9 @@ const loading = ref(false);
 const creating = ref(false);
 
 const BAND_COLORS: Record<Band, string> = {
-  low: '#18a058',
-  medium: '#f0a020',
-  high: '#d03050',
+  low: 'var(--color-success)',
+  medium: 'var(--color-warning)',
+  high: 'var(--color-error)',
 };
 
 function tierCounts(config: ExpertRouting): Record<Band, number> {

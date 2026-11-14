@@ -21,43 +21,43 @@
 
 <script setup lang="ts">
 import { NConfigProvider, NMessageProvider, NDialogProvider, NSpin } from 'naive-ui'
+import type { GlobalThemeOverrides } from 'naive-ui'
 import { useLoadingStore } from '@/stores/loading'
+// 颜色全部来自唯一来源 color-tokens；themeOverrides 内不得再写裸 hex
+import { buildNaiveCommonOverrides, brandScale, neutralScale, withAlpha } from '@/styles/color-tokens'
 
 const loadingStore = useLoadingStore()
 
-const themeOverrides = {
+const themeOverrides: GlobalThemeOverrides = {
   common: {
-    primaryColor: '#0f6b4a',
-    primaryColorHover: '#0d5a3e',
-    primaryColorPressed: '#0a4830',
+    // 品牌/语义色全状态（含 Suppl）由 token 源显式给出，naive-ui 2.43 不自动派生
+    ...buildNaiveCommonOverrides(),
     borderRadius: '12px',
-    borderColor: '#dcdcdc',
-    dividerColor: '#e8e8e8',
     fontFamily:
       'MiSans, PingFang SC, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
   },
   Card: {
     borderRadius: '16px',
     borderColor: 'transparent',
-    color: '#ffffff',
+    color: neutralScale[0],
     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
     paddingMedium: '20px',
     paddingSmall: '16px'
   },
   Layout: {
     // Transparent so the body's gradient background shows through the whole layout,
-    // instead of a flat #f5f5f5 patch painted by .n-layout / .n-layout-scroll-container.
+    // instead of a flat patch painted by .n-layout / .n-layout-scroll-container.
     color: 'transparent',
     siderColor: 'transparent',
     headerColor: 'transparent'
   },
   Menu: {
-    itemColorActive: 'rgba(15, 107, 74, 0.08)',
-    itemColorHover: 'rgba(15, 107, 74, 0.04)',
-    itemTextColorActive: '#0f6b4a',
-    itemTextColorHover: '#0f6b4a',
-    itemIconColorActive: '#0f6b4a',
-    itemIconColorHover: '#0f6b4a',
+    itemColorActive: withAlpha(brandScale[600], 0.08),
+    itemColorHover: withAlpha(brandScale[600], 0.04),
+    itemTextColorActive: brandScale[600],
+    itemTextColorHover: brandScale[600],
+    itemIconColorActive: brandScale[600],
+    itemIconColorHover: brandScale[600],
     borderRadius: '10px',
     itemHeight: '40px'
   },

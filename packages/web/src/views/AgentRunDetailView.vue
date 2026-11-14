@@ -584,11 +584,11 @@ onBeforeUnmount(stopLive);
 }
 .run-id {
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   word-break: break-all;
 }
 .agent-run-detail-view :deep(.n-card) {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-neutral-200);
   border-radius: 10px;
   box-shadow: none;
 }
@@ -601,11 +601,11 @@ onBeforeUnmount(stopLive);
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-neutral-200);
   border-radius: 999px;
-  background: #fff;
+  background: var(--color-neutral-0);
   font-size: 12px;
-  color: #595959;
+  color: var(--color-neutral-700);
 }
 .refresh-dot {
   width: 6px;
@@ -622,8 +622,8 @@ onBeforeUnmount(stopLive);
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
   border-radius: 10px;
   margin-bottom: 16px;
 }
@@ -632,18 +632,18 @@ onBeforeUnmount(stopLive);
   padding: 14px 16px 16px;
 }
 .stat-cell + .stat-cell {
-  border-left: 1px solid #e5e7eb;
+  border-left: 1px solid var(--color-neutral-200);
 }
 .stat-label {
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   white-space: nowrap;
 }
 .stat-value {
   margin-top: 2px;
   font-size: 20px;
   font-weight: 600;
-  color: #1f1f1f;
+  color: var(--color-neutral-800);
   font-variant-numeric: tabular-nums;
 }
 
@@ -686,7 +686,7 @@ onBeforeUnmount(stopLive);
     border-left: none;
   }
   .stat-cell:nth-child(n + 5) {
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid var(--color-neutral-200);
   }
 }
 </style>

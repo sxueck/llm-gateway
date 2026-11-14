@@ -182,27 +182,27 @@ const columns = computed(() => [
       const latency = latencies.value[row.id]
 
       if (isTesting) {
-        return h('span', { style: 'color: #999; font-size: 12px' }, t('providers.speedTesting'))
+        return h('span', { style: 'color: var(--color-neutral-700); font-size: 12px' }, t('providers.speedTesting'))
       }
 
       if (latency === undefined || latency === null) {
-        return h('span', { style: 'color: #ccc' }, '-')
+        return h('span', { style: 'color: var(--color-neutral-700)' }, '-')
       }
 
       // Primary green for good
-      let color = '#0f6b4a'
+      let color = 'var(--color-brand-600)'
       let bgColor = 'rgba(15, 107, 74, 0.08)'
 
       // Warm Gold/Bronze for warning
       if (latency > 500) {
-        color = '#B89D6A'
-        bgColor = 'rgba(184, 157, 106, 0.12)'
+        color = 'var(--color-warning)'
+        bgColor = 'color-mix(in srgb, var(--color-warning) 12%, transparent)'
       }
 
       // Muted Red for error/slow
       if (latency > 1500) {
-        color = '#D62F2F'
-        bgColor = 'rgba(214, 47, 47, 0.08)'
+        color = 'var(--color-error)'
+        bgColor = 'color-mix(in srgb, var(--color-error) 8%, transparent)'
       }
 
       return h(
@@ -554,9 +554,9 @@ onMounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #ffffff;
+  background: var(--color-neutral-0);
   border-radius: 12px;
-  border: 1px solid #e6e6e6;
+  border: 1px solid var(--color-neutral-200);
   overflow: hidden;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
 }
@@ -589,13 +589,13 @@ onMounted(() => {
 }
 
 .table-card :deep(.n-data-table-th) {
-  background: #fafafa;
+  background: var(--color-neutral-50);
   font-weight: 600;
   font-size: 12px;
-  color: #666;
+  color: var(--color-neutral-700);
   text-transform: uppercase;
   letter-spacing: 0.02em;
-  border-bottom: 1px solid #e8e8e8;
+  border-bottom: 1px solid var(--color-neutral-200);
   padding: 10px 12px;
 }
 
@@ -604,7 +604,7 @@ onMounted(() => {
 }
 
 .table-card :deep(.n-data-table-tr:hover .n-data-table-td) {
-  background-color: #f7fbf9 !important;
+  background-color: var(--color-neutral-50) !important;
 }
 
 .providers-view :deep(.n-button--primary-type) {
@@ -628,11 +628,11 @@ onMounted(() => {
   :deep(.n-button:not(.n-button--primary-type):not(.n-button--quaternary-type):focus) {
   color: var(--color-primary);
   border-color: var(--color-primary);
-  background-color: #f7fbf9;
+  background-color: var(--color-neutral-50);
 }
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape:hover) {
-  background: #d4e9e2;
+  background: var(--color-brand-200);
   color: var(--color-primary);
 }
 
@@ -641,7 +641,7 @@ onMounted(() => {
 }
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape .n-icon) {
-  color: #555;
+  color: var(--color-neutral-700);
   font-size: 16px;
   transition: color 0.2s;
 }
@@ -664,8 +664,8 @@ onMounted(() => {
   height: 15px;
   padding: 0 3px;
   border-radius: 999px;
-  background: #c45b0b;
-  color: #fff;
+  background: var(--color-warning-pressed);
+  color: var(--color-neutral-0);
   font-size: 10px;
   font-weight: 600;
   line-height: 15px;

@@ -268,7 +268,7 @@ defineExpose({ open, close });
   flex-direction: column;
   max-height: 60vh;
   border-radius: 16px;
-  background: #ffffff;
+  background: var(--color-neutral-0);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 2px 10px rgba(0, 0, 0, 0.08);
   overflow: hidden;
   animation: palette-in 0.12s ease-out;
@@ -291,7 +291,7 @@ defineExpose({ open, close });
 }
 
 .palette-search-icon {
-  color: #9ca3af;
+  color: var(--color-neutral-700);
 }
 
 .palette-list {
@@ -323,7 +323,7 @@ defineExpose({ open, close });
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
 }
 
 .palette-item {
@@ -337,7 +337,7 @@ defineExpose({ open, close });
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: #374151;
+  color: var(--color-text);
   font-size: 14px;
   text-align: left;
   cursor: pointer;
@@ -349,7 +349,7 @@ defineExpose({ open, close });
 
 .palette-item-icon {
   flex: 0 0 auto;
-  color: #9ca3af;
+  color: var(--color-neutral-700);
 }
 
 .palette-item-active .palette-item-icon {
@@ -366,21 +366,21 @@ defineExpose({ open, close });
 .palette-item-hint {
   flex: 0 0 auto;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--color-neutral-700);
 }
 
 .palette-empty {
   padding: 24px 12px;
   text-align: center;
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--color-neutral-700);
 }
 
 .palette-footer {
   padding: 8px 12px;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--color-neutral-700);
 }
 
 @media (prefers-reduced-motion: reduce) {

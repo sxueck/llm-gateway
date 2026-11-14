@@ -770,13 +770,13 @@ async function submit() {
 .dialog-subtitle {
   margin: 0;
   font-size: 12px;
-  color: #6b7a73;
+  color: var(--color-neutral-700);
   font-variant-numeric: tabular-nums;
 }
 
 .provider-dialog :deep(.n-card-header) {
   padding: 18px 22px 14px;
-  border-bottom: 1px solid #eef1ef;
+  border-bottom: 1px solid var(--color-neutral-200);
 }
 
 .provider-dialog :deep(.n-card__content) {
@@ -788,7 +788,7 @@ async function submit() {
 
 .provider-dialog :deep(.n-card__footer) {
   padding: 12px 22px;
-  border-top: 1px solid #eef1ef;
+  border-top: 1px solid var(--color-neutral-200);
 }
 
 .dialog-body {
@@ -802,7 +802,7 @@ async function submit() {
 
 /* The enable row trails the flow; whitespace separates it, no rule line. */
 .dialog-section + .dialog-section:not(.dialog-section--switch) {
-  border-top: 1px solid #f0f2f1;
+  border-top: 1px solid var(--color-neutral-50);
 }
 
 .section-head {
@@ -819,7 +819,7 @@ async function submit() {
 .section-head p {
   margin: 3px 0 0;
   font-size: 12px;
-  color: #75827c;
+  color: var(--color-neutral-700);
 }
 
 .section-head--aside {
@@ -846,7 +846,7 @@ async function submit() {
 
 .dialog-form :deep(.n-form-item-label) {
   font-size: 12px;
-  color: #52605a;
+  color: var(--color-neutral-700);
   padding-top: 0;
 }
 
@@ -854,7 +854,7 @@ async function submit() {
   margin: 2px 0 10px;
   font-size: 12px;
   line-height: 1.5;
-  color: #75827c;
+  color: var(--color-neutral-700);
 }
 
 .field-ok {
@@ -878,7 +878,7 @@ async function submit() {
 
 .protocol-name {
   font-size: 12px;
-  color: #52605a;
+  color: var(--color-neutral-700);
 }
 
 .protocol-field .field-note {
@@ -888,7 +888,7 @@ async function submit() {
 .model-loading,
 .model-idle,
 .model-empty {
-  color: #7a857f;
+  color: var(--color-neutral-700);
   font-size: 12px;
 }
 
@@ -936,9 +936,9 @@ async function submit() {
   align-items: center;
   gap: 8px;
   padding: 14px;
-  border: 1px dashed #dde3e0;
+  border: 1px dashed var(--color-neutral-300);
   border-radius: var(--radius-sm);
-  background: #fbfcfb;
+  background: var(--color-neutral-0);
 }
 
 .model-error {
@@ -946,9 +946,9 @@ async function submit() {
   gap: 10px;
   padding: 12px 14px;
   border-radius: var(--radius-sm);
-  border: 1px solid rgba(240, 160, 32, 0.35);
-  background: #fff9ec;
-  color: #a06a12;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 35%, transparent);
+  background: color-mix(in srgb, var(--color-warning) 7%, var(--color-neutral-0));
+  color: var(--color-warning);
 }
 
 .model-error__icon {
@@ -985,16 +985,16 @@ async function submit() {
 .model-summary {
   margin: 0 0 6px;
   font-size: 11px;
-  color: #75827c;
+  color: var(--color-neutral-700);
   font-variant-numeric: tabular-nums;
 }
 
 .model-list {
   max-height: 320px;
   overflow-y: auto;
-  border: 1px solid #e6eae8;
+  border: 1px solid var(--color-neutral-200);
   border-radius: var(--radius-sm);
-  background: #fff;
+  background: var(--color-neutral-0);
 }
 
 .model-row {
@@ -1007,11 +1007,11 @@ async function submit() {
 }
 
 .model-row + .model-row {
-  border-top: 1px solid #f1f3f2;
+  border-top: 1px solid var(--color-neutral-50);
 }
 
 .model-row:hover:not(.model-row--existing) {
-  background: #f4f8f6;
+  background: var(--color-neutral-50);
 }
 
 .model-row:focus-visible {
@@ -1025,7 +1025,7 @@ async function submit() {
 
 .model-row--existing {
   cursor: not-allowed;
-  background: #fafbfa;
+  background: var(--color-neutral-0);
 }
 
 .model-text {
@@ -1037,13 +1037,13 @@ async function submit() {
 
 .model-name {
   font-size: 13px;
-  color: #2f3a35;
+  color: var(--color-text);
   overflow-wrap: anywhere;
 }
 
 .model-id {
   font-size: 11px;
-  color: #818c86;
+  color: var(--color-neutral-700);
   overflow-wrap: anywhere;
 }
 
@@ -1079,7 +1079,7 @@ async function submit() {
 .dialog-section--switch p {
   margin: 3px 0 0;
   font-size: 12px;
-  color: #75827c;
+  color: var(--color-neutral-700);
 }
 
 .dialog-footer {
@@ -1093,7 +1093,7 @@ async function submit() {
 .footer-summary {
   margin: 0;
   font-size: 12px;
-  color: #52605a;
+  color: var(--color-neutral-700);
 }
 
 .footer-actions {

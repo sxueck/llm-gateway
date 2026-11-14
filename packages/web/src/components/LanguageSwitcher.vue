@@ -44,7 +44,7 @@ function handleLanguageSelect(key: string) {
 .language-btn {
   width: 40px;
   height: 40px;
-  color: #595959;
+  color: var(--color-neutral-700);
 }
 
 .language-btn:hover {

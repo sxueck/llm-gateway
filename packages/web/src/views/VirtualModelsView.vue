@@ -487,7 +487,7 @@ onUnmounted(() => {
 
 .pagination-total {
   font-size: 13px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
 }
 
 .page-size-select {
@@ -518,7 +518,7 @@ onUnmounted(() => {
 .virtual-model-modal :deep(.n-card__footer),
 .preview-modal :deep(.n-card__footer) {
   padding: 12px 20px;
-  border-top: 1px solid #e8e8e8;
-  background: #ffffff;
+  border-top: 1px solid var(--color-neutral-200);
+  background: var(--color-neutral-0);
 }
 </style>

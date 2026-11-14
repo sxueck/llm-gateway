@@ -398,6 +398,7 @@ import {
   type DataTableColumns,
 } from "naive-ui";
 import { Empty } from "@/components/ui/empty"
+import { statefulColors } from "@/styles/color-tokens"
 import {
   expertRoutingApi,
   type ExpertRoutingStatistics,
@@ -459,16 +460,16 @@ const ROUTE_SOURCE_META: Record<
   RouteSource,
   { labelKey: string; color: string; tag: NaiveTagType }
 > = {
-  session: { labelKey: "expertRouting.ui.source.session", color: "#8a2be2", tag: "info" },
-  jev: { labelKey: "expertRouting.ui.source.jev", color: "#18a058", tag: "success" },
-  fail_open: { labelKey: "expertRouting.ui.source.fail_open", color: "#f0a020", tag: "warning" },
-  intent_api: { labelKey: "expertRouting.ui.source.intent_api", color: "#2080f0", tag: "info" },
+  session: { labelKey: "expertRouting.ui.source.session", color: statefulColors.info.pressed, tag: "info" },
+  jev: { labelKey: "expertRouting.ui.source.jev", color: statefulColors.success.base, tag: "success" },
+  fail_open: { labelKey: "expertRouting.ui.source.fail_open", color: statefulColors.warning.base, tag: "warning" },
+  intent_api: { labelKey: "expertRouting.ui.source.intent_api", color: statefulColors.info.base, tag: "info" },
   llm_second_pass: {
     labelKey: "expertRouting.ui.source.llm_second_pass",
-    color: "#18a058",
+    color: statefulColors.success.base,
     tag: "success",
   },
-  fallback: { labelKey: "expertRouting.ui.source.fallback", color: "#d03050", tag: "error" },
+  fallback: { labelKey: "expertRouting.ui.source.fallback", color: statefulColors.error.base, tag: "error" },
 };
 
 const distributionBars = computed(() => {
@@ -646,7 +647,7 @@ onMounted(() => {
 
 <style scoped>
 .collapsible-card .card-header:focus-visible {
-  outline: 1px solid var(--n-color-target, #18a058);
+  outline: 1px solid var(--n-color-target, var(--color-success));
   outline-offset: 2px;
   border-radius: 3px;
 }

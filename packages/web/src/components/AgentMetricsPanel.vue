@@ -345,6 +345,7 @@
 <script setup lang="ts">
 import { computed, h, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { statefulColors } from "@/styles/color-tokens";
 import {
   NAlert,
   NButton,
@@ -803,15 +804,15 @@ const trendChartOption = computed(() => {
         name: t("agentMetrics.trend.runs"),
         type: "bar",
         data: overview.trend.map((point) => point.runs),
-        itemStyle: { color: "#2080f0", borderRadius: [3, 3, 0, 0] },
+        itemStyle: { color: statefulColors.info.base, borderRadius: [3, 3, 0, 0] },
       },
       {
         name: t("agentMetrics.trend.cost"),
         type: "line",
         yAxisIndex: 1,
         data: costs,
-        itemStyle: { color: "#f0a020" },
-        lineStyle: { color: "#f0a020", width: 2 },
+        itemStyle: { color: statefulColors.warning.base },
+        lineStyle: { color: statefulColors.warning.base, width: 2 },
       },
     ],
   };
@@ -869,8 +870,8 @@ watch(
   gap: 8px 28px;
   padding: 10px 16px;
   margin-bottom: 4px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-300);
   border-radius: 10px;
 }
 .summary-item {
@@ -881,12 +882,12 @@ watch(
 }
 .summary-label {
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
 }
 .summary-value {
   font-size: 18px;
   font-weight: 600;
-  color: #1f1f1f;
+  color: var(--color-text);
   font-variant-numeric: tabular-nums;
 }
 
@@ -909,8 +910,8 @@ watch(
 }
 
 .agent-card {
-  background: linear-gradient(135deg, #ffffff 0%, #f8f8f8 100%);
-  border: 1px solid #f0f0f0;
+  background: linear-gradient(135deg, var(--color-neutral-0) 0%, var(--color-neutral-50) 100%);
+  border: 1px solid var(--color-neutral-200);
   border-radius: 10px;
   padding: 12px 14px;
   height: 100%;
@@ -933,7 +934,7 @@ watch(
 .agent-label {
   font-size: 14px;
   font-weight: 600;
-  color: #1f1f1f;
+  color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -946,12 +947,12 @@ watch(
 .agent-stat .stat-k {
   display: block;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
 }
 .agent-stat .stat-v {
   font-size: 15px;
   font-weight: 600;
-  color: #1f1f1f;
+  color: var(--color-text);
   font-variant-numeric: tabular-nums;
 }
 .agent-foot {
@@ -965,23 +966,23 @@ watch(
   gap: 6px 18px;
   padding: 8px 12px;
   margin: 4px 0 8px;
-  background: #fafafa;
-  border: 1px solid #f0f0f0;
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-200);
   border-radius: 8px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
 }
 .totals-item strong {
   margin-left: 4px;
   font-weight: 600;
-  color: #1f1f1f;
+  color: var(--color-text);
   font-variant-numeric: tabular-nums;
 }
 .section-title {
   margin: 18px 0 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #1f1f1f;
+  color: var(--color-text);
 }
 .trend-chart {
   width: 100%;
@@ -1004,13 +1005,13 @@ watch(
 .ua-samples {
   margin-bottom: 12px;
   padding: 8px 12px;
-  background: #fafafa;
+  background: var(--color-neutral-50);
   border-radius: 8px;
 }
 .ua-title {
   margin-bottom: 4px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
 }
 .ua-line {
   display: block;

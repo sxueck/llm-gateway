@@ -52,7 +52,7 @@ defineProps<{
 }
 
 .page-heading__eyebrow {
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -70,7 +70,7 @@ defineProps<{
 
 .page-heading__subtitle {
   margin: 0;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   font-size: 13px;
   line-height: 1.7;
   font-weight: 400;

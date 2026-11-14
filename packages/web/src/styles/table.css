@@ -8,7 +8,7 @@
   padding: 10px 12px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   font-size: 13px;
-  color: #333;
+  color: var(--color-text);
 }
 
 .table-card .n-data-table-tr:hover .n-data-table-td {

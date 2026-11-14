@@ -922,7 +922,7 @@ onMounted(() => {
 }
 
 .detail-meta-card {
-  background: #fafafa;
+  background: var(--color-neutral-50);
   border-radius: 12px;
 }
 
@@ -944,36 +944,36 @@ onMounted(() => {
 }
 
 .table-time {
-  color: #374151;
+  color: var(--color-neutral-700);
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
 
 .table-model {
-  color: #111827;
+  color: var(--color-neutral-900);
   font-weight: 500;
   line-height: 1.45;
 }
 
 .table-latency {
-  color: #1f2937;
+  color: var(--color-neutral-800);
   font-weight: 600;
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
 
 .table-placeholder {
-  color: #9ca3af;
+  color: var(--color-neutral-700);
 }
 
 .table-preview {
-  color: #475569;
+  color: var(--color-neutral-700);
   font-size: 12.5px;
   line-height: 1.5;
 }
 
 .table-key {
-  color: #1f2937;
+  color: var(--color-neutral-800);
   font-size: 12.5px;
   font-weight: 500;
 }
@@ -990,7 +990,7 @@ onMounted(() => {
 }
 
 .session-nav-card {
-  background: #f8fafc;
+  background: var(--color-neutral-50);
   border-radius: 12px;
 }
 
@@ -1006,7 +1006,7 @@ onMounted(() => {
 
 .token-line {
   font-size: 12px;
-  color: #4b5563;
+  color: var(--color-neutral-700);
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
 }
@@ -1022,7 +1022,7 @@ onMounted(() => {
 .api-requests-view :deep(.session-start-row .table-placeholder),
 .api-requests-view :deep(.session-start-row .table-preview),
 .api-requests-view :deep(.session-start-row .token-line) {
-  color: #ea580c;
+  color: var(--color-warning);
 }
 
 .clean-dialog-modal .modal-content-wrapper {
@@ -1033,7 +1033,7 @@ onMounted(() => {
   font-size: 13px;
   padding: 11px 12px;
   font-weight: 600;
-  color: #334155;
+  color: var(--color-neutral-800);
   letter-spacing: 0.01em;
 }
 
@@ -1041,7 +1041,7 @@ onMounted(() => {
   font-size: 13px;
   padding: 11px 12px;
   line-height: 1.55;
-  color: #1f2937;
+  color: var(--color-neutral-800);
 }
 
 .api-requests-view :deep(.n-data-table-tr) {
@@ -1075,12 +1075,12 @@ onMounted(() => {
 
 .api-requests-view :deep(.n-descriptions-table-content__label) {
   font-weight: 500;
-  color: #475569;
+  color: var(--color-neutral-700);
   font-size: 13px;
 }
 
 .api-requests-view :deep(.n-descriptions-table-content__content) {
-  color: #1f2937;
+  color: var(--color-neutral-800);
   font-size: 13px;
   line-height: 1.5;
 }

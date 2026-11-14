@@ -56,24 +56,28 @@
   }
 }
 
-/* 与全局 style.css 的品牌绿/语义色保持一致的 light 主题 token */
+/*
+ * light 主题 token 全部引用全局 style.css :root 的同一颜色源
+ * （其权威清单在 src/styles/color-tokens.ts，由 color-tokens.test.ts 锁定），
+ * 此处不再出现裸 hex。--radius 为尺寸而非颜色，保留字面量。
+ */
 :root {
   --radius: 0.5rem;
-  --background: #ffffff;
-  --foreground: #1f1f1f;
-  --card: #ffffff;
-  --card-foreground: #1f1f1f;
-  --primary: #0f6b4a;
-  --primary-foreground: #ffffff;
-  --secondary: #f0f1f3;
-  --secondary-foreground: #1f1f1f;
-  --muted: #f7f8fa;
-  --muted-foreground: #8c8c8c;
-  --accent: #f0f1f3;
-  --accent-foreground: #1f1f1f;
-  --destructive: #d03050;
-  --destructive-foreground: #ffffff;
-  --border: #e5e7eb;
-  --input: #e5e7eb;
-  --ring: #0f6b4a;
+  --background: var(--color-neutral-0);
+  --foreground: var(--color-neutral-900);
+  --card: var(--color-neutral-0);
+  --card-foreground: var(--color-neutral-900);
+  --primary: var(--color-brand-600);
+  --primary-foreground: var(--color-neutral-0);
+  --secondary: var(--color-neutral-100);
+  --secondary-foreground: var(--color-neutral-900);
+  --muted: var(--color-neutral-50);
+  --muted-foreground: var(--color-neutral-700);
+  --accent: var(--color-neutral-100);
+  --accent-foreground: var(--color-neutral-900);
+  --destructive: var(--color-error);
+  --destructive-foreground: var(--color-neutral-0);
+  --border: var(--color-neutral-200);
+  --input: var(--color-neutral-200);
+  --ring: var(--color-brand-600);
 }

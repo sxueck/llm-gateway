@@ -29,6 +29,8 @@ rule-tests/*-test.yml    behaviour fixtures, run by `ast-grep test`
 | `esm-relative-specifier-ext` | TypeScript | warning | relative `import`/`export`/dynamic-`import` specifier without an allowed suffix | yes, in `ast:esm` (Node packages only) |
 | `no-catch-swallow` | TypeScript | warning | `catch { return <fallback> }` / `catch { return; }` | no (advisory) |
 | `parse-int-missing-radix` | TypeScript | warning | `parseInt` or `Number.parseInt` without an explicit radix | no (advisory) |
+| `no-bare-hex-color-css` | CSS | warning | hex colors outside web token files | no (advisory) |
+| `no-bare-hex-color-ts` | TypeScript | warning | hex color literals outside web token source and tests | no (advisory) |
 
 `no-catch-swallow` is a verbatim vendored copy of the canonical rule in
 `~/.pi/agent/rules/ast-grep-rules/` (that tree is the upstream; re-sync by
@@ -54,6 +56,8 @@ immediately before it (verified with 0.51, including multi-line import nodes):
 import { format } from "./format"; // ast-grep-ignore: esm-relative-specifier-ext
 ```
 
+For CSS, use `/* ast-grep-ignore: no-bare-hex-color-css */` on the same or previous line.
+
 Use suppression only with a named requirement in the commit/PR — do not
 reshape code to dodge a rule.
 
@@ -67,6 +71,9 @@ specifiers are the web convention. Scope is set by the command, not the rule.
 ## Limits
 
 - No Vue parser in ast-grep 0.51, so `.vue` files are skipped entirely.
+  `npm run ast` additionally runs `scripts/check-web-vue-hex.mjs`, a lexical
+  advisory check for Vue color literals (excluding the Dashboard chart palette);
+  it is not an AST parser. Test it with `node --test scripts/check-web-vue-hex.test.mjs`.
   `npm run typecheck` (tsc + vue-tsc) is the authority for them and for types
   everywhere else — a clean `ast:syntax` run is *not* proof that a file
   compiles.

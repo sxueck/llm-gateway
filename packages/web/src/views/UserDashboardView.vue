@@ -284,13 +284,13 @@ onMounted(load)
 
 .stat-header {
   font-size: 13px;
-  color: #66756f;
+  color: var(--color-neutral-700);
 }
 
 .stat-main-value {
   font-size: 30px;
   font-weight: 600;
-  color: var(--color-title, #1a1a1a);
+  color: var(--color-title, var(--color-neutral-900));
   line-height: 1.2;
 }
 
@@ -311,11 +311,11 @@ onMounted(load)
 }
 
 .stat-detail-label {
-  color: #999;
+  color: var(--color-neutral-700);
 }
 
 .stat-detail-value {
-  color: #42514b;
+  color: var(--color-neutral-700);
 }
 
 .recent-header {
@@ -325,29 +325,29 @@ onMounted(load)
 }
 
 .table-time {
-  color: #374151;
+  color: var(--color-neutral-800);
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
 
 .table-model {
-  color: #111827;
+  color: var(--color-neutral-900);
   font-weight: 500;
 }
 
 .table-latency {
-  color: #1f2937;
+  color: var(--color-neutral-800);
   font-weight: 600;
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
 
 .table-placeholder {
-  color: #9ca3af;
+  color: var(--color-neutral-700);
 }
 
 .table-key {
-  color: #1f2937;
+  color: var(--color-neutral-800);
   font-size: 12.5px;
   font-weight: 500;
 }
@@ -360,7 +360,7 @@ onMounted(load)
 
 .token-line {
   font-size: 12px;
-  color: #4b5563;
+  color: var(--color-neutral-700);
   font-variant-numeric: tabular-nums;
 }
 </style>

@@ -397,7 +397,7 @@ async function handleSubmit() {
 }
 
 .quota-config-label {
-  color: #999;
+  color: var(--color-neutral-700);
   font-size: 13px;
 }
 
@@ -407,11 +407,11 @@ async function handleSubmit() {
 
 .quota-apply-to {
   font-size: 12px;
-  color: #999;
+  color: var(--color-neutral-700);
 }
 
 .quota-apply-to-danger {
-  color: #d03050;
+  color: var(--color-error);
 }
 
 .quota-usage-error {
@@ -441,7 +441,7 @@ async function handleSubmit() {
 
 .quota-row-head {
   font-size: 12px;
-  color: #999;
+  color: var(--color-neutral-700);
   padding-bottom: 0;
 }
 
@@ -455,17 +455,17 @@ async function handleSubmit() {
 
 .quota-usage {
   font-size: 12px;
-  color: #666;
+  color: var(--color-neutral-700);
 }
 
 .quota-usage.is-over {
-  color: #d03050;
+  color: var(--color-error);
   font-weight: 600;
 }
 
 .quota-empty {
   font-size: 12px;
-  color: #999;
+  color: var(--color-neutral-700);
   padding: 12px 0;
 }
 </style>

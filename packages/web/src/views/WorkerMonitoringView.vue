@@ -280,7 +280,7 @@ const columns = computed<DataTableColumns<AgentRunMonitoringItem>>(() => [
         h("div", { style: "font-weight: 500" }, row.plugin_id),
         h(
           "code",
-          { style: "font-size: 12px; color: #888" },
+          { style: "font-size: 12px; color: var(--color-neutral-700)" },
           `${row.id} · v${row.plugin_version} · ${row.model_profile}`,
         ),
       ]),
@@ -513,7 +513,7 @@ onBeforeUnmount(() => {
 
 /* 仅本视图内抹平全局卡片的阴影与大圆角，换成 hairline 扁平风 */
 .worker-monitoring-view :deep(.n-card) {
-  border: 1px solid #e8eeea;
+  border: 1px solid var(--color-neutral-200);
   border-radius: 12px;
   box-shadow: none;
 }
@@ -526,11 +526,11 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-neutral-200);
   border-radius: 999px;
-  background: #fff;
+  background: var(--color-neutral-0);
   font-size: 12px;
-  color: #595959;
+  color: var(--color-neutral-700);
 }
 .refresh-dot {
   width: 6px;
@@ -542,8 +542,8 @@ onBeforeUnmount(() => {
 .stat-panel {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  background: #fff;
-  border: 1px solid #e8eeea;
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
   border-radius: 12px;
 }
 .stat-group {
@@ -551,14 +551,14 @@ onBeforeUnmount(() => {
   padding: 14px 20px 16px;
 }
 .stat-group + .stat-group {
-  border-left: 1px solid #e5e7eb;
+  border-left: 1px solid var(--color-neutral-200);
 }
 .stat-group-title {
   margin-bottom: 12px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
 }
 .stat-grid {
   display: grid;
@@ -570,7 +570,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   white-space: nowrap;
 }
 .stat-dot {
@@ -592,7 +592,7 @@ onBeforeUnmount(() => {
   margin-top: 2px;
   font-size: 20px;
   font-weight: 600;
-  color: #1f1f1f;
+  color: var(--color-neutral-900);
   font-variant-numeric: tabular-nums;
 }
 
@@ -606,7 +606,7 @@ onBeforeUnmount(() => {
   }
   .stat-group + .stat-group {
     border-left: none;
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid var(--color-neutral-200);
   }
 }
 </style>

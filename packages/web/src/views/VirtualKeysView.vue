@@ -1308,7 +1308,7 @@ onUnmounted(() => {
 
 .metrics-note {
   font-size: 12px;
-  color: #999;
+  color: var(--color-neutral-700);
 }
 
 .model-cell {
@@ -1340,17 +1340,17 @@ onUnmounted(() => {
 .detail-label {
   width: 120px;
   flex-shrink: 0;
-  color: #999;
+  color: var(--color-neutral-700);
 }
 
 .detail-value {
-  color: #333;
+  color: var(--color-neutral-800);
   word-break: break-all;
 }
 
 .form-hint {
   font-size: 12px;
-  color: #999;
+  color: var(--color-neutral-700);
 }
 
 .form-section {
@@ -1359,7 +1359,7 @@ onUnmounted(() => {
 
 .curl-base {
   font-size: 12px;
-  color: #999;
+  color: var(--color-neutral-700);
 }
 
 .curl-block-head {
@@ -1367,14 +1367,14 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   font-size: 12px;
-  color: #666;
+  color: var(--color-neutral-700);
   margin-bottom: 4px;
 }
 
 .curl-pre {
   margin: 0;
   padding: 8px;
-  background: #f6f6f6;
+  background: var(--color-neutral-50);
   border-radius: 6px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
@@ -1392,25 +1392,25 @@ onUnmounted(() => {
 }
 
 .table-card :deep(.n-data-table-th) {
-  background: #fafafa;
+  background: var(--color-neutral-50);
   font-weight: 600;
   font-size: 12px;
-  color: #666;
+  color: var(--color-neutral-700);
   text-transform: uppercase;
   letter-spacing: 0.02em;
-  border-bottom: 1px solid #e8e8e8;
+  border-bottom: 1px solid var(--color-neutral-200);
   padding: 10px 12px;
 }
 
 .table-card :deep(.n-data-table-td) {
   padding: 10px 12px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--color-neutral-100);
   font-size: 13px;
-  color: #333;
+  color: var(--color-neutral-800);
 }
 
 .table-card :deep(.n-data-table-tr:hover .n-data-table-td) {
-  background: #fafafa;
+  background: var(--color-neutral-50);
 }
 
 .table-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
@@ -1433,7 +1433,7 @@ onUnmounted(() => {
 }
 
 .table-card :deep(.n-button.n-button--quaternary-type.n-button--circle-shape .n-icon) {
-  color: #666;
+  color: var(--color-neutral-600);
   font-size: 16px;
 }
 
@@ -1443,14 +1443,14 @@ onUnmounted(() => {
 }
 
 .key-modal :deep(.n-card) {
-  background: #ffffff;
+  background: var(--color-neutral-0);
   border-radius: 8px;
-  border: 1px solid #e8e8e8;
+  border: 1px solid var(--color-neutral-200);
 }
 
 .key-modal :deep(.n-card__header) {
   padding: 16px 20px;
-  border-bottom: 1px solid #e8e8e8;
+  border-bottom: 1px solid var(--color-neutral-200);
 }
 
 .key-modal :deep(.n-card__content) {
@@ -1470,22 +1470,22 @@ onUnmounted(() => {
 }
 
 .modal-form-wrapper::-webkit-scrollbar-track {
-  background: #f0f0f0;
+  background: var(--color-neutral-100);
   border-radius: 3px;
 }
 
 .modal-form-wrapper::-webkit-scrollbar-thumb {
-  background: #d0d0d0;
+  background: var(--color-neutral-300);
   border-radius: 3px;
 }
 
 .modal-form-wrapper::-webkit-scrollbar-thumb:hover {
-  background: #b0b0b0;
+  background: var(--color-neutral-400);
 }
 
 .key-modal :deep(.n-card__footer) {
   padding: 12px 20px;
-  border-top: 1px solid #e8e8e8;
-  background: #ffffff;
+  border-top: 1px solid var(--color-neutral-200);
+  background: var(--color-neutral-0);
 }
 </style>

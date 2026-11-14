@@ -361,7 +361,7 @@ function handleCancel() {
 }
 
 .target-card {
-  background: #fafafa;
+  background: var(--color-neutral-50);
 }
 
 .target-card :deep(.n-card__header) {

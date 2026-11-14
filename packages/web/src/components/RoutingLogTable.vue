@@ -482,7 +482,7 @@ onMounted(loadLogs);
 .detail-label {
   flex: none;
   width: 110px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   font-size: 12px;
 }
 

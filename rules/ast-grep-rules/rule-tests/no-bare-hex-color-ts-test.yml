@@ -1,0 +1,11 @@
+id: no-bare-hex-color-ts
+valid:
+  - "const p = 'var(--color-primary)';"
+  - "const a = '#section';"
+  - "const h = '#a1b2c3d';"
+  - 'const r = `#${x}${y}${z}`;'
+invalid:
+  - "const accent = '#0f6b4a';"
+  - "const s = { color: '#fff' };"
+  - "const css = 'color:#f0a020;font-weight:bold';"
+  - 'const bg = `linear-gradient(#fff 0%, #000 100%)`;'

@@ -160,7 +160,7 @@ onUnmounted(() => {
 .alert-btn {
   width: 40px;
   height: 40px;
-  color: #595959;
+  color: var(--color-neutral-700);
 }
 
 .alert-btn:hover {
@@ -172,8 +172,8 @@ onUnmounted(() => {
   max-width: calc(100vw - 32px);
   display: flex;
   flex-direction: column;
-  background: #ffffff;
-  border: 1px solid #e6e6e6;
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-300);
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
   overflow: hidden;
@@ -184,7 +184,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 12px 14px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--color-neutral-200);
 }
 
 .alert-panel__title {
@@ -203,7 +203,7 @@ onUnmounted(() => {
   padding: 24px 14px;
   text-align: center;
   font-size: 13px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
 }
 
 .alert-panel__list {
@@ -215,7 +215,7 @@ onUnmounted(() => {
   display: flex;
   gap: 10px;
   padding: 10px 14px;
-  border-bottom: 1px solid #f7f7f7;
+  border-bottom: 1px solid var(--color-neutral-50);
 }
 
 .alert-item:last-child {
@@ -228,19 +228,19 @@ onUnmounted(() => {
   height: 8px;
   margin-top: 6px;
   border-radius: 50%;
-  background: #d9d9d9;
+  background: var(--color-neutral-300);
 }
 
 .alert-item[data-level='error'] .alert-item__dot {
-  background: #d62f2f;
+  background: var(--color-error);
 }
 
 .alert-item[data-level='warning'] .alert-item__dot {
-  background: #b89d6a;
+  background: var(--color-warning);
 }
 
 .alert-item[data-level='info'] .alert-item__dot {
-  background: #0f6b4a;
+  background: var(--color-primary);
 }
 
 .alert-item__body {
@@ -250,20 +250,20 @@ onUnmounted(() => {
 .alert-item__text {
   font-size: 13px;
   line-height: 1.6;
-  color: #262626;
+  color: var(--color-text);
   word-break: break-word;
 }
 
 .alert-item__meta {
   margin-top: 2px;
   font-size: 11px;
-  color: #a3a3a3;
+  color: var(--color-neutral-700);
 }
 
 .alert-panel__foot {
   padding: 8px 14px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--color-neutral-200);
   font-size: 11px;
-  color: #a3a3a3;
+  color: var(--color-neutral-700);
 }
 </style>

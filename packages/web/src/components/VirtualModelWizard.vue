@@ -87,7 +87,7 @@
                 {{ t('wizard.seconds') }}
               </template>
             </n-input-number>
-            <div style="font-size: 11px; color: #8c8c8c; margin-top: 4px;">
+            <div style="font-size: 11px; color: var(--color-neutral-700); margin-top: 4px;">
               {{ t('wizard.affinityDurationHint') }}
             </div>
           </n-form-item>
@@ -361,17 +361,17 @@ function handleCancel() {
 .option-title {
   font-weight: 500;
   font-size: 14px;
-  color: #262626;
+  color: var(--color-text);
   margin-bottom: 4px;
 }
 
 .option-description {
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
 }
 
 .target-card {
-  background: #fafafa;
+  background: var(--color-neutral-50);
 }
 
 .target-title {
@@ -387,14 +387,14 @@ function handleCancel() {
 
 .form-label {
   font-size: 12px;
-  color: #595959;
+  color: var(--color-neutral-700);
   font-weight: 500;
 }
 
 .wizard-footer {
   margin-top: 24px;
   padding-top: 16px;
-  border-top: 1px solid #e8e8e8;
+  border-top: 1px solid var(--color-neutral-300);
 }
 </style>
 

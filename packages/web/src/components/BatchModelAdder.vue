@@ -13,7 +13,7 @@
           <n-button
             size="small"
             @click="showBatchInput = true"
-            :style="{ border: '1px solid #0f6b4a', borderRadius: '8px' }"
+            :style="{ border: '1px solid var(--color-primary)', borderRadius: '8px' }"
           >
             <template #icon>
               <n-icon><DocumentTextOutline /></n-icon>
@@ -237,7 +237,7 @@ defineExpose({
 .section-title {
   font-size: 14px;
   font-weight: 600;
-  color: #262626;
+  color: var(--color-text);
   margin: 0;
 }
 
@@ -253,19 +253,19 @@ defineExpose({
 }
 
 .model-card {
-  border: 1px solid #e8e8e8;
+  border: 1px solid var(--color-neutral-300);
   border-radius: 8px;
 }
 
 .model-title {
   font-size: 13px;
   font-weight: 600;
-  color: #262626;
+  color: var(--color-text);
 }
 
 .model-card :deep(.n-card__header) {
   padding: 12px 16px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--color-neutral-200);
 }
 
 .model-card :deep(.n-card__content) {

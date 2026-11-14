@@ -3,7 +3,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #f7faf8 0%, #edf2ef 100%);
+  background: linear-gradient(135deg, var(--color-neutral-50) 0%, var(--color-neutral-100) 100%);
   overflow: auto;
 }
 
@@ -28,21 +28,21 @@
 .brand-name {
   font-size: 28px;
   font-weight: 700;
-  color: #1a1a1a;
+  color: var(--color-title);
   letter-spacing: -0.02em;
   margin: 0;
 }
 
 .brand-tagline {
   font-size: 14px;
-  color: #6b7280;
+  color: var(--color-neutral-700);
   margin: 0;
   font-weight: 400;
 }
 
 .auth-card {
   width: 100%;
-  background: #ffffff;
+  background: var(--color-neutral-0);
   border-radius: 20px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 4px 20px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -64,14 +64,14 @@
 .auth-title {
   font-size: 24px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--color-title);
   margin: 0 0 8px;
   letter-spacing: -0.01em;
 }
 
 .auth-subtitle {
   font-size: 14px;
-  color: #6b7280;
+  color: var(--color-neutral-700);
   margin: 0;
 }
 
@@ -81,14 +81,14 @@
 
 .auth-form :deep(.n-form-item-label) {
   font-weight: 500;
-  color: #374151;
+  color: var(--color-text);
   font-size: 14px;
   margin-bottom: 8px;
 }
 
 .auth-form :deep(.n-input) {
   border-radius: 12px;
-  background: #f9fafb;
+  background: var(--color-neutral-50);
   transition: all 0.2s ease;
 }
 
@@ -102,11 +102,11 @@
 }
 
 .auth-form :deep(.n-input:hover) {
-  background: #f3f4f6;
+  background: var(--color-neutral-100);
 }
 
 .auth-form :deep(.n-input:focus-within) {
-  background: #ffffff;
+  background: var(--color-neutral-0);
 }
 
 /* focus 光环画在 Naive 子元素上，父级 :focus-within 抑制不到；只限定 auth 页关掉，
@@ -116,7 +116,7 @@
 }
 
 .input-icon {
-  color: #9ca3af;
+  color: var(--color-neutral-700);
   font-size: 18px;
 }
 
@@ -152,14 +152,14 @@
 }
 
 .login-button:disabled {
-  background: #e5e7eb;
-  color: #9ca3af;
+  background: var(--color-neutral-200);
+  color: var(--color-neutral-500);
   box-shadow: none;
   transform: none;
 }
 
 .register-link {
-  color: #6b7280;
+  color: var(--color-neutral-700);
   font-size: 14px;
   transition: color 0.2s ease;
 }
@@ -180,7 +180,7 @@
 
 .auth-footer {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--color-neutral-700);
   margin: 0;
   text-align: center;
 }

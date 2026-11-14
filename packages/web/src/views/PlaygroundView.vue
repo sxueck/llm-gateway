@@ -1007,7 +1007,7 @@ onMounted(async () => {
 
 .config-label {
   font-size: 13px;
-  color: #595959;
+  color: var(--color-neutral-700);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1015,7 +1015,7 @@ onMounted(async () => {
 
 .config-value {
   font-variant-numeric: tabular-nums;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
 }
 
 .protocol-group {
@@ -1061,7 +1061,7 @@ onMounted(async () => {
 
 .vk-option-key {
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
 }
 
@@ -1154,7 +1154,7 @@ onMounted(async () => {
 }
 
 .metrics-empty {
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   font-size: 13px;
   padding: 8px 0;
 }
@@ -1174,7 +1174,7 @@ onMounted(async () => {
 }
 
 .metrics-label {
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   flex: none;
 }
 
@@ -1199,7 +1199,7 @@ onMounted(async () => {
 
 .metrics-error {
   font-size: 12px;
-  color: #d03050;
+  color: var(--color-error);
   word-break: break-word;
   border-top: 1px dashed rgba(0, 0, 0, 0.08);
   padding-top: 10px;

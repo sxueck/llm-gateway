@@ -71,19 +71,19 @@ const PANEL_ID = 'virtual-key-quota-info-panel'
 
 .quota-info-trigger {
   flex-shrink: 0;
-  color: #999;
+  color: var(--color-neutral-700);
 }
 
 .quota-info-trigger:hover {
-  color: var(--color-primary, #0f6b4a);
+  color: var(--color-primary);
 }
 
 .quota-info-panel {
   font-size: 12px;
   line-height: 1.6;
-  color: #666;
-  background: #fafafa;
-  border: 1px solid #ececec;
+  color: var(--color-neutral-700);
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-200);
   border-radius: 6px;
   padding: 10px 12px;
   max-height: 200px;
@@ -93,7 +93,7 @@ const PANEL_ID = 'virtual-key-quota-info-panel'
 .quota-info-panel-title {
   display: block;
   font-weight: 600;
-  color: #444;
+  color: var(--color-text);
   margin-bottom: 4px;
 }
 

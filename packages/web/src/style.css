@@ -6,15 +6,66 @@
   font-display: swap;
 }
 
+/*
+ * 颜色唯一来源是 src/styles/color-tokens.ts：本 :root 是它的 CSS 镜像，
+ * 由 color-tokens.test.ts 逐条锁定；改色值必须先改 token 文件。
+ * 品牌 50–900 与绿调中性灰在 OKLCH 空间生成；600/700/900 钉死品牌锚点。
+ */
 :root {
-  --color-primary: #0f6b4a;
+  /* 品牌色阶（OKLCH 生成，克制渐变；600=#0f6b4a 700=#006241 900=#1e3932） */
+  --color-brand-50: #f0f9f4;
+  --color-brand-100: #e3f1e9;
+  --color-brand-200: #d0e4d9;
+  --color-brand-300: #b9d3c5;
+  --color-brand-400: #92b8a4;
+  --color-brand-500: #5e947a;
+  --color-brand-600: #0f6b4a;
+  --color-brand-700: #006241;
+  --color-brand-800: #0e4e3c;
+  --color-brand-900: #1e3932;
+
+  /* 绿调中性灰（OKLCH 生成，色相 ~160°，彩度 ≤ 0.018） */
+  --color-neutral-0: #ffffff;
+  --color-neutral-50: #f7faf8;
+  --color-neutral-100: #eef3f0;
+  --color-neutral-200: #e2e8e4;
+  --color-neutral-300: #d4dbd7;
+  --color-neutral-400: #b8c0bb;
+  --color-neutral-500: #878e8a;
+  --color-neutral-600: #6c746f;
+  --color-neutral-700: #535a56;
+  --color-neutral-800: #2f3833;
+  --color-neutral-900: #19221d;
+  --color-neutral-950: #0a140f;
+
+  /* 主交互色四态（hover/pressed 保留上线既有值；base=brand-600） */
+  --color-primary: var(--color-brand-600);
   --color-primary-hover: #0d5a3e;
   --color-primary-pressed: #0a4830;
-  --color-title: #1e3932;
-  --color-success: #18a058;
-  --color-info: #2080f0;
-  --color-warning: #f0a020;
-  --color-error: #d03050;
+  --color-primary-disabled: #7a8f84;
+  --color-title: var(--color-brand-900);
+
+  /* 语义色四态（低饱和深色，OKLCH 降彩度递进；对白底/白字对比 ≥ 4.5:1） */
+  --color-success: #337344;
+  --color-success-hover: #276438;
+  --color-success-pressed: #1b552c;
+  --color-success-disabled: #b7caba;
+  --color-info: #3e6596;
+  --color-info-hover: #335784;
+  --color-info-pressed: #284972;
+  --color-info-disabled: #c0ccdb;
+  --color-warning: #804d0c;
+  --color-warning-hover: #704000;
+  --color-warning-pressed: #5f3300;
+  --color-warning-disabled: #dfcdbd;
+  --color-error: #92413d;
+  --color-error-hover: #803531;
+  --color-error-pressed: #6e2826;
+  --color-error-disabled: #dec4c1;
+
+  /* 通用文字/边框（补齐业务代码中带 fallback 的历史引用） */
+  --color-text: var(--color-neutral-800);
+  --color-border: var(--color-neutral-300);
 
   --space-xs: 4px;
   --space-sm: 8px;

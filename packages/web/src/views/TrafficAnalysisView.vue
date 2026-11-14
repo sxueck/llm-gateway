@@ -168,6 +168,7 @@ import VChart from 'vue-echarts';
 import { configApi, type TrafficAnalysisResponse, type TrafficAnalysisHistoryDayResponse, type ModelResponseTimeStat } from '@/api/config';
 import { formatResponseTime } from '@/utils/format';
 import { useDebouncedWindowSize } from '@/composables/useDebouncedWindowSize';
+import { CHART_LINE_COLORS, brandScale, neutralScale, infoColor } from '@/styles/color-tokens';
 
 const { t, locale } = useI18n();
 
@@ -203,9 +204,9 @@ const filteredLatencyData = computed(() => {
   return latencyData.value.filter(item => item.model === selectedLatencyModel.value);
 });
 
-const LATENCY_COLORS = [
-  '#006241', '#C4996C', '#1E3932', '#2D8A6D', '#A89F91',
-  '#6CA68D', '#4A4A4A', '#D4E9E2', '#8B5E3C', '#5B8C5A',
+const LATENCY_COLORS: string[] = [
+  ...CHART_LINE_COLORS,
+  brandScale[800], infoColor.pressed,
 ];
 
 // 图表坐标轴跟随网关时区（后端随响应返回）；未加载时回退默认值。
@@ -244,9 +245,9 @@ const wapeText = computed(() => {
 const accuracyColor = computed(() => {
   if (!data.value?.accuracy) return {};
   const r2 = data.value.accuracy.r2;
-  if (r2 >= 0.8) return { color: '#006241' };
-  if (r2 >= 0.5) return { color: '#C4996C' };
-  return { color: '#d03050' };
+  if (r2 >= 0.8) return { color: 'var(--color-brand-700)' };
+  if (r2 >= 0.5) return { color: 'var(--color-warning)' };
+  return { color: 'var(--color-error)' };
 });
 
 const overlayDayOptions = computed(() => {
@@ -299,12 +300,12 @@ const chartOption = computed(() => {
       data: actualData,
       smooth: true,
       symbol: 'none',
-      lineStyle: { color: '#006241', width: 2, type: 'solid' },
-      itemStyle: { color: '#006241' },
+      lineStyle: { color: brandScale[700], width: 2, type: 'solid' },
+      itemStyle: { color: brandScale[700] },
       markLine: {
         silent: true,
         symbol: 'none',
-        lineStyle: { color: '#999', type: 'dashed', width: 1 },
+        lineStyle: { color: neutralScale[500], type: 'dashed', width: 1 },
         data: [{ xAxis: Math.floor(nowMs / 3600000) * 3600000, name: 'now' }],
         label: { show: false },
       },
@@ -315,8 +316,8 @@ const chartOption = computed(() => {
       data: predData,
       smooth: true,
       symbol: 'none',
-      lineStyle: { color: '#C4996C', width: 2, type: 'dashed' },
-      itemStyle: { color: '#C4996C' },
+      lineStyle: { color: CHART_LINE_COLORS[1], width: 2, type: 'dashed' },
+      itemStyle: { color: CHART_LINE_COLORS[1] },
       markArea: markAreas.length > 0 ? {
         silent: true,
         data: markAreas,
@@ -337,8 +338,8 @@ const chartOption = computed(() => {
         data: histActual,
         smooth: true,
         symbol: 'none',
-        lineStyle: { color: '#2080F0', width: 2, type: 'solid' },
-        itemStyle: { color: '#2080F0' },
+        lineStyle: { color: infoColor.base, width: 2, type: 'solid' },
+        itemStyle: { color: infoColor.base },
       },
       {
         name: histPredName,
@@ -346,8 +347,8 @@ const chartOption = computed(() => {
         data: histPred,
         smooth: true,
         symbol: 'none',
-        lineStyle: { color: '#E8833A', width: 2, type: 'dashed' },
-        itemStyle: { color: '#E8833A' },
+        lineStyle: { color: infoColor.pressed, width: 2, type: 'dashed' },
+        itemStyle: { color: infoColor.pressed },
       },
     );
   }
@@ -406,19 +407,19 @@ const latencyDistributionOption = computed(() => {
     tooltip: {
       trigger: 'item',
       backgroundColor: 'rgba(255, 255, 255, 0.95)',
-      borderColor: '#e5e7eb',
+      borderColor: 'var(--color-neutral-200)',
       borderWidth: 1,
       extraCssText: 'backdrop-filter: blur(8px);',
       textStyle: {
-        color: '#1f2937',
+        color: 'var(--color-neutral-800)',
         fontSize: isMobile ? 11 : 13,
       },
       formatter: (params: any) => {
         const [time, duration, model] = params.data;
         const date = new Date(time);
         const timeStr = `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
-        return `<div style="font-weight: 600; color: #111827;">${model}</div>
-                <div style="margin-top: 4px; color: #6b7280;">
+        return `<div style="font-weight: 600; color: var(--color-neutral-900);">${model}</div>
+                <div style="margin-top: 4px; color: var(--color-neutral-700);">
                   Time: ${timeStr}<br/>
                   Latency: ${duration >= 1000 ? (duration / 1000).toFixed(2) + 's' : formatResponseTime(duration) + 'ms'}
                 </div>`;
@@ -436,12 +437,12 @@ const latencyDistributionOption = computed(() => {
       boundaryGap: false,
       axisLine: {
         lineStyle: {
-          color: '#e5e7eb',
+          color: neutralScale[200],
           width: 1,
         },
       },
       axisLabel: {
-        color: '#9ca3af',
+        color: neutralScale[500],
         fontSize: isMobile ? 10 : 12,
         formatter: (value: number) => {
           const date = new Date(value);
@@ -456,7 +457,7 @@ const latencyDistributionOption = computed(() => {
       type: 'value',
       name: t('trafficAnalysis.latency'),
       nameTextStyle: {
-        color: '#9ca3af',
+        color: neutralScale[500],
         align: 'right',
         padding: [0, 0, 0, 6],
       },
@@ -471,7 +472,7 @@ const latencyDistributionOption = computed(() => {
       },
       splitLine: {
         lineStyle: {
-          color: '#f3f4f6',
+          color: neutralScale[100],
           width: 1,
           type: 'dashed',
         },
@@ -493,7 +494,7 @@ const latencyDistributionOption = computed(() => {
             return LATENCY_COLORS[index];
           },
           opacity: 0.6,
-          borderColor: '#fff',
+          borderColor: neutralScale[0],
           borderWidth: 1,
         },
         emphasis: {
@@ -540,7 +541,7 @@ onMounted(() => {
 }
 
 .traffic-analysis-view :deep(.n-card) {
-  border: 1px solid #e8eeea;
+  border: 1px solid var(--color-neutral-200);
   border-radius: 12px;
   box-shadow: none;
 }
@@ -555,11 +556,11 @@ onMounted(() => {
 .chart-header-title {
   font-size: 16px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-neutral-800);
 }
 .chart-header-note {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--color-neutral-700);
   margin-left: 8px;
 }
 .latency-model-select {

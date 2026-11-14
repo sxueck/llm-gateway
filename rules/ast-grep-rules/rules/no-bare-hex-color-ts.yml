@@ -1,0 +1,27 @@
+id: no-bare-hex-color-ts
+language: TypeScript
+severity: warning
+message: "Use a web color token instead of a bare hex color"
+note: |
+  Covers hex colors in TypeScript string and template literals, excluding the
+  shared token source and test assertions. Vue files are not parsed by
+  ast-grep 0.51; they require a separate check. File filters are relative
+  to the repository root. Non-color strings shaped like hex may need an
+  explicit suppression.
+rule:
+  any:
+    - all:
+        - kind: string
+        - regex: '#[0-9a-fA-F]{8}[^0-9a-fA-F]|#[0-9a-fA-F]{6}[^0-9a-fA-F]|#[0-9a-fA-F]{4}[^0-9a-fA-F]|#[0-9a-fA-F]{3}[^0-9a-fA-F]'
+        - not:
+            inside:
+              stopBy: end
+              kind: template_string
+    - all:
+        - kind: template_string
+        - regex: '#[0-9a-fA-F]{8}[^0-9a-fA-F]|#[0-9a-fA-F]{6}[^0-9a-fA-F]|#[0-9a-fA-F]{4}[^0-9a-fA-F]|#[0-9a-fA-F]{3}[^0-9a-fA-F]'
+files:
+  - "packages/web/src/**"
+ignores:
+  - "packages/web/src/styles/color-tokens.ts"
+  - "**/*.test.ts"

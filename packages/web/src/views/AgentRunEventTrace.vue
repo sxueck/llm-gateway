@@ -149,7 +149,7 @@ function formatEventTime(value: number): string {
 }
 .event-row {
   padding: 10px 0;
-  border-bottom: 1px dashed #ececec;
+  border-bottom: 1px dashed var(--color-neutral-200);
 }
 .event-row:last-child {
   border-bottom: none;
@@ -171,14 +171,14 @@ function formatEventTime(value: number): string {
   font-size: 12px;
 }
 .event-row :deep([data-slot="trace-collapsible-trigger"]:hover) {
-  background: #f2f5f3;
+  background: var(--color-neutral-100);
 }
 .event-row :deep([data-slot="trace-collapsible-trigger"]:focus-visible) {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 .event-dot {
-  background: #d9d9d9;
+  background: var(--color-neutral-300);
 }
 .event-dot.dot-info {
   background: var(--color-info);
@@ -194,23 +194,23 @@ function formatEventTime(value: number): string {
 }
 .event-summary {
   font-size: 12px;
-  color: #595959;
+  color: var(--color-neutral-700);
   word-break: break-all;
 }
 .event-time {
   margin-left: auto;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   white-space: nowrap;
 }
 .event-seq {
   font-size: 11px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
 }
 .payload-json {
   margin: 0;
   padding: 10px;
-  background: #f7f8fa;
+  background: var(--color-neutral-50);
   border-radius: 6px;
   font-size: 12px;
   line-height: 1.6;

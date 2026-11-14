@@ -354,7 +354,7 @@ function getTotalTokens(usage: any): number {
 }
 
 .result-card.error {
-  border-color: #d03050;
+  border-color: var(--color-error);
 }
 
 .response-section,
@@ -364,8 +364,8 @@ function getTotalTokens(usage: any): number {
 
 .response-content,
 .error-content {
-  background: #f8f9fa;
-  border: 1px solid #e8e8e8;
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-300);
   max-height: 200px;
   overflow-y: auto;
 }

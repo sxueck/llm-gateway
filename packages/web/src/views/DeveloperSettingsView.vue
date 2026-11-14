@@ -485,8 +485,8 @@ onUnmounted(() => {
 <style scoped>
 .events-container {
   border-radius: 8px;
-  border: 1px solid #e5e5e5;
-  background: #ffffff;
+  border: 1px solid var(--color-neutral-200);
+  background: var(--color-neutral-0);
 }
 
 .empty-state {
@@ -495,7 +495,7 @@ onUnmounted(() => {
 
 .event-card {
   padding: 12px 16px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--color-neutral-100);
 }
 
 .event-card:last-child {
@@ -511,7 +511,7 @@ onUnmounted(() => {
 }
 
 .event-header:focus-visible {
-  outline: 2px solid #1677ff;
+  outline: 2px solid var(--color-info);
   outline-offset: 2px;
 }
 
@@ -527,7 +527,7 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 8px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
 }
 
 .event-toggle {
@@ -535,7 +535,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
 }
 
 .event-toggle-icon {
@@ -544,7 +544,7 @@ onUnmounted(() => {
 
 .event-timestamp {
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
 }
 
 .event-method {
@@ -554,7 +554,7 @@ onUnmounted(() => {
 .event-path {
   font-size: 13px;
   font-weight: 500;
-  color: #333333;
+  color: var(--color-neutral-800);
 }
 
 .event-status {
@@ -563,15 +563,15 @@ onUnmounted(() => {
 
 .event-duration {
   font-size: 12px;
-  color: #595959;
+  color: var(--color-neutral-700);
 }
 
 .event-flag {
   font-size: 11px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   padding: 0 4px;
   border-radius: 4px;
-  border: 1px solid #e5e5e5;
+  border: 1px solid var(--color-neutral-200);
 }
 
 .event-expand-enter-active,
@@ -606,7 +606,7 @@ onUnmounted(() => {
 .event-column-title {
   font-size: 12px;
   font-weight: 500;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   margin-bottom: 4px;
 }
 

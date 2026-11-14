@@ -309,21 +309,21 @@ onMounted(load)
 }
 
 .table-card :deep(.n-data-table-th) {
-  background: #fafafa;
+  background: var(--color-neutral-50);
   font-weight: 600;
   font-size: 12px;
-  color: #666;
+  color: var(--color-neutral-700);
   text-transform: uppercase;
   letter-spacing: 0.02em;
-  border-bottom: 1px solid #e8e8e8;
+  border-bottom: 1px solid var(--color-neutral-200);
   padding: 10px 12px;
 }
 
 .table-card :deep(.n-data-table-td) {
   padding: 10px 12px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--color-neutral-100);
   font-size: 13px;
-  color: #333;
+  color: var(--color-neutral-800);
 }
 
 .model-cell {
@@ -355,11 +355,11 @@ onMounted(load)
 .detail-label {
   width: 120px;
   flex-shrink: 0;
-  color: #999;
+  color: var(--color-neutral-700);
 }
 
 .detail-value {
-  color: #333;
+  color: var(--color-neutral-800);
   word-break: break-all;
 }
 

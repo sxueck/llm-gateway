@@ -503,6 +503,7 @@ import { RefreshCw as RefreshOutline } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useProviderStore } from '@/stores/provider'
 import { useVirtualKeyStore } from '@/stores/virtual-key'
+import { brandScale, neutralScale } from '@/styles/color-tokens'
 import {
   configApi,
   type ApiStats,
@@ -744,7 +745,7 @@ const chartOption = computed(() => {
       },
       itemStyle: {
         borderWidth: 2,
-        borderColor: '#ffffff'
+        borderColor: neutralScale[0]
       },
       emphasis: {
         focus: 'series',
@@ -780,23 +781,23 @@ const chartOption = computed(() => {
     tooltip: {
       trigger: 'axis',
       backgroundColor: 'rgba(255, 255, 255, 0.95)',
-      borderColor: '#e5e7eb',
+      borderColor: neutralScale[200],
       borderWidth: 1,
       extraCssText: 'backdrop-filter: blur(8px);',
       textStyle: {
-        color: '#1f2937',
+        color: neutralScale[800],
         fontSize: isMobile ? 11 : 13
       },
       padding: isMobile ? [8, 12] : [12, 16],
       axisPointer: {
         type: 'line',
         lineStyle: {
-          color: '#d1d5db',
+          color: neutralScale[300],
           width: 1,
           type: 'solid'
         },
         crossStyle: {
-          color: '#d1d5db',
+          color: neutralScale[300],
           width: 1,
           type: 'dashed'
         }
@@ -811,7 +812,7 @@ const chartOption = computed(() => {
         const itemFontSize = isMobile ? 11 : 13
         const marginBottom = isMobile ? 6 : 10
         const itemMargin = isMobile ? 4 : 6
-        let result = `<div style="font-weight: 600; margin-bottom: ${marginBottom}px; color: #111827; font-size: ${headerFontSize}px;">${formatTimestamp(timestamp, selectedPeriod.value)}</div>`
+        let result = `<div style="font-weight: 600; margin-bottom: ${marginBottom}px; color: ${neutralScale[900]}; font-size: ${headerFontSize}px;">${formatTimestamp(timestamp, selectedPeriod.value)}</div>`
         params.forEach((param: any) => {
           const value =
             chartMetric.value === 'requests'
@@ -819,8 +820,8 @@ const chartOption = computed(() => {
               : t('dashboard.tokensValue', { value: formatTokenNumber(param.value) })
           result += `<div style="display: flex; align-items: center; margin: ${itemMargin}px 0;">
             <span style="display: inline-block; width: ${isMobile ? 10 : 12}px; height: ${isMobile ? 10 : 12}px; border-radius: 3px; background-color: ${param.color}; margin-right: ${isMobile ? 8 : 10}px;"></span>
-            <span style="flex: 1; color: #4b5563; font-size: ${itemFontSize}px;">${param.seriesName}</span>
-            <span style="font-weight: 600; margin-left: ${isMobile ? 12 : 16}px; color: #111827; font-size: ${itemFontSize}px;">${value}</span>
+            <span style="flex: 1; color: ${neutralScale[700]}; font-size: ${itemFontSize}px;">${param.seriesName}</span>
+            <span style="font-weight: 600; margin-left: ${isMobile ? 12 : 16}px; color: ${neutralScale[900]}; font-size: ${itemFontSize}px;">${value}</span>
           </div>`
         })
         return result
@@ -836,14 +837,14 @@ const chartOption = computed(() => {
       itemHeight: isMobile ? 12 : 14,
       itemGap: isMobile ? 12 : 20,
       textStyle: {
-        color: '#6b7280',
+        color: neutralScale[600],
         fontSize: isMobile ? 11 : 13,
         fontWeight: 500
       },
-      pageIconColor: '#0f6b4a',
-      pageIconInactiveColor: '#d1d5db',
+      pageIconColor: brandScale[600],
+      pageIconInactiveColor: neutralScale[300],
       pageTextStyle: {
-        color: '#6b7280'
+        color: neutralScale[600]
       }
     },
     grid: {
@@ -858,7 +859,7 @@ const chartOption = computed(() => {
       data: timePoints.map(t => formatTimestamp(t, selectedPeriod.value)),
       axisLine: {
         lineStyle: {
-          color: '#e5e7eb',
+          color: neutralScale[200],
           width: 1
         }
       },
@@ -868,7 +869,7 @@ const chartOption = computed(() => {
       axisLabel: {
         rotate: selectedPeriod.value === '24h' ? 0 : 45,
         interval: 'auto',
-        color: '#9ca3af',
+        color: neutralScale[500],
         fontSize: isMobile ? 10 : 12,
         margin: isMobile ? 8 : 12
       },
@@ -885,7 +886,7 @@ const chartOption = computed(() => {
         show: false
       },
       axisLabel: {
-        color: '#9ca3af',
+        color: neutralScale[500],
         fontSize: isMobile ? 10 : 12,
         margin: isMobile ? 8 : 12,
         formatter: (value: number) => {
@@ -897,7 +898,7 @@ const chartOption = computed(() => {
       },
       splitLine: {
         lineStyle: {
-          color: '#f3f4f6',
+          color: neutralScale[100],
           width: 1,
           type: 'solid'
         }
@@ -933,11 +934,11 @@ const modelDistributionOption = computed(() => {
     tooltip: {
       trigger: 'item',
       backgroundColor: 'rgba(255, 255, 255, 0.95)',
-      borderColor: '#e5e7eb',
+      borderColor: neutralScale[200],
       borderWidth: 1,
       extraCssText: 'backdrop-filter: blur(8px);',
       textStyle: {
-        color: '#1f2937',
+        color: neutralScale[800],
         fontSize: isMobile ? 11 : 13
       },
       formatter: (params: any) => {
@@ -945,7 +946,7 @@ const modelDistributionOption = computed(() => {
           chartMetric.value === 'requests'
             ? formatNumber(params.value)
             : formatTokenNumber(params.value)
-        return `<div style="font-weight: 600; color: #111827;">${params.name}</div>
+        return `<div style="font-weight: 600; color: ${neutralScale[900]};">${params.name}</div>
                 <div style="margin-top: 4px;">${params.marker} ${val} (${params.percent}%)</div>`
       }
     },
@@ -955,7 +956,7 @@ const modelDistributionOption = computed(() => {
       left: 'center',
       bottom: 0,
       textStyle: {
-        color: '#6b7280',
+        color: neutralScale[600],
         fontSize: isMobile ? 11 : 12
       },
       formatter: (name: string) => {
@@ -971,7 +972,7 @@ const modelDistributionOption = computed(() => {
         avoidLabelOverlap: false,
         itemStyle: {
           borderRadius: 4,
-          borderColor: '#ffffff',
+          borderColor: neutralScale[0],
           borderWidth: 3
         },
         label: {
@@ -983,7 +984,7 @@ const modelDistributionOption = computed(() => {
             show: true,
             fontSize: isMobile ? 14 : 16,
             fontWeight: '600',
-            color: '#006241',
+            color: brandScale[700],
             formatter: '{b}\n{d}%'
           },
           scale: true,

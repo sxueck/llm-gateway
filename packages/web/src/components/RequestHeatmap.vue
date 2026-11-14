@@ -143,41 +143,41 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.heatmap-card { padding: 24px 28px; border: 1px solid #e6ebe8; border-radius: 16px; background: #fff; }
+.heatmap-card { padding: 24px 28px; border: 1px solid var(--color-neutral-200); border-radius: 16px; background: var(--color-neutral-0); }
 .heatmap-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 22px; }
-.heatmap-header h3 { margin: 0; color: #17231e; font-size: 17px; font-weight: 650; }
-.heatmap-header p { margin: 5px 0 0; color: #68756f; font-size: 12px; }
-.heatmap-header strong { color: #385449; font-size: 13px; font-weight: 600; white-space: nowrap; }
-.heatmap-state { padding: 28px 0; color: #68756f; font-size: 13px; }
+.heatmap-header h3 { margin: 0; color: var(--color-title); font-size: 17px; font-weight: 650; }
+.heatmap-header p { margin: 5px 0 0; color: var(--color-neutral-700); font-size: 12px; }
+.heatmap-header strong { color: var(--color-brand-700); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.heatmap-state { padding: 28px 0; color: var(--color-neutral-700); font-size: 13px; }
 .heatmap-skeleton { padding-top: 22px; padding-bottom: 36px; }
-.heatmap-placeholder { height: 144px; border-radius: 8px; background: #f8faf9; }
-.heatmap-retry { margin-left: 8px; padding: 0; border: 0; background: transparent; color: #006241; cursor: pointer; text-decoration: underline; }
+.heatmap-placeholder { height: 144px; border-radius: 8px; background: var(--color-neutral-50); }
+.heatmap-retry { margin-left: 8px; padding: 0; border: 0; background: transparent; color: var(--color-brand-700); cursor: pointer; text-decoration: underline; }
 .heatmap-scroll { max-width: 100%; overflow-x: auto; padding-bottom: 4px; }
 .heatmap-content { width: 100%; min-width: 900px; }
 .heatmap-months, .heatmap-grid { display: grid; grid-template-columns: repeat(var(--heatmap-columns), minmax(12px, 1fr)); column-gap: 3px; }
-.heatmap-months { position: relative; z-index: 2; height: 22px; color: #68756f; font-size: 11px; }
-.heatmap-months span { white-space: nowrap; padding: 0 2px; background: #fff; }
+.heatmap-months { position: relative; z-index: 2; height: 22px; color: var(--color-neutral-700); font-size: 11px; }
+.heatmap-months span { white-space: nowrap; padding: 0 2px; background: var(--color-neutral-0); }
 .heatmap-months span:last-child:not(:first-child) { justify-self: end; }
 .heatmap-grid { grid-auto-flow: column; grid-template-rows: repeat(7, auto); row-gap: 3px; }
-.heatmap-cell { width: 100%; aspect-ratio: 1; max-height: 18px; padding: 0; border: 0; border-radius: 3px; background: #edf1ee; }
+.heatmap-cell { width: 100%; aspect-ratio: 1; max-height: 18px; padding: 0; border: 0; border-radius: 3px; background: var(--color-brand-100); }
 button.heatmap-cell { cursor: pointer; }
-button.heatmap-cell:focus-visible, button.heatmap-cell.selected { outline: 2px solid #164e36; outline-offset: 2px; position: relative; z-index: 1; }
+button.heatmap-cell:focus-visible, button.heatmap-cell.selected { outline: 2px solid var(--color-brand-800); outline-offset: 2px; position: relative; z-index: 1; }
 .heatmap-cell.empty { visibility: hidden; }
-.heatmap-cell.level-1 { background: #c8e6d3; }
-.heatmap-cell.level-2 { background: #94cfaa; }
-.heatmap-cell.level-3 { background: #55ad7c; }
-.heatmap-cell.level-4 { background: #147a4b; }
-.heatmap-cell:not(.empty):hover { outline: 1px solid #4e7462; outline-offset: 1px; }
-.heatmap-tooltip { position: fixed; z-index: 10; display: grid; gap: 3px; min-width: 154px; padding: 9px 11px; border: 1px solid #dce7e1; border-radius: 8px; background: rgba(255, 255, 255, .98); box-shadow: 0 8px 24px rgba(23, 35, 30, .14); color: #52635b; font-size: 11px; pointer-events: none; }
-.heatmap-tooltip strong { color: #17231e; font-size: 12px; }
-.heatmap-detail { margin-top: 18px; padding: 16px; border: 1px solid #e6eeea; border-radius: 12px; background: #f8faf9; }
-.heatmap-detail-date { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; color: #17231e; font-size: 14px; font-weight: 650; }
-.heatmap-detail p { color: #68756f; font-size: 11px; font-weight: 400; }
+.heatmap-cell.level-1 { background: var(--color-brand-200); }
+.heatmap-cell.level-2 { background: var(--color-brand-400); }
+.heatmap-cell.level-3 { background: var(--color-brand-500); }
+.heatmap-cell.level-4 { background: var(--color-brand-700); }
+.heatmap-cell:not(.empty):hover { outline: 1px solid var(--color-brand-500); outline-offset: 1px; }
+.heatmap-tooltip { position: fixed; z-index: 10; display: grid; gap: 3px; min-width: 154px; padding: 9px 11px; border: 1px solid var(--color-neutral-300); border-radius: 8px; background: rgba(255, 255, 255, .98); box-shadow: 0 8px 24px rgba(23, 35, 30, .14); color: var(--color-neutral-700); font-size: 11px; pointer-events: none; }
+.heatmap-tooltip strong { color: var(--color-title); font-size: 12px; }
+.heatmap-detail { margin-top: 18px; padding: 16px; border: 1px solid var(--color-neutral-200); border-radius: 12px; background: var(--color-neutral-50); }
+.heatmap-detail-date { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; color: var(--color-title); font-size: 14px; font-weight: 650; }
+.heatmap-detail p { color: var(--color-neutral-700); font-size: 11px; font-weight: 400; }
 .heatmap-detail dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin: 12px 0 0; }
-.heatmap-detail dt { color: #68756f; font-size: 12px; }
-.heatmap-detail dd { margin: 4px 0 0; color: #17231e; font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.heatmap-detail dt { color: var(--color-neutral-700); font-size: 12px; }
+.heatmap-detail dd { margin: 4px 0 0; color: var(--color-title); font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .heatmap-detail p { margin: 12px 0 0; }
-.heatmap-footer { display: flex; justify-content: flex-end; gap: 16px; margin-top: 16px; color: #68756f; font-size: 11px; }
+.heatmap-footer { display: flex; justify-content: flex-end; gap: 16px; margin-top: 16px; color: var(--color-neutral-700); font-size: 11px; }
 .heatmap-legend { display: flex; align-items: center; gap: 4px; }
 .heatmap-legend .heatmap-cell { width: 14px; }
 @media (max-width: 639px) {

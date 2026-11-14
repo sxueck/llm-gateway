@@ -54,7 +54,7 @@ const stats = computed(() => {
 
 <style scoped>
 .overview-card {
-  background: #ffffff;
+  background: var(--color-neutral-0);
   border-radius: 16px;
   border: none;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -69,13 +69,13 @@ const stats = computed(() => {
 .card-title {
   font-size: 16px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--color-text);
   letter-spacing: -0.02em;
 }
 
 .stat-item {
   padding: 16px;
-  background: linear-gradient(135deg, #f8f9fa 0%, #f0f1f3 100%);
+  background: linear-gradient(135deg, var(--color-neutral-50) 0%, var(--color-neutral-100) 100%);
   border-radius: 12px;
   text-align: center;
   border: none;
@@ -90,7 +90,7 @@ const stats = computed(() => {
 .stat-value {
   font-size: 32px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--color-text);
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
@@ -101,7 +101,7 @@ const stats = computed(() => {
 
 .stat-label {
   font-size: 13px;
-  color: #8c8c8c;
+  color: var(--color-neutral-700);
   margin-top: 8px;
   font-weight: 500;
   text-transform: uppercase;

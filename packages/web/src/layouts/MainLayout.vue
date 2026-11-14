@@ -44,7 +44,7 @@
           <AlertCenter v-if="authStore.isAdmin" />
           <n-dropdown :options="userOptions" @select="handleUserAction">
             <div class="user-avatar">
-              <n-avatar round size="medium" :style="{ backgroundColor: '#0f6b4a' }">
+              <n-avatar round size="medium" :style="{ backgroundColor: 'var(--color-brand-600)' }">
                 {{ authStore.user?.username?.charAt(0).toUpperCase() }}
               </n-avatar>
               <div class="user-info">
@@ -229,7 +229,7 @@ function handleUserAction(key: string) {
   font-size: 12px;
   line-height: 1.25;
   font-weight: 500;
-  color: #66756f;
+  color: var(--color-neutral-700);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   background-color: rgba(250, 252, 251, 0.96);
@@ -247,7 +247,7 @@ function handleUserAction(key: string) {
   margin-block: 2px;
   padding: 0 12px;
   border-radius: 9px;
-  color: #42514b;
+  color: var(--color-neutral-700);
   font-size: 14px;
   line-height: 1.4;
   font-weight: 500;
@@ -281,7 +281,7 @@ function handleUserAction(key: string) {
 
 .nav-item-icon {
   flex: 0 0 auto;
-  color: #71827a;
+  color: var(--color-neutral-600);
   transition: color 0.18s ease;
 }
 
@@ -320,7 +320,7 @@ function handleUserAction(key: string) {
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.6);
-  color: #6b7280;
+  color: var(--color-neutral-700);
   font-size: 13px;
   cursor: pointer;
   transition: border-color 0.18s ease, color 0.18s ease, background-color 0.18s ease;
@@ -338,7 +338,7 @@ function handleUserAction(key: string) {
   background: rgba(0, 0, 0, 0.05);
   font-family: inherit;
   font-size: 11px;
-  color: #6b7280;
+  color: var(--color-neutral-700);
 }
 
 .header-right {
@@ -370,13 +370,13 @@ function handleUserAction(key: string) {
 .user-name {
   font-size: 14px;
   font-weight: 500;
-  color: #1a1a1a;
+  color: var(--color-text);
   line-height: 1.2;
 }
 
 .user-role {
   font-size: 11px;
-  color: #71827a;
+  color: var(--color-neutral-700);
   line-height: 1.2;
 }
 

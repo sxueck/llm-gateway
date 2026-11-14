@@ -15,8 +15,8 @@ import { Primitive } from "reka-ui"
  * 运行时样式优先级一致 —— 可被使用处的内联 style 覆盖，
  * 且不受 Tailwind utilities 分层 / 视图 scoped 样式影响，
  * 从而保持迁移前（如 class="my-4"、class="form-section"）的实际渲染效果。
- * 线色用 shadcn 的 --border 令牌（#e5e7eb），与主题覆盖的
- * dividerColor #e8e8e8 视觉一致。
+ * 线色用 shadcn 的 --border 令牌（var(--color-neutral-300)），与主题覆盖的
+ * dividerColor var(--color-neutral-300) 视觉一致。
  */
 const props = withDefaults(
   defineProps<{

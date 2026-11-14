@@ -1,0 +1,16 @@
+id: no-bare-hex-color-css
+language: css
+severity: warning
+message: "Use a web color token instead of a bare hex color"
+note: |
+  Color literals belong in the shared token definition files. This rule
+  covers CSS color_value nodes, not Vue style blocks; ast-grep 0.51 does not
+  parse .vue files. Suppress a justified exception with an ast-grep-ignore
+  comment. File filters are relative to the repository root.
+rule:
+  kind: color_value
+files:
+  - "packages/web/src/**/*.css"
+ignores:
+  - "packages/web/src/style.css"
+  - "packages/web/src/styles/shadcn.css"
