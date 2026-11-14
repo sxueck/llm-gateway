@@ -9,7 +9,7 @@
       >
         <template #actions>
           <n-space :size="12" class="dashboard-controls">
-            <n-button secondary :loading="requestLoading" @click="refreshDashboard">
+            <n-button secondary round :loading="requestLoading" @click="refreshDashboard">
               <template #icon>
                 <n-icon><RefreshOutline /></n-icon>
               </template>
@@ -590,7 +590,7 @@ const gridCols = computed(() => {
 
 const gridGap = computed(() => {
   if (windowWidth.value < 640) return 12
-  return 16
+  return 20
 })
 
 const enabledKeysCount = computed(() => {
@@ -737,7 +737,10 @@ const chartOption = computed(() => {
       symbolSize: isMobile ? 5 : 7,
       showSymbol: false,
       lineStyle: {
-        width: isMobile ? 2 : 2.5
+        width: isMobile ? 2 : 3,
+        shadowColor: colorScheme.line,
+        shadowBlur: isMobile ? 4 : 8,
+        shadowOffsetY: 2
       },
       itemStyle: {
         borderWidth: 2,
@@ -1093,120 +1096,6 @@ onMounted(() => {
 </style>
 
 <style scoped>
-.dashboard-view .dashboard-command-center {
-  gap: 16px;
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-}
-
-#app .dashboard-view .dashboard-command-center .dashboard-primary .n-card.stat-card:not(.stat-card-primary) {
-  background: #ffffff;
-  border-color: #f3f4f6;
-}
-
-.dashboard-view :deep(.page-heading__title) {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-.dashboard-view :deep(.page-heading__subtitle) {
-  font-size: 13px;
-}
-
-.dashboard-view .dashboard-stack {
-  gap: 16px;
-}
-
-.dashboard-view .stat-card,
-.dashboard-view .trend-card {
-  border-radius: 8px;
-}
-
-.dashboard-view .overview-card {
-  border-radius: 8px;
-}
-
-.dashboard-view .stat-card::after {
-  content: none;
-}
-
-.dashboard-view .stat-card:hover {
-  border-color: #e5e7eb;
-  box-shadow: 0 4px 14px -10px rgba(15, 107, 74, 0.16);
-}
-
-#app .dashboard-view .n-card.stat-card-primary:hover {
-  box-shadow: 0 4px 14px -10px rgba(15, 107, 74, 0.25);
-}
-
-.dashboard-view .stat-content,
-.dashboard-view .dashboard-secondary .stat-content {
-  padding: 18px 20px;
-}
-
-.dashboard-view .stat-header {
-  margin-bottom: 8px;
-}
-
-.dashboard-view .stat-main-value {
-  font-size: 32px;
-  margin-bottom: 6px;
-}
-
-.dashboard-view .dashboard-secondary .stat-main-value {
-  font-size: 24px;
-}
-
-.dashboard-view .stat-unit {
-  font-size: 13px;
-}
-
-.dashboard-view .stat-progress {
-  margin-top: 8px;
-}
-
-.dashboard-view .trend-card :deep(.n-card__header) {
-  padding: 16px 20px 12px;
-}
-
-.dashboard-view .trend-card :deep(.n-card-header__main),
-.dashboard-view .overview-card :deep(.n-card-header__main) {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.dashboard-view .trend-chart-container {
-  padding: 16px 12px 12px;
-  min-height: 360px;
-}
-
-.dashboard-view .trend-chart,
-.dashboard-view .chart-placeholder {
-  height: 380px;
-}
-
-.dashboard-view .trend-loading {
-  padding: 16px 12px 12px;
-}
-
-.dashboard-view .trend-card :deep(.n-empty),
-.dashboard-view .trend-error {
-  min-height: 420px;
-}
-
-.dashboard-view .overview-card :deep(.n-card__header) {
-  padding: 16px 20px;
-}
-
-.dashboard-view .overview-grid {
-  gap: 16px;
-}
-
 @media (max-width: 639px) {
   .dashboard-view .stat-card,
   .dashboard-view .trend-card,
