@@ -610,13 +610,21 @@ export async function countRequestTokens(
       }
       promptTokens = joined ? await enc.countLong(joined) : 0;
     } else if (requestBody.input !== undefined && requestBody.input !== null && requestBody.input !== '') {
-      // Array inputs are joined (matching previous behavior); non-string
-      // scalars are not tokenizable and yield 0 like the old text-guard did.
-      const inputText = Array.isArray(requestBody.input)
-        ? requestBody.input.join(' ')
-        : (typeof requestBody.input === 'string' ? requestBody.input : '');
-      const enc = createYieldingEncoder(encoding);
-      promptTokens = inputText ? await enc.countLong(inputText) : 0;
+      // Responses `input` 的诚实口径：字符串与结构化项（message /
+      // function_call / reasoning / …）都按 Responses 语义计入原客户端
+      // prompt，恰好一次。纯字符串数组是 embeddings 形态，维持拼接文本
+      // 计数；对象数组不再退化成 "[object Object]" 拼接（既低估又失真）。
+      const input = requestBody.input;
+      if (
+        Array.isArray(input) &&
+        input.length > 0 &&
+        input.every((item: unknown) => typeof item === 'string')
+      ) {
+        const enc = createYieldingEncoder(encoding);
+        promptTokens = await enc.countLong((input as string[]).join(' '));
+      } else {
+        promptTokens = await countResponsesInputCooperatively(input);
+      }
     } else if (typeof requestBody.prompt === 'string' && requestBody.prompt) {
       const enc = createYieldingEncoder(encoding);
       promptTokens = requestBody.prompt ? await enc.countLong(requestBody.prompt) : 0;
@@ -644,9 +652,21 @@ export async function countRequestTokens(
   }
 }
 
+/**
+ * 从流式 chunk 磁带估算 token。
+ *
+ * deliveredOutputText（可选）：调用方持有的完整已交付 output_text 原文
+ * （Responses 续传路径由处理器上报——即 responses-stream-processor.ts
+ * 合成终态所用的 clientText 全量，不受磁带截断影响）。提供时 completion
+ * 直接对完整文本按既有口径（countTextCooperatively 分段分词，与请求
+ * 路径同一标准）计数：磁带保持原样仅供日志，既不从被 256KiB 录制上限
+ * 截断的前缀估算，也不按丢弃字符 chars/4 之类启发式补计（对中文/代码
+ * 会显著低估）。未提供该参数时行为与旧版完全一致（非续传路径不变）。
+ */
 export async function countStreamResponseTokens(
   requestBody: any,
-  streamChunks: string[]
+  streamChunks: string[],
+  deliveredOutputText?: string
 ): Promise<TokenCountResult> {
   if (!requestBody || typeof requestBody !== 'object') {
     return { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -663,6 +683,26 @@ export async function countStreamResponseTokens(
 
     if (requestBody.messages && Array.isArray(requestBody.messages)) {
       promptTokens = await countMessagesCooperatively(requestBody.messages);
+    } else if (requestBody.input !== undefined && requestBody.input !== null && requestBody.input !== '') {
+      // 诚实续传估算：Responses 请求的 input（字符串及结构化项）计原
+      // 客户端 prompt 恰好一次。续写请求重发的 prompt（原始输入 + 半截
+      // assistant 文本 + 续写指令）由网关另行构造、不经过 request.body，
+      // 因此永远不会在这里被二次计入；网关估算不等于上游真实花费。
+      promptTokens = await countResponsesInputCooperatively(requestBody.input);
+    }
+
+    // 续传完整核算（F2 修正）：调用方传入与磁带截断无关的完整已交付
+    // output_text（responses-stream-processor.ts 合成终态所用的 clientText
+    // 原文，仅续传成功/合成失败路径提供）。completion 直接对完整文本按
+    // 既有口径（countTextCooperatively 分段分词）用真实分词器计数；磁带
+    // 保持原样仅供日志，不做基于丢弃字符的估算。
+    if (typeof deliveredOutputText === 'string' && deliveredOutputText.length > 0) {
+      completionTokens = await countTextCooperatively(deliveredOutputText);
+      return {
+        promptTokens,
+        completionTokens,
+        totalTokens: promptTokens + completionTokens,
+      };
     }
 
     const enc = createYieldingEncoder(encoding);
@@ -683,11 +723,22 @@ export async function countStreamResponseTokens(
           if (parsed.choices && parsed.choices[0]?.delta?.content) {
             contentParts.push(parsed.choices[0].delta.content);
           }
-          // OpenAI Responses API SSE 解析：response.output_text.delta
+          // OpenAI Responses API SSE 解析：response.output_text.delta。
+          // 两种线上形状都计一次 completion：官方规格的裸字符串 delta 与
+          // 网关 WS 适配器的包装对象 {delta:{text}}（顶层 text 兼容保留）。
+          // 合成终态帧（output_text.done / content_part.done /
+          // output_item.done / response.completed / response.failed 携带全文）
+          // 绝不能计入 —— 那是已交付增量的重复，不是新的 completion。
           else if (parsed.type && typeof parsed.type === 'string' && parsed.type.includes('output_text.delta')) {
-            const txt = (parsed.delta && typeof parsed.delta.text === 'string')
-              ? parsed.delta.text
-              : (typeof parsed.text === 'string' ? parsed.text : '');
+            const delta: any = parsed.delta;
+            let txt = '';
+            if (typeof delta === 'string') {
+              txt = delta;
+            } else if (delta && typeof delta.text === 'string') {
+              txt = delta.text;
+            } else if (typeof parsed.text === 'string') {
+              txt = parsed.text;
+            }
             if (txt) {
               contentParts.push(txt);
             }

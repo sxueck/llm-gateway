@@ -54,7 +54,7 @@ export async function pollApiRequestRow(
     try {
       const rows = await withConnection(env, async (conn) => {
         const [r] = await conn.query(
-          "SELECT id, model, prompt_tokens, completion_tokens, status, route_tier, route_log_id, created_at FROM api_requests ORDER BY created_at DESC LIMIT 50",
+          "SELECT id, model, prompt_tokens, completion_tokens, status, route_tier, route_log_id, created_at, request_params_json FROM api_requests ORDER BY created_at DESC LIMIT 50",
         );
         return r as Record<string, unknown>[];
       });

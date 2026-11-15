@@ -28,8 +28,12 @@ export interface StreamTokenUsage {
   reasoningContent?: string;
   thinkingBlocks?: ThinkingBlock[];
   streamResumed?: boolean;
+  /** 上游续写请求创建次数（含 429 拒绝后的重试；初始请求不计）。仅采纳了
+   * 续写段（成功收尾）时上报。 */
   streamResumeAttempts?: number;
   streamResumeChars?: number;
+  /** 完整已交付文本，用于续传计费；streamChunks 可能被录制上限截断。 */
+  deliveredOutputText?: string;
 }
 
 export interface RequestOptions {

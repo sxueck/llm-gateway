@@ -413,6 +413,234 @@ test("a truncated stream is continued through the resume factory", async () => {
   expect(written.join("")).toContain("data: [DONE]");
 });
 
+test("continuation request rejected with Retry-After: waits it out, heartbeats, then retries and stitches", async () => {
+  const { reply, frames } = createFakeReply();
+  const factory = vi
+    .fn()
+    .mockResolvedValueOnce({ stream: null, retryable: true, retryAfterMs: 40 })
+    .mockResolvedValueOnce(
+      healthyStream([
+        textChunk("id2", "ld!"),
+        finishChunk("id2", { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16 }),
+      ]),
+    );
+
+  const startedAt = Date.now();
+  const usage = await processOpenAIChatCompletionStreamToSse({
+    reply,
+    stream: brokenStream([textChunk("id1", "Hel"), textChunk("id1", "lo wor")]),
+    model: "test-model",
+    resumeStreamFactory: factory,
+    resumeRetry: { heartbeatIntervalMs: 10, defaultBackoffMs: 5 },
+  });
+  const elapsedMs = Date.now() - startedAt;
+
+  expect(factory).toHaveBeenCalledTimes(2);
+  expect(usage.streamResumed).toBe(true);
+  // streamResumeAttempts = 上游续写请求创建次数：被 429 拒绝的那次 + 重试
+  // 成功的那次（初始请求不计）。
+  expect(usage.streamResumeAttempts).toBe(2);
+  expect(usage.streamResumeChars).toBe("Hello wor".length);
+  // Retry-After (40ms) 真的被遵守，而不是立即重试。
+  expect(elapsedMs).toBeGreaterThanOrEqual(35);
+
+  const heartbeatIdx = frames.findIndex((f) => f === ": ping\n\n");
+  const continuationIdx = frames.findIndex((f) => f.includes("ld!"));
+  expect(heartbeatIdx).toBeGreaterThan(-1);
+  expect(continuationIdx).toBeGreaterThan(heartbeatIdx);
+  expect(frames[frames.length - 1]).toBe("data: [DONE]\n\n");
+  // 心跳是注释帧，不能混入用于 token 计数/重放的 chunk 序列。
+  expect(usage.streamChunks.every((c) => !c.startsWith(":"))).toBe(true);
+});
+
+test("retryable rejection without Retry-After falls back to the small default backoff", async () => {
+  const { reply, frames } = createFakeReply();
+  const factory = vi
+    .fn()
+    .mockResolvedValueOnce({ stream: null, retryable: true })
+    .mockResolvedValueOnce(
+      healthyStream([
+        textChunk("id2", "more"),
+        finishChunk("id2", { prompt_tokens: 2, completion_tokens: 2, total_tokens: 4 }),
+      ]),
+    );
+
+  const usage = await processOpenAIChatCompletionStreamToSse({
+    reply,
+    stream: brokenStream([textChunk("id1", "first ")]),
+    model: "test-model",
+    resumeStreamFactory: factory,
+    resumeRetry: { heartbeatIntervalMs: 5, defaultBackoffMs: 20 },
+  });
+
+  expect(factory).toHaveBeenCalledTimes(2);
+  expect(usage.streamResumed).toBe(true);
+  // 创建次数口径：第一次（无 Retry-After，回退默认退避）+ 第二次成功。
+  expect(usage.streamResumeAttempts).toBe(2);
+  expect(frames.join("")).toContain(": ping\n\n");
+  expect(frames.some((f) => f.includes("more"))).toBe(true);
+});
+
+test("retryable rejection without Retry-After and heartbeats disabled still resumes", async () => {
+  const { reply, frames } = createFakeReply();
+  const factory = vi
+    .fn()
+    .mockResolvedValueOnce({ stream: null, retryable: true })
+    .mockResolvedValueOnce(
+      healthyStream([
+        textChunk("id2", "tail"),
+        finishChunk("id2", { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }),
+      ]),
+    );
+
+  const usage = await processOpenAIChatCompletionStreamToSse({
+    reply,
+    stream: brokenStream([textChunk("id1", "head")]),
+    model: "test-model",
+    resumeStreamFactory: factory,
+    resumeRetry: { heartbeatIntervalMs: 0, defaultBackoffMs: 5 },
+  });
+
+  expect(factory).toHaveBeenCalledTimes(2);
+  expect(usage.streamResumed).toBe(true);
+  // 心跳关闭不影响创建计数：两次创建都被计入。
+  expect(usage.streamResumeAttempts).toBe(2);
+  expect(frames.some((f) => f === ": ping\n\n")).toBe(false);
+});
+
+test("heartbeats span the gap while the continuation request itself is pending", async () => {
+  const { reply, frames } = createFakeReply();
+  const factory = vi.fn(async () => {
+    // create() 在拿到响应头之前悬置一段时间（覆盖 enabled 检查 + 建连）。
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    return healthyStream([
+      textChunk("id2", "late"),
+      finishChunk("id2", { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }),
+    ]);
+  });
+
+  await processOpenAIChatCompletionStreamToSse({
+    reply,
+    stream: brokenStream([textChunk("id1", "early ")]),
+    model: "test-model",
+    resumeStreamFactory: factory,
+    resumeRetry: { heartbeatIntervalMs: 15 },
+  });
+
+  const heartbeatIdx = frames.findIndex((f) => f === ": ping\n\n");
+  const continuationIdx = frames.findIndex((f) => f.includes("late"));
+  expect(heartbeatIdx).toBeGreaterThan(-1);
+  expect(continuationIdx).toBeGreaterThan(heartbeatIdx);
+});
+
+test("non-retryable continuation rejection stays terminal without a retry wait", async () => {
+  const { reply, frames } = createFakeReply();
+  const factory = vi
+    .fn()
+    .mockResolvedValueOnce({ stream: null, retryable: false, retryAfterMs: 5000 });
+
+  const startedAt = Date.now();
+  await expect(
+    processOpenAIChatCompletionStreamToSse({
+      reply,
+      stream: brokenStream([textChunk("id1", "partial")]),
+      model: "test-model",
+      resumeStreamFactory: factory,
+      resumeRetry: { heartbeatIntervalMs: 10, defaultBackoffMs: 10 },
+    }),
+  ).rejects.toThrow("upstream connection reset");
+
+  expect(factory).toHaveBeenCalledTimes(1);
+  expect(Date.now() - startedAt).toBeLessThan(2000); // 没有盲目等 5 秒
+  expect(frames.some((f) => f === "data: [DONE]\n\n")).toBe(false);
+  expect(reply.raw.end).not.toHaveBeenCalled();
+});
+
+test("a Retry-After beyond the resume window terminates rather than retrying early", async () => {
+  const { reply } = createFakeReply();
+  const factory = vi.fn(async () => ({ stream: null, retryable: true, retryAfterMs: 120_000 }));
+  await expect(processOpenAIChatCompletionStreamToSse({
+    reply,
+    stream: brokenStream([textChunk("id1", "partial")]),
+    model: "test-model",
+    resumeStreamFactory: factory,
+    resumeRetry: { maxRetryAfterMs: 60_000 },
+  })).rejects.toThrow("upstream connection reset");
+  expect(factory).toHaveBeenCalledTimes(1);
+});
+
+test("exhausted continuation attempts keep the original failure terminal", async () => {
+  const { reply, frames } = createFakeReply();
+  const factory = vi.fn(async () => ({
+    stream: null,
+    retryable: true,
+    retryAfterMs: 20,
+  }));
+
+  await expect(
+    processOpenAIChatCompletionStreamToSse({
+      reply,
+      stream: brokenStream([textChunk("id1", "partial")]),
+      model: "test-model",
+      resumeStreamFactory: factory,
+      resumeRetry: { maxAttempts: 3, defaultBackoffMs: 5, heartbeatIntervalMs: 5 },
+    }),
+  ).rejects.toThrow("upstream connection reset");
+
+  expect(factory).toHaveBeenCalledTimes(3);
+  expect(frames.some((f) => f === ": ping\n\n")).toBe(true);
+  expect(frames.some((f) => f === "data: [DONE]\n\n")).toBe(false);
+});
+
+test("client abort during the resume gap stops retries immediately", async () => {
+  const { reply, frames } = createFakeReply();
+  const controller = new AbortController();
+  const factory = vi
+    .fn()
+    .mockImplementationOnce(async () => {
+      // 第一次续写被拒后客户端断开（abort 信号由 proxy-handler 接线）。
+      setTimeout(() => controller.abort(), 5);
+      return { stream: null, retryable: true, retryAfterMs: 10_000 };
+    })
+    .mockResolvedValueOnce(healthyStream([textChunk("id2", "never"), finishChunk("id2", undefined)]));
+
+  const startedAt = Date.now();
+  await expect(
+    processOpenAIChatCompletionStreamToSse({
+      reply,
+      stream: brokenStream([textChunk("id1", "partial")]),
+      model: "test-model",
+      resumeStreamFactory: factory,
+      abortSignal: controller.signal,
+      resumeRetry: { heartbeatIntervalMs: 10, defaultBackoffMs: 5 },
+    }),
+  ).rejects.toThrow("upstream connection reset");
+
+  expect(factory).toHaveBeenCalledTimes(1);
+  expect(Date.now() - startedAt).toBeLessThan(2000); // 没有干等 10 秒的 Retry-After
+  expect(frames.some((f) => f.includes("never"))).toBe(false);
+  expect(frames.some((f) => f === "data: [DONE]\n\n")).toBe(false);
+});
+
+test("an unexpected factory throw stays terminal (never masks the original error)", async () => {
+  const { reply } = createFakeReply();
+  const factory = vi.fn(async () => {
+    throw new Error("factory bug");
+  });
+
+  await expect(
+    processOpenAIChatCompletionStreamToSse({
+      reply,
+      stream: brokenStream([textChunk("id1", "partial")]),
+      model: "test-model",
+      resumeStreamFactory: factory,
+      resumeRetry: { maxAttempts: 3, defaultBackoffMs: 1, heartbeatIntervalMs: 0 },
+    }),
+  ).rejects.toThrow("upstream connection reset");
+
+  expect(factory).toHaveBeenCalledTimes(1);
+});
+
 test("an empty upstream stream fails before any header is committed", async () => {
   const { raw } = createReplyStub();
 

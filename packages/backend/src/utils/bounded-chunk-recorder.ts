@@ -7,7 +7,11 @@
  * every concurrent stream on the event loop. Once the budget is exhausted,
  * recording stops; downstream consumers see a prefix (token fallback then
  * under-counts completion tokens, which is acceptable because upstream usage
- * is preferred whenever available).
+ * is preferred whenever available). The one exception is the Responses
+ * stream-resume billing estimate: a resumed stream has no upstream usage to
+ * prefer, so billing counts the processor's truncation-independent full
+ * delivered output text (clientText) instead of trusting the tape prefix
+ * (see responses-stream-processor.ts / countStreamResponseTokens).
  *
  * Overshoot past the budget is bounded by a single SSE frame (typically a few
  * KB) since the check runs between frames.

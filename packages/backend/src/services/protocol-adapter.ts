@@ -11,7 +11,14 @@ import {
   processOpenAIResponsesStreamToSseWithRetry,
 } from '../utils/responses-stream-processor.js';
 import { filterForwardedHeaders } from '../utils/header-sanitizer.js';
-import { buildResumeMessages, isStreamResumeEnabled } from './stream-resumer.js';
+import {
+  buildResumeMessages,
+  buildResumeResponsesParams,
+  extractResumeRetryAfterMs,
+  isStreamResumeEnabled,
+  isRetryableResumeError,
+} from './stream-resumer.js';
+import type { ResumeStreamOutcome } from '../utils/stream-processor.js';
 
 export type UpstreamTransport = 'http_sse' | 'websocket';
 
@@ -383,12 +390,11 @@ export class ProtocolAdapter {
 
     const streamIdleTimeoutMs = this.resolveStreamIdleTimeoutMs(config, options);
 
-    // Stream resume (system setting `stream_resume_enabled`): on a mid-stream
-    // upstream failure the processor asks this factory for a continuation
-    // stream built from the text already delivered downstream.
+    // SDK retries are disabled so creation failures expose Retry-After to the processor.
+    // See ResumeStreamOutcome for request-counting semantics.
     const resumeStreamFactory = async (
       partialText: string
-    ): Promise<AsyncIterable<any> | null> => {
+    ): Promise<AsyncIterable<any> | ResumeStreamOutcome | null> => {
       if (!(await isStreamResumeEnabled())) return null;
       try {
         return withStreamIdleTimeout(
@@ -402,8 +408,17 @@ export class ProtocolAdapter {
           streamIdleTimeoutMs
         );
       } catch (resumeError: any) {
-        memoryLogger.debug(`断点续传请求创建失败: ${resumeError?.message || resumeError}`, 'Protocol');
-        return null;
+        const retryAfterMs = extractResumeRetryAfterMs(resumeError);
+        const retryable = isRetryableResumeError(resumeError);
+        memoryLogger.debug(
+          `断点续传请求创建失败: ${resumeError?.message || resumeError}` +
+            ` | retryable: ${retryable}` +
+            (retryAfterMs !== undefined
+              ? ` | retry-after: ${retryAfterMs}ms`
+              : ' | 无 Retry-After 头'),
+          'Protocol'
+        );
+        return { stream: null, retryable, retryAfterMs };
       }
     };
 
@@ -675,6 +690,14 @@ export class ProtocolAdapter {
     const totalAttempts = Math.max(1, modelRetryLimit + 1);
     const baseUpstreamRequestOptions = Object.keys(requestOptions).length > 0 ? requestOptions : undefined;
 
+    // F1: 续写请求必须挂客户端 abortSignal（chat 路径经 requestOptions.signal 已有同款
+    // 契约）：客户端在等响应头（建连等待）或续写流等待事件时取消，上游请求要立即
+    // 中止，而不是挂到 SDK 超时/流空闲超时。初始请求的 per-attempt signal 由处理器
+    // （responses-stream-processor）合并，续写请求直接复用客户端信号。
+    const resumeUpstreamRequestOptions = abortSignal
+      ? { ...(baseUpstreamRequestOptions || {}), signal: abortSignal }
+      : baseUpstreamRequestOptions;
+
     const initTimeoutOverride = config.modelAttributes?.responses_init_timeout_ms;
     const initTimeoutMs =
       typeof initTimeoutOverride === 'number' && Number.isFinite(initTimeoutOverride) && initTimeoutOverride >= 0
@@ -685,6 +708,34 @@ export class ProtocolAdapter {
               ? requestTimeoutMs
               : 30_000
           );
+
+    // Responses 续写禁用工具调用；创建失败按 ResumeStreamOutcome 上报。
+    const resumeStreamFactory = async (
+      partialText: string
+    ): Promise<AsyncIterable<any> | ResumeStreamOutcome | null> => {
+      if (!(await isStreamResumeEnabled())) return null;
+      try {
+        return withStreamIdleTimeout(
+          await client.responses.create(
+            buildResumeResponsesParams(requestParams, partialText),
+            resumeUpstreamRequestOptions
+          ) as unknown as AsyncIterable<any>,
+          this.resolveStreamIdleTimeoutMs(config, options)
+        );
+      } catch (resumeError: any) {
+        const retryAfterMs = extractResumeRetryAfterMs(resumeError);
+        const retryable = isRetryableResumeError(resumeError);
+        memoryLogger.debug(
+          `Responses 断点续传请求创建失败: ${resumeError?.message || resumeError}` +
+            ` | retryable: ${retryable}` +
+            (retryAfterMs !== undefined
+              ? ` | retry-after: ${retryAfterMs}ms`
+              : ' | 无 Retry-After 头'),
+          'Protocol'
+        );
+        return { stream: null, retryable, retryAfterMs };
+      }
+    };
 
     return await processOpenAIResponsesStreamToSseWithRetry({
       client,
@@ -698,6 +749,7 @@ export class ProtocolAdapter {
       initTimeoutMs,
       streamIdleTimeoutMs: this.resolveStreamIdleTimeoutMs(config, options),
       streamRestorer,
+      resumeStreamFactory,
       logger: memoryLogger,
     });
   }

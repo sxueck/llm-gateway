@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import {
   upstreamFetch,
   clearProxyAgentCache,
@@ -13,6 +13,48 @@ const undiciMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('undici', () => undiciMocks);
+
+// 生产代码在调用时读取全部代理环境变量（HTTP_PROXY/HTTPS_PROXY 的大小写变体与 NO_PROXY）。
+// 开发机/CI 的外层 shell 常年导出这些变量，dotenv 还会在导入期注入 ../../.env；
+// 任何一个残留都会让 upstreamFetch 走 ProxyAgent+undici 分支而非 native fetch 分支。
+// 只有先清空它们，测试才能确定性地锁死「走哪条传输分支」这一被测行为；结束后原样恢复。
+const PROXY_ENV_KEYS = [
+  'HTTPS_PROXY',
+  'https_proxy',
+  'HTTP_PROXY',
+  'http_proxy',
+  'NO_PROXY',
+  'no_proxy',
+] as const;
+
+const proxyEnvSnapshot = new Map<string, string | undefined>();
+
+beforeAll(() => {
+  for (const key of PROXY_ENV_KEYS) {
+    proxyEnvSnapshot.set(key, process.env[key]);
+    delete process.env[key];
+  }
+});
+
+afterAll(() => {
+  for (const [key, value] of proxyEnvSnapshot) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+});
+
+// 跨 describe 清理 undici mock 与模块级 dispatcher 缓存：
+// 防止上一个 describe 残留的 mockResolvedValue 掩盖本次期望的失败路径，
+// 或缓存住的 Agent/ProxyAgent 让「不应创建 dispatcher」的守卫断言失真。
+beforeEach(() => {
+  undiciMocks.Agent.mockClear();
+  undiciMocks.ProxyAgent.mockClear();
+  undiciMocks.fetch.mockReset();
+  clearProxyAgentCache();
+});
 
 describe('upstreamFetch abort behavior', () => {
   let fetchSpy: MockInstance | undefined;

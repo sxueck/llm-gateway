@@ -5,10 +5,11 @@ resetJournalBeforeEach();
 
 test("openai non-stream: /v1/chat/completions forwards to the mapped upstream model", async () => {
   const c = ctx();
+  const marker = `openai-nonstream-${Date.now()}`;
   const res = await fetch(`${c.gatewayBaseUrl}/v1/chat/completions`, {
     method: "POST",
     headers: bearerHeaders("openai"),
-    body: JSON.stringify({ model: c.models.openai, messages: [{ role: "user", content: "e2e ping" }] }),
+    body: JSON.stringify({ model: c.models.openai, user: marker, messages: [{ role: "user", content: "e2e ping" }] }),
   });
   expect(res.status).toBe(200);
   const body = (await res.json()) as {
@@ -26,7 +27,10 @@ test("openai non-stream: /v1/chat/completions forwards to the mapped upstream mo
 
   const row = await pollApiRequestRow(
     c.mysql,
-    (r) => r.model === c.models.openai || r.model === c.identifiers.openai,
+    (r) => {
+      const params = typeof r.request_params_json === "string" ? JSON.parse(r.request_params_json) : r.request_params_json;
+      return (params as { user?: string } | null)?.user === marker;
+    },
   );
   expect(row.status).toBe("success");
   expect(Number(row.prompt_tokens)).toBe(12);

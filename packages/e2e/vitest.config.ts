@@ -1,12 +1,13 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 const PKG_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   test: {
     include: ["tests/**/*.e2e.spec.ts"],
+    exclude: [...configDefaults.exclude, "tests/mock-upstream.e2e.spec.ts"],
     // 全部用例共享同一网关进程与 journal，文件并行会互相污染断言
     fileParallelism: false,
     testTimeout: 60_000,

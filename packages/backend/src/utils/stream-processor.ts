@@ -10,10 +10,51 @@ import type { ThinkingBlock, StreamTokenUsage } from '../routes/proxy/http-clien
 // 续写会把已输出文本再送回上游。超过这个长度就不再续，避免一次必然失败的请求。
 const STREAM_RESUME_MAX_CHARS = 64 * 1024;
 
+// 仅重试续写请求的创建；已采纳的续写段再次失败时直接终止。
+const STREAM_RESUME_MAX_REQUEST_ATTEMPTS = 3;
+// 上游没有给出 Retry-After 头时的小退避。
+const STREAM_RESUME_DEFAULT_BACKOFF_MS = 500;
+// 对服务端建议等待时间的封顶（与 services/stream-resumer.ts 的上限互为镜像）。
+const STREAM_RESUME_MAX_RETRY_AFTER_MS = 60_000;
+// 续写间隙向下游发送 SSE 注释心跳的间隔；<=0 关闭心跳。
+const STREAM_RESUME_HEARTBEAT_INTERVAL_MS = 5_000;
+// SSE 规范要求客户端忽略以 ':' 开头的行，因此心跳不会干扰任何解析器。
+const STREAM_RESUME_HEARTBEAT_FRAME = ': ping\n\n';
+
 type SyncStreamRestorer = {
   process: (key: string, content: string) => string;
   flush: (key: string) => string;
 };
+
+/** Structured outcome of one continuation-request attempt: a stream on
+ * success, otherwise whether the failure may be retried and the
+ * server-advised wait (Retry-After) when the upstream provided one.
+ * Returning this object (or a stream) tells the processor a continuation
+ * request was actually created upstream — that is what increments
+ * streamResumeAttempts; plain null means no request was created (e.g. the
+ * system setting is off) and is never counted. */
+export interface ResumeStreamOutcome {
+  stream: AsyncIterable<any> | null;
+  retryable?: boolean;
+  /** Milliseconds advised by the upstream (Retry-After / retry-after-ms). */
+  retryAfterMs?: number;
+}
+
+export interface StreamResumeRetryOptions {
+  /** Total continuation-request attempts (first try + retries). Default 3. */
+  maxAttempts?: number;
+  /** Wait before retrying when no Retry-After header is available. Default 500ms. */
+  defaultBackoffMs?: number;
+  /** Upper bound applied to a server-advised Retry-After wait. Default 60s. */
+  maxRetryAfterMs?: number;
+  /** SSE comment heartbeat interval across the resume gap. Default 5s; <=0 disables. */
+  heartbeatIntervalMs?: number;
+}
+
+function resolveResumeRetryNumber(value: number | undefined, fallback: number, min: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.floor(value));
+}
 
 export interface OpenAIChatStreamProcessorOptions {
   reply: FastifyReply;
@@ -35,8 +76,15 @@ export interface OpenAIChatStreamProcessorOptions {
     warn?: (msg: string, tag?: string) => void;
   };
 
-  // Builds a continuation stream from delivered plain text.
-  resumeStreamFactory?: (partialText: string) => Promise<AsyncIterable<any> | null>;
+  // Builds a continuation from delivered plain text; see ResumeStreamOutcome.
+  resumeStreamFactory?: (
+    partialText: string
+  ) => Promise<AsyncIterable<any> | ResumeStreamOutcome | null>;
+
+  /** Tuning for retrying the continuation request itself (e.g. upstream 429
+   * with Retry-After). The factory reports retryability via
+   * ResumeStreamOutcome; defaults live above as STREAM_RESUME_* constants. */
+  resumeRetry?: StreamResumeRetryOptions;
 
   // When true, usage-only chunks (usage present, no meaningful choices) are
   // suppressed from the downstream SSE stream. Usage is still extracted for
@@ -67,7 +115,31 @@ export async function processOpenAIChatCompletionStreamToSse(
     logger,
     skipUsageChunks,
     resumeStreamFactory,
+    resumeRetry: resumeRetryOptions,
   } = options;
+
+  const resumeRetry = {
+    maxAttempts: resolveResumeRetryNumber(
+      resumeRetryOptions?.maxAttempts,
+      STREAM_RESUME_MAX_REQUEST_ATTEMPTS,
+      1
+    ),
+    defaultBackoffMs: resolveResumeRetryNumber(
+      resumeRetryOptions?.defaultBackoffMs,
+      STREAM_RESUME_DEFAULT_BACKOFF_MS,
+      0
+    ),
+    maxRetryAfterMs: resolveResumeRetryNumber(
+      resumeRetryOptions?.maxRetryAfterMs,
+      STREAM_RESUME_MAX_RETRY_AFTER_MS,
+      0
+    ),
+    heartbeatIntervalMs: resolveResumeRetryNumber(
+      resumeRetryOptions?.heartbeatIntervalMs,
+      STREAM_RESUME_HEARTBEAT_INTERVAL_MS,
+      0
+    ),
+  };
 
   const bufferedKeys = new Set<string>();
   const finishedByChoiceIndex = new Set<number>();
@@ -106,7 +178,11 @@ export async function processOpenAIChatCompletionStreamToSse(
   // Stream-resume state: the first attempt's text already delivered
   // downstream, and the continuation segment stitching onto it.
   let activeStream: AsyncIterable<any> = stream;
+  // resumeSegment：是否已采纳一段续写（终局门闩 —— 采纳过就绝不再续）。
   let resumeSegment = false;
+  // resumeAttempts：已真实创建并发往上游的续写请求次数（含被 429/5xx 拒绝
+  // 后的重试；初始请求不计）。仅工厂返回流或 ResumeStreamOutcome 时递增
+  // （outcome = 请求已创建但被拒；返回 null 表示从未创建，如开关关闭）。
   let resumeAttempts = 0;
   let resumeChars = 0;
   let resumeBaseId: string | undefined;
@@ -150,6 +226,188 @@ export async function processOpenAIChatCompletionStreamToSse(
     }
   };
 
+  // --- 续写间隙（resume gap）工具 ------------------------------------------
+  // 间隙 = 上游流死亡 → 续写流首块到达。期间向下游发 SSE 注释心跳（': ping'）
+  // 防止中间代理/客户端因空闲超时断开；同时随时感知客户端 abort。
+  const resumeClientGone = (): boolean =>
+    abortSignal?.aborted === true || reply.raw.destroyed || reply.raw.writableEnded;
+
+  // 返回 false 表示客户端已不在（心跳写不出去或已 abort）。
+  const writeResumeHeartbeat = async (): Promise<boolean> => {
+    if (resumeClientGone()) return false;
+    ensureHeaders();
+    // 心跳不进 chunkRecorder：它是传输层保活，不是模型输出，
+    // 也不应混入 token 计数/重放用的 chunk 序列。
+    await writeWithBackpressure(reply.raw, STREAM_RESUME_HEARTBEAT_FRAME, abortSignal);
+    return !resumeClientGone();
+  };
+
+  const sleepResumeGap = (ms: number): Promise<void> =>
+    new Promise((resolve) => {
+      if (ms <= 0 || abortSignal?.aborted) {
+        resolve();
+        return;
+      }
+      const onAbort = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        abortSignal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      abortSignal?.addEventListener('abort', onAbort, { once: true });
+    });
+
+  /** Waits `delayMs` keeping the SSE connection warm with comment heartbeats.
+   * Returns false when the wait elapsed, true when the client disappeared. */
+  const waitResumeGap = async (delayMs: number): Promise<boolean> => {
+    const startedAt = Date.now();
+    const deadline = startedAt + Math.max(0, delayMs);
+    const interval = resumeRetry.heartbeatIntervalMs;
+    let nextBeatAt = interval > 0 ? startedAt + interval : Number.POSITIVE_INFINITY;
+    while (true) {
+      if (resumeClientGone()) return true;
+      const now = Date.now();
+      if (now >= deadline) return false;
+      if (now >= nextBeatAt) {
+        if (!(await writeResumeHeartbeat())) return true;
+        nextBeatAt += interval;
+        continue;
+      }
+      await sleepResumeGap(Math.min(deadline, nextBeatAt) - now);
+    }
+  };
+
+  /** Awaits the continuation factory while ticking heartbeats over the gap
+   * (the factory covers the enabled-check DB read plus create() up to the
+   * first response headers). Returns { clientGone: true } when the downstream
+   * client disappears first; the pending factory promise stays error-guarded. */
+  const awaitResumeFactory = async (): Promise<{
+    clientGone: boolean;
+    value?: any;
+  }> => {
+    const pending = Promise.resolve(resumeStreamFactory!(partialContent));
+    // The race below owns rejections while it is pending; if the heartbeat
+    // side wins first, a later rejection must not surface as unhandled.
+    void pending.catch(() => {});
+
+    if (resumeRetry.heartbeatIntervalMs <= 0) {
+      const value = await pending;
+      return { clientGone: resumeClientGone(), value };
+    }
+
+    const CLIENT_GONE = Symbol('resume-client-gone');
+    let beatTimer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+    try {
+      const beating = new Promise<typeof CLIENT_GONE>((resolveBeat, rejectBeat) => {
+        const tick = () => {
+          if (stopped) return;
+          if (resumeClientGone()) {
+            resolveBeat(CLIENT_GONE);
+            return;
+          }
+          void (async () => {
+            if (!(await writeResumeHeartbeat())) {
+              resolveBeat(CLIENT_GONE);
+              return;
+            }
+            if (!stopped) beatTimer = setTimeout(tick, resumeRetry.heartbeatIntervalMs);
+          })().catch(rejectBeat);
+        };
+        beatTimer = setTimeout(tick, resumeRetry.heartbeatIntervalMs);
+      });
+
+      const winner = await Promise.race([pending, beating]);
+      if (winner === CLIENT_GONE) return { clientGone: true };
+      return { clientGone: false, value: winner };
+    } finally {
+      stopped = true;
+      clearTimeout(beatTimer);
+    }
+  };
+
+  /** Runs the continuation-request attempts: honor the factory-reported
+   * Retry-After wait when available, otherwise a small backoff; heartbeats
+   * span the whole gap; abort/client-gone stops immediately. Returns the
+   * adopted continuation stream, or null to keep the original failure
+   * terminal. At most one continuation segment is ever adopted. Each factory
+   * result that is a stream or a ResumeStreamOutcome counts as one upstream
+   * continuation-request creation (resumeAttempts), including rejected
+   * (e.g. 429) creations that are later retried. */
+  const runResumeAttempts = async (): Promise<AsyncIterable<any> | null> => {
+    // 先把还原器扣下的尾巴交给客户端，再清空它，避免接到续写开头。
+    await emitRestorerTail();
+    if (resumeClientGone()) return null;
+
+    let advisedWaitMs: number | undefined;
+    for (let attempt = 1; attempt <= resumeRetry.maxAttempts; attempt++) {
+      if (attempt > 1) {
+        // Do not retry earlier than the server requested. A delay beyond our
+        // bounded resume window is terminal instead of being silently clamped.
+        if (advisedWaitMs !== undefined && advisedWaitMs > resumeRetry.maxRetryAfterMs) {
+          logger?.warn?.('断点续传: Retry-After 超出等待上限，停止重试', 'Protocol');
+          return null;
+        }
+        const waitMs = advisedWaitMs ?? resumeRetry.defaultBackoffMs;
+        logger?.info(
+          `断点续传: 续写请求创建失败，${waitMs}ms 后进行第 ${attempt}/${resumeRetry.maxAttempts} 次尝试` +
+            (advisedWaitMs !== undefined ? '（遵循上游 Retry-After）' : ''),
+          'Protocol'
+        );
+        if (await waitResumeGap(waitMs)) return null;
+      }
+
+      let factoryValue: any;
+      try {
+        const outcome = await awaitResumeFactory();
+        if (outcome.clientGone) return null;
+        factoryValue = outcome.value;
+      } catch {
+        // 工厂契约是“从不抛出”（protocol-adapter 已把上游错误映射为
+        // ResumeStreamOutcome）；意外抛出保持终态，不掩盖原始错误。
+        return null;
+      }
+
+      let nextStream: AsyncIterable<any> | null = null;
+      let retryable = false;
+      let retryAfterMs: number | undefined;
+      let createdRequest = false;
+      if (
+        factoryValue &&
+        typeof factoryValue === 'object' &&
+        'stream' in factoryValue
+      ) {
+        nextStream = factoryValue.stream ?? null;
+        retryable = factoryValue.retryable === true;
+        const advised = factoryValue.retryAfterMs;
+        retryAfterMs =
+          typeof advised === 'number' && Number.isFinite(advised) && advised >= 0
+            ? advised
+            : undefined;
+        // ResumeStreamOutcome = 续写请求已真实创建但被上游拒绝（429/5xx 等）。
+        createdRequest = true;
+      } else {
+        nextStream = (factoryValue ?? null) as AsyncIterable<any> | null;
+        // 返回流 = 续写请求已创建且成功。返回 null = 未创建（开关关闭等）。
+        createdRequest = nextStream !== null;
+      }
+      if (createdRequest) resumeAttempts += 1;
+
+      if (nextStream) {
+        logger?.warn?.(
+          `断点续传: 上游流中断(已输出 ${partialContent.length} 字符)，续写请求成功(第 ${attempt} 次尝试)`,
+          'Protocol'
+        );
+        return nextStream;
+      }
+
+      if (!retryable || attempt >= resumeRetry.maxAttempts) return null;
+      advisedWaitMs = retryAfterMs;
+    }
+    return null;
+  };
   streamLoop: while (true) {
     try {
       for await (const chunk of activeStream) {
@@ -320,6 +578,10 @@ export async function processOpenAIChatCompletionStreamToSse(
         }
       }
 
+      // The SDK can end iteration silently after the client aborts.
+      // Propagate cancellation so the route does not audit it as success.
+      if (abortSignal?.aborted) throw new DOMException('Client aborted', 'AbortError');
+
       // The SDK ends the iterator silently on a graceful close without [DONE].
       if (!clientGone && !abortSignal?.aborted) {
         if (upstreamChunkCount === 0) {
@@ -336,11 +598,13 @@ export async function processOpenAIChatCompletionStreamToSse(
       }
 
       // Stream resume: the upstream died mid-flight after plain-text deltas
-      // were already flushed. Ask the factory for a continuation stream
-      // exactly once; a second failure or ineligible state stays terminal.
+      // were already flushed. Ask the factory for a continuation stream;
+      // creation failures may be retried (Retry-After aware), but once a
+      // segment was adopted (resumeSegment) a second mid-flight failure stays
+      // terminal — at most one continuation segment is ever adopted.
       if (
         resumeStreamFactory &&
-        resumeAttempts === 0 &&
+        !resumeSegment &&
         partialContent.length > 0 &&
         partialContent.length <= STREAM_RESUME_MAX_CHARS &&
         !sawNonTextDelta &&
@@ -351,26 +615,17 @@ export async function processOpenAIChatCompletionStreamToSse(
       ) {
         let nextStream: AsyncIterable<any> | null = null;
         try {
-          // 先把还原器扣下的尾巴交给客户端，再清空它，避免接到续写开头。
-          await emitRestorerTail();
-          if (reply.raw.destroyed || reply.raw.writableEnded) {
-            throw error;
-          }
-          nextStream = await resumeStreamFactory(partialContent);
+          nextStream = await runResumeAttempts();
         } catch (resumeError) {
           if (resumeError === error) throw resumeError;
           nextStream = null;
         }
         if (nextStream) {
-          resumeAttempts += 1;
+          // 采纳计数已在 runResumeAttempts 内完成（含被拒后重试的创建次数）。
           resumeChars = partialContent.length;
           resumeBaseId = lastChunkId;
           skipNextRoleOnlyChunk = true;
           resumeSegment = true;
-          logger?.warn?.(
-            `断点续传: 上游流中断(已输出 ${partialContent.length} 字符)，发起续写请求`,
-            'Protocol'
-          );
           activeStream = nextStream;
           continue streamLoop;
         }
@@ -393,15 +648,17 @@ export async function processOpenAIChatCompletionStreamToSse(
   return {
     // A resumed request has no complete first-attempt usage to combine with
     // the continuation's usage. Callers must count the stitched stream.
-    promptTokens: resumeAttempts > 0 ? 0 : promptTokens,
-    completionTokens: resumeAttempts > 0 ? 0 : completionTokens,
-    totalTokens: resumeAttempts > 0 ? 0 : totalTokens,
-    cachedTokens: resumeAttempts > 0 ? 0 : cachedTokens,
+    promptTokens: resumeSegment ? 0 : promptTokens,
+    completionTokens: resumeSegment ? 0 : completionTokens,
+    totalTokens: resumeSegment ? 0 : totalTokens,
+    cachedTokens: resumeSegment ? 0 : cachedTokens,
     streamChunks: chunkRecorder.chunks,
     tffbMs,
-    streamResumed: resumeAttempts > 0,
-    streamResumeAttempts: resumeAttempts > 0 ? resumeAttempts : undefined,
-    streamResumeChars: resumeAttempts > 0 ? resumeChars : undefined,
+    streamResumed: resumeSegment,
+    // 上游续写请求创建次数（含 429 重试；初始请求不计）；仅在采纳了续写段
+    // （成功收尾）时上报 —— 失败路径保持原始错误终态，不带续写 metadata。
+    streamResumeAttempts: resumeSegment ? resumeAttempts : undefined,
+    streamResumeChars: resumeSegment ? resumeChars : undefined,
     reasoningContent: reasoningContent || undefined,
     thinkingBlocks: thinkingBlocks.length > 0 ? thinkingBlocks : undefined,
   };

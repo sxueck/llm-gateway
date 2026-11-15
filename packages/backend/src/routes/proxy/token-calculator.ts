@@ -26,6 +26,10 @@ export interface TokenCalculationResult {
  * @param streamChunks - 流式响应块（可选）
  * @param promptTokensFromStream - 从流中解析的prompt tokens
  * @param completionTokensFromStream - 从流中解析的completion tokens
+ * @param deliveredOutputText - 调用方持有的完整已交付 output_text 原文
+ * （Responses 续传路径的 clientText 全量；磁带截断时按完整文本用真实
+ * 分词器计数，见 countStreamResponseTokens）。仅在 streamChunks 参与
+ * 估算时生效。
  */
 export async function calculateTokensIfNeeded(
   totalTokens: number,
@@ -33,7 +37,8 @@ export async function calculateTokensIfNeeded(
   responseBody?: any,
   streamChunks?: string[],
   promptTokensFromStream?: number,
-  completionTokensFromStream?: number
+  completionTokensFromStream?: number,
+  deliveredOutputText?: string
 ): Promise<TokenCalculationResult> {
   // 优先使用从流中解析的 usage 信息；仅当两者之和大于 0 时才直接采用，
   // 否则回退到响应 usage 或本地估算，避免 0/0 提前返回导致不计入总量
@@ -59,7 +64,7 @@ export async function calculateTokensIfNeeded(
   if (totalTokens !== 0) {
     // 如果只有 total_tokens，需要 fallback 计算
     if (streamChunks) {
-      const counted = await countStreamResponseTokens(requestBody, streamChunks);
+      const counted = await countStreamResponseTokens(requestBody, streamChunks, deliveredOutputText);
       memoryLogger.debug(`TokenCalc: fallback stream count with provided total | prompt=${counted.promptTokens} completion=${counted.completionTokens} total=${totalTokens}`, 'Token');
       return { promptTokens: counted.promptTokens, completionTokens: counted.completionTokens, totalTokens };
     }
@@ -74,7 +79,7 @@ export async function calculateTokensIfNeeded(
   }
 
   if (streamChunks) {
-    const counted = await countStreamResponseTokens(requestBody, streamChunks);
+    const counted = await countStreamResponseTokens(requestBody, streamChunks, deliveredOutputText);
     memoryLogger.debug(`TokenCalc: counted from stream chunks | prompt=${counted.promptTokens} completion=${counted.completionTokens} total=${counted.totalTokens}`, 'Token');
     return counted;
   }

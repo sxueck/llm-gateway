@@ -94,6 +94,68 @@ function shouldApplyPiiProtection(
   return protocolConfig?.protocol === "openai";
 }
 
+/** 续写失败信号的来源：处理器显式字段（优先）或 proxy 独立扫描 chunk 磁带。 */
+export type ResponsesResumeFailureSource = "processor" | "chunk-tape";
+
+export interface ResponsesResumeFailureSignal {
+  message: string;
+  source: ResponsesResumeFailureSource;
+}
+
+const RESPONSES_RESUME_FAILURE_FALLBACK_MESSAGE =
+  "Responses stream ended with a synthesized failure terminal";
+
+/** 优先使用处理器的失败信号；无显式信号时扫描录制帧，兼容 WS 适配器。 */
+export function detectResponsesResumeFailure(tokenUsage: {
+  streamResumed?: boolean;
+  streamFailed?: boolean;
+  streamFailure?: { code?: string; message?: string };
+  streamChunks?: string[];
+}): ResponsesResumeFailureSignal | null {
+  if (!tokenUsage?.streamResumed && tokenUsage?.streamFailed !== true) {
+    return null;
+  }
+
+  if (tokenUsage.streamFailed === true) {
+    const explicit =
+      typeof tokenUsage.streamFailure?.message === "string" &&
+      tokenUsage.streamFailure.message.trim().length > 0
+        ? tokenUsage.streamFailure.message
+        : "";
+    return {
+      message: explicit || RESPONSES_RESUME_FAILURE_FALLBACK_MESSAGE,
+      source: "processor",
+    };
+  }
+
+  const chunks = Array.isArray(tokenUsage.streamChunks)
+    ? tokenUsage.streamChunks
+    : [];
+  for (let i = chunks.length - 1; i >= 0; i--) {
+    for (const line of chunks[i].split("\n")) {
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      try {
+        const parsed = JSON.parse(data);
+        if (parsed?.type !== "response.failed") continue;
+        const message =
+          typeof parsed?.response?.error?.message === "string" &&
+          parsed.response.error.message
+            ? parsed.response.error.message
+            : "";
+        return {
+          message: message || RESPONSES_RESUME_FAILURE_FALLBACK_MESSAGE,
+          source: "chunk-tape",
+        };
+      } catch {
+        continue;
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * 阈值判断只统计历史窗口（去掉最近 KEEP_RECENT_WINDOW 条）：system prompt 若在历史内会计入，
  * 但最近消息不受压缩影响、不应把短对话撑过阈值。估算口径与 chars/4 对齐。
@@ -1155,6 +1217,76 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
 
     const duration = Date.now() - startTime;
 
+    // 合成的 response.failed 可能以 HTTP 200 返回，仍须按失败审计。
+    if (
+      isResponsesApi &&
+      (tokenUsage?.streamResumed || tokenUsage?.streamFailed === true)
+    ) {
+      const resumeFailure = detectResponsesResumeFailure(tokenUsage);
+      if (resumeFailure) {
+        // 录制帧可能被截断，计费须使用完整已交付文本。
+        const resumeFailureTokenCount = await calculateTokensIfNeeded(
+          0,
+          request.body,
+          undefined,
+          tokenUsage.streamChunks,
+          undefined,
+          undefined,
+          tokenUsage.deliveredOutputText,
+        );
+
+        circuitBreaker.recordFailure(
+          circuitBreakerKey,
+          new Error(resumeFailure.message),
+        );
+
+        const resumeFailureShouldLogBody = shouldLogRequestBody(virtualKey);
+        const resumeFailureFullRequestBody = buildRequestBodyForLogging(
+          request.body,
+          modelAttributes,
+          resumeFailureShouldLogBody,
+        );
+
+        logApiRequestAsync({
+          request,
+          virtualKey,
+          providerId,
+          model: getModelForLogging(request.body, currentModel),
+          tokenCount: resumeFailureTokenCount,
+          status: "error",
+          routeLogId: modelResult?.routeInfo?.logId ?? undefined,
+          routeTier: modelResult?.routeInfo?.tier ?? undefined,
+          responseTime: duration,
+          tffbMs: tokenUsage.tffbMs,
+          errorMessage: resumeFailure.message,
+          truncatedRequest: resumeFailureShouldLogBody
+            ? truncateRequestBody(resumeFailureFullRequestBody)
+            : undefined,
+          truncatedResponse: resumeFailureShouldLogBody
+            ? accumulateResponsesStream(tokenUsage.streamChunks)
+            : undefined,
+          cacheHit: 0,
+          compressionStats,
+          ip: streamRequestIp,
+          userAgent: streamRequestUserAgent,
+          piiMaskedCount,
+          // 失败行也携带续写事实（attempts/chars），供与上游 journal 对账。
+          streamResume: {
+            attempts: tokenUsage.streamResumeAttempts ?? 1,
+            chars: tokenUsage.streamResumeChars ?? 0,
+          },
+        });
+        ctx.auditLogged = true;
+
+        memoryLogger.warn(
+          `流式请求完成(续写失败): ${duration}ms | tokens: ${resumeFailureTokenCount.totalTokens} | ` +
+            `${resumeFailure.message} | 信号: ${resumeFailure.source}`,
+          "Proxy",
+        );
+        return;
+      }
+    }
+
     const tokenCount = await calculateTokensIfNeeded(
       tokenUsage.streamResumed ? 0 : tokenUsage.totalTokens,
       request.body,
@@ -1162,7 +1294,23 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
       tokenUsage.streamChunks,
       tokenUsage.streamResumed ? undefined : tokenUsage.promptTokens,
       tokenUsage.streamResumed ? undefined : tokenUsage.completionTokens,
+      // 续传估算必须完整：已交付输出不能只依赖被 256KiB 录制上限截断的
+      // 磁带，传入完整已交付文本（clientText 全量）用真实分词器计数
+      //（F2）。非续传路径不传，行为不变（上游 usage 优先）。
+      tokenUsage.streamResumed ? tokenUsage.deliveredOutputText : undefined,
     );
+
+    if (tokenUsage?.streamResumed) {
+      // 诚实续传估算的显式留痕：续写行没有可合并的上游 usage（原始段 usage
+      // 从未到达，续写段 usage 只覆盖重发的 prompt），这里的 tokens 是网关
+      // 估算 —— 原客户端 prompt 计一次 + 完整已交付文本 —— 不等于上游
+      // 真实花费。
+      memoryLogger.info(
+        `断点续传计费(网关估算): prompt=${tokenCount.promptTokens} completion=${tokenCount.completionTokens} | ` +
+          `attempts: ${tokenUsage.streamResumeAttempts ?? 1} | 非上游真实用量`,
+        "Proxy",
+      );
+    }
 
     circuitBreaker.recordSuccess(circuitBreakerKey);
 

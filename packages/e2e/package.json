@@ -6,7 +6,8 @@
   "description": "API-level E2E suite: boots the real backend against a real MySQL and a mock upstream, and exercises the OpenAI / Anthropic / Gemini forwarding chains plus expert routing.",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test:e2e": "vitest run"
+    "test:e2e": "npm run test:e2e:mock-upstream && vitest run",
+    "test:e2e:mock-upstream": "vitest run --config vitest.mock-upstream.config.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
