@@ -79,6 +79,7 @@ defineProps<{
 .page-heading__actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-sm);
   flex: 0 1 auto;
   flex-wrap: wrap;
@@ -100,6 +101,7 @@ defineProps<{
 
   .page-heading__actions {
     align-self: stretch;
+    justify-content: flex-start;
     padding-top: 0;
   }
 
