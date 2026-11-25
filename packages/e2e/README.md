@@ -1,6 +1,6 @@
 # @llm-gateway/e2e
 
-API 级端到端测试：启动真实后端（tsx 直跑 `packages/backend/src/index.ts`）+ 真实 MySQL（自动建库/迁移）+ 内置 mock upstream，覆盖三条原生转发链路与专家路由。
+API 级端到端测试：启动真实后端（tsx 直跑 `packages/backend/src/index.ts`）+ 真实 MySQL（自动建库/迁移）+ 内置 mock upstream，覆盖原生协议转发、专家路由和流式续传。
 
 ## 覆盖
 
@@ -11,6 +11,7 @@ API 级端到端测试：启动真实后端（tsx 直跑 `packages/backend/src/i
 | `gemini-chain.e2e.spec.ts` | `/v1beta/models/{model}:generateContent`（x-goog-api-key）非流式 + `:streamGenerateContent?alt=sse` |
 | `expert-routing.e2e.spec.ts` | JEV 分类器选档（medium）+ 分类器故障时 `fail_open=fallback` |
 | `stream-resume.e2e.spec.ts` | Chat SSE 断链、429 重试、工具调用、客户端取消和二次失败 |
+| `responses-chain.e2e.spec.ts` | `/v1/responses` 非流式（省略 `stream` 或显式 `false`）、请求 ID、用量和失败审计 |
 | `responses-resume.e2e.spec.ts` | Responses SSE 续传、计费和失败审计 |
 
 每条链路同时断言：响应语义、mock upstream 收到的 `model_identifier` 与鉴权、以及 `api_requests` 落库行（tokens/status/route_tier）——这层 DB 断言是 unit 层移除 SQL-shape 断言后的兜底。
@@ -49,5 +50,5 @@ MYSQL_PASSWORD=e2e-root-password npm run test:e2e
 
 - `vitest.mock-upstream.config.ts` — 独立自测配置，无 global setup；`vitest.config.ts` 排除该自测，供数据库套件使用。
 - `global-setup.ts` — 建库 → 起 mock upstream（:3112）→ 起网关（:3111，等 `/health`）→ 走 admin API 播种（provider/models/虚拟密钥/专家路由）→ 写 `.e2e-context.json` 供用例读取；teardown 反向清理。
-- `src/helpers/mock-upstream.ts` — 一台服务器扮演四种上游：OpenAI `/v1/chat/completions`、Anthropic `/v1/messages`、Gemini `/v1beta`、JEV classifier `/jev`；`/_internal/journal` 记录收到的请求供断言，`/_internal/jev-fail-mode` 注入分类器故障。
+- `src/helpers/mock-upstream.ts` — 一台服务器模拟 OpenAI `/v1/chat/completions` 和 `/v1/responses`（非流式）、Anthropic `/v1/messages`、Gemini `/v1beta`、JEV classifier `/jev`；`/_internal/journal` 记录收到的请求供断言，`/_internal/jev-fail-mode` 注入分类器故障。
 - `tests/` — 用例；`fileParallelism: false` 保证 journal 隔离。

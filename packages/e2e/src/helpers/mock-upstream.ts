@@ -166,8 +166,9 @@ export interface ServerHandle {
 }
 
 /**
- * 独立的 mock upstream：承载四种上游形态。
+ * 独立的 mock upstream：
  * - POST /v1/chat/completions          OpenAI Chat Completions（stream / non-stream）
+ * - POST /v1/responses                 OpenAI Responses（non-stream）
  * - POST /v1/messages                  Anthropic Messages（stream / non-stream）
  * - POST /v1beta/models/*:generateContent(Alt=SSE) Gemini 原生（stream / non-stream）
  * - POST /jev                          专家路由 classifier（systemone choice 协议）
@@ -391,6 +392,36 @@ export async function startMockUpstream(): Promise<ServerHandle> {
             usage: { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 },
           }),
         );
+        return;
+      }
+
+      if (req.method === "POST" && path === "/v1/responses") {
+        record("openai");
+        const b = body as { model?: string; stream?: boolean; input?: unknown; instructions?: string } | null;
+        if (b?.stream) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: { message: "mock only supports non-streaming Responses" } }));
+          return;
+        }
+        const failed = b?.input === "e2e responses failed";
+        res.writeHead(200, { "content-type": "application/json", "x-request-id": "req-e2e-responses" });
+        res.end(JSON.stringify({
+          id: "resp-e2e",
+          object: "response",
+          created_at: Math.floor(Date.now() / 1000),
+          model: b?.model,
+          status: failed ? "failed" : "completed",
+          error: failed ? { code: "server_error", message: "E2E responses failed" } : null,
+          instructions: b?.instructions,
+          output: failed ? [] : [{
+            id: "msg-e2e",
+            type: "message",
+            role: "assistant",
+            status: "completed",
+            content: [{ type: "output_text", text: "E2E responses ok", annotations: [] }],
+          }],
+          usage: failed ? null : { input_tokens: 12, output_tokens: 5, total_tokens: 17 },
+        }));
         return;
       }
 
