@@ -5,6 +5,7 @@ import { normalizeOpenAIError } from '../../utils/http-error-normalizer.js';
 import { upstreamFetch } from '../../utils/upstream-fetch.js';
 import { createUpstreamDeadline } from '../../utils/upstream-deadline.js';
 import { sanitizeCustomHeaders, filterForwardedHeaders } from '../../utils/header-sanitizer.js';
+import { sanitizeUpstreamRequestId, UPSTREAM_REQUEST_ID_HEADER } from '../../utils/upstream-request-id.js';
 
 export interface HttpResponse {
   statusCode: number;
@@ -91,6 +92,14 @@ function extractRawUpstreamError(error: any): { statusCode: number; errorRespons
   return { statusCode, errorResponse };
 }
 
+function normalizeResponsesError(error: any): { statusCode: number; errorResponse: any } {
+  const raw = error?.error?.error ?? error?.error;
+  if (typeof error?.status === 'number' && raw && typeof raw === 'object' && typeof raw.message === 'string') {
+    return { statusCode: error.status, errorResponse: { error: raw } };
+  }
+  return normalizeError(error);
+}
+
 export async function makeHttpRequest(
   config: ProtocolConfig,
   messages: any[],
@@ -109,26 +118,33 @@ export async function makeHttpRequest(
     } else if (isResponsesCompactRequest) {
       response = await protocolAdapter.compactResponse(config, input || [], options, abortSignal);
     } else if (isResponsesRequest) {
-      response = await protocolAdapter.createResponse(config, input || '', options, abortSignal);
+      response = await protocolAdapter.createResponse(config, input, options, abortSignal);
     } else {
       response = await protocolAdapter.chatCompletion(config, messages, options, abortSignal);
     }
 
-    try {
-      stripFieldRecursively(response, 'instructions');
-    } catch (_e) {
-      // Ignore strip errors
+    // Responses objects (including compact responses) may legitimately contain
+    // instructions at any depth. Keep the legacy sanitization for other APIs.
+    if (!isResponsesRequest && !isResponsesCompactRequest) {
+      try {
+        stripFieldRecursively(response, 'instructions');
+      } catch (_e) {
+        // Ignore strip errors
+      }
     }
 
-    return {
-      statusCode: 200,
-      headers: { 'content-type': 'application/json' },
-      body: response
-    };
+    const headers: Record<string, string | string[]> = { 'content-type': 'application/json' };
+    if (isResponsesRequest && !isResponsesCompactRequest) {
+      const requestId = sanitizeUpstreamRequestId(response?._request_id);
+      if (requestId) headers[UPSTREAM_REQUEST_ID_HEADER] = requestId;
+    }
+    return { statusCode: 200, headers, body: response };
   } catch (error: any) {
-    const { statusCode, errorResponse } = (options as any)?.__skipErrorNormalization
-      ? extractRawUpstreamError(error)
-      : normalizeError(error);
+    const { statusCode, errorResponse } = isResponsesRequest
+      ? normalizeResponsesError(error)
+      : (options as any)?.__skipErrorNormalization
+        ? extractRawUpstreamError(error)
+        : normalizeError(error);
 
     return {
       statusCode,
@@ -271,13 +287,15 @@ export async function makeStreamHttpRequest(
 ): Promise<StreamTokenUsage> {
   try {
     if (isResponsesRequest) {
-      return await protocolAdapter.streamResponse(config, input || '', options, reply, abortSignal);
+      return await protocolAdapter.streamResponse(config, input, options, reply, abortSignal);
     }
     return await protocolAdapter.streamChatCompletion(config, messages, options, reply, abortSignal);
   } catch (error: any) {
-    const { statusCode, errorResponse } = (options as any)?.__skipErrorNormalization
-      ? extractRawUpstreamError(error)
-      : normalizeError(error);
+    const { statusCode, errorResponse } = isResponsesRequest
+      ? normalizeResponsesError(error)
+      : (options as any)?.__skipErrorNormalization
+        ? extractRawUpstreamError(error)
+        : normalizeError(error);
     // 不直接向客户端写入错误，交由上层决定是否重试或返回
     const enriched = new Error(errorResponse?.error?.message || 'Stream request failed');
     (enriched as any).statusCode = statusCode;

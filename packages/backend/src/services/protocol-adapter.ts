@@ -109,14 +109,19 @@ const CHAT_PASSTHROUGH_KEYS = [
 ] as const;
 
 const RESPONSES_PASSTHROUGH_KEYS = [
+  'access_programs',
   'instructions',
   'background',
+  'background_options',
+  'image',
   'conversation',
   'context_management',
   'temperature',
   'top_p',
+  'top_logprobs',
   'store',
   'metadata',
+  'moderation',
   'tools',
   'tool_choice',
   'parallel_tool_calls',
@@ -133,6 +138,7 @@ const RESPONSES_PASSTHROUGH_KEYS = [
   'include',
   'prompt',
   'prompt_cache_key',
+  'prompt_cache_options',
   'prompt_cache_retention',
   'safety_identifier',
   'tool_search',
@@ -527,7 +533,7 @@ export class ProtocolAdapter {
 
   async createResponse(
     config: ProtocolConfig,
-    input: string | any[],
+    input: string | any[] | undefined,
     options: any,
     abortSignal?: AbortSignal
   ): Promise<any> {
@@ -541,7 +547,7 @@ export class ProtocolAdapter {
 
   private async openaiCreateResponse(
     config: ProtocolConfig,
-    input: string | any[],
+    input: string | any[] | undefined,
     options: any,
     abortSignal?: AbortSignal
   ): Promise<any> {
@@ -556,8 +562,12 @@ export class ProtocolAdapter {
     Object.assign(requestParams, this.buildResponsesRequestParams(options, true));
 
     const requestOptions: any = {};
-    if (options.requestTimeout !== undefined) {
-      requestOptions.timeout = options.requestTimeout;
+    const requestTimeoutMs =
+      options.requestTimeout !== undefined
+        ? options.requestTimeout
+        : config.modelAttributes?.requestTimeout;
+    if (requestTimeoutMs !== undefined) {
+      requestOptions.timeout = requestTimeoutMs;
     }
     if (abortSignal) {
       requestOptions.signal = abortSignal;
@@ -612,7 +622,7 @@ export class ProtocolAdapter {
 
   async streamResponse(
     config: ProtocolConfig,
-    input: string | any[],
+    input: string | any[] | undefined,
     options: any,
     reply: FastifyReply,
     abortSignal?: AbortSignal
@@ -627,7 +637,7 @@ export class ProtocolAdapter {
 
   private async openaiStreamResponse(
     config: ProtocolConfig,
-    input: string | any[],
+    input: string | any[] | undefined,
     options: any,
     reply: FastifyReply,
     abortSignal?: AbortSignal

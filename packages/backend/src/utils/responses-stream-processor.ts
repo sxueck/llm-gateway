@@ -6,6 +6,7 @@ import { createInitialAggregate, processResponsesEvent, type ResponsesAggregate 
 import { EmptyOutputError } from '../errors/empty-output-error.js';
 import { StreamTruncatedError, withStreamIdleTimeout, writeWithBackpressure } from './stream-guards.js';
 import { createResumeGapRunner, STREAM_RESUME_MAX_CHARS } from './resume-gap.js';
+import { sanitizeUpstreamRequestId, UPSTREAM_REQUEST_ID_HEADER } from './upstream-request-id.js';
 // 复用 chat 处理器导出的续写契约（仅类型，不引入 chat 运行时依赖）。
 import type { ResumeStreamOutcome, StreamResumeRetryOptions } from './stream-processor.js';
 
@@ -18,6 +19,8 @@ export const DEFAULT_RESPONSES_EMPTY_OUTPUT_MAX_RETRIES = Math.max(
 type SyncStreamRestorer = {
   process: (key: string, content: string) => string;
   flush: (key: string) => string;
+  /** Complete-field restore. Must not touch the incremental output_text buffer. */
+  restoreObject?: (body: any) => void;
 };
 
 type StreamLogger = {
@@ -67,6 +70,16 @@ function responsesEventHasAssistantContent(event: any): boolean {
 
   if (event.delta && typeof event.delta === 'object' && Object.keys(event.delta).length > 0) return true;
 
+  // 官方 Responses 流式增量为纯字符串（`delta: "…"`），不是包装对象。
+  if (
+    typeof event.type === 'string' &&
+    event.type.includes('output_text.delta') &&
+    typeof event.delta === 'string' &&
+    (event.delta as string).length > 0
+  ) {
+    return true;
+  }
+
   return false;
 }
 
@@ -76,6 +89,13 @@ const TERMINAL_RESPONSE_EVENTS = new Set([
   'response.incomplete',
   'response.failed',
   'response.done',
+]);
+
+const RESPONSES_CLOSE_EVENTS = new Set<string>([
+  'response.output_text.done',
+  'response.content_part.done',
+  'response.output_item.done',
+  ...TERMINAL_RESPONSE_EVENTS,
 ]);
 
 export interface OpenAIResponsesStreamProcessorOptions {
@@ -144,11 +164,16 @@ class SseWriter {
 
   constructor(
     private readonly reply: FastifyReply,
-    private readonly responseHeaders: Record<string, string>
+    private readonly responseHeaders: Record<string, string>,
+    private readonly getUpstreamRequestId: () => string | null
   ) {}
 
   private ensureHeadersSent(): void {
     if (!this.reply.raw.headersSent) {
+      const upstreamRequestId = this.getUpstreamRequestId();
+      if (upstreamRequestId) {
+        this.responseHeaders[UPSTREAM_REQUEST_ID_HEADER] = upstreamRequestId;
+      }
       this.reply.raw.writeHead(200, this.responseHeaders);
     }
   }
@@ -236,7 +261,8 @@ async function runStreamAttempt(
     resumeRetry,
   } = deps;
 
-  const writer = new SseWriter(reply, responseHeaders);
+  let upstreamRequestId: string | null = null;
+  const writer = new SseWriter(reply, responseHeaders, () => upstreamRequestId);
 
   // Per-attempt state
   const attemptStartedAt = Date.now();
@@ -245,6 +271,12 @@ async function runStreamAttempt(
   let bypassEmptyGuard = false;
   let aggregate: ResponsesAggregate = createInitialAggregate();
   let bufferedOutputKeyUsed = false;
+  // 上游 output_text.delta 的线路形态：官方为纯字符串，部分上游包装为对象。
+  // 还原器扣下尾巴补发合成增量时必须保持同一形态。
+  let stringDeltaShape = false;
+  let tailItemId: string | undefined;
+  let tailOutputIndex: number | undefined;
+  let tailContentIndex: number | undefined;
 
   let promptTokens = 0;
   let completionTokens = 0;
@@ -279,10 +311,18 @@ async function runStreamAttempt(
   try {
     // SAFETY: OpenAI SDK returns Stream<ChatCompletionChunk>-like async iterable in streaming mode;
     // its generated union type doesn't narrow here, but every consumer iterates SSE chunk objects.
-    stream = (await client.responses.create(
+    // The SDK exposes the selected attempt's headers without consuming the stream.
+    const created = client.responses.create(
       requestParams,
       attemptUpstreamRequestOptions
-    )) as unknown as AsyncIterable<any>;
+    );
+    if (created && typeof (created as any).withResponse === 'function') {
+      const withResponse = await (created as any).withResponse();
+      stream = withResponse?.data as AsyncIterable<any>;
+      upstreamRequestId = sanitizeUpstreamRequestId(withResponse?.request_id);
+    } else {
+      stream = (await created) as unknown as AsyncIterable<any>;
+    }
   } catch (error: any) {
     if (abortSignal && abortHandler) {
       abortSignal.removeEventListener('abort', abortHandler as any);
@@ -334,6 +374,11 @@ async function runStreamAttempt(
   // 合成 failed 终态（synthesizeResumeFailure）的审计信号：显式向调用方
   // 表达失败，不得以 success:true 伪造成功（下游帧仍完整）。
   let synthesizedFailure: { code: string; message: string } | undefined;
+  // 合成终态实际下发的权威全文（原始段+续写段原文一次性还原；
+  // 仅在采纳了续写段时赋值）。与增量累计值可能不同：间隙尾巴若把
+  // 跨断点的占位符从中间切开，增量累计值将永远带着假掩码，而全文
+  // 一次性还原能修复它——官方语义以 output_text.done/终态快照为准。
+  let synthesizedOutputText: string | undefined;
   // 续写段终态（合成 failed 或 completed 终止序列）下发之后，不得再向
   // 下游转发任何事件——增量绝不能出现在终态之后。
   let resumeTerminalEmitted = false;
@@ -523,22 +568,30 @@ async function runStreamAttempt(
       }
       if (typeof chunk.output_index === 'number') chunk.output_index = resumeOutputIndex;
       if (typeof chunk.content_index === 'number') chunk.content_index = resumeContentIndex;
+      // 续写段的原文也计入全文记账：合成终态的权威全文 = 原始段 + 续写段
+      // 的上游原文（还原前）一次性还原——这样才能修复跨断点被切开的占位符。
+      resumePartialText += text;
       renumberSequence(chunk);
-      // 与原始段相同的还原策略（仅包装形态 delta.text 走还原器）。
-      if (
-        streamRestorer &&
-        chunk.delta &&
-        typeof chunk.delta === 'object' &&
-        typeof chunk.delta.text === 'string'
-      ) {
-        bufferedOutputKeyUsed = true;
-        chunk.delta.text = streamRestorer.process('responses:output_text', chunk.delta.text);
+      // 与原始段相同的还原策略：官方字符串 delta 与包装形态 delta.text 都走还原器。
+      if (streamRestorer) {
+        const contDelta: any = chunk.delta;
+        if (typeof contDelta === 'string') {
+          bufferedOutputKeyUsed = true;
+          stringDeltaShape = true;
+          chunk.delta = streamRestorer.process('responses:output_text', contDelta);
+        } else if (contDelta && typeof contDelta === 'object' && typeof contDelta.text === 'string') {
+          bufferedOutputKeyUsed = true;
+          chunk.delta.text = streamRestorer.process('responses:output_text', contDelta.text);
+        }
       }
       await writer.enqueue(serializeChunkToSse(chunk));
+      const outDelta: any = chunk.delta;
       clientText +=
-        chunk.delta && typeof chunk.delta === 'object' && typeof chunk.delta.text === 'string'
-          ? chunk.delta.text
-          : text;
+        outDelta && typeof outDelta === 'object' && typeof outDelta.text === 'string'
+          ? outDelta.text
+          : typeof outDelta === 'string'
+            ? outDelta
+            : text;
       return;
     }
 
@@ -584,8 +637,11 @@ async function runStreamAttempt(
     // 其余事件（created/in_progress/content_part.done/output_text.done/…）一律抑制。
   };
 
-  /** 把还原器扣下的尾巴以增量形式交给客户端（续写间隙前 & 流结束时）。
-   * 终态已下发后不得再补增量（增量不能出现在终态之后）。*/
+  /** 把还原器扣下的尾巴以增量形式交给客户端（流结束时；收尾/终态事件
+   * 之前）。终态已下发后不得再补增量（增量不能出现在终态之后）。
+   * 注意：合成增量不携带 sequence_number——透传事件必须保持上游原号，
+   * 而上游下一个事件的编号只有收到后才知道；真实 SDK 聚合器
+   * （ResponseStream）不校验该字段的连续性，官方重放语义也不受影响。*/
   const emitRestorerTail = async (renumber: boolean): Promise<void> => {
     if (resumeTerminalEmitted) return;
     if (!streamRestorer || !bufferedOutputKeyUsed || reply.raw.destroyed || reply.raw.writableEnded) {
@@ -594,16 +650,102 @@ async function runStreamAttempt(
     const flushText = streamRestorer.flush('responses:output_text');
     if (!flushText) return;
 
-    const flushEvent: any = { type: 'response.output_text.delta', delta: { text: flushText } };
-    if (resumeItemId !== undefined) {
-      flushEvent.item_id = resumeItemId;
-      flushEvent.output_index = resumeOutputIndex;
-      flushEvent.content_index = resumeContentIndex;
+    const flushEvent: any =
+      stringDeltaShape
+        ? { type: 'response.output_text.delta', delta: flushText }
+        : { type: 'response.output_text.delta', delta: { text: flushText } };
+    if (tailItemId !== undefined) {
+      flushEvent.item_id = tailItemId;
+      flushEvent.output_index = tailOutputIndex;
+      flushEvent.content_index = tailContentIndex;
     }
     if (renumber) renumberSequence(flushEvent);
     clientText += flushText;
     await writer.enqueue(serializeChunkToSse(flushEvent));
   };
+
+  /** 对整段文本做一次纯还原且不残留缓冲。只能在还原器 pending 为空时
+   * 调用（即尾巴已补发之后）：process 会把文本并入 pending，flush 立即
+   * 归还全部还原结果并清空 pending，故该操作自身保持不变量。 */
+  const restoreFullTextOnce = (text: string): string => {
+    const through = streamRestorer!.process('responses:output_text', text);
+    return through + streamRestorer!.flush('responses:output_text');
+  };
+
+  /** 完整字段还原，不占用 output_text 增量缓冲。 */
+  const restoreSnapshotText = (text: string): string => {
+    const through = streamRestorer!.process('responses:snapshot', text);
+    return through + streamRestorer!.flush('responses:snapshot');
+  };
+
+  /** 还原收尾/终态事件携带的完整文本：output_text.done.text、
+   * content_part.done.part.text、output_item.done 与终态快照中 message
+   * content 的 output_text。上游官方流的这些字段是增量全文的权威快照，
+   * SDK finalResponse 直接采用它们——不还原就会向下游泄漏掩码占位符。 */
+  const restoreCloseEventText = (chunk: any): void => {
+    if (!streamRestorer || !chunk || typeof chunk !== 'object') return;
+    const type = String(chunk.type || '');
+
+    const restorePart = (part: any): void => {
+      if (!part || typeof part !== 'object') return;
+      const partType = String(part.type || 'output_text');
+      if (partType === 'output_text' || partType === 'text') {
+        if (typeof part.text === 'string' && part.text.length > 0) {
+          part.text = restoreFullTextOnce(part.text);
+        }
+        return;
+      }
+      if (
+        (partType === 'input_text' || partType === 'summary_text' || partType === 'reasoning_text') &&
+        typeof part.text === 'string' && part.text.length > 0
+      ) {
+        part.text = restoreSnapshotText(part.text);
+        return;
+      }
+      if (partType === 'refusal' && typeof part.refusal === 'string' && part.refusal.length > 0) {
+        part.refusal = restoreSnapshotText(part.refusal);
+      }
+    };
+
+    if (type === 'response.output_text.done') {
+      if (typeof chunk.text === 'string' && chunk.text.length > 0) {
+        chunk.text = restoreFullTextOnce(chunk.text);
+      }
+      return;
+    }
+
+    if (type === 'response.content_part.done') {
+      restorePart(chunk.part);
+      return;
+    }
+
+    const restoreMessageItem = (item: any): void => {
+      if (!item || typeof item !== 'object') return;
+      if (Array.isArray(item.content)) {
+        for (const part of item.content) restorePart(part);
+      }
+      if (Array.isArray(item.summary)) {
+        for (const part of item.summary) restorePart(part);
+      }
+    };
+
+    if (type === 'response.output_item.done') {
+      restoreMessageItem(chunk.item);
+      return;
+    }
+
+    if (TERMINAL_RESPONSE_EVENTS.has(type)) {
+      const response: any = chunk.response;
+      if (response && typeof response === 'object' && Array.isArray(response.output)) {
+        for (const item of response.output) restoreMessageItem(item);
+      }
+    }
+  };
+
+  /** 合成终态的权威全文：原始段+续写段的上游原文（还原前）做一次
+   * 性还原。只能在还原器 pending 为空时调用（即尾巴已补发之后）。 */
+  const authoritativeFinalText = (): string =>
+    streamRestorer ? restoreFullTextOnce(resumePartialText) : clientText;
 
   /** 以原始 response 身份合成唯一的 response.failed 终态：
    * 先 flush 还原器（增量必须在终态之前），再下发携带原始 id、全部
@@ -626,6 +768,9 @@ async function runStreamAttempt(
     await writer.flush();
     // 先把还原器扣下的尾巴以增量交付（增量必须在终态之前）。
     await emitRestorerTail(true);
+    // 权威全文：修复被断点从中间切开的占位符（全文一次性还原）。
+    const finalText = authoritativeFinalText();
+    synthesizedOutputText = finalText;
 
     const responseId = originalResponseId();
     const snapshot =
@@ -642,7 +787,7 @@ async function runStreamAttempt(
     // 审计信号：调用方（路由/计费侧）必须看到明确失败。
     synthesizedFailure = { code: String(error.code), message: String(error.message) };
 
-    const part = { type: 'output_text', text: clientText, annotations: [] };
+    const part = { type: 'output_text', text: finalText, annotations: [] };
     const outputIndex = resumeOutputIndex;
     const finalItems: any[] = Array.isArray(snapshot.output) ? [...snapshot.output] : [];
     const previousItem =
@@ -717,16 +862,20 @@ async function runStreamAttempt(
     const itemId = resumeItemId;
     const outputIndex = resumeOutputIndex;
     const contentIndex = resumeContentIndex;
+    // 权威全文：修复被断点从中间切开的占位符（全文一次性还原）。
+    // 还原器 pending 已在流结束时清空，此处可安全调用。
+    const finalText = authoritativeFinalText();
+    synthesizedOutputText = finalText;
 
     await emitSynthesized({
       type: 'response.output_text.done',
       item_id: itemId,
       output_index: outputIndex,
       content_index: contentIndex,
-      text: clientText,
+      text: finalText,
     });
 
-    const part = { type: 'output_text', text: clientText, annotations: [] };
+    const part = { type: 'output_text', text: finalText, annotations: [] };
     await emitSynthesized({
       type: 'response.content_part.done',
       item_id: itemId,
@@ -847,24 +996,65 @@ async function runStreamAttempt(
             await writer.flush();
           }
 
-          // Builtin PII protection: restore masked values in stream
-          if (
-            streamRestorer &&
-            typeof (chunk as any)?.delta?.text === 'string' &&
-            String((chunk as any)?.type || '').includes('output_text.delta')
-          ) {
-            bufferedOutputKeyUsed = true;
-            (chunk as any).delta.text = streamRestorer.process('responses:output_text', (chunk as any).delta.text);
+          // Builtin PII protection: restore masked values in stream.
+          // 官方 Responses 增量是纯字符串（`delta: "…"`），部分上游包装为
+          // 对象（`delta: {text}`）：两种形态都过还原器。
+          const passthroughType = String((chunk as any)?.type || '');
+          if (streamRestorer && passthroughType.includes('output_text.delta')) {
+            if (tailItemId !== undefined && (tailItemId !== chunk.item_id ||
+                tailOutputIndex !== chunk.output_index || tailContentIndex !== chunk.content_index)) {
+              await emitRestorerTail(false);
+            }
+            tailItemId = chunk.item_id;
+            tailOutputIndex = chunk.output_index;
+            tailContentIndex = chunk.content_index;
+            const delta: any = (chunk as any)?.delta;
+            if (typeof delta === 'string') {
+              bufferedOutputKeyUsed = true;
+              stringDeltaShape = true;
+              (chunk as any).delta = streamRestorer.process('responses:output_text', delta);
+            } else if (delta && typeof delta === 'object' && typeof delta.text === 'string') {
+              bufferedOutputKeyUsed = true;
+              delta.text = streamRestorer.process('responses:output_text', delta.text);
+            }
+          }
+
+          // 收尾/终态事件：先补发还原器扣下的缓冲尾巴（增量绝不能出现在
+          // output_text.done / completed 等事件之后），再还原这些事件携带
+          // 的完整文本——终态快照不得向下游泄漏掩码占位符。
+          if (RESPONSES_CLOSE_EVENTS.has(passthroughType)) {
+            await emitRestorerTail(false);
+            restoreCloseEventText(chunk);
+          }
+
+          // created / in_progress 就会回显 instructions 与 input，不能等到终态。
+          // refusal.done 的全文不在 response 上，单独还原。
+          if (streamRestorer) {
+            if (
+              (passthroughType === 'response.refusal.delta' && typeof (chunk as any).delta === 'string') ||
+              passthroughType === 'response.refusal.done'
+            ) {
+              const field = passthroughType === 'response.refusal.delta' ? 'delta' : 'refusal';
+              if (typeof (chunk as any)[field] === 'string' && (chunk as any)[field].length > 0) {
+                (chunk as any)[field] = restoreSnapshotText((chunk as any)[field]);
+              }
+            }
+            if ((chunk as any)?.response && typeof (chunk as any).response === 'object') {
+              streamRestorer.restoreObject?.((chunk as any).response);
+            }
           }
 
           await writer.enqueue(serializeChunkToSse(chunk));
 
-          // 下游可见文本 = 还原后的文本（包装形态），否则为上游原文。
+          // 下游可见文本 = 还原后的文本（官方字符串形态或包装形态），否则为上游原文。
           if (deltaText) {
+            const outDelta: any = (chunk as any)?.delta;
             clientText +=
-              chunk?.delta && typeof chunk.delta === 'object' && typeof chunk.delta.text === 'string'
-                ? chunk.delta.text
-                : deltaText;
+              outDelta && typeof outDelta === 'object' && typeof outDelta.text === 'string'
+                ? outDelta.text
+                : typeof outDelta === 'string'
+                  ? outDelta
+                  : deltaText;
           }
 
           // Usage extraction
@@ -891,8 +1081,9 @@ async function runStreamAttempt(
         }
 
         // Flush any remaining content from builtin PII stream restorer
-        // （非续传路径保持既有输出不变；续传路径同步重编号）。续写段
-        // 若已合成失败终态，这里不会再补增量。
+        // （完整流已在收尾/终态事件前补发过尾巴，此处通常无残留；
+        // 被截断的流没有终态事件，仍需在此把已产出的文本尾巴交给客户端）。
+        // 续传路径同步重编号；续写段若已合成失败终态，这里不会再补增量。
         await emitRestorerTail(resumeSegment);
 
         // 续写段成功到达终止事件：合成原始身份的终止序列（恰好一次）。
@@ -935,6 +1126,12 @@ async function runStreamAttempt(
         ) {
           let nextStream: AsyncIterable<any> | null = null;
           try {
+            // 间隙中先把还原器扣下的尾巴以增量交给客户端（已提交行为：
+            // 等待续写期间不留下游空窗）。若占位符恰好被断点从中间切开，
+            // 这里下发的前半段拼不回完整占位符——补偿在合成终态时进行：
+            // 对原始段+续写段的全文做一次性还原，作为合成
+            // output_text.done/终态快照的权威全文下发（官方语义：done 的
+            // text 字段即全文，SDK 聚合器会以其替换增量累计值）。
             const resumeOutcome = await gapRunner.runAttempts({
               partialText: resumePartialText,
               factory: resumeStreamFactory,
@@ -1033,9 +1230,8 @@ async function runStreamAttempt(
     streamResumeAttempts: resumeSegment ? resumeAttempts : undefined,
     streamResumeChars: resumeSegment ? resumeChars : undefined,
     streamFailure: synthesizedFailure,
-    // 完整已交付输出（clientText 原文，引用传递不复制）：仅在采纳了续写段
-    // 时上报（合成失败收尾也属于采纳续写段），供计费对完整文本计数。
-    deliveredOutputText: resumeSegment ? clientText : undefined,
+    // 续传计费使用交付终态的完整文本，而非可能被截断的事件磁带。
+    deliveredOutputText: resumeSegment ? (synthesizedOutputText ?? clientText) : undefined,
   };
 }
 
@@ -1121,7 +1317,7 @@ export async function processOpenAIResponsesStreamToSseWithRetry(
           // 审计信号：合成 failed 终态显式表达失败，不伪造成功。
           streamFailed: result.streamFailure ? true : undefined,
           streamFailure: result.streamFailure,
-          // 完整已交付输出（clientText 原文）：续传计费对完整文本计数。
+          // 续传计费对完整终态文本计数。
           deliveredOutputText: result.deliveredOutputText,
         };
       }

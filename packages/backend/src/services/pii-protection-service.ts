@@ -144,6 +144,50 @@ function collectTextRefs(body: any): TextRef[] {
     }
   };
 
+  // Replayed assistant turns quote the user via output_text / refusal, not input_text.
+  const collectResponsesContentPart = (part: any) => {
+    if (!part || typeof part !== 'object') return;
+    if (
+      (part.type === 'input_text' || part.type === 'text' || part.type === 'output_text' ||
+        part.type === 'summary_text' || part.type === 'reasoning_text') &&
+      typeof part.text === 'string'
+    ) {
+      pushStringRef(() => part.text, (v) => { part.text = v; });
+      return;
+    }
+    if (part.type === 'refusal' && typeof part.refusal === 'string') {
+      pushStringRef(() => part.refusal, (v) => { part.refusal = v; });
+    }
+  };
+
+  // Reasoning summaries can quote the user. encrypted_content is ciphertext, not text.
+  const collectReasoningItem = (item: any) => {
+    if (Array.isArray(item.summary)) {
+      for (const part of item.summary) collectResponsesContentPart(part);
+    }
+    if (Array.isArray(item.content)) {
+      for (const part of item.content) collectResponsesContentPart(part);
+    }
+  };
+
+  const collectResponsesInputItemText = (item: any, instructions = false) => {
+    if (!item || typeof item !== 'object') return;
+    if (typeof item.type === 'string' && item.type && item.type !== 'message') {
+      if (item.type === 'reasoning') collectReasoningItem(item);
+      return;
+    }
+    if (!instructions && item.role === 'system') return;
+
+    if (typeof item.content === 'string') {
+      pushStringRef(() => item.content, (v) => { item.content = v; });
+      return;
+    }
+
+    if (Array.isArray(item.content)) {
+      for (const part of item.content) collectResponsesContentPart(part);
+    }
+  };
+
   // OpenAI chat: messages
   if (Array.isArray(body?.messages)) {
     for (const msg of body.messages) {
@@ -191,16 +235,28 @@ function collectTextRefs(body: any): TextRef[] {
     pushStringRef(() => body.input, (v) => { body.input = v; });
   } else if (Array.isArray(body?.input)) {
     for (let i = 0; i < body.input.length; i++) {
-      if (typeof body.input[i] === 'string') {
+      const item = body.input[i];
+      if (typeof item === 'string') {
         const idx = i;
         pushStringRef(() => body.input[idx], (v) => { body.input[idx] = v; });
+        continue;
       }
+      collectResponsesInputItemText(item);
     }
   }
 
   // Instructions field
   if (typeof body?.instructions === 'string') {
     pushStringRef(() => body.instructions, (v) => { body.instructions = v; });
+  } else if (Array.isArray(body?.instructions)) {
+    for (let i = 0; i < body.instructions.length; i++) {
+      if (typeof body.instructions[i] === 'string') {
+        const idx = i;
+        pushStringRef(() => body.instructions[idx], (v) => { body.instructions[idx] = v; });
+      } else {
+        collectResponsesInputItemText(body.instructions[i], true);
+      }
+    }
   }
 
   // Anthropic system field: intentionally skipped (trusted application-side config)
@@ -236,15 +292,10 @@ function collectTextRefs(body: any): TextRef[] {
         pushStringRef(() => item.text, (v) => { item.text = v; });
       }
 
-      // Shape 3: item.content[] blocks with type 'output_text' or 'text'
-      if (Array.isArray(item.content)) {
-        for (const block of item.content) {
-          if (!block || typeof block !== 'object') continue;
-          // Only process text-bearing blocks, not tool calls or other structured data
-          if ((block.type === 'output_text' || block.type === 'text') && typeof block.text === 'string') {
-            pushStringRef(() => block.text, (v) => { block.text = v; });
-          }
-        }
+      if (item.type === 'reasoning') {
+        collectReasoningItem(item);
+      } else if (Array.isArray(item.content)) {
+        for (const block of item.content) collectResponsesContentPart(block);
       }
     }
   }
@@ -469,6 +520,14 @@ export class PiiStreamRestorer {
     this.pendingByKey.set(key, nextPending);
 
     return toProcess;
+  }
+
+  /**
+   * Restore every complete text field on a response snapshot.
+   * Does not touch the incremental output_text buffer.
+   */
+  restoreObject(body: any): void {
+    restoreResponseBodyInPlace(body, this.ctx);
   }
 
   /**

@@ -2,6 +2,7 @@ import { FastifyRequest, FastifyReply } from "fastify";
 import { nanoid } from "nanoid";
 import { memoryLogger } from "../../services/logger.js";
 import { debugModeService } from "../../services/debug-mode.js";
+import { assignResponsesRequestParams } from "../../services/protocol-adapter.js";
 import {
   truncateRequestBody,
   truncateResponseBody,
@@ -210,34 +211,8 @@ function parseModelAttributes(currentModel?: any): any | undefined {
   }
 }
 function buildResponsesOptions(body: any, includePrevId: boolean) {
-  const options: any = {
-    instructions: body?.instructions,
-    temperature: body?.temperature,
-    top_p: body?.top_p,
-    store: body?.store,
-    metadata: body?.metadata,
-    tools: body?.tools,
-    tool_choice: body?.tool_choice,
-    parallel_tool_calls: body?.parallel_tool_calls,
-    stream_options: body?.stream_options,
-    service_tier: body?.service_tier,
-    prompt_cache_key: body?.prompt_cache_key,
-    safety_identifier: body?.safety_identifier,
-    mcp: body?.mcp,
-    reasoning: body?.reasoning,
-    thinking: body?.thinking,
-    text: body?.text,
-    truncation: body?.truncation,
-    user: body?.user,
-    include: body?.include,
-    max_tool_calls: body?.max_tool_calls,
-    background: body?.background,
-    conversation: body?.conversation,
-    context_management: body?.context_management,
-  };
-  if (includePrevId && body?.previous_response_id) {
-    options.previous_response_id = body.previous_response_id;
-  }
+  const options: any = {};
+  assignResponsesRequestParams(options, body, includePrevId);
   return options;
 }
 
@@ -358,10 +333,18 @@ export function applyOpenAITargetModelMutations(
   // Clamp oversized max_tokens/max_completion_tokens to the model's serving cap
   // (sourced from model_attributes.max_completion_tokens).
   const servingLimits = resolveServingLimits(modelAttributes);
-  const didClampMaxTokens = clampMaxTokensFields(
+  let didClampMaxTokens = clampMaxTokensFields(
     request.body,
     servingLimits.maxCompletionTokens,
   );
+  const body = request.body as any;
+  const cap = servingLimits.maxCompletionTokens;
+  if (isResponsesApiPath(request.url || "") && cap !== undefined &&
+      typeof body?.max_output_tokens === "number" && Number.isFinite(body.max_output_tokens) &&
+      body.max_output_tokens > cap) {
+    body.max_output_tokens = cap;
+    didClampMaxTokens = true;
+  }
   if (didClampMaxTokens) {
     memoryLogger.info(
       `Request max tokens exceeded serving cap; clamped to ${servingLimits.maxCompletionTokens} | 模型: ${currentModel?.name}`,
@@ -646,7 +629,7 @@ export function createOpenAIProxyHandler() {
             virtualKey,
             request.body,
             (request.body as any)?.stream === true,
-            shouldBypassGatewayCache(request.url || ""),
+            shouldBypassGatewayCache(request.url || "") || isResponsesApiPath(request.url || ""),
           );
           if (
             logicalCacheKeyForRequest &&
@@ -899,21 +882,6 @@ export function createOpenAIProxyHandler() {
         "Proxy",
       );
 
-      const isResponsesApi = isResponsesApiPath(path);
-      const isResponsesCompactRequest = isResponsesCompactPath(path);
-
-      // Responses API 只支持流式模式，非流式直接返回错误
-      if (!isStreamRequest && isResponsesApi && !isResponsesCompactRequest) {
-        return reply.code(400).send({
-          error: {
-            message: "Responses API only supports streaming mode",
-            type: "invalid_request_error",
-            param: "stream",
-            code: "responses_non_stream_not_supported",
-          },
-        });
-      }
-
       proxyCtx = {
         request,
         reply,
@@ -1099,8 +1067,8 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
       const input = (request.body as any)?.input;
 
       const options = buildResponsesOptions(request.body as any, true);
-      // 模型名后缀解析的强制思考深度：覆盖客户端传入的 reasoning.effort，
-      // 并像 Chat 分支一样原样透传上游错误
+      // 模型名后缀解析的强制思考深度，覆盖客户端传入的 reasoning.effort。
+      // Responses 错误始终经 normalizeResponsesError，不走 Chat 的原样透传。
       if (modelResult?.forcedReasoningEffort) {
         const existingReasoning = options.reasoning;
         options.reasoning = {
@@ -1109,7 +1077,6 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
             : {}),
           effort: modelResult.forcedReasoningEffort,
         };
-        (options as any).__skipErrorNormalization = true;
       }
       (options as any).__forwardedHeaders = forwardedHeaders;
 
@@ -1121,7 +1088,7 @@ export async function handleStreamRequest(ctx: ProxyRequestContext) {
         );
       }
 
-      if (options.instructions) {
+      if (typeof options.instructions === "string" && options.instructions) {
         memoryLogger.debug(
           `Responses API instructions (${options.instructions.length} 字符): ${options.instructions.substring(0, 100)}...`,
           "Proxy",
@@ -1743,7 +1710,8 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
     modelAttributesParam ?? parseModelAttributes(currentModel);
   const isEmbeddingsRequest = isEmbeddingsPath(path);
   const isResponsesCompactRequest = isResponsesCompactPath(path);
-  const bypassGatewayCache = shouldBypassGatewayCache(path);
+  const isResponsesRequest = isResponsesApiPath(path) && !isResponsesCompactRequest;
+  const bypassGatewayCache = shouldBypassGatewayCache(path) || isResponsesRequest;
   const nonStreamRequestUserAgent = getRequestUserAgent(request);
 
   // Advertise the enforced completion cap (serving cap of this model) on all
@@ -2094,6 +2062,27 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
     if (piiResult.context) {
       (response as any).__piiContext = piiResult.context;
     }
+  } else if (isResponsesRequest) {
+    const piiEnabled = shouldApplyPiiProtection(
+      path, protocolConfig, true, false, virtualKey,
+    );
+    piiResult = piiEnabled
+      ? maskRequestBodyInPlace(request.body, true)
+      : { applied: false, context: null, maskedCount: 0 };
+    const options = buildResponsesOptions(request.body as any, true);
+    if (modelResult?.forcedReasoningEffort) {
+      const reasoning = options.reasoning;
+      options.reasoning = {
+        ...(reasoning && typeof reasoning === "object" ? reasoning : {}),
+        effort: modelResult.forcedReasoningEffort,
+      };
+    }
+    options.__forwardedHeaders = forwardedHeaders;
+    if (piiResult.context) options.__pii = piiResult.context;
+    response = await makeHttpRequest(
+      protocolConfig, [], options, false, (request.body as any)?.input,
+      true, abortController.signal,
+    );
   } else if (isEmbeddingsRequest) {
     const messages = (request.body as any)?.messages || [];
     const options = {
@@ -2230,13 +2219,15 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
   }
 
   try {
-    try {
-      stripFieldRecursively(responseData, "instructions");
-    } catch (_e) {
-      memoryLogger.debug(
-        `Strip instructions failed: ${(_e as Error)?.message || _e}`,
-        "Proxy",
-      );
+    if (!isResponsesApiPath(path)) {
+      try {
+        stripFieldRecursively(responseData, "instructions");
+      } catch (_e) {
+        memoryLogger.debug(
+          `Strip instructions failed: ${(_e as Error)?.message || _e}`,
+          "Proxy",
+        );
+      }
     }
 
     const piiContext = piiResult?.context || (response as any)?.__piiContext;
@@ -2277,12 +2268,14 @@ export async function handleNonStreamRequest(ctx: ProxyRequestContext) {
   const payloadUnusable =
     response.statusCode >= 200 &&
     response.statusCode < 300 &&
+    !(isResponsesRequest && responseData?.object === "response") &&
     isUnusableUpstreamPayload(responseData);
   const outcomeStatus = payloadUnusable ? 502 : response.statusCode;
   if (payloadUnusable) {
     reply.code(502);
   }
-  const isSuccess = outcomeStatus >= 200 && outcomeStatus < 300;
+  const isSuccess = outcomeStatus >= 200 && outcomeStatus < 300 &&
+    !(isResponsesRequest && responseData?.object === "response" && responseData.status === "failed");
 
   const shouldLogBody = shouldLogRequestBody(virtualKey);
 

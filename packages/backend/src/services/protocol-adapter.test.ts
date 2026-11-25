@@ -118,3 +118,55 @@ describe('applyReasoningEffortNoneTranslation', () => {
     expect(params).toEqual({ temperature: 1 });
   });
 });
+
+describe('createResponse request timeout', () => {
+  function captureAdapter() {
+    let capturedOptions: any;
+    const adapter = new ProtocolAdapter();
+    (adapter as any).getOpenAIClient = () => ({
+      responses: {
+        create: async (_params: any, requestOptions: any) => {
+          capturedOptions = requestOptions;
+          return { id: 'resp_1', object: 'response', output: [] };
+        },
+      },
+    });
+    return { adapter, getOptions: () => capturedOptions };
+  }
+
+  test('falls back to modelAttributes.requestTimeout', async () => {
+    const { adapter, getOptions } = captureAdapter();
+
+    await adapter.createResponse(
+      {
+        provider: 'openai',
+        apiKey: 'k',
+        model: 'm',
+        baseUrl: 'http://upstream.test',
+        modelAttributes: { requestTimeout: 12345 },
+      },
+      'hi',
+      {}
+    );
+
+    expect(getOptions().timeout).toBe(12345);
+  });
+
+  test('explicit options.requestTimeout wins over model attributes', async () => {
+    const { adapter, getOptions } = captureAdapter();
+
+    await adapter.createResponse(
+      {
+        provider: 'openai',
+        apiKey: 'k',
+        model: 'm',
+        baseUrl: 'http://upstream.test',
+        modelAttributes: { requestTimeout: 12345 },
+      },
+      'hi',
+      { requestTimeout: 50 }
+    );
+
+    expect(getOptions().timeout).toBe(50);
+  });
+});
