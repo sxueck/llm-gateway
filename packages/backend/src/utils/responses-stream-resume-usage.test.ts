@@ -228,8 +228,10 @@ describe('processOpenAIResponsesStreamToSseWithRetry — resume usage vs truncat
   });
 
   test('合成失败续传（中文超 256KiB 磁带）：失败行同样按全文真实分词计数', async () => {
-    const originalChunk = '中'.repeat(CHUNK_CHARS);
-    const contChunk = '文'.repeat(CHUNK_CHARS);
+    // 保留同样的字符数和真实分词，但用标点避免让整段连续中文变成一个 BPE 片段。
+    const sentenceChunk = (text: string) => text.repeat(Math.ceil(CHUNK_CHARS / text.length)).slice(0, CHUNK_CHARS);
+    const originalChunk = sentenceChunk('初始回复已经发送。');
+    const contChunk = sentenceChunk('续写内容仍需计入完整用量。');
     const fullText = originalChunk.repeat(ORIGINAL_CHUNKS) + contChunk.repeat(CONT_CHUNKS);
 
     const { reply, frames } = createReply();

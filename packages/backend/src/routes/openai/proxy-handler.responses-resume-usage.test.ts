@@ -86,8 +86,9 @@ const PROMPT_INPUT = "count me as prompt once";
 // 完整已交付输出（clientText 全量）：均超过 256KiB（BoundedChunkRecorder
 // 默认录制上限）——真实链路里磁带只会录到它们的前缀。
 const ASCII_FULL_TEXT = "a".repeat(300_000);
-const CJK_WORD = "配额不得因磁带截断而低估";
-const CJK_FULL_TEXT = CJK_WORD.repeat(24_000).slice(0, 263_000);
+// 用标点分隔重复的中文句子，避免单个长 BPE 片段；仍超过磁带上限。
+const CJK_SENTENCE = "配额不得因磁带截断而低估。";
+const CJK_FULL_TEXT = CJK_SENTENCE.repeat(24_000).slice(0, 263_000);
 
 function frame(type: string, payload: Record<string, unknown> = {}): string {
   return `event: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`;
