@@ -39,7 +39,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 
       - name: Unit tests
-        run: npm test
+        # Long tiktoken cases contend for CPU and can time out on shared runners.
+        run: |
+          npm run test -w @llm-gateway/backend -- --no-file-parallelism
+          npx vitest run --root packages/web
+          npx vitest run --root packages/worker
         env:
           NODE_ENV: test
           JWT_SECRET: ci-test-only-jwt-secret-must-be-at-least-32-characters
